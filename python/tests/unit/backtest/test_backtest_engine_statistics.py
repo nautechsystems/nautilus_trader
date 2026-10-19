@@ -12,11 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest engine statistics behavior.
+"""
 
 import math
+from decimal import Decimal
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
@@ -59,11 +64,18 @@ def _engine_with_account() -> BacktestEngine:
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     return engine
 
 
-def test_engine_exposes_portfolio_statistics():
+def test_engine_exposes_portfolio_statistics() -> None:
+    """
+    Test engine exposes portfolio statistics.
+    """
     engine = _engine_with_account()
     engine.run()
     stats = engine.portfolio.statistics()
@@ -73,7 +85,10 @@ def test_engine_exposes_portfolio_statistics():
     engine.dispose()
 
 
-def test_engine_portfolio_statistics_equals_result():
+def test_engine_portfolio_statistics_equals_result() -> None:
+    """
+    Test engine portfolio statistics equals result.
+    """
     engine = _engine_with_account()
     engine.run()
     stats = engine.portfolio.statistics()

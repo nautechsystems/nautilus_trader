@@ -2,23 +2,22 @@
 
 `FIX OrdType <40>=J` (Market If Touched)
 
-A *Market-If-Touched* order is a conditional order which once triggered will immediately
-place a *Market* order. This order type is often used to enter a new position on a stop price,
-or to take profits for an existing position, either as a SELL order against LONG positions,
-or as a BUY order against SHORT positions.
+A *Market-If-Touched* order releases a *Market* order when its trigger price is reached. Traders often use it
+to enter on a pullback or take profit. A take-profit order sells against a LONG position or buys against a
+SHORT position.
 
 ## Use cases
 
-Use a *Market-If-Touched* order to act with execution certainty when a target price is touched, such
-as entering on a pullback to a level or taking profit at a target. It behaves like a stop in the
-opposite direction (buying below or selling above the current market) and converts to a *Market* order
-on trigger. The tradeoff matches any market execution: the touch price is not the fill price, and the
-fill can slip in fast markets.
+Use a *Market-If-Touched* order to prioritize execution when a target price is touched. It triggers in the
+opposite market direction from a stop order, such as buying below or selling above the current market. The
+touch price is not a guaranteed fill price, and the released *Market* order can slip, be rejected, or stay
+unfilled.
 
 ## Example
 
-In the following example we create a *Market-If-Touched* order on the Binance Futures exchange
-to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000 USDT, active until further notice:
+**Example**: create a *Market-If-Touched* order on the Binance Futures exchange to SELL 10 ETHUSDT-PERP
+Perpetual Futures contracts. Set a trigger price of 10,000 USDT and keep the order active until further
+notice.
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -48,13 +47,13 @@ let order = self.order().market_if_touched(
 ```
 
 ```python tab="Python"
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import MarketIfTouchedOrder
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import MarketIfTouchedOrder
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TriggerType
 
 order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
@@ -69,10 +68,12 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 )
 ```
 
-See the [`MarketIfTouchedOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.market_if_touched.MarketIfTouchedOrder) for further details.
+See the
+[`MarketIfTouchedOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.MarketIfTouchedOrder)
+for further details.
 
 ## Related guides
 
 - [Orders](index.md#trigger-type) - Trigger types and other execution instructions.
 - [Emulated orders](emulated.md) - Emulating conditional orders on venues without native support.
-- [Execution](../execution.md) - How orders reach the venue and fills are handled.
+- [Execution](../execution/) - How orders reach the venue and fills are handled.

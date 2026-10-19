@@ -1,6 +1,6 @@
 # Docs Style
 
-This guide outlines the style conventions and best practices for writing documentation for NautilusTrader.
+Use this guide for NautilusTrader documentation style and writing practices.
 
 The [Markdown Style](markdown_style.md) guide is the shared baseline for Markdown syntax and
 formatting, and `.markdownlint.jsonc` enforces its mechanical subset. This guide covers what is
@@ -8,10 +8,9 @@ specific to NautilusTrader documentation rather than repeating that baseline.
 
 ## General principles
 
-- We favor simplicity over complexity, less is more.
-- We favor concise yet readable prose and documentation.
-- We value standardization in conventions, style, patterns, etc.
-- Documentation should be accessible to users of varying technical backgrounds.
+- Prefer simple structure and concise, readable prose.
+- Use consistent conventions, style, and patterns.
+- Write for users of varying technical backgrounds.
 
 ## Documentation types
 
@@ -22,14 +21,16 @@ Mixing types in a single page makes it harder to read and harder to maintain.
 | Type             | Purpose                         | Section          |
 | ---------------- | ------------------------------- | ---------------- |
 | **Tutorial**     | Teach by walking through a task | `tutorials/`     |
-| **How‑to guide** | Solve a specific problem        | `how_to/`        |
+| **How-to guide** | Solve a specific problem        | `how_to/`        |
 | **Explanation**  | Clarify design and architecture | `concepts/`      |
 | **Reference**    | Describe the machinery          | `api_reference/` |
 
-Two sections are exceptions: `getting_started/` is an onboarding path that
-combines tutorial-style walkthroughs with setup instructions, and
-`integrations/` pages mix reference (capabilities, symbology) with how-to
-content (setup, configuration) so each venue page is self-contained.
+Two sections are exceptions:
+
+- `getting_started/` combines tutorial-style walkthroughs with setup instructions for onboarding.
+- `integrations/` pages combine reference (capabilities, symbology) with how-to content (setup,
+  configuration). Thus, each venue page is self-contained.
+
 Standalone how-to content that is not venue-specific belongs in `how_to/`.
 
 ### Choosing the right type
@@ -47,7 +48,7 @@ they want X. Keep these distinct:
 - How-to guides should not teach background concepts.
 
 When one type needs to reference another, link to it instead of inlining. For
-example, a how-to guide that configures `TradingNodeConfig` should link to the
+example, a how-to guide that configures `LiveNodeConfig` should link to the
 API reference for field definitions rather than listing them again.
 
 ## Language and tone
@@ -55,9 +56,9 @@ API reference for field definitions rather than listing them again.
 - Use active voice when possible ("Configure the adapter" vs "The adapter should be configured").
 - Write in present tense for describing current functionality.
 - Use future tense only for planned features.
-- Avoid unnecessary jargon; define technical terms on first use.
-- Be direct and concise; avoid filler words like "basically", "simply", "just".
-- Use parallel structure in lists; keep grammatical patterns consistent across items.
+- Avoid unnecessary jargon. Define technical terms on first use.
+- Be direct and concise. Avoid filler words like "basically", "simply", "just".
+- Use parallel structure in lists. Keep grammatical patterns consistent across items.
 
 ## Markdown tables
 
@@ -101,6 +102,10 @@ than line numbers, which become stale as code changes.
 Heading style, case, and hierarchy follow the [Markdown Style](markdown_style.md#headings) guide:
 title case for the page heading, sentence case below it.
 
+NautilusTrader makes one exception for `index.md` pages: headings and navigation links that name
+individual documents use the target document's exact H1 title, including its capitalization.
+General section headings retain sentence case.
+
 Always capitalize proper nouns regardless of heading level (product names, technologies,
 companies, acronyms).
 
@@ -136,13 +141,13 @@ Use admonition blocks to highlight important information:
 
 | Admonition   | Purpose                                                       |
 | ------------ | ------------------------------------------------------------- |
-| `:::note`    | Supplementary context that clarifies but isn't essential.     |
+| `:::note`    | Supplementary context that clarifies but is not essential.    |
 | `:::info`    | Important information the reader should be aware of.          |
 | `:::tip`     | Helpful suggestions or best practices.                        |
 | `:::warning` | Potential pitfalls or important caveats.                      |
 | `:::danger`  | Critical issues that could cause data loss or system failure. |
 
-Avoid overusing admonitions; too many diminish their impact.
+Avoid overusing admonitions. Too many diminish their impact.
 
 ## MDX components
 

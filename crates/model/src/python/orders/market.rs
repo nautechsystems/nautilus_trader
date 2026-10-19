@@ -130,7 +130,7 @@ impl MarketOrder {
 
     #[staticmethod]
     #[pyo3(name = "closing_side")]
-    fn py_closing_side(side: PositionSide) -> OrderSide {
+    fn py_closing_side(side: PositionSide) -> Option<OrderSide> {
         OrderCore::closing_side(side)
     }
 
@@ -283,7 +283,7 @@ impl MarketOrder {
     fn py_tags(&self) -> Option<Vec<&str>> {
         self.tags
             .as_ref()
-            .map(|vec| vec.iter().map(|s| s.as_str()).collect())
+            .map(|vec| vec.iter().map(Ustr::as_str).collect())
     }
 
     #[pyo3(name = "events")]
@@ -453,7 +453,7 @@ impl MarketOrder {
             |x| {
                 dict.set_item(
                     "tags",
-                    x.iter().map(|x| x.to_string()).collect::<Vec<String>>(),
+                    x.iter().map(ToString::to_string).collect::<Vec<String>>(),
                 )
             },
         )?;

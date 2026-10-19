@@ -27,21 +27,19 @@ Examples include BTC and ETH options on crypto derivatives venues.
 | `multiplier`          | `Quantity`         | `Quantity`         | `1`              | Contract multiplier.                     |
 | `lot_size`            | `Quantity`         | `Quantity`         | `1`              | Rounded lot or board size.               |
 | `max_quantity`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                  |
-| `min_quantity`        | `Option<Quantity>` | `Quantity \| None` | `1`              | Minimum order quantity.                  |
+| `min_quantity`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Minimum order quantity.                  |
 | `max_notional`        | `Option<Money>`    | `Money \| None`    | `None`           | Maximum order notional value.            |
 | `min_notional`        | `Option<Money>`    | `Money \| None`    | `None`           | Minimum order notional value.            |
 | `max_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.      |
 | `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`             | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -53,7 +51,7 @@ Examples include BTC and ETH options on crypto derivatives venues.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::OptionKind,
@@ -63,8 +61,8 @@ use nautilus_model::{
 };
 use rust_decimal_macros::dec;
 
-let activation = Utc.with_ymd_and_hms(2022, 12, 22, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2023, 1, 13, 8, 0, 0).unwrap();
+let activation: Timestamp = "2022-12-22T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2023-01-13T08:00:00Z".parse().unwrap();
 
 let btc_option = CryptoOption::builder()
     .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
@@ -75,8 +73,8 @@ let btc_option = CryptoOption::builder()
     .is_inverse(false)
     .option_kind(OptionKind::Put)
     .strike_price(Price::from("16000.00"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(2)
     .size_precision(1)
     .price_increment(Price::from("0.01"))
@@ -88,8 +86,6 @@ let btc_option = CryptoOption::builder()
     .min_notional(Money::from("10.00 USD"))
     .margin_init(dec!(0))
     .margin_maint(dec!(0))
-    .maker_fee(dec!(0.0003))
-    .taker_fee(dec!(0.0003))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -133,8 +129,6 @@ btc_option = CryptoOption(
     min_notional=Money(10.00, USD),
     margin_init=Decimal(0),
     margin_maint=Decimal(0),
-    maker_fee=Decimal("0.0003"),
-    taker_fee=Decimal("0.0003"),
     ts_event=0,
     ts_init=0,
 )
@@ -142,7 +136,7 @@ btc_option = CryptoOption(
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoOption` instruments include:
+**Adapters that create or consume `CryptoOption` instruments include**:
 
 - [Bybit](../../integrations/bybit.md) for crypto options.
 - [Deribit](../../integrations/deribit.md) for crypto options.

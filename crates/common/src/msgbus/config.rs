@@ -25,7 +25,7 @@ use crate::{
 /// Configuration for `MessageBus` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -74,7 +74,7 @@ pub struct MessageBusConfig {
     pub stream_per_topic: bool,
     /// The external stream keys the message bus will listen to for publishing deserialized message payloads internally.
     pub external_streams: Option<Vec<String>>,
-    /// A list of serializable types **not** to publish externally.
+    /// A list of serializable payload type names **not** to publish externally.
     pub types_filter: Option<Vec<String>>,
     /// The heartbeat interval (seconds).
     pub heartbeat_interval_secs: Option<u16>,
@@ -91,8 +91,8 @@ impl MessageBusConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] when the default encoding cannot carry custom payloads, or when
-    /// a category override selects an encoding unsupported by any payload type in that category.
+    /// Returns an error if the default encoding cannot carry custom payloads, or when a category
+    /// override selects an encoding unsupported by any payload type in that category.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
@@ -242,7 +242,6 @@ mod tests {
 
     #[rstest]
     #[case("sbe", SerializationEncoding::Sbe)]
-    #[case("capnp", SerializationEncoding::Capnp)]
     fn test_deserialize_message_bus_config_with_schema_encoding(
         #[case] encoding_name: &str,
         #[case] expected: SerializationEncoding,
@@ -263,6 +262,22 @@ mod tests {
     }
 
     #[rstest]
+    #[case("encoding")]
+    #[case("encoding_market_data")]
+    #[case("encoding_builtin")]
+    fn message_bus_config_rejects_removed_encoding(#[case] field: &str) {
+        let mut config = serde_json::Map::new();
+        config.insert(field.into(), json!("capnp"));
+
+        let error = serde_json::from_value::<MessageBusConfig>(config.into()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "unknown variant `capnp`, expected one of `json`, `msgpack`, `sbe`"
+        );
+    }
+
+    #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
     fn message_bus_config_validate_accepts_custom_safe_default(
@@ -278,7 +293,6 @@ mod tests {
 
     #[rstest]
     #[case(SerializationEncoding::Sbe)]
-    #[case(SerializationEncoding::Capnp)]
     fn message_bus_config_validate_rejects_schema_default(#[case] encoding: SerializationEncoding) {
         let config = MessageBusConfig {
             encoding,
@@ -293,10 +307,9 @@ mod tests {
         ));
     }
 
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     #[rstest]
     #[cfg_attr(feature = "sbe", case(SerializationEncoding::Sbe))]
-    #[cfg_attr(feature = "capnp", case(SerializationEncoding::Capnp))]
     fn message_bus_config_validate_accepts_market_data_override(
         #[case] encoding: SerializationEncoding,
     ) {
@@ -324,25 +337,8 @@ mod tests {
         ));
     }
 
-    #[cfg(not(feature = "capnp"))]
-    #[rstest]
-    fn message_bus_config_validate_rejects_market_data_capnp_without_feature() {
-        let config = MessageBusConfig {
-            encoding_market_data: Some(SerializationEncoding::Capnp),
-            ..Default::default()
-        };
-
-        let error = config.validate().unwrap_err();
-        assert!(matches!(
-            error,
-            ConfigError::UnsupportedValue { field, .. }
-                if field == "MessageBusConfig.encoding_market_data"
-        ));
-    }
-
     #[rstest]
     #[case(SerializationEncoding::Sbe)]
-    #[case(SerializationEncoding::Capnp)]
     fn message_bus_config_validate_rejects_builtin_schema_override(
         #[case] encoding: SerializationEncoding,
     ) {

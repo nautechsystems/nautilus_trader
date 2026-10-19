@@ -54,14 +54,17 @@ use std::{
     time::Duration,
 };
 
-use chrono::Utc;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_binance::common::{
     consts,
     credential::{SigningCredential, resolve_credentials},
     enums::{BinanceEnvironment, BinanceProductType},
 };
-use nautilus_network::websocket::{
-    PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+use nautilus_network::{
+    http::create_standard_nautilus_headers,
+    websocket::{
+        PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
+    },
 };
 use serde::Serialize;
 use tokio_tungstenite::tungstenite::Message;
@@ -172,34 +175,36 @@ async fn main() -> anyhow::Result<()> {
     let (raw_handler, mut raw_rx) = channel_message_handler();
     let ping_handler: PingHandler = Arc::new(move |_| {});
 
-    let headers = vec![("X-MBX-APIKEY".to_string(), api_key)];
+    let mut headers = create_standard_nautilus_headers();
+    headers.push(("X-MBX-APIKEY".to_string(), api_key));
 
     let ws_config = WebSocketConfig {
         url,
         headers,
-        heartbeat: Some(20),
-        heartbeat_msg: None,
-        reconnect_timeout_ms: None,
+        heartbeat_interval_secs: Some(20),
+        heartbeat_payload: None,
+        connect_timeout_ms: None,
         reconnect_delay_initial_ms: None,
         reconnect_delay_max_ms: None,
         reconnect_backoff_factor: None,
         reconnect_jitter_ms: None,
         reconnect_max_attempts: Some(0),
+        heartbeat_timeout_secs: None,
         idle_timeout_ms: None,
+        writer_capacity: None,
         backend: TransportBackend::Tungstenite,
         proxy_url: None,
+        max_message_size_bytes: None,
+        max_frame_size_bytes: None,
     };
 
-    let client = WebSocketClient::connect(
-        ws_config,
-        Some(raw_handler),
-        Some(ping_handler),
-        None,
-        vec![],
-        None,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Connection failed: {e}"))?;
+    let client = WebSocketClient::builder()
+        .config(ws_config)
+        .message_handler(raw_handler)
+        .ping_handler(ping_handler)
+        .connect()
+        .await
+        .map_err(|e| anyhow::anyhow!("Connection failed: {e}"))?;
 
     println!("Connected");
 
@@ -345,7 +350,9 @@ async fn main() -> anyhow::Result<()> {
     // Write manifest
     let manifest = FixtureManifest {
         command: env::args().collect::<Vec<_>>().join(" "),
-        captured_at: Utc::now().to_rfc3339(),
+        captured_at: Timestamp::now()
+            .display_with_offset(Offset::UTC)
+            .to_string(),
         environment: environment_name(config.environment).to_string(),
         symbol: config.symbol,
         output_dir: output_root.display().to_string(),
@@ -439,7 +446,9 @@ fn record_fixture(
 
     let metadata = FixtureMetadata {
         fixture: record.clone(),
-        captured_at: Utc::now().to_rfc3339(),
+        captured_at: Timestamp::now()
+            .display_with_offset(Offset::UTC)
+            .to_string(),
     };
     write_json(&output_root.join(&record.metadata_path), &metadata)?;
 

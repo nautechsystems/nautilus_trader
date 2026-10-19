@@ -55,7 +55,8 @@
 //! - [`Quantity`]: Non-negative values only. Subtracting a larger quantity from a smaller
 //!   one raises an error rather than producing a negative result.
 //! - [`Price`]: Signed values allowed (can represent negative prices for spreads, etc.).
-//! - [`Money`]: Signed values allowed. Operations between different currencies raise an error.
+//! - [`Money`]: Signed values allowed. Arithmetic requires matching currencies. Ordering compares
+//!   currency code, then raw amount.
 
 pub mod balance;
 pub mod currency;
@@ -64,7 +65,7 @@ pub mod money;
 pub mod price;
 pub mod quantity;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 // Re-exports

@@ -119,17 +119,7 @@ impl AxHttpError {
     /// Retries on network errors, rate limiting (429), and server errors (5xx).
     #[must_use]
     pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::NetworkError(_) => true,
-            Self::UnexpectedStatus { status, .. } => *status == 429 || *status >= 500,
-            Self::MissingCredentials
-            | Self::MissingSessionToken
-            | Self::ApiError { .. }
-            | Self::JsonError(_)
-            | Self::ValidationError(_)
-            | Self::BuildError(_)
-            | Self::Canceled(_) => false,
-        }
+        crate::common::retry::should_retry_http(self)
     }
 }
 
@@ -195,7 +185,11 @@ mod tests {
     #[case(AxHttpError::UnexpectedStatus { status: 500, body: String::new() }, true)]
     #[case(AxHttpError::UnexpectedStatus { status: 502, body: String::new() }, true)]
     #[case(AxHttpError::UnexpectedStatus { status: 503, body: String::new() }, true)]
+    #[case(AxHttpError::UnexpectedStatus { status: 599, body: String::new() }, true)]
+    #[case(AxHttpError::UnexpectedStatus { status: 600, body: String::new() }, true)]
     #[case(AxHttpError::UnexpectedStatus { status: 429, body: String::new() }, true)]
+    #[case(AxHttpError::UnexpectedStatus { status: 408, body: String::new() }, false)]
+    #[case(AxHttpError::UnexpectedStatus { status: 425, body: String::new() }, false)]
     #[case(AxHttpError::UnexpectedStatus { status: 400, body: String::new() }, false)]
     #[case(AxHttpError::UnexpectedStatus { status: 401, body: String::new() }, false)]
     #[case(AxHttpError::UnexpectedStatus { status: 404, body: String::new() }, false)]

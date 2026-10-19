@@ -83,20 +83,17 @@ impl PyStubType for PathBuf {
     }
 }
 
-impl<Tz: chrono::TimeZone> PyStubType for chrono::DateTime<Tz> {
-    fn type_output() -> TypeInfo {
-        TypeInfo::with_module("datetime.datetime", "datetime".into())
-    }
-}
-
 impl_with_module!(SystemTime, "datetime.datetime", "datetime");
-impl_with_module!(chrono::NaiveDateTime, "datetime.datetime", "datetime");
-impl_with_module!(chrono::NaiveDate, "datetime.date", "datetime");
-impl_with_module!(chrono::NaiveTime, "datetime.time", "datetime");
-impl_with_module!(chrono::FixedOffset, "datetime.tzinfo", "datetime");
-impl_with_module!(chrono::Utc, "datetime.tzinfo", "datetime");
+impl_with_module!(jiff::Timestamp, "datetime.datetime", "datetime");
+impl_with_module!(jiff::Zoned, "datetime.datetime", "datetime");
+impl_with_module!(jiff::civil::DateTime, "datetime.datetime", "datetime");
+impl_with_module!(jiff::civil::Date, "datetime.date", "datetime");
+impl_with_module!(jiff::civil::Time, "datetime.time", "datetime");
+impl_with_module!(jiff::tz::Offset, "datetime.tzinfo", "datetime");
+impl_with_module!(jiff::tz::TimeZone, "datetime.tzinfo", "datetime");
 impl_with_module!(std::time::Duration, "datetime.timedelta", "datetime");
-impl_with_module!(chrono::Duration, "datetime.timedelta", "datetime");
+impl_with_module!(jiff::SignedDuration, "datetime.timedelta", "datetime");
+impl_with_module!(jiff::Span, "datetime.timedelta", "datetime");
 impl_with_module!(time::Duration, "datetime.timedelta", "datetime");
 impl_with_module!(time::Date, "datetime.date", "datetime");
 impl_with_module!(time::OffsetDateTime, "datetime.datetime", "datetime");

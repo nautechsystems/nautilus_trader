@@ -27,21 +27,24 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::{REDACTED, SecretString};
+use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_network::{
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
     websocket::{
         PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -91,12 +94,14 @@ pub struct BinanceFuturesWsTradingClient {
     >,
     out_rx:
         Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsTradingMessage>>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     request_id_counter: Arc<AtomicU64>,
-    cancellation_token: CancellationToken,
+    cancellation_token: Arc<Mutex<CancellationToken>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     recv_window_ms: Option<u64>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for BinanceFuturesWsTradingClient {
@@ -134,19 +139,28 @@ impl BinanceFuturesWsTradingClient {
             )))),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: Arc::new(Mutex::new(None)),
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(Mutex::new(CancellationToken::new())),
             transport_backend,
             proxy_url: None,
             recv_window_ms: None,
+            socket_control: None,
         }
     }
 
     /// Configures the proxy used by the WebSocket connection.
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.proxy_url = proxy_url;
+        self.proxy_url = proxy_url.map(SecretString::from);
+        self
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
         self
     }
 
@@ -181,67 +195,93 @@ impl BinanceFuturesWsTradingClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    // Mutex poisoning is not documented individually
-    #[expect(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceFuturesWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.disconnect_handler().await?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                BinanceFuturesWsApiError::ClientError(format!(
+                    "failed to start WebSocket handler task generation: {e}"
+                ))
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            BinanceFuturesWsApiError::ClientError(format!(
+                "failed to acquire WebSocket handler task spawner: {e}"
+            ))
+        })?;
         self.signal.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
+        *self.cancellation_token.lock() = CancellationToken::new();
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
 
-        let headers = vec![(
+        let mut headers = create_standard_nautilus_headers();
+        headers.push((
             BINANCE_API_KEY_HEADER.to_string(),
             self.credential.api_key().to_string(),
-        )];
+        ));
 
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers,
-            heartbeat: self.heartbeat,
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(5_000),
+            heartbeat_interval_secs: self.heartbeat,
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
 
         let keyed_quotas = vec![(
-            BINANCE_FUTURES_WS_RATE_LIMIT_KEY_ORDER[0]
-                .as_str()
-                .to_string(),
+            BINANCE_FUTURES_WS_RATE_LIMIT_KEY_ORDER[0].to_string(),
             binance_futures_ws_order_quota(),
         )];
 
-        let client = WebSocketClient::connect(
-            config,
-            Some(raw_handler),
-            Some(ping_handler),
-            None,
-            keyed_quotas,
-            Some(binance_futures_ws_order_quota()),
-        )
-        .await
-        .map_err(|e| BinanceFuturesWsApiError::ConnectionError(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(raw_handler)
+            .ping_handler(ping_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(binance_futures_ws_order_quota())
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| BinanceFuturesWsApiError::ConnectionError(e.to_string()))?;
 
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
+        let reconnect_handle = client.reconnect_handle();
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
 
+        cmd_tx
+            .send(BinanceFuturesWsTradingCommand::SetClient(client))
+            .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))?;
+
         {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(out_rx);
         }
 
         {
             let mut tx_guard = self.cmd_tx.write().await;
             *tx_guard = cmd_tx;
+            self.connection_mode.store(connection_mode);
         }
 
         let signal = self.signal.clone();
@@ -250,15 +290,13 @@ impl BinanceFuturesWsTradingClient {
             BinanceFuturesWsTradingHandler::new(signal, cmd_rx, raw_rx, out_tx, credential)
                 .with_recv_window(self.recv_window_ms);
 
-        self.cmd_tx
-            .read()
-            .await
-            .send(BinanceFuturesWsTradingCommand::SetClient(client))
-            .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))?;
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
-        let cancellation_token = self.cancellation_token.clone();
+        let cancellation_token = self.cancellation_token.lock().clone();
 
-        let handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             tokio::select! {
                 () = cancellation_token.cancelled() => {
                     log::debug!("Handler task cancelled");
@@ -267,15 +305,41 @@ impl BinanceFuturesWsTradingClient {
                     log::debug!("Handler run completed");
                 }
             }
-        });
+        };
 
-        self.task_handle = Some(Arc::new(handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx.lock().take();
+            return Err(BinanceFuturesWsApiError::HandlerUnavailable(format!(
+                "failed to register handler task: {e}"
+            )));
+        }
 
         Ok(())
     }
 
     /// Disconnects from the WebSocket Trading API server.
-    pub async fn disconnect(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task fails or does not stop after abort.
+    pub async fn disconnect(&mut self) -> BinanceFuturesWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        self.disconnect_handler().await
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.signal.store(true, Ordering::Relaxed);
+        self.cancellation_token.lock().cancel();
+    }
+
+    async fn disconnect_handler(&self) -> BinanceFuturesWsApiResult<()> {
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self
@@ -287,13 +351,20 @@ impl BinanceFuturesWsTradingClient {
             log::debug!("Failed to send disconnect command: {e}");
         }
 
-        self.cancellation_token.cancel();
+        self.cancellation_token.lock().cancel();
 
-        if let Some(handle) = self.task_handle.take()
-            && let Ok(handle) = Arc::try_unwrap(handle)
-        {
-            let _ = handle.await;
+        let result = self
+            .handler_tasks
+            .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                BinanceFuturesWsApiError::ClientError(format!("handler task shutdown failed: {e}"))
+            });
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
         }
+        result
     }
 
     /// Places a new order via the WebSocket Trading API.
@@ -383,20 +454,16 @@ impl BinanceFuturesWsTradingClient {
     /// Receives the next message from the handler.
     ///
     /// Returns `None` if the receiver is closed or not initialized.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
     pub async fn recv(&self) -> Option<BinanceFuturesWsTradingMessage> {
         let rx_opt = {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             rx_guard.take()
         };
 
         if let Some(mut rx) = rx_opt {
             let result = rx.recv().await;
 
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(rx);
             result
         } else {
@@ -415,9 +482,94 @@ impl BinanceFuturesWsTradingClient {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+
+        let mut ws_client = BinanceFuturesWsTradingClient::new(
+            Some(url),
+            "startup-key".to_string(),
+            "startup-secret".to_string(),
+            None,
+            TransportBackend::default(),
+        );
+        let observer = ws_client.clone();
+
+        let command = BinanceFuturesWsTradingCommand::CancelOrder {
+            id: "startup-74".to_string(),
+            params: BinanceCancelOrderParams {
+                symbol: "ETHUSDT".to_string(),
+                order_id: Some(725),
+                orig_client_order_id: None,
+                recv_window: None,
+            },
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.disconnect().await.expect("disconnect failed");
+        server.abort();
+
+        let mut payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        let timestamp = payload["params"]
+            .as_object_mut()
+            .unwrap()
+            .remove("timestamp")
+            .unwrap();
+        let signature = payload["params"]
+            .as_object_mut()
+            .unwrap()
+            .remove("signature")
+            .unwrap();
+        let timestamp = timestamp.as_u64().unwrap();
+        let query = format!("apiKey=startup-key&orderId=725&symbol=ETHUSDT&timestamp={timestamp}");
+        assert_eq!(
+            signature,
+            serde_json::json!(observer.credential.sign(&query))
+        );
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "id": "startup-74",
+                "method": "order.cancel",
+                "params": {
+                    "apiKey": "startup-key",
+                    "symbol": "ETHUSDT",
+                    "orderId": 725
+                }
+            })
+        );
+    }
 
     #[rstest]
     fn test_operational_options_are_preserved() {
@@ -432,7 +584,7 @@ mod tests {
         .with_recv_window(Some(30_000));
 
         assert_eq!(
-            client.proxy_url.as_deref(),
+            client.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("http://proxy.example:8080")
         );
         assert_eq!(client.recv_window_ms, Some(30_000));

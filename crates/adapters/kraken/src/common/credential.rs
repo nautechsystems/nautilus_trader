@@ -65,7 +65,7 @@ pub struct KrakenCredential {
 impl Debug for KrakenCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(KrakenCredential))
-            .field("api_key", &self.api_key)
+            .field("api_key", &REDACTED)
             .field("api_secret", &REDACTED)
             .finish()
     }
@@ -429,7 +429,8 @@ mod tests {
         let cred = KrakenCredential::new("test_key", "test_secret");
         let dbg_out = format!("{cred:?}");
 
-        assert!(dbg_out.contains(REDACTED));
+        assert_eq!(dbg_out.matches(REDACTED).count(), 2);
+        assert!(!dbg_out.contains("test_key"));
         assert!(!dbg_out.contains("test_secret"));
     }
 }

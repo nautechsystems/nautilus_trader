@@ -178,19 +178,7 @@ impl From<BybitErrorResponse> for BybitHttpError {
 pub(crate) fn is_bybit_ambiguous_order_error_code(code: i64) -> bool {
     matches!(
         code,
-        429 | 10000
-            | 10006
-            | 10016
-            | 10019
-            | 10403
-            | 10429
-            | 170001
-            | 170005
-            | 170007
-            | 170032
-            | 20003
-            | 20006
-            | 500000
+        10000 | 10016 | 10019 | 170001 | 170007 | 170032 | 20006 | 500000
     )
 }
 
@@ -248,6 +236,25 @@ mod tests {
             http_error.to_string(),
             "Parameter validation error: Invalid parameter value"
         );
+    }
+
+    #[rstest]
+    #[case(10000, true)]
+    #[case(10016, true)]
+    #[case(10019, true)]
+    #[case(170001, true)]
+    #[case(170007, true)]
+    #[case(170032, true)]
+    #[case(20006, true)]
+    #[case(500000, true)]
+    #[case(429, false)]
+    #[case(10006, false)]
+    #[case(10403, false)]
+    #[case(10429, false)]
+    #[case(170005, false)]
+    #[case(20003, false)]
+    fn test_order_error_ambiguity(#[case] code: i64, #[case] expected: bool) {
+        assert_eq!(is_bybit_ambiguous_order_error_code(code), expected);
     }
 
     #[rstest]

@@ -15,20 +15,22 @@
 
 //! Python bindings for the Interactive Brokers historical data client.
 
-use chrono::{DateTime, Utc};
 use ibapi::contracts::Contract;
-use nautilus_common::live::get_runtime;
+use jiff::Timestamp;
+use nautilus_common::live::block_on_nautilus_with;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Bar, Data},
     identifiers::InstrumentId,
     instruments::any::InstrumentAny,
-    python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
+    python::{data::data_to_pyobject, instruments::instrument_any_to_pyobject},
 };
 use pyo3::{prelude::*, types::PyList};
 
 use crate::{
-    common::enums::IbHistoricalTickType, historical::HistoricalInteractiveBrokersClient,
+    common::enums::IbHistoricalTickType, config::InteractiveBrokersDataClientConfig,
+    historical::HistoricalInteractiveBrokersClient,
+    providers::instruments::InteractiveBrokersInstrumentProvider,
     python::conversion::py_list_to_contracts,
 };
 
@@ -38,11 +40,10 @@ impl HistoricalInteractiveBrokersClient {
     #[new]
     #[allow(clippy::needless_pass_by_value)]
     fn py_new(
-        instrument_provider: crate::providers::instruments::InteractiveBrokersInstrumentProvider,
-        config: crate::config::InteractiveBrokersDataClientConfig,
+        instrument_provider: InteractiveBrokersInstrumentProvider,
+        config: InteractiveBrokersDataClientConfig,
     ) -> PyResult<Self> {
-        get_runtime()
-            .block_on(Self::connect_with_provider(instrument_provider, config))
+        block_on_nautilus_with(move || Self::connect_with_provider(instrument_provider, config))
             .map_err(to_pyruntime_err)
     }
 
@@ -52,16 +53,14 @@ impl HistoricalInteractiveBrokersClient {
 
     /// Request historical bars.
     ///
-    /// # Arguments
+    /// # Continuous futures
     ///
-    /// * `bar_specifications` - List of bar specifications (e.g., ["1-HOUR-LAST"])
-    /// * `end_date_time` - End date for bars
-    /// * `start_date_time` - Optional start date
-    /// * `duration` - Optional duration string (e.g., "1 D")
-    /// * `contracts` - Optional list of IB contracts (dicts with symbol, sec_type, exchange, currency, etc.)
-    /// * `instrument_ids` - Optional list of instrument IDs
-    /// * `use_rth` - Use regular trading hours only
-    /// * `timeout` - Request timeout in seconds
+    /// Continuous futures (`CONTFUT`) reject an explicit end date/time with IB
+    /// error 10339. For these contracts the end date is dropped and only the
+    /// first duration segment is requested, anchored to the current time, so
+    /// the returned bars may fall outside `[start_date_time, end_date_time]`.
+    /// A warning is logged when the requested end date/time is in the past or
+    /// the range spans more than one duration segment.
     #[pyo3(signature = (bar_specifications, end_date_time, start_date_time=None, duration=None, contracts=None, instrument_ids=None, use_rth=true, timeout=60))]
     #[pyo3(name = "request_bars")]
     #[allow(clippy::too_many_arguments)]
@@ -70,8 +69,8 @@ impl HistoricalInteractiveBrokersClient {
         &self,
         py: Python<'py>,
         bar_specifications: Vec<String>,
-        end_date_time: DateTime<Utc>,
-        start_date_time: Option<DateTime<Utc>>,
+        end_date_time: Timestamp,
+        start_date_time: Option<Timestamp>,
         duration: Option<String>,
         contracts: Option<Py<PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
@@ -117,17 +116,6 @@ impl HistoricalInteractiveBrokersClient {
     }
 
     /// Request historical ticks (quotes or trades).
-    ///
-    /// # Arguments
-    ///
-    /// * `tick_type` - Historical tick type.
-    /// * `start_date_time` - Start date for ticks
-    /// * `end_date_time` - End date for ticks
-    /// * `contracts` - Optional list of IB contracts (dicts with symbol, sec_type, exchange, currency, etc.)
-    /// * `instrument_ids` - Optional list of instrument IDs
-    /// * `use_rth` - Use regular trading hours only
-    /// * `timeout` - Request timeout in seconds
-    /// * `limit` - Maximum number of ticks to return, or 0 for no explicit limit
     #[pyo3(signature = (tick_type, start_date_time, end_date_time, contracts=None, instrument_ids=None, use_rth=true, timeout=60, limit=0))]
     #[pyo3(name = "request_ticks")]
     #[allow(clippy::too_many_arguments)]
@@ -136,8 +124,8 @@ impl HistoricalInteractiveBrokersClient {
         &self,
         py: Python<'py>,
         tick_type: IbHistoricalTickType,
-        start_date_time: DateTime<Utc>,
-        end_date_time: DateTime<Utc>,
+        start_date_time: Timestamp,
+        end_date_time: Timestamp,
         contracts: Option<Py<PyList>>,
         instrument_ids: Option<Vec<InstrumentId>>,
         use_rth: bool,
@@ -173,24 +161,20 @@ impl HistoricalInteractiveBrokersClient {
                 )
                 .await
                 .map_err(to_pyruntime_err)?;
-            // Convert Data enum to Python objects using pycapsules
+            // Convert Data values to native Python objects.
             Python::attach(|py| -> PyResult<Py<PyList>> {
                 let py_list = PyList::empty(py);
                 for data in data_vec {
-                    let py_capsule = data_to_pycapsule(py, data);
-                    py_list.append(py_capsule)?;
+                    let py_obj = data_to_pyobject(py, data)?;
+                    py_list.append(py_obj)?;
                 }
+
                 Ok(py_list.into())
             })
         })
     }
 
     /// Request instruments.
-    ///
-    /// # Arguments
-    ///
-    /// * `instrument_ids` - Optional list of instrument IDs to load
-    /// * `contracts` - Optional list of IB contracts (dicts with symbol, sec_type, exchange, currency, etc.)
     #[pyo3(signature = (instrument_ids=None, contracts=None))]
     #[pyo3(name = "request_instruments")]
     #[allow(clippy::needless_pass_by_value)]
@@ -229,6 +213,7 @@ impl HistoricalInteractiveBrokersClient {
                         instrument_any_to_pyobject(py, instrument).map_err(to_pyruntime_err)?;
                     py_list.append(py_obj)?;
                 }
+
                 Ok(py_list.into())
             })
         })

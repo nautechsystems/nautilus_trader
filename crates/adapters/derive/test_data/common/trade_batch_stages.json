@@ -1,0 +1,16 @@
+[
+  null,
+  "Batching",
+  "Executing",
+  "Da",
+  "Proving",
+  "Settling",
+  "Settled",
+  "BatchingError",
+  "ExecutingError",
+  "DaError",
+  "ProvingError",
+  "SettlingError",
+  "SettledError",
+  "FutureStage"
+]

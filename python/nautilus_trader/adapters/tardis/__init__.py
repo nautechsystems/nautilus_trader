@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for Tardis market data.
+"""
 
 from nautilus_trader._fixup import fixup_module_names
 from nautilus_trader._libnautilus.tardis import *  # noqa: F403 (undefined-local-with-import-star)
@@ -24,8 +27,8 @@ __all__ = [
     "TardisDataClientFactory",
     "convert_tardis_options_chain_csv",
     "load_tardis_deltas",
-    "load_tardis_depth10_from_snapshot5",
-    "load_tardis_depth10_from_snapshot25",
+    "load_tardis_depth_from_snapshot5",
+    "load_tardis_depth_from_snapshot25",
     "load_tardis_funding_rates",
     "load_tardis_options_chain",
     "load_tardis_quotes",
@@ -33,8 +36,8 @@ __all__ = [
     "run_tardis_machine_replay",
     "stream_tardis_batched_deltas",
     "stream_tardis_deltas",
-    "stream_tardis_depth10_from_snapshot5",
-    "stream_tardis_depth10_from_snapshot25",
+    "stream_tardis_depth_from_snapshot5",
+    "stream_tardis_depth_from_snapshot25",
     "stream_tardis_funding_rates",
     "stream_tardis_options_chain",
     "stream_tardis_quotes",

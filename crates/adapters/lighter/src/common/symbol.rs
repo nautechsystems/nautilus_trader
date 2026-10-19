@@ -15,13 +15,19 @@
 
 //! Bidirectional mapping between Nautilus `InstrumentId` and Lighter `market_index`.
 //!
-//! Lighter identifies markets by a 16-bit `market_index` (perpetuals occupy
-//! `0..=254`, spot markets `2048..=4094`). The mapping is populated at
-//! bootstrap from `GET /api/v1/orderBookDetails` and subsequently consulted
-//! on every WebSocket frame and outbound transaction.
+//! Lighter identifies markets by a 64-bit `market_index`. Legacy markets keep
+//! their range-partitioned ids (perpetuals `0..=254`, spot `2048..=4094`);
+//! markets listed after the September 2026 upgrade take the next free index
+//! from `4095` for either product type, so product type must come from the
+//! venue's `market_type` field, never from the id. The mapping is populated
+//! at bootstrap from `GET /api/v1/orderBookDetails` and subsequently
+//! consulted on every WebSocket frame and outbound transaction.
 
 use dashmap::DashMap;
-use nautilus_model::identifiers::{InstrumentId, Symbol};
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol, Venue},
+    types::Currency,
+};
 use ustr::Ustr;
 
 use super::{consts::LIGHTER_VENUE, enums::LighterProductType};
@@ -38,11 +44,21 @@ pub const SPOT_SUFFIX: &str = "-SPOT";
 /// (`-PERP` or `-SPOT`) before being qualified by the Lighter venue.
 #[must_use]
 pub fn format_instrument_id(venue_symbol: &str, product_type: LighterProductType) -> InstrumentId {
+    format_instrument_id_with_venue(venue_symbol, product_type, *LIGHTER_VENUE)
+}
+
+/// Builds a Nautilus [`InstrumentId`] for a specific venue.
+#[must_use]
+pub fn format_instrument_id_with_venue(
+    venue_symbol: &str,
+    product_type: LighterProductType,
+    venue: Venue,
+) -> InstrumentId {
     let suffix = product_suffix(product_type);
     let trimmed = venue_symbol.trim();
     let upper = trimmed.to_ascii_uppercase();
     let symbol = format!("{upper}{suffix}");
-    InstrumentId::new(Symbol::from_str_unchecked(&symbol), *LIGHTER_VENUE)
+    InstrumentId::new(Symbol::from_str_unchecked(&symbol), venue)
 }
 
 /// Returns the venue-native symbol for an instrument id by stripping any
@@ -96,11 +112,22 @@ fn canonical_symbol_key(venue_symbol: &str) -> Ustr {
 /// as relists must be coordinated by the caller (e.g. quiesce consumers
 /// before reinserting) to avoid concurrent readers observing partial
 /// state.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MarketRegistry {
-    by_index: DashMap<i16, InstrumentId>,
-    by_id: DashMap<InstrumentId, i16>,
+    venue: Venue,
+    settlement_currency: Currency,
+    by_index: DashMap<i64, InstrumentId>,
+    by_id: DashMap<InstrumentId, i64>,
     by_raw_symbol: DashMap<(Ustr, LighterProductType), InstrumentId>,
+}
+
+impl Default for MarketRegistry {
+    fn default() -> Self {
+        Self::new_with_venue_and_settlement_currency(
+            *LIGHTER_VENUE,
+            Currency::get_or_create_crypto("USDC"),
+        )
+    }
 }
 
 impl MarketRegistry {
@@ -108,6 +135,33 @@ impl MarketRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns a new empty registry for a venue and settlement currency.
+    #[must_use]
+    pub fn new_with_venue_and_settlement_currency(
+        venue: Venue,
+        settlement_currency: Currency,
+    ) -> Self {
+        Self {
+            venue,
+            settlement_currency,
+            by_index: DashMap::new(),
+            by_id: DashMap::new(),
+            by_raw_symbol: DashMap::new(),
+        }
+    }
+
+    /// Returns the venue assigned to registered instruments.
+    #[must_use]
+    pub const fn venue(&self) -> Venue {
+        self.venue
+    }
+
+    /// Returns the deployment settlement currency.
+    #[must_use]
+    pub const fn settlement_currency(&self) -> Currency {
+        self.settlement_currency
     }
 
     /// Registers a market and returns the resulting [`InstrumentId`].
@@ -118,11 +172,11 @@ impl MarketRegistry {
     /// installed so all three lookups stay consistent.
     pub fn insert(
         &self,
-        market_index: i16,
+        market_index: i64,
         venue_symbol: &str,
         product_type: LighterProductType,
     ) -> InstrumentId {
-        let instrument_id = format_instrument_id(venue_symbol, product_type);
+        let instrument_id = format_instrument_id_with_venue(venue_symbol, product_type, self.venue);
         let canonical = canonical_symbol_key(venue_symbol);
 
         // Evict any prior mapping that shared this market_index but pointed
@@ -157,7 +211,7 @@ impl MarketRegistry {
 
     /// Returns the [`InstrumentId`] for a given `market_index`.
     #[must_use]
-    pub fn instrument_id(&self, market_index: i16) -> Option<InstrumentId> {
+    pub fn instrument_id(&self, market_index: i64) -> Option<InstrumentId> {
         self.by_index.get(&market_index).map(|e| *e)
     }
 
@@ -166,13 +220,13 @@ impl MarketRegistry {
     /// Callers iterating across all venue markets (e.g. the mass-status
     /// reconciliation path) use this to bound the per-market REST fan-out.
     #[must_use]
-    pub fn all_market_indices(&self) -> Vec<i16> {
+    pub fn all_market_indices(&self) -> Vec<i64> {
         self.by_index.iter().map(|e| *e.key()).collect()
     }
 
     /// Returns the venue `market_index` for a given [`InstrumentId`].
     #[must_use]
-    pub fn market_index(&self, instrument_id: &InstrumentId) -> Option<i16> {
+    pub fn market_index(&self, instrument_id: &InstrumentId) -> Option<i64> {
         self.by_id.get(instrument_id).map(|e| *e)
     }
 
@@ -284,6 +338,36 @@ mod tests {
         );
         assert_eq!(registry.len(), 1);
         assert!(!registry.is_empty());
+    }
+
+    #[rstest]
+    fn registry_round_trip_widened_market_ids() {
+        let registry = MarketRegistry::new();
+        let perp = registry.insert(4095, "ETH", LighterProductType::Perp);
+        let future_perp = registry.insert(40_000, "FUTURE", LighterProductType::Perp);
+        let future_spot = registry.insert(50_000, "FUTURE/USDC", LighterProductType::Spot);
+
+        assert_eq!(registry.instrument_id(4095), Some(perp));
+        assert_eq!(registry.instrument_id(40_000), Some(future_perp));
+        assert_eq!(registry.instrument_id(50_000), Some(future_spot));
+        assert_eq!(registry.market_index(&perp), Some(4095));
+        assert_eq!(registry.market_index(&future_perp), Some(40_000));
+        assert_eq!(registry.market_index(&future_spot), Some(50_000));
+        assert_eq!(registry.len(), 3);
+    }
+
+    #[rstest]
+    fn registry_scopes_instruments_to_configured_venue() {
+        let venue = Venue::from("LIGHTER_CUSTOM");
+        let settlement_currency = Currency::USDG();
+        let registry =
+            MarketRegistry::new_with_venue_and_settlement_currency(venue, settlement_currency);
+
+        let instrument_id = registry.insert(0, "ETH", LighterProductType::Perp);
+
+        assert_eq!(instrument_id.venue, venue);
+        assert_eq!(registry.venue(), venue);
+        assert_eq!(registry.settlement_currency(), settlement_currency);
     }
 
     #[rstest]

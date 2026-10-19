@@ -20,4 +20,6 @@ pub mod convert;
 pub mod core;
 pub mod parse;
 
+mod streams;
+
 pub use core::InteractiveBrokersDataClient;

@@ -40,6 +40,7 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_kraken::common::consts::KRAKEN_VENUE;
 use nautilus_model::{
     data::{BarType, Data},
@@ -71,34 +72,23 @@ fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to load quotes: {e}"))?;
     println!("Loaded {} trades, {} quotes", trades.len(), quotes.len());
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        Symbol::from(SYMBOL),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        1,
-        4,
-        Price::from("0.5"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(0.02)),
-        Some(dec!(0.01)),
-        Some(dec!(0.0002)),
-        Some(dec!(0.0005)),
-        None,
-        None,
-        0.into(),
-        0.into(),
-    );
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(SYMBOL))
+        .base_currency(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(4)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("0.0001"))
+        .margin_init(dec!(0.02))
+        .margin_maint(dec!(0.01))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap();
 
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 
@@ -109,6 +99,9 @@ fn main() -> anyhow::Result<()> {
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from(STARTING_BALANCE)])
+            .fee_model(
+                FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0005))).into(),
+            )
             .build()?,
     )?;
 

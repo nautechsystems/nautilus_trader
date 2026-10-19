@@ -13,110 +13,49 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Module for wrapping raw socket streams with TLS encryption.
+//! Wraps raw socket streams with TLS encryption and builds `rustls` client configurations from
+//! certificate directories.
+//!
+//! A certificates directory acts as an additional trust store: every certificate that parses
+//! from any file directly inside it, regardless of file name, becomes a trust anchor for each
+//! connection built from the resulting `ClientConfig`, alongside the webpki roots. No CA or
+//! self-signature checks are performed, and a certificate chain matched to a private key in the
+//! directory is used as the client certificate instead. Write access to the directory is
+//! therefore equivalent to control over which servers those connections trust. Each anchor
+//! added this way is logged at INFO with its SHA-256 fingerprint so operators can audit exactly
+//! what became trusted.
 
-use std::{fs::File, io::BufReader, path::Path};
-
-use nautilus_cryptography::providers::install_cryptographic_provider;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_tungstenite::{
-    MaybeTlsStream,
-    tungstenite::{Error, handshake::client::Request, stream::Mode},
+use std::{
+    convert::TryFrom,
+    fs::File,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
-/// A connector that can be used when establishing connections, allowing to control whether
-/// `native-tls` or `rustls` is used to create a TLS connection. Or TLS can be disabled with the
-/// `Plain` variant.
-#[non_exhaustive]
-#[derive(Clone)]
-#[allow(dead_code)]
-pub(crate) enum Connector {
-    /// No TLS connection.
-    Plain,
-    /// TLS connection using `rustls`.
-    Rustls(std::sync::Arc<rustls::ClientConfig>),
-}
-
-mod encryption {
-
-    pub(super) mod rustls {
-        use std::{convert::TryFrom, sync::Arc};
-
-        use nautilus_cryptography::tls::create_tls_config;
-        use rustls::{ClientConfig, pki_types::ServerName};
-        use tokio::io::{AsyncRead, AsyncWrite};
-        use tokio_rustls::TlsConnector as TokioTlsConnector;
-        use tokio_tungstenite::{
-            MaybeTlsStream,
-            tungstenite::{Error, error::TlsError, stream::Mode},
-        };
-
-        pub(crate) async fn wrap_stream<S>(
-            socket: S,
-            domain: String,
-            mode: Mode,
-            tls_connector: Option<Arc<ClientConfig>>,
-        ) -> Result<MaybeTlsStream<S>, Error>
-        where
-            S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
-        {
-            match mode {
-                Mode::Plain => Ok(MaybeTlsStream::Plain(socket)),
-                Mode::Tls => {
-                    let config: Arc<ClientConfig> = match tls_connector {
-                        Some(config) => config,
-                        None => create_tls_config(),
-                    };
-                    let domain = ServerName::try_from(domain.as_str())
-                        .map_err(|_| TlsError::InvalidDnsName)?
-                        .to_owned();
-                    let stream = TokioTlsConnector::from(config);
-                    let connected = stream.connect(domain, socket).await;
-
-                    match connected {
-                        Err(e) => Err(Error::Io(e)),
-                        Ok(s) => Ok(MaybeTlsStream::Rustls(s)),
-                    }
-                }
-            }
-        }
-    }
-
-    pub(super) mod plain {
-        use tokio::io::{AsyncRead, AsyncWrite};
-        use tokio_tungstenite::{
-            MaybeTlsStream,
-            tungstenite::{
-                error::{Error, UrlError},
-                stream::Mode,
-            },
-        };
-
-        #[expect(
-            clippy::unused_async,
-            reason = "signature mirrors the rustls variant which is genuinely async"
-        )]
-        pub(crate) async fn wrap_stream<S>(
-            socket: S,
-            mode: Mode,
-        ) -> Result<MaybeTlsStream<S>, Error>
-        where
-            S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
-        {
-            match mode {
-                Mode::Plain => Ok(MaybeTlsStream::Plain(socket)),
-                Mode::Tls => Err(Error::Url(UrlError::TlsFeatureNotEnabled)),
-            }
-        }
-    }
-}
+use anyhow::Context;
+use aws_lc_rs::digest::{SHA256, digest};
+use nautilus_core::hex;
+use nautilus_cryptography::{providers::install_cryptographic_provider, tls::create_tls_config};
+use rustls::{
+    ClientConfig,
+    pki_types::{
+        CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer,
+        ServerName,
+        pem::{self, PemObject},
+    },
+};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_rustls::TlsConnector;
+use tokio_tungstenite::{
+    MaybeTlsStream,
+    tungstenite::{Error, error::TlsError, handshake::client::Request, stream::Mode},
+};
 
 pub(crate) async fn tcp_tls<S>(
     request: &Request,
     mode: Mode,
     stream: S,
-    connector: Option<Connector>,
+    connector: Option<Arc<ClientConfig>>,
 ) -> Result<MaybeTlsStream<S>, Error>
 where
     S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
@@ -124,14 +63,28 @@ where
 {
     let domain = domain(request)?;
 
-    match connector {
-        Some(conn) => match conn {
-            Connector::Rustls(conn) => {
-                self::encryption::rustls::wrap_stream(stream, domain, mode, Some(conn)).await
-            }
-            Connector::Plain => self::encryption::plain::wrap_stream(stream, mode).await,
-        },
-        None => self::encryption::rustls::wrap_stream(stream, domain, mode, None).await,
+    wrap_stream(stream, domain, mode, connector).await
+}
+
+async fn wrap_stream<S>(
+    socket: S,
+    domain: String,
+    mode: Mode,
+    tls_config: Option<Arc<ClientConfig>>,
+) -> Result<MaybeTlsStream<S>, Error>
+where
+    S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
+{
+    match mode {
+        Mode::Plain => Ok(MaybeTlsStream::Plain(socket)),
+        Mode::Tls => {
+            let config = tls_config.unwrap_or_else(create_tls_config);
+            let domain = ServerName::try_from(domain.as_str())
+                .map_err(|_| TlsError::InvalidDnsName)?
+                .to_owned();
+            let stream = TlsConnector::from(config).connect(domain, socket).await?;
+            Ok(MaybeTlsStream::Rustls(stream))
+        }
     }
 }
 
@@ -170,24 +123,15 @@ pub(crate) fn create_tls_config_from_certs_dir(
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-    // Sort entries for deterministic cert/key selection across platforms
-    let mut entries: Vec<_> = std::fs::read_dir(certs_dir)?.collect::<Result<Vec<_>, _>>()?;
-    entries.sort_by_key(|e| e.path());
-
-    for entry in entries {
-        let path = entry.path();
-
-        if client_key.is_none()
-            && let Ok(key) = load_private_key(&path)
-        {
-            client_key = Some(key);
+    for path in list_files(certs_dir)? {
+        if client_key.is_none() {
             // No early continue: a combined PEM carries the certificate alongside
             // the key, so this file is still scanned for certificates below.
+            client_key = load_private_key(&path)?;
         }
 
-        if let Ok(certs) = load_certs(&path)
-            && !certs.is_empty()
-        {
+        let certs = load_certs(&path)?;
+        if !certs.is_empty() {
             all_certs.push((path, certs));
         }
     }
@@ -202,7 +146,6 @@ pub(crate) fn create_tls_config_from_certs_dir(
             let test_config = rustls::ClientConfig::builder()
                 .with_root_certificates(rustls::RootCertStore::empty())
                 .with_client_auth_cert(all_certs[i].1.clone(), key.clone_key());
-
             if test_config.is_ok() {
                 let (path, cert) = all_certs.remove(i);
                 log::debug!("Matched client certificate from {}", path.display());
@@ -217,6 +160,7 @@ pub(crate) fn create_tls_config_from_certs_dir(
                 certs_dir.display()
             );
         }
+
         matched
     } else {
         None
@@ -224,14 +168,18 @@ pub(crate) fn create_tls_config_from_certs_dir(
 
     for (path, certs) in all_certs {
         for cert in certs {
-            if let Err(e) = root_store.add(cert) {
-                log::warn!("Invalid certificate in {}: {e}", path.display());
+            let fingerprint = fingerprint_sha256(&cert);
+            match root_store.add(cert) {
+                Ok(()) => log::info!(
+                    "Trusting root certificate from {} (SHA-256 fingerprint: {fingerprint})",
+                    path.display()
+                ),
+                Err(e) => log::warn!("Invalid certificate in {}: {e}", path.display()),
             }
         }
     }
 
     let builder = rustls::ClientConfig::builder().with_root_certificates(root_store);
-
     if let (Some(cert), Some(key)) = (client_cert, client_key) {
         return Ok(builder.with_client_auth_cert(cert, key)?);
     }
@@ -251,43 +199,91 @@ pub(crate) fn create_tls_config_from_certs_dir(
     Ok(builder.with_no_client_auth())
 }
 
-fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
+// Sorted for deterministic selection; unreadable metadata errors rather than reading as absent
+fn list_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
 
-    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader).find_map(Result::ok) {
-        return Ok(key.into());
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        let metadata = std::fs::metadata(&path)
+            .with_context(|| format!("failed to read metadata for {}", path.display()))?;
+
+        if metadata.is_file() {
+            paths.push(path);
+        }
     }
 
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader).find_map(Result::ok) {
-        return Ok(key.into());
+    paths.sort();
+    Ok(paths)
+}
+
+fn load_private_key(path: &Path) -> anyhow::Result<Option<PrivateKeyDer<'static>>> {
+    if let Some(key) = read_pem_items::<PrivatePkcs8KeyDer>(path)?
+        .into_iter()
+        .next()
+    {
+        return Ok(Some(key.into()));
     }
 
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    if let Some(key) = rustls_pemfile::ec_private_keys(&mut reader).find_map(Result::ok) {
-        return Ok(key.into());
+    if let Some(key) = read_pem_items::<PrivatePkcs1KeyDer>(path)?
+        .into_iter()
+        .next()
+    {
+        return Ok(Some(key.into()));
     }
 
-    anyhow::bail!("No valid private key found in {}", path.display());
+    let key = read_pem_items::<PrivateSec1KeyDer>(path)?
+        .into_iter()
+        .next();
+    Ok(key.map(Into::into))
 }
 
 fn load_certs(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let certs = rustls_pemfile::certs(&mut reader)
-        .filter_map(std::result::Result::ok)
-        .collect();
-    Ok(certs)
+    read_pem_items(path)
+}
+
+// Skips malformed PEM blocks but propagates I/O errors so unreadable is not read as empty
+fn read_pem_items<T: PemObject>(path: &Path) -> anyhow::Result<Vec<T>> {
+    let file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut items = Vec::new();
+
+    for item in T::pem_reader_iter(file) {
+        match item {
+            Ok(item) => items.push(item),
+            Err(pem::Error::Io(e)) => {
+                return Err(e).with_context(|| format!("failed to read {}", path.display()));
+            }
+            Err(_) => {}
+        }
+    }
+
+    Ok(items)
+}
+
+fn fingerprint_sha256(cert: &CertificateDer<'_>) -> String {
+    hex::encode(digest(&SHA256, cert.as_ref()))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{io::Cursor, sync::Arc};
+
+    #[cfg(target_os = "linux")]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use log::Level;
     use rstest::rstest;
+    use rustls::{
+        ClientConnection, Connection, ServerConnection,
+        pki_types::{PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer, ServerName},
+        server::WebPkiClientVerifier,
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_rustls::TlsAcceptor;
 
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use crate::logging::tests::capture_logs_for;
 
     // Test certificates generated with:
     // openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes
@@ -332,47 +328,116 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 3BSW8BRUdXasnBkWIg==
 -----END CERTIFICATE-----";
 
-    fn generate_client_key_and_cert() -> (String, String) {
+    struct TestIdentity {
+        key_pem: String,
+        cert_pem: String,
+        key_der: PrivateKeyDer<'static>,
+        cert_der: CertificateDer<'static>,
+    }
+
+    fn generate_identity() -> TestIdentity {
         let key_pair = rcgen::KeyPair::generate().unwrap();
         let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
             .unwrap()
             .self_signed(&key_pair)
             .unwrap();
-        (key_pair.serialize_pem(), cert.pem())
+
+        TestIdentity {
+            key_pem: key_pair.serialize_pem(),
+            cert_pem: cert.pem(),
+            key_der: PrivatePkcs8KeyDer::from(key_pair.serialize_der()).into(),
+            cert_der: cert.der().clone(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tcp_tls_wraps_stream_and_transfers_data() {
+        install_cryptographic_provider();
+        let server_identity = generate_identity();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(server_identity.cert_der.clone()).unwrap();
+        let client_config = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![server_identity.cert_der],
+                server_identity.key_der.clone_key(),
+            )
+            .unwrap();
+        let request = Request::builder()
+            .uri("wss://localhost/socket")
+            .body(())
+            .unwrap();
+        let (client_socket, server_socket) = tokio::io::duplex(1024);
+
+        let server_task = tokio::spawn(async move {
+            let mut stream = TlsAcceptor::from(Arc::new(server_config))
+                .accept(server_socket)
+                .await
+                .unwrap();
+            let mut request = [0u8; 4];
+            stream.read_exact(&mut request).await.unwrap();
+            stream.write_all(b"pong").await.unwrap();
+            request
+        });
+
+        let mut stream = tcp_tls(
+            &request,
+            Mode::Tls,
+            client_socket,
+            Some(Arc::new(client_config)),
+        )
+        .await
+        .unwrap();
+        let is_tls = matches!(&stream, MaybeTlsStream::Rustls(_));
+        stream.write_all(b"ping").await.unwrap();
+        let mut response = [0u8; 4];
+        stream.read_exact(&mut response).await.unwrap();
+        let received = server_task.await.unwrap();
+
+        assert!(is_tls);
+        assert_eq!(received, *b"ping");
+        assert_eq!(response, *b"pong");
     }
 
     #[rstest]
-    fn test_combined_key_and_cert_pem_enables_client_auth() {
-        // Regression: a combined PEM (key + certificate in one file) used to
-        // have its certificate skipped, silently dropping client auth
-        let (key_pem, cert_pem) = generate_client_key_and_cert();
+    #[case::combined(true)]
+    #[case::separate(false)]
+    fn test_client_auth_files_complete_mutual_tls_handshake(#[case] combined: bool) {
+        let client_identity = generate_identity();
+        let server_identity = generate_identity();
         let temp_dir = tempfile::tempdir().unwrap();
-        let combined_path = temp_dir.path().join("client.pem");
-        std::fs::write(&combined_path, format!("{key_pem}{cert_pem}")).unwrap();
 
-        let result = create_tls_config_from_certs_dir(temp_dir.path(), true);
+        if combined {
+            std::fs::write(
+                temp_dir.path().join("client.pem"),
+                format!("{}{}", client_identity.key_pem, client_identity.cert_pem),
+            )
+            .unwrap();
+        } else {
+            std::fs::write(
+                temp_dir.path().join("client-key.pem"),
+                &client_identity.key_pem,
+            )
+            .unwrap();
+            std::fs::write(
+                temp_dir.path().join("client-cert.pem"),
+                &client_identity.cert_pem,
+            )
+            .unwrap();
+        }
 
-        assert!(
-            result.is_ok(),
-            "Combined key+cert PEM should satisfy client auth: {:?}",
-            result.err()
-        );
-    }
+        std::fs::write(
+            temp_dir.path().join("server.pem"),
+            &server_identity.cert_pem,
+        )
+        .unwrap();
 
-    #[rstest]
-    fn test_separate_key_and_cert_files_enable_client_auth() {
-        let (key_pem, cert_pem) = generate_client_key_and_cert();
-        let temp_dir = tempfile::tempdir().unwrap();
-        std::fs::write(temp_dir.path().join("key.pem"), key_pem).unwrap();
-        std::fs::write(temp_dir.path().join("cert.pem"), cert_pem).unwrap();
+        let client_config = create_tls_config_from_certs_dir(temp_dir.path(), true).unwrap();
 
-        let result = create_tls_config_from_certs_dir(temp_dir.path(), true);
-
-        assert!(
-            result.is_ok(),
-            "Separate key and cert files should satisfy client auth: {:?}",
-            result.err()
-        );
+        assert_mutual_tls_handshake(client_config, &client_identity, server_identity);
     }
 
     #[rstest]
@@ -385,11 +450,8 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 
         let result = create_tls_config_from_certs_dir(temp_dir.path(), false);
 
-        assert!(
-            result.is_ok(),
-            "CA-only directory should succeed: {:?}",
-            result.err()
-        );
+        let config = result.unwrap();
+        assert!(!config.client_auth_cert_resolver.has_certs());
     }
 
     #[rstest]
@@ -454,5 +516,275 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
             "Should succeed ignoring invalid cert file: {:?}",
             result.err()
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[tokio::test]
+    async fn test_dropped_pem_is_surfaced_as_trusted_root() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Any file dropped into the directory that carries a valid PEM certificate becomes a
+        // trust anchor, regardless of name, so the load must be surfaced to the operator
+        let dropped_path = temp_dir.path().join("notes.txt");
+        std::fs::write(&dropped_path, TEST_CERT).unwrap();
+
+        let capture = capture_logs_for(&["nautilus_network::tls"]).await;
+        let config = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap();
+        // The capture buffer is process-global and only target-filtered, so parallel tests
+        // reaching the loader can add records; this test's records are the ones naming the
+        // unique dropped path
+        let dropped = dropped_path.display().to_string();
+        let trust_messages: Vec<String> = capture
+            .messages()
+            .into_iter()
+            .filter(|(level, _)| *level == Level::Info)
+            .filter(|(_, message)| message.contains(&dropped))
+            .map(|(_, message)| message)
+            .collect();
+
+        assert!(!config.client_auth_cert_resolver.has_certs());
+        assert_eq!(
+            trust_messages,
+            vec![format!(
+                "Trusting root certificate from {} (SHA-256 fingerprint: {})",
+                dropped,
+                // SHA-256 of the TEST_CERT DER bytes
+                "e56da924fb335d2e54b94f8fe44a2b4c6dac3ab868bbbd8d41bb0596541019a3",
+            )]
+        );
+    }
+
+    #[rstest]
+    fn test_load_private_key_reads_supported_formats() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("key.pem");
+        let expected_der = vec![1, 2, 3, 4];
+        let cases = [
+            (
+                "PRIVATE KEY",
+                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(expected_der.clone())),
+            ),
+            (
+                "RSA PRIVATE KEY",
+                PrivateKeyDer::Pkcs1(PrivatePkcs1KeyDer::from(expected_der.clone())),
+            ),
+            (
+                "EC PRIVATE KEY",
+                PrivateKeyDer::Sec1(PrivateSec1KeyDer::from(expected_der)),
+            ),
+        ];
+
+        for (label, expected) in cases {
+            std::fs::write(&path, pem_block(label, "AQIDBA==")).unwrap();
+
+            let key = load_private_key(&path).unwrap();
+
+            assert_eq!(key, Some(expected));
+        }
+    }
+
+    #[rstest]
+    fn test_load_private_key_preserves_format_priority() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("keys.pem");
+        let pem = [
+            pem_block("RSA PRIVATE KEY", "AQ=="),
+            pem_block("EC PRIVATE KEY", "Ag=="),
+            pem_block("PRIVATE KEY", "Aw=="),
+        ]
+        .concat();
+        std::fs::write(&path, pem).unwrap();
+
+        let key = load_private_key(&path).unwrap();
+
+        assert_eq!(
+            key,
+            Some(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![3])))
+        );
+    }
+
+    #[rstest]
+    fn test_load_private_key_skips_malformed_blocks() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("key.pem");
+        let pem = [
+            pem_block("PRIVATE KEY", "invalid!"),
+            pem_block("PRIVATE KEY", "BQYH"),
+        ]
+        .concat();
+        std::fs::write(&path, pem).unwrap();
+
+        let key = load_private_key(&path).unwrap();
+
+        assert_eq!(
+            key,
+            Some(PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(vec![
+                5, 6, 7
+            ])))
+        );
+    }
+
+    #[rstest]
+    fn test_load_private_key_returns_none_for_file_without_key() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("cert.pem");
+        std::fs::write(&path, pem_block("CERTIFICATE", "AQ==")).unwrap();
+
+        let key = load_private_key(&path).unwrap();
+
+        assert_eq!(key, None);
+    }
+
+    #[rstest]
+    fn test_load_certs_fails_on_read_error() {
+        // A directory fails on read (Unix) or on open (Windows)
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let error = load_certs(temp_dir.path()).unwrap_err();
+
+        let expected_prefix = if cfg!(windows) {
+            "failed to open"
+        } else {
+            "failed to read"
+        };
+
+        assert_eq!(
+            error.to_string(),
+            format!("{expected_prefix} {}", temp_dir.path().display())
+        );
+    }
+
+    #[rstest]
+    fn test_certs_directory_skips_subdirectories() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(temp_dir.path().join("ca.pem"), TEST_CERT).unwrap();
+        std::fs::create_dir(temp_dir.path().join("archive")).unwrap();
+
+        let config = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap();
+
+        assert!(!config.client_auth_cert_resolver.has_certs());
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn test_certs_directory_fails_on_dangling_symlink() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(temp_dir.path().join("ca.pem"), TEST_CERT).unwrap();
+        let link_path = temp_dir.path().join("client.key");
+        std::os::unix::fs::symlink(temp_dir.path().join("missing.key"), &link_path).unwrap();
+
+        let error = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("failed to read metadata for {}", link_path.display())
+        );
+    }
+
+    #[cfg(unix)]
+    #[rstest]
+    fn test_certs_directory_fails_on_unreadable_key_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let identity = generate_identity();
+        std::fs::write(temp_dir.path().join("client.crt"), &identity.cert_pem).unwrap();
+        let key_path = temp_dir.path().join("client.key");
+        std::fs::write(&key_path, &identity.key_pem).unwrap();
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        // Privileged users bypass file permissions, so the failure cannot be simulated
+        if File::open(&key_path).is_ok() {
+            return;
+        }
+
+        let error = create_tls_config_from_certs_dir(temp_dir.path(), false).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("failed to open {}", key_path.display())
+        );
+    }
+
+    #[rstest]
+    fn test_load_certs_reads_all_valid_certificate_blocks() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("mixed.pem");
+        let pem = [
+            pem_block("PRIVATE KEY", "AQ=="),
+            pem_block("CERTIFICATE", "invalid!"),
+            pem_block("CERTIFICATE", "AgM="),
+            pem_block("CERTIFICATE", "BAU="),
+        ]
+        .concat();
+        std::fs::write(&path, pem).unwrap();
+
+        let certs = load_certs(&path).unwrap();
+
+        assert_eq!(
+            certs,
+            vec![
+                CertificateDer::from(vec![2, 3]),
+                CertificateDer::from(vec![4, 5]),
+            ]
+        );
+    }
+
+    fn pem_block(label: &str, payload: &str) -> String {
+        format!(
+            "-----{} {label}-----\n{payload}\n-----{} {label}-----\n",
+            "BEGIN", "END"
+        )
+    }
+
+    fn assert_mutual_tls_handshake(
+        client_config: rustls::ClientConfig,
+        client_identity: &TestIdentity,
+        server_identity: TestIdentity,
+    ) {
+        let mut client_roots = rustls::RootCertStore::empty();
+        client_roots.add(client_identity.cert_der.clone()).unwrap();
+        let verifier = WebPkiClientVerifier::builder(Arc::new(client_roots))
+            .build()
+            .unwrap();
+        let server_config = rustls::ServerConfig::builder()
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(
+                vec![server_identity.cert_der],
+                server_identity.key_der.clone_key(),
+            )
+            .unwrap();
+        let server_name = ServerName::try_from("localhost").unwrap();
+        let mut client = Connection::Client(
+            ClientConnection::new(Arc::new(client_config), server_name).unwrap(),
+        );
+        let mut server =
+            Connection::Server(ServerConnection::new(Arc::new(server_config)).unwrap());
+
+        for _ in 0..10 {
+            transfer_tls(&mut client, &mut server);
+            transfer_tls(&mut server, &mut client);
+            if !client.is_handshaking() && !server.is_handshaking() {
+                break;
+            }
+        }
+
+        assert!(!client.is_handshaking());
+        assert!(!server.is_handshaking());
+        assert_eq!(
+            server.peer_certificates().unwrap(),
+            std::slice::from_ref(&client_identity.cert_der)
+        );
+    }
+
+    fn transfer_tls(from: &mut Connection, to: &mut Connection) {
+        let mut bytes = Vec::new();
+        from.write_tls(&mut bytes).unwrap();
+        if bytes.is_empty() {
+            return;
+        }
+
+        to.read_tls(&mut Cursor::new(bytes)).unwrap();
+        to.process_new_packets().unwrap();
     }
 }

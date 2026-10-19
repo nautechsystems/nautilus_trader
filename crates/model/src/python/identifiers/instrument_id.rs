@@ -46,20 +46,21 @@ impl InstrumentId {
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
         let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
-        self.symbol = Symbol::new_checked(
+        let symbol = Symbol::new_checked(
             py_tuple
                 .get_item(0)?
                 .cast::<PyString>()?
                 .extract::<&str>()?,
         )
         .map_err(correctness_error_to_pyvalue_err)?;
-        self.venue = Venue::new_checked(
+        let venue = Venue::new_checked(
             py_tuple
                 .get_item(1)?
                 .cast::<PyString>()?
                 .extract::<&str>()?,
         )
         .map_err(correctness_error_to_pyvalue_err)?;
+        *self = Self::new(symbol, venue);
         Ok(())
     }
 
@@ -137,10 +138,10 @@ impl InstrumentId {
     }
 
     /// Returns the parent-symbol components `(root, class)` if this id has
-    /// a recognised parent shape `<root>.<class>` in its symbol component.
+    /// a recognized parent shape `<root>.<class>` in its symbol component.
     ///
     /// Returns `None` when the symbol has zero or more than one `.`, or when
-    /// the suffix is not a recognised `InstrumentClass` parent suffix
+    /// the suffix is not a recognized `InstrumentClass` parent suffix
     /// (see `InstrumentClass.try_from_parent_suffix`).
     ///
     /// Used to gate parent-style subscription fan-out: a `None` return means

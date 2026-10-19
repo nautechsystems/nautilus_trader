@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python wrapper functions for dYdX URL helpers.
+//! Python bindings for dYdX URL resolution.
 
 use pyo3::prelude::*;
 

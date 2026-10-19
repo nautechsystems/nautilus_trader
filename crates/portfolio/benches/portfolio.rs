@@ -23,7 +23,7 @@
 use std::{cell::RefCell, hint::black_box, rc::Rc};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_common::{cache::Cache, clock::TestClock};
+use nautilus_common::{cache::Cache, clock::VirtualClock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
@@ -151,6 +151,7 @@ fn make_opened(position: &Position) -> PositionOpened {
         last_px: Price::new(position.avg_px_open, 0),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
+        realized_pnl: position.realized_pnl,
         event_id: UUID4::new(),
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::default(),
@@ -162,7 +163,7 @@ fn make_opened(position: &Position) -> PositionOpened {
 // `mark_values`. Quotes are cached for every instrument so price lookups succeed.
 fn build_portfolio(account_type: AccountType, n: usize) -> Portfolio {
     let mut cache = Cache::new(None, None);
-    let clock = TestClock::new();
+    let clock = VirtualClock::new();
     let account_id = AccountId::new("SIM-001");
 
     let instruments = make_instruments(n);
@@ -264,9 +265,9 @@ fn bench_unrealized_pnls(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("margin", n), &n, |b, &n| {
             let mut portfolio = build_portfolio(AccountType::Margin, n);
             let venue = venue();
-            let _ = portfolio.unrealized_pnls(&venue, None);
+            let _ = portfolio.unrealized_pnls(&venue, None, None);
             b.iter(|| {
-                black_box(portfolio.unrealized_pnls(black_box(&venue), None));
+                black_box(portfolio.unrealized_pnls(black_box(&venue), None, None));
             });
         });
     }
@@ -281,7 +282,7 @@ fn bench_realized_pnls(c: &mut Criterion) {
             let mut portfolio = build_portfolio(AccountType::Margin, n);
             let venue = venue();
             b.iter(|| {
-                black_box(portfolio.realized_pnls(black_box(&venue), None));
+                black_box(portfolio.realized_pnls(black_box(&venue), None, None));
             });
         });
     }
@@ -296,7 +297,7 @@ fn bench_net_exposures(c: &mut Criterion) {
             let portfolio = build_portfolio(AccountType::Cash, n);
             let venue = venue();
             b.iter(|| {
-                black_box(portfolio.net_exposures(black_box(&venue), None));
+                black_box(portfolio.net_exposures(black_box(&venue), None, None));
             });
         });
     }

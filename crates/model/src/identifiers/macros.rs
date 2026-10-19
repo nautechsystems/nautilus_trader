@@ -58,6 +58,19 @@ macro_rules! impl_from_str_for_identifier {
     };
 }
 
+// Erases a kind-typed identifier to its `ComponentId`. The source already
+// holds a validated interned value, so the conversion reuses it rather than
+// re-checking and re-interning through the string constructors.
+macro_rules! impl_from_identifier_for_component_id {
+    ($ty:ty) => {
+        impl From<$ty> for ComponentId {
+            fn from(value: $ty) -> Self {
+                Self(value.inner())
+            }
+        }
+    };
+}
+
 macro_rules! impl_as_ref_for_identifier {
     ($ty:ty) => {
         impl AsRef<str> for $ty {

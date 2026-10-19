@@ -60,8 +60,8 @@ impl DepthSnapshotStreamEvent {
     ///
     /// # Errors
     ///
-    /// Returns error if buffer is too short, group size exceeds limits,
-    /// or data is otherwise invalid.
+    /// Returns an error if buffer is too short, group size exceeds limits, or data is otherwise
+    /// invalid.
     pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;
@@ -81,11 +81,8 @@ impl DepthSnapshotStreamEvent {
         let price_exponent = cursor.read_i8()?;
         let qty_exponent = cursor.read_i8()?;
 
-        let (bid_block_length, num_bids) = cursor.read_group_header_16()?;
-        let bids = cursor.read_group(bid_block_length, u32::from(num_bids), PriceLevel::decode)?;
-
-        let (ask_block_length, num_asks) = cursor.read_group_header_16()?;
-        let asks = cursor.read_group(ask_block_length, u32::from(num_asks), PriceLevel::decode)?;
+        let bids = PriceLevel::decode_group(cursor)?;
+        let asks = PriceLevel::decode_group(cursor)?;
 
         let symbol = Ustr::from(cursor.read_var_string8_ref()?);
 
@@ -197,6 +194,83 @@ mod tests {
 
         assert!(event.bids.is_empty());
         assert!(event.asks.is_empty());
+    }
+
+    #[rstest]
+    #[case::bids(false)]
+    #[case::asks(true)]
+    fn test_decode_rejects_undersized_depth_blocks(
+        #[case] asks: bool,
+        #[values(0, 1, 10_000)] count: u16,
+    ) {
+        for block_length in 0..PriceLevel::ENCODED_LENGTH as u16 {
+            let mut buf = make_valid_buffer(1, 1);
+
+            let offset = MessageHeader::ENCODED_LENGTH
+                + DepthSnapshotStreamEvent::BLOCK_LENGTH
+                + if asks {
+                    4 + PriceLevel::ENCODED_LENGTH
+                } else {
+                    0
+                };
+
+            buf[offset..offset + 2].copy_from_slice(&block_length.to_le_bytes());
+            buf[offset + 2..offset + 4].copy_from_slice(&u16::to_le_bytes(count));
+
+            let expected = StreamDecodeError::InvalidBlockLength {
+                expected: PriceLevel::ENCODED_LENGTH as u16,
+                actual: block_length,
+            };
+
+            assert_eq!(
+                DepthSnapshotStreamEvent::decode(&buf).unwrap_err(),
+                expected
+            );
+            assert_eq!(
+                DepthSnapshotStreamEvent::decode_validated(&buf).unwrap_err(),
+                expected
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_decode_depth_extensions_and_symbol() {
+        let mut buf = make_valid_buffer(2, 2);
+        let width = PriceLevel::ENCODED_LENGTH;
+        let bids_header = MessageHeader::ENCODED_LENGTH + DepthSnapshotStreamEvent::BLOCK_LENGTH;
+        let asks_header = bids_header + 4 + 2 * width;
+        for header in [asks_header, bids_header] {
+            for index in (0..2).rev() {
+                let end = header + 4 + (index + 1) * width;
+                buf.splice(end..end, [0xFF; 3]);
+            }
+
+            buf[header..header + 2].copy_from_slice(&((width + 3) as u16).to_le_bytes());
+        }
+
+        let event = DepthSnapshotStreamEvent::decode(&buf).unwrap();
+
+        assert_eq!(event.event_time_us, 1_000_000);
+        assert_eq!(event.book_update_id, 12_345);
+        assert_eq!(event.price_exponent, -2);
+        assert_eq!(event.qty_exponent, -8);
+        assert_eq!(
+            event
+                .bids
+                .iter()
+                .map(|level| (level.price_mantissa, level.qty_mantissa))
+                .collect::<Vec<_>>(),
+            vec![(4_200_000, 100_000_000), (4_199_900, 100_000_000)]
+        );
+        assert_eq!(
+            event
+                .asks
+                .iter()
+                .map(|level| (level.price_mantissa, level.qty_mantissa))
+                .collect::<Vec<_>>(),
+            vec![(4_200_100, 200_000_000), (4_200_200, 200_000_000)]
+        );
+        assert_eq!(event.symbol, "BTCUSDT");
     }
 
     #[rstest]

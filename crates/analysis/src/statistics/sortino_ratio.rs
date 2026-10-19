@@ -40,7 +40,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.analysis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -79,6 +79,12 @@ impl PortfolioStatistic for SortinoRatio {
         }
 
         let returns = self.downsample_to_daily_bins(raw_returns);
+
+        // Match `calculate_std`: a single observation cannot estimate dispersion
+        if returns.len() < 2 {
+            return Some(f64::NAN);
+        }
+
         let total_n = returns.len() as f64;
         let mean = returns.values().sum::<f64>() / total_n;
 
@@ -142,6 +148,17 @@ mod tests {
     fn test_zero_downside_deviation() {
         let ratio = SortinoRatio::new(None);
         let returns = create_returns(&[0.02, 0.03, 0.01]);
+        let result = ratio.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
+    }
+
+    #[rstest]
+    #[case(-0.02)]
+    #[case(0.02)]
+    fn test_single_observation_returns_nan(#[case] value: f64) {
+        let ratio = SortinoRatio::new(None);
+        let returns = create_returns(&[value]);
         let result = ratio.calculate_from_returns(&returns);
         assert!(result.is_some());
         assert!(result.unwrap().is_nan());

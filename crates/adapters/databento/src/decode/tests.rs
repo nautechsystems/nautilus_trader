@@ -26,7 +26,7 @@ use databento::dbn::{
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BarType, Data},
+    data::{BarType, Data, OrderBookDelta},
     enums::{
         AggressorSide, AssetClass, BookAction, InstrumentClass, MarketStatusAction, OptionKind,
         OrderSide,
@@ -80,16 +80,16 @@ fn test_parse_optional_bool(#[case] input: c_char, #[case] expected: Option<bool
 }
 
 #[rstest]
-#[case('A' as c_char, OrderSide::Sell)]
-#[case('B' as c_char, OrderSide::Buy)]
-#[case('X' as c_char, OrderSide::NoOrderSide)]
-fn test_parse_order_side(#[case] input: c_char, #[case] expected: OrderSide) {
+#[case('A' as c_char, Some(OrderSide::Sell))]
+#[case('B' as c_char, Some(OrderSide::Buy))]
+#[case('X' as c_char, None)]
+fn test_parse_order_side(#[case] input: c_char, #[case] expected: Option<OrderSide>) {
     assert_eq!(parse_order_side(input), expected);
 }
 
 #[rstest]
-#[case('A' as c_char, AggressorSide::Seller)]
-#[case('B' as c_char, AggressorSide::Buyer)]
+#[case('A' as c_char, AggressorSide::Sell)]
+#[case('B' as c_char, AggressorSide::Buy)]
 #[case('X' as c_char, AggressorSide::NoAggressor)]
 fn test_parse_aggressor_side(#[case] input: c_char, #[case] expected: AggressorSide) {
     assert_eq!(parse_aggressor_side(input), expected);
@@ -517,7 +517,7 @@ fn test_decode_mbo_msg() {
 
     assert_eq!(delta.instrument_id, instrument_id);
     assert_eq!(delta.action, BookAction::Delete);
-    assert_eq!(delta.order.side, OrderSide::Sell);
+    assert_eq!(delta.order.side, Some(OrderSide::Sell));
     assert_eq!(delta.order.price, Price::from("3722.75"));
     assert_eq!(delta.order.size, quantity_from_str("1"));
     assert_eq!(delta.order.order_id, 647_784_973_705);
@@ -555,7 +555,7 @@ fn test_decode_mbo_msg_clear_action() {
 
     assert_eq!(delta.instrument_id, instrument_id);
     assert_eq!(delta.action, BookAction::Clear);
-    assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+    assert_eq!(delta.order.side, None);
     assert_eq!(delta.order.size, quantity_from_str("0"));
     assert_eq!(delta.order.order_id, 0);
     assert_eq!(delta.sequence, 1_000_000);
@@ -589,7 +589,7 @@ fn test_decode_mbo_msg_price_undef_with_precision() {
 
     assert!(delta.order.price.is_undefined());
     assert_eq!(delta.order.price.precision, 0);
-    assert_eq!(delta.order.price.raw, PRICE_UNDEF);
+    assert_eq!(delta.order.price.raw(), PRICE_UNDEF);
 }
 
 fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
@@ -607,6 +607,142 @@ fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
         ts_in_delta: 0,
         sequence: 1_000_000,
     }
+}
+
+fn push_mbo_record(
+    buffer: &mut MboDeltaBuffer,
+    output: &mut Vec<OrderBookDelta>,
+    msg: &dbn::MboMsg,
+    instrument_id: InstrumentId,
+) {
+    let (delta, trade) = decode_mbo_msg(msg, instrument_id, 2, Some(0.into()), false).unwrap();
+    assert!(trade.is_none());
+    buffer.push(msg, instrument_id, delta);
+    while let Some(delta) = buffer.pop_ready() {
+        output.push(delta);
+    }
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_preserves_interleaved_record_order() {
+    let instrument_a = InstrumentId::from("A.GLBX");
+    let instrument_b = InstrumentId::from("B.GLBX");
+    let mut a1 = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    a1.order_id = 1;
+    let mut b1 = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    b1.order_id = 2;
+    let mut a2 = mbo_msg_with_action('C' as c_char, dbn::FlagSet::empty());
+    a2.order_id = 3;
+    let boundary_a = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    let boundary_b = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    for (msg, instrument_id) in [
+        (&a1, instrument_a),
+        (&b1, instrument_b),
+        (&a2, instrument_a),
+        (&boundary_a, instrument_a),
+        (&boundary_b, instrument_b),
+    ] {
+        push_mbo_record(&mut buffer, &mut output, msg, instrument_id);
+    }
+
+    assert_eq!(output.len(), 3);
+    assert_eq!(output[0].instrument_id, instrument_a);
+    assert_eq!(output[0].order.order_id, 1);
+    assert_eq!(output[0].flags, 0);
+    assert_eq!(output[1].instrument_id, instrument_b);
+    assert_eq!(output[1].order.order_id, 2);
+    assert_eq!(output[1].flags, dbn::flags::LAST);
+    assert_eq!(output[2].instrument_id, instrument_a);
+    assert_eq!(output[2].order.order_id, 3);
+    assert_eq!(output[2].flags, dbn::flags::LAST);
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_preserves_snapshot_flag_at_standalone_boundary() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let mut snapshot = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty().set_snapshot());
+    snapshot.hd.ts_event = 10;
+    let mut boundary = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    boundary.hd.ts_event = 10;
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    push_mbo_record(&mut buffer, &mut output, &snapshot, instrument_id);
+    push_mbo_record(&mut buffer, &mut output, &boundary, instrument_id);
+
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].flags, dbn::flags::SNAPSHOT | dbn::flags::LAST);
+    assert_eq!(output[0].sequence, 0);
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_applies_boundary_with_distinct_record_timestamp() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let mut delta_msg = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    delta_msg.ts_recv = 10;
+    let mut boundary = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    boundary.ts_recv = 11;
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    push_mbo_record(&mut buffer, &mut output, &delta_msg, instrument_id);
+    push_mbo_record(&mut buffer, &mut output, &boundary, instrument_id);
+
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].flags, dbn::flags::LAST);
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_ignores_empty_event_boundary() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let boundary = mbo_msg_with_action('N' as c_char, dbn::FlagSet::empty().set_last());
+    let mut buffer = MboDeltaBuffer::default();
+    let mut output = Vec::new();
+
+    push_mbo_record(&mut buffer, &mut output, &boundary, instrument_id);
+
+    assert!(output.is_empty());
+    assert!(buffer.pop_ready().is_none());
+}
+
+#[rstest]
+fn test_mbo_delta_buffer_releases_incomplete_event_at_end() {
+    let instrument_id = InstrumentId::from("A.GLBX");
+    let mut msg = mbo_msg_with_action('A' as c_char, dbn::FlagSet::empty());
+    msg.hd.ts_event = 10;
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+    let mut buffer = MboDeltaBuffer::default();
+    buffer.push(&msg, instrument_id, delta);
+
+    assert!(trade.is_none());
+    assert!(buffer.pop_ready().is_none());
+
+    buffer.finish();
+    let output = buffer.pop_ready().unwrap();
+
+    assert_eq!(output.instrument_id, instrument_id);
+    assert_eq!(output.flags, 0);
+    assert!(buffer.pop_ready().is_none());
+}
+
+#[rstest]
+#[case::incremental(dbn::FlagSet::empty(), 1_000_000)]
+#[case::snapshot(dbn::FlagSet::empty().set_snapshot(), 0)]
+fn test_decode_mbo_msg_snapshot_does_not_advance_sequence(
+    #[case] flags: dbn::FlagSet,
+    #[case] expected_sequence: u64,
+) {
+    let msg = mbo_msg_with_action('A' as c_char, flags);
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
+    let delta = delta.unwrap();
+
+    assert!(trade.is_none());
+    assert_eq!(delta.flags, flags.raw());
+    assert_eq!(delta.sequence, expected_sequence);
 }
 
 #[rstest]
@@ -678,7 +814,7 @@ fn test_decode_mbo_msg_trade_event_sequence_book_records_only() {
 
 #[rstest]
 fn test_decode_mbo_msg_no_order_side_update() {
-    // MBO messages with NoOrderSide are now passed through to the book
+    // MBO messages without a side are passed through to the book
     // The book will resolve the side from its cache using the order_id
     let ts_recv = 1_609_160_400_000_000_000;
     let msg = dbn::MboMsg {
@@ -698,11 +834,11 @@ fn test_decode_mbo_msg_no_order_side_update() {
     let instrument_id = InstrumentId::from("ESM4.GLBX");
     let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
 
-    // Delta should be created with NoOrderSide (book will resolve it)
+    // The book resolves the missing side
     assert!(delta.is_some());
     assert!(trade.is_none());
     let delta = delta.unwrap();
-    assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+    assert_eq!(delta.order.side, None);
     assert_eq!(delta.order.order_id, 123_456_789);
     assert_eq!(delta.action, BookAction::Update);
 }
@@ -882,18 +1018,18 @@ fn test_decode_mbp10_msg() {
     let msg = dbn_stream.next().unwrap().unwrap();
 
     let instrument_id = InstrumentId::from("ESM4.GLBX");
-    let depth10 = decode_mbp10_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+    let depth = decode_mbp10_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
 
-    assert_eq!(depth10.instrument_id, instrument_id);
-    assert_eq!(depth10.bids.len(), 10);
-    assert_eq!(depth10.asks.len(), 10);
-    assert_eq!(depth10.bid_counts.len(), 10);
-    assert_eq!(depth10.ask_counts.len(), 10);
-    assert_eq!(depth10.flags, 128);
-    assert_eq!(depth10.sequence, 1_170_352);
-    assert_eq!(depth10.ts_event, msg.ts_recv);
-    assert_eq!(depth10.ts_event, 1_609_160_400_000_704_060);
-    assert_eq!(depth10.ts_init, 0);
+    assert_eq!(depth.instrument_id, instrument_id);
+    assert_eq!(depth.bids.len(), 10);
+    assert_eq!(depth.asks.len(), 10);
+    assert_eq!(depth.bid_counts.len(), 10);
+    assert_eq!(depth.ask_counts.len(), 10);
+    assert_eq!(depth.flags, 128);
+    assert_eq!(depth.sequence, 1_170_352);
+    assert_eq!(depth.ts_event, msg.ts_recv);
+    assert_eq!(depth.ts_event, 1_609_160_400_000_704_060);
+    assert_eq!(depth.ts_init, 0);
 }
 
 #[rstest]
@@ -910,7 +1046,7 @@ fn test_decode_trade_msg() {
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
     assert_eq!(trade.size, quantity_from_str("5"));
-    assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
     assert_eq!(trade.ts_event, 1_609_160_400_099_150_057);
@@ -941,7 +1077,7 @@ fn test_decode_tbbo_msg() {
     assert_eq!(trade.instrument_id, instrument_id);
     assert_eq!(trade.price, Price::from("3720.25"));
     assert_eq!(trade.size, quantity_from_str("5"));
-    assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+    assert_eq!(trade.aggressor_side, AggressorSide::Sell);
     assert_eq!(trade.trade_id.to_string(), "1170380");
     assert_eq!(trade.ts_event, msg.ts_recv);
     assert_eq!(trade.ts_event, 1_609_160_400_099_150_057);
@@ -968,7 +1104,10 @@ fn test_decode_ohlcv_msg() {
     assert_eq!(bar.low, Price::from("372025.00"));
     assert_eq!(bar.close, Price::from("372050.00"));
     assert_eq!(bar.volume, quantity_from_str("57"));
-    assert_eq!(bar.ts_event, msg.hd.ts_event + BAR_CLOSE_ADJUSTMENT_1S); // timestamp_on_close=true
+    assert_eq!(
+        bar.ts_event,
+        UnixNanos::from(msg.hd.ts_event) + BAR_CLOSE_ADJUSTMENT_1S
+    ); // timestamp_on_close=true
     assert_eq!(bar.ts_init, 0); // ts_init was Some(0)
 }
 
@@ -1016,7 +1155,7 @@ fn test_decode_definition_msg_futures_contract() {
     assert_eq!(future.id, instrument_id);
     assert_eq!(future.raw_symbol.as_str(), "ESU6");
     assert_eq!(future.asset_class, AssetClass::Index);
-    assert_eq!(future.underlying.as_str(), "ES");
+    assert_eq!(future.underlying, "ES");
     assert_eq!(future.currency, Currency::from("USD"));
     assert_eq!(future.price_precision, 2);
     assert_eq!(future.price_increment, Price::from("0.25"));
@@ -1043,8 +1182,8 @@ fn test_decode_definition_msg_futures_spread() {
     assert_eq!(spread.id, instrument_id);
     assert_eq!(spread.raw_symbol.as_str(), "ESU6-ESM7");
     assert_eq!(spread.asset_class, AssetClass::Index);
-    assert_eq!(spread.underlying.as_str(), "ES");
-    assert_eq!(spread.strategy_type.as_str(), "EQ");
+    assert_eq!(spread.underlying, "ES");
+    assert_eq!(spread.strategy_type, "EQ");
     assert_eq!(spread.currency, Currency::from("USD"));
     assert_eq!(spread.price_precision, 2);
     assert_eq!(spread.price_increment, Price::from("0.05"));
@@ -1073,7 +1212,7 @@ fn test_decode_definition_msg_option_contract() {
     assert_eq!(call.asset_class, AssetClass::Commodity);
     assert_eq!(call.option_kind, OptionKind::Call);
     assert_eq!(call.strike_price, Price::from("9600.00"));
-    assert_eq!(call.underlying.as_str(), "ESU6");
+    assert_eq!(call.underlying, "ESU6");
     assert_eq!(call.currency, Currency::from("USD"));
     assert_eq!(call.multiplier, quantity(50));
     // GLBX expirations carry an accurate intraday time (2026-09-18 13:30 UTC) and must not be
@@ -1118,7 +1257,7 @@ fn test_decode_definition_msg_option_spread() {
     assert_eq!(spread.id, spread_id);
     assert_eq!(spread.raw_symbol.as_str(), "UD:2E: SG 2500275");
     assert_eq!(spread.asset_class, AssetClass::Commodity);
-    assert_eq!(spread.strategy_type.as_str(), "SG");
+    assert_eq!(spread.strategy_type, "SG");
     assert_eq!(spread.currency, Currency::from("USD"));
     assert_eq!(spread.multiplier, quantity(1));
     assert_eq!(spread.ts_init, 0);
@@ -1134,7 +1273,7 @@ fn test_decode_definition_msg_option_spread() {
     };
     assert_eq!(mixed.id, mixed_id);
     assert_eq!(mixed.raw_symbol.as_str(), "UD:T$:CFO 2632896");
-    assert_eq!(mixed.strategy_type.as_str(), "CV:FO");
+    assert_eq!(mixed.strategy_type, "CV:FO");
 }
 
 #[rstest]
@@ -1304,7 +1443,7 @@ fn test_decode_imbalance_msg() {
     assert_eq!(imbalance.total_imbalance_qty, quantity_from_str("2000"));
     assert_eq!(imbalance.paired_qty.precision, 0);
     assert_eq!(imbalance.total_imbalance_qty.precision, 0);
-    assert_eq!(imbalance.side, OrderSide::Buy);
+    assert_eq!(imbalance.side, Some(OrderSide::Buy));
     assert_eq!(imbalance.significant_imbalance, 126);
     assert_eq!(imbalance.ts_event, msg.hd.ts_event);
     assert_eq!(imbalance.ts_recv, msg.ts_recv);
@@ -1505,10 +1644,10 @@ fn test_decode_cmbp1_msg() {
     let quote = maybe_quote.expect("Expected valid quote");
 
     assert_eq!(quote.instrument_id, instrument_id);
-    assert!(quote.bid_price.raw > 0);
-    assert!(quote.ask_price.raw > 0);
-    assert!(quote.bid_size.raw > 0);
-    assert!(quote.ask_size.raw > 0);
+    assert!(quote.bid_price.is_positive());
+    assert!(quote.ask_price.is_positive());
+    assert!(quote.bid_size.is_positive());
+    assert!(quote.ask_size.is_positive());
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_init, 0);
 
@@ -1535,10 +1674,10 @@ fn test_decode_cbbo_1s_msg() {
     let quote = maybe_quote.expect("Expected valid quote");
 
     assert_eq!(quote.instrument_id, instrument_id);
-    assert!(quote.bid_price.raw > 0);
-    assert!(quote.ask_price.raw > 0);
-    assert!(quote.bid_size.raw > 0);
-    assert!(quote.ask_size.raw > 0);
+    assert!(quote.bid_price.is_positive());
+    assert!(quote.ask_price.is_positive());
+    assert!(quote.bid_size.is_positive());
+    assert!(quote.ask_size.is_positive());
     assert_eq!(quote.ts_event, msg.ts_recv);
     assert_eq!(quote.ts_init, 0);
 }
@@ -1585,25 +1724,61 @@ fn test_decode_mbp10_msg_with_undefined_levels() {
     msg.levels[7].ask_px = i64::MAX;
     msg.levels[7].ask_sz = 0;
     msg.levels[7].ask_ct = 0;
+    msg.hd.ts_event = 1_609_160_400_000_700_000;
     msg.ts_recv = 1_609_160_400_000_704_060;
+    msg.sequence = 42;
+    msg.flags = dbn::FlagSet::empty().set_snapshot();
 
     let instrument_id = InstrumentId::from("TEST.VENUE");
     let depth = decode_mbp10_msg(&msg, instrument_id, 2, None).unwrap();
 
-    assert_eq!(depth.bids[5].side, OrderSide::NoOrderSide);
-    assert_eq!(depth.bids[5].price.raw, 0);
-    assert_eq!(depth.bids[5].price.precision, 0);
-    assert_eq!(depth.bids[5].size.raw, 0);
-    assert_eq!(depth.asks[7].side, OrderSide::NoOrderSide);
-    assert_eq!(depth.asks[7].price.raw, 0);
-    assert_eq!(depth.asks[7].price.precision, 0);
-    assert_eq!(depth.asks[7].size.raw, 0);
+    let expected_bids = [
+        ("100.00", 10),
+        ("99.99", 11),
+        ("99.98", 12),
+        ("99.97", 13),
+        ("99.96", 14),
+        ("99.94", 16),
+        ("99.93", 17),
+        ("99.92", 18),
+        ("99.91", 19),
+    ];
+    let expected_asks = [
+        ("100.01", 10),
+        ("100.02", 11),
+        ("100.03", 12),
+        ("100.04", 13),
+        ("100.05", 14),
+        ("100.06", 15),
+        ("100.07", 16),
+        ("100.09", 18),
+        ("100.10", 19),
+    ];
 
-    // Defined neighbours keep their normal side and instrument precision
-    assert_eq!(depth.bids[0].side, OrderSide::Buy);
-    assert_eq!(depth.bids[0].price.precision, 2);
-    assert_eq!(depth.asks[0].side, OrderSide::Sell);
-    assert_eq!(depth.asks[0].price.precision, 2);
+    assert_eq!(depth.instrument_id, instrument_id);
+    assert_eq!(depth.bids.len(), expected_bids.len());
+    assert_eq!(depth.asks.len(), expected_asks.len());
+    assert_eq!(depth.bid_counts.as_slice(), &[1, 2, 3, 4, 5, 7, 8, 9, 10]);
+    assert_eq!(depth.ask_counts.as_slice(), &[1, 2, 3, 4, 5, 6, 7, 9, 10]);
+    for (order, (price, size)) in depth.bids.iter().zip(expected_bids) {
+        assert_eq!(order.side, Some(OrderSide::Buy));
+        assert_eq!(order.price, Price::from(price));
+        assert_eq!(order.price.precision, 2);
+        assert_eq!(order.size, Quantity::from(size));
+        assert_eq!(order.order_id, 0);
+    }
+
+    for (order, (price, size)) in depth.asks.iter().zip(expected_asks) {
+        assert_eq!(order.side, Some(OrderSide::Sell));
+        assert_eq!(order.price, Price::from(price));
+        assert_eq!(order.price.precision, 2);
+        assert_eq!(order.size, Quantity::from(size));
+        assert_eq!(order.order_id, 0);
+    }
+    assert_eq!(depth.flags, msg.flags.raw());
+    assert_eq!(depth.sequence, u64::from(msg.sequence));
+    assert_eq!(depth.ts_event, UnixNanos::from(msg.ts_recv));
+    assert_eq!(depth.ts_init, UnixNanos::from(msg.ts_recv));
 }
 
 #[rstest]
@@ -1627,10 +1802,10 @@ fn test_decode_tcbbo_msg() {
     let quote = maybe_quote.expect("Expected valid quote");
 
     assert_eq!(quote.instrument_id, instrument_id);
-    assert!(quote.bid_price.raw > 0);
-    assert!(quote.ask_price.raw > 0);
-    assert!(quote.bid_size.raw > 0);
-    assert!(quote.ask_size.raw > 0);
+    assert!(quote.bid_price.is_positive());
+    assert!(quote.ask_price.is_positive());
+    assert!(quote.bid_size.is_positive());
+    assert!(quote.ask_size.is_positive());
     assert_eq!(quote.ts_event, tcbbo_msg.ts_recv);
     assert_eq!(quote.ts_init, 0);
 

@@ -38,3 +38,17 @@ use pyo3_stub_gen::derive::gen_stub_pyfunction;
 pub fn py_mask_api_key(api_key: String) -> String {
     crate::string::secret::mask_api_key(&api_key)
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("sk-abc123xyz789", "sk-a...z789")]
+    #[case("abc", "***")]
+    fn test_py_mask_api_key(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(py_mask_api_key(input.to_string()), expected);
+    }
+}

@@ -1,117 +1,125 @@
 # Emulated orders
 
-## Introduction
-
 Emulation lets you use order types even when your trading venue does not natively support them.
 
-Nautilus locally mimics the behavior of these order types (such as `STOP_LIMIT` or `TRAILING_STOP` orders)
-while using only `MARKET` and `LIMIT` orders for actual execution on the venue.
-
-When you create an emulated order, Nautilus continuously tracks a specific type of market price (specified by the
-`emulation_trigger` parameter) and based on the order type and conditions you've set, will automatically submit
-the appropriate fundamental order (`MARKET` / `LIMIT`) when the triggering condition is met.
-
-For example, if you create an emulated `STOP_LIMIT` order, Nautilus will monitor the market price until your `stop`
-price is reached, and then automatically submits a `LIMIT` order to the venue.
-
-To perform emulation, Nautilus needs to know which **type of market price** it should monitor.
-By default, it uses bid and ask prices (quotes), which is why you'll often see `emulation_trigger=TriggerType.DEFAULT`
-in examples (this is equivalent to using `TriggerType.BID_ASK`). However, Nautilus supports various other price types,
-that can guide the emulation process.
+The `OrderEmulator` monitors the market data selected by `emulation_trigger`. When the local order matches its
+release condition, the emulator transforms it into a `MARKET` or `LIMIT` order. It routes that order to the
+configured execution algorithm or the risk engine. For example, an emulated `STOP_LIMIT` becomes a
+`LIMIT` order after its stop price triggers.
 
 ## Submitting an order for emulation
 
-The only requirement to emulate an order is to pass a `TriggerType` to the `emulation_trigger`
-parameter of an `Order` constructor, or `OrderFactory` creation method. The following
-emulation trigger types are currently supported:
+**Supported triggers**: set `emulation_trigger` on an order constructor or `OrderFactory` method.
+The local emulator accepts these values.
 
-- `NO_TRIGGER`: disables local emulation completely and order is fully submitted to the venue.
-- `DEFAULT`: which is the same as `BID_ASK`.
-- `BID_ASK`: emulated using quotes to trigger.
-- `LAST_PRICE`: emulated using trades to trigger.
+| Trigger type | Market data used                                   |
+| ------------ | -------------------------------------------------- |
+| `DEFAULT`    | Quotes, with the same local behavior as `BID_ASK`. |
+| `BID_ASK`    | Best bid and ask quotes.                           |
+| `LAST_PRICE` | Trades.                                            |
 
-The choice of trigger type determines how the order emulation will behave:
+Leave `emulation_trigger` as `None` to disable local emulation and submit through the normal
+pathway.
 
-- For `STOP` orders, the trigger price will be compared against the specified trigger type.
-- For `TRAILING_STOP` orders, the trailing offset will be updated based on the specified trigger type.
-- For `LIMIT` orders being emulated, the limit price will be compared against the specified trigger type to determine when to release the order as a `MARKET` order.
+Other `TriggerType` values describe trigger methods that some venues support, but the local
+`OrderEmulator` does not accept them as `emulation_trigger` values.
 
-Here are all the available values you can set into `emulation_trigger` parameter and their purposes:
+:::warning
+The emulator cancels an order submitted with any other `emulation_trigger` value, and logs the
+unsupported trigger type as an error.
+:::
 
-| Trigger Type      | Description                                                                                          | Common use cases                                                                                             |
-| :---------------- | :--------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
-| `NO_TRIGGER`      | Disables emulation completely. The order is sent directly to the venue without any local processing. | When you want to use the venue's native order handling, or for simple order types that don't need emulation. |
-| `DEFAULT`         | Same as `BID_ASK`. This is the standard choice for most emulated orders.                             | General‑purpose emulation when you want to work with the "default" type of market prices.                    |
-| `BID_ASK`         | Uses the best bid and ask prices (quotes) to guide emulation.                                        | Stop orders, trailing stops, and other orders that should react to the current market spread.                |
-| `LAST_PRICE`      | Uses the price of the most recent trade to guide emulation.                                          | Orders that should trigger based on actual executed trades rather than quotes.                               |
-| `DOUBLE_LAST`     | Uses two consecutive last trade prices to confirm the trigger condition.                             | When you want additional confirmation of price movement before triggering.                                   |
-| `DOUBLE_BID_ASK`  | Uses two consecutive bid/ask price updates to confirm the trigger condition.                         | When you want extra confirmation of quote movements before triggering.                                       |
-| `LAST_OR_BID_ASK` | Triggers on either last trade price or bid/ask prices.                                               | When you want to be more responsive to any type of price movement.                                           |
-| `MID_POINT`       | Uses the middle point between the best bid and ask prices.                                           | Orders that should trigger based on the theoretical fair price.                                              |
-| `MARK_PRICE`      | Uses the mark price (common in derivatives markets) for triggering.                                  | Particularly useful for futures and perpetual contracts.                                                     |
-| `INDEX_PRICE`     | Uses an underlying index price for triggering.                                                       | When trading derivatives that track an index.                                                                |
+**Trigger behavior**: emulation depends on the selected trigger type.
+
+- For stop orders, the emulator compares the trigger price with the selected market data.
+- For trailing-stop orders, it updates the trailing trigger from that market data.
+- For emulated `LIMIT` orders, it compares the limit price with that market data and releases a
+  `MARKET` order when matched.
+
+**Cached data**: the emulator creates a matching core for a trigger instrument. The first order's
+`emulation_trigger` selects the cached market data used to seed that core.
+
+- `DEFAULT` and `BID_ASK` use the latest cached quote's bid and ask.
+- `LAST_PRICE` uses the latest cached trade price.
+
+An eligible order that matches this data releases on submission **without an `OrderEmulated` event**. If the
+selected source has no cached data, the order stays emulated until matching market data arrives.
 
 ## Technical details
 
-The platform makes it possible to emulate most order types locally, regardless
-of whether the type is supported on a trading venue. The logic and code paths for
-order emulation are exactly the same for all [environment contexts](../architecture.md#environment-contexts)
-and use a common `OrderEmulator` component.
+The same `OrderEmulator` component manages supported emulated order types in all
+[environment contexts](../architecture.md#environment-contexts).
 
 :::note
-There is no limitation on the number of emulated orders you can have per running instance.
+NautilusTrader does not configure a fixed count limit for emulated orders. Available memory and the
+cost of market data processing provide practical limits.
 :::
 
 ## Lifecycle
 
-An emulated order will progress through the following stages:
+**Lifecycle**: an emulated order progresses through these stages.
 
-1. Submitted by a `Strategy` through the `submit_order` method.
-2. Sent to the `RiskEngine` for pre-trade risk checks (it may be denied at this point).
-3. Sent to the `OrderEmulator` where it is *held* / emulated.
-4. Once triggered, emulated order is transformed into a `MARKET` or `LIMIT` order and released (submitted to the venue).
-5. Released order undergoes final risk checks before venue submission.
+1. A `Strategy` submits it through `submit_order`, which routes it to the `OrderEmulator`.
+1. The `OrderEmulator` checks for immediate release. If the order does not match, it holds and
+   monitors it locally.
+1. For a held order, a matching market update transforms it into a `MARKET` or `LIMIT` order and
+   releases it once the required prices are available.
+1. The emulator routes the released order to an `ExecutionAlgorithm` when `exec_algorithm_id` is
+   set, or to the `RiskEngine` otherwise.
+
+:::warning[Risk checks apply at release]
+Initial submissions and modifications of held emulated orders bypass the `RiskEngine`. Held orders
+do not reserve account funds. Releases without an execution algorithm pass through the `RiskEngine`
+before reaching the `ExecutionEngine`. An execution algorithm's `submit_order` method also routes
+its submissions through the risk engine.
+
+Unless risk checks are bypassed, a failed check on a release without an execution algorithm moves
+that order to `DENIED`, without automatic retry. This includes protective stops: `HALTED` denies
+them, while `REDUCING` permits only eligible reduce-only submissions with an identified open position.
+See [Trading state](../execution/index.md#trading-state).
+
+Denial also invokes contingency handling, which can cancel locally managed OTO children or OCO/OUO
+siblings. A denied stop can therefore cancel its linked take-profit order.
+:::
 
 :::note
-Emulated orders are subject to the same risk controls as *regular* orders, and can be
-modified and canceled by a trading strategy in the normal way. They will also be included
-when canceling all orders.
+A strategy can modify or cancel emulated orders, and a cancel-all request includes them.
 :::
 
 :::info
-An emulated order will retain its original client order ID throughout its entire life cycle, making it easy to query
-through the cache.
+An emulated order keeps its client order ID when transformed, so cache queries continue to use the same ID.
 :::
 
 ### Held emulated orders
 
-The following will occur for an emulated order now *held* by the `OrderEmulator` component:
+**While held**: the `OrderEmulator` takes these actions while it holds an order.
 
-- The original `SubmitOrder` command will be cached.
-- The emulated order will be processed inside a local `MatchingCore` component.
-- The `OrderEmulator` will subscribe to any needed market data (if not already) to update the matching core.
-- The emulated order can be modified (by the trader) and updated (by the market) until *released* or canceled.
+- It caches the original `SubmitOrder` command.
+- It processes the order in a local matching core.
+- It subscribes to the required quotes or trades if no matching subscription exists.
+- It accepts strategy modifications and market-driven updates until release or cancellation.
 
 ### Released emulated orders
 
-Once data arrival triggers / matches an emulated order locally, the following
-*release* actions will occur:
+**Release sequence**: when market data matches an emulated order, release performs these actions
+in order.
 
-- The order will be transformed to either a `MARKET` or `LIMIT` order (see below table) through an additional `OrderInitialized` event.
-- The orders `emulation_trigger` will be set to `NONE` (it will no longer be treated as an emulated order by any component).
-- The order attached to the original `SubmitOrder` command will be sent back to the `RiskEngine` for additional checks since any modification/updates.
-- If not denied, then the command will continue to the `ExecutionEngine` and on to the trading venue via an `ExecutionClient` as normal.
+1. It transforms the order into a `MARKET` or `LIMIT` order through another `OrderInitialized` event. This
+   sets `emulation_trigger` to `None`, so components no longer treat the order as emulated.
+1. It updates the original `SubmitOrder` command to describe the transformed order.
+1. It applies and publishes `OrderReleased` before sending the command.
+1. It sends that command to the configured `ExecutionAlgorithm` or, otherwise, the `RiskEngine`.
+   Risk-approved submissions reach the `ExecutionEngine`, which routes an eligible order to an
+   `ExecutionClient`.
 
-## Order types which can be emulated
+## Order types that can be emulated
 
-The following table lists which order types are possible to emulate, and
-which order type they transform to when being released for submission to the
-trading venue.
+**Released type**: the released type depends on the original emulated order type.
 
 | Order type for emulation | Can emulate | Released type |
-| :----------------------- | :---------- | :------------ |
-| `MARKET`                 |             | n/a           |
-| `MARKET_TO_LIMIT`        |             | n/a           |
+| ------------------------ | ----------- | ------------- |
+| `MARKET`                 | -           | N/A           |
+| `MARKET_TO_LIMIT`        | -           | N/A           |
 | `LIMIT`                  | ✓           | `MARKET`      |
 | `STOP_MARKET`            | ✓           | `MARKET`      |
 | `STOP_LIMIT`             | ✓           | `LIMIT`       |
@@ -120,29 +128,38 @@ trading venue.
 | `TRAILING_STOP_MARKET`   | ✓           | `MARKET`      |
 | `TRAILING_STOP_LIMIT`    | ✓           | `LIMIT`       |
 
+A `MARKET` release keeps the original time in force, except that `GTD` becomes `GTC` because market
+orders do not support `GTD`.
+
+:::warning
+An emulated `TRAILING_STOP_LIMIT` submitted without a limit price gets one from the trailing
+calculation. If the order triggers before that calculation succeeds, the emulator logs a warning
+and keeps the order emulated. Once a market update lets the calculation produce a limit price,
+the next matching update releases the order.
+
+For example, the `LAST_OR_BID_ASK` trigger type needs a last trade price. A `BID_ASK` emulation trigger
+subscribes the emulator to quotes only. Thus, the order stays held until trade data reaches the cache (such as
+from a strategy's trade subscription).
+:::
+
 ## Querying
 
-When writing trading strategies, it may be necessary to know the state of emulated orders in the system.
-There are several ways to query emulation status:
+Use the cache or the order object to query emulation status.
 
-### Through the Cache
+### Through the cache
 
-The following `Cache` methods are available:
+**Cache methods**: the `Cache` provides these methods.
 
-- `self.cache.orders_emulated(...)`: Returns all currently emulated orders.
-- `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated.
-- `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders.
+- `self.cache.orders_emulated(...)` returns all emulated orders that match its filters.
+- `self.cache.is_order_emulated(...)` checks one client order ID.
+- `self.cache.orders_emulated_count(...)` returns the number of matching emulated orders.
 
 See the full [API reference](/docs/python-api-latest/cache.html) for additional details.
 
 ### Direct order queries
 
-You can query order objects directly using:
-
-- `order.is_emulated`
-
-If either of these return `False`, then the order has been *released* from the
-`OrderEmulator`, and so is no longer considered an emulated order (or was never an emulated order).
+Use `order.is_emulated` to query an order object directly. A `False` value means the order was
+released or was never emulated.
 
 :::warning
 Do not hold a local reference to an emulated order. The order object transforms
@@ -151,22 +168,16 @@ when the emulated order is *released*. Use the `Cache` instead.
 
 ## Persistence and recovery
 
-If a running system either crashes or shuts down with active emulated orders, then
-they will be reloaded inside the `OrderEmulator` from any configured cache database.
-This preserves order state across system restarts and recoveries.
+On startup, the `OrderEmulator` reactivates emulated orders that the configured cache database
+restored into the cache. This preserves their state across restarts.
 
 ## Best practices
 
-When working with emulated orders, consider the following best practices:
+**Best practices**: when working with emulated orders, follow these rules.
 
-1. Always use the `Cache` for querying or tracking emulated orders rather than storing local references
-2. Be aware that emulated orders transform to different types when released
-3. Remember that emulated orders undergo risk checks both at submission and release
-
-:::note
-Order emulation allows you to use advanced order types even on venues that don't natively support them,
-making your trading strategies more portable across different venues.
-:::
+- Query the `Cache` instead of storing local order references.
+- Account for the order type changing on release.
+- Handle denials and rejections from the released order's execution path.
 
 ## Related guides
 

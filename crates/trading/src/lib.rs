@@ -34,11 +34,13 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `examples`: Enables example strategies (e.g. `EmaCross`) for backtesting and demos.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
-//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+//! - `examples`: Enables example strategies such as `EmaCross` for backtesting and demos.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -56,10 +58,6 @@
 #![allow(
     clippy::manual_let_else,
     reason = "match and if-let early returns are consistent with surrounding trading flow code"
-)]
-#![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "matches the Rust 1.94 ICE workaround in the workspace lint table"
 )]
 #![allow(
     clippy::cast_lossless,
@@ -85,6 +83,13 @@
     clippy::match_wildcard_for_single_variants,
     reason = "wildcard arms guard against future enum variants in trading dispatch"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 #![cfg_attr(
     test,
     allow(
@@ -111,7 +116,7 @@ pub mod examples;
 
 pub use algorithm::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, ExecutionAlgorithmNative,
-    ImportableExecAlgorithmConfig, TwapAlgorithm, TwapAlgorithmConfig,
+    ImportableExecutionAlgorithmConfig, TwapAlgorithm, TwapAlgorithmConfig,
 };
 pub use controller::ImportableControllerConfig;
 pub use strategy::{

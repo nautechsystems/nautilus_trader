@@ -23,7 +23,7 @@ use std::{
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{Bar, BookOrder, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{Bar, BookOrder, DEPTH10_LEN, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick},
     types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 
@@ -32,6 +32,7 @@ use crate::markers::DataClass;
 const QUOTE_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/quote/v1";
 const TRADE_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/trade/v1";
 const BAR_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/bar/v1";
+const DEPTH_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/depth/v1";
 const DEPTH10_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/depth10/v1";
 const DELTAS_FINGERPRINT_DOMAIN: &[u8] = b"nautilus-event-store/marker/fingerprint/deltas/v1";
 
@@ -88,8 +89,8 @@ impl DataMarkerExtractorRegistry {
                 DataClass::BookDeltas => {
                     registry.register::<OrderBookDeltas>(Box::new(OrderBookDeltasExtractor));
                 }
-                DataClass::BookDepth10 => {
-                    registry.register::<OrderBookDepth10>(Box::new(OrderBookDepth10Extractor));
+                DataClass::BookDepth => {
+                    registry.register::<OrderBookDepth>(Box::new(OrderBookDepthExtractor));
                 }
                 DataClass::Quote => {
                     registry.register::<QuoteTick>(Box::new(QuoteTickExtractor));
@@ -197,26 +198,25 @@ impl DataMarkerExtractor for BarExtractor {
 }
 
 #[derive(Debug)]
-struct OrderBookDepth10Extractor;
+struct OrderBookDepthExtractor;
 
-impl DataMarkerExtractor for OrderBookDepth10Extractor {
+impl DataMarkerExtractor for OrderBookDepthExtractor {
     fn data_class(&self) -> DataClass {
-        DataClass::BookDepth10
+        DataClass::BookDepth
     }
 
     fn identifier(&self, msg: &dyn Any) -> Option<String> {
-        msg.downcast_ref::<OrderBookDepth10>()
+        msg.downcast_ref::<OrderBookDepth>()
             .map(|depth| depth.instrument_id.to_string())
     }
 
     fn timestamps(&self, msg: &dyn Any) -> Option<(UnixNanos, UnixNanos)> {
-        msg.downcast_ref::<OrderBookDepth10>()
+        msg.downcast_ref::<OrderBookDepth>()
             .map(|depth| (depth.ts_event, depth.ts_init))
     }
 
     fn fingerprint(&self, msg: &dyn Any) -> Option<[u8; 32]> {
-        msg.downcast_ref::<OrderBookDepth10>()
-            .map(fingerprint_depth10)
+        msg.downcast_ref::<OrderBookDepth>().map(fingerprint_depth)
     }
 }
 
@@ -279,14 +279,21 @@ fn fingerprint_bar(bar: &Bar) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-fn fingerprint_depth10(depth: &OrderBookDepth10) -> [u8; 32] {
+fn fingerprint_depth(depth: &OrderBookDepth) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(DEPTH10_FINGERPRINT_DOMAIN);
-    for (order, count) in depth.bids.iter().zip(depth.bid_counts) {
+    if depth.bids.len() == DEPTH10_LEN && depth.asks.len() == DEPTH10_LEN {
+        hasher.update(DEPTH10_FINGERPRINT_DOMAIN);
+    } else {
+        hasher.update(DEPTH_FINGERPRINT_DOMAIN);
+        hasher.update(&(depth.bids.len() as u64).to_be_bytes());
+        hasher.update(&(depth.asks.len() as u64).to_be_bytes());
+    }
+
+    for (order, count) in depth.bids.iter().zip(depth.bid_counts.iter().copied()) {
         write_depth_level(&mut hasher, order, count);
     }
 
-    for (order, count) in depth.asks.iter().zip(depth.ask_counts) {
+    for (order, count) in depth.asks.iter().zip(depth.ask_counts.iter().copied()) {
         write_depth_level(&mut hasher, order, count);
     }
     write_unix_nanos(&mut hasher, depth.ts_event);
@@ -299,7 +306,7 @@ fn fingerprint_deltas(deltas: &OrderBookDeltas) -> [u8; 32] {
     hasher.update(&(deltas.deltas.len() as u64).to_be_bytes());
     for delta in &deltas.deltas {
         hasher.update(&[delta.action as u8]);
-        hasher.update(&[delta.order.side as u8]);
+        hasher.update(&[delta.order.side.map_or(0, |side| side as u8)]);
         write_price_raw(&mut hasher, delta.order.price);
         write_quantity_raw(&mut hasher, delta.order.size);
         hasher.update(&delta.order.order_id.to_be_bytes());
@@ -332,9 +339,9 @@ fn write_quantity_raw(hasher: &mut blake3::Hasher, quantity: Quantity) {
 fn price_raw_at_precision(price: Price) -> i128 {
     let scale_down = FIXED_PRECISION.saturating_sub(price.precision);
     #[cfg(feature = "defi")]
-    let raw = price.raw;
+    let raw = price.raw();
     #[cfg(not(feature = "defi"))]
-    let raw = i128::from(price.raw);
+    let raw = i128::from(price.raw());
 
     raw / 10_i128.pow(u32::from(scale_down))
 }
@@ -346,15 +353,15 @@ fn price_raw_at_precision(price: Price) -> i128 {
 fn quantity_raw_at_precision(quantity: Quantity) -> u128 {
     let scale_down = FIXED_PRECISION.saturating_sub(quantity.precision);
     #[cfg(feature = "defi")]
-    let raw = quantity.raw;
+    let raw = quantity.raw();
     #[cfg(not(feature = "defi"))]
-    let raw = u128::from(quantity.raw);
+    let raw = u128::from(quantity.raw());
 
     raw / 10_u128.pow(u32::from(scale_down))
 }
 
-fn write_unix_nanos(hasher: &mut blake3::Hasher, ts: UnixNanos) {
-    hasher.update(&ts.as_u64().to_be_bytes());
+fn write_unix_nanos(hasher: &mut blake3::Hasher, value: UnixNanos) {
+    hasher.update(&value.as_u64().to_be_bytes());
 }
 
 fn write_str(hasher: &mut blake3::Hasher, value: &str) {
@@ -370,7 +377,7 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::{
-            Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
+            Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick,
             TradeTick, depth::DEPTH10_LEN,
         },
         enums::{AggressorSide, BookAction, OrderSide},
@@ -407,7 +414,7 @@ mod tests {
             InstrumentId::from("ETHUSDT.BINANCE"),
             Price::from("3000.18"),
             Quantity::from("0.75"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::new("T-ABC-123"),
             UnixNanos::from(1_700_000_000_000_000_300),
             UnixNanos::from(1_700_000_000_000_000_400),
@@ -439,11 +446,40 @@ mod tests {
         Quantity::from_raw(QuantityRaw::from(cents) * scale, 2)
     }
 
-    fn depth10() -> OrderBookDepth10 {
+    #[rstest]
+    fn variable_depth_fingerprint_distinguishes_side_boundaries() {
+        let bid = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from("2"), 0);
+        let ask = BookOrder::new(OrderSide::Sell, bid.price, bid.size, 0);
+        let left = OrderBookDepth::new(
+            InstrumentId::from("ETHUSDT.BINANCE"),
+            vec![bid],
+            vec![ask; 2],
+            vec![1],
+            vec![1; 2],
+            0,
+            0,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        let right = OrderBookDepth::new(
+            left.instrument_id,
+            vec![bid; 2],
+            vec![ask],
+            vec![1; 2],
+            vec![1],
+            left.flags,
+            left.sequence,
+            left.ts_event,
+            left.ts_init,
+        );
+        assert_ne!(fingerprint_depth(&left), fingerprint_depth(&right));
+    }
+
+    fn depth() -> OrderBookDepth {
         let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
-        let bids = std::array::from_fn(|i| {
-            let level = i64::try_from(i).expect("depth10 index fits i64");
-            let order_offset = u64::try_from(i).expect("depth10 index fits u64");
+        let bids: [BookOrder; 10] = std::array::from_fn(|i| {
+            let level = i64::try_from(i).expect("depth index fits i64");
+            let order_offset = u64::try_from(i).expect("depth index fits u64");
 
             BookOrder::new(
                 OrderSide::Buy,
@@ -452,9 +488,9 @@ mod tests {
                 1_000 + order_offset,
             )
         });
-        let asks = std::array::from_fn(|i| {
-            let level = i64::try_from(i).expect("depth10 index fits i64");
-            let order_offset = u64::try_from(i).expect("depth10 index fits u64");
+        let asks: [BookOrder; 10] = std::array::from_fn(|i| {
+            let level = i64::try_from(i).expect("depth index fits i64");
+            let order_offset = u64::try_from(i).expect("depth index fits u64");
 
             BookOrder::new(
                 OrderSide::Sell,
@@ -463,12 +499,12 @@ mod tests {
                 2_000 + order_offset,
             )
         });
-        let bid_counts =
-            std::array::from_fn(|i| 10 + u32::try_from(i).expect("depth10 index fits u32"));
-        let ask_counts =
-            std::array::from_fn(|i| 20 + u32::try_from(i).expect("depth10 index fits u32"));
+        let bid_counts: [u32; 10] =
+            std::array::from_fn(|i| 10 + u32::try_from(i).expect("depth index fits u32"));
+        let ask_counts: [u32; 10] =
+            std::array::from_fn(|i| 20 + u32::try_from(i).expect("depth index fits u32"));
 
-        OrderBookDepth10::new(
+        OrderBookDepth::new(
             instrument_id,
             bids,
             asks,
@@ -603,12 +639,12 @@ mod tests {
     }
 
     #[rstest]
-    fn depth10_extractor_fields_and_fingerprint() {
-        let depth = depth10();
-        let registry = DataMarkerExtractorRegistry::default_registry(&[DataClass::BookDepth10]);
+    fn depth_extractor_fields_and_fingerprint() {
+        let depth = depth();
+        let registry = DataMarkerExtractorRegistry::default_registry(&[DataClass::BookDepth]);
         let extractor = extractor_for(&registry, &depth);
 
-        assert_eq!(extractor.data_class(), DataClass::BookDepth10);
+        assert_eq!(extractor.data_class(), DataClass::BookDepth);
         assert_eq!(
             extractor.identifier(&depth),
             Some("ETHUSDT.BINANCE".to_string())
@@ -670,7 +706,7 @@ mod tests {
     #[rstest]
     #[case::price(|t: &mut TradeTick| t.price = Price::from("3000.19"))]
     #[case::size(|t: &mut TradeTick| t.size = Quantity::from("0.76"))]
-    #[case::aggressor_side(|t: &mut TradeTick| t.aggressor_side = AggressorSide::Seller)]
+    #[case::aggressor_side(|t: &mut TradeTick| t.aggressor_side = AggressorSide::Sell)]
     #[case::trade_id(|t: &mut TradeTick| t.trade_id = TradeId::new("T-ABC-124"))]
     #[case::ts_event(|t: &mut TradeTick| t.ts_event = UnixNanos::from(1))]
     fn trade_fingerprint_changes_when_hashed_field_changes(#[case] mutate: fn(&mut TradeTick)) {
@@ -698,21 +734,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case::bid_price(|d: &mut OrderBookDepth10| d.bids[0].price = price_from_cents(300_001))]
-    #[case::bid_size(|d: &mut OrderBookDepth10| d.bids[0].size = quantity_from_cents(10_001))]
-    #[case::bid_count(|d: &mut OrderBookDepth10| d.bid_counts[0] = 99)]
-    #[case::ask_price(|d: &mut OrderBookDepth10| d.asks[0].price = price_from_cents(300_101))]
-    #[case::ask_size(|d: &mut OrderBookDepth10| d.asks[0].size = quantity_from_cents(20_001))]
-    #[case::ask_count(|d: &mut OrderBookDepth10| d.ask_counts[0] = 99)]
-    #[case::ts_event(|d: &mut OrderBookDepth10| d.ts_event = UnixNanos::from(1))]
-    fn depth10_fingerprint_changes_when_hashed_field_changes(
-        #[case] mutate: fn(&mut OrderBookDepth10),
+    #[case::bid_price(|d: &mut OrderBookDepth| d.bids[0].price = price_from_cents(300_001))]
+    #[case::bid_size(|d: &mut OrderBookDepth| d.bids[0].size = quantity_from_cents(10_001))]
+    #[case::bid_count(|d: &mut OrderBookDepth| d.bid_counts[0] = 99)]
+    #[case::ask_price(|d: &mut OrderBookDepth| d.asks[0].price = price_from_cents(300_101))]
+    #[case::ask_size(|d: &mut OrderBookDepth| d.asks[0].size = quantity_from_cents(20_001))]
+    #[case::ask_count(|d: &mut OrderBookDepth| d.ask_counts[0] = 99)]
+    #[case::ts_event(|d: &mut OrderBookDepth| d.ts_event = UnixNanos::from(1))]
+    fn depth_fingerprint_changes_when_hashed_field_changes(
+        #[case] mutate: fn(&mut OrderBookDepth),
     ) {
-        let base = depth10();
-        let mut changed = base;
+        let base = depth();
+        let mut changed = base.clone();
         mutate(&mut changed);
 
-        assert_ne!(fingerprint_depth10(&base), fingerprint_depth10(&changed));
+        assert_ne!(fingerprint_depth(&base), fingerprint_depth(&changed));
     }
 
     #[rstest]
@@ -734,7 +770,7 @@ mod tests {
         ));
     })]
     #[case::action(|d: &mut OrderBookDeltas| d.deltas[0].action = BookAction::Delete)]
-    #[case::side(|d: &mut OrderBookDeltas| d.deltas[0].order.side = OrderSide::Sell)]
+    #[case::side(|d: &mut OrderBookDeltas| d.deltas[0].order.side = OrderSide::Sell.into())]
     #[case::price(|d: &mut OrderBookDeltas| d.deltas[0].order.price = Price::from("3000.01"))]
     #[case::size(|d: &mut OrderBookDeltas| d.deltas[0].order.size = Quantity::from("1.11"))]
     #[case::order_id(|d: &mut OrderBookDeltas| d.deltas[0].order.order_id = 99)]
@@ -757,7 +793,7 @@ mod tests {
             (DataClass::Quote, fingerprint_quote(&quote_tick())),
             (DataClass::Trade, fingerprint_trade(&trade_tick())),
             (DataClass::Bar, fingerprint_bar(&bar())),
-            (DataClass::BookDepth10, fingerprint_depth10(&depth10())),
+            (DataClass::BookDepth, fingerprint_depth(&depth())),
             (DataClass::BookDeltas, fingerprint_deltas(&deltas())),
         ];
 
@@ -776,11 +812,11 @@ mod tests {
         let quote = quote_tick();
         let trade = trade_tick();
         let bar = bar();
-        let depth = depth10();
+        let depth = depth();
         let deltas = deltas();
         let registry = DataMarkerExtractorRegistry::default_registry(&[
             DataClass::Quote,
-            DataClass::BookDepth10,
+            DataClass::BookDepth,
         ]);
 
         assert!(registry.lookup(&quote).is_some());

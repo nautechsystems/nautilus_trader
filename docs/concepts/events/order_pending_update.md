@@ -1,17 +1,21 @@
 # OrderPendingUpdate
 
-`OrderPendingUpdate` represents a `ModifyOrder` command having been sent to the trading
-venue. The `ExecutionEngine` applies it to the order, updates the `Cache`, and publishes
-it on the `MessageBus`. It fires when the system dispatches a modify request and awaits
-venue acknowledgement.
+`OrderPendingUpdate` records that the system has sent a `ModifyOrder` request to the trading venue
+and awaits acknowledgement. The `ExecutionEngine` applies it to the order, updates the `Cache`,
+and publishes it on the `MessageBus`.
 
-Transition: `ACCEPTED` -> `PENDING_UPDATE`. Handler: `on_order_pending_update`.
+Typical transition: `ACCEPTED` -> `PENDING_UPDATE`. Handler: `on_order_pending_update`.
 
 ## Fields
 
-`OrderPendingUpdate` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `venue_order_id` and
-`account_id` are usually populated but may be `None`, and `reconciliation` carries a real
-value.
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderPendingUpdate` carries:
+
+| Field            | Python type              | Required/default | Description                                      |
+| ---------------- | ------------------------ | ---------------- | ------------------------------------------------ |
+| `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue-assigned order identifier, if known.   |
+| `account_id`     | `AccountId` or `None`    | Required         | The account associated with the order, if known. |
+| `reconciliation` | `bool`                   | Required         | If generated during reconciliation.              |
 
 ## Example
 

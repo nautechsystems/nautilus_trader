@@ -72,8 +72,7 @@ pub trait KernelEventStore: Debug {
     ///
     /// # Errors
     ///
-    /// Returns an error when the source reader, snapshot restore, decode, or cache apply
-    /// step fails.
+    /// Returns an error if the source reader, snapshot restore, decode, or cache apply step fails.
     fn restore_parent_cache(&mut self, instance_id: UUID4, cache: &mut Cache)
     -> anyhow::Result<()>;
 
@@ -85,8 +84,8 @@ pub trait KernelEventStore: Debug {
     ///
     /// # Errors
     ///
-    /// Returns an error when opening the new run, spawning the writer, or blocking on the
-    /// initial entry ack fails.
+    /// Returns an error if opening the new run, spawning the writer, or blocking on the initial
+    /// entry ack fails.
     fn open(
         &mut self,
         instance_id: UUID4,
@@ -183,8 +182,9 @@ pub const DEFAULT_DATA_MARKER_CHANNEL_CAPACITY: usize = 10_000;
 pub enum DataMarkerClass {
     /// Order-book delta stream.
     BookDeltas,
-    /// Level-10 order-book snapshot stream.
-    BookDepth10,
+    /// Order-book depth snapshot stream.
+    #[serde(alias = "BookDepth10")]
+    BookDepth,
     /// Quote (level-1 bid/ask) stream.
     Quote,
     /// Trade (last sale) stream.
@@ -197,7 +197,7 @@ impl DataMarkerClass {
     /// All builtin data-marker classes in canonical order.
     pub const ALL: [Self; 5] = [
         Self::BookDeltas,
-        Self::BookDepth10,
+        Self::BookDepth,
         Self::Quote,
         Self::Trade,
         Self::Bar,
@@ -331,6 +331,22 @@ mod tests {
         let restored: EventStoreConfig = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(restored.data_markers, config.data_markers);
+    }
+
+    #[rstest]
+    fn data_marker_class_serde_accepts_legacy_depth10_spelling() {
+        assert_eq!(
+            serde_json::from_str::<DataMarkerClass>(r#""BookDepth10""#).unwrap(),
+            DataMarkerClass::BookDepth
+        );
+        assert_eq!(
+            serde_json::from_str::<DataMarkerClass>(r#""BookDepth""#).unwrap(),
+            DataMarkerClass::BookDepth
+        );
+        assert_eq!(
+            serde_json::to_string(&DataMarkerClass::BookDepth).unwrap(),
+            r#""BookDepth""#
+        );
     }
 
     #[rstest]

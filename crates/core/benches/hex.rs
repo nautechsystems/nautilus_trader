@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[path = "hex/corpus.rs"]
+mod corpus;
+#[path = "hex/edges.rs"]
+mod edges;
+
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -95,5 +100,7 @@ criterion_group!(
     bench_decode_512,
     bench_decode_array_32,
     bench_roundtrip_32,
+    corpus::bench_corpus,
+    edges::bench_edges,
 );
 criterion_main!(benches);

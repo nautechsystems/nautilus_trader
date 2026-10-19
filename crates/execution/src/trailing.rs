@@ -14,12 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 // TODO: We'll use anyhow for now, but would be best to implement some specific Error(s)
+use nautilus_common::cache::Cache;
 use nautilus_model::{
-    enums::{OrderSideSpecified, OrderType, TrailingOffsetType, TriggerType},
+    enums::{OrderSide, OrderType, TrailingOffsetType, TriggerType},
     orders::{Order, OrderAny, OrderError},
     types::Price,
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 /// Calculates the new trigger and limit prices for a trailing stop order.
 ///
@@ -44,7 +45,7 @@ pub fn trailing_stop_calculate(
     ask: Option<Price>,
     last: Option<Price>,
 ) -> anyhow::Result<(Option<Price>, Option<Price>)> {
-    let order_side = order.order_side_specified();
+    let order_side = order.order_side();
     let order_type = order.order_type();
 
     if !matches!(
@@ -74,15 +75,6 @@ pub fn trailing_stop_calculate(
     let trailing_offset_type = order.trailing_offset_type().ok_or_else(|| {
         anyhow::anyhow!("Missing `TrailingOffsetType` for trailing stop calculation")
     })?;
-    anyhow::ensure!(
-        trigger_type != TriggerType::NoTrigger,
-        "Invalid `TriggerType::NoTrigger` for trailing stop calculation"
-    );
-    anyhow::ensure!(
-        trailing_offset_type != TrailingOffsetType::NoTrailingOffset,
-        "Invalid `TrailingOffsetType::NoTrailingOffset` for trailing stop calculation"
-    );
-
     let mut new_trigger_price: Option<Price>;
     let mut new_limit_price: Option<Price> = None;
 
@@ -104,26 +96,19 @@ pub fn trailing_stop_calculate(
     };
 
     let better_trigger: fn(Price, Price) -> bool = match order_side {
-        OrderSideSpecified::Buy => |c, p| c < p,
-        OrderSideSpecified::Sell => |c, p| c > p,
+        OrderSide::Buy => |c, p| c < p,
+        OrderSide::Sell => |c, p| c > p,
     };
     let better_limit = better_trigger;
 
-    let compute = |off: Decimal, basis: Price| -> anyhow::Result<Price> {
-        let basis = basis.as_decimal();
-        let offset = match trailing_offset_type {
-            TrailingOffsetType::Price => off,
-            TrailingOffsetType::BasisPoints => basis * off / Decimal::from(10_000),
-            TrailingOffsetType::Ticks => off * price_increment.as_decimal(),
-            _ => {
-                anyhow::bail!("`TrailingOffsetType` {trailing_offset_type} not currently supported")
-            }
-        };
-        let value = match order_side {
-            OrderSideSpecified::Buy => basis + offset,
-            OrderSideSpecified::Sell => basis - offset,
-        };
-        Price::from_decimal_dp(value, price_increment.precision).map_err(Into::into)
+    let compute = |offset: Decimal, basis: Price| {
+        trailing_stop_calculate_with_last(
+            price_increment,
+            trailing_offset_type,
+            order_side,
+            offset,
+            basis,
+        )
     };
 
     match trigger_type {
@@ -146,8 +131,8 @@ pub fn trailing_stop_calculate(
                 ask.ok_or_else(|| anyhow::anyhow!("Ask required"))?,
             );
             let basis = match order_side {
-                OrderSideSpecified::Buy => ask,
-                OrderSideSpecified::Sell => bid,
+                OrderSide::Buy => ask,
+                OrderSide::Sell => bid,
             };
             let cand_trigger = compute(trailing_offset, basis)?;
             new_trigger_price = maybe_move(&mut trigger_price, cand_trigger, better_trigger);
@@ -197,7 +182,7 @@ pub fn trailing_stop_calculate(
 pub fn trailing_stop_calculate_with_last(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
-    side: OrderSideSpecified,
+    side: OrderSide,
     offset: Decimal,
     last: Price,
 ) -> anyhow::Result<Price> {
@@ -210,11 +195,29 @@ pub fn trailing_stop_calculate_with_last(
     };
 
     let price = match side {
-        OrderSideSpecified::Buy => last + offset,
-        OrderSideSpecified::Sell => last - offset,
+        OrderSide::Buy => last + offset,
+        OrderSide::Sell => last - offset,
     };
 
-    Price::from_decimal_dp(price, price_increment.precision).map_err(Into::into)
+    let rounded = Price::from_decimal_dp(price, price_increment.precision)?;
+    let increment_raw = price_increment.raw().abs();
+
+    if increment_raw == 0 || rounded.raw() % increment_raw == 0 {
+        return Ok(rounded);
+    }
+
+    // The increment is coarser than its precision, such as 0.25: use its nearest multiple
+    let increment = price_increment.as_decimal();
+    let nearest = price
+        .checked_div(increment)
+        .and_then(|increments| {
+            increments
+                .round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven)
+                .checked_mul(increment)
+        })
+        .unwrap_or(price);
+
+    Price::from_decimal_dp(nearest, price_increment.precision).map_err(Into::into)
 }
 
 /// Calculates the trailing stop price using bid and ask prices.
@@ -226,30 +229,42 @@ pub fn trailing_stop_calculate_with_last(
 pub fn trailing_stop_calculate_with_bid_ask(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
-    side: OrderSideSpecified,
+    side: OrderSide,
     offset: Decimal,
     bid: Price,
     ask: Price,
 ) -> anyhow::Result<Price> {
-    let bid = bid.as_decimal();
-    let ask = ask.as_decimal();
-
-    let offset = match trailing_offset_type {
-        TrailingOffsetType::Price => offset,
-        TrailingOffsetType::BasisPoints => match side {
-            OrderSideSpecified::Buy => ask * offset / Decimal::from(10_000),
-            OrderSideSpecified::Sell => bid * offset / Decimal::from(10_000),
-        },
-        TrailingOffsetType::Ticks => offset * price_increment.as_decimal(),
-        _ => anyhow::bail!("`TrailingOffsetType` {trailing_offset_type} not currently supported"),
+    let basis = match side {
+        OrderSide::Buy => ask,
+        OrderSide::Sell => bid,
     };
 
-    let price = match side {
-        OrderSideSpecified::Buy => ask + offset,
-        OrderSideSpecified::Sell => bid - offset,
+    trailing_stop_calculate_with_last(price_increment, trailing_offset_type, side, offset, basis)
+}
+
+// Activation is not an order event, so copy only the activation fields into the cached order:
+// `replace_order` would append its last event to the cache database again, and copying the whole
+// order would overwrite a lifecycle state whose event is still queued for the execution engine.
+pub(crate) fn store_trailing_stop_activation(cache: &mut Cache, order: &OrderAny) {
+    let Some(mut cached) = cache.order_mut(&order.client_order_id()) else {
+        log::error!(
+            "Cannot store trailing stop activation: order {} not found",
+            order.client_order_id()
+        );
+        return;
     };
 
-    Price::from_decimal_dp(price, price_increment.precision).map_err(Into::into)
+    match (&mut *cached, order) {
+        (OrderAny::TrailingStopMarket(cached), OrderAny::TrailingStopMarket(order)) => {
+            cached.activation_price = order.activation_price;
+            cached.is_activated = order.is_activated;
+        }
+        (OrderAny::TrailingStopLimit(cached), OrderAny::TrailingStopLimit(order)) => {
+            cached.activation_price = order.activation_price;
+            cached.is_activated = order.is_activated;
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -346,30 +361,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_with_no_trailing_offset_type_returns_error() {
-        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+    #[should_panic(expected = "Trailing offset type not set")]
+    fn test_build_without_trailing_offset_type_panics() {
+        let _ = OrderTestBuilder::new(OrderType::TrailingStopMarket)
             .instrument_id("BTCUSDT-PERP.BINANCE".into())
             .side(OrderSide::Buy)
             .trigger_price(Price::new(100.0, 2))
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
             .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
-
-        let result = trailing_stop_calculate(
-            Price::new(0.01, 2),
-            None,
-            &order,
-            None,
-            None,
-            Some(Price::new(99.0, 2)),
-        );
-
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid `TrailingOffsetType::NoTrailingOffset` for trailing stop calculation"
-        );
     }
 
     #[rstest]
@@ -583,7 +584,7 @@ mod tests {
     #[rstest]
     #[case(OrderSide::Buy, 100.0, 1.0, 98.0, Some("99.0"))]
     #[case(OrderSide::Sell, 100.0, 1.0, 102.0, Some("101.0"))]
-    fn test_trailing_stop_market_last_price_move_in_favour(
+    fn test_trailing_stop_market_last_price_move_in_favor(
         #[case] side: OrderSide,
         #[case] initial_trigger: f64,
         #[case] offset: f64,
@@ -704,28 +705,28 @@ mod tests {
     #[rstest]
     #[case(
         TrailingOffsetType::Price,
-        OrderSideSpecified::Buy,
+        OrderSide::Buy,
         dec!(1.25),
         Price::from("98.00"),
         Price::from("99.25")
     )]
     #[case(
         TrailingOffsetType::BasisPoints,
-        OrderSideSpecified::Buy,
+        OrderSide::Buy,
         dec!(50),
         Price::from("98.00"),
         Price::from("98.49")
     )]
     #[case(
         TrailingOffsetType::Ticks,
-        OrderSideSpecified::Sell,
+        OrderSide::Sell,
         dec!(5),
         Price::from("102.00"),
         Price::from("101.95")
     )]
     fn test_calculate_with_last_uses_decimal_math(
         #[case] trailing_offset_type: TrailingOffsetType,
-        #[case] side: OrderSideSpecified,
+        #[case] side: OrderSide,
         #[case] offset: Decimal,
         #[case] last: Price,
         #[case] expected: Price,
@@ -743,9 +744,110 @@ mod tests {
     }
 
     #[rstest]
+    #[case::basis_points_sell(
+        "0.25",
+        TrailingOffsetType::BasisPoints,
+        OrderSide::Sell,
+        dec!(33),
+        "1500.00",
+        "1495.00"
+    )]
+    #[case::basis_points_buy(
+        "0.25",
+        TrailingOffsetType::BasisPoints,
+        OrderSide::Buy,
+        dec!(33),
+        "1500.25",
+        "1505.25"
+    )]
+    #[case::price_offset(
+        "0.25",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.30),
+        "1500.00",
+        "1499.75"
+    )]
+    #[case::midpoint_to_even_increment(
+        "0.50",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.25),
+        "100.50",
+        "100.00"
+    )]
+    #[case::offset_under_half_increment(
+        "0.25",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.10),
+        "1500.00",
+        "1500.00"
+    )]
+    #[case::negative_price(
+        "0.25",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.30),
+        "-10.00",
+        "-10.25"
+    )]
+    #[case::decimal_increment(
+        "0.01",
+        TrailingOffsetType::BasisPoints,
+        OrderSide::Sell,
+        dec!(1.25),
+        "100.00",
+        "99.99"
+    )]
+    #[case::decimal_increment_midpoint(
+        "0.01",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.005),
+        "100.00",
+        "100.00"
+    )]
+    #[case::decimal_increment_offset_under_half(
+        "0.01",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.004),
+        "100.00",
+        "100.00"
+    )]
+    #[case::zero_increment(
+        "0.00",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.30),
+        "1500.00",
+        "1499.70"
+    )]
+    fn test_calculate_with_last_rounds_to_price_increment(
+        #[case] price_increment: &str,
+        #[case] trailing_offset_type: TrailingOffsetType,
+        #[case] side: OrderSide,
+        #[case] offset: Decimal,
+        #[case] last: &str,
+        #[case] expected: &str,
+    ) {
+        let price = trailing_stop_calculate_with_last(
+            Price::from(price_increment),
+            trailing_offset_type,
+            side,
+            offset,
+            Price::from(last),
+        )
+        .unwrap();
+
+        assert_eq!(price, Price::from(expected));
+    }
+
+    #[rstest]
     #[case(
         TrailingOffsetType::Price,
-        OrderSideSpecified::Sell,
+        OrderSide::Sell,
         dec!(1.25),
         Price::from("102.00"),
         Price::from("103.00"),
@@ -753,7 +855,7 @@ mod tests {
     )]
     #[case(
         TrailingOffsetType::BasisPoints,
-        OrderSideSpecified::Sell,
+        OrderSide::Sell,
         dec!(50),
         Price::from("102.00"),
         Price::from("103.00"),
@@ -761,7 +863,7 @@ mod tests {
     )]
     #[case(
         TrailingOffsetType::Ticks,
-        OrderSideSpecified::Buy,
+        OrderSide::Buy,
         dec!(5),
         Price::from("102.00"),
         Price::from("103.00"),
@@ -769,7 +871,7 @@ mod tests {
     )]
     fn test_calculate_with_bid_ask_uses_decimal_math(
         #[case] trailing_offset_type: TrailingOffsetType,
-        #[case] side: OrderSideSpecified,
+        #[case] side: OrderSide,
         #[case] offset: Decimal,
         #[case] bid: Price,
         #[case] ask: Price,
@@ -814,5 +916,123 @@ mod tests {
 
         assert_eq!(new_trigger.unwrap(), Price::from("98.49"));
         assert_eq!(new_limit.unwrap(), Price::from("98.24"));
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "105.00", "100.00", "101.00")]
+    #[case(OrderSide::Sell, "95.00", "100.00", "99.00")]
+    fn test_trigger_override_takes_precedence(
+        #[case] side: OrderSide,
+        #[case] stored: &str,
+        #[case] override_price: &str,
+        #[case] last: &str,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::from(stored))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(dec!(1))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::from("0.01"),
+            Some(Price::from(override_price)),
+            &order,
+            None,
+            None,
+            Some(Price::from(last)),
+        )
+        .unwrap();
+
+        assert_eq!(result, (None, None));
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "100.00", "105.00", None, Some("100.50"))]
+    #[case(OrderSide::Buy, "105.00", "100.00", Some("101.00"), None)]
+    #[case(OrderSide::Sell, "100.00", "95.00", None, Some("99.50"))]
+    #[case(OrderSide::Sell, "95.00", "100.00", Some("99.00"), None)]
+    fn test_trailing_limit_prices_improve_independently(
+        #[case] side: OrderSide,
+        #[case] trigger: &str,
+        #[case] limit: &str,
+        #[case] expected_trigger: Option<&str>,
+        #[case] expected_limit: Option<&str>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::from(trigger))
+            .price(Price::from(limit))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(dec!(1))
+            .limit_offset(dec!(0.5))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::from("0.01"),
+            None,
+            &order,
+            None,
+            None,
+            Some(Price::from("100.00")),
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            (
+                expected_trigger.map(Price::from),
+                expected_limit.map(Price::from)
+            )
+        );
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "110.00", "98.00", "99.00", "98.50")]
+    #[case(OrderSide::Buy, "110.00", "103.00", "102.00", "101.50")]
+    #[case(OrderSide::Sell, "90.00", "103.00", "102.00", "102.50")]
+    #[case(OrderSide::Sell, "90.00", "98.00", "99.00", "99.50")]
+    fn test_trailing_limit_last_or_bid_ask_keeps_best_prices(
+        #[case] side: OrderSide,
+        #[case] initial: &str,
+        #[case] last: &str,
+        #[case] expected_trigger: &str,
+        #[case] expected_limit: &str,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id("BTCUSDT-PERP.BINANCE".into())
+            .side(side)
+            .trigger_price(Price::from(initial))
+            .price(Price::from(initial))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trailing_offset(dec!(1))
+            .limit_offset(dec!(0.5))
+            .trigger_type(TriggerType::LastOrBidAsk)
+            .quantity(Quantity::from(1))
+            .build();
+
+        let result = trailing_stop_calculate(
+            Price::from("0.01"),
+            None,
+            &order,
+            Some(Price::from("100.00")),
+            Some(Price::from("101.00")),
+            Some(Price::from(last)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            (
+                Some(Price::from(expected_trigger)),
+                Some(Price::from(expected_limit))
+            )
+        );
     }
 }

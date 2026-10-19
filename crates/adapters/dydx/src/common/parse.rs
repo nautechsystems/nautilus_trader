@@ -46,7 +46,6 @@ pub fn order_side_to_proto(side: OrderSide) -> ProtoOrderSide {
     match side {
         OrderSide::Buy => ProtoOrderSide::Buy,
         OrderSide::Sell => ProtoOrderSide::Sell,
-        _ => ProtoOrderSide::Unspecified,
     }
 }
 
@@ -97,7 +96,6 @@ pub fn time_in_force_to_proto_with_post_only(
 ///
 /// This function converts a dYdX ticker into a Nautilus `InstrumentId`
 /// by appending "-PERP" to the symbol and using the dYdX venue.
-///
 #[must_use]
 pub fn parse_instrument_id<S: AsRef<str>>(ticker: S) -> InstrumentId {
     let mut base = ticker.as_ref().trim().to_uppercase();
@@ -186,7 +184,6 @@ mod tests {
     #[rstest]
     #[case(OrderSide::Buy, ProtoOrderSide::Buy)]
     #[case(OrderSide::Sell, ProtoOrderSide::Sell)]
-    #[case(OrderSide::NoOrderSide, ProtoOrderSide::Unspecified)]
     fn test_order_side_to_proto(#[case] side: OrderSide, #[case] expected: ProtoOrderSide) {
         assert_eq!(order_side_to_proto(side), expected);
     }
@@ -224,10 +221,10 @@ mod tests {
     #[rstest]
     fn test_get_currency() {
         let btc = Currency::get_or_create_crypto("BTC");
-        assert_eq!(btc.code.as_str(), "BTC");
+        assert_eq!(btc.code, "BTC");
 
         let usdc = Currency::get_or_create_crypto("USDC");
-        assert_eq!(usdc.code.as_str(), "USDC");
+        assert_eq!(usdc.code, "USDC");
     }
 
     #[rstest]

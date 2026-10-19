@@ -19,7 +19,7 @@
 
 use std::hint::black_box;
 
-use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType},
@@ -109,6 +109,24 @@ fn bench_fill_apply(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_requires_replay_state(c: &mut Criterion) {
+    let mut group = c.benchmark_group("position/requires_replay_state");
+
+    for count in HISTORY_COUNTS {
+        let (position, _) = position_with_fills(count);
+        group.throughput(Throughput::Elements(count as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(count),
+            &position,
+            |b, position| {
+                b.iter(|| black_box(position.requires_replay_state()));
+            },
+        );
+    }
+
+    group.finish();
+}
+
 fn bench_fill_void_replay(c: &mut Criterion) {
     let mut group = c.benchmark_group("position/fill_void_replay");
 
@@ -180,32 +198,21 @@ fn position_with_fills(count: usize) -> (Position, OrderFilled) {
 }
 
 fn instrument() -> InstrumentAny {
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        InstrumentId::from("AUD/USD.SIM"),
-        Symbol::from("AUD/USD"),
-        Currency::AUD(),
-        Currency::USD(),
-        5,
-        0,
-        Price::from("0.00001"),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .raw_symbol(Symbol::from("AUD/USD"))
+            .base_currency(Currency::AUD())
+            .quote_currency(Currency::USD())
+            .price_precision(5)
+            .size_precision(0)
+            .price_increment(Price::from("0.00001"))
+            .size_increment(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn fill(index: usize, side: OrderSide, quantity: Quantity) -> OrderFilled {
@@ -261,5 +268,10 @@ fn fill_void(fill: &OrderFilled) -> OrderFillVoided {
     )
 }
 
-criterion_group!(benches, bench_fill_apply, bench_fill_void_replay);
+criterion_group!(
+    benches,
+    bench_fill_apply,
+    bench_requires_replay_state,
+    bench_fill_void_replay
+);
 criterion_main!(benches);

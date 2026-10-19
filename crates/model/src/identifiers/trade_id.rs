@@ -36,7 +36,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -68,7 +68,7 @@ impl TradeId {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
     /// - `value` length exceeds 36 characters.
     pub fn new<T: AsRef<str>>(value: T) -> Self {

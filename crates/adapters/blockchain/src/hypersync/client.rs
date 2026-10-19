@@ -29,18 +29,17 @@ use hypersync_client::{
     net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_common::live::get_runtime;
-use nautilus_core::hex;
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, hex};
+use nautilus_live::task::{TaskJoinOutcome, TaskSlot, finish_task};
 use nautilus_model::{
     defi::{Block, Blockchain, DexType, SharedChain},
     identifiers::InstrumentId,
 };
-use nautilus_network::http::Url;
 
 use crate::{
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::transform::transform_hypersync_block,
-    rpc::types::BlockchainMessage,
+    rpc::{http::validate_execution_endpoint, types::BlockchainMessage},
 };
 
 /// An item yielded by the contract-events stream.
@@ -53,35 +52,6 @@ pub enum PoolEventStreamItem {
     Block(Block),
     /// A contract event log.
     Log(Log),
-}
-
-/// Maps one HyperSync response into stream items, surfacing blocks ahead of the logs from the
-/// same response so callers can cache them before converting events from those blocks.
-///
-/// Blocks that fail to transform are logged and skipped without dropping the response's logs.
-fn pool_events_from_response(
-    chain: Blockchain,
-    blocks: Vec<Vec<hypersync_client::simple_types::Block>>,
-    logs: Vec<Vec<Log>>,
-) -> Vec<PoolEventStreamItem> {
-    let mut items = Vec::new();
-
-    for batch in blocks {
-        for block in batch {
-            match transform_hypersync_block(chain, block) {
-                Ok(block) => items.push(PoolEventStreamItem::Block(block)),
-                Err(e) => log::error!("Failed to transform block for timestamp: {e}"),
-            }
-        }
-    }
-
-    for batch in logs {
-        for log in batch {
-            items.push(PoolEventStreamItem::Log(log));
-        }
-    }
-
-    items
 }
 
 /// The interval in milliseconds at which to check for new blocks when waiting
@@ -98,81 +68,6 @@ const DISCONNECT_TIMEOUT_SECS: u64 = 5;
 /// Delay before restarting a DEX event stream after it reaches the current indexed tip.
 const DEX_EVENT_STREAM_RETRY_DELAY_MS: u64 = 1_000;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DexEventStreamFilter {
-    contract_addresses: Vec<Address>,
-    event_signatures: Vec<String>,
-}
-
-impl DexEventStreamFilter {
-    fn new(mut contract_addresses: Vec<Address>, mut event_signatures: Vec<String>) -> Self {
-        contract_addresses.sort_unstable();
-        contract_addresses.dedup();
-        event_signatures.sort_unstable();
-        event_signatures.dedup();
-        Self {
-            contract_addresses,
-            event_signatures,
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.contract_addresses.is_empty() || self.event_signatures.is_empty()
-    }
-}
-
-#[derive(Debug)]
-struct DexEventStreamTask {
-    filter: DexEventStreamFilter,
-    next_from_block: Arc<AtomicU64>,
-    cancellation_token: tokio_util::sync::CancellationToken,
-    task: tokio::task::JoinHandle<()>,
-}
-
-struct DexEventSignatures {
-    swap: String,
-    mint: String,
-    burn: String,
-    collect: String,
-    flash: Option<String>,
-    fee_protocol_update: Option<String>,
-    fee_protocol_collect: Option<String>,
-}
-
-impl DexEventSignatures {
-    fn new(dex_extended: &DexExtended) -> Self {
-        Self {
-            swap: dex_extended.swap_created_event.to_string(),
-            mint: dex_extended.mint_created_event.to_string(),
-            burn: dex_extended.burn_created_event.to_string(),
-            collect: dex_extended.collect_created_event.to_string(),
-            flash: dex_extended
-                .flash_created_event
-                .as_ref()
-                .map(ToString::to_string),
-            fee_protocol_update: dex_extended
-                .fee_protocol_update_event
-                .as_ref()
-                .map(ToString::to_string),
-            fee_protocol_collect: dex_extended
-                .fee_protocol_collect_event
-                .as_ref()
-                .map(ToString::to_string),
-        }
-    }
-}
-
-struct DexEventStreamContext {
-    dex: DexType,
-    client: Arc<hypersync_client::Client>,
-    tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
-    filter: DexEventStreamFilter,
-    dex_extended: &'static DexExtended,
-    signatures: DexEventSignatures,
-    next_from_block: Arc<AtomicU64>,
-    cancellation_token: tokio_util::sync::CancellationToken,
-}
-
 /// A client for interacting with a HyperSync API to retrieve blockchain data.
 #[derive(Debug)]
 pub struct HyperSyncClient {
@@ -181,7 +76,7 @@ pub struct HyperSyncClient {
     /// The underlying HyperSync Rust client for making API requests.
     client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
-    blocks_task: Option<tokio::task::JoinHandle<()>>,
+    blocks_task: TaskSlot<()>,
     /// Cancellation token for the blocks subscription task.
     blocks_cancellation_token: Option<tokio_util::sync::CancellationToken>,
     /// Background DEX event stream tasks keyed by DEX type.
@@ -210,19 +105,22 @@ impl HyperSyncClient {
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Self {
         let mut config = hypersync_client::ClientConfig::default();
-        let hypersync_url =
-            Url::parse(chain.hypersync_url.as_str()).expect("Invalid HyperSync URL");
+        let hypersync_url = validate_execution_endpoint(chain.hypersync_url.as_str(), "HyperSync")
+            .expect("Invalid HyperSync URL");
         config.url = hypersync_url.to_string();
         config.api_token = std::env::var("ENVIO_API_TOKEN")
             .expect("ENVIO_API_TOKEN environment variable must be set");
 
-        let client = hypersync_client::Client::new(config)
+        config
+            .validate()
+            .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
+        let client = hypersync_client::Client::new_with_agent(config, NAUTILUS_USER_AGENT)
             .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
 
         Self {
             chain,
             client: Arc::new(client),
-            blocks_task: None,
+            blocks_task: TaskSlot::new(),
             blocks_cancellation_token: None,
             dex_event_tasks: AHashMap::new(),
             tx,
@@ -253,15 +151,21 @@ impl HyperSyncClient {
             return;
         }
 
-        if self
-            .dex_event_tasks
-            .get(&dex)
-            .is_some_and(|task| task.filter == filter)
-        {
+        if self.dex_event_tasks.get(&dex).is_some_and(|task| {
+            task.filter == filter
+                && task
+                    .task
+                    .as_ref()
+                    .is_some_and(|handle| !handle.is_finished())
+        }) {
             return;
         }
 
         let next_from_block = self.stop_dex_event_stream(dex).await;
+        if self.dex_event_tasks.contains_key(&dex) {
+            log::error!("Previous HyperSync DEX event stream for {dex} is still stopping");
+            return;
+        }
 
         let from_block = match next_from_block {
             Some(block) => block,
@@ -281,32 +185,34 @@ impl HyperSyncClient {
             return;
         };
 
-        let client = self.client.clone();
+        let client = Arc::clone(&self.client);
         let chain = self.chain.name;
         let Some(dex_extended) = get_dex_extended(chain, &dex) else {
             log::error!("Failed to get DEX registration for {dex} on {chain}");
             return;
         };
-        let signatures = DexEventSignatures::new(dex_extended);
         let stream_token = self.cancellation_token.child_token();
         let task_token = stream_token.clone();
         let next_from_block = Arc::new(AtomicU64::new(from_block));
-        let task_next_from_block = next_from_block.clone();
+        let task_next_from_block = Arc::clone(&next_from_block);
         let task_filter = filter.clone();
 
-        let task = get_runtime().spawn(async move {
-            Self::run_dex_event_stream(DexEventStreamContext {
+        let mut task = TaskSlot::new();
+        if let Err(e) = task.spawn(async move {
+            Self::run_dex_event_stream(
                 dex,
                 client,
                 tx,
-                filter: task_filter,
+                task_filter,
                 dex_extended,
-                signatures,
-                next_from_block: task_next_from_block,
-                cancellation_token: task_token,
-            })
+                task_next_from_block,
+                task_token,
+            )
             .await;
-        });
+        }) {
+            stream_token.cancel();
+            log::error!("Failed to start HyperSync DEX event stream for {dex}: {e}");
+        }
 
         self.dex_event_tasks.insert(
             dex,
@@ -341,7 +247,6 @@ impl HyperSyncClient {
         let chain = self.chain.name;
         let mut rx = self
             .client
-            .clone()
             .stream(query, StreamConfig::default())
             .await
             .expect("Failed to create stream");
@@ -361,33 +266,27 @@ impl HyperSyncClient {
         log::debug!("Disconnecting HyperSync client");
         self.cancellation_token.cancel();
 
-        // Await blocks task with timeout, abort if it takes too long
-        if let Some(mut task) = self.blocks_task.take() {
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
-                &mut task,
-            )
-            .await
-            {
-                Ok(Ok(())) => {
-                    log::debug!("Blocks task completed gracefully");
+        if let Some(outcome) = finish_task(
+            &mut self.blocks_task,
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    log::error!("HyperSync blocks task failed: {error}");
                 }
-                Ok(Err(e)) => {
-                    log::error!("Error awaiting blocks task: {e}");
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Blocks task did not complete within {DISCONNECT_TIMEOUT_SECS}s timeout, \
-                         aborting task (this is expected if Hypersync long-poll was in progress)"
-                    );
-                    task.abort();
-                    let _ = task.await;
+                TaskJoinOutcome::Incomplete => {
+                    log::error!("HyperSync blocks task did not stop after abort");
                 }
             }
         }
 
-        for (dex, task) in self.dex_event_tasks.drain() {
-            Self::stop_dex_event_task(dex, task).await;
+        let dexes = self.dex_event_tasks.keys().copied().collect::<Vec<_>>();
+        for dex in dexes {
+            self.stop_dex_event_stream(dex).await;
         }
 
         log::debug!("HyperSync client disconnected");
@@ -415,7 +314,6 @@ impl HyperSyncClient {
         let query = Self::construct_block_query(from_block, to_block);
         let mut rx = self
             .client
-            .clone()
             .stream(query, StreamConfig::default())
             .await
             .unwrap();
@@ -425,12 +323,10 @@ impl HyperSyncClient {
         async_stream::stream! {
             while let Some(response) = rx.recv().await {
                 let response = response.unwrap();
-                for batch in response.data.blocks {
-                        for received_block in batch {
-                            let block = transform_hypersync_block(chain, received_block).unwrap();
-                            yield block
-                        }
-                    }
+                for received_block in response.data.blocks.into_iter().flatten() {
+                    let block = transform_hypersync_block(chain, received_block).unwrap();
+                    yield block
+                }
             }
         }
     }
@@ -446,7 +342,7 @@ impl HyperSyncClient {
         }
 
         let chain = self.chain.name;
-        let client = self.client.clone();
+        let client = Arc::clone(&self.client);
         let tx = if let Some(tx) = &self.tx {
             tx.clone()
         } else {
@@ -459,7 +355,7 @@ impl HyperSyncClient {
         let cancellation_token = blocks_token.clone();
         self.blocks_cancellation_token = Some(blocks_token);
 
-        let task = get_runtime().spawn(async move {
+        if let Err(e) = self.blocks_task.spawn(async move {
             log::debug!("Starting task 'blocks_feed");
 
             let current_block_height = client.get_height().await.unwrap();
@@ -472,7 +368,7 @@ impl HyperSyncClient {
                         break;
                     }
                     result = tokio::time::timeout(
-                        std::time::Duration::from_secs(HYPERSYNC_REQUEST_TIMEOUT_SECS),
+                        Duration::from_secs(HYPERSYNC_REQUEST_TIMEOUT_SECS),
                         client.get(&query)
                     ) => {
                         let response = match result {
@@ -487,13 +383,11 @@ impl HyperSyncClient {
                             }
                         };
 
-                        for batch in response.data.blocks {
-                            for received_block in batch {
-                                let block = transform_hypersync_block(chain, received_block).unwrap();
-                                let msg = BlockchainMessage::Block(block);
-                                if let Err(e) = tx.send(msg) {
-                                    log::error!("Error sending message: {e}");
-                                }
+                        for received_block in response.data.blocks.into_iter().flatten() {
+                            let block = transform_hypersync_block(chain, received_block).unwrap();
+                            let msg = BlockchainMessage::Block(block);
+                            if let Err(e) = tx.send(msg) {
+                                log::error!("Error sending message: {e}");
                             }
                         }
 
@@ -506,7 +400,7 @@ impl HyperSyncClient {
                                         log::debug!("Blocks subscription task received cancellation signal during polling");
                                         return;
                                     }
-                                    () = tokio::time::sleep(std::time::Duration::from_millis(
+                                    () = tokio::time::sleep(Duration::from_millis(
                                         BLOCK_POLLING_INTERVAL_MS,
                                     )) => {}
                                 }
@@ -517,9 +411,43 @@ impl HyperSyncClient {
                     }
                 }
             }
-        });
+        }) {
+            if let Some(token) = self.blocks_cancellation_token.take() {
+                token.cancel();
+            }
+            log::error!("Failed to start HyperSync blocks subscription task: {e}");
+        }
+    }
 
-        self.blocks_task = Some(task);
+    /// Unsubscribes from new blocks by stopping the background watch task.
+    pub async fn unsubscribe_blocks(&mut self) {
+        if self.blocks_task.is_none() {
+            return;
+        }
+
+        // Cancel only the blocks child token, not the main cancellation token
+        if let Some(token) = self.blocks_cancellation_token.take() {
+            token.cancel();
+        }
+
+        if let Some(outcome) = finish_task(
+            &mut self.blocks_task,
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    log::error!("HyperSync blocks task failed during unsubscribe: {error}");
+                }
+                TaskJoinOutcome::Incomplete => {
+                    log::error!("HyperSync blocks task did not stop after abort");
+                }
+            }
+        }
+        log::debug!("Unsubscribed from blocks");
     }
 
     /// Constructs a HyperSync query for fetching blocks with all available fields within the specified range.
@@ -587,26 +515,15 @@ impl HyperSyncClient {
         to_block.map(|block| block.saturating_add(1))
     }
 
-    fn dex_event_stream_error_level(received_response: bool) -> log::Level {
-        if received_response {
-            log::Level::Debug
-        } else {
-            log::Level::Error
-        }
-    }
-
-    async fn run_dex_event_stream(context: DexEventStreamContext) {
-        let DexEventStreamContext {
-            dex,
-            client,
-            tx,
-            filter,
-            dex_extended,
-            signatures,
-            next_from_block,
-            cancellation_token,
-        } = context;
-
+    async fn run_dex_event_stream(
+        dex: DexType,
+        client: Arc<hypersync_client::Client>,
+        tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+        filter: DexEventStreamFilter,
+        dex_extended: &'static DexExtended,
+        next_from_block: Arc<AtomicU64>,
+        cancellation_token: tokio_util::sync::CancellationToken,
+    ) {
         log::debug!("Starting task 'dex_event_stream' for {dex}");
 
         loop {
@@ -630,7 +547,7 @@ impl HyperSyncClient {
             let mut rx = match client.stream(query, StreamConfig::default()).await {
                 Ok(rx) => rx,
                 Err(e) => {
-                    log::error!("Failed to create DEX event stream for {dex}: {e}");
+                    log::warn!("Failed to create DEX event stream for {dex}: {e}");
 
                     if !Self::sleep_or_cancel(
                         Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS),
@@ -660,12 +577,10 @@ impl HyperSyncClient {
                         let response = match response {
                             Ok(resp) => resp,
                             Err(e) => {
-                                if Self::dex_event_stream_error_level(received_response)
-                                    == log::Level::Debug
-                                {
+                                if received_response {
                                     log::debug!("DEX event stream drained for {dex}: {e}");
                                 } else {
-                                    log::error!("Failed to receive DEX event stream response for {dex}: {e}");
+                                    log::warn!("Failed to receive DEX event stream response for {dex}: {e}");
                                 }
                                 break;
                             }
@@ -674,25 +589,18 @@ impl HyperSyncClient {
                         received_response = true;
                         next_from_block.fetch_max(response.next_block, Ordering::Relaxed);
 
-                        for batch in response.data.logs {
-                            for log in batch {
-                                Self::send_dex_event_log(&tx, dex_extended, &signatures, &log);
-                            }
+                        for log in response.data.logs.into_iter().flatten() {
+                            Self::send_dex_event_log(&tx, dex_extended, &log);
                         }
                     }
                 }
-
-                if cancellation_token.is_cancelled() {
-                    break;
-                }
             }
 
-            if cancellation_token.is_cancelled()
-                || !Self::sleep_or_cancel(
-                    Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS),
-                    &cancellation_token,
-                )
-                .await
+            if !Self::sleep_or_cancel(
+                Duration::from_millis(DEX_EVENT_STREAM_RETRY_DELAY_MS),
+                &cancellation_token,
+            )
+            .await
             {
                 break;
             }
@@ -710,7 +618,7 @@ impl HyperSyncClient {
             match client.get_height().await {
                 Ok(height) if height >= from_block => return,
                 Ok(_) => {}
-                Err(e) => log::error!("Failed to get HyperSync height for DEX event stream: {e}"),
+                Err(e) => log::warn!("Failed to get HyperSync height for DEX event stream: {e}"),
             }
 
             if !Self::sleep_or_cancel(
@@ -737,7 +645,6 @@ impl HyperSyncClient {
     fn send_dex_event_log(
         tx: &tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
         dex_extended: &DexExtended,
-        signatures: &DexEventSignatures,
         log: &Log,
     ) {
         let event_signature = match log.topics.first().and_then(|t| t.as_ref()) {
@@ -745,153 +652,178 @@ impl HyperSyncClient {
             None => return,
         };
 
-        if event_signature == signatures.swap {
-            match dex_extended.parse_swap_event_hypersync(log) {
-                Ok(swap_event) => {
-                    if let Err(e) = tx.send(BlockchainMessage::SwapEvent(swap_event)) {
-                        log::error!("Failed to send swap event: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to parse swap with error '{e:?}' for event: {log:?}");
-                }
-            }
-        } else if event_signature == signatures.mint {
-            match dex_extended.parse_mint_event_hypersync(log) {
-                Ok(mint_event) => {
-                    if let Err(e) = tx.send(BlockchainMessage::MintEvent(mint_event)) {
-                        log::error!("Failed to send mint event: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to parse mint with error '{e:?}' for event: {log:?}");
-                }
-            }
-        } else if event_signature == signatures.burn {
-            match dex_extended.parse_burn_event_hypersync(log) {
-                Ok(burn_event) => {
-                    if let Err(e) = tx.send(BlockchainMessage::BurnEvent(burn_event)) {
-                        log::error!("Failed to send burn event: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to parse burn with error '{e:?}' for event: {log:?}");
-                }
-            }
-        } else if event_signature == signatures.collect {
-            match dex_extended.parse_collect_event_hypersync(log) {
-                Ok(collect_event) => {
-                    if let Err(e) = tx.send(BlockchainMessage::CollectEvent(collect_event)) {
-                        log::error!("Failed to send collect event: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to parse collect with error '{e:?}' for event: {log:?}");
-                }
-            }
-        } else if signatures
-            .flash
-            .as_ref()
-            .is_some_and(|signature| event_signature == *signature)
+        let (event_name, event) = if event_signature == dex_extended.swap_created_event.as_ref() {
+            (
+                "swap",
+                dex_extended
+                    .parse_swap_event_hypersync(log)
+                    .map(BlockchainMessage::SwapEvent),
+            )
+        } else if event_signature == dex_extended.mint_created_event.as_ref() {
+            (
+                "mint",
+                dex_extended
+                    .parse_mint_event_hypersync(log)
+                    .map(BlockchainMessage::MintEvent),
+            )
+        } else if event_signature == dex_extended.burn_created_event.as_ref() {
+            (
+                "burn",
+                dex_extended
+                    .parse_burn_event_hypersync(log)
+                    .map(BlockchainMessage::BurnEvent),
+            )
+        } else if event_signature == dex_extended.collect_created_event.as_ref() {
+            (
+                "collect",
+                dex_extended
+                    .parse_collect_event_hypersync(log)
+                    .map(BlockchainMessage::CollectEvent),
+            )
+        } else if dex_extended.flash_created_event.as_deref() == Some(event_signature.as_str()) {
+            (
+                "flash",
+                dex_extended
+                    .parse_flash_event_hypersync(log)
+                    .map(BlockchainMessage::FlashEvent),
+            )
+        } else if dex_extended.fee_protocol_update_event.as_deref()
+            == Some(event_signature.as_str())
         {
-            match dex_extended.parse_flash_event_hypersync(log) {
-                Ok(flash_event) => {
-                    if let Err(e) = tx.send(BlockchainMessage::FlashEvent(flash_event)) {
-                        log::error!("Failed to send flash event: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to parse flash with error '{e:?}' for event: {log:?}");
-                }
-            }
-        } else if signatures
-            .fee_protocol_update
-            .as_ref()
-            .is_some_and(|signature| event_signature == *signature)
+            (
+                "fee-protocol update",
+                dex_extended
+                    .parse_fee_protocol_update_event_hypersync(log)
+                    .map(BlockchainMessage::FeeProtocolUpdateEvent),
+            )
+        } else if dex_extended.fee_protocol_collect_event.as_deref()
+            == Some(event_signature.as_str())
         {
-            match dex_extended.parse_fee_protocol_update_event_hypersync(log) {
-                Ok(update_event) => {
-                    if let Err(e) = tx.send(BlockchainMessage::FeeProtocolUpdateEvent(update_event))
-                    {
-                        log::error!("Failed to send fee-protocol update event: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "Failed to parse fee-protocol update with error '{e:?}' for event: {log:?}",
-                    );
-                }
-            }
-        } else if signatures
-            .fee_protocol_collect
-            .as_ref()
-            .is_some_and(|signature| event_signature == *signature)
-        {
-            match dex_extended.parse_fee_protocol_collect_event_hypersync(log) {
-                Ok(collect_event) => {
-                    if let Err(e) =
-                        tx.send(BlockchainMessage::FeeProtocolCollectEvent(collect_event))
-                    {
-                        log::error!("Failed to send fee-protocol collect event: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "Failed to parse fee-protocol collect with error '{e:?}' for event: {log:?}",
-                    );
-                }
-            }
+            (
+                "fee-protocol collect",
+                dex_extended
+                    .parse_fee_protocol_collect_event_hypersync(log)
+                    .map(BlockchainMessage::FeeProtocolCollectEvent),
+            )
         } else {
             log::error!("Unknown event signature: {event_signature}");
+            return;
+        };
+
+        match event {
+            Ok(event) => {
+                if let Err(e) = tx.send(event) {
+                    log::error!("Failed to send {event_name} event: {e}");
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to parse {event_name} with error '{e:?}' for event: {log:?}",);
+            }
         }
     }
 
     async fn stop_dex_event_stream(&mut self, dex: DexType) -> Option<u64> {
-        if let Some(task) = self.dex_event_tasks.remove(&dex) {
-            Some(Self::stop_dex_event_task(dex, task).await)
-        } else {
-            None
+        let task = self.dex_event_tasks.get_mut(&dex)?;
+        let terminated = Self::stop_dex_event_task(dex, task).await;
+        let next_from_block = task.next_from_block.load(Ordering::Relaxed);
+
+        if terminated {
+            self.dex_event_tasks.remove(&dex);
         }
+
+        Some(next_from_block)
     }
 
-    async fn stop_dex_event_task(dex: DexType, mut task: DexEventStreamTask) -> u64 {
+    async fn stop_dex_event_task(dex: DexType, task: &mut DexEventStreamTask) -> bool {
         task.cancellation_token.cancel();
 
-        match tokio::time::timeout(Duration::from_secs(DISCONNECT_TIMEOUT_SECS), &mut task.task)
-            .await
-        {
-            Ok(Ok(())) => {
-                log::debug!("DEX event stream task for {dex} completed gracefully");
+        let outcome = finish_task(
+            &mut task.task,
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+        )
+        .await;
+
+        match outcome {
+            None | Some(TaskJoinOutcome::Completed(())) | Some(TaskJoinOutcome::Aborted) => true,
+            Some(TaskJoinOutcome::Failed(error)) => {
+                log::error!("HyperSync DEX event stream task for {dex} failed: {error}");
+                true
             }
-            Ok(Err(e)) => {
-                log::error!("Error awaiting DEX event stream task for {dex}: {e}");
-            }
-            Err(_) => {
-                log::warn!(
-                    "DEX event stream task for {dex} did not complete within {DISCONNECT_TIMEOUT_SECS}s timeout, aborting task"
-                );
-                task.task.abort();
-                let _ = task.task.await;
+            Some(TaskJoinOutcome::Incomplete) => {
+                log::error!("HyperSync DEX event stream task for {dex} did not stop after abort");
+                false
             }
         }
-
-        task.next_from_block.load(Ordering::Relaxed)
     }
+}
 
-    /// Unsubscribes from new blocks by stopping the background watch task.
-    pub async fn unsubscribe_blocks(&mut self) {
-        if let Some(task) = self.blocks_task.take() {
-            // Cancel only the blocks child token, not the main cancellation token
-            if let Some(token) = self.blocks_cancellation_token.take() {
-                token.cancel();
-            }
+impl Drop for HyperSyncClient {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel();
+        if let Some(token) = self.blocks_cancellation_token.as_ref() {
+            token.cancel();
+        }
+        self.blocks_task.abort();
 
-            if let Err(e) = task.await {
-                log::error!("Error awaiting blocks task during unsubscribe: {e}");
-            }
-            log::debug!("Unsubscribed from blocks");
+        for task in self.dex_event_tasks.values_mut() {
+            task.cancellation_token.cancel();
+            task.task.abort();
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DexEventStreamFilter {
+    contract_addresses: Vec<Address>,
+    event_signatures: Vec<String>,
+}
+
+impl DexEventStreamFilter {
+    fn new(mut contract_addresses: Vec<Address>, mut event_signatures: Vec<String>) -> Self {
+        contract_addresses.sort_unstable();
+        contract_addresses.dedup();
+        event_signatures.sort_unstable();
+        event_signatures.dedup();
+        Self {
+            contract_addresses,
+            event_signatures,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.contract_addresses.is_empty() || self.event_signatures.is_empty()
+    }
+}
+
+#[derive(Debug)]
+struct DexEventStreamTask {
+    filter: DexEventStreamFilter,
+    next_from_block: Arc<AtomicU64>,
+    cancellation_token: tokio_util::sync::CancellationToken,
+    task: TaskSlot<()>,
+}
+
+/// Maps one HyperSync response into stream items, surfacing blocks ahead of the logs from the
+/// same response so callers can cache them before converting events from those blocks.
+///
+/// Blocks that fail to transform are logged and skipped without dropping the response's logs.
+fn pool_events_from_response(
+    chain: Blockchain,
+    blocks: Vec<Vec<hypersync_client::simple_types::Block>>,
+    logs: Vec<Vec<Log>>,
+) -> Vec<PoolEventStreamItem> {
+    let mut items = Vec::new();
+
+    for block in blocks.into_iter().flatten() {
+        match transform_hypersync_block(chain, block) {
+            Ok(block) => items.push(PoolEventStreamItem::Block(block)),
+            Err(e) => log::error!("Failed to transform block for timestamp: {e}"),
+        }
+    }
+
+    items.extend(logs.into_iter().flatten().map(PoolEventStreamItem::Log));
+    items
 }
 
 #[cfg(test)]
@@ -909,7 +841,7 @@ mod tests {
         simple_types::{Block as HypersyncBlock, Log},
     };
     use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
-    use nautilus_model::defi::{Chain, PoolIdentifier};
+    use nautilus_model::defi::Chain;
     use rstest::rstest;
 
     use super::*;
@@ -937,6 +869,19 @@ mod tests {
             timestamp: Some(Quantity::from(timestamp_secs)),
             ..Default::default()
         }
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid HyperSync URL")]
+    fn hypersync_rejects_remote_cleartext_before_loading_token() {
+        let mut chain = Chain::new(Blockchain::Arbitrum, 42_161);
+        chain.hypersync_url = "http://localhost:8080".to_string();
+
+        let _ = HyperSyncClient::new(
+            Arc::new(chain),
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        );
     }
 
     #[rstest]
@@ -1059,25 +1004,12 @@ mod tests {
         assert!(!DexEventStreamFilter::new(vec![address], vec!["0x01".to_string()]).is_empty());
     }
 
-    #[rstest]
-    #[case(false, log::Level::Error)]
-    #[case(true, log::Level::Debug)]
-    fn dex_event_stream_error_level_preserves_pre_response_errors(
-        #[case] received_response: bool,
-        #[case] expected: log::Level,
-    ) {
-        assert_eq!(
-            HyperSyncClient::dex_event_stream_error_level(received_response),
-            expected
-        );
-    }
-
     #[tokio::test]
     async fn stop_dex_event_task_cancels_and_awaits_task() {
         let cancellation_token = tokio_util::sync::CancellationToken::new();
         let task_token = cancellation_token.clone();
         let next_from_block = Arc::new(AtomicU64::new(42));
-        let task_next_from_block = next_from_block.clone();
+        let task_next_from_block = Arc::clone(&next_from_block);
 
         let task = tokio::spawn(async move {
             task_token.cancelled().await;
@@ -1087,72 +1019,15 @@ mod tests {
             filter: DexEventStreamFilter::new(vec![], vec![]),
             next_from_block,
             cancellation_token,
-            task,
+            task: TaskSlot::from_handle(task),
         };
+        let mut stream_task = stream_task;
 
-        let final_next_from_block =
-            HyperSyncClient::stop_dex_event_task(DexType::UniswapV3, stream_task).await;
+        let terminated =
+            HyperSyncClient::stop_dex_event_task(DexType::UniswapV3, &mut stream_task).await;
 
-        assert_eq!(final_next_from_block, 99);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn live_hypersync_dex_event_stream_follows_tip_and_stops() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        let chain = Arc::new(
-            Chain::from_chain_id(42161)
-                .expect("Arbitrum chain should exist")
-                .clone(),
-        );
-        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Arbitrum UniswapV3 should be registered");
-        let pool_addresses = vec![
-            Address::from_str("0xC31E54c7A869B9FcBEcc14363CF510d1c41fa443").unwrap(),
-            Address::from_str("0x641C00A822e8b671738d32a431a4Fb6074E5c79d").unwrap(),
-            Address::from_str("0x4CEf551255EC96d89feC975446301b5C4e164C59").unwrap(),
-        ];
-        let expected_pool_ids = pool_addresses
-            .iter()
-            .map(|address| PoolIdentifier::from_address(*address))
-            .collect::<Vec<_>>();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut client =
-            HyperSyncClient::new(chain, Some(tx), tokio_util::sync::CancellationToken::new());
-
-        client
-            .update_dex_event_stream(
-                DexType::UniswapV3,
-                pool_addresses,
-                vec![dex_extended.swap_created_event.to_string()],
-            )
-            .await;
-
-        let event = tokio::time::timeout(Duration::from_secs(240), async {
-            loop {
-                let msg = rx
-                    .recv()
-                    .await
-                    .expect("HyperSync live stream channel should stay open");
-
-                if let BlockchainMessage::SwapEvent(event) = msg
-                    && expected_pool_ids.contains(&event.pool_identifier)
-                {
-                    break event;
-                }
-            }
-        })
-        .await
-        .expect("expected a live Arbitrum UniswapV3 swap within 240s");
-
-        client
-            .update_dex_event_stream(DexType::UniswapV3, Vec::new(), Vec::new())
-            .await;
-        client.disconnect().await;
-
-        assert!(event.block_number > 0);
-        assert!(expected_pool_ids.contains(&event.pool_identifier));
-        assert!(client.dex_event_tasks.is_empty());
+        assert!(terminated);
+        assert_eq!(stream_task.next_from_block.load(Ordering::Relaxed), 99);
+        assert!(stream_task.task.is_none());
     }
 }

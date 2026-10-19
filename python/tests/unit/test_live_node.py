@@ -12,15 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test live node behavior.
+"""
 
 import asyncio
-from datetime import UTC
-from datetime import datetime
-from datetime import timedelta
+from typing import ClassVar
 
 import pytest
-from strategies.acceptance import DualTimer
-from strategies.acceptance import DualTimerConfig
 
 from nautilus_trader.common import Cache
 from nautilus_trader.common import CacheConfig
@@ -31,39 +30,52 @@ from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.live import LiveDataEngineConfig
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.live import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PortfolioConfig
+from nautilus_trader.model import ActorId
 from nautilus_trader.model import ExecAlgorithmId
-from nautilus_trader.model import OrderSide
-from nautilus_trader.model import OrderStatus
+from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TraderId
 from nautilus_trader.portfolio import Portfolio
 from nautilus_trader.trading import ExecutionAlgorithm
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableControllerConfig
-from nautilus_trader.trading import ImportableExecAlgorithmConfig
+from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
+from nautilus_trader.trading import Strategy
+from nautilus_trader.trading import StrategyConfig
+from tests.unit.common.actor import ConfiguredIdProbeStrategy
 from tests.unit.common.actor import ControllerRegistrationProbe
 from tests.unit.common.actor import LifecycleProbeStrategy
 
 
-@pytest.fixture(scope="module")
-def live_node():
+@pytest.fixture
+def live_node() -> object:
+    """
+    Live node.
+    """
     trader_id = TraderId("TESTER-001")
     return LiveNode.builder("TEST", trader_id, Environment.SANDBOX).build()
 
 
 class RequiredConfigLiveActorConfig(DataActorConfig):
+    """
+    Collect required config live actor config tests.
+    """
+
     def __init__(
         self,
         required_label: str,
-        actor_id=None,
+        actor_id: object = None,
         log_events: bool = True,
         log_commands: bool = True,
-    ):
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         self.actor_id = actor_id
         self.log_events = log_events
         self.log_commands = log_commands
@@ -71,31 +83,136 @@ class RequiredConfigLiveActorConfig(DataActorConfig):
 
 
 class RequiredConfigLiveActor(DataActor):
+    """
+    Collect required config live actor tests.
+    """
+
     received_actor_id: str | None = None
     received_label: str | None = None
 
-    def __init__(self, config: RequiredConfigLiveActorConfig):
+    def __init__(self, config: RequiredConfigLiveActorConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         type(self).received_actor_id = str(config.actor_id)
         type(self).received_label = config.required_label
 
 
 class LifecycleExecutionAlgorithm(ExecutionAlgorithm):
-    start_observations = []
+    """
+    Collect lifecycle execution algorithm tests.
+    """
 
-    def on_start(self):
+    start_observations: ClassVar[list[object]] = []
+
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         type(self).start_observations.append((self.state, self.is_running()))
 
 
 class FirstDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
-    pass
+    """
+    Collect first default live execution algorithm tests.
+    """
 
 
 class SecondDefaultLiveExecutionAlgorithm(ExecutionAlgorithm):
-    pass
+    """
+    Collect second default live execution algorithm tests.
+    """
 
 
-def test_importable_actor_config_construction():
+class FirstDefaultLiveStrategy(Strategy):
+    """
+    Collect first default live strategy tests.
+    """
+
+
+class SecondDefaultLiveStrategy(Strategy):
+    """
+    Collect second default live strategy tests.
+    """
+
+
+class DefaultIdLiveStrategy(Strategy):
+    """
+    Collect default id live strategy tests.
+    """
+
+    instances: ClassVar[list[object]] = []
+
+    def __init__(self, config: StrategyConfig | None = None) -> None:
+        """
+        Initialize the instance.
+        """
+        super().__init__(config)
+        type(self).instances.append(self)
+
+
+class DefaultIdLiveActor(DataActor):
+    """
+    Collect default id live actor tests.
+    """
+
+    instances: ClassVar[list[object]] = []
+
+    def __init__(self, config: DataActorConfig | None = None) -> None:
+        """
+        Initialize the instance.
+        """
+        super().__init__(config)
+        type(self).instances.append(self)
+
+
+class SecondDefaultIdLiveActor(DefaultIdLiveActor):
+    """
+    Collect second default id live actor tests.
+    """
+
+
+class NonForwardingLiveActor(DataActor):
+    """
+    Collect non forwarding live actor tests.
+    """
+
+    instances: ClassVar[list[object]] = []
+
+    def __init__(self, _config: object = None) -> None:
+        """
+        Initialize the instance.
+        """
+        # Deliberately does not forward to `super().__init__()`
+        type(self).instances.append(self)
+
+
+class SecondNonForwardingLiveActor(NonForwardingLiveActor):
+    """
+    Collect second non forwarding live actor tests.
+    """
+
+
+class InternalConfigLiveActor(DataActor):
+    """
+    Collect internal config live actor tests.
+    """
+
+    instances: ClassVar[list[object]] = []
+
+    def __init__(self) -> None:
+        """
+        Initialize the instance.
+        """
+        super().__init__(DataActorConfig(actor_id=ActorId("INTERNAL-CONFIG-ACTOR")))
+        type(self).instances.append(self)
+
+
+def test_importable_actor_config_construction() -> None:
+    """
+    Test importable actor config construction.
+    """
     config = ImportableActorConfig(
         actor_path="tests.unit.common.actor:TestActor",
         config_path="tests.unit.common.actor:TestActorConfig",
@@ -107,7 +224,10 @@ def test_importable_actor_config_construction():
     assert config.config == {"actor_id": "TEST-001"}
 
 
-def test_importable_actor_config_empty():
+def test_importable_actor_config_empty() -> None:
+    """
+    Test importable actor config empty.
+    """
     config = ImportableActorConfig(
         actor_path="module:Class",
         config_path="module:Config",
@@ -118,7 +238,10 @@ def test_importable_actor_config_empty():
     assert config.config == {}
 
 
-def test_importable_strategy_config_construction():
+def test_importable_strategy_config_construction() -> None:
+    """
+    Test importable strategy config construction.
+    """
     config = ImportableStrategyConfig(
         strategy_path="tests.unit.common.actor:TestStrategy",
         config_path="nautilus_trader.trading:StrategyConfig",
@@ -130,7 +253,10 @@ def test_importable_strategy_config_construction():
     assert config.config == {"strategy_id": "S-001"}
 
 
-def test_importable_controller_config_construction():
+def test_importable_controller_config_construction() -> None:
+    """
+    Test importable controller config construction.
+    """
     config = ImportableControllerConfig(
         controller_path="tests.unit.common.actor:StrategyCreatingController",
         config_path="tests.unit.common.actor:TestControllerConfig",
@@ -142,7 +268,10 @@ def test_importable_controller_config_construction():
     assert config.config == {"actor_id": "Controller-001"}
 
 
-def test_live_node_config_registers_importable_controller():
+def test_live_node_config_registers_importable_controller() -> None:
+    """
+    Test live node config registers importable controller.
+    """
     ControllerRegistrationProbe.reset()
     trader_id = TraderId("TESTER-003")
     node = LiveNode.build(
@@ -150,7 +279,7 @@ def test_live_node_config_registers_importable_controller():
         LiveNodeConfig(
             trader_id=trader_id,
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             controller=ImportableControllerConfig(
                 controller_path="tests.unit.common.actor:ControllerRegistrationProbe",
                 config_path="tests.unit.common.actor:ControllerRegistrationProbeConfig",
@@ -164,13 +293,16 @@ def test_live_node_config_registers_importable_controller():
     assert ControllerRegistrationProbe.received_actor_id == "Controller-001"
 
 
-def test_live_node_exposes_cache_and_portfolio_inspection():
+def test_live_node_exposes_cache_and_portfolio_inspection() -> None:
+    """
+    Test live node exposes cache and portfolio inspection.
+    """
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
             trader_id=TraderId("TESTER-010"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
         ),
     )
 
@@ -185,105 +317,18 @@ def test_live_node_exposes_cache_and_portfolio_inspection():
         node.dispose()
 
 
-def test_live_node_poll_requires_running_node_and_returns_processed_count():
-    node = LiveNode.build(
-        "TEST",
-        LiveNodeConfig(
-            trader_id=TraderId("TESTER-011"),
-            environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
-            timeout_connection_secs=0,
-            timeout_reconciliation_secs=0,
-            timeout_portfolio_secs=0,
-            timeout_disconnection_secs=0,
-            delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
-        ),
-    )
-
-    try:
-        with pytest.raises(RuntimeError, match="LiveNode is not running"):
-            node.poll()
-
-        node.start()
-        assert node.poll() == 0
-    finally:
-        node.dispose()
-
-
 @pytest.mark.asyncio
-async def test_live_node_poll_services_migrated_strategy_from_async_host_loop():
-    node = LiveNode.build(
-        "TEST",
-        LiveNodeConfig(
-            trader_id=TraderId("TESTER-012"),
-            environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
-            timeout_connection_secs=0,
-            timeout_reconciliation_secs=0,
-            timeout_portfolio_secs=0,
-            timeout_disconnection_secs=0,
-            delay_post_stop_secs=0,
-            timeout_shutdown_secs=0,
-        ),
-    )
-    strategy = DualTimer(
-        DualTimerConfig(
-            instrument_id="AUD/USD.SIM",
-            trade_size="100000",
-            alert_iso=(datetime.now(UTC) + timedelta(seconds=1)).isoformat(),
-        ),
-    )
-    node.add_strategy(strategy)
-    processed_counts = []
-
-    try:
-        assert strategy.is_ready() is True
-
-        node.start()
-
-        assert node.is_running is True
-        assert strategy.is_running() is True
-
-        async with asyncio.timeout(5):
-            while not (strategy.fired_a and strategy.fired_b):
-                processed_counts.append(node.poll())
-                await asyncio.sleep(0.01)
-
-        processed_counts.append(node.poll())
-        orders = node.cache.orders(strategy_id=strategy.strategy_id)
-
-        assert len(processed_counts) > 1
-        assert sum(processed_counts) == 5
-        assert strategy.fired_a is True
-        assert strategy.fired_b is True
-        assert len(orders) == 2
-        assert {order.side for order in orders} == {OrderSide.BUY, OrderSide.SELL}
-        assert {order.status for order in orders} == {OrderStatus.DENIED}
-
-        node.stop()
-
-        assert node.is_running is False
-        assert strategy.is_stopped() is True
-    finally:
-        node.dispose()
-
-
-@pytest.mark.parametrize(
-    ("trader_id", "stop_before_dispose"),
-    [
-        ("TESTER-004", True),
-        ("TESTER-005", False),
-    ],
-)
-def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
+async def test_live_node_start_stop_dispose_local() -> None:
+    """
+    Test live node start stop dispose local.
+    """
     LifecycleProbeStrategy.reset()
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
-            trader_id=TraderId(trader_id),
+            trader_id=TraderId("TESTER-004"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             msgbus=MessageBusConfig(external_streams=["signals"]),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
@@ -301,20 +346,21 @@ def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
         ),
     )
 
+    handle = node.handle()
+
     try:
-        assert node.is_running is False
+        assert handle.is_running is False
 
-        node.start()
-        assert node.is_running is True
+        task = asyncio.create_task(node.run_async())
+        await asyncio.sleep(0.1)
+        assert handle.is_running is True
 
-        if stop_before_dispose:
-            node.stop()
-        else:
-            node.dispose()
+        handle.stop()
+        async with asyncio.timeout(10.0):
+            await task
 
-        assert node.is_running is False
+        assert handle.is_running is False
     finally:
-        node.dispose()
         node.dispose()
 
     assert node.is_running is False
@@ -323,13 +369,16 @@ def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
     assert LifecycleProbeStrategy.disposed == 1
 
 
-def test_live_node_dispose_before_start_twice_does_not_raise():
+def test_live_node_dispose_before_start_twice_does_not_raise() -> None:
+    """
+    Test live node dispose before start twice does not raise.
+    """
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
             trader_id=TraderId("TESTER-006"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
         ),
     )
 
@@ -337,13 +386,16 @@ def test_live_node_dispose_before_start_twice_does_not_raise():
     node.dispose()
 
 
-def test_live_node_stop_before_start_raises():
+def test_live_node_stop_before_start_raises() -> None:
+    """
+    Test live node stop before start raises.
+    """
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
             trader_id=TraderId("TESTER-008"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
         ),
     )
 
@@ -354,13 +406,17 @@ def test_live_node_stop_before_start_raises():
         node.dispose()
 
 
-def test_live_node_start_after_dispose_raises():
+@pytest.mark.asyncio
+async def test_live_node_run_after_dispose_raises() -> None:
+    """
+    Test live node run after dispose raises.
+    """
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
             trader_id=TraderId("TESTER-009"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
             timeout_portfolio_secs=0,
@@ -372,19 +428,23 @@ def test_live_node_start_after_dispose_raises():
     node.dispose()
 
     try:
-        with pytest.raises(RuntimeError, match="Invalid state trigger DISPOSED -> START"):
-            node.start()
+        with pytest.raises(RuntimeError, match="cannot be run from state Stopped"):
+            node.run_async()
     finally:
         node.dispose()
 
 
-def test_live_node_strategy_start_failure_disposes_resources():
+@pytest.mark.asyncio
+async def test_live_node_strategy_start_failure_disposes_resources() -> None:
+    """
+    Test live node strategy start failure disposes resources.
+    """
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
             trader_id=TraderId("TESTER-007"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=1,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
@@ -398,29 +458,35 @@ def test_live_node_strategy_start_failure_disposes_resources():
         ),
     )
 
+    handle = node.handle()
+
     with pytest.raises(RuntimeError, match="simulated live node strategy start failure"):
-        node.start()
+        await node.run_async()
 
-    assert node.is_running is False
-
-    node.dispose()
+    assert handle.is_running is False
     node.dispose()
 
 
-def test_importable_exec_algorithm_config_construction():
-    config = ImportableExecAlgorithmConfig(
-        exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
-        config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+def test_importable_exec_algorithm_config_construction() -> None:
+    """
+    Test importable exec algorithm config construction.
+    """
+    config = ImportableExecutionAlgorithmConfig(
+        exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
+        config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
         config={"actor_id": "ALGO-001"},
     )
 
-    assert config.exec_algorithm_path == "tests.unit.common.actor:TestExecAlgorithm"
-    assert config.config_path == "tests.unit.common.actor:TestExecAlgorithmConfig"
+    assert config.exec_algorithm_path == "tests.unit.common.actor:TestExecutionAlgorithm"
+    assert config.config_path == "tests.unit.common.actor:TestExecutionAlgorithmConfig"
     assert config.config == {"actor_id": "ALGO-001"}
 
 
-def test_importable_exec_algorithm_config_empty():
-    config = ImportableExecAlgorithmConfig(
+def test_importable_exec_algorithm_config_empty() -> None:
+    """
+    Test importable exec algorithm config empty.
+    """
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="module:Class",
         config_path="module:Config",
         config={},
@@ -430,7 +496,10 @@ def test_importable_exec_algorithm_config_empty():
     assert config.config == {}
 
 
-def test_builder_accepts_supported_runtime_configs():
+def test_builder_accepts_supported_runtime_configs() -> None:
+    """
+    Test builder accepts supported runtime configs.
+    """
     trader_id = TraderId("TESTER-002")
     cache_config = CacheConfig(
         None,
@@ -453,7 +522,7 @@ def test_builder_accepts_supported_runtime_configs():
         .with_portfolio_config(PortfolioConfig())
         .with_data_engine_config(LiveDataEngineConfig(time_bars_build_with_no_updates=False))
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
-        .with_exec_engine_config(LiveExecEngineConfig(reconciliation=False))
+        .with_exec_engine_config(LiveExecutionEngineConfig(reconciliation=False))
         .build()
     )
 
@@ -461,7 +530,23 @@ def test_builder_accepts_supported_runtime_configs():
     assert node.environment == Environment.SANDBOX
 
 
-def test_add_actor_from_config_registers(live_node):
+def test_builder_rejects_unregistered_cache_database_factory() -> None:
+    """
+    Test builder rejects unregistered cache database factory.
+    """
+    builder = LiveNode.builder("TEST", TraderId("TESTER-003"), Environment.SANDBOX)
+
+    with pytest.raises(
+        NotImplementedError,
+        match="No cache database factory extractor registered for 'dict'",
+    ):
+        builder.with_cache_database_factory({})
+
+
+def test_add_actor_from_config_registers(live_node: LiveNode) -> None:
+    """
+    Test add actor from config registers.
+    """
     config = ImportableActorConfig(
         actor_path="tests.unit.common.actor:TestActor",
         config_path="tests.unit.common.actor:TestActorConfig",
@@ -471,7 +556,10 @@ def test_add_actor_from_config_registers(live_node):
     live_node.add_actor_from_config(config)
 
 
-def test_add_actor_from_config_accepts_required_subclass_kwargs(live_node):
+def test_add_actor_from_config_accepts_required_subclass_kwargs(live_node: LiveNode) -> None:
+    """
+    Test add actor from config accepts required subclass kwargs.
+    """
     RequiredConfigLiveActor.received_actor_id = None
     RequiredConfigLiveActor.received_label = None
     config = ImportableActorConfig(
@@ -489,7 +577,10 @@ def test_add_actor_from_config_accepts_required_subclass_kwargs(live_node):
     assert RequiredConfigLiveActor.received_label == "configured"
 
 
-def test_add_actor_from_config_rejects_invalid_path(live_node):
+def test_add_actor_from_config_rejects_invalid_path(live_node: LiveNode) -> None:
+    """
+    Test add actor from config rejects invalid path.
+    """
     config = ImportableActorConfig(
         actor_path="no_colon_here",
         config_path="module:Config",
@@ -500,7 +591,10 @@ def test_add_actor_from_config_rejects_invalid_path(live_node):
         live_node.add_actor_from_config(config)
 
 
-def test_add_actor_from_config_rejects_nonexistent_module(live_node):
+def test_add_actor_from_config_rejects_nonexistent_module(live_node: LiveNode) -> None:
+    """
+    Test add actor from config rejects nonexistent module.
+    """
     config = ImportableActorConfig(
         actor_path="nonexistent.module:SomeClass",
         config_path="nonexistent.module:SomeConfig",
@@ -511,7 +605,61 @@ def test_add_actor_from_config_rejects_nonexistent_module(live_node):
         live_node.add_actor_from_config(config)
 
 
-def test_add_strategy_from_config_registers(live_node):
+def test_add_actor_from_empty_config_preserves_class_derived_id(live_node: LiveNode) -> None:
+    """
+    Test add actor from empty config preserves class derived ID.
+    """
+    InternalConfigLiveActor.instances.clear()
+    config = ImportableActorConfig(
+        actor_path="tests.unit.test_live_node:InternalConfigLiveActor",
+        config_path="",
+        config={},
+    )
+
+    live_node.add_actor_from_config(config)
+
+    actor = InternalConfigLiveActor.instances[-1]
+    assert actor.config.actor_id == ActorId("INTERNAL-CONFIG-ACTOR")
+    assert actor.actor_id == ActorId("InternalConfigLiveActor")
+    assert actor.state() == ComponentState.READY
+
+
+def test_add_actor_registers_constructed_instance(live_node: LiveNode) -> None:
+    """
+    Test add actor registers constructed instance.
+    """
+    actor_id = ActorId("PY-LIVE-CONSTRUCTED-ACTOR")
+    actor = DataActor(
+        DataActorConfig(
+            actor_id=actor_id,
+            log_events=False,
+            log_commands=False,
+        ),
+    )
+
+    live_node.add_actor(actor)
+
+    assert actor.actor_id == actor_id
+    assert actor.trader_id == live_node.trader_id
+    assert actor.state() == ComponentState.READY
+    assert actor.is_ready() is True
+
+    duplicate = DataActor(DataActorConfig(actor_id=actor_id))
+
+    with pytest.raises(RuntimeError) as exc_info:
+        live_node.add_actor(duplicate)
+
+    assert str(exc_info.value) == "Actor 'PY-LIVE-CONSTRUCTED-ACTOR' is already registered"
+    del exc_info
+    assert duplicate.trader_id is None
+    assert duplicate.state() == ComponentState.PRE_INITIALIZED
+    assert duplicate.is_ready() is False
+
+
+def test_add_strategy_from_config_registers(live_node: LiveNode) -> None:
+    """
+    Test add strategy from config registers.
+    """
     config = ImportableStrategyConfig(
         strategy_path="tests.unit.common.actor:TestStrategy",
         config_path="nautilus_trader.trading:StrategyConfig",
@@ -521,7 +669,10 @@ def test_add_strategy_from_config_registers(live_node):
     live_node.add_strategy_from_config(config)
 
 
-def test_add_strategy_from_config_rejects_invalid_path(live_node):
+def test_add_strategy_from_config_rejects_invalid_path(live_node: LiveNode) -> None:
+    """
+    Test add strategy from config rejects invalid path.
+    """
     config = ImportableStrategyConfig(
         strategy_path="no_colon_here",
         config_path="module:Config",
@@ -532,7 +683,10 @@ def test_add_strategy_from_config_rejects_invalid_path(live_node):
         live_node.add_strategy_from_config(config)
 
 
-def test_add_strategy_from_config_rejects_nonexistent_module(live_node):
+def test_add_strategy_from_config_rejects_nonexistent_module(live_node: LiveNode) -> None:
+    """
+    Test add strategy from config rejects nonexistent module.
+    """
     config = ImportableStrategyConfig(
         strategy_path="nonexistent.module:SomeClass",
         config_path="nonexistent.module:SomeConfig",
@@ -543,18 +697,54 @@ def test_add_strategy_from_config_rejects_nonexistent_module(live_node):
         live_node.add_strategy_from_config(config)
 
 
-def test_add_exec_algorithm_from_config_registers(live_node):
-    config = ImportableExecAlgorithmConfig(
-        exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
-        config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+def test_add_strategy_from_config_accepts_string_strategy_id(live_node: LiveNode) -> None:
+    """
+    Test add strategy from config accepts a string strategy ID.
+    """
+    ConfiguredIdProbeStrategy.reset()
+    config = ImportableStrategyConfig(
+        strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+        config_path="tests.unit.common.actor:CustomFieldStrategyConfig",
+        config={"strategy_id": "LIVE-STRAT-001", "custom_field": "x"},
+    )
+
+    live_node.add_strategy_from_config(config)
+
+    assert ConfiguredIdProbeStrategy.config_strategy_id == StrategyId("LIVE-STRAT-001")
+
+
+def test_add_strategy_from_config_with_unsettable_field_raises(live_node: LiveNode) -> None:
+    """
+    Test add strategy from config raises when a field cannot be set.
+    """
+    config = ImportableStrategyConfig(
+        strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+        config_path="nautilus_trader.trading:StrategyConfig",
+        config={"log_events": "not_a_bool"},
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to set attribute log_events"):
+        live_node.add_strategy_from_config(config)
+
+
+def test_add_exec_algorithm_from_config_registers(live_node: LiveNode) -> None:
+    """
+    Test add exec algorithm from config registers.
+    """
+    config = ImportableExecutionAlgorithmConfig(
+        exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
+        config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
         config={},
     )
 
     live_node.add_exec_algorithm_from_config(config)
 
 
-def test_add_exec_algorithm_from_config_registers_v2_instance(live_node):
-    config = ImportableExecAlgorithmConfig(
+def test_add_exec_algorithm_from_config_registers_v2_instance(live_node: LiveNode) -> None:
+    """
+    Test add exec algorithm from config registers v2 instance.
+    """
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="tests.unit.test_live_node:LifecycleExecutionAlgorithm",
         config_path="nautilus_trader.trading:ExecutionAlgorithmConfig",
         config={"exec_algorithm_id": "PY-LIVE-CONFIG"},
@@ -566,7 +756,10 @@ def test_add_exec_algorithm_from_config_registers_v2_instance(live_node):
         live_node.add_exec_algorithm_from_config(config)
 
 
-def test_add_exec_algorithm_registers_constructed_instance(live_node):
+def test_add_exec_algorithm_registers_constructed_instance(live_node: LiveNode) -> None:
+    """
+    Test add exec algorithm registers constructed instance.
+    """
     exec_algorithm_id = ExecAlgorithmId("PY-LIVE-CONSTRUCTED")
     LifecycleExecutionAlgorithm.start_observations = []
     exec_algorithm = LifecycleExecutionAlgorithm(
@@ -614,7 +807,10 @@ def test_add_exec_algorithm_registers_constructed_instance(live_node):
         live_node.add_exec_algorithm(duplicate)
 
 
-def test_add_exec_algorithms_registers_distinct_class_derived_ids(live_node):
+def test_add_exec_algorithms_registers_distinct_class_derived_ids(live_node: LiveNode) -> None:
+    """
+    Test add exec algorithms registers distinct class derived ids.
+    """
     first = FirstDefaultLiveExecutionAlgorithm()
     second = SecondDefaultLiveExecutionAlgorithm()
 
@@ -627,13 +823,118 @@ def test_add_exec_algorithms_registers_distinct_class_derived_ids(live_node):
     assert second.is_registered() is True
 
 
-def test_add_exec_algorithm_rejects_running_node():
+def test_add_strategies_registers_distinct_class_derived_ids() -> None:
+    """
+    Test add strategies registers distinct class derived ids.
+    """
+    node = LiveNode.builder("TEST", TraderId("TESTER-020"), Environment.SANDBOX).build()
+    first = FirstDefaultLiveStrategy()
+    second = SecondDefaultLiveStrategy()
+
+    try:
+        node.add_strategy(first)
+        node.add_strategy(second)
+
+        assert first.strategy_id == StrategyId("FirstDefaultLiveStrategy-000")
+        assert first.state() == ComponentState.READY
+        assert second.strategy_id == StrategyId("SecondDefaultLiveStrategy-001")
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_strategy_from_config_derives_class_derived_id() -> None:
+    """
+    Test add strategy from config derives class derived id.
+    """
+    node = LiveNode.builder("TEST", TraderId("TESTER-021"), Environment.SANDBOX).build()
+    DefaultIdLiveStrategy.instances.clear()
+    config = ImportableStrategyConfig(
+        strategy_path="tests.unit.test_live_node:DefaultIdLiveStrategy",
+        config_path="nautilus_trader.trading:StrategyConfig",
+        config={},
+    )
+
+    try:
+        node.add_strategy_from_config(config)
+
+        registered = DefaultIdLiveStrategy.instances[-1]
+        assert registered.strategy_id == StrategyId("DefaultIdLiveStrategy-000")
+        assert registered.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_actors_from_config_derive_distinct_class_derived_ids() -> None:
+    """
+    Test add actors from config derive distinct class derived ids.
+    """
+    node = LiveNode.builder("TEST", TraderId("TESTER-022"), Environment.SANDBOX).build()
+    DefaultIdLiveActor.instances.clear()
+    configs = [
+        ImportableActorConfig(
+            actor_path=f"tests.unit.test_live_node:{class_name}",
+            config_path="nautilus_trader.common:DataActorConfig",
+            config={},
+        )
+        for class_name in ("DefaultIdLiveActor", "SecondDefaultIdLiveActor")
+    ]
+
+    try:
+        for config in configs:
+            node.add_actor_from_config(config)
+
+        first, second = DefaultIdLiveActor.instances
+        assert first.actor_id == ActorId("DefaultIdLiveActor")
+        assert first.state() == ComponentState.READY
+        assert second.actor_id == ActorId("SecondDefaultIdLiveActor")
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+def test_add_actors_from_config_derive_ids_without_a_forwarding_constructor() -> None:
+    """
+    Test add actors from config derive ids without a forwarding constructor.
+    """
+    # Without class-derived IDs at registration both fall back to the shared `DataActor`
+    # default and the second registration is rejected as a duplicate
+    node = LiveNode.builder("TEST", TraderId("TESTER-023"), Environment.SANDBOX).build()
+    configs = [
+        ImportableActorConfig(
+            actor_path=f"tests.unit.test_live_node:{class_name}",
+            config_path="nautilus_trader.common:DataActorConfig",
+            config={},
+        )
+        for class_name in ("NonForwardingLiveActor", "SecondNonForwardingLiveActor")
+    ]
+
+    NonForwardingLiveActor.instances.clear()
+
+    try:
+        for config in configs:
+            node.add_actor_from_config(config)
+
+        first, second = NonForwardingLiveActor.instances
+        assert first.actor_id == ActorId("NonForwardingLiveActor")
+        assert second.actor_id == ActorId("SecondNonForwardingLiveActor")
+        assert first.state() == ComponentState.READY
+        assert second.state() == ComponentState.READY
+    finally:
+        node.dispose()
+
+
+@pytest.mark.asyncio
+async def test_add_exec_algorithm_rejects_running_node() -> None:
+    """
+    Test add exec algorithm rejects running node.
+    """
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
             trader_id=TraderId("TESTER-008"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
             timeout_portfolio_secs=0,
@@ -646,22 +947,29 @@ def test_add_exec_algorithm_rejects_running_node():
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-LIVE-RUNNING")),
     )
 
+    handle = node.handle()
+    task = asyncio.create_task(node.run_async())
+    await asyncio.sleep(0.1)
+
     try:
-        node.start()
+        # `run_async` owns the node, so registration is refused before the running check.
         with pytest.raises(RuntimeError) as exc_info:
             node.add_exec_algorithm(exec_algorithm)
     finally:
-        node.dispose()
+        handle.stop()
+        async with asyncio.timeout(10.0):
+            await task
 
-    assert str(exc_info.value) == (
-        "Cannot add exec algorithm while node is running, "
-        "add exec algorithms before calling start()"
-    )
+    assert "run_async" in str(exc_info.value)
+    del exc_info
     assert exec_algorithm.is_registered() is False
-    assert node.is_running is False
+    assert handle.is_running is False
 
 
-def test_add_exec_algorithm_rejects_data_actor_instance(live_node):
+def test_add_exec_algorithm_rejects_data_actor_instance(live_node: LiveNode) -> None:
+    """
+    Test add exec algorithm rejects data actor instance.
+    """
     with pytest.raises(
         RuntimeError,
         match="requires a Python v2 ExecutionAlgorithm instance",
@@ -669,8 +977,11 @@ def test_add_exec_algorithm_rejects_data_actor_instance(live_node):
         live_node.add_exec_algorithm(DataActor())
 
 
-def test_add_exec_algorithm_from_config_rejects_invalid_path(live_node):
-    config = ImportableExecAlgorithmConfig(
+def test_add_exec_algorithm_from_config_rejects_invalid_path(live_node: LiveNode) -> None:
+    """
+    Test add exec algorithm from config rejects invalid path.
+    """
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="invalid_path_no_colon",
         config_path="module:Config",
         config={},
@@ -680,8 +991,11 @@ def test_add_exec_algorithm_from_config_rejects_invalid_path(live_node):
         live_node.add_exec_algorithm_from_config(config)
 
 
-def test_add_exec_algorithm_from_config_rejects_nonexistent_module(live_node):
-    config = ImportableExecAlgorithmConfig(
+def test_add_exec_algorithm_from_config_rejects_nonexistent_module(live_node: LiveNode) -> None:
+    """
+    Test add exec algorithm from config rejects nonexistent module.
+    """
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="nonexistent.module:SomeClass",
         config_path="nonexistent.module:SomeConfig",
         config={},

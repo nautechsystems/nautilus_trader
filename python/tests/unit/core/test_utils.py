@@ -12,17 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test utils behavior.
+"""
 
 import pytest
 
 from nautilus_trader.core import NAUTILUS_USER_AGENT
 from nautilus_trader.core import NAUTILUS_VERSION
 from nautilus_trader.core import convert_to_snake_case
-from nautilus_trader.core import is_pycapsule
 from nautilus_trader.core import mask_api_key
 
 
-def test_version_constants_are_consistent():
+def test_version_constants_are_consistent() -> None:
+    """
+    Test version constants are consistent.
+    """
     assert NAUTILUS_VERSION
     assert f"NautilusTrader/{NAUTILUS_VERSION}" == NAUTILUS_USER_AGENT
 
@@ -47,23 +52,22 @@ def test_version_constants_are_consistent():
         ("TradeTick", "trade_tick"),
     ],
 )
-def test_convert_to_snake_case(value, expected):
+def test_convert_to_snake_case(value: object, expected: object) -> None:
+    """
+    Test convert to snake case.
+    """
     assert convert_to_snake_case(value) == expected
 
 
-def test_mask_api_key_masks_middle():
-    result = mask_api_key("sk-abc123xyz789")
-    assert result.startswith("sk")
-    assert result.endswith("789")
-    assert "..." in result
+def test_mask_api_key_masks_middle() -> None:
+    """
+    Test mask api key masks middle.
+    """
+    assert mask_api_key("sk-abc123xyz789") == "sk-a...z789"
 
 
-def test_mask_api_key_short_key():
-    result = mask_api_key("abc")
-    assert isinstance(result, str)
-
-
-def test_is_pycapsule_rejects_non_capsule():
-    assert is_pycapsule("not a capsule") is False
-    assert is_pycapsule(42) is False
-    assert is_pycapsule(None) is False
+def test_mask_api_key_short_key() -> None:
+    """
+    Test mask api key short key.
+    """
+    assert mask_api_key("abc") == "***"

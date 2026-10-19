@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test execution configs behavior.
+"""
 
 import pytest
 
@@ -20,7 +23,10 @@ from nautilus_trader.execution import OrderEmulatorConfig
 from nautilus_trader.model import ClientId
 
 
-def test_execution_engine_config_defaults():
+def test_execution_engine_config_defaults() -> None:
+    """
+    Test execution engine config defaults.
+    """
     config = ExecutionEngineConfig()
     assert config.load_cache is True
     assert config.manage_own_order_books is False
@@ -32,7 +38,10 @@ def test_execution_engine_config_defaults():
     assert config.debug is False
 
 
-def test_execution_engine_config_with_overrides():
+def test_execution_engine_config_with_overrides() -> None:
+    """
+    Test execution engine config with overrides.
+    """
     client_id = ClientId("EXEC-001")
     config = ExecutionEngineConfig(
         load_cache=False,
@@ -78,26 +87,41 @@ def test_execution_engine_config_with_overrides():
         {"purge_account_events_interval_mins": 0},
     ],
 )
-def test_execution_engine_config_rejects_non_positive_intervals(kwargs):
+def test_execution_engine_config_rejects_non_positive_intervals(kwargs: object) -> None:
+    """
+    Test execution engine config rejects non positive intervals.
+    """
     with pytest.raises(ValueError, match="must be a positive"):
         ExecutionEngineConfig(**kwargs)
 
 
-def test_execution_engine_config_repr():
+def test_execution_engine_config_repr() -> None:
+    """
+    Test execution engine config repr.
+    """
     config = ExecutionEngineConfig()
     assert "ExecutionEngineConfig" in repr(config)
 
 
-def test_order_emulator_config_defaults():
+def test_order_emulator_config_defaults() -> None:
+    """
+    Test order emulator config defaults.
+    """
     config = OrderEmulatorConfig()
     assert config.debug is False
 
 
-def test_order_emulator_config_debug_enabled():
+def test_order_emulator_config_debug_enabled() -> None:
+    """
+    Test order emulator config debug enabled.
+    """
     config = OrderEmulatorConfig(debug=True)
     assert config.debug is True
 
 
-def test_order_emulator_config_repr():
+def test_order_emulator_config_repr() -> None:
+    """
+    Test order emulator config repr.
+    """
     config = OrderEmulatorConfig()
     assert "OrderEmulatorConfig" in repr(config)

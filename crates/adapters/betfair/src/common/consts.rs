@@ -58,6 +58,9 @@ pub const BETFAIR_RACE_STREAM_HOST: &str = "sports-data-stream-api.betfair.com";
 /// Stream TLS port.
 pub const BETFAIR_STREAM_PORT: u16 = 443;
 
+/// Requested interval between server stream heartbeat messages in milliseconds.
+pub const BETFAIR_STREAM_SERVER_HEARTBEAT_MS: u64 = 5_000;
+
 // Interactive login URL (non-cert)
 pub const BETFAIR_IDENTITY_LOGIN_URL: &str = "https://identitysso.betfair.com/api/login";
 
@@ -76,6 +79,7 @@ pub const BETFAIR_CUSTOMER_ORDER_REF_MAX_LEN: usize = 32;
 
 // Betting API JSON-RPC methods
 pub const METHOD_LIST_MARKET_CATALOGUE: &str = "SportsAPING/v1.0/listMarketCatalogue";
+pub const METHOD_LIST_EVENTS: &str = "SportsAPING/v1.0/listEvents";
 pub const METHOD_LIST_CURRENT_ORDERS: &str = "SportsAPING/v1.0/listCurrentOrders";
 pub const METHOD_PLACE_ORDERS: &str = "SportsAPING/v1.0/placeOrders";
 pub const METHOD_CANCEL_ORDERS: &str = "SportsAPING/v1.0/cancelOrders";

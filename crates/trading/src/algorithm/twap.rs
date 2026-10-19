@@ -65,8 +65,8 @@ pub type TwapAlgorithmConfig = ExecutionAlgorithmConfig;
 pub struct TwapAlgorithm {
     /// The algorithm core.
     pub core: ExecutionAlgorithmCore,
-    /// Scheduled sizes for each primary order.
-    scheduled_sizes: AHashMap<ClientOrderId, Vec<Quantity>>,
+    /// Schedules for each primary order.
+    scheduled_orders: AHashMap<ClientOrderId, TwapSchedule>,
 }
 
 impl TwapAlgorithm {
@@ -75,7 +75,7 @@ impl TwapAlgorithm {
     pub fn new(config: TwapAlgorithmConfig) -> Self {
         Self {
             core: ExecutionAlgorithmCore::new(config),
-            scheduled_sizes: AHashMap::new(),
+            scheduled_orders: AHashMap::new(),
         }
     }
 
@@ -87,7 +87,7 @@ impl TwapAlgorithm {
             core.clock_mut().cancel_timer(timer_name);
         }
         core.remove_submit_params(&primary_id);
-        self.scheduled_sizes.remove(&primary_id);
+        self.scheduled_orders.remove(&primary_id);
         log::info!("Completed TWAP execution for {primary_id}");
     }
 }
@@ -103,6 +103,10 @@ impl DataActor for TwapAlgorithm {
         ExecutionAlgorithm::on_stop(self)
     }
 
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        ExecutionAlgorithm::on_resume(self)
+    }
+
     fn on_reset(&mut self) -> anyhow::Result<()> {
         ExecutionAlgorithm::on_reset(self)
     }
@@ -112,7 +116,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
     fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
         let primary_id = order.client_order_id();
 
-        if self.scheduled_sizes.contains_key(&primary_id) {
+        if self.scheduled_orders.contains_key(&primary_id) {
             anyhow::bail!("Order {primary_id} already being executed");
         }
 
@@ -336,14 +340,20 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             }
         }
 
-        self.scheduled_sizes
-            .insert(primary_id, scheduled_sizes.clone());
+        self.scheduled_orders.insert(
+            primary_id,
+            TwapSchedule {
+                remaining_sizes: scheduled_sizes.clone(),
+                interval,
+            },
+        );
 
-        let first_qty = self.scheduled_sizes.get_mut(&primary_id).unwrap().remove(0);
+        let schedule = self.scheduled_orders.get_mut(&primary_id).unwrap();
+        let first_qty = schedule.remaining_sizes.remove(0);
         let is_single_slice = self
-            .scheduled_sizes
+            .scheduled_orders
             .get(&primary_id)
-            .is_some_and(|s| s.is_empty());
+            .is_some_and(|schedule| schedule.remaining_sizes.is_empty());
 
         // Single slice: submit the primary order directly
         if is_single_slice {
@@ -353,7 +363,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         }
 
         // Multiple slices: spawn first child order and reduce primary
-        let tags = order.tags().map(|t| t.to_vec());
+        let tags = order.tags().map(<[Ustr]>::to_vec);
         let time_in_force = order.time_in_force();
         let reduce_only = order.is_reduce_only();
         let mut order = order;
@@ -379,9 +389,9 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        log::info!("Received time event: {event:?}");
+        log::info!("Received time event: {event}");
 
-        let primary_id = ClientOrderId::new(event.name.as_str());
+        let primary_id = ClientOrderId::new(event.name);
 
         let primary = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core(self).cache_ref();
@@ -390,6 +400,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
 
         let Some(primary) = primary else {
             log::error!("Cannot find primary order for exec_spawn_id={primary_id}");
+            self.complete_sequence(primary_id);
             return Ok(());
         };
 
@@ -398,18 +409,18 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             return Ok(());
         }
 
-        let Some(scheduled_sizes) = self.scheduled_sizes.get_mut(&primary_id) else {
+        let Some(schedule) = self.scheduled_orders.get_mut(&primary_id) else {
             log::error!("Cannot find scheduled sizes for exec_spawn_id={primary_id}");
             return Ok(());
         };
 
-        if scheduled_sizes.is_empty() {
+        if schedule.remaining_sizes.is_empty() {
             log::warn!("No more size to execute for exec_spawn_id={primary_id}");
             return Ok(());
         }
 
-        let quantity = scheduled_sizes.remove(0);
-        let is_final_slice = scheduled_sizes.is_empty();
+        let quantity = schedule.remaining_sizes.remove(0);
+        let is_final_slice = schedule.remaining_sizes.is_empty();
 
         // Final slice: submit the primary order (already reduced to remaining quantity)
         if is_final_slice {
@@ -419,7 +430,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         }
 
         // Intermediate slice: spawn child order and reduce primary
-        let tags = primary.tags().map(|t| t.to_vec());
+        let tags = primary.tags().map(<[Ustr]>::to_vec);
         let time_in_force = primary.time_in_force();
         let reduce_only = primary.is_reduce_only();
         let mut primary = primary;
@@ -443,13 +454,48 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         Ok(())
     }
 
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        let primary_ids: Vec<ClientOrderId> = self.scheduled_orders.keys().copied().collect();
+
+        for primary_id in primary_ids {
+            let primary_is_open = {
+                let cache = ExecutionAlgorithmNative::exec_algorithm_core(self).cache_ref();
+                cache.order(&primary_id).map(|primary| !primary.is_closed())
+            };
+
+            if primary_is_open.is_none() {
+                log::error!("Cannot find primary order for exec_spawn_id={primary_id}");
+            }
+            let interval = self.scheduled_orders.get(&primary_id).and_then(|schedule| {
+                (!schedule.remaining_sizes.is_empty()).then_some(schedule.interval)
+            });
+
+            let Some(interval) = interval.filter(|_| primary_is_open == Some(true)) else {
+                self.complete_sequence(primary_id);
+                continue;
+            };
+
+            ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+                .clock_mut()
+                .set_timer(primary_id.as_str(), interval, None, None, None, None, None)?;
+        }
+
+        Ok(())
+    }
+
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.unsubscribe_all_strategy_events();
         ExecutionAlgorithmNative::exec_algorithm_core_mut(self).reset();
-        self.scheduled_sizes.clear();
+        self.scheduled_orders.clear();
         Ok(())
     }
 });
+
+#[derive(Debug)]
+struct TwapSchedule {
+    remaining_sizes: Vec<Quantity>,
+    interval: Duration,
+}
 
 fn validation_failed(detail: impl Into<String>) -> Ustr {
     let reason = OrderDeniedReason::ValidationFailed {
@@ -466,13 +512,13 @@ mod tests {
     use indexmap::IndexMap;
     use nautilus_common::{
         cache::Cache,
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         component::Component,
         enums::ComponentTrigger,
-        messages::execution::{SubmitOrder, TradingCommand},
+        messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
         msgbus::{self, MessagingSwitchboard, TypedHandler},
     };
-    use nautilus_core::{Params, UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, TimeInForce},
         events::{OrderDeniedReason, OrderEventAny, order::spec::OrderCanceledSpec},
@@ -495,11 +541,11 @@ mod tests {
         TwapAlgorithm::new(config)
     }
 
-    fn register_algorithm(algo: &mut TwapAlgorithm) {
+    fn register_algorithm_with_clock(algo: &mut TwapAlgorithm) -> Rc<RefCell<VirtualClock>> {
         use nautilus_common::timer::TimeEventCallback;
 
         let trader_id = TraderId::from("TRADER-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         // Register a no-op default handler for timer callbacks
@@ -507,13 +553,19 @@ mod tests {
             .borrow_mut()
             .register_default_handler(TimeEventCallback::Rust(std::sync::Arc::new(|_| {})));
 
-        algo.core.register(trader_id, clock, cache).unwrap();
+        algo.core.register(trader_id, clock.clone(), cache).unwrap();
 
         // Transition to Running state for tests
         algo.transition_state(ComponentTrigger::Initialize).unwrap();
         algo.transition_state(ComponentTrigger::Start).unwrap();
         algo.transition_state(ComponentTrigger::StartCompleted)
             .unwrap();
+
+        clock
+    }
+
+    fn register_algorithm(algo: &mut TwapAlgorithm) {
+        let _ = register_algorithm_with_clock(algo);
     }
 
     fn add_instrument_to_cache(algo: &TwapAlgorithm) {
@@ -588,11 +640,11 @@ mod tests {
         assert!(matches!(
             &events[0],
             OrderEventAny::Denied(event)
-                if event.reason.as_str() == expected_reason
+                if event.reason == expected_reason
                     && event.strategy_id == strategy_id
                     && event.client_order_id == order.client_order_id()
         ));
-        assert!(algo.scheduled_sizes.is_empty());
+        assert!(algo.scheduled_orders.is_empty());
         assert!(algo.clock().timer_names().is_empty());
     }
 
@@ -600,7 +652,7 @@ mod tests {
     fn test_twap_creation() {
         let algo = create_twap_algorithm();
         assert!(algo.id().inner().starts_with("TWAP"));
-        assert!(algo.scheduled_sizes.is_empty());
+        assert!(algo.scheduled_orders.is_empty());
     }
 
     #[rstest]
@@ -614,17 +666,27 @@ mod tests {
     #[rstest]
     fn test_twap_reset_clears_scheduled_sizes() {
         let mut algo = create_twap_algorithm();
-        let primary_id = ClientOrderId::new("O-001");
+        algo.scheduled_orders.insert(
+            ClientOrderId::new("O-001"),
+            TwapSchedule {
+                remaining_sizes: vec![Quantity::from("1.0")],
+                interval: Duration::from_secs(1),
+            },
+        );
+        algo.scheduled_orders.insert(
+            ClientOrderId::new("O-002"),
+            TwapSchedule {
+                remaining_sizes: vec![Quantity::from("2.0")],
+                interval: Duration::from_secs(2),
+            },
+        );
 
-        algo.scheduled_sizes
-            .insert(primary_id, vec![Quantity::from("1.0")]);
-
-        assert!(!algo.scheduled_sizes.is_empty());
+        assert!(!algo.scheduled_orders.is_empty());
 
         // Dispatch through the DataActor entry point the component lifecycle uses
         DataActor::on_reset(&mut algo).unwrap();
 
-        assert!(algo.scheduled_sizes.is_empty());
+        assert!(algo.scheduled_orders.is_empty());
     }
 
     #[rstest]
@@ -830,7 +892,11 @@ mod tests {
         algo.on_order(order).unwrap();
 
         // First slice spawned immediately, remaining 2 slices scheduled (no remainder)
-        let remaining = algo.scheduled_sizes.get(&primary_id).unwrap();
+        let remaining = &algo
+            .scheduled_orders
+            .get(&primary_id)
+            .unwrap()
+            .remaining_sizes;
         assert_eq!(remaining.len(), 2);
 
         for qty in remaining {
@@ -864,6 +930,48 @@ mod tests {
     }
 
     #[rstest]
+    fn test_twap_refused_modify_preserves_remaining_quantity_schedule() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+
+        let command = ModifyOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("STRAT-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            primary_id,
+            None,
+            Some(Quantity::from("0.4")),
+            None,
+            None,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        );
+
+        algo.handle_modify_order(command).unwrap();
+
+        let primary_quantity = algo.cache().order(&primary_id).unwrap().quantity();
+        let scheduled_quantity = algo.scheduled_orders[&primary_id]
+            .remaining_sizes
+            .iter()
+            .fold(Decimal::ZERO, |total, quantity| {
+                total + quantity.as_decimal()
+            });
+        assert_eq!(primary_quantity.as_decimal(), scheduled_quantity);
+        assert_eq!(primary_quantity, Quantity::from("0.8"));
+    }
+
+    #[rstest]
     fn test_twap_on_order_accepts_already_cached_primary() {
         let mut algo = create_twap_algorithm();
         register_algorithm(&mut algo);
@@ -886,7 +994,7 @@ mod tests {
 
         algo.on_order(order).unwrap();
 
-        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 2);
     }
 
     #[rstest]
@@ -908,7 +1016,11 @@ mod tests {
         algo.on_order(order).unwrap();
 
         // First slice spawned, 3 remaining (2 regular + 1 remainder)
-        let remaining = algo.scheduled_sizes.get(&primary_id).unwrap();
+        let remaining = &algo
+            .scheduled_orders
+            .get(&primary_id)
+            .unwrap()
+            .remaining_sizes;
         assert_eq!(remaining.len(), 3);
         assert_eq!(
             remaining,
@@ -921,7 +1033,7 @@ mod tests {
 
         for quantity in remaining {
             assert_eq!(quantity.precision, instrument.size_precision());
-            assert_eq!(quantity.raw % instrument.size_increment().raw, 0);
+            assert_eq!(quantity.raw() % instrument.size_increment().raw(), 0);
         }
 
         let first = algo
@@ -959,7 +1071,8 @@ mod tests {
             .quantity();
         assert_eq!(spawned.precision, instrument.size_precision());
         assert!(
-            algo.scheduled_sizes[&primary_id]
+            algo.scheduled_orders[&primary_id]
+                .remaining_sizes
                 .iter()
                 .all(|quantity| quantity.precision == instrument.size_precision())
         );
@@ -990,14 +1103,14 @@ mod tests {
         algo.on_order(order).unwrap();
 
         // Verify 2 slices remain after first spawn (no remainder)
-        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 2);
 
         // Simulate timer firing
         let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
         ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
 
         // One slice consumed
-        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 1);
         assert_eq!(algo.core.submit_params(&primary_id), Some(submit_params));
     }
 
@@ -1016,13 +1129,13 @@ mod tests {
         let primary_id = order.client_order_id();
 
         algo.on_order(order).unwrap();
-        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 2);
 
         // Dispatch through the DataActor entry point the clock callback uses
         let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
         algo.handle_time_event(&event);
 
-        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 1);
     }
 
     #[rstest]
@@ -1048,7 +1161,7 @@ mod tests {
             .remember_submit_params(primary_id, Some(submit_params.clone()));
 
         algo.on_order(order).unwrap();
-        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 1);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 1);
         assert_eq!(
             algo.core.submit_params(&primary_id),
             Some(submit_params.clone())
@@ -1064,7 +1177,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 
@@ -1073,7 +1186,7 @@ mod tests {
         ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
 
         // Sequence completed, scheduled_sizes removed
-        assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
         assert_eq!(
             received
                 .borrow()
@@ -1106,7 +1219,7 @@ mod tests {
             .remember_submit_params(primary_id, Some(submit_params));
 
         algo.on_order(order).unwrap();
-        assert_eq!(algo.scheduled_sizes.get(&primary_id).unwrap().len(), 2);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 2);
 
         // Mark primary order as closed (canceled)
         {
@@ -1130,8 +1243,47 @@ mod tests {
         ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
 
         // Sequence should complete early since primary is closed
-        assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
         assert_eq!(algo.core.submit_params(&primary_id), None);
+    }
+
+    #[rstest]
+    fn test_twap_on_time_event_completes_when_primary_missing() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            let primary = cache.order(&primary_id).map(|order| order.clone()).unwrap();
+            let canceled = OrderCanceledSpec::builder()
+                .trader_id(primary.trader_id())
+                .strategy_id(primary.strategy_id())
+                .instrument_id(primary.instrument_id())
+                .client_order_id(primary.client_order_id())
+                .build();
+            cache
+                .update_order(&OrderEventAny::Canceled(canceled))
+                .unwrap();
+            cache.purge_order(primary_id);
+        }
+        assert!(algo.cache().order(&primary_id).is_none());
+
+        let event = TimeEvent::new(primary_id.inner(), UUID4::new(), 0.into(), 0.into());
+        ExecutionAlgorithm::on_time_event(&mut algo, &event).unwrap();
+
+        // A vanished primary is terminal: the schedule must not outlive it and block the ID
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
+        assert!(algo.clock().timer_names().is_empty());
     }
 
     #[rstest]
@@ -1163,6 +1315,162 @@ mod tests {
 
         // Timer should be canceled
         assert!(algo.clock().timer_names().is_empty());
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 3);
+    }
+
+    #[rstest]
+    fn test_twap_on_resume_rearms_timer_without_submitting() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params(params);
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+        let order_count = algo
+            .cache()
+            .orders_total_count(None, None, None, None, None);
+
+        Component::stop(&mut algo).unwrap();
+
+        // Observe the command bus directly: resubmitting the already-cached primary would
+        // leave the order count unchanged, so the count alone cannot prove nothing was sent.
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+
+        let resume_time = algo.clock().timestamp_ns();
+        Component::resume(&mut algo).unwrap();
+
+        assert!(received.borrow().is_none());
+        assert_eq!(algo.clock().timer_count(), 1);
+        assert_eq!(
+            algo.clock().next_time_ns(primary_id.as_str()),
+            Some(resume_time + DurationNanos::from_secs(20))
+        );
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 3);
+        assert_eq!(
+            algo.cache()
+                .orders_total_count(None, None, None, None, None),
+            order_count
+        );
+    }
+
+    #[rstest]
+    fn test_twap_on_resume_executes_remaining_slices() {
+        let mut algo = create_twap_algorithm();
+        let clock = register_algorithm_with_clock(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+
+        Component::stop(&mut algo).unwrap();
+        Component::resume(&mut algo).unwrap();
+        assert_eq!(algo.clock().timer_count(), 1);
+
+        let first_events = clock.borrow_mut().advance_time(20_000_000_000.into(), true);
+        assert_eq!(first_events.len(), 1);
+        algo.handle_time_event(&first_events[0]);
+        assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 1);
+
+        let final_events = clock.borrow_mut().advance_time(40_000_000_000.into(), true);
+        assert_eq!(final_events.len(), 1);
+        algo.handle_time_event(&final_events[0]);
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
+    }
+
+    #[rstest]
+    fn test_twap_on_resume_completes_closed_primary() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+        Component::stop(&mut algo).unwrap();
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            let primary = cache.order(&primary_id).map(|order| order.clone()).unwrap();
+            let canceled = OrderCanceledSpec::builder()
+                .trader_id(primary.trader_id())
+                .strategy_id(primary.strategy_id())
+                .instrument_id(primary.instrument_id())
+                .client_order_id(primary.client_order_id())
+                .build();
+            cache
+                .update_order(&OrderEventAny::Canceled(canceled))
+                .unwrap();
+        }
+
+        Component::resume(&mut algo).unwrap();
+
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
+        assert_eq!(algo.clock().timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_twap_on_resume_completes_missing_primary() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+        add_instrument_to_cache(&algo);
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.2"));
+        let primary_id = order.client_order_id();
+        algo.on_order(order).unwrap();
+        Component::stop(&mut algo).unwrap();
+
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            let primary = cache.order(&primary_id).map(|order| order.clone()).unwrap();
+            let canceled = OrderCanceledSpec::builder()
+                .trader_id(primary.trader_id())
+                .strategy_id(primary.strategy_id())
+                .instrument_id(primary.instrument_id())
+                .client_order_id(primary.client_order_id())
+                .build();
+            cache
+                .update_order(&OrderEventAny::Canceled(canceled))
+                .unwrap();
+            cache.purge_order(primary_id);
+        }
+
+        assert!(algo.cache().order(&primary_id).is_none());
+        Component::resume(&mut algo).unwrap();
+
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
+        assert_eq!(algo.clock().timer_count(), 0);
     }
 
     #[rstest]
@@ -1184,7 +1492,11 @@ mod tests {
         algo.on_order(order).unwrap();
 
         // 3 / 0.5 = 6 intervals, first spawned immediately, 5 remaining (plus possible remainder)
-        let remaining = algo.scheduled_sizes.get(&primary_id).unwrap();
+        let remaining = &algo
+            .scheduled_orders
+            .get(&primary_id)
+            .unwrap()
+            .remaining_sizes;
         assert!(remaining.len() >= 5);
     }
 
@@ -1246,7 +1558,7 @@ mod tests {
         algo.on_order(order).unwrap();
 
         // Should submit entire size directly (no scheduling)
-        assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
         assert_eq!(algo.core.submit_params(&primary_id), None);
     }
 
@@ -1283,7 +1595,7 @@ mod tests {
 
         algo.on_order(order).unwrap();
 
-        assert!(algo.scheduled_sizes.get(&primary_id).is_none());
+        assert!(algo.scheduled_orders.get(&primary_id).is_none());
         assert_eq!(algo.core.submit_params(&primary_id), None);
     }
 
@@ -1361,7 +1673,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 
@@ -1398,7 +1710,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 
@@ -1423,7 +1735,7 @@ mod tests {
         add_instrument_to_cache(&algo);
         DataActorNative::clock_mut(&mut algo)
             .as_any_mut()
-            .downcast_mut::<TestClock>()
+            .downcast_mut::<VirtualClock>()
             .unwrap()
             .set_time(UnixNanos::new(u64::MAX - 500_000_000));
 
@@ -1437,7 +1749,7 @@ mod tests {
             }
         });
         msgbus::register_trading_command_endpoint(
-            MessagingSwitchboard::risk_engine_execute(),
+            MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
 

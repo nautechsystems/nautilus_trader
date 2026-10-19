@@ -12,10 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest node behavior.
+"""
+
+from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from strategies import backtest_surface
+from strategies.backtest_surface import QuoteCountActor
+from strategies.backtest_surface import QuoteCountActorConfig
+from strategies.backtest_surface import RoutedOrderExecutionAlgorithm
+from strategies.backtest_surface import RoutedOrderExecutionAlgorithmConfig
+from strategies.backtest_surface import StreamingWhipsaw
+from strategies.backtest_surface import StreamingWhipsawConfig
 
 from nautilus_trader.analysis import TearsheetConfig
 from nautilus_trader.analysis import TearsheetStatsTableChart
@@ -23,32 +36,55 @@ from nautilus_trader.analysis import create_tearsheet
 from nautilus_trader.analysis import tearsheet
 from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.backtest import BacktestDataConfig
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.backtest import BacktestRunConfig
 from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.common import ImportableActorConfig
+from nautilus_trader.core import UUID4
+from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import Venue
+from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.persistence import RotationConfig
+from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.trading import EmaCrossConfig
+from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
+from nautilus_trader.trading import ImportableStrategyConfig
 from tests.providers import TestInstrumentProvider
 from tests.stubs import TestDataProviderPyo3
 
 
-def test_node_construction():
+def test_node_construction() -> None:
+    """
+    Test node construction.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -57,25 +93,654 @@ def test_node_construction():
     assert node is not None
 
 
-def test_node_exposes_builtin_strategy_registration():
-    assert hasattr(BacktestNode, "add_builtin_strategy")
-
-
-def test_node_empty_configs_raises():
-    with pytest.raises(RuntimeError, match="At least one run config"):
-        BacktestNode([])
-
-
-def test_node_venue_mismatch_raises():
+def test_node_installs_configured_margin_model() -> None:
+    """
+    Test node installs the configured margin model on the account.
+    """
+    instrument = TestInstrumentProvider.audusd_sim()
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        base_currency=Currency.from_str("USD"),
+        default_leverage=Decimal(10),
+        margin_model=StandardMarginModel(),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+    )
+    node = BacktestNode([config])
+
+    try:
+        assert len(node.run()) == 1
+        account = node.get_engine_cache(config.id).account_for_venue(Venue("SIM"))
+
+        assert account is not None
+        assert account.calculate_initial_margin(
+            instrument=instrument,
+            quantity=Quantity.from_int(10_000),
+            price=Price.from_str("0.80000"),
+        ) == Money.from_str("240.00 USD")
+    finally:
+        node.dispose()
+
+
+def test_node_uses_margin_account_default_leverage() -> None:
+    """
+    Test node uses the low-level margin account leverage default.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        base_currency=Currency.from_str("USD"),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+    )
+    node = BacktestNode([config])
+
+    try:
+        assert len(node.run()) == 1
+        account = node.get_engine_cache(config.id).account_for_venue(Venue("SIM"))
+
+        assert account.default_leverage == Decimal(10)
+    finally:
+        node.dispose()
+
+
+def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
+    """
+    Test node applies configured latency during execution.
+    """
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    quotes = _whipsaw_quotes(instrument, count=10)
+    catalog.write_instruments([instrument])
+    catalog.write_quote_ticks(quotes)
+    venue = BacktestVenueConfig(
+        name="BINANCE",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USDT"],
+        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
+        catalog_path=str(catalog_path),
+        instrument_id=instrument.id,
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[data],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+    )
+    node = BacktestNode([config])
+
+    try:
+        node.build()
+        node.add_strategy_from_config(
+            config.id,
+            ImportableStrategyConfig(
+                strategy_path="tests.strategies.backtest_surface:StreamingWhipsaw",
+                config_path="tests.strategies.backtest_surface:StreamingWhipsawConfig",
+                config={
+                    "instrument_id": str(instrument.id),
+                    "trade_size": "1.00000",
+                },
+            ),
+        )
+        result = node.run()[0]
+
+        assert result.backtest_end == quotes[-1].ts_event + 1_000_000_000
+    finally:
+        node.dispose()
+
+
+def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: Path) -> None:
+    """
+    Test an instrument data config loads definitions across instrument classes.
+    """
+    currency_pair = TestInstrumentProvider.audusd_sim()
+    equity = TestInstrumentProvider.aapl_equity()
+    catalog_path = tmp_path / "catalog"
+    catalog_path.mkdir()
+    ParquetDataCatalog(str(catalog_path)).write_instruments([currency_pair, equity])
+    venues = [
+        BacktestVenueConfig(
+            name="SIM",
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal(0),
+                taker_rate=Decimal(0),
+            ),
+        ),
+        BacktestVenueConfig(
+            name="XNAS",
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal(0),
+                taker_rate=Decimal(0),
+            ),
+        ),
+    ]
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.Instrument,
+        catalog_path=str(catalog_path),
+        instrument_ids=[currency_pair.id, equity.id],
+    )
+    config = BacktestRunConfig(
+        venues=venues,
+        data=[data],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+    )
+    node = BacktestNode([config])
+
+    try:
+        assert len(node.run()) == 1
+        cache = node.get_engine_cache(config.id)
+
+        assert sorted(str(instrument_id) for instrument_id in cache.instrument_ids()) == [
+            str(equity.id),
+            str(currency_pair.id),
+        ]
+    finally:
+        node.dispose()
+
+
+@pytest.mark.parametrize("from_config", [False, True])
+def test_node_registers_actor_forms(tmp_path: Path, from_config: bool) -> None:
+    """
+    Test node actor registration forms receive runtime market data.
+    """
+    QuoteCountActor.reset_observations()
+    node, config, instrument, quotes = _build_component_node(tmp_path, quote_count=4)
+
+    try:
+        if from_config:
+            node.add_actor_from_config(
+                config.id,
+                ImportableActorConfig(
+                    actor_path="strategies.backtest_surface:QuoteCountActor",
+                    config_path="strategies.backtest_surface:QuoteCountActorConfig",
+                    config={"instrument_id": str(instrument.id)},
+                ),
+            )
+        else:
+            node.add_actor(
+                config.id,
+                QuoteCountActor(QuoteCountActorConfig(instrument_id=str(instrument.id))),
+            )
+
+        node.run()
+
+        assert QuoteCountActor.quote_count == len(quotes)
+        assert QuoteCountActor.last_bid == quotes[-1].bid_price
+    finally:
+        node.dispose()
+
+
+@pytest.mark.parametrize("from_config", [False, True])
+def test_node_registers_strategy_forms(tmp_path: Path, from_config: bool) -> None:
+    """
+    Test node strategy registration forms submit orders at runtime.
+    """
+    node, config, instrument, _ = _build_component_node(tmp_path, quote_count=10)
+
+    try:
+        if from_config:
+            node.add_strategy_from_config(
+                config.id,
+                ImportableStrategyConfig(
+                    strategy_path="strategies.backtest_surface:StreamingWhipsaw",
+                    config_path="strategies.backtest_surface:StreamingWhipsawConfig",
+                    config={
+                        "instrument_id": str(instrument.id),
+                        "trade_size": "1.00000",
+                    },
+                ),
+            )
+        else:
+            node.add_strategy(
+                config.id,
+                StreamingWhipsaw(
+                    StreamingWhipsawConfig(
+                        instrument_id=str(instrument.id),
+                        trade_size="1.00000",
+                    ),
+                ),
+            )
+
+        result = node.run()[0]
+
+        assert result.total_orders == 4
+        assert result.total_positions == 2
+    finally:
+        node.dispose()
+
+
+@pytest.mark.parametrize("from_config", [False, True])
+def test_node_registers_execution_algorithm_forms(tmp_path: Path, from_config: bool) -> None:
+    """
+    Test node execution-algorithm registration forms receive routed orders.
+    """
+    RoutedOrderExecutionAlgorithm.reset_observations()
+    node, config, instrument, _ = _build_component_node(tmp_path, quote_count=3)
+    algorithm_id = ExecAlgorithmId("NODE-EXEC")
+
+    try:
+        if from_config:
+            node.add_exec_algorithm_from_config(
+                config.id,
+                ImportableExecutionAlgorithmConfig(
+                    exec_algorithm_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithm",
+                    config_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithmConfig",
+                    config={
+                        "exec_algorithm_id": str(algorithm_id),
+                        "log_events": False,
+                        "log_commands": False,
+                    },
+                ),
+            )
+        else:
+            node.add_exec_algorithm(
+                config.id,
+                RoutedOrderExecutionAlgorithm(
+                    RoutedOrderExecutionAlgorithmConfig(
+                        exec_algorithm_id=str(algorithm_id),
+                        log_events=False,
+                        log_commands=False,
+                    ),
+                ),
+            )
+        node.add_strategy_from_config(
+            config.id,
+            ImportableStrategyConfig(
+                strategy_path="strategies.backtest_surface:RoutedOrderProbe",
+                config_path="strategies.backtest_surface:RoutedOrderProbeConfig",
+                config={
+                    "instrument_id": str(instrument.id),
+                    "trade_size": "0.10000",
+                    "exec_algorithm_id": str(algorithm_id),
+                },
+            ),
+        )
+
+        result = node.run()[0]
+
+        assert result.total_orders == 1
+        assert RoutedOrderExecutionAlgorithm.received_exec_algorithm_ids == [algorithm_id]
+        assert RoutedOrderExecutionAlgorithm.cache_instrument_ids == [str(instrument.id)]
+    finally:
+        node.dispose()
+
+
+def test_node_rejects_disposed_execution_algorithm_before_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test node rejects a disposed execution algorithm before construction.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+    )
+    node = BacktestNode([config])
+    constructor_calls: list[bool] = []
+
+    class ConstructorProbe:
+        def __init__(self) -> None:
+            constructor_calls.append(True)
+
+    monkeypatch.setattr(backtest_surface, "ConstructorProbe", ConstructorProbe, raising=False)
+
+    try:
+        assert len(node.run()) == 1
+
+        with pytest.raises(RuntimeError, match="Cannot add components to disposed trader"):
+            node.add_exec_algorithm_from_config(
+                config.id,
+                ImportableExecutionAlgorithmConfig(
+                    exec_algorithm_path="strategies.backtest_surface:ConstructorProbe",
+                    config_path="",
+                    config={},
+                ),
+            )
+
+        assert constructor_calls == []
+    finally:
+        node.dispose()
+
+
+@pytest.mark.parametrize("replace_existing", [False, True])
+def test_node_streams_output_to_new_or_replaced_directory(
+    tmp_path: Path,
+    replace_existing: bool,
+) -> None:
+    """
+    Test configured streaming creates its run directory and replaces existing output.
+    """
+    instance_id = UUID4()
+    output_path = tmp_path / "output"
+    run_path = output_path / "backtest" / str(instance_id)
+    sentinel = run_path / "stale.feather"
+    if replace_existing:
+        run_path.mkdir(parents=True)
+        sentinel.write_bytes(b"stale")
+    node, _config, _, _ = _build_component_node(
+        tmp_path,
+        quote_count=3,
+        engine=BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            instance_id=instance_id,
+            streaming=StreamingConfig(
+                writer_path=str(output_path),
+                flush_interval_ms=1,
+                replace_existing=replace_existing,
+                rotation_config=RotationConfig.size(1),
+            ),
+        ),
+    )
+
+    try:
+        assert run_path.is_dir()
+        assert sentinel.exists() is False
+
+        result = node.run()[0]
+        files = list((output_path / "backtest" / str(result.instance_id)).rglob("*.feather"))
+        quote_files = [path for path in files if "quotes" in str(path)]
+
+        assert files
+        assert len(quote_files) == 3
+    finally:
+        node.dispose()
+
+
+def test_engine_reset_reopens_streaming_writer(tmp_path: Path) -> None:
+    """
+    Test a reset engine streams the rows of its next run.
+    """
+    instance_id = UUID4()
+    output_path = tmp_path / "output"
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    quotes = _whipsaw_quotes(instrument, count=3)
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            instance_id=instance_id,
+            streaming=StreamingConfig(writer_path=str(output_path), flush_interval_ms=1),
+        ),
+    )
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money.from_str("1_000_000 USDT")],
+        book_type=BookType.L1_MBP,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    engine.add_instrument(instrument)
+    engine.add_data(quotes)
+
+    try:
+        engine.run()
+        engine.reset()
+        engine.run()
+        streamed = ParquetDataCatalog(str(output_path)).read_backtest(str(instance_id))
+
+        assert streamed == [quote for quote in quotes for _ in range(2)]
+    finally:
+        engine.dispose()
+
+
+def test_engine_streaming_promotes_into_separate_catalog(tmp_path: Path) -> None:
+    """
+    Test streaming stages under the writer path and promotes into the catalog.
+    """
+    instance_id = UUID4()
+    writer_path = tmp_path / "stream"
+    catalog_path = tmp_path / "catalog"
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    quotes = _whipsaw_quotes(instrument, count=3)
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            instance_id=instance_id,
+            streaming=StreamingConfig(
+                writer_path=str(writer_path),
+                catalog=DataCatalogConfig(path=str(catalog_path)),
+                data_types=[NautilusDataType.QuoteTick],
+            ),
+        ),
+    )
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money.from_str("1_000_000 USDT")],
+        book_type=BookType.L1_MBP,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    engine.add_instrument(instrument)
+    engine.add_data(quotes)
+
+    try:
+        engine.run()
+        promoted = ParquetDataCatalog(str(catalog_path)).query_quote_ticks()
+
+        assert promoted == quotes
+        assert (writer_path / "backtest" / str(instance_id) / "quotes").is_dir()
+        assert not (catalog_path / "backtest").exists()
+    finally:
+        engine.dispose()
+
+
+def test_node_builds_with_configured_catalog(tmp_path: Path) -> None:
+    """
+    Test node construction registers an existing built-in catalog.
+    """
+    input_path = tmp_path / "input"
+    engine = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+        catalogs=[DataCatalogConfig(path=str(input_path), name="history")],
+    )
+    node, _, _, quotes = _build_component_node(
+        tmp_path,
+        quote_count=4,
+        engine=engine,
+    )
+
+    try:
+        assert node.run()[0].iterations == len(quotes)
+    finally:
+        node.dispose()
+
+
+def test_node_rejects_invalid_configured_catalog_path(tmp_path: Path) -> None:
+    """
+    Test node construction consumes and validates configured catalogs.
+    """
+    engine = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+        catalogs=[DataCatalogConfig(path="\0")],
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to create data catalog"):
+        _build_component_node(
+            tmp_path,
+            quote_count=1,
+            engine=engine,
+            raise_exception=True,
+        )
+
+
+def test_node_rejects_duplicate_configured_catalog_names(tmp_path: Path) -> None:
+    """
+    Test node construction rejects duplicate catalog names without panicking.
+    """
+    catalog = DataCatalogConfig(path=str(tmp_path), name="history")
+    engine = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+        catalogs=[catalog, catalog],
+    )
+
+    with pytest.raises(RuntimeError, match="Duplicate data catalog name 'history'"):
+        _build_component_node(
+            tmp_path,
+            quote_count=1,
+            engine=engine,
+            raise_exception=True,
+        )
+
+
+@pytest.mark.parametrize("raise_exception", [True, False])
+def test_node_run_fails_when_fill_cost_exceeds_cash_balance(
+    tmp_path: Path,
+    raise_exception: bool,
+) -> None:
+    """
+    Test a fill the cash account cannot pay for fails the run per the error policy.
+    """
+    instrument = TestInstrumentProvider.aapl_equity()
+    catalog = ParquetDataCatalog(str(tmp_path))
+    catalog.write_instruments([instrument])
+    catalog.write_quote_ticks(
+        [
+            TestDataProviderPyo3.quote_tick(
+                instrument_id=instrument.id,
+                bid_price="99.99",
+                ask_price="100.00",
+                bid_size="250",
+                ask_size="250",
+            ),
+        ],
+    )
+    venue = BacktestVenueConfig(
+        name="XNAS",
+        oms_type="NETTING",
+        account_type="CASH",
+        starting_balances=["250_001 USD"],
+        book_type="L1_MBP",
+        fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+    )
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.QuoteTick,
+        catalog_path=str(tmp_path),
+        instrument_id=instrument.id,
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[data],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        raise_exception=raise_exception,
+    )
+    node = BacktestNode([config])
+    node.build()
+    node.add_strategy(
+        config.id,
+        StreamingWhipsaw(
+            StreamingWhipsawConfig(instrument_id=str(instrument.id), trade_size="2500"),
+        ),
+    )
+
+    try:
+        if raise_exception:
+            with pytest.raises(RuntimeError, match=r"balance would become negative: -21\.50 USD"):
+                node.run()
+        else:
+            assert node.run() == []
+    finally:
+        node.dispose()
+
+
+def test_node_exposes_builtin_strategy_registration() -> None:
+    """
+    Test node exposes builtin strategy registration.
+    """
+    assert hasattr(BacktestNode, "add_builtin_strategy")
+
+
+def test_node_empty_configs_raises() -> None:
+    """
+    Test node empty configs raises.
+    """
+    with pytest.raises(RuntimeError, match="At least one run config"):
+        BacktestNode([])
+
+
+def test_node_venue_mismatch_raises() -> None:
+    """
+    Test node venue mismatch raises.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("BTC/USDT.BINANCE"),
     )
@@ -84,16 +749,23 @@ def test_node_venue_mismatch_raises():
         BacktestNode([config])
 
 
-def test_node_repr():
+def test_node_repr() -> None:
+    """
+    Test node repr.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -102,16 +774,23 @@ def test_node_repr():
     assert "BacktestNode" in repr(node)
 
 
-def test_node_dispose():
+def test_node_dispose() -> None:
+    """
+    Test node dispose.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path="/data/catalog",
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
@@ -132,22 +811,108 @@ def test_node_dispose():
         ("generate_account_report", (Venue("SIM"),)),
     ],
 )
-def test_node_post_run_inspection_unknown_config_raises(method_name, args):
+def test_node_post_run_inspection_unknown_config_raises(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test node post run inspection unknown config raises.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     config = BacktestRunConfig(venues=[venue], data=[])
     node = BacktestNode([config])
 
-    with pytest.raises(RuntimeError, match="No engine for run config 'missing'"):
+    with pytest.raises(
+        RuntimeError,
+        match="No engine for run config 'missing': unknown run config ID",
+    ) as exc_info:
         getattr(node, method_name)("missing", *args)
 
+    assert config.id in str(exc_info.value)
 
-def test_node_post_run_inspection_retains_exact_engine_state(tmp_path):
+
+@pytest.mark.parametrize("build_state", ["not_built", "suppressed_failure", "raised_failure"])
+@pytest.mark.parametrize("method_name", ["get_engine_cache", "add_strategy_from_config"])
+def test_node_missing_engine_explains_build_requirement(
+    tmp_path: Path,
+    build_state: str,
+    method_name: str,
+) -> None:
+    """
+    Test missing engine diagnostics before building and after build failures.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.QuoteTick,
+        catalog_path=str(tmp_path),
+        instrument_id=InstrumentId.from_str("AAA.SIM"),
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[data],
+        raise_exception=build_state == "raised_failure",
+    )
+    node = BacktestNode([config])
+
+    if build_state == "raised_failure":
+        with pytest.raises(RuntimeError, match="No instruments found"):
+            node.build()
+    elif build_state == "suppressed_failure":
+        node.build()
+
+    args = ()
+    if method_name == "add_strategy_from_config":
+        args = (
+            ImportableStrategyConfig(
+                strategy_path="tests.strategies.backtest_surface:StreamingWhipsaw",
+                config_path="tests.strategies.backtest_surface:StreamingWhipsawConfig",
+                config={"instrument_id": "AAA.SIM", "trade_size": "1.00000"},
+            ),
+        )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"call build.*failed.*disposed",
+    ):
+        getattr(node, method_name)(config.id, *args)
+
+
+def test_node_inspection_after_dispose_explains_missing_engine(tmp_path: Path) -> None:
+    """
+    Test explicit disposal removes a previously usable engine.
+    """
+    node, config, _, _ = _build_component_node(tmp_path, quote_count=1)
+    node.get_engine_cache(config.id)
+    node.dispose()
+
+    with pytest.raises(RuntimeError, match="engine was disposed"):
+        node.get_engine_cache(config.id)
+
+
+def test_node_post_run_inspection_retains_exact_engine_state(tmp_path: Path) -> None:
+    """
+    Test node post run inspection retains exact engine state.
+    """
     instrument = TestInstrumentProvider.ethusdt_binance()
     catalog_path = tmp_path / "catalog"
     catalog_path.mkdir()
@@ -205,7 +970,13 @@ def test_node_post_run_inspection_retains_exact_engine_state(tmp_path):
         node.dispose()
 
 
-def test_result_tearsheet_rejects_default_disposed_node_state(tmp_path, monkeypatch):
+def test_result_tearsheet_rejects_default_disposed_node_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test result tearsheet rejects default disposed node state.
+    """
     instrument = TestInstrumentProvider.ethusdt_binance()
     catalog_path = tmp_path / "catalog"
     catalog_path.mkdir()
@@ -233,7 +1004,10 @@ def test_result_tearsheet_rejects_default_disposed_node_state(tmp_path, monkeypa
         node.dispose()
 
 
-def test_node_streaming_matches_oneshot_from_local_catalog(tmp_path):
+def test_node_streaming_matches_oneshot_from_local_catalog(tmp_path: Path) -> None:
+    """
+    Test node streaming matches oneshot from local catalog.
+    """
     instrument = TestInstrumentProvider.ethusdt_binance()
     catalog_path = tmp_path / "catalog"
     catalog_path.mkdir()
@@ -257,28 +1031,73 @@ def test_node_streaming_matches_oneshot_from_local_catalog(tmp_path):
     assert oneshot.summary["positions.closed"] == streaming.summary["positions.closed"]
 
 
-def _run_ema_cross_node(catalog_path, instrument, chunk_size):
+def _run_ema_cross_node(catalog_path: object, instrument: object, chunk_size: object) -> object:
     node, _ = _build_ema_cross_node(catalog_path, instrument, chunk_size)
     result = node.run()[0]
     node.dispose()
     return result
 
 
+def _build_component_node(
+    tmp_path: Path,
+    quote_count: int,
+    engine: BacktestEngineConfig | None = None,
+    raise_exception: bool = False,
+) -> tuple[BacktestNode, BacktestRunConfig, object, list[object]]:
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    catalog_path = tmp_path / "input"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    quotes = _whipsaw_quotes(instrument, count=quote_count)
+    catalog.write_instruments([instrument])
+    catalog.write_quote_ticks(quotes)
+    venue = BacktestVenueConfig(
+        name="BINANCE",
+        oms_type="NETTING",
+        account_type="MARGIN",
+        starting_balances=["1_000_000 USDT"],
+        book_type="L1_MBP",
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    data = BacktestDataConfig(
+        data_type=NautilusDataType.QuoteTick,
+        catalog_path=str(catalog_path),
+        instrument_id=instrument.id,
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[data],
+        engine=engine or BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+        raise_exception=raise_exception,
+    )
+    node = BacktestNode([config])
+    node.build()
+    return node, config, instrument, quotes
+
+
 def _build_ema_cross_node(
-    catalog_path,
-    instrument,
-    chunk_size,
-    dispose_on_completion=True,
-):
+    catalog_path: object,
+    instrument: object,
+    chunk_size: object,
+    dispose_on_completion: object = True,
+) -> object:
     venue = BacktestVenueConfig(
         name="BINANCE",
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USDT"],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     data = BacktestDataConfig(
-        data_type="QuoteTick",
+        data_type=NautilusDataType.QuoteTick,
         catalog_path=catalog_path,
         instrument_id=instrument.id,
     )
@@ -304,7 +1123,7 @@ def _build_ema_cross_node(
     return node, config
 
 
-def _whipsaw_quotes(instrument, count):
+def _whipsaw_quotes(instrument: object, count: object) -> object:
     base_ns = 1_600_000_200_000_000_000
     quotes = []
 

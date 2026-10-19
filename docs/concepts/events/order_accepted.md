@@ -1,16 +1,21 @@
 # OrderAccepted
 
-`OrderAccepted` represents an order having been accepted by the trading venue. The
-`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the
-`MessageBus`. It fires when the venue acknowledges the order as received and valid (often
-a FIX `NEW` OrdStatus).
+`OrderAccepted` records the trading venue's acknowledgement that an order is received and valid
+(often a FIX `NEW` OrdStatus). The `ExecutionEngine` applies it to the order, updates the `Cache`,
+and publishes it on the `MessageBus`.
 
-Transition: `SUBMITTED` -> `ACCEPTED`. Handler: `on_order_accepted`.
+Typical transition: `SUBMITTED` -> `ACCEPTED`. Handler: `on_order_accepted`.
 
 ## Fields
 
-`OrderAccepted` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `venue_order_id` and `account_id` are
-populated, and `reconciliation` carries a real value (default `False`).
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderAccepted` carries:
+
+| Field            | Python type    | Required/default | Description                            |
+| ---------------- | -------------- | ---------------- | -------------------------------------- |
+| `venue_order_id` | `VenueOrderId` | Required         | The venue-assigned order identifier.   |
+| `account_id`     | `AccountId`    | Required         | The account associated with the order. |
+| `reconciliation` | `bool`         | Required         | If generated during reconciliation.    |
 
 ## Example
 

@@ -18,6 +18,12 @@
 //! This crate re-exports the core, model, and common component crates as a small
 //! stable entry point. Use the individual `nautilus-*` crates for adapter,
 //! backtest, live, and other crate-specific APIs.
+//!
+//! # Feature Flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation:
+//!
+//! - `test-support`: Enables model test fixtures, builders, specs, and defaults.
 
 #![warn(clippy::pedantic)]
 

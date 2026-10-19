@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
@@ -30,7 +30,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -45,8 +45,14 @@ pub struct ExecutionMassStatus {
     pub venue: Venue,
     /// The report ID.
     pub report_id: UUID4,
-    /// UNIX timestamp (nanoseconds) when the object was initialized.
+    /// Local UNIX timestamp (nanoseconds) captured before report collection starts.
     pub ts_init: UnixNanos,
+    /// Lower timestamp bound applied to historical reports, when bounded.
+    #[serde(default)]
+    lookback_start: Option<UnixNanos>,
+    /// Whether every report source required for this mass status completed.
+    #[serde(default = "default_true")]
+    reports_complete: bool,
     /// The order status reports.
     order_reports: IndexMap<VenueOrderId, OrderStatusReport>,
     /// The fill reports.
@@ -71,6 +77,8 @@ impl ExecutionMassStatus {
             venue,
             report_id: report_id.unwrap_or_default(),
             ts_init,
+            lookback_start: None,
+            reports_complete: true,
             order_reports: IndexMap::new(),
             fill_reports: IndexMap::new(),
             position_reports: IndexMap::new(),
@@ -93,6 +101,28 @@ impl ExecutionMassStatus {
     #[must_use]
     pub fn position_reports(&self) -> IndexMap<InstrumentId, Vec<PositionStatusReport>> {
         self.position_reports.clone()
+    }
+
+    /// Returns the lower timestamp bound applied to historical reports.
+    #[must_use]
+    pub const fn lookback_start(&self) -> Option<UnixNanos> {
+        self.lookback_start
+    }
+
+    /// Returns whether every report source required for this mass status completed.
+    #[must_use]
+    pub const fn reports_complete(&self) -> bool {
+        self.reports_complete
+    }
+
+    /// Sets the bounded historical report contract.
+    pub const fn set_report_window(
+        &mut self,
+        lookback_start: Option<UnixNanos>,
+        reports_complete: bool,
+    ) {
+        self.lookback_start = lookback_start;
+        self.reports_complete = reports_complete;
     }
 
     /// Add order reports to the mass status.
@@ -123,20 +153,64 @@ impl ExecutionMassStatus {
     }
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 impl Display for ExecutionMassStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ExecutionMassStatus(client_id={}, account_id={}, venue={}, order_reports={:?}, fill_reports={:?}, position_reports={:?}, report_id={}, ts_init={})",
+            "ExecutionMassStatus(client_id={}, account_id={}, venue={}, order_reports={}, fill_reports={}, position_reports={}, report_id={}, ts_init={})",
             self.client_id,
             self.account_id,
             self.venue,
-            self.order_reports,
-            self.fill_reports,
-            self.position_reports,
+            ReportMapDisplay(&self.order_reports),
+            ReportListMapDisplay(&self.fill_reports),
+            ReportListMapDisplay(&self.position_reports),
             self.report_id,
             self.ts_init,
         )
+    }
+}
+
+struct ReportMapDisplay<'a, K, V>(&'a IndexMap<K, V>);
+
+impl<K: Debug, V: Display> Display for ReportMapDisplay<'_, K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{")?;
+
+        for (index, (key, value)) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{key:?}: {value}")?;
+        }
+        f.write_str("}")
+    }
+}
+
+struct ReportListMapDisplay<'a, K, V>(&'a IndexMap<K, Vec<V>>);
+
+impl<K: Debug, V: Display> Display for ReportListMapDisplay<'_, K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{")?;
+
+        for (map_index, (key, values)) in self.0.iter().enumerate() {
+            if map_index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{key:?}: [")?;
+
+            for (value_index, value) in values.iter().enumerate() {
+                if value_index > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{value}")?;
+            }
+            f.write_str("]")?;
+        }
+        f.write_str("}")
     }
 }
 
@@ -147,9 +221,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{
-            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
-        },
+        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
         identifiers::{
             AccountId, ClientId, InstrumentId, PositionId, TradeId, Venue, VenueOrderId,
         },
@@ -173,7 +245,7 @@ mod tests {
             InstrumentId::from("AAPL.NASDAQ"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -209,7 +281,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("IB-DU123456"),
             InstrumentId::from("AAPL.NASDAQ"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("50"),
             UnixNanos::from(2_000_000_000),
             UnixNanos::from(3_000_000_000),
@@ -227,9 +299,22 @@ mod tests {
         assert_eq!(mass_status.account_id, AccountId::from("IB-DU123456"));
         assert_eq!(mass_status.venue, Venue::from("NASDAQ"));
         assert_eq!(mass_status.ts_init, UnixNanos::from(1_000_000_000));
+        assert_eq!(mass_status.lookback_start(), None);
+        assert!(mass_status.reports_complete());
         assert!(mass_status.order_reports().is_empty());
         assert!(mass_status.fill_reports().is_empty());
         assert!(mass_status.position_reports().is_empty());
+    }
+
+    #[rstest]
+    fn test_set_report_window() {
+        let mut mass_status = test_execution_mass_status();
+        let lookback_start = UnixNanos::from(500_000_000);
+
+        mass_status.set_report_window(Some(lookback_start), false);
+
+        assert_eq!(mass_status.lookback_start(), Some(lookback_start));
+        assert!(!mass_status.reports_complete());
     }
 
     #[rstest]
@@ -258,7 +343,7 @@ mod tests {
             InstrumentId::from("MSFT.NASDAQ"),
             None,
             VenueOrderId::from("2"),
-            OrderSide::Sell,
+            OrderSide::Sell.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Filled,
@@ -323,7 +408,7 @@ mod tests {
         let position_report2 = PositionStatusReport::new(
             AccountId::from("IB-DU123456"),
             InstrumentId::from("AAPL.NASDAQ"), // Same instrument ID
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             Quantity::from("25"),
             UnixNanos::from(2_100_000_000),
             UnixNanos::from(3_100_000_000),
@@ -334,7 +419,7 @@ mod tests {
         let position_report3 = PositionStatusReport::new(
             AccountId::from("IB-DU123456"),
             InstrumentId::from("MSFT.NASDAQ"), // Different instrument
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100"),
             UnixNanos::from(2_200_000_000),
             UnixNanos::from(3_200_000_000),
@@ -445,12 +530,54 @@ mod tests {
     #[rstest]
     fn test_display() {
         let mass_status = test_execution_mass_status();
-        let display_str = format!("{mass_status}");
 
-        assert!(display_str.contains("ExecutionMassStatus"));
-        assert!(display_str.contains("IB"));
-        assert!(display_str.contains("IB-DU123456"));
-        assert!(display_str.contains("NASDAQ"));
+        assert_eq!(
+            mass_status.to_string(),
+            format!(
+                "ExecutionMassStatus(client_id=IB, account_id=IB-DU123456, venue=NASDAQ, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={}, ts_init=1000000000)",
+                mass_status.report_id,
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_display_with_reports_uses_report_display() {
+        let mut mass_status = test_execution_mass_status();
+        let order_report = create_test_order_report();
+        let fill_report = create_test_fill_report();
+        let position_report = create_test_position_report();
+        let expected_order_report = order_report.to_string();
+        let expected_fill_report = fill_report.to_string();
+        let expected_position_report = position_report.to_string();
+
+        mass_status.add_order_reports(vec![order_report]);
+        mass_status.add_fill_reports(vec![fill_report]);
+        mass_status.add_position_reports(vec![position_report]);
+
+        assert_eq!(
+            mass_status.to_string(),
+            format!(
+                "ExecutionMassStatus(client_id=IB, account_id=IB-DU123456, venue=NASDAQ, order_reports={{\"1\": {expected_order_report}}}, fill_reports={{\"1\": [{expected_fill_report}]}}, position_reports={{\"AAPL.NASDAQ\": [{expected_position_report}]}}, report_id={}, ts_init=1000000000)",
+                mass_status.report_id,
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_report_map_display_uses_value_display() {
+        let reports = IndexMap::from([("key", "value")]);
+
+        assert_eq!(ReportMapDisplay(&reports).to_string(), "{\"key\": value}");
+    }
+
+    #[rstest]
+    fn test_report_list_map_display_uses_value_display() {
+        let reports = IndexMap::from([("key", vec!["one", "two"])]);
+
+        assert_eq!(
+            ReportListMapDisplay(&reports).to_string(),
+            "{\"key\": [one, two]}"
+        );
     }
 
     #[rstest]
@@ -463,12 +590,27 @@ mod tests {
 
     #[rstest]
     fn test_serialization_roundtrip() {
-        let original = test_execution_mass_status();
+        let mut original = test_execution_mass_status();
+        original.set_report_window(Some(UnixNanos::from(500_000_000)), false);
 
         // Test JSON serialization
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: ExecutionMassStatus = serde_json::from_str(&json).unwrap();
         assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_deserialization_defaults_unbounded_report_contract() {
+        let original = test_execution_mass_status();
+        let mut value = serde_json::to_value(original).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("lookback_start");
+        object.remove("reports_complete");
+
+        let deserialized: ExecutionMassStatus = serde_json::from_value(value).unwrap();
+
+        assert_eq!(deserialized.lookback_start(), None);
+        assert!(deserialized.reports_complete());
     }
 
     #[rstest]
@@ -511,7 +653,7 @@ mod tests {
             InstrumentId::from("AAPL.NASDAQ"),
             None,
             venue_order_id,
-            OrderSide::Sell, // Different side
+            OrderSide::Sell.into(), // Different side
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Filled,

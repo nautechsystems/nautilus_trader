@@ -23,6 +23,7 @@ use pyo3::prelude::*;
 use crate::{
     average::ama::AdaptiveMovingAverage,
     indicator::{Indicator, MovingAverage},
+    python::float_precision,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -35,19 +36,19 @@ impl AdaptiveMovingAverage {
     /// low. The AMA will increase lag when the price swings increase.
     #[new]
     #[pyo3(signature = (period_efficiency_ratio, period_fast, period_slow, price_type=None))]
-    #[must_use]
     pub fn py_new(
         period_efficiency_ratio: usize,
         period_fast: usize,
         period_slow: usize,
         price_type: Option<PriceType>,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             period_efficiency_ratio,
             period_fast,
             period_slow,
             price_type,
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -134,21 +135,26 @@ impl AdaptiveMovingAverage {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        float_precision::check_quote(quote)?;
         self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) -> PyResult<()> {
+        float_precision::check_trade(trade)?;
         self.handle_trade(trade);
+        Ok(())
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]
-    const fn py_reset(&mut self) {
+    fn py_reset(&mut self) {
         self.reset();
     }
 

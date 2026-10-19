@@ -21,10 +21,10 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::HasTsInit;
+use super::{ARROW_TIMESTAMP_NANOSECOND, HasTsInit};
 use crate::{
     identifiers::InstrumentId,
-    types::{Price, fixed::FIXED_SIZE_BINARY},
+    types::{Price, fixed::FIXED_DECIMAL},
 };
 
 /// Represents a mark price update.
@@ -33,7 +33,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -83,9 +83,15 @@ impl MarkPriceUpdate {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("value".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert("value".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 }
@@ -114,7 +120,7 @@ impl HasTsInit for MarkPriceUpdate {
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -164,9 +170,15 @@ impl IndexPriceUpdate {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("value".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert("value".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 }

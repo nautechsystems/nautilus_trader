@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         report.order_status,
     );
 
-    log::info!("Cancelling the resting order to free up locked USDH...");
+    log::info!("Cancelling the resting order to free up locked quote tokens...");
     client
         .cancel_order(instrument_id, Some(client_order_id), None)
         .await?;

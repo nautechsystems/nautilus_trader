@@ -70,7 +70,7 @@ use crate::config::ConfigResult;
 /// Configuration for the Nautilus logger.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -125,8 +125,7 @@ impl<S: logger_config_builder::IsComplete> LoggerConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`](crate::config::ConfigError) if any field fails validation
-    /// (see [`LoggerConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`LoggerConfig::validate`]).
     pub fn build(self) -> ConfigResult<LoggerConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -180,8 +179,8 @@ impl LoggerConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`](crate::config::ConfigError) if the file writer configuration
-    /// is invalid (see [`FileWriterConfig::validate`]).
+    /// Returns an error if the file writer configuration is invalid (see
+    /// [`FileWriterConfig::validate`]).
     pub fn validate(&self) -> ConfigResult<()> {
         if let Some(file_config) = &self.file_config {
             file_config.validate()?;
@@ -211,11 +210,9 @@ impl LoggerConfig {
                 continue;
             }
 
-            let kv_lower = kv.to_lowercase();
-
-            // Handle bare flags (without =)
-            if !kv.contains('=') {
-                match kv_lower.as_str() {
+            let Some((k, v)) = kv.split_once('=') else {
+                // Handle bare flags (without =)
+                match kv.to_lowercase().as_str() {
                     "log_components_only" => config.log_components_only = true,
                     "is_colored" => config.is_colored = true,
                     "print_config" => config.print_config = true,
@@ -226,15 +223,10 @@ impl LoggerConfig {
                     _ => anyhow::bail!("Invalid spec pair: {kv}"),
                 }
                 continue;
-            }
+            };
 
-            let parts: Vec<&str> = kv.splitn(2, '=').collect();
-            if parts.len() != 2 {
-                anyhow::bail!("Invalid spec pair: {kv}");
-            }
-
-            let k = parts[0].trim();
-            let v = parts[1].trim();
+            let k = k.trim();
+            let v = v.trim();
             let k_lower = k.to_lowercase();
 
             match k_lower.as_str() {

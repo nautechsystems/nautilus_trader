@@ -28,7 +28,7 @@ pub(crate) mod nanos_as_u64 {
     ///
     /// # Errors
     ///
-    /// Propagates any error from the underlying serializer.
+    /// Returns an error if the underlying serializer fails.
     #[expect(
         clippy::trivially_copy_pass_by_ref,
         reason = "serde with contract requires a borrowed value"
@@ -44,7 +44,7 @@ pub(crate) mod nanos_as_u64 {
     ///
     /// # Errors
     ///
-    /// Propagates any error from the underlying deserializer.
+    /// Returns an error if the underlying deserializer fails.
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<UnixNanos, D::Error> {
@@ -62,7 +62,7 @@ pub(crate) mod opt_nanos_as_u64 {
     ///
     /// # Errors
     ///
-    /// Propagates any error from the underlying serializer.
+    /// Returns an error if the underlying serializer fails.
     #[expect(
         clippy::ref_option,
         reason = "serde with contract requires a borrowed option"
@@ -81,7 +81,7 @@ pub(crate) mod opt_nanos_as_u64 {
     ///
     /// # Errors
     ///
-    /// Propagates any error from the underlying deserializer.
+    /// Returns an error if the underlying deserializer fails.
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<UnixNanos>, D::Error> {

@@ -14,52 +14,71 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Configuration structures for the Lighter adapter.
+//!
+//! Fields follow this order:
+//!
+//! - Environment
+//! - Deployment
+//! - Nautilus identity
+//! - Authentication
+//! - Connectivity
+//! - Operational behavior
 
-use std::fmt::Debug;
-
-use nautilus_core::string::secret::REDACTED;
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
+use nautilus_model::{
+    identifiers::{AccountId, Venue},
+    types::Currency,
+};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
-    credential::credential_env_vars,
-    enums::LighterEnvironment,
-    urls::{lighter_http_base_url, lighter_ws_url},
+    credential::credential_env_vars_for_deployment,
+    deployment,
+    enums::{LighterDeployment, LighterEnvironment},
 };
 
 const WS_READONLY_QUERY_PARAM: &str = "readonly";
 
 /// Configuration for the Lighter data client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
+    pyo3::pyclass(module = "nautilus_trader.adapters.lighter", from_py_object,)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.lighter")
 )]
 pub struct LighterDataClientConfig {
+    /// Target environment within the selected deployment.
+    #[builder(default)]
+    pub environment: LighterEnvironment,
+    /// Lighter protocol deployment, which controls endpoint defaults and protocol settings.
+    #[builder(default)]
+    pub deployment: LighterDeployment,
+    /// Optional Nautilus venue identifier override.
+    ///
+    /// This scopes instruments, cache entries, and message routing without changing the
+    /// deployment's signing or settlement settings.
+    pub venue: Option<Venue>,
+    /// Lighter account index for authenticated REST data requests. Falls back
+    /// to the environment variable selected by `deployment` and `environment`.
+    pub account_index: Option<u64>,
+    /// API key index for authenticated REST data requests. Falls back to the
+    /// environment variable selected by `deployment` and `environment`.
+    pub api_key_index: Option<u8>,
+    /// Hex-encoded private key for REST auth tokens. Falls back to the
+    /// environment variable selected by `deployment` and `environment`.
+    pub private_key: Option<SecretString>,
     /// Optional REST URL override.
     pub base_url_http: Option<String>,
     /// Optional WebSocket URL override.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
-    /// Target environment.
-    #[builder(default)]
-    pub environment: LighterEnvironment,
-    /// Lighter account index for authenticated REST data requests. Falls back
-    /// to `LIGHTER_ACCOUNT_INDEX` / `LIGHTER_TESTNET_ACCOUNT_INDEX`.
-    pub account_index: Option<u64>,
-    /// API key index for authenticated REST data requests. Falls back to
-    /// `LIGHTER_API_KEY_INDEX` / `LIGHTER_TESTNET_API_KEY_INDEX`.
-    pub api_key_index: Option<u8>,
-    /// Hex-encoded private key for REST auth tokens. Falls back to
-    /// `LIGHTER_API_SECRET` / `LIGHTER_TESTNET_API_SECRET`.
-    pub private_key: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -69,6 +88,12 @@ pub struct LighterDataClientConfig {
     /// Refresh interval for instrument metadata in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Set to 0 to disable snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// Optional REST read-bucket quota override in requests per minute; unset keeps
     /// the conservative 60 req/min default (raising it requires venue IP registration).
     pub rest_quota_per_min: Option<u32>,
@@ -79,14 +104,17 @@ pub struct LighterDataClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(LighterDataClientConfig {
-    base_url_http: Option<String>,
-    base_url_ws: Option<String>,
     environment: LighterEnvironment,
+    deployment: LighterDeployment,
+    venue: Option<Venue>,
     account_index: Option<u64>,
     api_key_index: Option<u8>,
+    base_url_http: Option<String>,
+    base_url_ws: Option<String>,
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     update_instruments_interval_mins: u64,
+    book_snapshot_timeout_secs: u64,
     rest_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
 });
@@ -107,9 +135,9 @@ impl LighterDataClientConfig {
     /// Returns the resolved REST base URL.
     #[must_use]
     pub fn http_url(&self) -> String {
-        self.base_url_http
-            .clone()
-            .unwrap_or_else(|| lighter_http_base_url(self.environment).to_string())
+        self.base_url_http.clone().unwrap_or_else(|| {
+            deployment::http_base_url(self.deployment, self.environment).to_string()
+        })
     }
 
     /// Returns the resolved WebSocket URL.
@@ -118,46 +146,39 @@ impl LighterDataClientConfig {
         let url = self
             .base_url_ws
             .clone()
-            .unwrap_or_else(|| lighter_ws_url(self.environment).to_string());
+            .unwrap_or_else(|| deployment::ws_url(self.deployment, self.environment).to_string());
 
         ensure_readonly_ws_url(url)
+    }
+
+    /// Returns the configured venue or the deployment default.
+    #[must_use]
+    pub fn resolved_venue(&self) -> Venue {
+        self.venue
+            .unwrap_or_else(|| deployment::venue(self.deployment))
+    }
+
+    /// Returns the deployment settlement currency.
+    #[must_use]
+    pub fn settlement_currency(&self) -> Currency {
+        deployment::settlement_currency(self.deployment)
     }
 
     /// Returns `true` when all REST auth credential fields are available.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
-        let (key_var, secret_var, account_var) = credential_env_vars(self.environment);
+        let (key_var, secret_var, account_var) =
+            credential_env_vars_for_deployment(self.deployment, self.environment);
         let has_key = self.api_key_index.is_some() || env_var_is_set(key_var);
         let has_account = self.account_index.is_some() || env_var_is_set(account_var);
         let has_secret = self
             .private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
             || env_var_is_set(secret_var);
 
         has_key && has_account && has_secret
-    }
-}
-
-impl Debug for LighterDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(LighterDataClientConfig))
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_ws", &self.base_url_ws)
-            .field("proxy_url", &self.proxy_url)
-            .field("environment", &self.environment)
-            .field("account_index", &self.account_index)
-            .field("api_key_index", &self.api_key_index)
-            .field("private_key", &self.private_key.as_ref().map(|_| REDACTED))
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field(
-                "update_instruments_interval_mins",
-                &self.update_instruments_interval_mins,
-            )
-            .field("rest_quota_per_min", &self.rest_quota_per_min)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
     }
 }
 
@@ -189,46 +210,47 @@ fn ensure_readonly_ws_url(url: String) -> String {
 }
 
 /// Configuration for the Lighter execution client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.lighter", from_py_object,)
+    pyo3::pyclass(module = "nautilus_trader.adapters.lighter", from_py_object,)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.lighter")
 )]
-pub struct LighterExecClientConfig {
-    /// Trader identifier.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
-    /// Account identifier on the venue.
+pub struct LighterExecutionClientConfig {
+    /// Target environment within the selected deployment.
+    #[builder(default)]
+    pub environment: LighterEnvironment,
+    /// Lighter protocol deployment, which controls endpoint defaults and protocol settings.
+    #[builder(default)]
+    pub deployment: LighterDeployment,
+    /// Optional Nautilus venue identifier override.
+    ///
+    /// This scopes instruments, cache entries, and execution routing without changing the
+    /// deployment's signing, settlement, or protocol behavior.
+    pub venue: Option<Venue>,
+    /// Account identifier on the venue. Its issuer must match the resolved venue.
     #[builder(default = AccountId::from("LIGHTER-001"))]
     pub account_id: AccountId,
     /// Lighter account index (numeric, assigned at registration). Falls back
-    /// to `LIGHTER_ACCOUNT_INDEX` / `LIGHTER_TESTNET_ACCOUNT_INDEX` when
-    /// resolved through `common::credential`.
+    /// to the environment variable selected by `deployment` and `environment`.
     pub account_index: Option<u64>,
     /// API key index for a user-created Lighter key. Low indexes are reserved
     /// for Lighter clients; 255 is the `apikeys` all-keys sentinel. Falls back
-    /// to `LIGHTER_API_KEY_INDEX` /
-    /// `LIGHTER_TESTNET_API_KEY_INDEX` when resolved through
-    /// `common::credential`.
+    /// to the environment variable selected by `deployment` and `environment`.
     pub api_key_index: Option<u8>,
     /// Hex-encoded private key for the API key (Schnorr / ecgfp5). Falls back
-    /// to `LIGHTER_API_SECRET` / `LIGHTER_TESTNET_API_SECRET` when resolved
-    /// through `common::credential`.
-    pub private_key: Option<String>,
+    /// to the environment variable selected by `deployment` and `environment`.
+    pub private_key: Option<SecretString>,
     /// Optional REST URL override.
     pub base_url_http: Option<String>,
     /// Optional WebSocket URL override.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
-    /// Target environment.
-    #[builder(default)]
-    pub environment: LighterEnvironment,
+    pub proxy_url: Option<SecretString>,
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -247,54 +269,44 @@ pub struct LighterExecClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Whether to use Lighter-native GTD orders.
+    ///
+    /// The current Lighter venue validation requires a `GoodTillTime` expiry of at least five
+    /// minutes, so a shorter strategy GTD lifetime cannot be represented as an explicit venue
+    /// expiry. Set to false only when the strategy manages GTD expiry locally. Lighter then uses
+    /// a 28-day fallback expiry and the strategy must enable `manage_gtd_expiry` so the local
+    /// expiry timer sends the cancel. Local strategy expiries beyond 28 days are denied because
+    /// the fallback would expire first; use native GTD for those orders.
+    #[builder(default = true)]
+    pub use_gtd: bool,
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(LighterExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(LighterExecutionClientConfig {
+    environment: LighterEnvironment,
+    deployment: LighterDeployment,
+    venue: Option<Venue>,
     account_id: AccountId,
     account_index: Option<u64>,
     api_key_index: Option<u8>,
     base_url_http: Option<String>,
     base_url_ws: Option<String>,
-    environment: LighterEnvironment,
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     market_order_slippage_bps: u32,
     rest_quota_per_min: Option<u32>,
     sendtx_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
+    use_gtd: bool,
 });
 
-impl Default for LighterExecClientConfig {
+impl Default for LighterExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl Debug for LighterExecClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(LighterExecClientConfig))
-            .field("trader_id", &self.trader_id)
-            .field("account_id", &self.account_id)
-            .field("account_index", &self.account_index)
-            .field("api_key_index", &self.api_key_index)
-            .field("private_key", &self.private_key.as_ref().map(|_| REDACTED))
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_ws", &self.base_url_ws)
-            .field("proxy_url", &self.proxy_url)
-            .field("environment", &self.environment)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field("market_order_slippage_bps", &self.market_order_slippage_bps)
-            .field("rest_quota_per_min", &self.rest_quota_per_min)
-            .field("sendtx_quota_per_min", &self.sendtx_quota_per_min)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
-}
-
-impl LighterExecClientConfig {
+impl LighterExecutionClientConfig {
     /// Returns `true` when all fields required to sign and submit
     /// authenticated transactions are configured.
     ///
@@ -304,7 +316,8 @@ impl LighterExecClientConfig {
     pub fn has_credentials(&self) -> bool {
         let key_set = self
             .private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty());
         key_set && self.account_index.is_some() && self.api_key_index.is_some()
     }
@@ -312,9 +325,9 @@ impl LighterExecClientConfig {
     /// Returns the resolved REST base URL.
     #[must_use]
     pub fn http_url(&self) -> String {
-        self.base_url_http
-            .clone()
-            .unwrap_or_else(|| lighter_http_base_url(self.environment).to_string())
+        self.base_url_http.clone().unwrap_or_else(|| {
+            deployment::http_base_url(self.deployment, self.environment).to_string()
+        })
     }
 
     /// Returns the resolved WebSocket URL.
@@ -322,12 +335,32 @@ impl LighterExecClientConfig {
     pub fn ws_url(&self) -> String {
         self.base_url_ws
             .clone()
-            .unwrap_or_else(|| lighter_ws_url(self.environment).to_string())
+            .unwrap_or_else(|| deployment::ws_url(self.deployment, self.environment).to_string())
+    }
+
+    /// Returns the configured venue or the deployment default.
+    #[must_use]
+    pub fn resolved_venue(&self) -> Venue {
+        self.venue
+            .unwrap_or_else(|| deployment::venue(self.deployment))
+    }
+
+    /// Returns the deployment settlement currency.
+    #[must_use]
+    pub fn settlement_currency(&self) -> Currency {
+        deployment::settlement_currency(self.deployment)
+    }
+
+    /// Returns the L2 signing-domain chain ID for the deployment and environment.
+    #[must_use]
+    pub const fn chain_id(&self) -> u32 {
+        deployment::chain_id(self.deployment, self.environment)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
@@ -340,7 +373,7 @@ mod tests {
         let config = LighterDataClientConfig {
             api_key_index: Some(5),
             account_index: Some(12_345),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            private_key: Some(PRIVATE_KEY_HEX.into()),
             ..Default::default()
         };
 
@@ -352,7 +385,7 @@ mod tests {
         let config = LighterDataClientConfig {
             api_key_index: Some(5),
             account_index: Some(12_345),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            private_key: Some(PRIVATE_KEY_HEX.into()),
             ..Default::default()
         };
 
@@ -410,23 +443,137 @@ mod tests {
     }
 
     #[rstest]
+    fn data_config_book_snapshot_timeout_default_is_ten_seconds() {
+        let config = LighterDataClientConfig::default();
+
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
+    }
+
+    #[derive(Debug)]
+    struct ExpectedDeploymentSettings {
+        http_url: &'static str,
+        data_ws_url: &'static str,
+        chain_id: u32,
+        venue: &'static str,
+        currency: &'static str,
+    }
+
+    #[rstest]
+    #[case::lighter_mainnet(
+        LighterDeployment::Lighter,
+        LighterEnvironment::Mainnet,
+        ExpectedDeploymentSettings {
+            http_url: "https://mainnet.zklighter.elliot.ai",
+            data_ws_url: "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
+            chain_id: 304,
+            venue: "LIGHTER",
+            currency: "USDC",
+        }
+    )]
+    #[case::lighter_testnet(
+        LighterDeployment::Lighter,
+        LighterEnvironment::Testnet,
+        ExpectedDeploymentSettings {
+            http_url: "https://testnet.zklighter.elliot.ai",
+            data_ws_url: "wss://testnet.zklighter.elliot.ai/stream?readonly=true",
+            chain_id: 300,
+            venue: "LIGHTER",
+            currency: "USDC",
+        }
+    )]
+    #[case::robinhood_mainnet(
+        LighterDeployment::Robinhood,
+        LighterEnvironment::Mainnet,
+        ExpectedDeploymentSettings {
+            http_url: "https://api.rh.lighter.xyz",
+            data_ws_url: "wss://api.rh.lighter.xyz/stream?readonly=true",
+            chain_id: 466_324,
+            venue: "LIGHTER_ROBINHOOD",
+            currency: "USDG",
+        }
+    )]
+    #[case::robinhood_testnet(
+        LighterDeployment::Robinhood,
+        LighterEnvironment::Testnet,
+        ExpectedDeploymentSettings {
+            http_url: "https://api.rh-testnet.lighter.xyz",
+            data_ws_url: "wss://api.rh-testnet.lighter.xyz/stream?readonly=true",
+            chain_id: 300,
+            venue: "LIGHTER_ROBINHOOD",
+            currency: "USDG",
+        }
+    )]
+    fn configs_resolve_deployment_settings(
+        #[case] deployment: LighterDeployment,
+        #[case] environment: LighterEnvironment,
+        #[case] expected: ExpectedDeploymentSettings,
+    ) {
+        let data = LighterDataClientConfig {
+            environment,
+            deployment,
+            ..Default::default()
+        };
+
+        let execution = LighterExecutionClientConfig {
+            environment,
+            deployment,
+            ..Default::default()
+        };
+
+        assert_eq!(data.http_url(), expected.http_url);
+        assert_eq!(data.ws_url(), expected.data_ws_url);
+        assert_eq!(data.resolved_venue().as_str(), expected.venue);
+        assert_eq!(data.settlement_currency().code, expected.currency);
+        assert_eq!(execution.http_url(), expected.http_url);
+        assert_eq!(
+            execution.ws_url(),
+            expected.data_ws_url.replace("?readonly=true", "")
+        );
+        assert_eq!(execution.resolved_venue().as_str(), expected.venue);
+        assert_eq!(execution.settlement_currency().code, expected.currency);
+        assert_eq!(execution.chain_id(), expected.chain_id);
+    }
+
+    #[rstest]
+    fn configs_preserve_custom_venue() {
+        let venue = Venue::from("LIGHTER_CUSTOM");
+        let data = LighterDataClientConfig {
+            deployment: LighterDeployment::Robinhood,
+            venue: Some(venue),
+            ..Default::default()
+        };
+
+        let execution = LighterExecutionClientConfig {
+            deployment: LighterDeployment::Robinhood,
+            venue: Some(venue),
+            ..Default::default()
+        };
+
+        assert_eq!(data.resolved_venue(), venue);
+        assert_eq!(execution.resolved_venue(), venue);
+        assert_eq!(execution.chain_id(), 466_324);
+    }
+
+    #[rstest]
     fn exec_config_debug_redacts_private_key() {
-        let config = LighterExecClientConfig {
-            trader_id: TraderId::from("TRADER-001"),
+        let config = LighterExecutionClientConfig {
             account_id: AccountId::from("LIGHTER-001"),
             api_key_index: Some(5),
             account_index: Some(12_345),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            private_key: Some(PRIVATE_KEY_HEX.into()),
             base_url_http: None,
             base_url_ws: None,
             proxy_url: None,
             environment: LighterEnvironment::Mainnet,
+            deployment: LighterDeployment::Lighter,
+            venue: None,
             http_timeout_secs: 60,
             ws_timeout_secs: 30,
             market_order_slippage_bps: 50,
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
             transport_backend: TransportBackend::default(),
+            use_gtd: true,
         };
 
         let dbg_out = format!("{config:?}");
@@ -436,145 +583,29 @@ mod tests {
     }
 
     #[rstest]
+    fn exec_config_use_gtd_defaults_to_true() {
+        // Backwards compatibility: the default preserves the native Lighter GTD
+        // behavior so existing configs are unchanged.
+        let config = LighterExecutionClientConfig::default();
+
+        assert!(config.use_gtd);
+    }
+
+    #[rstest]
+    fn exec_config_toml_use_gtd_override() {
+        let config: LighterExecutionClientConfig = toml::from_str("use_gtd = false").unwrap();
+
+        assert!(!config.use_gtd);
+    }
+
+    #[rstest]
     fn exec_config_ws_url_keeps_regular_stream_url() {
-        let config = LighterExecClientConfig {
-            trader_id: TraderId::from("TRADER-001"),
+        let config = LighterExecutionClientConfig {
             account_id: AccountId::from("LIGHTER-001"),
             environment: LighterEnvironment::Mainnet,
             ..Default::default()
         };
 
         assert_eq!(config.ws_url(), "wss://mainnet.zklighter.elliot.ai/stream");
-    }
-
-    // Tests that observe the `env_var_is_set` fallback live in the workspace
-    // `serial_tests` group (see `.config/nextest.toml`) so env-var mutation is
-    // pinned to a single thread.
-    #[allow(unsafe_code)] // env-var mutation in tests; restored via `EnvGuard`.
-    mod serial_tests {
-        use super::*;
-
-        const LIGHTER_ENV_VARS: &[&str] = &[
-            "LIGHTER_API_KEY_INDEX",
-            "LIGHTER_API_SECRET",
-            "LIGHTER_ACCOUNT_INDEX",
-            "LIGHTER_TESTNET_API_KEY_INDEX",
-            "LIGHTER_TESTNET_API_SECRET",
-            "LIGHTER_TESTNET_ACCOUNT_INDEX",
-        ];
-
-        /// Snapshots and clears the Lighter credential env vars, restoring the
-        /// original values on drop.
-        struct EnvGuard {
-            saved: Vec<(&'static str, Option<String>)>,
-        }
-
-        impl EnvGuard {
-            fn clear_lighter() -> Self {
-                let saved = LIGHTER_ENV_VARS
-                    .iter()
-                    .map(|&name| (name, std::env::var(name).ok()))
-                    .collect::<Vec<_>>();
-                for &(name, _) in &saved {
-                    // SAFETY: the `serial_tests` nextest group serializes
-                    // these tests, and no other lighter test reads or writes
-                    // the LIGHTER_* env vars.
-                    unsafe { std::env::remove_var(name) };
-                }
-                Self { saved }
-            }
-        }
-
-        impl Drop for EnvGuard {
-            fn drop(&mut self) {
-                for (name, original) in &self.saved {
-                    match original {
-                        // SAFETY: see `EnvGuard::clear_lighter`.
-                        Some(value) => unsafe { std::env::set_var(name, value) },
-                        None => unsafe { std::env::remove_var(name) },
-                    }
-                }
-            }
-        }
-
-        #[rstest]
-        fn data_config_has_credentials_false_when_all_unset() {
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig::default();
-
-            assert!(!config.has_credentials());
-        }
-
-        #[rstest]
-        #[case::only_api_key_index(Some(5), None, None)]
-        #[case::only_account_index(None, Some(12_345), None)]
-        #[case::only_private_key(None, None, Some(PRIVATE_KEY_HEX.to_string()))]
-        #[case::missing_api_key_index(None, Some(12_345), Some(PRIVATE_KEY_HEX.to_string()))]
-        #[case::missing_account_index(Some(5), None, Some(PRIVATE_KEY_HEX.to_string()))]
-        #[case::missing_private_key(Some(5), Some(12_345), None)]
-        fn data_config_has_credentials_false_for_partial_config(
-            #[case] api_key_index: Option<u8>,
-            #[case] account_index: Option<u64>,
-            #[case] private_key: Option<String>,
-        ) {
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig {
-                account_index,
-                api_key_index,
-                private_key,
-                ..Default::default()
-            };
-
-            assert!(!config.has_credentials());
-        }
-
-        #[rstest]
-        #[case::empty("")]
-        #[case::whitespace("   ")]
-        fn data_config_has_credentials_false_for_blank_private_key(#[case] private_key: &str) {
-            let _guard = EnvGuard::clear_lighter();
-            let config = LighterDataClientConfig {
-                api_key_index: Some(5),
-                account_index: Some(12_345),
-                private_key: Some(private_key.to_string()),
-                ..Default::default()
-            };
-
-            assert!(!config.has_credentials());
-        }
-
-        #[rstest]
-        fn data_config_has_credentials_reads_testnet_env_vars() {
-            let _guard = EnvGuard::clear_lighter();
-            // SAFETY: see `EnvGuard::clear_lighter`; the guard restores values on drop.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_KEY_INDEX", "5") };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_SECRET", PRIVATE_KEY_HEX) };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_ACCOUNT_INDEX", "12345") };
-            let config = LighterDataClientConfig {
-                environment: LighterEnvironment::Testnet,
-                ..Default::default()
-            };
-
-            assert!(config.has_credentials());
-        }
-
-        #[rstest]
-        fn data_config_has_credentials_ignores_mismatched_environment_env_vars() {
-            let _guard = EnvGuard::clear_lighter();
-            // SAFETY: see `EnvGuard::clear_lighter`.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_KEY_INDEX", "5") };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_API_SECRET", PRIVATE_KEY_HEX) };
-            // SAFETY: see above.
-            unsafe { std::env::set_var("LIGHTER_TESTNET_ACCOUNT_INDEX", "12345") };
-            let config = LighterDataClientConfig {
-                environment: LighterEnvironment::Mainnet,
-                ..Default::default()
-            };
-
-            assert!(!config.has_credentials());
-        }
     }
 }

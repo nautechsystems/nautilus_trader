@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -45,7 +45,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -102,10 +102,6 @@ pub struct BettingInstrument {
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
-    /// The fee rate for liquidity makers as a percentage of order value.
-    pub maker_fee: Decimal,
-    /// The fee rate for liquidity takers as a percentage of order value.
-    pub taker_fee: Decimal,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -130,17 +126,8 @@ pub struct BettingInstrument {
 
 #[bon::bon]
 impl BettingInstrument {
-    /// Creates a new [`BettingInstrument`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails (precision mismatches or non-positive increments).
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         event_type_id: u64,
@@ -172,8 +159,6 @@ impl BettingInstrument {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -227,8 +212,6 @@ impl BettingInstrument {
             min_price,
             margin_init: margin_init.unwrap_or(dec!(1)),
             margin_maint: margin_maint.unwrap_or(dec!(1)),
-            maker_fee: maker_fee.unwrap_or_default(),
-            taker_fee: taker_fee.unwrap_or_default(),
             tick_scheme,
             info,
             ts_event,
@@ -236,103 +219,14 @@ impl BettingInstrument {
         })
     }
 
-    /// Creates a new [`BettingInstrument`] instance by parsing and validating input parameters.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any required parameter is invalid or parsing fails during `new_checked`.
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        event_type_id: u64,
-        event_type_name: Ustr,
-        competition_id: u64,
-        competition_name: Ustr,
-        event_id: u64,
-        event_name: Ustr,
-        event_country_code: Ustr,
-        event_open_date: UnixNanos,
-        betting_type: Ustr,
-        market_id: Ustr,
-        market_name: Ustr,
-        market_type: Ustr,
-        market_start_time: UnixNanos,
-        selection_id: u64,
-        selection_name: Ustr,
-        selection_handicap: f64,
-        currency: Currency,
-        price_precision: u8,
-        size_precision: u8,
-        price_increment: Price,
-        size_increment: Quantity,
-        max_quantity: Option<Quantity>,
-        min_quantity: Option<Quantity>,
-        max_notional: Option<Money>,
-        min_notional: Option<Money>,
-        max_price: Option<Price>,
-        min_price: Option<Price>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            event_type_id,
-            event_type_name,
-            competition_id,
-            competition_name,
-            event_id,
-            event_name,
-            event_country_code,
-            event_open_date,
-            betting_type,
-            market_id,
-            market_name,
-            market_type,
-            market_start_time,
-            selection_id,
-            selection_name,
-            selection_handicap,
-            currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`BettingInstrument`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`BettingInstrument::new_checked`], which the builder calls so the
-    /// same correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`BettingInstrument::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,
@@ -366,8 +260,6 @@ impl BettingInstrument {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -405,8 +297,6 @@ impl BettingInstrument {
             min_price,
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
             tick_scheme,
             info,
             ts_event,
@@ -434,13 +324,6 @@ impl Hash for BettingInstrument {
 }
 
 impl Instrument for BettingInstrument {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme.or_else(|| {
-            self.uses_betfair_tick_scheme()
-                .then(|| Ustr::from(BETFAIR_TICK_SCHEME_NAME))
-        })
-    }
-
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Betting(self)
     }
@@ -539,6 +422,17 @@ impl Instrument for BettingInstrument {
         })
     }
 
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme.or_else(|| {
+            self.uses_betfair_tick_scheme()
+                .then(|| Ustr::from(BETFAIR_TICK_SCHEME_NAME))
+        })
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
+    }
+
     fn ts_event(&self) -> UnixNanos {
         self.ts_event
     }
@@ -553,14 +447,6 @@ impl Instrument for BettingInstrument {
 
     fn margin_maint(&self) -> Decimal {
         self.margin_maint
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
     }
 
     fn strike_price(&self) -> Option<Price> {
@@ -646,8 +532,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -658,7 +542,7 @@ mod tests {
     fn test_serialization_roundtrip(betting: BettingInstrument) {
         let json = serde_json::to_string(&betting).unwrap();
         let deserialized: BettingInstrument = serde_json::from_str(&json).unwrap();
-        assert_eq!(betting, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]
@@ -719,8 +603,6 @@ mod tests {
             Some(Price::from("1.00")),
             Some(dec!(0.01)),
             Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
             None,
             None,
             3.into(),
@@ -760,8 +642,6 @@ mod tests {
             .min_price(Price::from("1.00"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(3.into())
             .ts_init(4.into())
             .build()

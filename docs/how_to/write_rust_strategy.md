@@ -36,6 +36,11 @@ pub struct MyStrategy {
 appended to all client order IDs from this strategy, preventing collisions
 when multiple strategies trade the same instrument.
 
+The tag cannot contain a hyphen, because the runtime reads it back from the
+final hyphen-separated part of the strategy ID. `StrategyCore::new` panics on
+an invalid tag; use `StrategyCore::new_checked` to handle it as an error
+instead.
+
 ```rust
 impl MyStrategy {
     pub fn new(instrument_id: InstrumentId) -> Self {

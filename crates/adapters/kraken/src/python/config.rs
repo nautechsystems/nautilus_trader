@@ -15,17 +15,14 @@
 
 //! Python bindings for Kraken configuration.
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    enums::AccountType,
-    identifiers::{AccountId, TraderId},
-};
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::{KrakenEnvironment, KrakenProductType},
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
 };
 
 #[pymethods]
@@ -49,6 +46,7 @@ impl KrakenDataClientConfig {
         ws_idle_timeout_ms = None,
         max_requests_per_second = None,
         transport_backend = None,
+        validate_l2_checksum = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -67,11 +65,14 @@ impl KrakenDataClientConfig {
         ws_idle_timeout_ms: Option<u64>,
         max_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        // Stays the last positional parameter: Python callers bind `proxy_url` and the arguments
+        // after it by position.
+        validate_l2_checksum: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_type: product_type.unwrap_or(defaults.product_type),
             environment: environment.unwrap_or(defaults.environment),
             base_url,
@@ -79,7 +80,8 @@ impl KrakenDataClientConfig {
             ws_private_url,
             ws_l3_url,
             validate_l3_checksum: validate_l3_checksum.unwrap_or(defaults.validate_l3_checksum),
-            proxy_url,
+            validate_l2_checksum: validate_l2_checksum.unwrap_or(defaults.validate_l2_checksum),
+            proxy_url: proxy_url.map(SecretString::from),
             timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
@@ -119,11 +121,10 @@ impl KrakenDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl KrakenExecClientConfig {
+impl KrakenExecutionClientConfig {
     /// Configuration for the Kraken execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id,
         account_id,
         api_key,
         api_secret,
@@ -136,6 +137,7 @@ impl KrakenExecClientConfig {
         heartbeat_interval_secs = None,
         auth_timeout_secs = None,
         max_requests_per_second = None,
+        max_retries = None,
         spot_account_type = None,
         default_leverage = None,
         use_spot_position_reports = None,
@@ -147,7 +149,6 @@ impl KrakenExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        trader_id: TraderId,
         account_id: AccountId,
         api_key: String,
         api_secret: String,
@@ -160,6 +161,7 @@ impl KrakenExecClientConfig {
         heartbeat_interval_secs: Option<u64>,
         auth_timeout_secs: Option<u64>,
         max_requests_per_second: Option<u32>,
+        max_retries: Option<u32>,
         spot_account_type: Option<AccountType>,
         default_leverage: Option<u16>,
         use_spot_position_reports: Option<bool>,
@@ -177,20 +179,20 @@ impl KrakenExecClientConfig {
             ));
         }
         Ok(Self {
-            trader_id,
             account_id,
-            api_key,
-            api_secret,
+            api_key: api_key.into(),
+            api_secret: api_secret.into(),
             product_type: product_type.unwrap_or(defaults.product_type),
             environment: environment.unwrap_or(defaults.environment),
             base_url,
             ws_url,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             timeout_secs: timeout_secs.unwrap_or(defaults.timeout_secs),
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
             auth_timeout_secs,
             max_requests_per_second,
+            max_retries: max_retries.unwrap_or(defaults.max_retries),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             spot_account_type,
             default_leverage,
@@ -217,6 +219,53 @@ impl KrakenExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(KrakenExecClientConfig).to_string()
+        stringify!(KrakenExecutionClientConfig).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{
+        Python,
+        types::{PyAnyMethods, PyTypeMethods},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    /// The checksum option is the last positional parameter, so a positional call binds the proxy
+    /// URL to `proxy_url`.
+    #[rstest]
+    fn data_config_keeps_the_proxy_url_position() {
+        Python::initialize();
+        Python::attach(|py| {
+            let cls = py.get_type::<KrakenDataClientConfig>();
+            let none = py.None();
+            let args = (
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                none.clone_ref(py),
+                true,
+                "http://proxy.example:8080",
+            );
+
+            let config = cls
+                .call1(args)
+                .unwrap_or_else(|e| panic!("construct {}: {e}", cls.name().unwrap()))
+                .extract::<KrakenDataClientConfig>()
+                .expect("extract KrakenDataClientConfig");
+
+            assert!(config.has_proxy_url());
+            assert!(config.validate_l3_checksum);
+            assert_eq!(
+                config.validate_l2_checksum,
+                KrakenDataClientConfig::default().validate_l2_checksum
+            );
+        });
     }
 }

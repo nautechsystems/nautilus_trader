@@ -1,7 +1,9 @@
 """
 Render the Hurst/VPIN tutorial's diagnostic panels from real backtest output.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
+
+    make sync
 
     # Capture a backtest log against multi-day Tardis PF_XBTUSD data.
     RUST_LOG=info cargo run -p nautilus-kraken --features examples \\
@@ -9,10 +11,8 @@ Usage:
 
     # Parse the log and regenerate the five PNG panels next to this script.
     BACKTEST_LOG=/tmp/backtest.log \\
-        python3 docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
-
-Requires the ``visualization`` extra for Kaleido/Plotly:
-    uv sync --extra visualization
+        uv run --project python --no-sync \\
+            python docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
 
 Parses per-bar signal snapshots and ``OrderFilled`` events from the strategy's
 info-level log, then writes five PNGs using the ``nautilus_dark`` tearsheet
@@ -33,6 +33,7 @@ from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
+
 
 LOG_PATH = Path(os.environ.get("BACKTEST_LOG", "/tmp/backtest.log"))  # noqa: S108
 OUT = Path(__file__).resolve().parent
@@ -64,7 +65,7 @@ def parse_log(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     bars: list[dict] = []
     fills: list[dict] = []
 
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = BAR.search(line)
         if m:
@@ -97,9 +98,9 @@ def walk_fills(
     """
     Walk the fill sequence tracking running net position on a Netting OMS.
 
-    Returns entries, partial reductions, full closes, and (open_ts, close_ts)
-    intervals per position cycle. ``close_ts`` is None for a position that is
-    still open at the end of the fill series.
+    Returns entries, partial reductions, full closes, and (open_ts, close_ts) intervals
+    per position cycle. ``close_ts`` is None for a position that is still open at the
+    end of the fill series.
 
     """
     entries: list[dict] = []
@@ -192,11 +193,11 @@ def _contiguous_runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return runs
 
 
-def _filter_fills(records, lo, hi):
+def _filter_fills(records, lo, hi) -> object:
     return [e for e in records if lo <= e["ts"] <= hi]
 
 
-def _draw_fill_connectors(fig, records, bars, row=None, col=None):
+def _draw_fill_connectors(fig, records, bars, row=None, col=None) -> None:
     # Thin dotted segment from the bar-close polyline (interpolated at the
     # fill timestamp) to the actual execution price. Makes the slip between
     # fill price and reference line visually obvious without moving markers
@@ -224,7 +225,15 @@ def _draw_fill_connectors(fig, records, bars, row=None, col=None):
         )
 
 
-def _draw_fill_markers(fig, entries, partials, closes, row=None, col=None, show_legend=True):
+def _draw_fill_markers(
+    fig,
+    entries,
+    partials,
+    closes,
+    row=None,
+    col=None,
+    show_legend=True,
+) -> None:
     kw = {}
     if row is not None:
         kw["row"] = row

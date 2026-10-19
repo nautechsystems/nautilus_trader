@@ -86,7 +86,7 @@ _THEMES: dict[str, dict[str, Any]] = {
 }
 
 
-def _require_not_none(value: Any, name: str) -> None:
+def _require_not_none(value: object, name: str) -> None:
     if value is None:
         raise ValueError(f"{name} must not be None")
 

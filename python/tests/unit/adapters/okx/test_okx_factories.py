@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-import sys
+"""
+Test okx factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import load_example_module
@@ -22,7 +23,7 @@ from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXDataClientFactory
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXExecutionClientFactory
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.common import Environment
@@ -39,6 +40,9 @@ okx_exec_tester = load_example_module("okx", "exec_tester")
 
 
 def test_okx_factories_expose_python_names() -> None:
+    """
+    Test okx factories expose python names.
+    """
     data_factory = OKXDataClientFactory()
     exec_factory = OKXExecutionClientFactory()
 
@@ -46,7 +50,19 @@ def test_okx_factories_expose_python_names() -> None:
     assert exec_factory.name() == OKX
 
 
+def test_okx_data_config_preserves_positional_environment() -> None:
+    """
+    Test okx data config preserves positional environment.
+    """
+    config = OKXDataClientConfig(None, OKXEnvironment.DEMO)
+
+    assert config.environment == OKXEnvironment.DEMO
+
+
 def test_live_node_builder_accepts_okx_data_factory() -> None:
+    """
+    Test live node builder accepts okx data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -55,7 +71,8 @@ def test_live_node_builder_accepts_okx_data_factory() -> None:
             None,
             OKXDataClientFactory(),
             OKXDataClientConfig(
-                instrument_types=[OKXInstrumentType.SPOT],
+                instrument_types=[OKXInstrumentType.OPTION],
+                instrument_families=["BTC-USD"],
                 environment=OKXEnvironment.DEMO,
             ),
         )
@@ -67,6 +84,9 @@ def test_live_node_builder_accepts_okx_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_okx_exec_factory() -> None:
+    """
+    Test live node builder accepts okx exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("OKX-001")
 
@@ -84,8 +104,7 @@ def test_live_node_builder_accepts_okx_exec_factory() -> None:
         .add_exec_client(
             None,
             OKXExecutionClientFactory(),
-            OKXExecClientConfig(
-                trader_id=trader_id,
+            OKXExecutionClientConfig(
                 account_id=account_id,
                 instrument_types=[OKXInstrumentType.SPOT],
                 environment=OKXEnvironment.DEMO,
@@ -101,67 +120,106 @@ def test_live_node_builder_accepts_okx_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_buys", "expected_sells", "expected_dry_run"),
-    [
-        ([], False, False, True),
-        (["--live-orders"], True, False, False),
-        (["--live-orders", "--limit-sells"], True, True, False),
-    ],
-)
-def test_okx_exec_tester_limit_sells_are_explicit(
+def test_okx_exec_tester_registers_exec_tester_strategy(
     monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_buys: bool,
-    expected_sells: bool,
-    expected_dry_run: bool,
 ) -> None:
+    """
+    Test okx exec tester registers exec tester strategy.
+    """
     captured: dict[str, object] = {}
 
     class CapturingExecTesterConfig:
+        """
+        Collect capturing exec tester config tests.
+        """
+
         def __init__(self, **kwargs: object) -> None:
+            """
+            Initialize the instance.
+            """
             captured["exec_tester_kwargs"] = kwargs
 
     class CapturingNode:
+        """
+        Collect capturing node tests.
+        """
+
         def add_builtin_strategy(self, type_name: str, config: object) -> None:
+            """
+            Add builtin strategy.
+            """
             captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
 
+        def run(self) -> None:
+            """
+            Run.
+            """
+            captured["node_ran"] = True
+
     class CapturingBuilder:
+        """
+        Collect capturing builder tests.
+        """
+
         def with_reconciliation(self, reconciliation: bool) -> "CapturingBuilder":
+            """
+            With reconciliation.
+            """
             captured["reconciliation"] = reconciliation
             return self
 
         def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> "CapturingBuilder":
+            """
+            With risk engine config.
+            """
             captured["risk_engine_config"] = config
             return self
 
         def add_data_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add data client.
+            """
             captured["data_client_args"] = args
             return self
 
         def add_exec_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add exec client.
+            """
             captured["exec_client_args"] = args
             return self
 
         def build(self) -> CapturingNode:
+            """
+            Build.
+            """
             return CapturingNode()
 
     class CapturingLiveNode:
+        """
+        Collect capturing live node tests.
+        """
+
         @staticmethod
         def builder(name: str, trader_id: TraderId, environment: Environment) -> CapturingBuilder:
+            """
+            Builder.
+            """
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 
-    monkeypatch.setattr(sys, "argv", ["exec_tester.py", *extra_args])
     monkeypatch.setattr(okx_exec_tester, "ExecTesterConfig", CapturingExecTesterConfig)
     monkeypatch.setattr(okx_exec_tester, "LiveNode", CapturingLiveNode)
 
     okx_exec_tester.main()
 
     assert captured["strategy_type_name"] == "ExecTester"
+    assert captured["node_ran"] is True
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
-    assert kwargs["enable_limit_buys"] is expected_buys
-    assert kwargs["enable_limit_sells"] is expected_sells
-    assert kwargs["dry_run"] is expected_dry_run
+    assert kwargs["instrument_id"] == okx_exec_tester.INSTRUMENT_ID
+    assert kwargs["use_hyphens_in_client_order_ids"] is False
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
+    assert kwargs["dry_run"] is False

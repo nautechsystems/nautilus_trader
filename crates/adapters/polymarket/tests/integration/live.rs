@@ -1,0 +1,2919 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! End-to-end seam tests: strategy commands -> risk engine -> execution engine ->
+//! `PolymarketExecutionClient` -> mock venue -> live execution routing -> cache.
+
+use std::{cell::RefCell, rc::Rc, time::Duration};
+
+use axum::http::StatusCode;
+use nautilus_common::{
+    actor::DataActor,
+    cache::Cache,
+    messages::execution::{GenerateOrderStatusReport, QueryOrder, TradingCommand},
+    msgbus::{self, TypedHandler},
+    testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_live::{
+    SocketReconnectRequestOutcome,
+    testing::{ExecutionHarness, RoutedKind},
+};
+use nautilus_model::{
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    events::{OrderEventAny, OrderRejected},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+    },
+    instruments::InstrumentAny,
+    orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    reports::{ExecutionMassStatus, OrderStatusReport},
+    types::{Currency, Money, Price, Quantity},
+};
+use rstest::rstest;
+use rust_decimal::Decimal;
+use serde_json::{Value, json};
+use ustr::Ustr;
+
+use crate::{
+    harness,
+    mock_venue::{DEFAULT_ACCEPTED_ORDER_ID, load_json},
+};
+
+const DEADLINE: Duration = Duration::from_secs(5);
+const UNRESOLVED_MASS_STATUS_ERROR: &str = "cannot generate mass status: Polymarket settlement \
+                                            registry holds 1 record(s) with unresolved evidence";
+const STREAM_GAP_MASS_STATUS_ERROR: &str = "cannot generate mass status: 1 Polymarket order(s) \
+                                            await a trade read after a user stream reconnect";
+// Matches the user stream endpoint name the execution client registers
+const USER_STREAMS_ENDPOINT: &str = "polymarket-user-streams";
+
+fn order_reached(cache: &Cache, order: &OrderAny, status: OrderStatus) -> bool {
+    cache
+        .order(&order.client_order_id())
+        .is_some_and(|cached| cached.status() == status)
+}
+
+fn event_count(order: &OrderAny, predicate: impl Fn(&OrderEventAny) -> bool) -> usize {
+    order
+        .events()
+        .iter()
+        .filter(|event| predicate(event))
+        .count()
+}
+
+#[rstest]
+#[tokio::test]
+async fn harness_builds_and_connects() {
+    let h = harness::Harness::build().await;
+
+    h.assert_engine_ready();
+    assert!(h.cache().borrow().instrument(&h.instrument_id()).is_some());
+    assert_eq!(
+        h.mock_state
+            .user_socket_count
+            .load(std::sync::atomic::Ordering::Acquire),
+        1,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn submit_routes_to_accepted_in_cache() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await;
+
+    let status = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .map(|cached| cached.status());
+    let post_count = *h.mock_state.order_post_count.lock().await;
+    assert!(
+        accepted,
+        "order did not reach Accepted: status={status:?}, routed={:?}, order_posts={post_count}",
+        h.routed(),
+    );
+    harness::invariants::assert_tracked_used_events(h.routed());
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Accepted,
+    );
+    let cached = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    assert_eq!(h.risk_command_count(), 1);
+    assert_eq!(
+        cached.venue_order_id(),
+        Some(VenueOrderId::from(
+            crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID
+        )),
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        true,
+    );
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn exec_tester_drives_submit_to_accepted() {
+    let mut h = harness::Harness::build().await;
+    let instrument_id = h.instrument_id();
+    let mut tester = h.register_exec_tester(
+        StrategyId::from(harness::STRATEGY_ID),
+        Quantity::from("100.0000"),
+    );
+
+    tester.on_start().unwrap();
+    tester.on_quote(&harness::quote(instrument_id)).unwrap();
+
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            cache
+                .orders(None, Some(&instrument_id), None, None, None)
+                .iter()
+                .any(|order| order.status() == OrderStatus::Accepted)
+        })
+        .await;
+
+    assert!(accepted, "ExecTester-driven order did not reach Accepted");
+    assert_eq!(h.risk_command_count(), 1);
+    harness::invariants::assert_tracked_used_events(h.routed());
+}
+
+#[rstest]
+#[tokio::test]
+async fn tracked_gtd_expiry_within_window_becomes_expired() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+
+    let mut message = load_json("ws_user_order_cancellation.json");
+    message["event_type"] = json!("order");
+    message["order_type"] = json!("GTD");
+    message["expiration"] = json!("1703875265");
+    h.mock_state.send_user(message).await;
+
+    let expired = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Expired)
+        })
+        .await;
+
+    assert!(expired, "in-window GTD cancel did not become Expired");
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Expired,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn tracked_cancel_emits_event_and_shrinks_own_book() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+
+    h.cancel_via_execution(&order);
+    let state = h.mock_state.clone();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.cancel_delete_count.lock().await == 1 }
+        },
+        DEADLINE,
+    )
+    .await;
+    h.mock_state
+        .feed_user("ws_user_order_cancellation.json")
+        .await;
+    let canceled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Canceled)
+        })
+        .await;
+
+    assert!(canceled, "order did not reach Canceled");
+    assert_eq!(h.risk_command_count(), 1);
+    harness::invariants::assert_tracked_used_events(h.routed());
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Canceled,
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        false,
+    );
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn tracked_full_fill_emits_event_and_closes() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+
+    h.mock_state.feed_user("ws_user_trade_full.json").await;
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    assert!(filled, "order did not reach Filled");
+    harness::invariants::assert_tracked_used_events(h.routed());
+    harness::invariants::assert_filled_qty(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        Decimal::from(100),
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        false,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn tracked_partial_then_full_fill_is_exact_and_deduplicated() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+
+    h.mock_state.feed_user("ws_user_trade.json").await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::PartiallyFilled)
+        })
+        .await,
+        "order did not reach PartiallyFilled",
+    );
+    harness::invariants::assert_filled_qty(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        Decimal::from(25),
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        true,
+    );
+
+    h.mock_state.feed_user("ws_user_trade.json").await;
+    h.pump_for(Duration::from_millis(200)).await;
+    harness::invariants::assert_filled_qty(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        Decimal::from(25),
+    );
+
+    h.mock_state
+        .feed_user("ws_user_trade_completion.json")
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await,
+        "order did not reach Filled",
+    );
+    let cached = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        2,
+    );
+    harness::invariants::assert_tracked_used_events(h.routed());
+    harness::invariants::assert_filled_qty(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        Decimal::from(100),
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        false,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn external_order_is_parsed_by_mass_status_reconciliation() {
+    let h = harness::Harness::build().await;
+    *h.mock_state.orders_response_override.lock().await = Some(crate::mock_venue::load_json(
+        "http_open_orders_harness.json",
+    ));
+    *h.mock_state.trades_response_override.lock().await =
+        Some(crate::mock_venue::load_json("http_empty_page.json"));
+
+    let mass_status = h.reconcile_from_venue().await;
+    let reports = mass_status.order_reports();
+    let report = reports.values().next().expect("external order report");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(report.account_id, AccountId::from(harness::ACCOUNT_ID));
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(report.instrument_id, h.instrument_id());
+    assert_eq!(
+        report.venue_order_id,
+        VenueOrderId::from(crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID),
+    );
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.time_in_force, TimeInForce::Gtc);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.quantity, Quantity::from("100.0000"));
+    assert_eq!(report.filled_qty, Quantity::from("0.0000"));
+    assert_eq!(report.price, Some(Price::from("0.5000")));
+    assert_eq!(
+        report.ts_accepted,
+        UnixNanos::from(1_703_875_200_000_000_000),
+    );
+    assert_eq!(report.ts_last, report.ts_accepted);
+    assert_eq!(report.expire_time, None);
+    assert!(!report.post_only);
+    assert!(!report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn external_fill_is_parsed_by_mass_status_reconciliation() {
+    let h = harness::Harness::build().await;
+    *h.mock_state.orders_response_override.lock().await =
+        Some(crate::mock_venue::load_json("http_empty_page.json"));
+    *h.mock_state.trades_response_override.lock().await =
+        Some(crate::mock_venue::load_json("http_trades_page.json"));
+
+    let mass_status = h.reconcile_from_venue().await;
+    let fills = mass_status.fill_reports();
+    let report = fills
+        .values()
+        .flat_map(|reports| reports.iter())
+        .next()
+        .expect("external fill report");
+
+    assert_eq!(fills.values().map(Vec::len).sum::<usize>(), 1);
+    assert_eq!(report.account_id, AccountId::from(harness::ACCOUNT_ID));
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(report.instrument_id, h.instrument_id());
+    assert_eq!(
+        report.venue_order_id,
+        VenueOrderId::from(crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID),
+    );
+    assert_eq!(report.trade_id, TradeId::from("trade-0x001"));
+    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.last_qty, Quantity::from("10.0000"));
+    assert_eq!(report.last_px, Price::from("0.5000"));
+    assert_eq!(report.commission, Money::zero(Currency::pUSD()));
+    assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+    assert_eq!(report.avg_px, None);
+    assert_eq!(report.ts_event, UnixNanos::from(1_704_067_200_000_000_000));
+    assert_eq!(report.venue_position_id, None);
+}
+
+#[rstest]
+#[tokio::test]
+async fn submit_venue_error_rejects_and_stays_out_of_book() {
+    let mut h = harness::Harness::build().await;
+    *h.mock_state.order_response.lock().await = Some(crate::mock_venue::load_json(
+        "http_order_response_failed.json",
+    ));
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    let rejected = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Rejected)
+        })
+        .await;
+
+    assert!(rejected, "order did not reach Rejected");
+    assert_eq!(h.risk_command_count(), 1);
+    harness::invariants::assert_tracked_used_events(h.routed());
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Rejected,
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        false,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn cancel_replace_rotates_venue_id_and_updates_exact_values(
+    #[values(OrderSide::Buy, OrderSide::Sell)] order_side: OrderSide,
+) {
+    let mut h = harness::Harness::build().await;
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from(harness::TRADER_ID))
+        .strategy_id(StrategyId::from(harness::STRATEGY_ID))
+        .instrument_id(h.instrument_id())
+        .client_order_id(ClientOrderId::from("O-1"))
+        .side(order_side)
+        .price(Price::from("0.5000"))
+        .quantity(Quantity::from("100.0000"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+    let old_venue_order_id = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .and_then(|cached| cached.venue_order_id())
+        .unwrap();
+    let mut canceled = load_json("http_canceled_orders_harness.json")["data"][0].clone();
+    canceled["side"] = json!(order_side.to_string());
+    *h.mock_state.single_order_response.lock().await = Some(canceled);
+    *h.mock_state.trades_response_override.lock().await =
+        Some(crate::mock_venue::load_json("http_empty_page.json"));
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+
+    h.modify_via_risk(
+        &order,
+        Some(Price::from("0.6000")),
+        Some(Quantity::from("120.0000")),
+    );
+    let updated = h
+        .pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                cached.status() == OrderStatus::Accepted
+                    && cached.venue_order_id() != Some(old_venue_order_id)
+                    && cached.price() == Some(Price::from("0.6000"))
+                    && cached.quantity() == Quantity::from("120.0000")
+            })
+        })
+        .await;
+    let open_order_ids = h.mock_state.open_order_ids.lock().await.clone();
+
+    assert!(updated, "replacement did not update the cached order");
+    assert_eq!(h.risk_command_count(), 2);
+    harness::invariants::assert_tracked_used_events(h.routed());
+    assert_eq!(open_order_ids.len(), 1);
+    let replacement_venue_order_id = VenueOrderId::from(
+        open_order_ids
+            .iter()
+            .next()
+            .expect("mock should retain the replacement venue order ID")
+            .as_str(),
+    );
+    let cached = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    assert_eq!(cached.client_order_id(), order.client_order_id());
+    assert_eq!(cached.venue_order_id(), Some(replacement_venue_order_id));
+    assert_eq!(cached.order_side(), order_side);
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.price(), Some(Price::from("0.6000")));
+    assert_eq!(cached.quantity(), Quantity::from("120.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Updated(_))),
+        1,
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        true,
+    );
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn cancel_and_resubmit_limit_order_keeps_distinct_client_orders(
+    #[values(OrderSide::Buy, OrderSide::Sell)] order_side: OrderSide,
+) {
+    let mut h = harness::Harness::build().await;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+
+    let [original, replacement] = [
+        ("O-CANCEL-ORIGINAL", "0.4321", "12.3400"),
+        ("O-CANCEL-REPLACEMENT", "0.6789", "8.7600"),
+    ]
+    .map(|(client_order_id, price, qty)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from(harness::TRADER_ID))
+            .strategy_id(StrategyId::from(harness::STRATEGY_ID))
+            .instrument_id(h.instrument_id())
+            .client_order_id(ClientOrderId::from(client_order_id))
+            .side(order_side)
+            .price(Price::from(price))
+            .quantity(Quantity::from(qty))
+            .time_in_force(TimeInForce::Gtc)
+            .build()
+    });
+
+    h.submit_via_risk(&original);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &original, OrderStatus::Accepted)
+        })
+        .await,
+        "original order did not reach Accepted",
+    );
+    let old_venue_order_id = cached_order(&h, &original).venue_order_id().unwrap();
+    let mut cancel_response = load_json("http_cancel_response_ok.json");
+    cancel_response["canceled"][0] = json!(old_venue_order_id.as_str());
+    *h.mock_state.cancel_response.lock().await = Some(cancel_response);
+    h.cancel_via_execution(&original);
+    let state = h.mock_state.clone();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.cancel_delete_count.lock().await == 1 }
+        },
+        DEADLINE,
+    )
+    .await;
+
+    let mut cancellation = load_json("ws_user_order_cancellation.json");
+    cancellation["event_type"] = json!("order");
+    cancellation["id"] = json!(old_venue_order_id.as_str());
+    cancellation["side"] = json!(order_side.to_string());
+    cancellation["original_size"] = json!(original.quantity().to_string());
+    cancellation["price"] = json!(original.price().unwrap().to_string());
+    h.mock_state.send_user(cancellation).await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &original, OrderStatus::Canceled)
+        })
+        .await,
+        "original order did not reach Canceled before resubmission",
+    );
+
+    h.submit_via_risk(&replacement);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &replacement, OrderStatus::Accepted)
+        })
+        .await,
+        "replacement order did not reach Accepted",
+    );
+
+    let canceled = cached_order(&h, &original);
+    let accepted = cached_order(&h, &replacement);
+    let new_venue_order_id = accepted.venue_order_id().unwrap();
+    assert_eq!(canceled.client_order_id(), original.client_order_id());
+    assert_eq!(canceled.venue_order_id(), Some(old_venue_order_id));
+    assert_eq!(canceled.status(), OrderStatus::Canceled);
+    assert_eq!(canceled.order_side(), order_side);
+    assert_eq!(canceled.price(), original.price());
+    assert_eq!(canceled.quantity(), original.quantity());
+    assert_eq!(accepted.client_order_id(), replacement.client_order_id());
+    assert_ne!(accepted.client_order_id(), canceled.client_order_id());
+    assert_ne!(new_venue_order_id, old_venue_order_id);
+    assert_eq!(accepted.status(), OrderStatus::Accepted);
+    assert_eq!(accepted.order_side(), order_side);
+    assert_eq!(accepted.price(), replacement.price());
+    assert_eq!(accepted.quantity(), replacement.quantity());
+
+    for order in [&canceled, &accepted] {
+        assert_eq!(
+            event_count(order, |event| matches!(event, OrderEventAny::Accepted(_))),
+            1,
+        );
+        assert_eq!(
+            event_count(order, |event| matches!(event, OrderEventAny::Updated(_))),
+            0,
+        );
+    }
+
+    assert_eq!(*h.mock_state.order_post_count.lock().await, 2);
+    assert_eq!(
+        *h.mock_state.open_order_ids.lock().await,
+        std::collections::HashSet::from([new_venue_order_id.to_string()]),
+    );
+    assert_eq!(h.risk_command_count(), 2);
+    harness::invariants::assert_tracked_used_events(h.routed());
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &original.client_order_id(),
+        false,
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &replacement.client_order_id(),
+        true,
+    );
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn startup_reconciliation_correlates_tracked_open_order() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+    let tracked_event_count = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .expect("tracked order should be cached")
+        .events()
+        .len();
+    *h.mock_state.orders_response_override.lock().await = Some(crate::mock_venue::load_json(
+        "http_open_orders_harness.json",
+    ));
+    *h.mock_state.trades_response_override.lock().await =
+        Some(crate::mock_venue::load_json("http_empty_page.json"));
+
+    let mass_status = h.reconcile_from_venue().await;
+    let reports = mass_status.order_reports();
+    let report = reports.values().next().expect("tracked order report");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(
+        report.venue_order_id,
+        VenueOrderId::from(crate::mock_venue::DEFAULT_ACCEPTED_ORDER_ID)
+    );
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    let cache = h.cache().borrow();
+    assert_eq!(
+        cache
+            .orders(None, Some(&h.instrument_id()), None, None, None)
+            .len(),
+        1,
+    );
+    let tracked = cache
+        .order(&order.client_order_id())
+        .expect("tracked order should remain cached");
+    assert_eq!(tracked.status(), OrderStatus::Accepted);
+    assert_eq!(tracked.events().len(), tracked_event_count);
+}
+
+#[rstest]
+#[tokio::test]
+async fn reconciliation_preserves_resting_partially_filled_order(
+    #[values(false, true)] mass_status: bool,
+) {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let h =
+        harness::Harness::build_with_cache(|execution| seed_partially_filled(execution, &order))
+            .await;
+    let before = cached_order(&h, &order);
+    *h.mock_state.trades_response_override.lock().await = Some(load_json("http_empty_page.json"));
+
+    let report = if mass_status {
+        let mut orders = load_json("http_open_orders_harness.json");
+        orders["data"][0]["size_matched"] = json!("25.0000");
+        *h.mock_state.orders_response_override.lock().await = Some(orders);
+        let mass_status = h.reconcile_from_venue().await;
+        let reports = mass_status.order_reports();
+        assert_eq!(reports.len(), 1);
+        reports
+            .values()
+            .next()
+            .expect("partially filled order report")
+            .clone()
+    } else {
+        *h.mock_state.single_order_response.lock().await = Some(load_json("http_open_order.json"));
+        let report =
+            generate_order_status_report(&h, &order, VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+                .await;
+        h.exec_engine()
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+        report
+    };
+
+    let cached = cached_order(&h, &order);
+
+    assert_eq!(before.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+    assert_eq!(report.quantity, Quantity::from("100.0000"));
+    assert_eq!(report.filled_qty, Quantity::from("25.0000"));
+    assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(cached.filled_qty(), Quantity::from("25.0000"));
+    assert_eq!(cached.events(), before.events());
+}
+
+#[rstest]
+#[tokio::test]
+async fn reconciliation_applies_missed_terminal_cancel() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+    h.mark_pending_cancel(&order);
+    *h.mock_state.orders_response_override.lock().await = Some(crate::mock_venue::load_json(
+        "http_canceled_orders_harness.json",
+    ));
+    *h.mock_state.trades_response_override.lock().await =
+        Some(crate::mock_venue::load_json("http_empty_page.json"));
+
+    let mass_status = h.reconcile_from_venue().await;
+    let reports = mass_status.order_reports();
+    let report = reports.values().next().expect("canceled order report");
+
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Canceled,
+    );
+    harness::invariants::assert_in_own_book(
+        &h.cache().borrow(),
+        &h.instrument_id(),
+        &order.client_order_id(),
+        false,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn stalled_submit_query_and_buffered_trade_apply_fill_once(
+    #[values(false, true)] stream_first: bool,
+) {
+    let mut h = harness::Harness::build().await;
+    h.mock_state.order_response_gate.enable();
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    let order = harness::limit_order(h.instrument_id(), "O-STALLED-FILL");
+    h.submit_via_risk(&order);
+    h.pump_for(Duration::from_millis(200)).await;
+    let venue_order_id = h
+        .mock_state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .unwrap();
+    let mut trade = user_trade("ws_user_trade.json", "CONFIRMED");
+    trade["taker_order_id"] = json!(venue_order_id);
+    serve_rest_trades(&h, &[trade.clone()]).await;
+
+    if stream_first {
+        h.mock_state.send_user(trade.clone()).await;
+        h.pump_for(Duration::from_millis(100)).await;
+    }
+
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = json!(venue_order_id);
+    venue_order["asset_id"] = json!(crate::mock_venue::TEST_TOKEN_ID);
+    venue_order["market"] = json!(crate::mock_venue::TEST_CONDITION_ID);
+    venue_order["size_matched"] = json!("25.0000");
+    venue_order["status"] = json!("CANCELED");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+    h.mock_state.trade_queries.lock().await.clear();
+    h.exec_engine()
+        .borrow()
+        .execute(TradingCommand::QueryOrder(QueryOrder::new(
+            order.trader_id(),
+            Some(h.client_id()),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    assert!(
+        h.pump_until(Duration::from_secs(1), |cache| {
+            cache
+                .order(&order.client_order_id())
+                .is_some_and(|cached| cached.filled_qty() == Quantity::from("25"))
+        })
+        .await,
+        "query reads={}, routed={:?}, order={:?}",
+        h.mock_state
+            .single_order_get_count
+            .load(std::sync::atomic::Ordering::Acquire),
+        h.routed(),
+        cached_order(&h, &order)
+    );
+    h.mock_state.order_response_gate.release();
+
+    if !stream_first {
+        h.mock_state.send_user(trade).await;
+    }
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let cached = cached_order(&h, &order);
+    assert_eq!(
+        cached.trade_ids(),
+        vec![&TradeId::from("trade-0xabcdef1234")]
+    );
+    {
+        let cache = h.cache().borrow();
+        let positions = cache.positions_open(
+            None,
+            Some(&h.instrument_id()),
+            None,
+            Some(&h.account_id()),
+            None,
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("25"));
+    }
+
+    assert_eq!(cached.filled_qty(), Quantity::from("25"));
+    assert_eq!(cached.status(), OrderStatus::Canceled);
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        1
+    );
+    assert!(
+        h.mock_state
+            .trade_queries
+            .lock()
+            .await
+            .contains(&std::collections::HashMap::from([
+                (
+                    "market".to_string(),
+                    crate::mock_venue::TEST_CONDITION_ID.to_string()
+                ),
+                ("next_cursor".to_string(), "MA==".to_string()),
+            ]))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn ambiguous_submit_is_resolved_by_signed_hash_websocket_order() {
+    let mut h = harness::Harness::build().await;
+    *h.mock_state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    h.pump_for(Duration::from_millis(200)).await;
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Submitted,
+    );
+    let venue_order_id = h
+        .mock_state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .expect("mock should retain the signed order hash");
+    let mut websocket_order = crate::mock_venue::load_json("ws_user_order_placement.json");
+    websocket_order["id"] = serde_json::Value::String(venue_order_id.clone());
+    websocket_order["event_type"] = serde_json::Value::String("order".to_string());
+    h.mock_state.send_user(websocket_order).await;
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await;
+    let cached = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+
+    assert!(accepted, "WebSocket order did not resolve ambiguous submit");
+    harness::invariants::assert_tracked_used_events(h.routed());
+    assert_eq!(
+        cached.venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id.as_str())),
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Rejected(_))),
+        0,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn ambiguous_submit_is_resolved_by_targeted_rest_read() {
+    let mut h = harness::Harness::build().await;
+    *h.mock_state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    h.pump_for(Duration::from_millis(200)).await;
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::Submitted,
+    );
+    let venue_order_id = h
+        .mock_state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .expect("mock should retain the signed order hash");
+    let mut venue_order = crate::mock_venue::load_json("http_open_order.json");
+    venue_order["id"] = serde_json::Value::String(venue_order_id.clone());
+    venue_order["asset_id"] = serde_json::Value::from(crate::mock_venue::TEST_TOKEN_ID);
+    venue_order["market"] = serde_json::Value::from(crate::mock_venue::TEST_CONDITION_ID);
+    venue_order["size_matched"] = serde_json::Value::from("0.0000");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await;
+
+    let cached = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+
+    assert!(
+        accepted,
+        "targeted REST read did not resolve ambiguous submit"
+    );
+    harness::invariants::assert_tracked_used_events(h.routed());
+    assert_eq!(
+        cached.venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id.as_str())),
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Rejected(_))),
+        0,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn stalled_submit_query_retains_cancellation_after_local_close() {
+    let mut h = harness::Harness::build().await;
+    h.mock_state.order_response_gate.enable();
+    *h.mock_state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    let order = harness::limit_order(h.instrument_id(), "O-QUERY-CLOSED");
+    h.submit_via_risk(&order);
+    h.pump_for(Duration::from_millis(200)).await;
+    let venue_order_id = h
+        .mock_state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .unwrap();
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = json!(venue_order_id);
+    venue_order["asset_id"] = json!(crate::mock_venue::TEST_TOKEN_ID);
+    venue_order["market"] = json!(crate::mock_venue::TEST_CONDITION_ID);
+    venue_order["size_matched"] = json!("0.0000");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order.clone());
+    *h.mock_state.cancel_response.lock().await =
+        Some(json!({"canceled": [&venue_order_id], "not_canceled": {}}));
+    serve_rest_trades(&h, &[]).await;
+    h.exec_engine()
+        .borrow()
+        .execute(TradingCommand::QueryOrder(QueryOrder::new(
+            order.trader_id(),
+            Some(h.client_id()),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    let canceled = TestOrderEventStubs::canceled(
+        &order,
+        h.account_id(),
+        Some(VenueOrderId::from(venue_order_id.as_str())),
+    );
+    h.exec_engine().borrow_mut().process(&canceled);
+
+    wait_until_async(
+        || {
+            let state = h.mock_state.clone();
+            async move { state.open_order_ids.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    h.mock_state.order_response_gate.release();
+    venue_order["status"] = json!("CANCELED");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+    assert!(reports_resume(&mut h).await);
+    h.pump_for(Duration::from_millis(200)).await;
+    let cached = cached_order(&h, &order);
+
+    assert_eq!(cached.status(), OrderStatus::Canceled);
+    assert_eq!(cached.filled_qty(), Quantity::from("0"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        0
+    );
+    assert_eq!(*h.mock_state.order_post_count.lock().await, 1);
+    assert_eq!(*h.mock_state.cancel_delete_count.lock().await, 1);
+    assert!(h.mock_state.open_order_ids.lock().await.is_empty());
+}
+
+#[rstest]
+#[case::confirmed(false, StatusCode::OK)]
+#[case::retry(true, StatusCode::INTERNAL_SERVER_ERROR)]
+#[case::unconfirmed(true, StatusCode::OK)]
+#[tokio::test]
+async fn ambiguous_submit_found_after_local_close_is_canceled_at_venue(
+    #[case] retry: bool,
+    #[case] cancel_status: StatusCode,
+    #[values(false, true)] with_fill: bool,
+    #[values(false, true)] rejected: bool,
+) {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    *h.mock_state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from(harness::TRADER_ID))
+        .strategy_id(StrategyId::from(harness::STRATEGY_ID))
+        .instrument_id(h.instrument_id())
+        .client_order_id(ClientOrderId::from("O-CLOSED"))
+        .side(OrderSide::Buy)
+        .price(Price::from(if with_fill { "0.5000" } else { "0.0100" }))
+        .quantity(Quantity::from(if with_fill {
+            "100.0000"
+        } else {
+            "5.0000"
+        }))
+        .time_in_force(TimeInForce::Gtc)
+        .post_only(true)
+        .build();
+
+    h.submit_via_risk(&order);
+    h.pump_for(Duration::from_millis(200)).await;
+    let venue_order_id = h
+        .mock_state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .unwrap();
+    let rejection = OrderEventAny::Rejected(OrderRejected::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        h.account_id(),
+        Ustr::from("INFLIGHT_TIMEOUT"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        true,
+        false,
+    ));
+
+    let terminal = if rejected {
+        rejection
+    } else {
+        TestOrderEventStubs::canceled(
+            &order,
+            h.account_id(),
+            Some(VenueOrderId::from(venue_order_id.as_str())),
+        )
+    };
+
+    h.exec_engine().borrow_mut().process(&terminal);
+
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = Value::String(venue_order_id.clone());
+    venue_order["asset_id"] = Value::from(crate::mock_venue::TEST_TOKEN_ID);
+    venue_order["market"] = Value::from(crate::mock_venue::TEST_CONDITION_ID);
+    venue_order["original_size"] = json!(order.quantity().to_string());
+    venue_order["price"] = json!(order.price().unwrap().to_string());
+    venue_order["size_matched"] = Value::from(if with_fill { "25.0000" } else { "0.0000" });
+    let mut cancellation = load_json("http_cancel_response_ok.json");
+    cancellation["canceled"] = serde_json::to_value([&venue_order_id]).unwrap();
+    *h.mock_state.cancel_response.lock().await = Some(cancellation.clone());
+
+    if retry {
+        *h.mock_state.cancel_response_status.lock().await = cancel_status;
+        *h.mock_state.cancel_response.lock().await =
+            Some(load_json("http_cancel_response_failed.json"));
+    }
+
+    *h.mock_state.single_order_response.lock().await = Some(venue_order.clone());
+
+    if retry {
+        wait_until_async(
+            || {
+                let state = h.mock_state.clone();
+                async move { *state.cancel_delete_count.lock().await == 1 }
+            },
+            DEADLINE,
+        )
+        .await;
+
+        assert!(
+            h.mock_state
+                .open_order_ids
+                .lock()
+                .await
+                .contains(&venue_order_id)
+        );
+        *h.mock_state.cancel_response.lock().await = Some(cancellation);
+        *h.mock_state.cancel_response_status.lock().await = StatusCode::OK;
+    }
+
+    wait_until_async(
+        || {
+            let state = h.mock_state.clone();
+            async move { state.open_order_ids.lock().await.is_empty() }
+        },
+        DEADLINE,
+    )
+    .await;
+
+    h.pump_for(Duration::from_millis(50)).await;
+    let before_terminal_read = generate_mass_status(&h).await;
+    assert_eq!(
+        before_terminal_read.unwrap_err().to_string(),
+        "cannot generate mass status: 1 Polymarket order(s) have an unknown submit outcome",
+    );
+    venue_order["status"] = Value::from("CANCELED");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    if with_fill {
+        let mut trade = user_trade("ws_user_trade.json", "CONFIRMED");
+        trade["taker_order_id"] = json!(venue_order_id);
+        serve_rest_trades(&h, &[trade]).await;
+    } else {
+        serve_rest_trades(&h, &[]).await;
+    }
+
+    if rejected && with_fill {
+        h.pump_until(DEADLINE, |_| declined.borrow().len() == 1)
+            .await;
+        assert_eq!(declined.borrow().len(), 1);
+        assert_eq!(
+            generate_mass_status(&h).await.unwrap_err().to_string(),
+            UNRESOLVED_MASS_STATUS_ERROR,
+        );
+    } else {
+        assert!(reports_resume(&mut h).await);
+        assert!(declined.borrow().is_empty());
+    }
+
+    h.pump_for(Duration::from_millis(50)).await;
+
+    let cached = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    assert_eq!(
+        cached.status(),
+        if rejected {
+            OrderStatus::Rejected
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if with_fill && !rejected { "25" } else { "0" })
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        usize::from(with_fill && !rejected)
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        0
+    );
+    assert_eq!(
+        *h.mock_state.cancel_delete_count.lock().await,
+        if retry { 2 } else { 1 }
+    );
+    assert!(h.mock_state.open_order_ids.lock().await.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn ambiguous_submit_resolution_retries_failed_order_reads() {
+    let mut h = harness::Harness::build().await;
+    *h.mock_state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    h.mock_state
+        .single_order_response_statuses
+        .lock()
+        .await
+        .extend([
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ]);
+    serve_rest_trades(&h, &[]).await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    h.pump_for(Duration::from_millis(200)).await;
+    let status_while_unknown = cached_order(&h, &order).status();
+    let gate_while_unknown = generate_mass_status(&h).await;
+    let venue_order_id = h
+        .mock_state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .expect("mock should retain the signed order hash");
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = json!(venue_order_id);
+    venue_order["asset_id"] = json!(crate::mock_venue::TEST_TOKEN_ID);
+    venue_order["market"] = json!(crate::mock_venue::TEST_CONDITION_ID);
+    venue_order["size_matched"] = json!("0.0000");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert_eq!(status_while_unknown, OrderStatus::Submitted);
+    assert_eq!(
+        gate_while_unknown.unwrap_err().to_string(),
+        "cannot generate mass status: 1 Polymarket order(s) have an unknown submit outcome"
+    );
+    assert!(accepted, "resolver did not retry after failed order reads");
+    assert!(resumed, "reports stayed blocked after the order resolved");
+    assert_eq!(
+        h.mock_state
+            .single_order_get_count
+            .load(std::sync::atomic::Ordering::Acquire),
+        3,
+    );
+    let cached = cached_order(&h, &order);
+    assert_eq!(
+        cached.venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id.as_str())),
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Accepted(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Rejected(_))),
+        0,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn ambiguous_submit_resolves_trade_matched_before_order_creation() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    *h.mock_state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    h.mock_state
+        .trades_filter_after
+        .store(true, std::sync::atomic::Ordering::Release);
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    h.pump_for(Duration::from_millis(200)).await;
+    let venue_order_id = h
+        .mock_state
+        .open_order_ids
+        .lock()
+        .await
+        .iter()
+        .next()
+        .cloned()
+        .expect("mock should retain the signed order hash");
+
+    // The venue can stamp an order that matches on submit after its trade's match time
+    let mut trade = user_trade("ws_user_trade_full.json", "CONFIRMED");
+    trade["taker_order_id"] = json!(venue_order_id);
+    trade["match_time"] = json!("1704067260");
+    serve_rest_trades(&h, &[trade]).await;
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = json!(venue_order_id);
+    venue_order["asset_id"] = json!(crate::mock_venue::TEST_TOKEN_ID);
+    venue_order["market"] = json!(crate::mock_venue::TEST_CONDITION_ID);
+    venue_order["status"] = json!("MATCHED");
+    venue_order["size_matched"] = json!("100.0000");
+    venue_order["created_at"] = json!(1_704_067_261_u64);
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert!(
+        filled,
+        "resolver missed a trade matched before the order's creation time"
+    );
+    assert!(resumed, "reports stayed blocked after the order resolved");
+    let cached = cached_order(&h, &order);
+    assert_eq!(
+        cached.venue_order_id(),
+        Some(VenueOrderId::from(venue_order_id.as_str())),
+    );
+    assert_eq!(cached.filled_qty(), Quantity::from("100.0000"));
+
+    let fill_trade_ids: Vec<TradeId> = cached
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.trade_id),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fill_trade_ids, vec![TradeId::from("trade-0xfull")]);
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+    assert!(
+        h.mock_state
+            .trade_queries
+            .lock()
+            .await
+            .contains(&std::collections::HashMap::from([
+                (
+                    "market".to_string(),
+                    crate::mock_venue::TEST_CONDITION_ID.to_string()
+                ),
+                ("after".to_string(), "1704067201".to_string()),
+                ("next_cursor".to_string(), "MA==".to_string()),
+            ]))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn ambiguous_cancel_is_resolved_by_websocket_cancel() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+    *h.mock_state.cancel_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+
+    h.cancel_via_execution(&order);
+    let state = h.mock_state.clone();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.cancel_delete_count.lock().await == 1 }
+        },
+        DEADLINE,
+    )
+    .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    harness::invariants::assert_order_status(
+        &h.cache().borrow(),
+        &order.client_order_id(),
+        OrderStatus::PendingCancel,
+    );
+
+    h.mock_state
+        .feed_user("ws_user_order_cancellation.json")
+        .await;
+    let canceled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Canceled)
+        })
+        .await;
+    let cached = h
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+
+    assert!(
+        canceled,
+        "WebSocket cancel did not resolve ambiguous cancel"
+    );
+    harness::invariants::assert_tracked_used_events(h.routed());
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Canceled(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(
+            event,
+            OrderEventAny::CancelRejected(_)
+        )),
+        0,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn stream_failed_trade_confirmed_by_rest_keeps_fill_and_resumes_reports() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[]).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "MATCHED"))
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await,
+        "order did not reach Filled",
+    );
+
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "FAILED"))
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let quarantined = generate_mass_status(&h).await;
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert_eq!(
+        quarantined.unwrap_err().to_string(),
+        UNRESOLVED_MASS_STATUS_ERROR,
+    );
+    assert!(resumed, "reports stayed blocked after REST confirmation");
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.status(), OrderStatus::Filled);
+    assert_eq!(cached.filled_qty(), Quantity::from("100.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(
+            event,
+            OrderEventAny::FillVoided(_)
+        )),
+        0,
+    );
+    {
+        let cache = h.cache().borrow();
+        let positions = cache.positions_open(None, Some(&h.instrument_id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("100.0000"));
+    }
+
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+    assert!(
+        h.mock_state
+            .trade_queries
+            .lock()
+            .await
+            .contains(&std::collections::HashMap::from([
+                ("id".to_string(), "trade-0xfull".to_string()),
+                ("next_cursor".to_string(), "MA==".to_string()),
+            ]))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn failed_multi_maker_trade_voids_only_owned_maker_leg() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[]).await;
+    h.mock_state.send_user(owned_maker_trade("MATCHED")).await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::PartiallyFilled)
+        })
+        .await,
+        "order did not reach PartiallyFilled",
+    );
+
+    h.mock_state.send_user(owned_maker_trade("FAILED")).await;
+    serve_rest_trades(&h, &[owned_maker_trade("FAILED")]).await;
+
+    let voided = h
+        .pump_until(DEADLINE, |cache| {
+            cache
+                .order(&order.client_order_id())
+                .is_some_and(|cached| !cached.voided_qty().is_zero())
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert!(voided, "owned maker leg was not voided");
+    assert!(resumed, "reports stayed blocked after the REST failure");
+    let cached = cached_order(&h, &order);
+
+    let fills: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.clone()),
+            _ => None,
+        })
+        .collect();
+
+    let voids: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::FillVoided(voided) => Some(voided.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(voids.len(), 1);
+    assert_eq!(fills[0].liquidity_side, LiquiditySide::Maker);
+    assert_eq!(fills[0].last_qty, Quantity::from("60.0000"));
+    assert_eq!(voids[0].trade_id, fills[0].trade_id);
+    assert_eq!(voids[0].voided_qty, Quantity::from("60.0000"));
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
+    assert_eq!(cached.voided_qty(), Quantity::from("60.0000"));
+    assert!(
+        h.cache()
+            .borrow()
+            .positions_open(None, Some(&h.instrument_id()), None, None, None)
+            .is_empty(),
+        "voided maker fill left an open position",
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+#[rstest]
+#[tokio::test]
+async fn fill_applied_after_rest_failure_is_voided_once() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "FAILED")]).await;
+
+    // The fill waits unrouted in the event channel while REST settles the trade as failed, so
+    // core applies it only after the failure is final and the observer owes it a void
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "MATCHED"))
+        .await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "FAILED"))
+        .await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let status_before_routing = cached_order(&h, &order).status();
+
+    let voided = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Voided)
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert_eq!(status_before_routing, OrderStatus::Accepted);
+    assert!(voided, "late applied fill was not voided");
+    assert!(resumed, "reports stayed blocked after the void applied");
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
+    assert_eq!(cached.voided_qty(), Quantity::from("100.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(
+            event,
+            OrderEventAny::FillVoided(_)
+        )),
+        1,
+    );
+    assert!(
+        h.cache()
+            .borrow()
+            .positions_open(None, Some(&h.instrument_id()), None, None, None)
+            .is_empty(),
+        "voided fill left an open position",
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+#[rstest]
+#[tokio::test]
+async fn reconnect_resolves_provisional_trade_from_rest() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "MATCHED"))
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await,
+        "order did not reach Filled",
+    );
+
+    // The stream never delivers the terminal status; only REST knows the trade failed
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "FAILED")]).await;
+    h.pump_for(Duration::from_millis(600)).await;
+    let status_before_reconnect = cached_order(&h, &order).status();
+
+    // Withhold the REST result so the unresolved interval after the reconnect is observable
+    serve_rest_trades(&h, &[]).await;
+    let handle = h
+        .sockets
+        .handle(h.client_id(), Ustr::from(USER_STREAMS_ENDPOINT))
+        .expect("user stream should register a reconnect handle");
+    let outcome = handle.request_reconnect();
+    let blocked = reports_block(&mut h).await;
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "FAILED")]).await;
+
+    let voided = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Voided)
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert_eq!(status_before_reconnect, OrderStatus::Filled);
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+    assert_eq!(
+        blocked.map(|e| e.to_string()),
+        Some(UNRESOLVED_MASS_STATUS_ERROR.to_string()),
+    );
+    assert!(voided, "reconnect did not resolve the provisional trade");
+    assert!(resumed, "reports stayed blocked after the REST failure");
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
+    assert_eq!(cached.voided_qty(), Quantity::from("100.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1,
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(
+            event,
+            OrderEventAny::FillVoided(_)
+        )),
+        1,
+    );
+    assert!(
+        h.cache()
+            .borrow()
+            .positions_open(None, Some(&h.instrument_id()), None, None, None)
+            .is_empty(),
+        "voided fill left an open position",
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+// The trade matches while the user stream is down, so only REST reports it. The submit
+// response lands either while the stream is still reconnecting or after it has reconnected.
+#[rstest]
+#[case::post_completes_before_reconnect(true)]
+#[case::post_completes_after_reconnect(false)]
+#[tokio::test]
+async fn reconnect_discovers_trade_missed_during_stream_outage(
+    #[case] post_before_reconnect: bool,
+) {
+    let mut h = harness::Harness::build_with_cache(seed_taker_fee_schedule).await;
+    let declined = record_declined_fills();
+    serve_rest_trades(&h, &[]).await;
+    *h.mock_state.single_order_response.lock().await = Some(Value::Null);
+    let post_gate = h.mock_state.order_request_gate.clone();
+    let upgrade_gate = h.mock_state.user_upgrade_gate.clone();
+    let request_paths = h.mock_state.startup_request_paths.clone();
+
+    let balance_reads = move || {
+        request_paths.try_lock().map_or(0, |paths| {
+            paths
+                .iter()
+                .filter(|path| *path == "/balance-allowance")
+                .count()
+        })
+    };
+
+    post_gate.enable();
+    upgrade_gate.enable();
+    let handle = h
+        .sockets
+        .handle(h.client_id(), Ustr::from(USER_STREAMS_ENDPOINT))
+        .expect("user stream should register a reconnect handle");
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+
+    h.submit_via_risk(&order);
+    let post_held = pump_until_venue(&mut h, || post_gate.started() == 1).await;
+    let outcome = handle.request_reconnect();
+    let upgrade_held = pump_until_venue(&mut h, || upgrade_gate.started() == 1).await;
+
+    let accepted = if post_before_reconnect {
+        post_gate.release();
+
+        let accepted = h
+            .pump_until(DEADLINE, |cache| {
+                order_reached(cache, &order, OrderStatus::Accepted)
+            })
+            .await;
+
+        upgrade_gate.release();
+        accepted
+    } else {
+        // The reconnect refreshes the account after starting the new stream session
+        let reads_before_reconnect = balance_reads();
+        upgrade_gate.release();
+        assert!(
+            pump_until_venue(&mut h, || balance_reads() > reads_before_reconnect).await,
+            "user stream did not reconnect",
+        );
+        post_gate.release();
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await
+    };
+
+    let blocked = reports_block(&mut h).await;
+    let status_while_blocked = cached_order(&h, &order).status();
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["status"] = json!("MATCHED");
+    venue_order["size_matched"] = json!("100.0000");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert!(post_held, "submit POST was not held");
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+    assert!(upgrade_held, "user stream reconnect was not held");
+    assert!(accepted, "order did not reach Accepted");
+    assert_eq!(
+        blocked.map(|e| e.to_string()),
+        Some(STREAM_GAP_MASS_STATUS_ERROR.to_string()),
+    );
+    assert_eq!(status_while_blocked, OrderStatus::Accepted);
+    assert!(filled, "reconnect did not discover the missed trade");
+    assert!(resumed, "reports stayed blocked after the trade applied");
+    let cached = cached_order(&h, &order);
+
+    let fills: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, TradeId::from("trade-0xfull"));
+    assert_eq!(
+        fills[0].venue_order_id,
+        VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID)
+    );
+    assert_eq!(fills[0].last_qty, Quantity::from("100.0000"));
+    assert_eq!(fills[0].last_px, Price::from("0.5000"));
+    assert_eq!(fills[0].liquidity_side, LiquiditySide::Taker);
+    assert_eq!(fills[0].commission, Some(Money::from("0.5 pUSD")));
+    assert_eq!(cached.filled_qty(), Quantity::from("100.0000"));
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+// The cached fill has local economics that REST would contradict, so it must not be admitted again
+#[rstest]
+#[tokio::test]
+async fn reconnect_reads_restored_order_without_readmitting_cached_fill() {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let mut h =
+        harness::Harness::build_with_cache(|execution| seed_partially_filled(execution, &order))
+            .await;
+    let declined = record_declined_fills();
+    serve_rest_trades(&h, &[]).await;
+    *h.mock_state.single_order_response.lock().await = Some(Value::Null);
+    let handle = h
+        .sockets
+        .handle(h.client_id(), Ustr::from(USER_STREAMS_ENDPOINT))
+        .expect("user stream should register a reconnect handle");
+
+    let outcome = handle.request_reconnect();
+    let blocked = reports_block(&mut h).await;
+    serve_rest_trades(&h, &[user_trade("ws_user_trade.json", "CONFIRMED")]).await;
+    *h.mock_state.single_order_response.lock().await = Some(load_json("http_open_order.json"));
+    let resumed = reports_resume(&mut h).await;
+
+    assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
+    assert_eq!(
+        blocked.map(|e| e.to_string()),
+        Some(STREAM_GAP_MASS_STATUS_ERROR.to_string()),
+    );
+    assert!(
+        resumed,
+        "reports stayed blocked after the restored order's read"
+    );
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(cached.filled_qty(), Quantity::from("25.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1,
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+#[rstest]
+#[tokio::test]
+async fn rest_confirmation_applies_quarantined_unapplied_trade_once() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[]).await;
+
+    // The stream missed the match and first reports the trade as failed
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "FAILED"))
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let quarantined = generate_mass_status(&h).await;
+    let status_while_quarantined = cached_order(&h, &order).status();
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "CONFIRMED"))
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    assert_eq!(
+        quarantined.unwrap_err().to_string(),
+        UNRESOLVED_MASS_STATUS_ERROR,
+    );
+    assert_eq!(status_while_quarantined, OrderStatus::Accepted);
+    assert!(filled, "REST confirmation did not apply the fill");
+    assert!(resumed, "reports stayed blocked after REST confirmation");
+    let cached = cached_order(&h, &order);
+
+    let fills: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, TradeId::from("trade-0xfull"));
+    assert_eq!(fills[0].last_qty, Quantity::from("100.0000"));
+    assert_eq!(fills[0].last_px, Price::from("0.5000"));
+    assert_eq!(fills[0].liquidity_side, LiquiditySide::Taker);
+    assert_eq!(cached.filled_qty(), Quantity::from("100.0000"));
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+#[rstest]
+#[case::before_read(false)]
+#[case::during_read(true)]
+#[tokio::test]
+async fn query_order_defers_during_quarantine_and_resumes_after_settlement(
+    #[case] quarantine_during_read: bool,
+) {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-QUERY-SETTLEMENT");
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[]).await;
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["status"] = json!("MATCHED");
+    venue_order["size_matched"] = json!("100.0000");
+    let order_response = h.mock_state.single_order_response.clone();
+    let mut response = order_response.lock().await;
+    *response = Some(venue_order);
+    let order_reads = h.mock_state.single_order_get_count.clone();
+    let reads_before = order_reads.load(std::sync::atomic::Ordering::Acquire);
+
+    let query = QueryOrder::new(
+        order.trader_id(),
+        Some(h.client_id()),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    if quarantine_during_read {
+        h.exec_engine()
+            .borrow()
+            .execute(TradingCommand::QueryOrder(query.clone()));
+
+        let read_started = pump_until_venue(&mut h, || {
+            order_reads.load(std::sync::atomic::Ordering::Acquire) > reads_before
+        })
+        .await;
+
+        assert!(read_started);
+    }
+
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "FAILED"))
+        .await;
+    let blocked = reports_block(&mut h).await;
+    assert_eq!(blocked.unwrap().to_string(), UNRESOLVED_MASS_STATUS_ERROR);
+
+    if !quarantine_during_read {
+        h.exec_engine()
+            .borrow()
+            .execute(TradingCommand::QueryOrder(query.clone()));
+    }
+
+    drop(response);
+    h.pump_for(Duration::from_millis(200)).await;
+    let during = cached_order(&h, &order);
+    let reports_during = h
+        .routed()
+        .iter()
+        .filter(|kind| **kind == RoutedKind::Report)
+        .count();
+    let reads_during = order_reads.load(std::sync::atomic::Ordering::Acquire);
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    assert!(reports_resume(&mut h).await);
+    h.exec_engine()
+        .borrow()
+        .execute(TradingCommand::QueryOrder(query));
+    let report_resumed = h.pump_until_routed(DEADLINE, RoutedKind::Report).await;
+    let after = cached_order(&h, &order);
+
+    assert_eq!(during.status(), OrderStatus::Accepted);
+    assert_eq!(during.filled_qty(), Quantity::from("0.0000"));
+    assert_eq!(reports_during, 0);
+    assert_eq!(
+        reads_during,
+        reads_before + usize::from(quarantine_during_read)
+    );
+    assert!(filled);
+    assert!(report_resumed);
+    assert_eq!(after.status(), OrderStatus::Filled);
+    assert_eq!(after.filled_qty(), Quantity::from("100.0000"));
+    assert_eq!(
+        event_count(&after, |event| matches!(event, OrderEventAny::Filled(_))),
+        1
+    );
+    assert_eq!(
+        event_count(&after, |event| matches!(
+            event,
+            OrderEventAny::FillVoided(_)
+        )),
+        0
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+#[rstest]
+#[tokio::test]
+async fn contradictory_report_after_rest_failure_does_not_create_fill_or_void() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-REPORT-TOMBSTONE");
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "FAILED")]).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "FAILED"))
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    assert!(reports_resume(&mut h).await);
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+
+    let report = generate_mass_status(&h).await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let cached = cached_order(&h, &order);
+
+    assert!(report.unwrap_err().to_string().contains("settled FAILED"));
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
+    assert_eq!(cached.voided_qty(), Quantity::from("0.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        0
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(
+            event,
+            OrderEventAny::FillVoided(_)
+        )),
+        0
+    );
+    assert!(
+        h.cache()
+            .borrow()
+            .positions_open(None, Some(&h.instrument_id()), None, None, None)
+            .is_empty()
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+#[rstest]
+#[tokio::test]
+async fn engine_declined_fill_fails_reports_closed() {
+    let mut h = harness::Harness::build().await;
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from(harness::TRADER_ID))
+        .strategy_id(StrategyId::from(harness::STRATEGY_ID))
+        .instrument_id(h.instrument_id())
+        .client_order_id(ClientOrderId::from("O-1"))
+        .side(OrderSide::Sell)
+        .price(Price::from("0.5000"))
+        .quantity(Quantity::from("100.0000"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[]).await;
+    let declined = record_declined_fills();
+    let before_trade = generate_mass_status(&h).await;
+
+    // A SELL fill past the order quantity is declined by the engine as an overfill
+    let mut trade = user_trade("ws_user_trade_full.json", "CONFIRMED");
+    trade["side"] = json!("SELL");
+    trade["size"] = json!("150.0");
+    trade["maker_orders"][0]["matched_amount"] = json!("150.0000");
+    h.mock_state.send_user(trade).await;
+    h.pump_for(Duration::from_millis(300)).await;
+    let after_decline = generate_mass_status(&h).await;
+
+    assert!(
+        before_trade.is_ok(),
+        "reports were blocked before the trade"
+    );
+    assert_eq!(
+        after_decline.unwrap_err().to_string(),
+        UNRESOLVED_MASS_STATUS_ERROR,
+    );
+    let declined = declined.borrow();
+    assert_eq!(declined.len(), 1);
+
+    let OrderEventAny::Filled(declined_fill) = &declined[0] else {
+        panic!("expected a declined fill, was {:?}", declined[0]);
+    };
+
+    assert_eq!(declined_fill.trade_id, TradeId::from("trade-0xfull"));
+    assert_eq!(
+        declined_fill.account_id,
+        AccountId::from(harness::ACCOUNT_ID)
+    );
+    assert_eq!(declined_fill.instrument_id, h.instrument_id());
+    assert_eq!(declined_fill.last_qty, Quantity::from("150.0000"));
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        0,
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn matched_not_broadcasted_trade_applies_provisionally_once() {
+    let mut h = harness::Harness::build().await;
+    let declined = record_declined_fills();
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+
+    h.mock_state
+        .send_user(user_trade(
+            "ws_user_trade_full.json",
+            "MATCHED_NOT_BROADCASTED",
+        ))
+        .await;
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    let provisional = generate_mass_status(&h).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "CONFIRMED"))
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let confirmed = generate_mass_status(&h).await;
+
+    assert!(filled, "MATCHED_NOT_BROADCASTED trade did not apply");
+    assert!(provisional.is_ok(), "provisional fill blocked reports");
+    assert!(confirmed.is_ok(), "stream confirmation blocked reports");
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.filled_qty(), Quantity::from("100.0000"));
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1,
+    );
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+#[rstest]
+#[tokio::test]
+async fn restart_hydrates_cached_fill_and_ignores_replayed_trade() {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let mut h =
+        harness::Harness::build_with_cache(|execution| seed_partially_filled(execution, &order))
+            .await;
+    serve_rest_trades(&h, &[]).await;
+    let declined = record_declined_fills();
+
+    h.mock_state.feed_user("ws_user_trade.json").await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let after_replay = generate_mass_status(&h).await;
+    let filled_after_replay = cached_order(&h, &order).filled_qty();
+
+    // New trades on a restored order wait for a targeted REST read
+    h.mock_state
+        .feed_user("ws_user_trade_completion.json")
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let while_gated = generate_mass_status(&h).await;
+    let filled_while_gated = cached_order(&h, &order).filled_qty();
+    serve_rest_trades(
+        &h,
+        &[user_trade("ws_user_trade_completion.json", "CONFIRMED")],
+    )
+    .await;
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    h.pump_for(Duration::from_millis(200)).await;
+
+    assert!(after_replay.is_ok(), "replayed trade blocked reports");
+    assert_eq!(filled_after_replay, Quantity::from("25.0000"));
+    assert_eq!(
+        while_gated.unwrap_err().to_string(),
+        UNRESOLVED_MASS_STATUS_ERROR,
+    );
+    assert_eq!(filled_while_gated, Quantity::from("25.0000"));
+    assert!(filled, "REST confirmation did not fill the restored order");
+    let cached = cached_order(&h, &order);
+
+    let trade_ids: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.trade_id),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        trade_ids,
+        vec![
+            TradeId::from("trade-0xabcdef1234"),
+            TradeId::from("trade-0xcompletion"),
+        ],
+    );
+    assert_eq!(cached.filled_qty(), Quantity::from("100.0000"));
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+// The first venue order fills 3 and has 1 more voided when its trade fails, so a modify to 12
+// leaves 8 to the replacement. When the replacement's confirmed maker trade leaves only dust
+// unfilled, its MATCHED status closes the order at its filled quantity, without the voided 1.
+#[rstest]
+#[tokio::test]
+async fn replacement_dust_terminal_after_prior_void_closes_order() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    settle_first_leg_with_void(&mut h, &order, "3.0000", "1.0000").await;
+
+    replace_and_fill_to_dust(&mut h, &order, "12.0000", "8.0000", "7.9950").await;
+
+    let cached = cached_order(&h, &order);
+    assert_eq!(cached.filled_qty(), Quantity::from("10.9950"));
+    let Some(OrderEventAny::Updated(updated)) = cached.events().last().copied() else {
+        panic!("expected the terminal quantity update last");
+    };
+    assert!(updated.reconciliation);
+    assert_eq!(updated.quantity, Quantity::from("10.9950"));
+}
+
+// The replacement of 10 fills 9.9950 after the first venue order filled 30 and had 50 voided, but
+// its MATCHED order message never arrives. A status report reads the order at the 90 that includes
+// the voided quantity, and still closes it at the 39.9950 filled.
+#[rstest]
+#[case::query(true)]
+#[case::status_report(false)]
+#[tokio::test]
+async fn reported_dust_terminal_after_prior_void_closes_order(#[case] queried: bool) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    settle_first_leg_with_void(&mut h, &order, "30.0000", "50.0000").await;
+    let replacement_venue_order_id = replace_order(&mut h, &order, "90.0000").await;
+    let trade = replacement_trade(replacement_venue_order_id, "9.9950");
+    serve_rest_trades(
+        &h,
+        &[
+            sized_trade("trade-kept", "30.0000", "CONFIRMED"),
+            sized_trade("trade-failed", "50.0000", "FAILED"),
+            trade.clone(),
+        ],
+    )
+    .await;
+    h.mock_state.send_user(trade).await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache
+                .order(&order.client_order_id())
+                .is_some_and(|cached| cached.filled_qty() == Quantity::from("39.9950"))
+        })
+        .await,
+        "replacement fill was not applied",
+    );
+    let open = cached_order(&h, &order);
+    let mut venue_order = load_json("http_open_order.json");
+    venue_order["id"] = json!(replacement_venue_order_id.as_str());
+    venue_order["status"] = json!("MATCHED");
+    venue_order["original_size"] = json!("10.0000");
+    venue_order["size_matched"] = json!("9.9950");
+    *h.mock_state.single_order_response.lock().await = Some(venue_order);
+
+    if queried {
+        h.exec_engine()
+            .borrow()
+            .execute(TradingCommand::QueryOrder(QueryOrder::new(
+                order.trader_id(),
+                Some(h.client_id()),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )));
+    } else {
+        let report = generate_order_status_report(&h, &order, replacement_venue_order_id).await;
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.quantity, Quantity::from("39.9950"));
+        assert_eq!(report.filled_qty, Quantity::from("39.9950"));
+        h.exec_engine()
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+    }
+    let closed = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+
+    let cached = cached_order(&h, &order);
+    assert_eq!(open.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(open.quantity(), Quantity::from("90.0000"));
+    assert_eq!(open.leaves_qty(), Quantity::from("0.0050"));
+    assert!(closed, "order ended {:?}, not Filled", cached.status());
+    assert_eq!(cached.events().len(), open.events().len() + 1);
+    let Some(OrderEventAny::Updated(updated)) = cached.events().last().copied() else {
+        panic!("expected the terminal quantity update last");
+    };
+    assert!(updated.reconciliation);
+    assert_eq!(updated.quantity, Quantity::from("39.9950"));
+    assert_eq!(cached.quantity(), Quantity::from("39.9950"));
+    assert_eq!(cached.filled_qty(), Quantity::from("39.9950"));
+    assert_eq!(cached.leaves_qty(), Quantity::from("0.0000"));
+}
+
+// A dust terminal closes the order at the 39.9950 filled after an earlier venue order had 50
+// voided. A new session restores its fills and its void, so the trades the stream replays do not
+// change the order: the confirmed ones need no REST read, and the failed one is read once.
+#[rstest]
+#[tokio::test]
+async fn restart_restores_dust_terminal_after_prior_void() {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let (closed, [replacement, matched]) = {
+        let mut h = harness::Harness::build().await;
+        submit_until_accepted(&mut h, &order).await;
+        settle_first_leg_with_void(&mut h, &order, "30.0000", "50.0000").await;
+        let replayed =
+            replace_and_fill_to_dust(&mut h, &order, "90.0000", "10.0000", "9.9950").await;
+        (cached_order(&h, &order), replayed)
+    };
+    assert_eq!(closed.quantity(), Quantity::from("39.9950"));
+    assert_eq!(closed.filled_qty(), Quantity::from("39.9950"));
+    assert_eq!(closed.non_reopened_voided_qty(), Quantity::from("50.0000"));
+
+    let mut h = restart_with_order(&order, &closed).await;
+    serve_rest_trades(&h, &[sized_trade("trade-failed", "50.0000", "FAILED")]).await;
+    let declined = record_declined_fills();
+    let restored = cached_order(&h, &order);
+    let trade_queries = h.mock_state.trade_queries.clone();
+
+    for message in [
+        sized_trade("trade-kept", "30.0000", "CONFIRMED"),
+        sized_trade("trade-failed", "50.0000", "MATCHED"),
+        sized_trade("trade-failed", "50.0000", "FAILED"),
+        replacement,
+        matched,
+    ] {
+        h.mock_state.send_user(message).await;
+    }
+    let failed_trade_read = pump_until_venue(&mut h, || {
+        trade_queries.try_lock().is_ok_and(|queries| {
+            queries
+                .iter()
+                .any(|query| query.get("id").is_some_and(|id| id == "trade-failed"))
+        })
+    })
+    .await;
+    h.pump_for(Duration::from_millis(200)).await;
+    let resumed = reports_resume(&mut h).await;
+
+    let replayed = cached_order(&h, &order);
+    let trade_reads: Vec<_> = trade_queries
+        .lock()
+        .await
+        .iter()
+        .filter_map(|query| query.get("id").cloned())
+        .collect();
+    assert_eq!(restored.events(), closed.events());
+    assert!(failed_trade_read, "failed trade was not read from REST");
+    assert!(resumed, "reports stayed blocked");
+    assert_eq!(trade_reads, ["trade-failed"]);
+    assert_eq!(replayed.events(), closed.events());
+    assert_eq!(*declined.borrow(), Vec::<OrderEventAny>::new());
+}
+
+// The venue order fills 30 and has 10 more voided when its trade fails. A modify to the 40 they
+// account for, or to less, leaves nothing to replace, so it is rejected while the venue order
+// still works, and a modify to 50 then replaces it with 10.
+#[rstest]
+#[case::equal("40.0000")]
+#[case::below("35.0000")]
+#[tokio::test]
+async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] target: &str) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-1");
+    submit_until_accepted(&mut h, &order).await;
+    settle_first_leg_with_void(&mut h, &order, "30.0000", "10.0000").await;
+    let before = cached_order(&h, &order);
+
+    h.modify_via_risk(&order, None, Some(Quantity::from(target)));
+    let rejected = h
+        .pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                event_count(&cached, |event| {
+                    matches!(event, OrderEventAny::ModifyRejected(_))
+                }) == 1
+            })
+        })
+        .await;
+    h.pump_for(Duration::from_millis(200)).await;
+
+    let after = cached_order(&h, &order);
+    let reasons: Vec<_> = after
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::ModifyRejected(event) => Some(event.reason.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert!(rejected, "modify was not rejected");
+    assert_eq!(*h.mock_state.cancel_delete_count.lock().await, 0);
+    assert_eq!(
+        reasons,
+        [format!(
+            "Modify quantity {target} must be greater than filled quantity 30.0000 plus \
+             non-reopened voided quantity 10.0000"
+        )],
+    );
+    assert_eq!(after.status(), before.status());
+    assert_eq!(after.venue_order_id(), before.venue_order_id());
+    assert_eq!(after.quantity(), Quantity::from("100.0000"));
+    assert_eq!(after.leaves_qty(), Quantity::from("60.0000"));
+
+    let replacement_venue_order_id = replace_order(&mut h, &order, "50.0000").await;
+
+    let replaced = cached_order(&h, &order);
+    assert_eq!(*h.mock_state.cancel_delete_count.lock().await, 1);
+    assert_eq!(replaced.venue_order_id(), Some(replacement_venue_order_id));
+    assert_eq!(replaced.leaves_qty(), Quantity::from("10.0000"));
+}
+
+// Starts a new session on a cache holding the order as its events left it
+async fn restart_with_order(order: &OrderAny, closed: &OrderAny) -> harness::Harness {
+    harness::Harness::build_with_cache(|execution| {
+        execution
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(execution.client_id()), false)
+            .unwrap();
+        let mut engine = execution.exec_engine().borrow_mut();
+
+        for event in closed.events().into_iter().skip(1) {
+            engine.process(event);
+        }
+    })
+    .await
+}
+
+// Fills `kept` of the accepted venue order, then matches and fails a trade of `voided`
+async fn settle_first_leg_with_void(
+    h: &mut harness::Harness,
+    order: &OrderAny,
+    kept: &str,
+    voided: &str,
+) {
+    let kept_trade = sized_trade("trade-kept", kept, "CONFIRMED");
+    let failed_trade = sized_trade("trade-failed", voided, "FAILED");
+    serve_rest_trades(h, &[kept_trade.clone(), failed_trade.clone()]).await;
+
+    for trade in [
+        kept_trade,
+        sized_trade("trade-failed", voided, "MATCHED"),
+        failed_trade,
+    ] {
+        h.mock_state.send_user(trade).await;
+    }
+
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                cached.filled_qty() == Quantity::from(kept)
+                    && cached.non_reopened_voided_qty() == Quantity::from(voided)
+            })
+        })
+        .await,
+        "first venue order did not settle at {kept} filled and {voided} voided",
+    );
+}
+
+// Modifies the order to `target` once the venue reports its canceled order at the cached filled
+// quantity. Returns the replacement's venue order ID.
+async fn replace_order(h: &mut harness::Harness, order: &OrderAny, target: &str) -> VenueOrderId {
+    let replaced = cached_order(h, order);
+    let mut canceled = load_json("http_canceled_orders_harness.json")["data"][0].clone();
+    canceled["size_matched"] = json!(replaced.filled_qty().to_string());
+    *h.mock_state.single_order_response.lock().await = Some(canceled);
+    h.mock_state
+        .order_response_uses_request_hash
+        .store(true, std::sync::atomic::Ordering::Release);
+    h.modify_via_risk(order, None, Some(Quantity::from(target)));
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            cache.order(&order.client_order_id()).is_some_and(|cached| {
+                cached.quantity() == Quantity::from(target)
+                    && cached.venue_order_id() != replaced.venue_order_id()
+            })
+        })
+        .await,
+        "replacement did not update the cached order",
+    );
+    cached_order(h, order).venue_order_id().unwrap()
+}
+
+// A confirmed trade in which the replacement venue order is the owned maker for `filled`
+fn replacement_trade(venue_order_id: VenueOrderId, filled: &str) -> Value {
+    let mut trade = owned_maker_trade("CONFIRMED");
+    trade["id"] = json!("trade-replacement");
+    trade["size"] = json!((Quantity::from("40.0000") + Quantity::from(filled)).to_string());
+    trade["maker_orders"][1]["order_id"] = json!(venue_order_id.as_str());
+    trade["maker_orders"][1]["matched_amount"] = json!(filled);
+    trade
+}
+
+// Modifies the order to `target`, then fills `filled` of the replacement's `size` as a maker and
+// reports it MATCHED, which closes the order. Returns the trade and the order message.
+async fn replace_and_fill_to_dust(
+    h: &mut harness::Harness,
+    order: &OrderAny,
+    target: &str,
+    size: &str,
+    filled: &str,
+) -> [Value; 2] {
+    let replacement_venue_order_id = replace_order(h, order, target).await;
+
+    let trade = replacement_trade(replacement_venue_order_id, filled);
+    h.mock_state.send_user(trade.clone()).await;
+    let mut matched = load_json("ws_user_order_matched.json");
+    matched["id"] = json!(replacement_venue_order_id.as_str());
+    matched["event_type"] = json!("order");
+    matched["original_size"] = json!(size);
+    matched["size_matched"] = json!(filled);
+    matched["associate_trades"] = json!(["trade-replacement"]);
+    h.mock_state.send_user(matched.clone()).await;
+    let closed = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, order, OrderStatus::Filled)
+        })
+        .await;
+
+    assert!(
+        closed,
+        "order ended {:?}, not Filled",
+        cached_order(h, order).status(),
+    );
+    [trade, matched]
+}
+
+async fn submit_until_accepted(h: &mut harness::Harness, order: &OrderAny) {
+    h.submit_via_risk(order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, order, OrderStatus::Accepted)
+        })
+        .await,
+        "order did not reach Accepted",
+    );
+}
+
+fn cached_order(h: &harness::Harness, order: &OrderAny) -> OrderAny {
+    h.cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .expect("order should be cached")
+        .clone()
+}
+
+fn user_trade(fixture: &str, status: &str) -> Value {
+    let mut trade = load_json(fixture);
+    trade["status"] = json!(status);
+    trade["event_type"] = json!("trade");
+    trade
+}
+
+// A taker trade of `size` for the tracked order
+fn sized_trade(id: &str, size: &str, status: &str) -> Value {
+    let mut trade = user_trade("ws_user_trade.json", status);
+    trade["id"] = json!(id);
+    trade["size"] = json!(size);
+    trade["maker_orders"][0]["matched_amount"] = json!(size);
+    trade
+}
+
+// The tracked order is the one owned maker among the two makers of the full-fill trade
+fn owned_maker_trade(status: &str) -> Value {
+    let mut trade = user_trade("ws_user_trade_full.json", status);
+    let mut unowned = trade["maker_orders"][0].clone();
+    unowned["matched_amount"] = json!("40.0000");
+    unowned["side"] = json!("BUY");
+    let mut owned = unowned.clone();
+    owned["order_id"] = json!(DEFAULT_ACCEPTED_ORDER_ID);
+    owned["owner"] = trade["owner"].clone();
+    owned["maker_address"] = trade["maker_address"].clone();
+    owned["matched_amount"] = json!("60.0000");
+
+    trade["trader_side"] = json!("MAKER");
+    trade["side"] = json!("SELL");
+    trade["taker_order_id"] =
+        json!("0xtaker05taker05taker05taker05taker05taker05taker05taker05taker05");
+    trade["owner"] = unowned["owner"].clone();
+    trade["maker_address"] = unowned["maker_address"].clone();
+    trade["maker_orders"] = json!([unowned, owned]);
+    trade
+}
+
+async fn serve_rest_trades(h: &harness::Harness, trades: &[Value]) {
+    *h.mock_state.orders_response_override.lock().await = Some(load_json("http_empty_page.json"));
+    *h.mock_state.trades_response_override.lock().await =
+        Some(json!({ "data": trades, "next_cursor": "LTE=" }));
+}
+
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test harness only runs mock venue tasks during the await"
+)]
+async fn generate_order_status_report(
+    h: &harness::Harness,
+    order: &OrderAny,
+    venue_order_id: VenueOrderId,
+) -> OrderStatusReport {
+    h.exec_engine()
+        .borrow()
+        .get_client(&h.client_id())
+        .expect("execution client is registered")
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(order.instrument_id()),
+            client_order_id: Some(order.client_order_id()),
+            venue_order_id: Some(venue_order_id),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("order status report request should succeed")
+        .expect("order status report request should return a report")
+}
+
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test harness only runs mock venue tasks during the await"
+)]
+async fn generate_mass_status(h: &harness::Harness) -> anyhow::Result<Option<ExecutionMassStatus>> {
+    let client_id = h.client_id();
+    h.exec_engine()
+        .borrow_mut()
+        .generate_mass_status(&client_id, None)
+        .await
+}
+
+fn record_declined_fills() -> Rc<RefCell<Vec<OrderEventAny>>> {
+    let declined = Rc::new(RefCell::new(Vec::new()));
+    let recorder = declined.clone();
+    msgbus::subscribe_order_events(
+        "events.order_fill_declined.*".into(),
+        TypedHandler::from(move |event: &OrderEventAny| recorder.borrow_mut().push(event.clone())),
+        None,
+    );
+    declined
+}
+
+async fn reports_resume(h: &mut harness::Harness) -> bool {
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+
+    while tokio::time::Instant::now() < deadline {
+        if generate_mass_status(h).await.is_ok() {
+            return true;
+        }
+
+        h.pump_for(Duration::from_millis(100)).await;
+    }
+
+    false
+}
+
+async fn reports_block(h: &mut harness::Harness) -> Option<anyhow::Error> {
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+
+    while tokio::time::Instant::now() < deadline {
+        if let Err(e) = generate_mass_status(h).await {
+            return Some(e);
+        }
+
+        h.pump_for(Duration::from_millis(100)).await;
+    }
+
+    None
+}
+
+async fn pump_until_venue(h: &mut harness::Harness, condition: impl Fn() -> bool) -> bool {
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+
+    while tokio::time::Instant::now() < deadline {
+        if condition() {
+            return true;
+        }
+
+        h.pump_for(Duration::from_millis(10)).await;
+    }
+
+    false
+}
+
+// Charges the taker fee so the commission of a REST-sourced fill is observable
+fn seed_taker_fee_schedule(execution: &ExecutionHarness) {
+    let mut instrument = harness::instrument();
+
+    let InstrumentAny::BinaryOption(binary) = &mut instrument else {
+        panic!("expected binary option harness instrument");
+    };
+
+    binary
+        .info
+        .as_mut()
+        .expect("harness instrument info")
+        .insert(
+            "fee_schedule".into(),
+            json!({"exponent": "1", "rate": "0.02", "takerOnly": true, "rebateRate": "0"}),
+        );
+    execution
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument)
+        .unwrap();
+}
+
+// Leaves the order as a previous run would: accepted, then filled 25 by `ws_user_trade.json`
+fn seed_partially_filled(execution: &ExecutionHarness, order: &OrderAny) {
+    let account_id = AccountId::from(harness::ACCOUNT_ID);
+    execution
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(execution.client_id()), false)
+        .unwrap();
+    let mut engine = execution.exec_engine().borrow_mut();
+    engine.process(&TestOrderEventStubs::submitted(order, account_id));
+    engine.process(&TestOrderEventStubs::accepted(
+        order,
+        account_id,
+        VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID),
+    ));
+    let accepted = execution
+        .cache()
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    engine.process(&TestOrderEventStubs::filled(
+        &accepted,
+        &harness::instrument(),
+        Some(TradeId::from("trade-0xabcdef1234")),
+        None,
+        Some(Price::from("0.5000")),
+        Some(Quantity::from("25.0000")),
+        Some(LiquiditySide::Taker),
+        Some(Money::zero(Currency::pUSD())),
+        None,
+        Some(account_id),
+    ));
+}

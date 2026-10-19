@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use derive_builder::Builder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -38,15 +40,12 @@ fn escape_sql_string(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+#[derive(Clone, Serialize, Deserialize, Builder)]
 #[serde(deny_unknown_fields)]
 #[builder(default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.infrastructure", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -62,6 +61,18 @@ pub struct PostgresConnectOptions {
     pub username: String,
     pub password: String,
     pub database: String,
+}
+
+impl Debug for PostgresConnectOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(PostgresConnectOptions))
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &"***")
+            .field("database", &self.database)
+            .finish()
+    }
 }
 
 impl PostgresConnectOptions {
@@ -522,7 +533,7 @@ async fn execute_schema_as_role(
 //
 // Skips `--` line comments and respects single-quoted string literals and `$$` dollar-quoted
 // bodies, so a semicolon inside a comment, string literal, or `DO` block does not split a
-// statement. Tagged `$tag$` quoting is not recognised; keep the schema files on bare `$$`.
+// statement. Tagged `$tag$` quoting is not recognized; keep the schema files on bare `$$`.
 // Used for the plain DDL schema files; the PL/pgSQL files are split separately on their
 // function terminators.
 fn split_sql_statements(sql: &str) -> Vec<String> {
@@ -676,6 +687,42 @@ database = "nautilus"
         assert_eq!(config.port, 5432);
         assert_eq!(config.username, "nautilus");
         assert_eq!(config.database, "nautilus");
+    }
+
+    #[rstest]
+    fn test_postgres_connect_options_debug_redacts_password() {
+        let config = PostgresConnectOptions::new(
+            "localhost".to_string(),
+            5432,
+            "nautilus".to_string(),
+            "secret-password".to_string(),
+            "nautilus".to_string(),
+        );
+
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("password: \"***\""));
+        assert!(!debug.contains("secret-password"));
+    }
+
+    #[rstest]
+    fn test_postgres_connect_options_connection_string_masks_password() {
+        let config = PostgresConnectOptions::new(
+            "db.example.com".to_string(),
+            6543,
+            "trader".to_string(),
+            "pw".to_string(),
+            "orders".to_string(),
+        );
+
+        let url = config.connection_string();
+        let masked_url = config.connection_string_masked();
+
+        assert_eq!(url, "postgres://trader:pw@db.example.com:6543/orders");
+        assert_eq!(
+            masked_url,
+            "postgres://trader:***@db.example.com:6543/orders"
+        );
     }
 
     #[rstest]

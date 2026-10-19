@@ -31,8 +31,16 @@
 /// log_trace!("Processing data", component = "DataEngine");
 ///
 /// // Both color and component (flexible order)
-/// log_trace!("Data processed", color = LogColor::Cyan, component = "DataEngine");
-/// log_trace!("Data processed", component = "DataEngine", color = LogColor::Cyan);
+/// log_trace!(
+///     "Data processed",
+///     color = LogColor::Cyan,
+///     component = "DataEngine"
+/// );
+/// log_trace!(
+///     "Data processed",
+///     component = "DataEngine",
+///     color = LogColor::Cyan
+/// );
 /// ```
 #[macro_export]
 macro_rules! log_trace {
@@ -110,8 +118,16 @@ macro_rules! log_trace {
 /// log_debug!("Validating order", component = "RiskEngine");
 ///
 /// // Both color and component (flexible order)
-/// log_debug!("Order validated", color = LogColor::Blue, component = "RiskEngine");
-/// log_debug!("Order validated", component = "RiskEngine", color = LogColor::Blue);
+/// log_debug!(
+///     "Order validated",
+///     color = LogColor::Blue,
+///     component = "RiskEngine"
+/// );
+/// log_debug!(
+///     "Order validated",
+///     component = "RiskEngine",
+///     color = LogColor::Blue
+/// );
 /// ```
 #[macro_export]
 macro_rules! log_debug {
@@ -183,14 +199,26 @@ macro_rules! log_debug {
 /// log_info!("Order {} filled successfully", order_id);
 ///
 /// // Custom color (e.g., green for success)
-/// log_info!("Order {} filled successfully", order_id, color = LogColor::Green);
+/// log_info!(
+///     "Order {} filled successfully",
+///     order_id,
+///     color = LogColor::Green
+/// );
 ///
 /// // Custom component
 /// log_info!("Processing order", component = "OrderManager");
 ///
 /// // Both color and component (flexible order)
-/// log_info!("Order filled", color = LogColor::Green, component = "OrderManager");
-/// log_info!("Order filled", component = "OrderManager", color = LogColor::Green);
+/// log_info!(
+///     "Order filled",
+///     color = LogColor::Green,
+///     component = "OrderManager"
+/// );
+/// log_info!(
+///     "Order filled",
+///     component = "OrderManager",
+///     color = LogColor::Green
+/// );
 /// ```
 #[macro_export]
 macro_rules! log_info {
@@ -266,8 +294,16 @@ macro_rules! log_info {
 /// log_warn!("Risk limit exceeded", component = "RiskEngine");
 ///
 /// // Both color and component (flexible order)
-/// log_warn!("Warning message", color = LogColor::Magenta, component = "RiskEngine");
-/// log_warn!("Warning message", component = "RiskEngine", color = LogColor::Magenta);
+/// log_warn!(
+///     "Warning message",
+///     color = LogColor::Magenta,
+///     component = "RiskEngine"
+/// );
+/// log_warn!(
+///     "Warning message",
+///     component = "RiskEngine",
+///     color = LogColor::Magenta
+/// );
 /// ```
 #[macro_export]
 macro_rules! log_warn {
@@ -345,8 +381,16 @@ macro_rules! log_warn {
 /// log_error!("Connection failed", component = "DataEngine");
 ///
 /// // Both color and component (flexible order)
-/// log_error!("Critical error", color = LogColor::Magenta, component = "DataEngine");
-/// log_error!("Critical error", component = "DataEngine", color = LogColor::Magenta);
+/// log_error!(
+///     "Critical error",
+///     color = LogColor::Magenta,
+///     component = "DataEngine"
+/// );
+/// log_error!(
+///     "Critical error",
+///     component = "DataEngine",
+///     color = LogColor::Magenta
+/// );
 /// ```
 #[macro_export]
 macro_rules! log_error {

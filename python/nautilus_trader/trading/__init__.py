@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Trading node orchestration and strategy components.
+"""
 
 from nautilus_trader._fixup import fixup_module_names
 from nautilus_trader._libnautilus.trading import *  # noqa: F403 (undefined-local-with-import-star)

@@ -15,12 +15,9 @@
 
 use std::{ffi::c_char, str::FromStr};
 
-use nautilus_core::{
-    MUTEX_POISONED,
-    ffi::{
-        abort_on_panic,
-        string::{cstr_as_str, str_to_cstr},
-    },
+use nautilus_core::ffi::{
+    abort_on_panic,
+    string::{cstr_as_str, str_to_cstr},
 };
 
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::Currency};
@@ -70,25 +67,17 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
 }
 
 /// Registers a currency in the global map for FFI.
-///
-/// # Panics
-///
-/// Panics if the internal mutex `CURRENCY_MAP` is poisoned when locking.
 #[unsafe(no_mangle)]
 pub extern "C" fn currency_register(currency: Currency) {
     abort_on_panic(|| {
         CURRENCY_MAP
             .lock()
-            .unwrap()
             .insert(currency.code.to_string(), currency);
     });
 }
 
 /// Checks whether a currency code exists in the global map for FFI.
 ///
-/// # Panics
-///
-/// Panics if the internal mutex `CURRENCY_MAP` is poisoned when locking.
 ///
 /// # Safety
 ///
@@ -97,12 +86,7 @@ pub extern "C" fn currency_register(currency: Currency) {
 pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
     abort_on_panic(|| {
         let code = unsafe { cstr_as_str(code_ptr) };
-        u8::from(
-            CURRENCY_MAP
-                .lock()
-                .expect(MUTEX_POISONED)
-                .contains_key(code),
-        )
+        u8::from(CURRENCY_MAP.lock().contains_key(code))
     })
 }
 
@@ -148,8 +132,8 @@ mod tests {
         let currency = unsafe {
             super::currency_from_py(code.as_ptr(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
         };
-        assert_eq!(currency.code.as_str(), "MYC");
-        assert_eq!(currency.name.as_str(), "My Currency");
+        assert_eq!(currency.code, "MYC");
+        assert_eq!(currency.name, "My Currency");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 

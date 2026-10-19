@@ -117,6 +117,19 @@ pub enum PoolProfilerError {
         calculated_tick: i32,
     },
 
+    #[error(
+        "Swap replay mismatch at {location}: simulated_tick={simulated_tick}, event_tick={event_tick}, simulated_liquidity={simulated_liquidity}, event_liquidity={event_liquidity}, simulated_crossed_tick_count={simulated_crossed_tick_count}, anchoring_crossed_tick={anchoring_crossed_tick:?}"
+    )]
+    SwapReplayMismatch {
+        location: PoolEventLocation,
+        simulated_tick: i32,
+        event_tick: i32,
+        simulated_liquidity: u128,
+        event_liquidity: u128,
+        simulated_crossed_tick_count: usize,
+        anchoring_crossed_tick: Option<i32>,
+    },
+
     #[error("Liquidity overflow at {location}: current={current}, delta={delta}")]
     LiquidityOverflow {
         location: PoolEventLocation,
@@ -146,7 +159,8 @@ impl PoolProfilerError {
     pub fn location(&self) -> Option<&PoolEventLocation> {
         match self {
             Self::LiquidityOverflow { location, .. }
-            | Self::LiquidityUnderflow { location, .. } => Some(location),
+            | Self::LiquidityUnderflow { location, .. }
+            | Self::SwapReplayMismatch { location, .. } => Some(location),
             _ => None,
         }
     }

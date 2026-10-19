@@ -102,7 +102,7 @@ impl DexPoolData {
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -133,6 +133,7 @@ pub enum DefiData {
 impl DefiData {
     /// Returns the block position associated with this DeFi data.
     #[must_use]
+    #[rustfmt::skip]
     pub fn block_position(&self) -> (u64, u32, u32) {
         match self {
             Self::Block(block) => (block.number, 0, 0),
@@ -143,18 +144,10 @@ impl DefiData {
                 snapshot.block_position.log_index,
             ),
             Self::PoolSwap(swap) => (swap.block, swap.transaction_index, swap.log_index),
-            Self::PoolLiquidityUpdate(update) => {
-                (update.block, update.transaction_index, update.log_index)
-            }
-            Self::PoolFeeCollect(collect) => {
-                (collect.block, collect.transaction_index, collect.log_index)
-            }
-            Self::PoolFeeProtocolUpdate(update) => {
-                (update.block, update.transaction_index, update.log_index)
-            }
-            Self::PoolFeeProtocolCollect(collect) => {
-                (collect.block, collect.transaction_index, collect.log_index)
-            }
+            Self::PoolLiquidityUpdate(update) => (update.block, update.transaction_index, update.log_index),
+            Self::PoolFeeCollect(collect) => (collect.block, collect.transaction_index, collect.log_index),
+            Self::PoolFeeProtocolUpdate(update) => (update.block, update.transaction_index, update.log_index),
+            Self::PoolFeeProtocolCollect(collect) => (collect.block, collect.transaction_index, collect.log_index),
             Self::PoolFlash(flash) => (flash.block, flash.transaction_index, flash.log_index),
         }
     }

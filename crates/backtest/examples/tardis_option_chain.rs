@@ -25,10 +25,13 @@
 //! Run with:
 //! `cargo run -p nautilus-backtest --features examples,streaming --example tardis-option-chain`
 
+#[cfg(feature = "mimalloc")]
+mod allocator;
+
 use std::{fmt::Debug, path::Path, str::FromStr};
 
 use nautilus_backtest::{
-    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
+    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
 use nautilus_common::actor::DataActor;
@@ -38,7 +41,7 @@ use nautilus_execution::models::fee::{
 };
 use nautilus_model::{
     data::{
-        QuoteTick,
+        NautilusDataType, QuoteTick,
         option_chain::{OptionChainSlice, StrikeRange},
     },
     enums::{AccountType, BookType, OmsType, OrderSide, TimeInForce},
@@ -46,7 +49,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -261,6 +264,9 @@ impl DataActor for OptionChainBacktest {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "mimalloc")]
+    allocator::register();
+
     nautilus_common::logging::ensure_logging_initialized();
 
     let catalog_path = CATALOG_PATH.to_string();
@@ -331,10 +337,7 @@ fn load_option_metadata(
         .filter_map(option_metadata)
         .filter(|metadata| {
             metadata.instrument_id.venue == venue
-                && metadata
-                    .underlying
-                    .as_str()
-                    .eq_ignore_ascii_case(underlying)
+                && metadata.underlying.eq_ignore_ascii_case(underlying)
         })
         .collect();
 
@@ -380,7 +383,7 @@ fn nearest_series(
         .iter()
         .map(|metadata| metadata.instrument_id)
         .collect();
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         venue,
         first.underlying,
         settlement_currency,
@@ -439,15 +442,12 @@ fn strike_range(selection_mode: SelectionMode) -> StrikeRange {
 fn option_fee_model() -> anyhow::Result<FeeModelAny> {
     match FEE_MODEL {
         "capped" => Ok(FeeModelAny::CappedOption(CappedOptionFeeModel::new(
-            Some(parse_decimal("0.0003")?),
-            Some(parse_decimal("0.0003")?),
+            parse_decimal("0.0003")?,
+            parse_decimal("0.0003")?,
             None,
         )?)),
         "tiered" => Ok(FeeModelAny::TieredNotionalOption(
-            TieredNotionalOptionFeeModel::new(
-                Some(parse_decimal("0.0002")?),
-                Some(parse_decimal("0.0005")?),
-            )?,
+            TieredNotionalOptionFeeModel::new(parse_decimal("0.0002")?, parse_decimal("0.0005")?)?,
         )),
         other => {
             anyhow::bail!("Invalid FEE_MODEL '{other}', expected 'capped' or 'tiered'")

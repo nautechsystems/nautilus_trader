@@ -32,6 +32,7 @@ use super::{
     bool_field, float64_field, money_to_f64, quantity_to_f64, timestamp_field, uint8_field,
     uint32_field, uint64_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`Position`].
 #[must_use]
@@ -106,7 +107,7 @@ fn commissions_to_json(position: &Position) -> String {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
     let mut trader_id = StringBuilder::new();
     let mut strategy_id = StringBuilder::new();
@@ -129,10 +130,14 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
     let mut base_currency = StringBuilder::new();
     let mut quote_currency = StringBuilder::new();
     let mut settlement_currency = StringBuilder::new();
-    let mut ts_init = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_opened = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_last = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_closed = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_init =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_opened =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_last =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_closed =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
     let mut duration_ns = UInt64Builder::with_capacity(data.len());
     let mut avg_px_open = Float64Builder::with_capacity(data.len());
     let mut avg_px_close = Float64Builder::with_capacity(data.len());
@@ -172,7 +177,7 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
         ts_opened.append_value(unix_nanos_to_i64(position.ts_opened.as_u64()));
         ts_last.append_value(unix_nanos_to_i64(position.ts_last.as_u64()));
         ts_closed.append_option(position.ts_closed.map(|v| unix_nanos_to_i64(v.as_u64())));
-        duration_ns.append_value(position.duration_ns);
+        duration_ns.append_value(position.duration_ns.as_u64());
         avg_px_open.append_value(position.avg_px_open);
         avg_px_close.append_option(position.avg_px_close);
         realized_return.append_value(position.realized_return);
@@ -310,7 +315,7 @@ mod tests {
         assert_eq!(fields[21].name(), "ts_init");
         assert_eq!(
             fields[21].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[25].name(), "duration_ns");
         assert_eq!(fields[25].data_type(), &DataType::UInt64);

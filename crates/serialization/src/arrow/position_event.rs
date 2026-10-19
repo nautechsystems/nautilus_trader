@@ -39,9 +39,10 @@ const POSITION_OPENED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("last_px", false),
     JsonFieldSpec::utf8("currency", false),
     JsonFieldSpec::f64("avg_px_open", false),
+    JsonFieldSpec::utf8("realized_pnl", true),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const POSITION_CHANGED_FIELDS: &[JsonFieldSpec] = &[
@@ -65,9 +66,9 @@ const POSITION_CHANGED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("realized_pnl", true),
     JsonFieldSpec::utf8("unrealized_pnl", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_opened", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_opened", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const POSITION_CLOSED_FIELDS: &[JsonFieldSpec] = &[
@@ -93,10 +94,10 @@ const POSITION_CLOSED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("unrealized_pnl", false),
     JsonFieldSpec::u64("duration", false),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_opened", false),
-    JsonFieldSpec::u64("ts_closed", true),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_opened", false),
+    JsonFieldSpec::timestamp("ts_closed", true),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 const POSITION_ADJUSTED_FIELDS: &[JsonFieldSpec] = &[
@@ -110,8 +111,8 @@ const POSITION_ADJUSTED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("pnl_change", true),
     JsonFieldSpec::utf8("reason", true),
     JsonFieldSpec::utf8("event_id", false),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
@@ -129,11 +130,19 @@ macro_rules! impl_position_event_arrow {
         }
 
         impl EncodeToRecordBatch for $type {
-            fn encode_batch(
+            fn encode_batch<T>(
                 metadata: &HashMap<String, String>,
-                data: &[Self],
-            ) -> Result<RecordBatch, ArrowError> {
-                encode_batch($type_name, metadata, data, $fields)
+                data: &[T],
+            ) -> Result<RecordBatch, ArrowError>
+            where
+                T: std::borrow::Borrow<Self>,
+            {
+                encode_batch(
+                    $type_name,
+                    metadata,
+                    data.iter().map(std::borrow::Borrow::borrow),
+                    $fields,
+                )
             }
 
             fn metadata(&self) -> HashMap<String, String> {
@@ -165,7 +174,7 @@ impl_position_event_arrow!(
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, PositionAdjustmentType, PositionSide},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
@@ -218,6 +227,7 @@ mod tests {
             last_px: Price::from("1.0525"),
             currency: Currency::USD(),
             avg_px_open: 1.0525,
+            realized_pnl: Some(Money::new(-1.25, Currency::USD())),
             event_id: UUID4::default(),
             ts_event: UnixNanos::from(1_000_000_000),
             ts_init: UnixNanos::from(1_000_000_001),
@@ -287,7 +297,7 @@ mod tests {
             realized_return: 0.0071,
             realized_pnl: Some(Money::new(112.50, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: 3_600_000_000_000,
+            duration: DurationNanos::new(3_600_000_000_000),
             event_id: UUID4::default(),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),

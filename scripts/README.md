@@ -1,6 +1,6 @@
 # Scripts directory
 
-This directory contains assorted helper scripts used by NautilusTrader's
+This directory contains scripts used by NautilusTrader's
 developer tooling and CI pipeline. Only one of them (`curate-dataset.sh`)
 needs a brief explanation because it is meant to be executed manually when
 curating test-fixture datasets.
@@ -15,7 +15,7 @@ bring a third-party file into the NautilusTrader *test-data* bucket:
 - download the raw file from its original URL (with retries)
 - create a versioned directory (`v1/<slug>/`)
 - copy the file into that directory
-- write a `LICENSE.txt` file holding the SPDX identifier or licence URL
+- write a `LICENSE.txt` file holding the SPDX identifier or license URL
 - compute size and SHA-256 checksum and store them in `metadata.json`
 
 The result is a self-contained directory ready to upload one-for-one to the
@@ -24,7 +24,7 @@ S3 bucket (or to commit into the repository if the data size is small).
 ### Usage
 
 ```bash
-scripts/curate-dataset.sh <slug> <filename> <download-url> <licence>
+scripts/curate-dataset.sh <slug> <filename> <download-url> <license>
 ```
 
 - **`slug`** - sub-directory name (e.g. `fi2010_all`)
@@ -61,11 +61,11 @@ and downstream tooling can verify the checksum.
 - Re-running the script with the same arguments simply overwrites the existing
   files - useful when the upstream file is updated and you want to bump the
   checksum.
-- Only basic validation is performed; ensure that the licence you specify
+- Only basic validation is performed; ensure that the license you specify
   indeed permits redistribution.
 
 ---
 
-For details on the other helper scripts, run them with `-h` or read the
+For details on the other scripts, run them with `-h` or read the
 inline comments; they are mostly invoked from CI and rarely need manual
 execution.

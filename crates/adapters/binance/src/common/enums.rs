@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
+        module = "nautilus_trader.adapters.binance",
         eq,
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
@@ -120,7 +120,7 @@ impl Display for BinanceProductType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
+        module = "nautilus_trader.adapters.binance",
         eq,
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
@@ -171,7 +171,6 @@ impl TryFrom<OrderSide> for BinanceSide {
         match value {
             OrderSide::Buy => Ok(Self::Buy),
             OrderSide::Sell => Ok(Self::Sell),
-            _ => anyhow::bail!("Unsupported `OrderSide` for Binance: {value:?}"),
         }
     }
 }
@@ -190,11 +189,7 @@ impl From<BinanceSide> for OrderSide {
 #[serde(rename_all = "UPPERCASE")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
-        eq,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", eq, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -221,7 +216,7 @@ pub enum BinancePositionSide {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
+        module = "nautilus_trader.adapters.binance",
         eq,
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
@@ -356,9 +351,11 @@ pub enum BinanceFuturesOrderType {
     Unknown,
 }
 
-impl From<BinanceFuturesOrderType> for OrderType {
-    fn from(value: BinanceFuturesOrderType) -> Self {
-        match value {
+impl TryFrom<BinanceFuturesOrderType> for OrderType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: BinanceFuturesOrderType) -> Result<Self, Self::Error> {
+        Ok(match value {
             BinanceFuturesOrderType::Limit => Self::Limit,
             BinanceFuturesOrderType::Market => Self::Market,
             BinanceFuturesOrderType::Stop => Self::StopLimit,
@@ -366,10 +363,9 @@ impl From<BinanceFuturesOrderType> for OrderType {
             BinanceFuturesOrderType::TakeProfit => Self::LimitIfTouched,
             BinanceFuturesOrderType::TakeProfitMarket => Self::MarketIfTouched,
             BinanceFuturesOrderType::TrailingStopMarket => Self::TrailingStopMarket,
-            BinanceFuturesOrderType::Liquidation
-            | BinanceFuturesOrderType::Adl
-            | BinanceFuturesOrderType::Unknown => Self::Market, // Exchange-generated orders
-        }
+            BinanceFuturesOrderType::Liquidation | BinanceFuturesOrderType::Adl => Self::Market,
+            BinanceFuturesOrderType::Unknown => anyhow::bail!("unknown Binance Futures order type"),
+        })
     }
 }
 
@@ -387,7 +383,7 @@ pub enum BinanceTimeInForce {
     Gtx,
     /// Good till date.
     Gtd,
-    /// Request-for-quote interactive (USD-M Futures).
+    /// Retail Price Improvement (USD-M Futures).
     Rpi,
     /// Unknown or undocumented value.
     #[serde(other)]

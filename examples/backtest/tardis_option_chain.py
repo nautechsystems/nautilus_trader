@@ -19,8 +19,9 @@ Example: option-chain backtest from a Tardis-backed catalog.
 The catalog must already contain option instruments plus per-instrument QuoteTick
 and OptionGreeks data, such as data written by the Tardis Machine replay pipeline.
 
-Run with a built v2 extension:
+Run with a built extension:
     python examples/backtest/tardis_option_chain.py --catalog-path /path/to/catalog
+
 """
 
 from __future__ import annotations
@@ -30,13 +31,14 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from typing import Self
 
-from nautilus_trader.backtest import BacktestDataConfig  # type: ignore[attr-defined]
-from nautilus_trader.backtest import BacktestEngineConfig  # type: ignore[attr-defined]
 from nautilus_trader.backtest import BacktestNode  # type: ignore[attr-defined]
-from nautilus_trader.backtest import BacktestRunConfig  # type: ignore[attr-defined]
-from nautilus_trader.backtest import BacktestVenueConfig  # type: ignore[attr-defined]
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.execution import CappedOptionFeeModel  # type: ignore[attr-defined]
 from nautilus_trader.execution import TieredNotionalOptionFeeModel  # type: ignore[attr-defined]
@@ -47,6 +49,7 @@ from nautilus_trader.model import ContingencyType  # type: ignore[attr-defined]
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitOrder  # type: ignore[attr-defined]
 from nautilus_trader.model import MarketOrder  # type: ignore[attr-defined]
+from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import OmsType  # type: ignore[attr-defined]
 from nautilus_trader.model import OptionChainSlice  # type: ignore[attr-defined]
 from nautilus_trader.model import OptionSeriesId  # type: ignore[attr-defined]
@@ -57,9 +60,7 @@ from nautilus_trader.model import StrikeRange  # type: ignore[attr-defined]
 from nautilus_trader.model import TimeInForce  # type: ignore[attr-defined]
 from nautilus_trader.model import TraderId
 from nautilus_trader.persistence import ParquetDataCatalog  # type: ignore[attr-defined]
-from nautilus_trader.trading import ImportableStrategyConfig  # type: ignore[attr-defined]
 from nautilus_trader.trading import Strategy
-from nautilus_trader.trading import StrategyConfig  # type: ignore[attr-defined]
 
 
 VENUE = "DERIBIT"
@@ -67,6 +68,10 @@ VENUE = "DERIBIT"
 
 @dataclass(frozen=True)
 class OptionMetadata:
+    """
+    Collect option metadata tests.
+    """
+
     instrument_id: InstrumentId
     underlying: str
     settlement_currency: str
@@ -76,6 +81,10 @@ class OptionMetadata:
 
 @dataclass(frozen=True)
 class SeriesSelection:
+    """
+    Collect series selection tests.
+    """
+
     series_id: OptionSeriesId
     instrument_ids: list[InstrumentId]
     strikes: list[Price]
@@ -84,6 +93,10 @@ class SeriesSelection:
 
 @dataclass(frozen=True)
 class SelectedOption:
+    """
+    Collect selected option tests.
+    """
+
     instrument_id: InstrumentId
     strike: Price
     quote: Any
@@ -91,23 +104,13 @@ class SelectedOption:
 
 
 class OptionChainBacktestConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "series_id",
-        "selection_mode",
-        "target_delta",
-        "delta_tolerance",
-        "target_strike",
-        "trade_size",
-        "snapshot_interval_ms",
-    )
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect option chain backtest config tests.
+    """
 
     def __init__(
         self,
+        *,
         series_id: str,
         selection_mode: str = "delta",
         target_delta: float = 0.25,
@@ -115,8 +118,11 @@ class OptionChainBacktestConfig(StrategyConfig):
         target_strike: str | None = None,
         trade_size: str = "1",
         snapshot_interval_ms: int = 1_000,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.series_id = series_id
         self.selection_mode = selection_mode
@@ -128,7 +134,14 @@ class OptionChainBacktestConfig(StrategyConfig):
 
 
 class OptionChainBacktest(Strategy):
+    """
+    Collect option chain backtest tests.
+    """
+
     def __init__(self, config: OptionChainBacktestConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._series_id = OptionSeriesId.from_str(config.series_id)
         self._selection_mode = config.selection_mode
@@ -140,6 +153,9 @@ class OptionChainBacktest(Strategy):
         self._orders_submitted = False
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         if self._selection_mode == "strike":
             if self._target_strike is None:
                 raise ValueError("target_strike is required when selection_mode is 'strike'")
@@ -154,10 +170,11 @@ class OptionChainBacktest(Strategy):
         )
 
     def on_option_chain(self, slice: OptionChainSlice) -> None:
-        self.log.info(
-            f"OPTION_CHAIN | {slice.series_id} | atm={slice.atm_strike} | "
-            f"calls={slice.call_count()} puts={slice.put_count()} strikes={slice.strike_count()}",
-        )
+        """
+        On option chain.
+        """
+        log_msg = f"OPTION_CHAIN | {slice.series_id} | atm={slice.atm_strike} | calls={slice.call_count()} puts={slice.put_count()} strikes={slice.strike_count()}"
+        self.log.info(log_msg)
 
         if self._orders_submitted:
             return
@@ -166,15 +183,16 @@ class OptionChainBacktest(Strategy):
         if selected is None:
             return
 
-        self.log.info(
-            f"Selected option {selected.instrument_id} at strike {selected.strike} "
-            f"with delta {selected.delta}",
-        )
+        log_msg = f"Selected option {selected.instrument_id} at strike {selected.strike} with delta {selected.delta}"
+        self.log.info(log_msg)
         self.submit_order(self._maker_order(selected))
         self.submit_order(self._taker_order(selected))
         self._orders_submitted = True
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.unsubscribe_option_chain(self._series_id)
 
     def _select_contract(self, slice: OptionChainSlice) -> SelectedOption | None:
@@ -231,8 +249,12 @@ class OptionChainBacktest(Strategy):
         return None
 
     def _maker_order(self, selected: SelectedOption) -> LimitOrder:
+        trader_id = self.trader_id
+        if trader_id is None:
+            raise RuntimeError("Strategy is not registered with a trader")
+
         return LimitOrder(
-            trader_id=self.trader_id,
+            trader_id=trader_id,
             strategy_id=self.strategy_id,
             instrument_id=selected.instrument_id,
             client_order_id=self._client_order_id("M"),
@@ -249,8 +271,12 @@ class OptionChainBacktest(Strategy):
         )
 
     def _taker_order(self, selected: SelectedOption) -> MarketOrder:
+        trader_id = self.trader_id
+        if trader_id is None:
+            raise RuntimeError("Strategy is not registered with a trader")
+
         return MarketOrder(
-            trader_id=self.trader_id,
+            trader_id=trader_id,
             strategy_id=self.strategy_id,
             instrument_id=selected.instrument_id,
             client_order_id=self._client_order_id("T"),
@@ -269,6 +295,9 @@ class OptionChainBacktest(Strategy):
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse args.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog-path", type=Path, default=Path("./catalog"))
     parser.add_argument("--underlying", default="BTC")
@@ -282,6 +311,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     args = parse_args()
     options = load_option_metadata(args.catalog_path, args.underlying)
     selection = nearest_series(options)
@@ -300,12 +332,12 @@ def main() -> None:
     )
     data = [
         BacktestDataConfig(
-            data_type="QuoteTick",
+            data_type=NautilusDataType.QuoteTick,
             catalog_path=str(args.catalog_path),
             instrument_ids=selection.instrument_ids,
         ),
         BacktestDataConfig(
-            data_type="OptionGreeks",
+            data_type=NautilusDataType.OptionGreeks,
             catalog_path=str(args.catalog_path),
             instrument_ids=selection.instrument_ids,
         ),
@@ -343,6 +375,9 @@ def main() -> None:
 
 
 def load_option_metadata(catalog_path: Path, underlying: str) -> list[OptionMetadata]:
+    """
+    Load option metadata.
+    """
     catalog = ParquetDataCatalog(str(catalog_path))
     options = [
         metadata
@@ -360,6 +395,9 @@ def load_option_metadata(catalog_path: Path, underlying: str) -> list[OptionMeta
 
 
 def option_metadata(instrument: Any) -> OptionMetadata | None:
+    """
+    Option metadata.
+    """
     if instrument.type_name == "CryptoOption":
         return OptionMetadata(
             instrument_id=instrument.id,
@@ -380,6 +418,9 @@ def option_metadata(instrument: Any) -> OptionMetadata | None:
 
 
 def nearest_series(options: list[OptionMetadata]) -> SeriesSelection:
+    """
+    Nearest series.
+    """
     expiration_ns = min(metadata.expiration_ns for metadata in options)
     same_expiry = [metadata for metadata in options if metadata.expiration_ns == expiration_ns]
     settlement_currency = next(
@@ -401,6 +442,7 @@ def nearest_series(options: list[OptionMetadata]) -> SeriesSelection:
             for metadata in same_expiry
             if metadata.settlement_currency == settlement_currency
         },
+        key=lambda strike: strike.as_decimal(),
     )
     series_id = OptionSeriesId(
         VENUE,
@@ -412,10 +454,16 @@ def nearest_series(options: list[OptionMetadata]) -> SeriesSelection:
 
 
 def median_strike(strikes: list[Price]) -> Price:
+    """
+    Median strike.
+    """
     return strikes[len(strikes) // 2]
 
 
 def option_fee_model(name: str) -> CappedOptionFeeModel | TieredNotionalOptionFeeModel:
+    """
+    Option fee model.
+    """
     if name == "tiered":
         return TieredNotionalOptionFeeModel(
             maker_rate=Decimal("0.0002"),
@@ -428,6 +476,9 @@ def option_fee_model(name: str) -> CappedOptionFeeModel | TieredNotionalOptionFe
 
 
 def starting_balance(settlement_currency: str) -> str:
+    """
+    Return the starting balance.
+    """
     if settlement_currency in {"BTC", "ETH"}:
         return f"10 {settlement_currency}"
     return f"1000000 {settlement_currency}"

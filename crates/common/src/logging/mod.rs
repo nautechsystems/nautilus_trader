@@ -42,6 +42,7 @@ pub mod bridge;
 use std::{
     collections::HashMap,
     env,
+    io::{self, Write},
     str::FromStr,
     sync::{
         OnceLock,
@@ -92,7 +93,9 @@ pub fn logging_is_initialized() -> bool {
 /// kernel initialization.
 ///
 /// Returns `true` if logging is available (either already initialized or
-/// successfully lazy-initialized), `false` otherwise.
+/// successfully lazy-initialized), `false` otherwise. If `NAUTILUS_LOG` enables file
+/// logging and the log file cannot be opened, the error is reported on stderr and
+/// logging continues to the console only.
 pub fn ensure_logging_initialized() -> bool {
     if crate::logging::logger::is_running() {
         return true;
@@ -104,13 +107,39 @@ pub fn ensure_logging_initialized() -> bool {
             .and_then(|spec| LoggerConfig::from_spec(&spec).ok())
             .unwrap_or_default();
 
-        Logger::init_with_config(
+        let file_logging = config.fileout_level != LevelFilter::Off;
+        let result = Logger::init_with_config(
             TraderId::default(),
             UUID4::default(),
-            config,
+            config.clone(),
             FileWriterConfig::default(),
-        )
-        .ok()
+        );
+
+        // Callers ignore the return value, so keep console logging rather than run with no logger
+        let result = match result {
+            Err(e) if file_logging => {
+                let _ = writeln!(io::stderr(), "Continuing without file logging: {e:#}");
+
+                let console_config = LoggerConfig {
+                    fileout_level: LevelFilter::Off,
+                    ..config
+                };
+
+                Logger::init_with_config(
+                    TraderId::default(),
+                    UUID4::default(),
+                    console_config,
+                    FileWriterConfig::default(),
+                )
+            }
+            result => result,
+        };
+
+        result
+            .inspect_err(|e| {
+                let _ = writeln!(io::stderr(), "Failed to initialize logging: {e:#}");
+            })
+            .ok()
     });
 
     crate::logging::logger::is_running()
@@ -205,6 +234,7 @@ pub fn init_logging(
     Logger::init_with_config(trader_id, instance_id, config, file_config)
 }
 
+/// Maps a [`LogLevel`] to a [`LevelFilter`].
 #[must_use]
 pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     match log_level {
@@ -223,7 +253,7 @@ pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
 ///
 /// Returns an error if the provided string is not a valid `LevelFilter`.
 pub fn parse_level_filter_str(s: &str) -> anyhow::Result<LevelFilter> {
-    let mut log_level_str = s.to_string().to_uppercase();
+    let mut log_level_str = s.to_uppercase();
     if log_level_str == "WARNING" {
         log_level_str = "WARN".to_string();
     }
@@ -239,24 +269,18 @@ pub fn parse_level_filter_str(s: &str) -> anyhow::Result<LevelFilter> {
 pub fn parse_component_levels(
     original_map: Option<HashMap<String, serde_json::Value>>,
 ) -> anyhow::Result<AHashMap<Ustr, LevelFilter>> {
-    match original_map {
-        Some(map) => {
-            let mut new_map = AHashMap::new();
+    let mut new_map = AHashMap::new();
 
-            for (key, value) in map {
-                let ustr_key = Ustr::from(&key);
-                let s = value.as_str().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Component log level for '{key}' must be a string, was: {value}"
-                    )
-                })?;
-                let lvl = parse_level_filter_str(s)?;
-                new_map.insert(ustr_key, lvl);
-            }
-            Ok(new_map)
-        }
-        None => Ok(AHashMap::new()),
+    for (key, value) in original_map.unwrap_or_default() {
+        let ustr_key = Ustr::from(&key);
+        let s = value.as_str().ok_or_else(|| {
+            anyhow::anyhow!("Component log level for '{key}' must be a string, was: {value}")
+        })?;
+        let lvl = parse_level_filter_str(s)?;
+        new_map.insert(ustr_key, lvl);
     }
+
+    Ok(new_map)
 }
 
 /// Logs that a task has started.

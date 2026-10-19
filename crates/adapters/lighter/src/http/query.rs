@@ -16,17 +16,32 @@
 //! Query parameter builders for Lighter REST endpoints.
 
 use derive_builder::Builder;
+use nautilus_core::string::secret::SecretString;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::common::enums::{
     LighterCandleResolution, LighterFundingResolution, LighterOrderBookFilter, LighterTradeType,
 };
 
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LighterTxLookup {
+    Hash,
+    SequenceIndex,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
+pub struct LighterTxQuery {
+    pub by: LighterTxLookup,
+    pub value: String,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Builder, PartialEq, Eq)]
 #[builder(setter(strip_option), default)]
 pub struct LighterOrderBooksQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<LighterOrderBookFilter>,
 }
@@ -35,27 +50,27 @@ pub struct LighterOrderBooksQuery {
 #[builder(setter(strip_option), default)]
 pub struct LighterOrderBookDetailsQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<LighterOrderBookFilter>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 pub struct LighterOrderBookOrdersQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub limit: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 pub struct LighterRecentTradesQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub limit: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 #[builder(setter(strip_option))]
 pub struct LighterCandlesQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub resolution: LighterCandleResolution,
     pub start_timestamp: i64,
     pub end_timestamp: i64,
@@ -68,7 +83,7 @@ pub struct LighterCandlesQuery {
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
 #[builder(setter(strip_option))]
 pub struct LighterFundingsQuery {
-    pub market_id: i16,
+    pub market_id: i64,
     pub resolution: LighterFundingResolution,
     pub start_timestamp: i64,
     pub end_timestamp: i64,
@@ -76,37 +91,51 @@ pub struct LighterFundingsQuery {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
-#[builder(setter(strip_option), default)]
+#[builder(setter(strip_option))]
 pub struct LighterTradesQuery {
+    #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorization: Option<String>,
+    pub authorization: Option<SecretString>,
+    #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<String>,
+    pub auth: Option<SecretString>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_index: Option<i64>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_index: Option<i64>,
+    #[builder(default)]
     pub sort_by: LighterTradeSortBy,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sort_dir: Option<LighterSortDirection>,
+    #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
+    #[builder(default)]
     #[serde(rename = "from")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_timestamp: Option<i64>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ask_filter: Option<i8>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<LighterTradeRole>,
+    #[builder(default)]
     #[serde(rename = "type")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trade_type: Option<LighterTradeQueryType>,
+    #[builder(default = "100")]
     pub limit: u16,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aggregate: Option<bool>,
 }
@@ -123,11 +152,11 @@ pub struct LighterMakerOnlyApiKeysQuery {
     #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorization: Option<String>,
+    pub authorization: Option<SecretString>,
     #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<String>,
+    pub auth: Option<SecretString>,
     pub account_index: i64,
 }
 
@@ -151,13 +180,13 @@ pub struct LighterAccountActiveOrdersQuery {
     #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorization: Option<String>,
+    pub authorization: Option<SecretString>,
     #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<String>,
+    pub auth: Option<SecretString>,
     pub account_index: i64,
-    pub market_id: i16,
+    pub market_id: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Builder, PartialEq, Eq)]
@@ -166,15 +195,15 @@ pub struct LighterAccountInactiveOrdersQuery {
     #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorization: Option<String>,
+    pub authorization: Option<SecretString>,
     #[builder(default)]
     #[builder(setter(into, strip_option))]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth: Option<String>,
+    pub auth: Option<SecretString>,
     pub account_index: i64,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_id: Option<i16>,
+    pub market_id: Option<i64>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ask_filter: Option<i8>,
@@ -188,6 +217,22 @@ pub struct LighterAccountInactiveOrdersQuery {
     pub cursor: Option<String>,
     pub limit: u16,
 }
+
+macro_rules! impl_auth_query_zeroize {
+    ($type:ident) => {
+        impl Zeroize for $type {
+            fn zeroize(&mut self) {
+                self.authorization.zeroize();
+                self.auth.zeroize();
+            }
+        }
+    };
+}
+
+impl_auth_query_zeroize!(LighterTradesQuery);
+impl_auth_query_zeroize!(LighterMakerOnlyApiKeysQuery);
+impl_auth_query_zeroize!(LighterAccountActiveOrdersQuery);
+impl_auth_query_zeroize!(LighterAccountInactiveOrdersQuery);
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -278,6 +323,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_book_orders_query_serializes_widened_market_id() {
+        let query = LighterOrderBookOrdersQueryBuilder::default()
+            .market_id(40_000)
+            .limit(10)
+            .build()
+            .unwrap();
+
+        let value = serde_json::to_value(query).unwrap();
+
+        assert_eq!(value["market_id"], 40_000);
+        assert_eq!(value["limit"], 10);
+    }
+
+    #[rstest]
     fn test_order_book_details_query_serializes_filter() {
         let query = LighterOrderBookDetailsQueryBuilder::default()
             .market_id(1)
@@ -293,13 +352,13 @@ mod tests {
 
     #[rstest]
     fn test_trades_query_renames_type_and_from() {
-        let query = LighterTradesQuery {
-            market_id: Some(0),
-            from_timestamp: Some(1_700_000_000_000),
-            trade_type: Some(LighterTradeQueryType::MarketSettlement),
-            limit: 50,
-            ..Default::default()
-        };
+        let query = LighterTradesQueryBuilder::default()
+            .market_id(0)
+            .from_timestamp(1_700_000_000_000)
+            .trade_type(LighterTradeQueryType::MarketSettlement)
+            .limit(50)
+            .build()
+            .unwrap();
 
         let value = serde_json::to_value(query).unwrap();
 
@@ -380,9 +439,9 @@ mod tests {
 
     #[rstest]
     fn test_trades_query_serializes_optional_filters() {
-        let query = LighterTradesQuery {
-            authorization: Some("bearer-token".to_string()),
-            auth: Some("auth-token".to_string()),
+        let mut query = LighterTradesQuery {
+            authorization: Some(SecretString::from("bearer-token")),
+            auth: Some(SecretString::from("auth-token")),
             market_id: Some(0),
             account_index: Some(1234),
             order_index: Some(5678),
@@ -397,7 +456,8 @@ mod tests {
             aggregate: Some(true),
         };
 
-        let value = serde_json::to_value(query).unwrap();
+        let value = serde_json::to_value(&query).unwrap();
+        let debug = format!("{query:?}");
 
         assert_eq!(value["authorization"], "bearer-token");
         assert_eq!(value["auth"], "auth-token");
@@ -417,6 +477,12 @@ mod tests {
         assert_eq!(value["type"], "liquidation");
         assert_eq!(value["limit"], 75);
         assert_eq!(value["aggregate"], true);
+        assert!(!debug.contains("bearer-token"));
+        assert!(!debug.contains("auth-token"));
+
+        query.zeroize();
+        assert!(query.authorization.is_none());
+        assert!(query.auth.is_none());
     }
 
     #[rstest]

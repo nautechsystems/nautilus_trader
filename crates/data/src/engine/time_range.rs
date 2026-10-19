@@ -19,7 +19,7 @@ use nautilus_common::messages::data::{
     QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestCommand,
     RequestFundingRates, RequestJoin, RequestQuotes, RequestTrades, TradesResponse,
 };
-use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::identifiers::ClientId;
 use serde_json::Value;
 
@@ -28,7 +28,7 @@ use super::{
     requests::{remove_request_bar_aggregation_params, request_params, response_params},
 };
 
-const TIME_RANGE_GENERATOR: &str = "time_range_generator";
+pub(super) const TIME_RANGE_GENERATOR: &str = "time_range_generator";
 const TIME_RANGE_DURATIONS_SECONDS: &str = "durations_seconds";
 const TIME_RANGE_POINT_DATA: &str = "point_data";
 
@@ -45,20 +45,20 @@ pub(super) struct TimeRangePipelineState {
 
 #[derive(Debug, Clone)]
 struct DefaultTimeRangeGenerator {
-    prev_request_end_ns: u64,
-    last_end_ns: u64,
-    durations_ns: Vec<Option<u64>>,
+    prev_request_end_ns: UnixNanos,
+    last_end_ns: UnixNanos,
+    durations_ns: Vec<Option<DurationNanos>>,
     point_data: bool,
     iteration_index: usize,
     duration_index: usize,
-    last_duration_ns: u64,
+    last_duration_ns: DurationNanos,
     stopped: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TimeRangeWindow {
-    start_ns: u64,
-    end_ns: u64,
+    start_ns: UnixNanos,
+    end_ns: UnixNanos,
 }
 
 pub(super) fn has_time_range_pipeline_params(params: Option<&Params>) -> bool {
@@ -118,15 +118,10 @@ impl DataEngine {
     fn bound_time_range_pipeline_dates(
         &self,
         req: &RequestCommand,
-    ) -> anyhow::Result<(
-        chrono::DateTime<chrono::Utc>,
-        chrono::DateTime<chrono::Utc>,
-        UnixNanos,
-        UnixNanos,
-    )> {
+    ) -> anyhow::Result<(jiff::Timestamp, jiff::Timestamp, UnixNanos, UnixNanos)> {
         let now_ns = self.clock.borrow().timestamp_ns();
         let now = now_ns.to_datetime_utc();
-        let zero = chrono::DateTime::<chrono::Utc>::from_timestamp_nanos(0);
+        let zero = jiff::Timestamp::UNIX_EPOCH;
         let (start, end) = time_range_request_dates(req);
         let mut start = start.unwrap_or(zero);
         let mut end = end.unwrap_or(now);
@@ -332,15 +327,15 @@ impl DefaultTimeRangeGenerator {
         end_ns: UnixNanos,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            prev_request_end_ns: start_ns.as_u64(),
-            last_end_ns: end_ns.as_u64(),
+            prev_request_end_ns: start_ns,
+            last_end_ns: end_ns,
             durations_ns: parse_time_range_durations(params)?,
             point_data: params
                 .and_then(|params| params.get_bool(TIME_RANGE_POINT_DATA))
                 .unwrap_or(false),
             iteration_index: 0,
             duration_index: 0,
-            last_duration_ns: 0,
+            last_duration_ns: DurationNanos::ZERO,
             stopped: false,
         })
     }
@@ -353,7 +348,7 @@ impl DefaultTimeRangeGenerator {
         if let Some(data_received) = data_received {
             self.iteration_index = self.iteration_index.saturating_add(1);
 
-            if self.last_duration_ns == 0 {
+            if self.last_duration_ns.is_zero() {
                 self.stopped = true;
                 return None;
             }
@@ -369,7 +364,7 @@ impl DefaultTimeRangeGenerator {
         };
         self.duration_index += 1;
 
-        let offset = u64::from(self.iteration_index > 0 && !self.point_data);
+        let offset = DurationNanos::new(u64::from(self.iteration_index > 0 && !self.point_data));
         let request_start_ns = self.prev_request_end_ns.saturating_add(offset);
         if request_start_ns > self.last_end_ns {
             self.stopped = true;
@@ -381,15 +376,15 @@ impl DefaultTimeRangeGenerator {
             request_start_ns
                 .checked_add(duration_ns)
                 .and_then(|end| end.checked_sub(offset))
-                .unwrap_or(u64::MAX)
+                .unwrap_or_else(UnixNanos::max)
                 .min(self.last_end_ns)
         } else {
-            self.last_duration_ns = 0;
+            self.last_duration_ns = DurationNanos::ZERO;
             self.last_end_ns
         };
 
         self.prev_request_end_ns = if self.point_data && request_start_ns == self.last_end_ns {
-            self.last_end_ns.saturating_add(1)
+            self.last_end_ns.saturating_add(DurationNanos::new(1))
         } else {
             request_end_ns
         };
@@ -413,10 +408,7 @@ impl DefaultTimeRangeGenerator {
 
 fn time_range_request_dates(
     req: &RequestCommand,
-) -> (
-    Option<chrono::DateTime<chrono::Utc>>,
-    Option<chrono::DateTime<chrono::Utc>>,
-) {
+) -> (Option<jiff::Timestamp>, Option<jiff::Timestamp>) {
     match req {
         RequestCommand::BookDeltas(cmd) => (cmd.start, cmd.end),
         RequestCommand::BookDepth(cmd) => (cmd.start, cmd.end),
@@ -431,8 +423,8 @@ fn time_range_request_dates(
 
 fn time_range_parent_request_with_dates(
     req: RequestCommand,
-    start: Option<chrono::DateTime<chrono::Utc>>,
-    end: Option<chrono::DateTime<chrono::Utc>>,
+    start: Option<jiff::Timestamp>,
+    end: Option<jiff::Timestamp>,
     ts_init: UnixNanos,
 ) -> RequestCommand {
     match req {
@@ -484,12 +476,12 @@ fn time_range_parent_request_with_dates(
 
 fn time_range_child_request(
     parent: &RequestCommand,
-    start_ns: u64,
-    end_ns: u64,
+    start_ns: UnixNanos,
+    end_ns: UnixNanos,
     ts_init: UnixNanos,
 ) -> RequestCommand {
-    let start = Some(UnixNanos::from(start_ns).to_datetime_utc());
-    let end = Some(UnixNanos::from(end_ns).to_datetime_utc());
+    let start = Some(start_ns.to_datetime_utc());
+    let end = Some(end_ns.to_datetime_utc());
     let request_id = UUID4::new();
 
     match parent {
@@ -739,7 +731,9 @@ fn empty_time_range_response_from_template(
     }
 }
 
-fn parse_time_range_durations(params: Option<&Params>) -> anyhow::Result<Vec<Option<u64>>> {
+fn parse_time_range_durations(
+    params: Option<&Params>,
+) -> anyhow::Result<Vec<Option<DurationNanos>>> {
     let Some(value) = params.and_then(|params| params.get(TIME_RANGE_DURATIONS_SECONDS)) else {
         return Ok(vec![None]);
     };
@@ -753,7 +747,7 @@ fn parse_time_range_durations(params: Option<&Params>) -> anyhow::Result<Vec<Opt
         .collect::<anyhow::Result<Vec<_>>>()
 }
 
-fn parse_time_range_duration(value: &Value) -> anyhow::Result<Option<u64>> {
+fn parse_time_range_duration(value: &Value) -> anyhow::Result<Option<DurationNanos>> {
     if value.is_null() {
         return Ok(None);
     }
@@ -779,7 +773,7 @@ fn parse_time_range_duration(value: &Value) -> anyhow::Result<Option<u64>> {
         anyhow::bail!("`durations_seconds` value is too large, was {value}");
     }
 
-    Ok(Some(nanos as u64))
+    Ok(Some(DurationNanos::new(nanos as u64)))
 }
 
 #[cfg(test)]

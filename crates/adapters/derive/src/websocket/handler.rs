@@ -23,25 +23,36 @@
 //! correlator `id`. When the venue echoes the id on a response frame, the
 //! matching oneshot is fulfilled with `result` or the JSON-RPC error.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    time::Duration,
 };
 
 use ahash::AHashMap;
-use nautilus_common::live::get_runtime;
+use nautilus_common::live::dst::task;
+use nautilus_core::string::secret::{SecretString, zeroize_json_value};
+use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
     RECONNECTED,
+    error::SendError,
     websocket::{AuthTracker, WebSocketClient},
 };
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 
 use super::{
+    client::UNAUTHENTICATED_CONNECTION_EPOCH,
     error::DeriveWsError,
-    messages::{DeriveWsChannel, DeriveWsFrame, WsSubscribeParams, WsSubscriptionPayload},
+    messages::{DeriveWsChannel, ParsedFrame, WsSubscribeParams, WsSubscriptionPayload},
 };
-use crate::http::models::JsonRpcRequest;
+use crate::{
+    book::sync::{BookSyncTracker, BookWrite},
+    http::models::JsonRpcRequest,
+};
 
 /// Outbound commands the outer client sends to the inner handler.
 #[derive(Debug)]
@@ -49,12 +60,14 @@ pub(super) enum HandlerCommand {
     /// Hand the active [`WebSocketClient`] to the handler.
     SetClient(WebSocketClient),
     /// Send a JSON-RPC request and resolve the oneshot when the venue replies.
-    /// `params` is a pre-serialized `Value` so the handler stays agnostic to the
+    /// `params` is pre-serialized JSON so the handler stays agnostic to the
     /// per-method param types (login, subscribe, signed `private/*` bodies).
     Request {
         method: &'static str,
-        params: Value,
-        response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+        params: SecretString,
+        connection_epoch: Option<u64>,
+        cancellation: Option<CancellationToken>,
+        response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
     },
     /// Gracefully tear down the WebSocket connection.
     Disconnect,
@@ -73,32 +86,45 @@ pub enum DeriveWsMessage {
     SessionRecoveryFailed(String),
     /// Channel update pushed by the venue.
     Subscription(WsSubscriptionPayload),
+    /// Book update admitted at ingress with its subscription generation.
+    BookSubscription {
+        /// Channel update pushed by the venue.
+        payload: WsSubscriptionPayload,
+        /// Cancelled when replacement, unsubscribe, or reconnect obsoletes the frame.
+        generation: CancellationToken,
+    },
 }
 
 #[derive(Debug)]
 struct SendCommand {
     id: u64,
     token: u64,
-    payload: String,
+    connection_epoch: u64,
+    payload: SecretString,
+    cancellation: Option<CancellationToken>,
+    book_generations: Vec<CancellationToken>,
 }
 
 #[derive(Debug)]
 struct SendFailure {
     id: u64,
     token: u64,
-    reason: String,
+    error: SendError,
 }
 
 #[derive(Debug)]
 struct PendingRequest {
     token: u64,
-    response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+    cancellation: Option<CancellationToken>,
+    book_writes: Vec<(String, BookWrite)>,
+    response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
 }
 
 /// Inner I/O loop. Lives in a Tokio task spawned by
 /// [`super::client::DeriveWebSocketClient::connect`].
 pub(super) struct FeedHandler {
     signal: Arc<AtomicBool>,
+    book_sync: Option<(BookSyncTracker, Duration)>,
     client: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     cmd_closed: bool,
@@ -109,21 +135,26 @@ pub(super) struct FeedHandler {
     pending: AHashMap<u64, PendingRequest>,
     send_tx: Option<tokio::sync::mpsc::UnboundedSender<SendCommand>>,
     send_failure_rx: tokio::sync::mpsc::UnboundedReceiver<SendFailure>,
-    send_task: Option<tokio::task::JoinHandle<()>>,
+    send_task: Arc<SharedTaskSlot<()>>,
     auth_tracker: AuthTracker,
+    authenticated_epoch: Arc<AtomicU64>,
 }
 
 impl FeedHandler {
-    pub(super) fn new(
+    pub(super) fn new_with_send_task(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         next_id: Arc<AtomicU64>,
         auth_tracker: AuthTracker,
+        authenticated_epoch: Arc<AtomicU64>,
+        send_task: Arc<SharedTaskSlot<()>>,
     ) -> Self {
         let (_, send_failure_rx) = tokio::sync::mpsc::unbounded_channel();
+
         Self {
             signal,
+            book_sync: None,
             client: None,
             cmd_rx,
             cmd_closed: false,
@@ -134,18 +165,32 @@ impl FeedHandler {
             pending: AHashMap::new(),
             send_tx: None,
             send_failure_rx,
-            send_task: None,
+            send_task,
             auth_tracker,
+            authenticated_epoch,
         }
+    }
+
+    pub(super) fn with_book_sync(mut self, book_sync: Option<(BookSyncTracker, Duration)>) -> Self {
+        self.book_sync = book_sync;
+        self
     }
 
     /// Drains the next event from the underlying channels, processes it, and
     /// returns the resulting outbound message (if any). Returns `None` when
     /// the handler is shutting down or both channels closed.
     pub(super) async fn next(&mut self) -> Option<DeriveWsMessage> {
+        let mut command_ready = true;
+
         loop {
             tokio::select! {
-                cmd = self.cmd_rx.recv(), if !self.cmd_closed => {
+                biased;
+                Some(failure) = self.send_failure_rx.recv() => {
+                    self.handle_send_failure(&failure);
+                }
+                cmd = self.cmd_rx.recv(), if !self.cmd_closed && command_ready => {
+                    command_ready = false;
+
                     match cmd {
                         None => {
                             self.cmd_closed = true;
@@ -153,25 +198,33 @@ impl FeedHandler {
                             if self.raw_closed {
                                 self.shutdown_send_path(
                                     "WebSocket handler stopped before response was received",
-                                );
+                                )
+                                .await;
                                 return None;
                             }
                         }
                         Some(HandlerCommand::SetClient(client)) => {
                             log::debug!("Setting WebSocket client in Derive handler");
                             let client = Arc::new(client);
-                            self.stop_send_worker();
+                            self.stop_send_worker().await;
                             self.start_send_worker(Arc::clone(&client));
                             self.client = Some(client);
                         }
-                        Some(HandlerCommand::Request { method, params, response_tx }) => {
-                            self.dispatch_request(method, params, response_tx);
+                        Some(HandlerCommand::Request {
+                            method,
+                            params,
+                            connection_epoch,
+                            cancellation,
+                            response_tx,
+                        }) => {
+                            self.dispatch_request(method, params, connection_epoch, cancellation, response_tx);
                         }
                         Some(HandlerCommand::Disconnect) => {
                             log::debug!("Derive handler received disconnect command");
                             self.shutdown_send_path(
                                 "WebSocket disconnected before response was received",
-                            );
+                            )
+                            .await;
 
                             if let Some(ref client) = self.client {
                                 client.disconnect().await;
@@ -183,6 +236,8 @@ impl FeedHandler {
                 }
 
                 raw = self.raw_rx.recv(), if !self.raw_closed => {
+                    command_ready = true;
+
                     match raw {
                         None => {
                             self.raw_closed = true;
@@ -190,7 +245,8 @@ impl FeedHandler {
                             if self.cmd_closed {
                                 self.shutdown_send_path(
                                     "WebSocket handler stopped before response was received",
-                                );
+                                )
+                                .await;
                                 return None;
                             }
                         }
@@ -198,14 +254,23 @@ impl FeedHandler {
                             if text.as_str() == RECONNECTED {
                                 log::info!("Derive WebSocket reconnected sentinel received");
                                 self.auth_tracker.invalidate();
+                                self.authenticated_epoch.store(
+                                    UNAUTHENTICATED_CONNECTION_EPOCH,
+                                    Ordering::Release,
+                                );
                                 self.restart_send_worker(
                                     "WebSocket reconnected before response was received",
-                                );
+                                )
+                                .await;
+
+                                if let Some((tracker, timeout)) = &self.book_sync {
+                                    tracker.reset_on_reconnect(*timeout);
+                                }
                                 return Some(DeriveWsMessage::Reconnected);
                             }
 
-                            match DeriveWsFrame::parse(&text) {
-                                Ok(DeriveWsFrame::Response { id, result, error }) => {
+                            match ParsedFrame::parse(&text) {
+                                Ok(ParsedFrame::Response { id, result, error }) => {
                                     if let Some(pending) = self.pending.remove(&id) {
                                         let outcome = match (result, error) {
                                             (_, Some(err)) => Err(DeriveWsError::JsonRpc {
@@ -214,8 +279,13 @@ impl FeedHandler {
                                                 data: err.data,
                                             }),
                                             (Some(value), None) => Ok(value),
-                                            (None, None) => Ok(Value::Null),
+                                            (None, None) => Ok(RawValue::NULL.to_owned()),
                                         };
+
+                                        if let Ok(value) = &outcome
+                                            && let Some((tracker, _)) = &self.book_sync {
+                                            open_book_gates(&pending, value, tracker);
+                                        }
                                         let _ = pending.response_tx.send(outcome);
                                     } else {
                                         log::debug!(
@@ -223,18 +293,36 @@ impl FeedHandler {
                                         );
                                     }
                                 }
-                                Ok(DeriveWsFrame::Subscription(payload)) => {
+                                Ok(ParsedFrame::Subscription(payload)) => {
+                                    if let Some((tracker, _)) = &self.book_sync
+                                        && payload.channel.as_str().starts_with("orderbook.") {
+                                        let Some(write) = tracker.write(payload.channel.as_str()) else {
+                                            continue;
+                                        };
+
+                                        if write.generation.is_cancelled() || write.gate.lock().is_closed() {
+                                            continue;
+                                        }
+                                        return Some(DeriveWsMessage::BookSubscription {
+                                            payload,
+                                            generation: write.generation,
+                                        });
+                                    }
                                     return Some(DeriveWsMessage::Subscription(payload));
                                 }
-                                Ok(DeriveWsFrame::UncorrelatedError(error)) => {
+                                Ok(ParsedFrame::UncorrelatedError(error)) => {
                                     self.fail_uncorrelated_error(error);
                                 }
-                                Ok(DeriveWsFrame::Unknown(value)) => {
-                                    log::debug!("Derive WebSocket unknown frame: {value}");
+                                Ok(ParsedFrame::Unknown(_)) => {
+                                    log::debug!("Derive WebSocket unknown frame, bytes={}", text.len());
                                 }
                                 Err(e) => {
                                     log::error!(
-                                        "Derive WebSocket frame parse error: {e}, text: {text}",
+                                        "Derive WebSocket frame parse error: {:?}, line={}, column={}, bytes={}",
+                                        e.classify(),
+                                        e.line(),
+                                        e.column(),
+                                        text.len(),
                                     );
                                 }
                             }
@@ -249,22 +337,22 @@ impl FeedHandler {
                             log::debug!("Derive WebSocket close frame received");
                             self.shutdown_send_path(
                                 "WebSocket closed before response was received",
-                            );
+                            )
+                            .await;
                             return None;
                         }
                         Some(_) => {}
                     }
                 }
 
-                Some(failure) = self.send_failure_rx.recv() => {
-                    self.handle_send_failure(failure);
-                }
+                () = task::yield_now(), if !command_ready => command_ready = true,
 
                 else => {
                     log::debug!("Derive handler shutting down: channels closed");
                     self.shutdown_send_path(
                         "WebSocket handler stopped before response was received",
-                    );
+                    )
+                    .await;
                     return None;
                 }
             }
@@ -274,60 +362,196 @@ impl FeedHandler {
     fn dispatch_request(
         &mut self,
         method: &'static str,
-        params: Value,
-        response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
+        params: SecretString,
+        connection_epoch: Option<u64>,
+        cancellation: Option<CancellationToken>,
+        response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
+    ) {
+        if cancellation
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled)
+        {
+            let _ = response_tx.send(Err(DeriveWsError::NotConnected));
+            return;
+        }
+
+        let Some(client) = self.client.as_ref() else {
+            let _ = response_tx.send(Err(DeriveWsError::NotConnected));
+            return;
+        };
+
+        let current_epoch = client.connection_epoch();
+
+        let connection_epoch = if method.starts_with("private/") {
+            let authenticated_epoch = self.authenticated_epoch.load(Ordering::Acquire);
+            if !client.connection_mode().is_active() || authenticated_epoch != current_epoch {
+                let _ = response_tx.send(Err(DeriveWsError::Authentication {
+                    operation: method.to_string(),
+                    reason: "WebSocket session is not authenticated".to_string(),
+                }));
+
+                return;
+            }
+
+            authenticated_epoch
+        } else {
+            connection_epoch.unwrap_or(current_epoch)
+        };
+
+        if !client.connection_mode().is_active() || connection_epoch != current_epoch {
+            let _ = response_tx.send(Err(DeriveWsError::NotConnected));
+            return;
+        }
+
+        self.enqueue_request(method, params, connection_epoch, cancellation, response_tx);
+    }
+
+    fn enqueue_request(
+        &mut self,
+        method: &'static str,
+        params_json: SecretString,
+        connection_epoch: u64,
+        cancellation: Option<CancellationToken>,
+        response_tx: tokio::sync::oneshot::Sender<Result<Box<RawValue>, DeriveWsError>>,
     ) {
         let Some(send_tx) = self.send_tx.clone() else {
             let _ = response_tx.send(Err(DeriveWsError::NotConnected));
             return;
         };
+
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let token = self.next_send_token;
         self.next_send_token = self.next_send_token.wrapping_add(1);
-        let request = JsonRpcRequest::new(id, method, params);
-        let payload = match serde_json::to_string(&request) {
-            Ok(p) => p,
+
+        let params: Value = match serde_json::from_str(params_json.expose_secret()) {
+            Ok(params) => params,
             Err(e) => {
                 let _ = response_tx.send(Err(DeriveWsError::Serde(e)));
                 return;
             }
         };
-        self.pending
-            .insert(id, PendingRequest { token, response_tx });
+
+        drop(params_json);
+
+        let book_writes = self
+            .book_sync
+            .as_ref()
+            .map_or_else(Vec::new, |(tracker, _)| {
+                params
+                    .get("channels")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter_map(|channel| {
+                        tracker
+                            .write(channel)
+                            .map(|write| (channel.to_owned(), write))
+                    })
+                    .collect::<Vec<_>>()
+            });
+
+        let book_generations = if cancellation.is_some() {
+            book_writes
+                .iter()
+                .map(|(_, write)| write.generation.clone())
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let book_writes = if method == "subscribe" {
+            book_writes
+        } else {
+            Vec::new()
+        };
+
+        let mut request = JsonRpcRequest::new(id, method, params);
+        let serialized = serde_json::to_string(&request);
+        zeroize_json_value(&mut request.params);
+
+        let payload = match serialized {
+            Ok(payload) => SecretString::from(payload),
+            Err(e) => {
+                let _ = response_tx.send(Err(DeriveWsError::Serde(e)));
+                return;
+            }
+        };
+
+        self.pending.insert(
+            id,
+            PendingRequest {
+                token,
+                cancellation: cancellation.clone(),
+                book_writes,
+                response_tx,
+            },
+        );
+
         log::debug!("Derive WebSocket sending `{method}` id={id}");
-        if let Err(e) = send_tx.send(SendCommand { id, token, payload })
+
+        if send_tx
+            .send(SendCommand {
+                id,
+                token,
+                connection_epoch,
+                payload,
+                cancellation,
+                book_generations,
+            })
+            .is_err()
             && self
                 .pending
                 .get(&id)
                 .is_some_and(|pending| pending.token == token)
             && let Some(pending) = self.pending.remove(&id)
         {
-            let _ = pending
-                .response_tx
-                .send(Err(DeriveWsError::transport(format!(
-                    "failed to queue WebSocket request: {e}",
-                ))));
+            let _ = pending.response_tx.send(Err(DeriveWsError::NotConnected));
         }
     }
 
     fn start_send_worker(&mut self, client: Arc<WebSocketClient>) {
+        if !self.send_task.is_empty() {
+            log::error!("Cannot start Derive WebSocket send worker while the prior task is owned");
+            return;
+        }
+
         let (send_tx, send_rx) = tokio::sync::mpsc::unbounded_channel();
         let (failure_tx, failure_rx) = tokio::sync::mpsc::unbounded_channel();
         self.send_tx = Some(send_tx);
         self.send_failure_rx = failure_rx;
 
-        self.send_task = Some(get_runtime().spawn(run_send_worker(client, send_rx, failure_tx)));
-    }
-
-    fn stop_send_worker(&mut self) {
-        self.send_tx.take();
-        if let Some(task) = self.send_task.take() {
-            task.abort();
+        if let Err(e) = self
+            .send_task
+            .spawn(run_send_worker(client, send_rx, failure_tx))
+        {
+            self.send_tx.take();
+            log::error!("Failed to start Derive WebSocket send worker: {e}");
         }
     }
 
-    fn restart_send_worker(&mut self, reason: &str) {
-        self.stop_send_worker();
+    async fn stop_send_worker(&mut self) {
+        self.send_tx.take();
+
+        if let Some(outcome) = self
+            .send_task
+            .finish(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(e) => {
+                    log::error!("Derive WebSocket send worker failed: {e}");
+                }
+                TaskJoinOutcome::Incomplete => {
+                    log::error!("Derive WebSocket send worker did not stop after abort");
+                }
+            }
+        }
+    }
+
+    async fn restart_send_worker(&mut self, reason: &str) {
+        self.stop_send_worker().await;
         self.fail_pending(reason);
 
         if let Some(client) = self.client.clone() {
@@ -335,12 +559,12 @@ impl FeedHandler {
         }
     }
 
-    fn shutdown_send_path(&mut self, reason: &str) {
-        self.stop_send_worker();
+    async fn shutdown_send_path(&mut self, reason: &str) {
+        self.stop_send_worker().await;
         self.fail_pending(reason);
     }
 
-    fn handle_send_failure(&mut self, failure: SendFailure) {
+    fn handle_send_failure(&mut self, failure: &SendFailure) {
         if !self
             .pending
             .get(&failure.id)
@@ -352,7 +576,7 @@ impl FeedHandler {
         if let Some(pending) = self.pending.remove(&failure.id) {
             let _ = pending
                 .response_tx
-                .send(Err(DeriveWsError::transport(failure.reason)));
+                .send(Err(send_error_to_derive(&failure.error)));
         }
     }
 
@@ -380,6 +604,7 @@ impl FeedHandler {
         if self.pending.is_empty() {
             return;
         }
+
         log::debug!(
             "Failing {} pending Derive WebSocket request(s): {reason}",
             self.pending.len(),
@@ -395,7 +620,8 @@ impl FeedHandler {
 
 impl Drop for FeedHandler {
     fn drop(&mut self) {
-        self.stop_send_worker();
+        self.send_tx.take();
+        self.send_task.abort();
     }
 }
 
@@ -405,16 +631,68 @@ async fn run_send_worker(
     failure_tx: tokio::sync::mpsc::UnboundedSender<SendFailure>,
 ) {
     while let Some(command) = send_rx.recv().await {
-        if let Err(e) = client.send_text(command.payload, None).await
+        let result = tokio::select! {
+            biased;
+            () = async {
+                if let Some(cancel) = &command.cancellation {
+                    cancel.cancelled().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => Err(SendError::Closed),
+            result = async {
+                if command.book_generations.iter().any(CancellationToken::is_cancelled) {
+                    return Err(SendError::Closed);
+                }
+                client.send_text_on_connection(
+                    command.payload.expose_secret().to_owned(),
+                    None,
+                    command.connection_epoch,
+                ).await
+            } => result,
+        };
+
+        if let Err(e) = result
             && failure_tx
                 .send(SendFailure {
                     id: command.id,
                     token: command.token,
-                    reason: e.to_string(),
+                    error: e,
                 })
                 .is_err()
         {
             return;
+        }
+    }
+}
+
+fn open_book_gates(pending: &PendingRequest, value: &RawValue, tracker: &BookSyncTracker) {
+    let is_pending = || {
+        !pending.response_tx.is_closed()
+            && !pending
+                .cancellation
+                .as_ref()
+                .is_some_and(CancellationToken::is_cancelled)
+    };
+
+    if pending.book_writes.is_empty() || !is_pending() {
+        return;
+    }
+
+    let Ok(result) = serde_json::from_str::<super::messages::WsSubscribeResult>(value.get()) else {
+        return;
+    };
+
+    for (channel, write) in &pending.book_writes {
+        let topic = DeriveWsChannel::from(channel.clone());
+
+        if result
+            .status
+            .get(&topic)
+            .is_some_and(|status| matches!(status.as_str(), "ok" | "already subscribed"))
+            && result.channels.contains(&topic)
+        {
+            tracker.confirm_subscription(write, is_pending);
         }
     }
 }
@@ -424,6 +702,22 @@ async fn run_send_worker(
 pub(super) fn subscribe_params(channel: DeriveWsChannel) -> WsSubscribeParams {
     WsSubscribeParams {
         channels: vec![channel],
+    }
+}
+
+fn send_error_to_derive(error: &SendError) -> DeriveWsError {
+    match error {
+        SendError::InvalidInput(_)
+        | SendError::BufferFull
+        | SendError::Closed
+        | SendError::Timeout
+        | SendError::ConnectionChanged => {
+            log::warn!("Derive WebSocket request was not sent: {error}");
+            DeriveWsError::NotConnected
+        }
+        SendError::BrokenPipe(_) | SendError::WriteTimeout => {
+            DeriveWsError::transport(error.to_string())
+        }
     }
 }
 
@@ -454,10 +748,431 @@ pub(super) fn trades_subscribe_params(instrument_type: &str, currency: &str) -> 
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
+    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_network::websocket::WebSocketConfig;
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+
+    fn unauthenticated_epoch() -> Arc<AtomicU64> {
+        Arc::new(AtomicU64::new(u64::MAX))
+    }
+
+    fn secret_json(mut value: Value) -> SecretString {
+        let serialized = SecretString::from(value.to_string());
+        zeroize_json_value(&mut value);
+        serialized
+    }
+
+    #[rstest]
+    #[case(SendError::InvalidInput("invalid".to_string()), false)]
+    #[case(SendError::BufferFull, false)]
+    #[case(SendError::Closed, false)]
+    #[case(SendError::Timeout, false)]
+    #[case(SendError::ConnectionChanged, false)]
+    #[case(SendError::BrokenPipe("lost connection".to_string()), true)]
+    #[case(SendError::WriteTimeout, true)]
+    fn test_send_error_preserves_write_ambiguity(
+        #[case] error: SendError,
+        #[case] ambiguous: bool,
+    ) {
+        let reason = error.to_string();
+        let error = send_error_to_derive(&error);
+        assert_eq!(
+            crate::common::retry::is_write_outcome_ambiguous_ws(&error),
+            ambiguous
+        );
+
+        if ambiguous {
+            let DeriveWsError::Transport(message) = error else {
+                panic!("expected ambiguous transport error: {error:?}");
+            };
+
+            assert_eq!(message, reason);
+        } else {
+            assert!(matches!(error, DeriveWsError::NotConnected));
+        }
+    }
+
+    #[rstest]
+    fn test_queued_request_debug_redacts_payload() {
+        let secret = "signature-secret";
+        let (response_tx, _response_rx) = tokio::sync::oneshot::channel();
+
+        let command = HandlerCommand::Request {
+            method: "public/login",
+            params: SecretString::from(format!(r#"{{"signature":"{secret}"}}"#)),
+            connection_epoch: None,
+            cancellation: None,
+            response_tx,
+        };
+
+        let send = SendCommand {
+            cancellation: None,
+            book_generations: Vec::new(),
+            id: 1,
+            token: 1,
+            connection_epoch: 1,
+            payload: SecretString::from(format!(r#"{{"signature":"{secret}"}}"#)),
+        };
+
+        let debug = format!("{command:?} {send:?}");
+
+        assert!(!debug.contains(secret));
+    }
+
+    #[rstest]
+    #[case::episode(true)]
+    #[case::generation(false)]
+    #[tokio::test]
+    async fn cancelled_book_writes_never_reach_socket(#[case] episode: bool) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let mut messages = Vec::new();
+
+            while let Some(Ok(message)) = socket.next().await {
+                match message {
+                    Message::Text(text) => messages.push(text.to_string()),
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+
+            messages
+        });
+
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{address}"))
+            .build()
+            .unwrap();
+
+        let client = Arc::new(
+            WebSocketClient::builder()
+                .config(config)
+                .message_handler(Arc::new(|_| {}))
+                .connect()
+                .await
+                .unwrap(),
+        );
+        let cancel = CancellationToken::new();
+        let generation = CancellationToken::new();
+
+        if episode {
+            cancel.cancel();
+        } else {
+            generation.cancel();
+        }
+
+        let (send_tx, send_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (failure_tx, mut failure_rx) = tokio::sync::mpsc::unbounded_channel();
+        send_tx
+            .send(SendCommand {
+                id: 17,
+                token: 29,
+                connection_epoch: client.connection_epoch(),
+                payload: SecretString::from("cancelled"),
+                cancellation: Some(cancel),
+                book_generations: vec![generation],
+            })
+            .unwrap();
+
+        send_tx
+            .send(SendCommand {
+                id: 31,
+                token: 43,
+                connection_epoch: client.connection_epoch(),
+                payload: SecretString::from("current"),
+                cancellation: None,
+                book_generations: Vec::new(),
+            })
+            .unwrap();
+
+        drop(send_tx);
+
+        run_send_worker(Arc::clone(&client), send_rx, failure_tx).await;
+        let failure = failure_rx.try_recv().unwrap();
+        client.disconnect().await;
+        let messages = tokio::time::timeout(std::time::Duration::from_secs(3), peer)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(failure.id, 17);
+        assert_eq!(failure.token, 29);
+        assert!(matches!(failure.error, SendError::Closed));
+        assert!(failure_rx.try_recv().is_err());
+        assert_eq!(messages, ["current"]);
+    }
+
+    #[rstest]
+    #[case::tracked(true)]
+    #[case::legacy(false)]
+    #[tokio::test]
+    async fn unowned_book_frames_are_dropped_only_on_tracked_streams(#[case] tracked: bool) {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = feed_handler(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            Arc::new(AtomicU64::new(1)),
+            AuthTracker::default(),
+            unauthenticated_epoch(),
+        )
+        .with_book_sync(tracked.then(|| (BookSyncTracker::default(), Duration::from_secs(10))));
+        let data: Value =
+            serde_json::from_str(include_str!("../../test_data/spot/ws_orderbook_eth.json"))
+                .unwrap();
+        let channel = "orderbook.ETH-USDC.1.10";
+        raw_tx
+            .send(Message::Text(
+                json!({"method": "subscription", "params": {"channel": channel, "data": data}})
+                    .to_string()
+                    .into(),
+            ))
+            .unwrap();
+        raw_tx.send(Message::Text(RECONNECTED.into())).unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(1), handler.next())
+            .await
+            .unwrap()
+            .unwrap();
+
+        if tracked {
+            assert!(matches!(event, DeriveWsMessage::Reconnected));
+        } else {
+            let DeriveWsMessage::Subscription(payload) = event else {
+                panic!("expected legacy book event");
+            };
+
+            assert_eq!(payload.channel.as_str(), channel);
+            assert_eq!(
+                serde_json::from_str::<Value>(payload.data.get()).unwrap(),
+                data
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn book_ack_opens_gate_at_ingress_and_drops_pre_ack_frames() {
+        let tracker = BookSyncTracker::default();
+        let channel = "orderbook.ETH-USDC.1.10";
+        tracker.record_subscription(channel, InstrumentId::from("ETH-USDC.DERIVE"));
+        let write = tracker.write(channel).unwrap();
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = feed_handler(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            Arc::new(AtomicU64::new(1)),
+            AuthTracker::default(),
+            Arc::new(AtomicU64::new(UNAUTHENTICATED_CONNECTION_EPOCH)),
+        )
+        .with_book_sync(Some((tracker, Duration::from_secs(10))));
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        handler.pending.insert(
+            1,
+            PendingRequest {
+                token: 1,
+                cancellation: Some(write.generation.clone()),
+                book_writes: vec![(channel.to_owned(), write.clone())],
+                response_tx,
+            },
+        );
+
+        let ack: Value =
+            serde_json::from_str(include_str!("../../test_data/spot/ws_subscribe_ack.json"))
+                .unwrap();
+        let mut data: Value =
+            serde_json::from_str(include_str!("../../test_data/spot/ws_orderbook_eth.json"))
+                .unwrap();
+
+        let notification = |data: &Value| {
+            Message::Text(
+                json!({"method": "subscription", "params": {"channel": channel, "data": data}})
+                    .to_string()
+                    .into(),
+            )
+        };
+
+        raw_tx.send(notification(&data)).unwrap();
+        raw_tx
+            .send(Message::Text(
+                json!({"id": 1, "result": ack["result"]}).to_string().into(),
+            ))
+            .unwrap();
+        data["timestamp"] = json!(data["timestamp"].as_i64().unwrap() + 1);
+        raw_tx.send(notification(&data)).unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(1), handler.next())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let DeriveWsMessage::BookSubscription {
+            payload,
+            generation,
+        } = event
+        else {
+            panic!("expected gated book event");
+        };
+
+        assert_eq!(
+            serde_json::from_str::<Value>(payload.data.get()).unwrap(),
+            data
+        );
+        assert!(!generation.is_cancelled());
+        assert!(!write.gate.lock().is_closed());
+        assert_eq!(
+            serde_json::from_str::<Value>(response_rx.await.unwrap().unwrap().get()).unwrap(),
+            ack["result"]
+        );
+    }
+
+    #[rstest]
+    #[case::cancelled(true, false, false, true)]
+    #[case::obsolete(false, true, false, true)]
+    #[case::abandoned(false, false, true, true)]
+    #[case::current(false, false, false, false)]
+    fn book_ack_opens_only_live_request(
+        #[case] cancelled: bool,
+        #[case] obsolete: bool,
+        #[case] abandoned: bool,
+        #[case] expected_closed: bool,
+    ) {
+        let tracker = BookSyncTracker::default();
+        let channel = "orderbook.ETH-USDC.1.10";
+        tracker.record_subscription(channel, InstrumentId::from("ETH-USDC.DERIVE"));
+        let write = tracker.write(channel).unwrap();
+        let gate = write.gate.clone();
+        let generation = write.generation.clone();
+        let cancel = CancellationToken::new();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        let _response_rx = if abandoned {
+            drop(response_rx);
+            None
+        } else {
+            Some(response_rx)
+        };
+
+        let pending = PendingRequest {
+            token: 1,
+            cancellation: Some(cancel.clone()),
+            book_writes: vec![(channel.to_owned(), write)],
+            response_tx,
+        };
+
+        if cancelled {
+            cancel.cancel();
+        }
+
+        if obsolete {
+            generation.cancel();
+        }
+
+        let ack: Value =
+            serde_json::from_str(include_str!("../../test_data/spot/ws_subscribe_ack.json"))
+                .unwrap();
+        let result = RawValue::from_string(ack["result"].to_string()).unwrap();
+        open_book_gates(&pending, &result, &tracker);
+        assert_eq!(gate.lock().is_closed(), expected_closed);
+    }
+
+    mod dst {
+        use super::*;
+
+        #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+        #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+        async fn commands_and_frames_progress_when_both_queues_are_ready() {
+            let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+            let mut handler = feed_handler(
+                Arc::new(AtomicBool::new(false)),
+                cmd_rx,
+                raw_rx,
+                Arc::new(AtomicU64::new(1)),
+                AuthTracker::new(),
+                unauthenticated_epoch(),
+            );
+            let mut responses = Vec::new();
+
+            for _ in 0..2 {
+                let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+                cmd_tx
+                    .send(HandlerCommand::Request {
+                        method: "subscribe",
+                        params: secret_json(json!({"channels": ["trades.perp.ETH"]})),
+                        connection_epoch: None,
+                        cancellation: None,
+                        response_tx,
+                    })
+                    .unwrap();
+
+                responses.push(response_rx);
+            }
+
+            raw_tx
+                .send(Message::text(
+                    r#"{"method":"subscription","params":{"channel":"trades.perp.ETH","data":[]}}"#,
+                ))
+                .unwrap();
+            let event =
+                nautilus_common::live::dst::time::timeout(Duration::from_secs(1), handler.next())
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+            let DeriveWsMessage::Subscription(payload) = event else {
+                panic!("expected subscription frame");
+            };
+
+            assert_eq!(payload.channel.as_str(), "trades.perp.ETH");
+            assert_eq!(payload.data.get(), "[]");
+            assert!(matches!(
+                responses[0].try_recv().unwrap(),
+                Err(DeriveWsError::NotConnected)
+            ));
+            assert_eq!(
+                responses[1].try_recv().unwrap_err(),
+                tokio::sync::oneshot::error::TryRecvError::Empty
+            );
+            cmd_tx.send(HandlerCommand::Disconnect).unwrap();
+            assert!(
+                nautilus_common::live::dst::time::timeout(Duration::from_secs(1), handler.next())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(matches!(
+                responses[1].try_recv().unwrap(),
+                Err(DeriveWsError::NotConnected)
+            ));
+        }
+    }
+
+    fn feed_handler(
+        signal: Arc<AtomicBool>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        next_id: Arc<AtomicU64>,
+        auth_tracker: AuthTracker,
+        authenticated_epoch: Arc<AtomicU64>,
+    ) -> FeedHandler {
+        FeedHandler::new_with_send_task(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            authenticated_epoch,
+            Arc::new(SharedTaskSlot::new()),
+        )
+    }
 
     #[rstest]
     fn test_subscribe_params_carries_single_channel() {
@@ -504,11 +1219,19 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = feed_handler(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        let params = serde_json::to_value(WsSubscribeParams { channels: vec![] }).unwrap();
-        handler.dispatch_request("public/login", params, response_tx);
+        let params =
+            secret_json(serde_json::to_value(WsSubscribeParams { channels: vec![] }).unwrap());
+        handler.dispatch_request("public/login", params, None, None, response_tx);
 
         let outcome = response_rx.await.expect("oneshot resolved");
         match outcome {
@@ -525,19 +1248,38 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = feed_handler(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, mut send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
 
         let (first_tx, _first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, _second_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({"sequence": 1}), first_tx);
-        handler.dispatch_request("second", json!({"sequence": 2}), second_tx);
+        handler.enqueue_request(
+            "first",
+            secret_json(json!({"sequence": 1})),
+            0,
+            None,
+            first_tx,
+        );
+        handler.enqueue_request(
+            "second",
+            secret_json(json!({"sequence": 2})),
+            0,
+            None,
+            second_tx,
+        );
 
         let first = send_rx.recv().await.expect("first queued send");
         let second = send_rx.recv().await.expect("second queued send");
-        let first_payload: Value = serde_json::from_str(&first.payload).unwrap();
-        let second_payload: Value = serde_json::from_str(&second.payload).unwrap();
+        let first_payload: Value = serde_json::from_str(first.payload.expose_secret()).unwrap();
+        let second_payload: Value = serde_json::from_str(second.payload.expose_secret()).unwrap();
 
         assert_eq!(first.id, 1);
         assert_eq!(second.id, 2);
@@ -555,26 +1297,35 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler =
-            FeedHandler::new(signal, cmd_rx, raw_rx, Arc::clone(&next_id), auth_tracker);
+        let mut handler = feed_handler(
+            signal,
+            cmd_rx,
+            raw_rx,
+            Arc::clone(&next_id),
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, mut send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
 
         let (old_tx, old_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({}), old_tx);
+        handler.enqueue_request("first", secret_json(json!({})), 0, None, old_tx);
         let old_send = send_rx.recv().await.expect("old queued send");
         let old_pending = handler.pending.remove(&old_send.id).unwrap();
-        old_pending.response_tx.send(Ok(Value::Null)).unwrap();
+        old_pending
+            .response_tx
+            .send(Ok(RawValue::NULL.to_owned()))
+            .unwrap();
         old_rx.await.unwrap().unwrap();
 
         next_id.store(old_send.id, Ordering::Relaxed);
         let (new_tx, new_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("second", json!({}), new_tx);
+        handler.enqueue_request("second", secret_json(json!({})), 0, None, new_tx);
         let new_send = send_rx.recv().await.expect("new queued send");
-        handler.handle_send_failure(SendFailure {
+        handler.handle_send_failure(&SendFailure {
             id: old_send.id,
             token: old_send.token,
-            reason: "late failure".to_string(),
+            error: SendError::BrokenPipe("late failure".to_string()),
         });
 
         assert_eq!(old_send.id, new_send.id);
@@ -584,43 +1335,52 @@ mod tests {
             new_send.token,
         );
 
-        handler.handle_send_failure(SendFailure {
+        handler.handle_send_failure(&SendFailure {
             id: new_send.id,
             token: new_send.token,
-            reason: "current failure".to_string(),
+            error: SendError::BrokenPipe("current failure".to_string()),
         });
+
         let error = new_rx.await.unwrap().expect_err("current request failed");
         assert!(error.to_string().contains("current failure"));
     }
 
     #[rstest]
-    #[tokio::test]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     async fn test_shutdown_aborts_send_worker_and_drains_pending_requests() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = feed_handler(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
 
-        let task = tokio::spawn(std::future::pending::<()>());
+        let task = task::spawn(std::future::pending::<()>());
         let abort_handle = task.abort_handle();
-        handler.send_task = Some(task);
+        handler.send_task.insert(task);
 
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, second_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({}), first_tx);
-        handler.dispatch_request("second", json!({}), second_tx);
-        handler.shutdown_send_path("disconnect requested");
-        tokio::task::yield_now().await;
+        handler.enqueue_request("first", secret_json(json!({})), 0, None, first_tx);
+        handler.enqueue_request("second", secret_json(json!({})), 0, None, second_tx);
+        handler.shutdown_send_path("disconnect requested").await;
+        task::yield_now().await;
 
         let first_error = first_rx.await.unwrap().expect_err("first request failed");
         let second_error = second_rx.await.unwrap().expect_err("second request failed");
         assert!(abort_handle.is_finished());
         assert!(handler.send_tx.is_none());
-        assert!(handler.send_task.is_none());
+        assert!(handler.send_task.is_empty());
         assert!(handler.pending.is_empty());
         assert!(first_error.to_string().contains("disconnect requested"));
         assert!(second_error.to_string().contains("disconnect requested"));
@@ -634,7 +1394,14 @@ mod tests {
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = feed_handler(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (_failure_tx, failure_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_failure_rx = failure_rx;
         drop(cmd_tx);
@@ -655,17 +1422,25 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = feed_handler(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("private/order", json!({}), response_tx);
+        handler.enqueue_request("request", secret_json(json!({})), 0, None, response_tx);
 
         handler.fail_uncorrelated_error(crate::http::models::JsonRpcError {
             code: -32700,
             message: "Parse error".to_string(),
             data: Some(json!("invalid JSON")),
         });
+
         let error = response_rx.await.unwrap().expect_err("request failed");
 
         match error {
@@ -680,6 +1455,7 @@ mod tests {
             }
             other => panic!("expected JsonRpc, was {other:?}"),
         }
+
         assert!(handler.pending.is_empty());
     }
 
@@ -691,13 +1467,20 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, next_id, auth_tracker);
+        let mut handler = feed_handler(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            unauthenticated_epoch(),
+        );
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, second_rx) = tokio::sync::oneshot::channel();
-        handler.dispatch_request("first", json!({}), first_tx);
-        handler.dispatch_request("second", json!({}), second_tx);
+        handler.enqueue_request("first", secret_json(json!({})), 0, None, first_tx);
+        handler.enqueue_request("second", secret_json(json!({})), 0, None, second_tx);
 
         handler.fail_uncorrelated_error(crate::http::models::JsonRpcError {
             code: -32600,

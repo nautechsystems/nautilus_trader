@@ -15,19 +15,19 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::{data::QuoteTick, identifiers::InstrumentId};
 
 use crate::indicator::Indicator;
 
-/// An indicator which calculates the efficiency ratio across a rolling window.
+/// Calculates the current bid-ask spread and its average across a rolling window.
 ///
-/// The Kaufman Efficiency measures the ratio of the relative market speed in
-/// relation to the volatility, this could be thought of as a proxy for noise.
+/// A zero capacity is accepted.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -88,16 +88,14 @@ impl Indicator for SpreadAnalyzer {
         self.current = spread;
         self.spreads.push(spread);
 
-        // Bound the rolling window to `capacity`, matching the Cython
-        // `deque(maxlen=capacity)`. Without this the buffer grows unbounded and
-        // `fast_mean_iterated` errors (panicking on `unwrap`) once the length
-        // exceeds `capacity`.
+        // Bound the rolling window to `capacity`. Without this the buffer grows unbounded and
+        // `fast_mean_iterated` errors (panicking on `unwrap`) once the length exceeds `capacity`.
         if self.spreads.len() > self.capacity {
             self.spreads.remove(0);
         }
 
-        // Recompute the average over the bounded window. The Cython reference uses an
-        // incremental `fast_mean_iterated(..., drop_left=false)` update, but at capacity
+        // Recompute the average over the bounded window. An incremental
+        // `fast_mean_iterated(..., drop_left=false)` update is cheaper, but at capacity
         // that subtracts `values[length - 1]` (the spread just pushed) rather than the
         // evicted oldest value, so the average freezes for non-constant spreads.
         // Recomputing from the bounded window is O(capacity) and always correct.
@@ -116,17 +114,32 @@ impl Indicator for SpreadAnalyzer {
 
 impl SpreadAnalyzer {
     /// Creates a new [`SpreadAnalyzer`] instance.
+    ///
+    /// A zero capacity is accepted.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the spread window capacity overflows or its allocation fails.
     #[must_use]
     pub fn new(capacity: usize, instrument_id: InstrumentId) -> Self {
-        Self {
+        Self::new_checked(capacity, instrument_id).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        capacity: usize,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Self> {
+        let mut spreads = Vec::new();
+        spreads.try_reserve_exact(capacity)?;
+        Ok(Self {
             capacity,
             instrument_id,
             current: 0.0,
             average: 0.0,
             initialized: false,
             has_inputs: false,
-            spreads: Vec::with_capacity(capacity),
-        }
+            spreads,
+        })
     }
 }
 
@@ -140,14 +153,42 @@ fn fast_mean(values: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-
+    use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
     use crate::{
         indicator::Indicator,
         ratio::spread_analyzer::SpreadAnalyzer,
         stubs::{spread_analyzer_10, *},
+        testing::assert_approx_equal,
     };
+
+    #[rstest]
+    #[case(usize::MAX)]
+    #[case(isize::MAX as usize / size_of::<f64>() + 1)]
+    fn test_checked_constructor_rejects_capacity_overflow(#[case] capacity: usize) {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let error = SpreadAnalyzer::new_checked(capacity, instrument_id).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "memory allocation failed because the computed capacity exceeded the collection's maximum"
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(10)]
+    fn test_checked_constructor_preserves_capacity(#[case] capacity: usize) {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let ind = SpreadAnalyzer::new_checked(capacity, instrument_id).unwrap();
+        assert_eq!(ind.capacity, capacity);
+        assert_eq!(ind.instrument_id, instrument_id);
+        assert_eq!(ind.current, 0.0);
+        assert_eq!(ind.average, 0.0);
+        assert!(!ind.initialized());
+        assert!(!ind.has_inputs());
+    }
+
     #[rstest]
     fn test_efficiency_ratio_initialized(spread_analyzer_10: SpreadAnalyzer) {
         let display_str = format!("{spread_analyzer_10}");
@@ -181,7 +222,7 @@ mod tests {
         spread_analyzer_10
             .handle_quote(&stub_quote("100.50", "100.55"))
             .unwrap();
-        assert_eq!(spread_analyzer_10.average, 0.049_999_999_999_997_16);
+        assert_approx_equal(spread_analyzer_10.average, 0.05);
     }
 
     #[rstest]
@@ -204,7 +245,7 @@ mod tests {
                 .unwrap();
         }
 
-        assert_eq!(spread_analyzer_10.average, 0.050_000_000_000_001_42);
+        assert_approx_equal(spread_analyzer_10.average, 0.05);
     }
 
     #[rstest]
@@ -212,9 +253,8 @@ mod tests {
         mut spread_analyzer_10: SpreadAnalyzer,
     ) {
         // Regression: feeding more than `capacity` quotes must not panic, and the
-        // internal window must stay bounded to `capacity` (matching the Cython
-        // `deque(maxlen=capacity)`). Previously the unbounded buffer caused
-        // `fast_mean_iterated` to error and panic on the (capacity + 1)th quote.
+        // internal window must stay bounded to `capacity`. Previously the unbounded buffer
+        // caused `fast_mean_iterated` to error and panic on the (capacity + 1)th quote.
         let bid_price: [&str; 15] = [
             "100.50", "100.45", "100.55", "100.60", "100.52", "100.48", "100.53", "100.57",
             "100.49", "100.51", "100.54", "100.56", "100.58", "100.50", "100.52",

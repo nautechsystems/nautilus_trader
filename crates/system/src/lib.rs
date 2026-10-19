@@ -38,12 +38,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `streaming`: Enables `persistence` dependency for streaming configuration.
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Builds as a Python extension module.
 //! - `live`: Enables live trading mode dependencies.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `streaming`.
+//! - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration.
 //! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -54,6 +54,10 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 
 pub mod builder;
 pub mod clock_factory;
@@ -72,7 +76,9 @@ pub mod python;
 // Re-exports
 pub use builder::NautilusKernelBuilder;
 pub use clock_factory::ClockFactory;
-pub use config::{NautilusKernelConfig, RotationConfig, StreamingConfig};
+pub use config::NautilusKernelConfig;
+#[cfg(feature = "streaming")]
+pub use config::{RotationConfig, StreamingConfig};
 pub use controller::Controller;
 pub use event_store::{EventStoreFactory, KernelEventStore, RegisteredComponents};
 pub use kernel::NautilusKernel;

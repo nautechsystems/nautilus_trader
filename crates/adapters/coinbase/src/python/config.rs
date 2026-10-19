@@ -15,14 +15,15 @@
 
 //! Python bindings for Coinbase configuration.
 
-use nautilus_model::enums::AccountType;
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 use rust_decimal::Decimal;
 
 use crate::{
     common::enums::{CoinbaseEnvironment, CoinbaseMarginType},
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    config::{CoinbaseDataClientConfig, CoinbaseExecutionClientConfig},
 };
 
 #[pymethods]
@@ -59,11 +60,11 @@ impl CoinbaseDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             base_url_rest,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
@@ -87,10 +88,11 @@ impl CoinbaseDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl CoinbaseExecClientConfig {
+impl CoinbaseExecutionClientConfig {
     /// Configuration for the Coinbase live execution client.
     #[new]
     #[pyo3(signature = (
+        account_id = None,
         api_key = None,
         api_secret = None,
         base_url_rest = None,
@@ -109,6 +111,7 @@ impl CoinbaseExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
+        account_id: Option<AccountId>,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url_rest: Option<String>,
@@ -127,11 +130,12 @@ impl CoinbaseExecClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            account_id: account_id.unwrap_or(defaults.account_id),
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             base_url_rest,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
@@ -152,6 +156,6 @@ impl CoinbaseExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(CoinbaseExecClientConfig).to_string()
+        stringify!(CoinbaseExecutionClientConfig).to_string()
     }
 }

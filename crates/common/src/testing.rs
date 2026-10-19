@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common test related helper functions.
+//! Common test support.
 
 #[cfg(feature = "live")]
 use std::future::Future;
@@ -23,7 +23,7 @@ use std::{
 };
 
 use nautilus_core::UUID4;
-use nautilus_model::{identifiers::TraderId, stubs::TestDefault};
+use nautilus_model::identifiers::TraderId;
 
 use crate::logging::{
     init_logging,
@@ -40,7 +40,7 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow
         ..Default::default()
     };
     init_logging(
-        TraderId::test_default(),
+        TraderId::default(),
         UUID4::new(),
         config,
         FileWriterConfig::default(),
@@ -51,25 +51,28 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow
 ///
 /// # Panics
 ///
-/// This function panics if the timeout duration is exceeded without the condition being met.
+/// Panics if the timeout duration is exceeded without the condition being met.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::time::Duration;
-/// use std::thread;
+/// use std::{thread, time::Duration};
+///
 /// use nautilus_common::testing::wait_until;
 ///
 /// let start_time = std::time::Instant::now();
 /// let timeout = Duration::from_secs(5);
 ///
-/// wait_until(|| {
-///     if start_time.elapsed().as_secs() > 2 {
-///         true
-///     } else {
-///         false
-///     }
-/// }, timeout);
+/// wait_until(
+///     || {
+///         if start_time.elapsed().as_secs() > 2 {
+///             true
+///         } else {
+///             false
+///         }
+///     },
+///     timeout,
+/// );
 /// ```
 ///
 /// In the above example, the `wait_until` function will block for at least 2 seconds, as that's how long
@@ -78,7 +81,7 @@ pub fn wait_until<F>(mut condition: F, timeout: Duration)
 where
     F: FnMut() -> bool,
 {
-    let start_time = Instant::now(); // dst-ok: test helper timer; uses real time by design
+    let start_time = Instant::now(); // dst-ok: test timer; uses real time by design
 
     loop {
         if condition() {
@@ -105,7 +108,7 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = bool>,
 {
-    let start_time = Instant::now(); // dst-ok: test helper timer; uses real time by design
+    let start_time = Instant::now(); // dst-ok: test timer; uses real time by design
 
     loop {
         if condition().await {

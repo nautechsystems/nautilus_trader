@@ -32,8 +32,8 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, CustomData, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -45,16 +45,16 @@ use nautilus_model::{
 use smallvec::SmallVec;
 use ustr::Ustr;
 
-pub use super::external::republish_external_message;
+pub use super::external::{process_external_typed_message, republish_external_message};
 use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BusPayloadType,
-    DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
+    DELTAS_HANDLERS, DEPTH_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
     INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
     OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
     POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send,
-    external::forward_to_external_egress,
+    external::{forward_any_to_external_egress, forward_to_external_egress},
     get_message_bus,
     matching::is_matching_backtracking,
     mstr::{Endpoint, MStr, Pattern, Topic},
@@ -66,9 +66,12 @@ use super::{
     DEFI_BLOCK_HANDLERS, DEFI_COLLECT_HANDLERS, DEFI_FLASH_HANDLERS, DEFI_LIQUIDITY_HANDLERS,
     DEFI_POOL_HANDLERS, DEFI_SWAP_HANDLERS,
 };
-use crate::messages::{
-    data::{DataCommand, DataResponse},
-    execution::{ExecutionReport, TradingCommand},
+use crate::{
+    actor::PublicationScope,
+    messages::{
+        data::{DataCommand, DataResponse},
+        execution::{ExecutionReport, TradingCommand},
+    },
 };
 
 /// Registers a handler for an endpoint using runtime type dispatch (Any).
@@ -219,9 +222,14 @@ pub fn deregister_any(endpoint: MStr<Endpoint>) {
 }
 
 /// Returns whether an endpoint handler is registered for the given endpoint name.
+///
+/// An invalid endpoint name returns `false`, because registration rejects such names.
 #[must_use]
 pub fn has_endpoint(endpoint: &str) -> bool {
-    let key: MStr<Endpoint> = Ustr::from(endpoint).into();
+    let Ok(key) = MStr::<Endpoint>::endpoint(endpoint) else {
+        return false;
+    };
+
     get_message_bus().borrow().get_endpoint(key).is_some()
 }
 
@@ -300,17 +308,16 @@ pub fn subscribe_book_deltas(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
-/// Subscribes a handler to order book depth10 snapshots matching a pattern.
-pub fn subscribe_book_depth10(
+/// Subscribes a handler to order book depth snapshots matching a pattern.
+pub fn subscribe_book_depth(
     pattern: MStr<Pattern>,
-    handler: TypedHandler<OrderBookDepth10>,
+    handler: TypedHandler<OrderBookDepth>,
     priority: Option<u32>,
 ) {
-    get_message_bus().borrow_mut().router_depth10.subscribe(
-        pattern,
-        handler,
-        priority.unwrap_or(0),
-    );
+    get_message_bus()
+        .borrow_mut()
+        .router_depth
+        .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
 /// Subscribes a handler to order book snapshots matching a pattern.
@@ -595,11 +602,11 @@ pub fn unsubscribe_book_deltas(pattern: MStr<Pattern>, handler: &TypedHandler<Or
         .unsubscribe(pattern, handler);
 }
 
-/// Unsubscribes a handler from order book depth10 snapshots.
-pub fn unsubscribe_book_depth10(pattern: MStr<Pattern>, handler: &TypedHandler<OrderBookDepth10>) {
+/// Unsubscribes a handler from order book depth snapshots.
+pub fn unsubscribe_book_depth(pattern: MStr<Pattern>, handler: &TypedHandler<OrderBookDepth>) {
     get_message_bus()
         .borrow_mut()
-        .router_depth10
+        .router_depth
         .unsubscribe(pattern, handler);
 }
 
@@ -812,28 +819,9 @@ pub fn unsubscribe_defi_flash(pattern: MStr<Pattern>, handler: &TypedHandler<Poo
 
 /// Unsubscribes a handler from a pattern (Any-based).
 pub fn unsubscribe_any(pattern: MStr<Pattern>, handler: &ShareableMessageHandler) {
-    log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
-
-    let handler_id = handler.0.id();
-    let bus_rc = get_message_bus();
-    let mut bus = bus_rc.borrow_mut();
-
-    let count_before = bus.subscriptions.len();
-
-    bus.topics.values_mut().for_each(|subs| {
-        subs.retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
-    });
-
-    bus.subscriptions
-        .retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
-
-    let removed = bus.subscriptions.len() < count_before;
-
-    if removed {
-        log::debug!("Handler for pattern '{pattern}' was removed");
-    } else {
-        log::debug!("No matching handler for pattern '{pattern}' was found");
-    }
+    get_message_bus()
+        .borrow_mut()
+        .unsubscribe_any(pattern, handler);
 }
 
 /// Checks if a handler is subscribed to a pattern (Any-based).
@@ -860,11 +848,11 @@ pub fn subscriber_count_deltas(topic: MStr<Topic>) -> usize {
         .subscriber_count(topic)
 }
 
-/// Returns the subscriber count for order book depth10 on a topic.
-pub fn subscriber_count_depth10(topic: MStr<Topic>) -> usize {
+/// Returns the subscriber count for order book depth on a topic.
+pub fn subscriber_count_depth(topic: MStr<Topic>) -> usize {
     get_message_bus()
         .borrow()
-        .router_depth10
+        .router_depth
         .subscriber_count(topic)
 }
 
@@ -930,6 +918,15 @@ pub fn exact_subscriber_count_option_greeks(topic: MStr<Topic>) -> usize {
         .exact_subscriber_count(topic)
 }
 
+/// Returns the exact subscriber count for option chains on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_option_chain(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_option_chain
+        .exact_subscriber_count(topic)
+}
+
 /// Returns the exact subscriber count for bars on a topic,
 /// excluding wildcard pattern subscriptions.
 pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {
@@ -941,6 +938,7 @@ pub fn exact_subscriber_count_bars(topic: MStr<Topic>) -> usize {
 
 /// Publishes a message to the topic using runtime type dispatch (Any).
 pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     // Take buffer (re-entrancy safe)
@@ -960,15 +958,7 @@ pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
     handlers.clear(); // Release refs before restore
     ANY_HANDLERS.with_borrow_mut(|buf| *buf = handlers);
 
-    let Some(custom) = message.downcast_ref::<CustomData>() else {
-        return;
-    };
-
-    forward_to_external_egress(
-        topic,
-        BusPayloadType::Custom(Ustr::from(custom.data.type_name())),
-        custom,
-    );
+    forward_any_to_external_egress(topic, message);
 }
 
 /// Tries to publish a message to the current thread's registered message bus.
@@ -983,6 +973,7 @@ pub fn try_publish_any(topic: MStr<Topic>, message: &dyn Any) -> bool {
         return false;
     }
 
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     let Ok(mut bus) = bus_rc.try_borrow_mut() else {
@@ -1029,16 +1020,16 @@ pub fn publish_deltas(topic: MStr<Topic>, deltas: &OrderBookDeltas) {
     forward_to_external_egress(topic, BusPayloadType::OrderBookDeltas, deltas);
 }
 
-/// Publishes order book depth10 to subscribers on a topic.
-pub fn publish_depth10(topic: MStr<Topic>, depth: &OrderBookDepth10) {
+/// Publishes order book depth to subscribers on a topic.
+pub fn publish_depth(topic: MStr<Topic>, depth: &OrderBookDepth) {
     publish_typed(
         topic,
-        &DEPTH10_HANDLERS,
-        |bus, h| bus.router_depth10.fill_matching_handlers(topic, h),
+        &DEPTH_HANDLERS,
+        |bus, h| bus.router_depth.fill_matching_handlers(topic, h),
         depth,
     );
 
-    forward_to_external_egress(topic, BusPayloadType::OrderBookDepth10, depth);
+    forward_to_external_egress(topic, BusPayloadType::OrderBookDepth, depth);
 }
 
 /// Publishes an order book snapshot to subscribers on a topic.
@@ -1301,6 +1292,7 @@ fn publish_typed<T: 'static>(
     fill_fn: impl FnOnce(&mut MessageBus, &mut SmallVec<[TypedHandler<T>; HANDLER_BUFFER_CAP]>),
     message: &T,
 ) {
+    let _publication = PublicationScope::enter();
     dispatch_tap_publish(topic, message);
 
     // Take buffer (re-entrancy safe)
@@ -1324,27 +1316,16 @@ fn publish_typed<T: 'static>(
 
 /// Sends a message to an endpoint handler using runtime type dispatch (Any).
 pub fn send_any(endpoint: MStr<Endpoint>, message: &dyn Any) {
-    dispatch_tap_send(endpoint, message);
-
-    let handler = {
-        let bus = get_message_bus();
-        let mut bus = bus.borrow_mut();
-        let handler = bus.get_endpoint(endpoint).cloned();
-        if handler.is_some() {
-            bus.increment_sent_count();
-        }
-        handler
-    };
-
-    if let Some(handler) = handler {
-        handler.0.handle(message);
-    } else {
-        log::error!("send_any: no registered endpoint '{endpoint}'");
-    }
+    send_any_inner(endpoint, message, "send_any");
 }
 
 /// Sends a message to an endpoint, converting to Any (convenience wrapper).
 pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
+    send_any_inner(endpoint, message, "send_any_value");
+}
+
+#[inline]
+fn send_any_inner(endpoint: MStr<Endpoint>, message: &dyn Any, fn_name: &str) {
     dispatch_tap_send(endpoint, message);
 
     let handler = {
@@ -1360,7 +1341,7 @@ pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
     if let Some(handler) = handler {
         handler.0.handle(message);
     } else {
-        log::error!("send_any_value: no registered endpoint '{endpoint}'");
+        log::error!("{fn_name}: no registered endpoint '{endpoint}'");
     }
 }
 
@@ -1387,7 +1368,7 @@ pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
             DataResponse::Quotes(resp) => handler.0.handle(resp),
             DataResponse::Trades(resp) => handler.0.handle(resp),
             DataResponse::FundingRates(resp) => handler.0.handle(resp),
-            DataResponse::ForwardPrices(resp) => handler.0.handle(resp),
+            DataResponse::OptionChainReferencePrice(resp) => handler.0.handle(resp),
             DataResponse::Bars(resp) => handler.0.handle(resp),
         }
     } else {
@@ -1600,11 +1581,10 @@ mod tests {
     //! where `send_*` holds a borrow, calls the handler, and the handler needs to
     //! call `borrow_mut()` for topic getters or other operations.
 
-    #[cfg(feature = "defi")]
-    use std::sync::Arc;
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
+        sync::Arc,
         thread,
     };
 
@@ -1616,28 +1596,31 @@ mod tests {
     use nautilus_model::defi::{
         AmmType, Chain, Dex, DexType, PoolIdentifier, PoolLiquidityUpdateType, Token,
     };
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     use nautilus_model::{data::OptionGreekValues, enums::GreeksConvention};
     use nautilus_model::{
         data::{
-            Bar, BarType, DataType, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-            OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+            Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
+            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
+            QuoteTick, TradeTick,
             stubs::{stub_custom_data, stub_deltas, stub_depth10},
         },
-        enums::{AccountType, BookType, OrderSide, PositionSide},
+        enums::{
+            AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+            TimeInForce,
+        },
         events::{OrderEventAny, PositionEvent, PositionOpened, order::spec::OrderDeniedSpec},
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
-            Venue,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
+            StrategyId, TradeId, TraderId, Venue, VenueOrderId,
         },
         instruments::{InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
-        types::{Currency, Price, Quantity},
+        reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+        types::{Currency, Money, Price, Quantity},
     };
     #[cfg(feature = "sbe")]
     use nautilus_serialization::sbe::FromSbe;
-    #[cfg(feature = "capnp")]
-    use nautilus_serialization::{capnp::FromCapnp, market_capnp};
     use rstest::rstest;
     use rust_decimal::Decimal;
 
@@ -1647,11 +1630,12 @@ mod tests {
         messages::{
             data::{
                 BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse,
-                CustomDataResponse, DataCommand, DataResponse, ForwardPricesResponse,
-                FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse,
-                RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes, TradesResponse,
+                CustomDataResponse, DataCommand, DataResponse, FundingRatesResponse,
+                InstrumentResponse, InstrumentsResponse, OptionChainReferencePriceResponse,
+                QuotesResponse, RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes,
+                TradesResponse, UnsubscribeCommand, UnsubscribeQuotes,
             },
-            execution::{CancelAllOrders, TradingCommand},
+            execution::{CancelAllOrders, GenerateExecutionMassStatus, TradingCommand},
         },
         msgbus::{
             BusMessage, BusTap, MessageBusConfig, MessageBusExternalEgress, SuppressExternalGuard,
@@ -1729,6 +1713,16 @@ mod tests {
         publications
     }
 
+    fn install_capturing_external_stream_egress(
+        encoding: SerializationEncoding,
+    ) -> Rc<RefCell<Vec<CapturedEgressMessage>>> {
+        install_capturing_external_egress_config(&MessageBusConfig {
+            encoding,
+            external_streams: Some(vec!["external.test".to_string()]),
+            ..Default::default()
+        })
+    }
+
     fn reset_message_bus() {
         get_message_bus().borrow_mut().dispose();
         set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
@@ -1774,6 +1768,19 @@ mod tests {
     }
 
     #[rstest]
+    #[case("")]
+    #[case("   ")]
+    #[case("\t\n")]
+    #[case("*")]
+    #[case("mailbox.*")]
+    #[case("mail?ox")]
+    fn has_endpoint_returns_false_for_invalid_name(#[case] endpoint: &str) {
+        reset_message_bus();
+
+        assert!(!has_endpoint(endpoint));
+    }
+
+    #[rstest]
     #[case(SerializationEncoding::MsgPack)]
     #[case(SerializationEncoding::Json)]
     fn publish_quote_forwards_decodable_payload_to_external_egress(
@@ -1793,7 +1800,7 @@ mod tests {
                 .expect("MsgPack payload must decode as QuoteTick"),
             SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
                 .expect("JSON payload must decode as QuoteTick"),
-            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+            SerializationEncoding::Sbe => {
                 unreachable!("schema encodings are tested separately")
             }
         };
@@ -1802,7 +1809,7 @@ mod tests {
                 .expect("MsgPack payload must decode as a value"),
             SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
                 .expect("JSON payload must decode as a value"),
-            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+            SerializationEncoding::Sbe => {
                 unreachable!("schema encodings are tested separately")
             }
         };
@@ -1866,12 +1873,6 @@ mod tests {
     #[rstest]
     fn republish_external_message_round_trips_quote_sbe() {
         assert_quote_round_trips(SerializationEncoding::Sbe);
-    }
-
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn republish_external_message_round_trips_quote_capnp() {
-        assert_quote_round_trips(SerializationEncoding::Capnp);
     }
 
     fn assert_typed_external_round_trips<T>(
@@ -1942,7 +1943,7 @@ mod tests {
         );
     }
 
-    fn assert_depth10_market_eq(actual: &OrderBookDepth10, expected: &OrderBookDepth10) {
+    fn assert_depth_market_eq(actual: &OrderBookDepth, expected: &OrderBookDepth) {
         assert_eq!(actual.instrument_id, expected.instrument_id);
         assert_eq!(actual.bid_counts, expected.bid_counts);
         assert_eq!(actual.ask_counts, expected.ask_counts);
@@ -1993,7 +1994,7 @@ mod tests {
         )
     }
 
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     fn option_greeks() -> OptionGreeks {
         OptionGreeks {
             instrument_id: InstrumentId::from("BTC-30JUN23-40000-C.DERIBIT"),
@@ -2052,6 +2053,7 @@ mod tests {
             last_px: Price::from("1.00000"),
             currency: Currency::USD(),
             avg_px_open: 1.0,
+            realized_pnl: None,
             event_id: UUID4::new(),
             ts_event: UnixNanos::from(10),
             ts_init: UnixNanos::from(11),
@@ -2230,12 +2232,12 @@ mod tests {
         );
         assert_typed_external_round_trips(
             encoding,
-            BusPayloadType::OrderBookDepth10,
-            "data.book.depth10.AAPL.XNAS",
+            BusPayloadType::OrderBookDepth,
+            "data.book.depth.AAPL.XNAS",
             stub_depth10(),
-            publish_depth10,
-            subscribe_book_depth10,
-            assert_depth10_market_eq,
+            publish_depth,
+            subscribe_book_depth,
+            assert_depth_market_eq,
         );
         assert_typed_external_round_trips(
             encoding,
@@ -2381,7 +2383,7 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
-    fn republish_external_message_round_trips_publishable_json_msgpack(
+    fn republish_external_message_round_trips_publishable_payloads(
         #[case] encoding: SerializationEncoding,
     ) {
         assert_publishable_json_msgpack_round_trips(encoding);
@@ -2391,7 +2393,7 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
-    fn republish_external_message_round_trips_publishable_defi_json_msgpack(
+    fn republish_external_message_round_trips_publishable_defi_payloads(
         #[case] encoding: SerializationEncoding,
     ) {
         assert_publishable_defi_json_msgpack_round_trips(encoding);
@@ -2443,11 +2445,503 @@ mod tests {
         reset_message_bus();
     }
 
+    fn assert_typed_payload_round_trips<T>(
+        encoding: SerializationEncoding,
+        payload_type: BusPayloadType,
+        topic: &str,
+        value: T,
+    ) where
+        T: serde::Serialize + Any + 'static,
+    {
+        let publications = install_capturing_external_stream_egress(encoding);
+        let expected = serde_json::to_value(&value).expect("typed payload must map to JSON");
+        let received = Rc::new(RefCell::new(Vec::<serde_json::Value>::new()));
+        let received_handler = received.clone();
+        subscribe_any(
+            topic.into(),
+            ShareableMessageHandler::from_typed(move |message: &T| {
+                received_handler.borrow_mut().push(
+                    serde_json::to_value(message).expect("received payload must map to JSON"),
+                );
+            }),
+            None,
+        );
+
+        publish_any(topic.into(), &value);
+
+        let bus_message = {
+            let publications = publications.borrow();
+            assert_eq!(publications.len(), 1);
+            assert_eq!(publications[0].topic, topic);
+            assert_eq!(publications[0].payload_type, payload_type);
+            assert_eq!(publications[0].encoding, encoding);
+            BusMessage::with_str_topic(
+                topic,
+                publications[0].payload_type,
+                publications[0].payload.clone(),
+                publications[0].encoding,
+            )
+        };
+        received.borrow_mut().clear();
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+
+        republish_external_message(&bus_message).expect("typed payload must republish");
+
+        assert_eq!(*received.borrow(), vec![expected]);
+        assert_eq!(
+            publications.borrow().len(),
+            1,
+            "republished typed payload must not echo to external egress"
+        );
+        reset_message_bus();
+    }
+
+    fn typed_processor_mapping<T>(
+        payload_type: BusPayloadType,
+        topic: &str,
+        value: &T,
+    ) -> serde_json::Value
+    where
+        T: serde::Serialize,
+    {
+        let message = BusMessage::with_str_topic(
+            topic,
+            payload_type,
+            Bytes::from(serde_json::to_vec(value).expect("typed payload must serialize")),
+            SerializationEncoding::Json,
+        );
+        let mut received = None;
+        let mut processor = |_: &dyn Any, mapping: &serde_json::Value| {
+            received = Some(mapping.clone());
+            Ok(())
+        };
+
+        process_external_typed_message(&message, &mut processor)
+            .expect("typed payload must process");
+
+        received.expect("processor must receive the typed mapping")
+    }
+
+    #[rstest]
+    fn typed_processor_mapping_identifies_subscription_action() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let client_id = Some(ClientId::from("EXTERNAL"));
+        let venue = Some(Venue::from("SIM"));
+        let ts_init = UnixNanos::from(1_000_000_000);
+        let subscribe = SubscribeCommand::Quotes(SubscribeQuotes::new(
+            instrument_id,
+            client_id,
+            venue,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            ts_init,
+            None,
+            None,
+        ));
+        let unsubscribe = UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+            instrument_id,
+            client_id,
+            venue,
+            UUID4::from("00000000-0000-4000-8000-000000000002"),
+            ts_init,
+            None,
+            None,
+        ));
+
+        let mut subscribe_mapping = typed_processor_mapping(
+            BusPayloadType::SubscribeCommand,
+            "external.test",
+            &subscribe,
+        );
+        let mut unsubscribe_mapping = typed_processor_mapping(
+            BusPayloadType::UnsubscribeCommand,
+            "external.test",
+            &unsubscribe,
+        );
+
+        assert_eq!(
+            subscribe_mapping
+                .as_object_mut()
+                .expect("subscribe payload must map to an object")
+                .remove("payload_type"),
+            Some(serde_json::json!("SubscribeCommand"))
+        );
+        assert_eq!(
+            unsubscribe_mapping
+                .as_object_mut()
+                .expect("unsubscribe payload must map to an object")
+                .remove("payload_type"),
+            Some(serde_json::json!("UnsubscribeCommand"))
+        );
+        assert_eq!(
+            subscribe_mapping,
+            serde_json::to_value(subscribe).expect("subscribe command must map to JSON")
+        );
+        assert_eq!(
+            unsubscribe_mapping,
+            serde_json::to_value(unsubscribe).expect("unsubscribe command must map to JSON")
+        );
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn typed_processor_publications_do_not_echo_to_external_egress() {
+        let publications = install_capturing_external_stream_egress(SerializationEncoding::Json);
+        let command = SubscribeCommand::Quotes(SubscribeQuotes::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Some(ClientId::from("EXTERNAL")),
+            Some(Venue::from("SIM")),
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_000_000_000),
+            None,
+            None,
+        ));
+
+        publish_any("external.test".into(), &command);
+        let message = {
+            let publications = publications.borrow();
+            assert_eq!(publications.len(), 1);
+            BusMessage::with_str_topic(
+                publications[0].topic.clone(),
+                publications[0].payload_type,
+                publications[0].payload.clone(),
+                publications[0].encoding,
+            )
+        };
+        let mut processor = |value: &dyn Any, _: &serde_json::Value| {
+            let command = value
+                .downcast_ref::<SubscribeCommand>()
+                .expect("processor must receive a subscribe command");
+            publish_any("external.test".into(), command);
+            Ok(())
+        };
+
+        process_external_typed_message(&message, &mut processor)
+            .expect("typed payload must process");
+        assert_eq!(
+            publications.borrow().len(),
+            1,
+            "processor publication must remain local"
+        );
+
+        publish_any("external.test".into(), &command);
+        assert_eq!(
+            publications.borrow().len(),
+            2,
+            "external egress must resume after processing"
+        );
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn typed_processor_error_skips_internal_republishing() {
+        let command = SubscribeCommand::Quotes(SubscribeQuotes::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Some(ClientId::from("EXTERNAL")),
+            Some(Venue::from("SIM")),
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_000_000_000),
+            None,
+            None,
+        ));
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_handler = received.clone();
+        subscribe_any(
+            "external.test".into(),
+            ShareableMessageHandler::from_typed(move |command: &SubscribeCommand| {
+                received_handler.borrow_mut().push(command.clone());
+            }),
+            None,
+        );
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::SubscribeCommand);
+        let message = BusMessage::with_str_topic(
+            "external.test",
+            BusPayloadType::SubscribeCommand,
+            Bytes::from(serde_json::to_vec(&command).expect("typed payload must serialize")),
+            SerializationEncoding::Json,
+        );
+        let mut processor =
+            |_: &dyn Any, _: &serde_json::Value| anyhow::bail!("processor rejected payload");
+
+        let error = process_external_typed_message(&message, &mut processor)
+            .expect_err("processor failure must stop processing");
+
+        assert_eq!(error.to_string(), "processor rejected payload");
+        assert!(received.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn typed_payloads_round_trip_supported_encodings(#[case] encoding: SerializationEncoding) {
+        let trader_id = TraderId::from("TRADER-001");
+        let client_id = ClientId::from("EXTERNAL");
+        let venue = Venue::from("SIM");
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let account_id = AccountId::from("SIM-001");
+        let venue_order_id = VenueOrderId::from("ORDER-001");
+        let ts_init = UnixNanos::from(1_000_000_000);
+
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::SubscribeCommand,
+            "external.test",
+            SubscribeCommand::Quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::from("00000000-0000-4000-8000-000000000001"),
+                ts_init,
+                None,
+                None,
+            )),
+        );
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::UnsubscribeCommand,
+            "external.test",
+            UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+                instrument_id,
+                Some(client_id),
+                Some(venue),
+                UUID4::from("00000000-0000-4000-8000-000000000002"),
+                ts_init,
+                None,
+                None,
+            )),
+        );
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::TradingCommand,
+            "external.test",
+            TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                trader_id,
+                Some(client_id),
+                StrategyId::from("STRATEGY-001"),
+                instrument_id,
+                Some(OrderSide::Buy),
+                UUID4::from("00000000-0000-4000-8000-000000000003"),
+                ts_init,
+                None,
+                Some(UUID4::from("00000000-0000-4000-8000-000000000004")),
+            )),
+        );
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::GenerateExecutionMassStatus,
+            "external.test",
+            GenerateExecutionMassStatus::new(
+                trader_id,
+                client_id,
+                Some(venue),
+                UUID4::from("00000000-0000-4000-8000-000000000005"),
+                ts_init,
+                None,
+                Some(UUID4::from("00000000-0000-4000-8000-000000000006")),
+            ),
+        );
+
+        let order_report = OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            Some(ClientOrderId::from("O-001")),
+            venue_order_id,
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("10"),
+            Quantity::from("2"),
+            UnixNanos::from(1_000_000_001),
+            UnixNanos::from(1_000_000_002),
+            UnixNanos::from(1_000_000_003),
+            Some(UUID4::from("00000000-0000-4000-8000-000000000007")),
+        );
+        let fill_report = FillReport::new(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            TradeId::from("TRADE-001"),
+            OrderSide::Buy,
+            Quantity::from("2"),
+            Price::from("1.25"),
+            Money::from("0.10 USD"),
+            LiquiditySide::Maker,
+            Some(ClientOrderId::from("O-001")),
+            Some(PositionId::from("P-001")),
+            UnixNanos::from(1_000_000_004),
+            UnixNanos::from(1_000_000_005),
+            Some(UUID4::from("00000000-0000-4000-8000-000000000008")),
+        );
+        let position_report = PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from("2"),
+            UnixNanos::from(1_000_000_006),
+            UnixNanos::from(1_000_000_007),
+            Some(UUID4::from("00000000-0000-4000-8000-000000000009")),
+            Some(PositionId::from("P-001")),
+            Some(Decimal::new(125, 2)),
+        );
+
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::OrderStatusReport,
+            "external.test",
+            order_report.clone(),
+        );
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::FillReport,
+            "external.test",
+            fill_report.clone(),
+        );
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::PositionStatusReport,
+            "external.test",
+            position_report.clone(),
+        );
+
+        let mut mass_status = ExecutionMassStatus::new(
+            client_id,
+            account_id,
+            venue,
+            UnixNanos::from(1_000_000_008),
+            Some(UUID4::from("00000000-0000-4000-8000-000000000010")),
+        );
+        mass_status.add_order_reports(vec![order_report]);
+        mass_status.add_fill_reports(vec![fill_report]);
+        mass_status.add_position_reports(vec![position_report]);
+        assert_typed_payload_round_trips(
+            encoding,
+            BusPayloadType::ExecutionMassStatus,
+            "external.test",
+            mass_status,
+        );
+    }
+
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
     fn republish_external_message_round_trips_custom_data(#[case] encoding: SerializationEncoding) {
         assert_custom_data_round_trips(encoding);
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_message_rejects_reserved_custom_metadata(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let custom = stub_custom_data(317, 42, None, Some("catalog/317".to_string()));
+        let mut envelope = serde_json::to_value(custom).unwrap();
+        envelope["data_type"]["metadata"]["identifier"] = serde_json::json!("shadow");
+        let payload = match encoding {
+            SerializationEncoding::Json => serde_json::to_vec(&envelope).unwrap(),
+            SerializationEncoding::MsgPack => rmp_serde::to_vec_named(&envelope).unwrap(),
+            SerializationEncoding::Sbe => unreachable!("custom payloads require JSON or MsgPack"),
+        };
+
+        let payload_type = BusPayloadType::Custom(Ustr::from("StubCustomData"));
+        let message = BusMessage::with_str_topic(
+            "data.custom.StubCustomData",
+            payload_type,
+            Bytes::from(payload),
+            encoding,
+        );
+        let received = Rc::new(RefCell::new(Vec::<CustomData>::new()));
+        let received_handler = received.clone();
+        subscribe_any(
+            "data.custom.StubCustomData".into(),
+            ShareableMessageHandler::from_typed(move |value: &CustomData| {
+                received_handler.borrow_mut().push(value.clone());
+            }),
+            None,
+        );
+
+        republish_external_message(&message).unwrap();
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+        let error = republish_external_message(&message).unwrap_err();
+
+        assert_eq!(
+            error.root_cause().to_string(),
+            "`identifier` is reserved for DataType catalog identity"
+        );
+        assert!(received.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn typed_processor_rejects_reserved_nested_custom_metadata(
+        #[case] encoding: SerializationEncoding,
+        #[values(false, true)] batch: bool,
+    ) {
+        let custom = stub_custom_data(317, 42, None, Some("catalog/317".to_string()));
+
+        let data: Arc<dyn Any + Send + Sync> = if batch {
+            Arc::new(vec![custom.clone()])
+        } else {
+            Arc::new(custom.clone())
+        };
+
+        let response = DataResponse::Data(CustomDataResponse {
+            correlation_id: UUID4::new(),
+            client_id: ClientId::from("CLIENT-001"),
+            venue: Some(Venue::from("SIM")),
+            data_type: custom.data_type,
+            data,
+            start: Some(UnixNanos::from(301)),
+            end: Some(UnixNanos::from(313)),
+            ts_init: UnixNanos::from(319),
+            params: None,
+        });
+
+        let mut envelope = serde_json::to_value(response).unwrap();
+        let item = if batch {
+            &mut envelope["Data"]["data"]["Batch"][0]
+        } else {
+            &mut envelope["Data"]["data"]["Scalar"]
+        };
+
+        item["value"]["data_type"]["metadata"]["identifier"] = serde_json::Value::Null;
+
+        let payload = match encoding {
+            SerializationEncoding::Json => serde_json::to_vec(&envelope).unwrap(),
+            SerializationEncoding::MsgPack => rmp_serde::to_vec_named(&envelope).unwrap(),
+            SerializationEncoding::Sbe => unreachable!("custom payloads require JSON or MsgPack"),
+        };
+
+        let message = BusMessage::with_str_topic(
+            "data.responses",
+            BusPayloadType::DataResponse,
+            Bytes::from(payload),
+            encoding,
+        );
+        let mut processed = false;
+        let error = process_external_typed_message(&message, &mut |_, _| {
+            processed = true;
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(
+            error
+                .root_cause()
+                .to_string()
+                .contains("`identifier` is reserved for DataType catalog identity")
+        );
+        assert!(!processed);
+        reset_message_bus();
     }
 
     #[rstest]
@@ -2460,7 +2954,7 @@ mod tests {
             "type": "UnregisteredCustomData",
             "data_type": {
                 "type_name": "UnregisteredCustomData",
-                "metadata": {},
+                "metadata": {"identifier": "shadow"},
             },
             "payload": {
                 "value": 1,
@@ -2473,7 +2967,7 @@ mod tests {
             SerializationEncoding::MsgPack => {
                 rmp_serde::to_vec_named(&envelope).expect("MsgPack envelope must serialize")
             }
-            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+            SerializationEncoding::Sbe => {
                 unreachable!("schema encodings do not support custom payloads")
             }
         };
@@ -2526,7 +3020,7 @@ mod tests {
         reset_message_bus();
     }
 
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     fn assert_market_data_binary_round_trips(encoding: SerializationEncoding) {
         assert_typed_external_round_trips(
             encoding,
@@ -2539,12 +3033,12 @@ mod tests {
         );
         assert_typed_external_round_trips(
             encoding,
-            BusPayloadType::OrderBookDepth10,
-            "data.book.depth10.AAPL.XNAS",
+            BusPayloadType::OrderBookDepth,
+            "data.book.depth.AAPL.XNAS",
             stub_depth10(),
-            publish_depth10,
-            subscribe_book_depth10,
-            assert_depth10_market_eq,
+            publish_depth,
+            subscribe_book_depth,
+            assert_depth_market_eq,
         );
         assert_typed_external_round_trips(
             encoding,
@@ -2617,12 +3111,6 @@ mod tests {
         assert_market_data_binary_round_trips(SerializationEncoding::Sbe);
     }
 
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn republish_external_message_round_trips_market_data_capnp() {
-        assert_market_data_binary_round_trips(SerializationEncoding::Capnp);
-    }
-
     #[rstest]
     #[case(BusPayloadType::AccountState)]
     fn republish_external_message_skips_unsupported_binary_payload(
@@ -2640,18 +3128,16 @@ mod tests {
             None,
         );
 
-        for encoding in [SerializationEncoding::Sbe, SerializationEncoding::Capnp] {
-            let message = BusMessage::with_str_topic(
-                "events.unsupported.payload",
-                payload_type,
-                Bytes::from_static(b"malformed unsupported payload"),
-                encoding,
-            );
-            get_message_bus()
-                .borrow_mut()
-                .add_streaming_type(payload_type);
-            republish_external_message(&message).unwrap();
-        }
+        let message = BusMessage::with_str_topic(
+            "events.unsupported.payload",
+            payload_type,
+            Bytes::from_static(b"malformed unsupported payload"),
+            SerializationEncoding::Sbe,
+        );
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+        republish_external_message(&message).unwrap();
 
         assert!(received.borrow().is_empty());
         reset_message_bus();
@@ -2677,6 +3163,46 @@ mod tests {
                 .contains("failed to decode JSON QuoteTick"),
             "{error:?}"
         );
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn republish_external_message_rejects_invalid_topic_and_processes_next_message() {
+        let quote = QuoteTick::default();
+        let payload = serde_json::to_vec(&quote).unwrap();
+        let invalid_message = BusMessage::with_str_topic(
+            "data.quotes.AUDUSD.SIM*",
+            BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")),
+            Bytes::from(payload.clone()),
+            SerializationEncoding::Json,
+        );
+        let valid_message = BusMessage::with_str_topic(
+            "data.quotes.AUDUSD.SIM",
+            BusPayloadType::QuoteTick,
+            Bytes::from(payload),
+            SerializationEncoding::Json,
+        );
+        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
+        let received_handler = received.clone();
+        subscribe_quotes(
+            "data.quotes.*".into(),
+            TypedHandler::from(move |quote: &QuoteTick| {
+                received_handler.borrow_mut().push(*quote);
+            }),
+            None,
+        );
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::QuoteTick);
+
+        let error = republish_external_message(&invalid_message).unwrap_err();
+        republish_external_message(&valid_message).unwrap();
+
+        assert_eq!(
+            format!("{error:#}"),
+            "invalid external message topic: Topic `value` contained invalid characters, was data.quotes.AUDUSD.SIM*"
+        );
+        assert_eq!(*received.borrow(), vec![quote]);
         reset_message_bus();
     }
 
@@ -2732,70 +3258,6 @@ mod tests {
         reset_message_bus();
     }
 
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn publish_quote_capnp_forwards_decodable_payload_to_external_egress() {
-        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
-        let quote = QuoteTick::default();
-
-        publish_quote("data.quotes.TEST".into(), &quote);
-
-        let publications = publications.borrow();
-        assert_eq!(publications.len(), 1);
-        assert_eq!(publications[0].topic, "data.quotes.TEST");
-        let reader = capnp::serialize::read_message(
-            &mut &publications[0].payload[..],
-            capnp::message::ReaderOptions::new(),
-        )
-        .expect("Cap'n Proto payload must be readable");
-        let root = reader
-            .get_root::<market_capnp::quote_tick::Reader>()
-            .expect("Cap'n Proto payload must have a QuoteTick root");
-        let decoded =
-            QuoteTick::from_capnp(root).expect("Cap'n Proto payload must decode as QuoteTick");
-        assert_eq!(decoded, quote);
-        drop(publications);
-        reset_message_bus();
-    }
-
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn publish_option_greeks_capnp_forwards_decodable_payload_to_external_egress() {
-        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
-        let greeks = option_greeks();
-
-        publish_option_greeks("data.option_greeks.TEST".into(), &greeks);
-
-        let publications = publications.borrow();
-        assert_eq!(publications.len(), 1);
-        assert_eq!(publications[0].topic, "data.option_greeks.TEST");
-        let reader = capnp::serialize::read_message(
-            &mut &publications[0].payload[..],
-            capnp::message::ReaderOptions::new(),
-        )
-        .expect("Cap'n Proto payload must be readable");
-        let root = reader
-            .get_root::<market_capnp::option_greeks::Reader>()
-            .expect("Cap'n Proto payload must have an OptionGreeks root");
-        let decoded = OptionGreeks::from_capnp(root)
-            .expect("Cap'n Proto payload must decode as OptionGreeks");
-        assert_eq!(decoded, greeks);
-        drop(publications);
-        reset_message_bus();
-    }
-
-    #[cfg(not(feature = "capnp"))]
-    #[rstest]
-    fn publish_quote_capnp_without_feature_drops_payload() {
-        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
-        let quote = QuoteTick::default();
-
-        publish_quote("data.quotes.TEST".into(), &quote);
-
-        assert!(publications.borrow().is_empty());
-        reset_message_bus();
-    }
-
     #[rstest]
     fn publish_quote_external_egress_respects_filter_and_suppress_guard() {
         let publications = install_capturing_external_egress(SerializationEncoding::MsgPack);
@@ -2818,6 +3280,61 @@ mod tests {
         assert_eq!(publications[0].topic, "data.quotes.PUBLISHED");
         drop(publications);
         reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(Vec::new()))]
+    fn publish_typed_report_external_egress_requires_external_streams(
+        #[case] external_streams: Option<Vec<String>>,
+    ) {
+        let publications = install_capturing_external_egress_config(&MessageBusConfig {
+            external_streams,
+            ..Default::default()
+        });
+
+        publish_any(
+            "reconciliation.raw.OrderStatusReport".into(),
+            &order_status_report(),
+        );
+
+        assert!(publications.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn publish_typed_report_external_egress_respects_filter() {
+        let publications = install_capturing_external_stream_egress(SerializationEncoding::Json);
+
+        get_message_bus()
+            .borrow_mut()
+            .set_types_filter(vec!["OrderStatusReport".to_string()]);
+        publish_any(
+            "reconciliation.raw.OrderStatusReport".into(),
+            &order_status_report(),
+        );
+
+        assert!(publications.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    fn order_status_report() -> OrderStatusReport {
+        OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            Some(ClientOrderId::from("O-001")),
+            VenueOrderId::from("ORDER-001"),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("10"),
+            Quantity::from("2"),
+            UnixNanos::from(1_000_000_001),
+            UnixNanos::from(1_000_000_002),
+            UnixNanos::from(1_000_000_003),
+            Some(UUID4::from("00000000-0000-4000-8000-000000000001")),
+        )
     }
 
     #[rstest]
@@ -3081,10 +3598,7 @@ mod tests {
 
     #[rstest]
     fn test_send_trading_command_allows_reentrant_topic_access() {
-        use nautilus_model::{
-            enums::OrderSide,
-            identifiers::{StrategyId, TraderId},
-        };
+        use nautilus_model::identifiers::{StrategyId, TraderId};
 
         use crate::{
             messages::execution::{TradingCommand, cancel::CancelAllOrders},
@@ -3109,7 +3623,7 @@ mod tests {
             None,
             StrategyId::new("S-001"),
             InstrumentId::from("TEST.VENUE"),
-            OrderSide::NoOrderSide,
+            None,
             UUID4::new(),
             0.into(),
             None,
@@ -3445,16 +3959,21 @@ mod tests {
         ));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<ForwardPricesResponse>(&DataResponse::ForwardPrices(
-            ForwardPricesResponse::new(
+        assert_response_handler_is_consumed::<OptionChainReferencePriceResponse>(
+            &DataResponse::OptionChainReferencePrice(OptionChainReferencePriceResponse::new(
                 correlation_id,
                 client_id,
-                venue,
-                Vec::new(),
+                OptionSeriesId::new_derived(
+                    venue,
+                    Ustr::from("BTC"),
+                    Ustr::from("BTC"),
+                    UnixNanos::from(100),
+                ),
+                Some(Price::from("50123.45")),
                 UnixNanos::default(),
                 None,
-            ),
-        ));
+            )),
+        );
 
         let correlation_id = UUID4::new();
         assert_response_handler_is_consumed::<BarsResponse>(&DataResponse::Bars(
@@ -3583,7 +4102,7 @@ mod tests {
                 None,
                 StrategyId::new("S-001"),
                 InstrumentId::from("TEST.VENUE"),
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 0.into(),
                 None,
@@ -3683,7 +4202,7 @@ mod tests {
             None,
             StrategyId::new("S-001"),
             InstrumentId::from("TEST.VENUE"),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             0.into(),
             None,
@@ -3733,7 +4252,7 @@ mod tests {
                 None,
                 StrategyId::new("S-001"),
                 InstrumentId::from("TEST.VENUE"),
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 0.into(),
                 None,
@@ -3907,8 +4426,45 @@ mod tests {
     }
 
     #[rstest]
+    fn send_any_variants_update_tap_and_count_before_handler() {
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus.clone());
+        clear_bus_tap();
+
+        let endpoint: MStr<Endpoint> = "endpoint.send.any.order.test".into();
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
+
+        let observations = Rc::new(RefCell::new(Vec::new()));
+        let observations_clone = observations.clone();
+        let handler = ShareableMessageHandler::from_any(move |message| {
+            let value = *message.downcast_ref::<u32>().unwrap();
+            observations_clone.borrow_mut().push((
+                value,
+                tap.send_endpoints(),
+                get_message_bus().borrow().sent_count(),
+            ));
+        });
+        register_any(endpoint, handler);
+
+        send_any(endpoint, &11_u32);
+        send_any_value(endpoint, &22_u32);
+
+        clear_bus_tap();
+
+        assert_eq!(
+            *observations.borrow(),
+            vec![
+                (11, vec![endpoint.to_string()], 1),
+                (22, vec![endpoint.to_string(), endpoint.to_string()], 2),
+            ]
+        );
+        assert_eq!(msgbus.borrow().sent_count(), 2);
+    }
+
+    #[rstest]
     fn set_bus_tap_then_send_endpoint_owned_invokes_tap() {
-        // send_trading_command (and the other owned send helpers) reach the tap
+        // send_trading_command and the other owned send functions reach the tap
         // through send_endpoint_owned_counted. Without this site instrumented, real
         // production order commands would bypass the audit log.
         let _msgbus = get_message_bus();
@@ -3920,7 +4476,7 @@ mod tests {
             Some(ClientId::from("BINANCE")),
             StrategyId::from("S-001"),
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             nautilus_core::UnixNanos::from(1),
             None,
@@ -3941,7 +4497,7 @@ mod tests {
 
     #[rstest]
     fn set_bus_tap_then_send_endpoint_ref_invokes_tap() {
-        // send_quote (and the other typed-ref send helpers) reach the tap through
+        // send_quote and the other typed-reference send functions reach the tap through
         // send_endpoint_ref. Mirrors the owned path coverage.
         let _msgbus = get_message_bus();
         let tap = Rc::new(RecordingTap::default());

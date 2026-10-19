@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use dashmap::DashMap;
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_model::{data::Data, identifiers::InstrumentId};
 
 use crate::websocket::{
@@ -117,7 +117,7 @@ pub(super) async fn unsubscribe_channel(
 }
 
 pub(super) fn emit_ws_message(
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
     subscriptions: &DashMap<InstrumentId, MarketStatsSubscription>,
     message: &NautilusWsMessage,
 ) -> bool {
@@ -131,7 +131,7 @@ pub(super) fn emit_ws_message(
                 return false;
             }
 
-            if let Err(e) = sender.send(DataEvent::Data(Data::MarkPriceUpdate(*mark_price))) {
+            if let Err(e) = sender.send(DataEvent::Data(Data::MarkPrice(*mark_price))) {
                 log::error!("Failed to send mark price: {e}");
             }
             true
@@ -145,7 +145,7 @@ pub(super) fn emit_ws_message(
                 return false;
             }
 
-            if let Err(e) = sender.send(DataEvent::Data(Data::IndexPriceUpdate(*index_price))) {
+            if let Err(e) = sender.send(DataEvent::Data(Data::IndexPrice(*index_price))) {
                 log::error!("Failed to send index price: {e}");
             }
             true

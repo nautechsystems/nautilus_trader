@@ -16,6 +16,12 @@
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `OrderMatchingEngine` instances.
+///
+/// With `defer_option_settlement`, automatic checks at the exact option expiry
+/// timestamp cancel orders but defer settlement to `process_instrument_expiration`.
+/// To settle at expiry, the caller schedules that call after processing the
+/// timestamp's market data. Automatic checks after expiry can also settle.
+/// Explicit contract-close events bypass this deferral.
 #[derive(Debug, Clone, Deserialize, Serialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 pub struct OrderMatchingEngineConfig {
@@ -45,6 +51,8 @@ pub struct OrderMatchingEngineConfig {
     pub queue_position: bool,
     #[builder(default)]
     pub oto_full_trigger: bool,
+    #[builder(default)]
+    pub defer_option_settlement: bool,
     pub price_protection_points: Option<u32>,
 }
 
@@ -60,10 +68,8 @@ mod tests {
 
     use super::*;
 
-    // Locks Rust defaults to the Cython per-engine constructor at
-    // nautilus_trader/backtest/engine.pyx:3882-3894.
     #[rstest]
-    fn test_default_matches_cython() {
+    fn test_default() {
         let config = OrderMatchingEngineConfig::default();
         assert!(config.bar_execution);
         assert!(!config.bar_adaptive_high_low_ordering);
@@ -78,6 +84,7 @@ mod tests {
         assert!(!config.use_market_order_acks);
         assert!(!config.queue_position);
         assert!(!config.oto_full_trigger);
+        assert!(!config.defer_option_settlement);
         assert_eq!(config.price_protection_points, None);
     }
 }

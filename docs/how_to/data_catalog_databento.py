@@ -9,8 +9,9 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`pip install nautilus_trader`)
+# - Python 3.13+
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`)
 # - [databento](https://pypi.org/project/databento/) Python client library (`pip install databento`)
 # - [Databento](https://databento.com) account with API key set as `DATABENTO_API_KEY`
 
@@ -38,12 +39,13 @@ client = db.Historical()  # Uses the DATABENTO_API_KEY environment variable
 # The response is in USD, displayed as fractional cents.
 
 # %% [markdown]
-# The following request is for a small amount of data (as used in this Medium article [Building high-frequency trading signals in Python with Databento and sklearn](https://databento.com/blog/hft-sklearn-python)) to demonstrate the workflow.
+# The following request is for a small amount of data (as used in the Databento blog post [Building high-frequency trading signals in Python with Databento and sklearn](https://databento.com/blog/hft-sklearn-python)) to demonstrate the workflow.
 
 # %%
 from pathlib import Path
 
 from databento import DBNStore
+
 
 # %% [markdown]
 # We'll prepare a directory for the raw Databento DBN format data, which we'll use for the rest of the tutorial.
@@ -64,7 +66,7 @@ client.metadata.get_cost(
 )
 
 # %% [markdown]
-# Use the historical API to request the data used in the Medium article.
+# Use the historical API to request the data used in the blog post.
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
@@ -92,14 +94,17 @@ df
 
 # %% [markdown]
 # ## Write to data catalog
+#
+# The guide writes the catalog to `catalog/` under the working directory and replaces that directory on each run.
 
 # %%
 import shutil
 from pathlib import Path
 
-from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
+from nautilus_trader.adapters.databento import DatabentoDataLoader
 from nautilus_trader.model import InstrumentId
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence import ParquetDataCatalog
+
 
 # %%
 CATALOG_PATH = Path.cwd() / "catalog"
@@ -110,7 +115,7 @@ if CATALOG_PATH.exists():
 CATALOG_PATH.mkdir()
 
 # Create a catalog instance
-catalog = ParquetDataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # %% [markdown]
 # Use a `DatabentoDataLoader` to decode and load the data into Nautilus objects.
@@ -119,41 +124,35 @@ catalog = ParquetDataCatalog(CATALOG_PATH)
 loader = DatabentoDataLoader()
 
 # %% [markdown]
-# Load Rust PyO3 objects by setting `as_legacy_cython=False`.
-#
-# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ES.GLBX").
+# Passing an `instrument_id` is optional but speeds up loading by skipping symbology mapping. If provided, use the Nautilus `symbol.venue` format (e.g., "ESZ3.GLBX").
 
 # %%
 path = DATABENTO_DATA_DIR / "es-front-glbx-mbp10.dbn.zst"
 
 # Option 1 (recommended): Let the loader infer the instrument ID from DBN metadata
-depth10 = loader.from_dbn_file(
-    path=path,
-    as_legacy_cython=False,
-)
+depth = loader.load_order_book_depth(filepath=path)
 
 # Option 2: Explicitly specify a valid Nautilus instrument ID (symbol.venue format)
 # instrument_id = InstrumentId.from_str("ESZ3.GLBX")  # E-mini S&P December 2023 futures on Globex
-# depth10 = loader.from_dbn_file(
-#     path=path,
+# depth = loader.load_order_book_depth(
+#     filepath=path,
 #     instrument_id=instrument_id,
-#     as_legacy_cython=False,
 # )
 
 # %%
 # Write data to catalog (this takes ~20 seconds or ~250,000/second for writing MBP-10 at the moment)
-catalog.write_data(depth10)
+catalog.write_order_book_depths(depth)
 
 # %%
 # Test reading from catalog
-depths = catalog.order_book_depth10()
+depths = catalog.query_order_book_depths()
 len(depths)
 
 # %% [markdown]
 # ## Preparing a month of AAPL trades
 
 # %% [markdown]
-# Now we'll expand on this workflow by preparing a month of AAPL trades on the Nasdaq exchange using the Databento `trade` schema, which will translate to Nautilus `TradeTick` objects.
+# Now we'll expand on this workflow by preparing a month of AAPL trades on the Nasdaq exchange using the Databento `trades` schema, which will translate to Nautilus `TradeTick` objects.
 
 # %%
 # Request cost quote (USD) - this endpoint is 'free'
@@ -192,15 +191,14 @@ df
 # %% [markdown]
 # We'll use an `InstrumentId` of `"AAPL.XNAS"`, where XNAS is the ISO 10383 MIC (Market Identifier Code) for the Nasdaq venue.
 #
-# Passing an `instrument_id` speeds up loading by skipping symbology mapping. Setting `as_legacy_cython=False` is more efficient when writing to the catalog.
+# Passing an `instrument_id` speeds up loading by skipping symbology mapping.
 
 # %%
 instrument_id = InstrumentId.from_str("AAPL.XNAS")
 
-trades = loader.from_dbn_file(
-    path=path,
+trades = loader.load_trades(
+    filepath=path,
     instrument_id=instrument_id,
-    as_legacy_cython=False,
 )
 
 # %% [markdown]
@@ -208,10 +206,10 @@ trades = loader.from_dbn_file(
 
 # %%
 # Write data to catalog
-catalog.write_data(trades)
+catalog.write_trade_ticks(trades)
 
 # %%
-trades = catalog.trade_ticks([instrument_id])
+trades = catalog.query_trade_ticks([str(instrument_id)])
 
 # %%
 len(trades)

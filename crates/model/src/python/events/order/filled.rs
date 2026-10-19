@@ -234,11 +234,17 @@ impl OrderFilled {
         self.order_type
     }
 
+    #[getter]
+    #[pyo3(name = "causation_id")]
+    fn py_causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
     /// Constructs an [`OrderFilled`] from a Python dict.
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if deserialization from the Python dict fails.
+    /// Returns an error if deserialization from the Python dict fails.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
@@ -249,7 +255,7 @@ impl OrderFilled {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if serialization into a Python dict fails.
+    /// Returns an error if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);

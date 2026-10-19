@@ -34,14 +34,19 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `build-info-event-store`: Includes the event-store backend version in build information logs.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
 //! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
-//! - `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
 //! - `live`: Enables the Tokio async runtime for live trading.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `sbe`: Enables Simple Binary Encoding (SBE) serialization support.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://crates.io/crates/madsim).
 //! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -95,12 +100,19 @@
 )]
 #![allow(
     clippy::inline_always,
-    reason = "hot-path helpers in throttler and clock are intentionally always inlined"
+    reason = "hot-path throttler and clock functions are intentionally always inlined"
 )]
 #![allow(
     clippy::match_same_arms,
     reason = "explicit per-variant arms document message dispatch even when bodies coincide"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 #![cfg_attr(
     test,
     allow(
@@ -119,6 +131,7 @@
 
 pub mod actor;
 pub mod cache;
+pub mod calendar;
 pub mod clients;
 pub mod clock;
 pub mod component;
@@ -129,7 +142,6 @@ pub mod factories;
 pub mod generators;
 pub mod greeks;
 pub mod logging;
-mod macros;
 pub mod messages;
 pub mod msgbus;
 pub mod providers;
@@ -140,17 +152,15 @@ pub mod throttler;
 pub mod timer;
 pub mod xrate;
 
+mod macros;
+
 #[cfg(feature = "live")]
 pub mod live;
 
 #[cfg(feature = "defi")]
 pub mod defi;
 
-#[cfg(feature = "ffi")]
-pub mod ffi;
-
 #[cfg(feature = "python")]
 pub mod python;
 
-#[cfg(feature = "capnp")]
 pub mod serialization;

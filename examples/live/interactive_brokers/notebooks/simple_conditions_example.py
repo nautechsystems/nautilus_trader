@@ -1,3 +1,7 @@
+"""
+Interactive Brokers order conditions.
+"""
+
 # ---
 # jupyter:
 #   jupytext:
@@ -6,7 +10,6 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -14,265 +17,164 @@
 # ---
 
 # %% [markdown]
-# Note: Use the jupytext python package to be able to open this python file in jupyter as a notebook.
-# Also run `jupytext-config set-default-viewer` to open jupytext python files as notebooks by default.
+# # Interactive Brokers order conditions
+#
+# This example shows the IB tag payload for time and price conditions before it configures the
+# clients. It builds offline by default. Set `IB_V2_ENABLE_ORDER_SUBMISSION=1` and
+# `IB_V2_RUN_NODE=1` only for a paper-account run.
 
 # %%
-import datetime
+from __future__ import annotations
+
+import datetime as dt
 import os
-import threading
-import time
+import sys
+from pathlib import Path
 
-from nautilus_trader.adapters.interactive_brokers.common import IB
-from nautilus_trader.adapters.interactive_brokers.common import IBContract
-from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
-from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import (
-    InteractiveBrokersInstrumentProviderConfig,
-)
-from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveDataClientFactory,
-)
-from nautilus_trader.adapters.interactive_brokers.factories import (
-    InteractiveBrokersLiveExecClientFactory,
-)
-from nautilus_trader.common.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.examples.interactive_brokers import resolve_ib_endpoint
-from nautilus_trader.execution.messages import CancelAllOrders
-from nautilus_trader.live.config import LiveDataEngineConfig
-from nautilus_trader.live.config import RoutingConfig
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model import TraderId
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orders import LimitOrder
-from nautilus_trader.trading import Strategy
-from nautilus_trader.trading.config import StrategyConfig
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from _common import build_ib_live_node
+from _common import default_es_future_instrument_id
+from _common import env_bool
+from _common import env_int
+from _common import ib_order_tags
+from _common import instrument_provider_config
+from _common import resolve_ib_endpoint
+from _common import schedule_node_stop
+from ib_v2_order_strategies import IbV2OrderStrategy
+from ib_v2_order_strategies import contract_id_from_instrument
+from ib_v2_order_strategies import env_ib_trigger_method
+from ib_v2_order_strategies import env_price
+from ib_v2_order_strategies import env_quantity
+
+from nautilus_trader.adapters import interactive_brokers as ib
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import TimeInForce
 
 
 # %%
-IB_HOST, IB_PORT = resolve_ib_endpoint("IB_EXAMPLE_HOST", "IB_EXAMPLE_PORT")
+INSTRUMENT_ID = os.getenv(
+    "IB_V2_ORDER_INSTRUMENT_ID",
+    default_es_future_instrument_id(),
+)
+
+
+# %% [markdown]
+# The first order activates after a UTC timestamp. The optional second order uses the qualified IB
+# contract ID and activates when the configured trigger price is reached.
 
 
 # %%
-class SimpleConditionsConfig(StrategyConfig, frozen=True):
-    tradable_instrument_id: str | None = "ESM6.CME"
+class ConditionsExample(IbV2OrderStrategy):
+    """
+    Conditions example.
+    """
 
+    strategy_id_value = "IB-V2-CONDITIONS-STRATEGY"
+    instrument_id_value = INSTRUMENT_ID
 
-class SimpleConditionsStrategy(Strategy):
-    def __init__(self, config: SimpleConditionsConfig) -> None:
-        super().__init__(config)
-        self.tradable_instrument_id = config.tradable_instrument_id
-        self.exec_client = None
-
-    def on_order_canceled(self, event):
-        self.log.info(f"Order canceled: {event}")
-
-    def on_order_pending_cancel(self, event):
-        self.log.info(f"Order pending cancel: {event}")
-
-    def on_start(self) -> None:
-        for instrument in self.cache.instruments():
-            if str(instrument.id) == self.tradable_instrument_id:
-                self.test_time_condition_order(instrument)
-                self.test_price_condition_order(instrument)
-
-    def test_price_condition_order(self, instrument):
-        contract_id = instrument.info.get("contract", {}).get("conId", 0)
-        price_condition = {
-            "type": "price",  # Use actual ES contract ID
-            "conId": contract_id,
-            "exchange": "CME",
-            "isMore": True,
-            "price": 6000.0,
-            "triggerMethod": 0,
-            "conjunction": "and",
-        }
-        order = LimitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=instrument.id,
-            client_order_id=self.order_factory.generate_client_order_id(),
-            order_side=OrderSide.BUY,
-            quantity=instrument.make_qty(1),
-            price=instrument.make_price(5950),
-            init_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-            time_in_force=TimeInForce.GTC,
-            tags=[IBOrderTags(conditions=[price_condition]).value],
-        )
-        self.submit_order(order)
-
-    def test_time_condition_order(self, instrument):
-        time_str = (datetime.datetime.now() + datetime.timedelta(minutes=5)).strftime(
-            "%Y%m%d-%H:%M:%S",
-        )
+    def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         time_condition = {
-            "type": "time",
-            "time": time_str,
+            "type": ib.IbConditionKind.TIME.as_str(),
+            "time": (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)).strftime(
+                "%Y%m%d-%H:%M:%S",
+            ),
             "isMore": True,
-            "conjunction": "and",
+            "conjunction": ib.IbConditionConjunction.AND.as_str(),
         }
-        order = LimitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=instrument.id,
-            client_order_id=self.order_factory.generate_client_order_id(),
-            order_side=OrderSide.SELL,
-            quantity=instrument.make_qty(1),
-            price=instrument.make_price(6100),
-            init_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-            time_in_force=TimeInForce.GTC,
-            tags=[IBOrderTags(conditions=[time_condition]).value],
+        time_order = self.limit_order(
+            self.client_order_id("TIME-CONDITION"),
+            OrderSide.SELL,
+            env_quantity("IB_V2_CONDITION_QUANTITY"),
+            env_price("IB_V2_CONDITION_TIME_LIMIT_PRICE", "6100.00"),
+            TimeInForce.GTC,
+            tags=[
+                ib_order_tags(
+                    conditions=[time_condition],
+                    conditionsCancelOrder=env_bool(
+                        "IB_V2_CONDITIONS_CANCEL_ORDER",
+                        False,
+                    ),
+                ),
+            ],
         )
-        self.submit_order(order)
+        self.submit_ib_order(time_order)
 
-    def _cancel_all_cached_orders(self, reason: str) -> None:
-        instrument_id = InstrumentId.from_str(self.tradable_instrument_id)
-        orders_open = self.cache.orders_open(instrument_id=instrument_id)
-        orders_inflight = self.cache.orders_inflight(instrument_id=instrument_id)
-        total_orders = len(orders_open) + len(orders_inflight)
-        if total_orders == 0:
+        if not env_bool("IB_V2_ENABLE_PRICE_CONDITION", True):
             return
 
-        if self.exec_client is None:
-            self.log.warning("No execution client is bound for cancel-all handling")
+        contract_id = env_int("IB_V2_CONDITION_CONTRACT_ID", 0) or (
+            contract_id_from_instrument(self.instrument)
+        )
+
+        if contract_id <= 0:
+            print("Skipping the price condition because the IB contract ID is missing.")
             return
 
-        self.log.info(f"Canceling {total_orders} cached orders for {reason}")
-        command = CancelAllOrders(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=instrument_id,
-            order_side=OrderSide.NO_ORDER_SIDE,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
+        price_condition = {
+            "type": ib.IbConditionKind.PRICE.as_str(),
+            "conId": contract_id,
+            "exchange": os.getenv("IB_V2_CONDITION_EXCHANGE", "CME"),
+            "isMore": True,
+            "price": float(os.getenv("IB_V2_CONDITION_TRIGGER_PRICE", "6000.0")),
+            "triggerMethod": env_ib_trigger_method(
+                "IB_V2_CONDITION_TRIGGER_METHOD",
+                ib.IbTriggerMethod.DEFAULT,
+            ),
+            "conjunction": ib.IbConditionConjunction.AND.as_str(),
+        }
+        price_order = self.limit_order(
+            self.client_order_id("PRICE-CONDITION"),
+            OrderSide.BUY,
+            env_quantity("IB_V2_CONDITION_QUANTITY"),
+            env_price("IB_V2_CONDITION_PRICE_LIMIT_PRICE", "5950.00"),
+            TimeInForce.GTC,
+            tags=[
+                ib_order_tags(
+                    conditions=[price_condition],
+                    conditionsCancelOrder=env_bool(
+                        "IB_V2_CONDITIONS_CANCEL_ORDER",
+                        False,
+                    ),
+                ),
+            ],
         )
-        self.exec_client.cancel_all_orders(command)
-
-    def _has_pending_cached_orders(self) -> bool:
-        instrument_id = InstrumentId.from_str(self.tradable_instrument_id)
-        return bool(
-            self.cache.orders_open(instrument_id=instrument_id)
-            or self.cache.orders_inflight(instrument_id=instrument_id),
-        )
+        self.submit_ib_order(price_order)
 
 
 # %%
-es_contract = IBContract(
-    secType="FUT",
-    exchange="CME",
-    localSymbol="ESM6",
-    lastTradeDateOrContractMonth="20260618",
-)
+def main() -> None:
+    """
+    Run the example.
+    """
+    host, port = resolve_ib_endpoint()
+    account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_ORDER_SUBMISSION") else None
+    if env_bool("IB_V2_ENABLE_ORDER_SUBMISSION") and account_id is None:
+        raise RuntimeError("Set TWS_ACCOUNT before enabling conditional order submission")
 
-contracts = [es_contract]
-tradable_instrument_id = "ESM6.CME"
+    provider_config = instrument_provider_config(load_ids=[INSTRUMENT_ID])
+    node = build_ib_live_node(
+        name="IB-V2-CONDITIONS-001",
+        trader_id="IB-V2-CONDITIONS-001",
+        host=host,
+        port=port,
+        data_client_id=env_int("IB_V2_DATA_CLIENT_ID", 1421),
+        exec_client_id=env_int("IB_V2_EXEC_CLIENT_ID", 1422),
+        account_id=account_id,
+        provider_config=provider_config,
+    )
+    node.add_strategy(ConditionsExample())
 
-
-# Configure the trading node
-instrument_provider = InteractiveBrokersInstrumentProviderConfig(
-    load_contracts=frozenset(contracts),
-    symbology_method=SymbologyMethod.IB_SIMPLIFIED,
-)
-
-config_node = TradingNodeConfig(
-    trader_id=TraderId("CONDITIONS-TESTER-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        log_level_file="INFO",
-        log_file_name=datetime.datetime.strftime(
-            datetime.datetime.now(tz=datetime.UTC),
-            "%Y-%m-%d_%H-%M",
-        )
-        + "_simple_conditions_test.log",
-        log_directory="./logs/",
-        print_config=True,
-    ),
-    data_clients={
-        IB: InteractiveBrokersDataClientConfig(
-            ibg_host=IB_HOST,
-            ibg_port=IB_PORT,
-            ibg_client_id=int(os.getenv("IB_EXAMPLE_DATA_CLIENT_ID", "1251")),
-            market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,
-            instrument_provider=instrument_provider,
-            use_regular_trading_hours=False,
-        ),
-    },
-    exec_clients={
-        IB: InteractiveBrokersExecClientConfig(
-            ibg_host=IB_HOST,
-            ibg_port=IB_PORT,
-            ibg_client_id=int(os.getenv("IB_EXAMPLE_EXEC_CLIENT_ID", "1252")),
-            account_id=os.environ.get("TWS_ACCOUNT"),
-            instrument_provider=instrument_provider,
-            routing=RoutingConfig(
-                default=True,
-            ),
-        ),
-    },
-    data_engine=LiveDataEngineConfig(
-        time_bars_timestamp_on_close=False,
-        validate_data_sequence=True,
-        time_bars_build_with_no_updates=False,
-    ),
-    timeout_connection=90.0,
-    timeout_reconciliation=5.0,
-    timeout_portfolio=5.0,
-    timeout_disconnection=5.0,
-    timeout_post_stop=10.0,
-)
-
-strat_config = SimpleConditionsConfig(
-    tradable_instrument_id=tradable_instrument_id,
-    manage_stop=True,
-    market_exit_max_attempts=400,
-    market_exit_time_in_force=TimeInForce.DAY,
-    market_exit_reduce_only=False,
-)
-strategy = SimpleConditionsStrategy(config=strat_config)
-
-# Instantiate the node with a configuration
-node = TradingNode(config=config_node)
-
-# Add your strategies and modules
-node.trader.add_strategy(strategy)
-
-# Register your client factories with the node
-node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
-node.build()
-
-exec_engine = node.kernel.exec_engine
-default_client_id = exec_engine.default_client
-if default_client_id is None:
-    raise RuntimeError("Expected an Interactive Brokers execution client to be registered")
-strategy.exec_client = exec_engine._clients[default_client_id]
-
-if __name__ == "__main__":
-    auto_stop_seconds = int(os.getenv("IB_EXAMPLE_AUTO_STOP_SECONDS", "20"))
-
-    def stop_after_delay() -> None:
-        time.sleep(auto_stop_seconds)
-        strategy._cancel_all_cached_orders("scheduled shutdown")
-        deadline = time.time() + 45
-        while time.time() < deadline:
-            if not strategy._has_pending_cached_orders():
-                break
-            time.sleep(0.25)
-        node.stop()
-
-    if auto_stop_seconds > 0:
-        threading.Thread(target=stop_after_delay, daemon=True).start()
-
-    try:
+    print(f"Built conditional-order node for {INSTRUMENT_ID}.", flush=True)
+    if env_bool("IB_V2_RUN_NODE"):
+        schedule_node_stop(node, env_int("IB_V2_AUTO_STOP_SECONDS", 20))
         node.run()
-    finally:
-        node.dispose()
+
+
+# %%
+if __name__ == "__main__":
+    main()

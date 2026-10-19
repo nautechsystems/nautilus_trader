@@ -20,9 +20,6 @@ use std::sync::LazyLock;
 use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
-/// Long-form venue identifier string.
-pub const INTERACTIVE_BROKERS: &str = "INTERACTIVE_BROKERS";
-
 /// Short-form venue identifier string used as the canonical venue and client ID.
 pub const IB: &str = "IB";
 

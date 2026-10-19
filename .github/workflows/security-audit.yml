@@ -4,12 +4,12 @@ name: security-audit
 #
 # Triggers:
 #   - Nightly cron and manual dispatch: every audit job runs unconditionally.
-#   - Pull requests: GitHub path filters create a workflow run only when
-#     audit-relevant paths change. The gate job remains as a second check
-#     before the audit jobs run.
-#   - Pushes to develop / master / test-security: GitHub path filters create a
-#     workflow run only when audit-relevant paths change. The gate job remains as
-#     a second check before the audit jobs run.
+#   - Calls from build.yml: audit jobs run for audit-relevant changes, while
+#     test-ci and test-pre-commit force every audit job and nightly skips them.
+#   - Pull requests not targeting develop: GitHub path filters create a workflow
+#     run only when audit-relevant paths change.
+#   - Pushes to test-security: GitHub path filters create a workflow run only
+#     when audit-relevant paths change.
 
 permissions:
   contents: read
@@ -23,39 +23,71 @@ env:
     || 'block' }}
 
 on:
+  workflow_call:
+    inputs:
+      force:
+        description: Run every audit job regardless of changed paths
+        type: boolean
+        default: false
+      skip:
+        description: Complete the audit gate without running audit jobs
+        type: boolean
+        default: false
   pull_request:
+    branches-ignore: [develop]
     paths: &security_audit_paths
       - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.toml
       - crates/**/Cargo.toml
       - crates/**/fuzz/Cargo.lock
-      - uv.lock
-      - pyproject.toml
       - .pre-commit-config.yaml
       - python/uv.lock
       - python/pyproject.toml
       - deny.toml
       - .cargo/deny-fuzz.toml
       - osv-scanner.toml
+      - security-audit.toml
       - .supply-chain/**
+      - .nautilus-engineering/tools.toml
       - tools.toml
       - .cargo/config.toml
       - .cargo/audit.toml
       - rust-toolchain.toml
       - scripts/cargo-tool-version.sh
+      - scripts/install-osv-scanner.sh
+      - scripts/install-security-tools.sh
+      - scripts/purge-orphan-dev-wheels.sh
       - scripts/rust-toolchain.sh
+      - scripts/security-audit.py
+      - scripts/tool-version.sh
       - scripts/uv-version.sh
+      - scripts/ci/check-security-audit-result.sh
+      - scripts/ci/check-security-gate-result.bash
+      - scripts/ci/configure-r2-aws.bash
+      - scripts/ci/create-docker-manifest.bash
+      - scripts/ci/merge-nightly.bash
+      - scripts/ci/package-cli-artifact.bash
+      - scripts/ci/plan-nightly-merge.bash
+      - scripts/ci/plan-wheel-publication.bash
+      - scripts/ci/publish-wheels*
+      - scripts/ci/save-docker-digest.bash
       - scripts/ci/security-audit-gate.sh
-      - .zizmor.yml
+      - scripts/ci/select-attestation-bundle.bash
+      - scripts/ci/test-publish-wheels.bash
+      - scripts/ci/update-pyproject-version.sh
+      - scripts/ci/validate-wheel-artifacts.bash
+      - scripts/ci/validate-wheel-upload.bash
       - .github/actions/**
       - .github/workflows/**
   push:
-    branches: [develop, master, test-security]
+    branches: [test-security]
     paths: *security_audit_paths
   schedule:
     - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
+# The two audit job names and their "Run ..." step names are checked by
+# scripts/ci/check-security-audit-result.sh. Keep both files in sync.
 jobs:
   changes:
     name: changes
@@ -63,14 +95,16 @@ jobs:
     outputs:
       audit_needed: ${{ steps.filter.outputs.audit_needed }}
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -80,11 +114,19 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
+          FORCE_AUDIT: ${{ inputs.force }}
+          SKIP_AUDIT: ${{ inputs.skip }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
-        run: bash scripts/ci/security-audit-gate.sh
+        run: |
+          if [ "$SKIP_AUDIT" = "true" ]; then
+            export SKIP_SECURITY_AUDIT=true
+          elif [ "$FORCE_AUDIT" = "true" ]; then
+            export FORCE_SECURITY_AUDIT=true
+          fi
+          bash scripts/ci/security-audit-gate.sh
 
   zizmor:
     name: zizmor
@@ -96,7 +138,8 @@ jobs:
       actions: read
       security-events: write
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -104,7 +147,8 @@ jobs:
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -113,17 +157,19 @@ jobs:
         run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        # https://github.com/astral-sh/setup-uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           enable-cache: true
+          prune-cache: true
 
       - name: Run zizmor
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          uv run --no-project --with zizmor==1.24.1 -- \
-            zizmor --format sarif --min-severity medium --config .zizmor.yml .github/ \
+          uv run --no-project --with "zizmor==$(bash scripts/tool-version.sh zizmor)" -- \
+            zizmor --strict-collection --format sarif --min-severity informational .github/ \
             > zizmor.sarif
 
       - name: Upload zizmor SARIF
@@ -132,18 +178,20 @@ jobs:
           hashFiles('zizmor.sarif') != '' &&
           (github.event_name != 'pull_request' ||
           !github.event.pull_request.head.repo.fork)
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        # https://github.com/github/codeql-action
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: zizmor.sarif
           category: zizmor
 
-  cargo-audit:
-    name: cargo-audit
+  supply-chain:
+    name: supply-chain
     needs: changes
     if: needs.changes.outputs.audit_needed == 'true'
     runs-on: ubuntu-22.04
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
@@ -151,144 +199,100 @@ jobs:
             ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Install cargo-audit
-        uses: ./.github/actions/cargo-tool-install
+      - name: Get Rust toolchain version
+        id: rust-toolchain
+        run: echo "toolchain=$(bash scripts/rust-toolchain.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Rust toolchain
+        # https://github.com/actions-rust-lang/setup-rust-toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
-          tool-name: cargo-audit
+          toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
+          override: true
+          rustflags: -D warnings
+          build-warnings: ""
 
-      - name: Run cargo-audit
-        run: |
-          cargo audit
-          cargo audit --file crates/adapters/lighter/fuzz/pornin/Cargo.lock
-
-  cargo-deny:
-    name: cargo-deny
-    needs: changes
-    if: needs.changes.outputs.audit_needed == 'true'
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      - name: Cache supply-chain tools
+        # https://github.com/actions/cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
+          path: |-
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-vet
+            ~/.cargo/bin/osv-scanner
+          key: >-
+            supply-chain-tools-${{ runner.os }}-${{
+            hashFiles('.nautilus-engineering/tools.toml', 'rust-toolchain.toml') }}
 
-      - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-deny
-        uses: ./.github/actions/cargo-tool-install
-        with:
-          tool-name: cargo-deny
-
-      - name: Run cargo-deny (advisories, licenses, sources, bans)
-        run: |
-          cargo deny --all-features check advisories licenses sources bans
-          cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
-            --config .cargo/deny-fuzz.toml --locked --all-features check \
-            advisories licenses sources bans
-
-  cargo-vet:
-    name: cargo-vet
-    needs: changes
-    if: needs.changes.outputs.audit_needed == 'true'
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
-
-      - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-vet
-        uses: ./.github/actions/cargo-tool-install
-        with:
-          tool-name: cargo-vet
-
-      - name: Run cargo-vet
-        run: |
-          cargo vet --locked
-          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
-            --store-path .supply-chain
-
-  pip-audit:
-    name: pip-audit
-    needs: changes
-    if: needs.changes.outputs.audit_needed == 'true'
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
-        with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
-
-      - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
-
-      - name: Get uv version from pyproject.toml
-        shell: bash
-        run: |
-          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
+      - name: Get uv version
+        id: uv-version
+        run: echo "version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        # https://github.com/astral-sh/setup-uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: ${{ env.UV_VERSION }}
+          version: ${{ steps.uv-version.outputs.version }}
+          prune-cache: true
 
       - name: Install Python
-        run: uv python install 3.13
+        run: uv python install 3.14
 
-      - name: Run pip-audit
-        # aiohttp 3.14.0 fixes these advisories, but remains inside uv's 3-day
-        # exclude-newer window while aiohttp source builds are disabled.
-        run: >
-          uv export --no-hashes --frozen |
-          uv run --no-project --no-build --with "pip-audit==$(bash scripts/tool-version.sh pip-audit)" --
-          pip-audit --disable-pip --no-deps -r /dev/stdin
-          --ignore-vuln GHSA-jg22-mg44-37j8
-          --ignore-vuln GHSA-hg6j-4rv6-33pg
+      - name: Install supply-chain tools
+        run: bash scripts/install-security-tools.sh
 
-  osv-scanner:
-    name: osv-scanner
-    needs: changes
-    if: needs.changes.outputs.audit_needed == 'true'
+      - name: Run supply-chain audits
+        run: uv run --project python --no-sync --no-build -- python scripts/security-audit.py run
+
+  audit-result:
+    name: audit-result
+    if: always()
+    needs:
+      - changes
+      - zizmor
+      - supply-chain
     runs-on: ubuntu-22.04
+    env:
+      AUDIT_NEEDED: ${{ needs.changes.outputs.audit_needed }}
+      CHANGES_RESULT: ${{ needs.changes.result }}
+      ZIZMOR_RESULT: ${{ needs.zizmor.result }}
+      SUPPLY_CHAIN_RESULT: ${{ needs.supply-chain.result }}
     steps:
-      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ env.EGRESS_POLICY }}
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.SECURITY_AUDIT_ALLOWED_ENDPOINTS }}
 
-      - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          persist-credentials: false
+      - name: Require the planned audit result
+        shell: bash
+        run: |-
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::Security audit planning did not succeed"
+            exit 1
+          fi
 
-      - name: Run osv-scanner
-        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
-        with:
-          scan-args: |-
-            --config=osv-scanner.toml
-            --lockfile=Cargo.lock
-            --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock
-            --lockfile=uv.lock
-            --lockfile=python/uv.lock
+          if [ "$AUDIT_NEEDED" = "true" ]; then
+            expected=success
+          elif [ "$AUDIT_NEEDED" = "false" ]; then
+            expected=skipped
+          else
+            echo "::error::Security audit planning produced no decision"
+            exit 1
+          fi
+
+          for result in \
+            "$ZIZMOR_RESULT" \
+            "$SUPPLY_CHAIN_RESULT"; do
+            if [ "$result" != "$expected" ]; then
+              echo "::error::Expected audit job result $expected, found $result"
+              exit 1
+            fi
+          done

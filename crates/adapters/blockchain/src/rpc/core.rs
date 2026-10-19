@@ -16,7 +16,8 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use alloy::primitives::Address;
-use nautilus_core::consts::NAUTILUS_USER_AGENT;
+use nautilus_core::string::secret::{REDACTED, SecretString};
+use nautilus_live::SocketControl;
 #[cfg(feature = "hypersync")]
 use nautilus_model::defi::DexType;
 use nautilus_model::defi::{
@@ -25,7 +26,7 @@ use nautilus_model::defi::{
 };
 use nautilus_network::{
     RECONNECTED,
-    http::USER_AGENT,
+    http::create_standard_nautilus_headers,
     websocket::{TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler},
 };
 use tokio_tungstenite::tungstenite::Message;
@@ -67,17 +68,18 @@ pub struct CoreBlockchainRpcClient {
     wss_consumer_rx: Option<tokio::sync::mpsc::UnboundedReceiver<Message>>,
     /// Tracks desired subscriptions that need to be re-established on reconnection.
     subscriptions: Arc<tokio::sync::RwLock<HashMap<RpcEventType, RpcSubscription>>>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     transport_backend: TransportBackend,
     /// Optional proxy URL for the WebSocket connection.
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for CoreBlockchainRpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(CoreBlockchainRpcClient))
             .field("chain", &self.chain)
-            .field("wss_rpc_url", &self.wss_rpc_url)
+            .field("wss_rpc_url", &REDACTED)
             .field("request_id", &self.request_id)
             .field(
                 "pending_subscription_request",
@@ -149,7 +151,8 @@ impl CoreBlockchainRpcClient {
             wss_consumer_rx: None,
             subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             transport_backend: TransportBackend::default(),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
+            socket_control: None,
         }
     }
 
@@ -165,6 +168,11 @@ impl CoreBlockchainRpcClient {
         self.transport_backend = backend;
     }
 
+    /// Configures socket state reporting and reconnect control.
+    pub fn set_socket_control(&mut self, control: SocketControl) {
+        self.socket_control = Some(control);
+    }
+
     /// Establishes a WebSocket connection to the blockchain node and sets up the message channel.
     ///
     /// Configures automatic reconnection with exponential backoff and subscription re-establishment.
@@ -178,25 +186,41 @@ impl CoreBlockchainRpcClient {
 
         // Most blockchain RPC nodes require a heartbeat to keep the connection alive
         let heartbeat_interval = 30;
+        let headers = create_standard_nautilus_headers();
 
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
-            headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
-            heartbeat: Some(heartbeat_interval),
-            heartbeat_msg: None,
-            reconnect_timeout_ms: Some(10_000),
+            headers,
+            heartbeat_interval_secs: Some(heartbeat_interval),
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(10_000),
             reconnect_delay_initial_ms: Some(1_000),
             reconnect_delay_max_ms: Some(30_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(1_000),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
 
-        let client =
-            WebSocketClient::connect(config, Some(handler), None, None, vec![], None).await?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await?;
+        let reconnect_handle = client.reconnect_handle();
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);
@@ -352,10 +376,7 @@ impl CoreBlockchainRpcClient {
 
     /// Waits for and returns the next available message from the WebSocket channel.
     pub async fn wait_on_rpc_channel(&mut self) -> Option<Message> {
-        match &mut self.wss_consumer_rx {
-            Some(rx) => rx.recv().await,
-            None => None,
-        }
+        self.wss_consumer_rx.as_mut()?.recv().await
     }
 
     /// Retrieves, parses, and returns the next blockchain RPC message as a structured `BlockchainRpcMessage` type.
@@ -447,7 +468,8 @@ impl CoreBlockchainRpcClient {
                                                 json
                                             ) {
                                                 Ok(block_response) => {
-                                                    let block = block_response.params.result;
+                                                    let mut block = block_response.params.result;
+                                                    block.set_chain(self.chain.name);
                                                     Ok(BlockchainMessage::Block(block))
                                                 }
                                                 Err(e) => Err(
@@ -658,10 +680,35 @@ impl CoreBlockchainRpcClient {
 #[cfg(test)]
 mod tests {
     use alloy::primitives::address;
-    use nautilus_model::defi::{Chain, DexType};
+    use nautilus_model::defi::{Blockchain, Chain, DexType};
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn debug_redacts_websocket_rpc_url() {
+        const USERINFO_SECRET: &str = "core-wss-userinfo-secret";
+        const PATH_SECRET: &str = "core-wss-path-secret";
+        const QUERY_SECRET: &str = "core-wss-query-secret";
+        let wss_rpc_url = format!(
+            "wss://rpc-user:{USERINFO_SECRET}@rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}"
+        );
+        let client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            wss_rpc_url.clone(),
+            None,
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("wss_rpc_url: \"<redacted>\""));
+        assert!(!debug.contains(USERINFO_SECRET));
+        assert!(!debug.contains(PATH_SECRET));
+        assert!(!debug.contains(QUERY_SECRET));
+        assert!(!debug.contains(&wss_rpc_url));
+    }
 
     #[rstest]
     fn pool_logs_subscription_params_use_logs_filter_with_sorted_addresses() {
@@ -753,5 +800,55 @@ mod tests {
             .expect_err("unsubscribe ack should be skipped");
 
         assert!(matches!(error, BlockchainRpcClientError::NoMessageReceived));
+    }
+
+    #[tokio::test]
+    async fn next_rpc_message_sets_client_chain_on_new_block() {
+        let mut client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(8453)
+                .expect("Base chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        client
+            .subscription_event_types
+            .insert("0xblocks".to_string(), RpcEventType::NewBlock);
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.wss_consumer_rx = Some(rx);
+        tx.send(Message::Text(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "eth_subscription",
+                "params": {
+                    "subscription": "0xblocks",
+                    "result": {
+                        "hash": "0xabc",
+                        "number": "0x10",
+                        "parentHash": "0xdef",
+                        "miner": "0x0000000000000000000000000000000000000001",
+                        "gasLimit": "0x1c9c380",
+                        "gasUsed": "0x5208",
+                        "timestamp": "0x6553f100"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .expect("block notification should enqueue");
+
+        let message = client
+            .next_rpc_message()
+            .await
+            .expect("block notification should parse");
+
+        let BlockchainMessage::Block(block) = message else {
+            panic!("expected block message");
+        };
+
+        assert_eq!(block.chain(), Blockchain::Base);
+        assert_eq!(block.number, 16);
+        assert_eq!(block.hash, "0xabc");
     }
 }

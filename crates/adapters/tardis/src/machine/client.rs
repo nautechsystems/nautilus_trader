@@ -13,15 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    fmt::Debug,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use ahash::AHashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_model::data::Data;
-use ustr::Ustr;
+use nautilus_network::url_origin;
 
 use super::{
     Error,
@@ -40,13 +43,13 @@ use crate::{
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.tardis")
 )]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TardisMachineClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
@@ -55,6 +58,20 @@ pub struct TardisMachineClient {
     pub normalize_symbols: bool,
     pub book_snapshot_output: BookSnapshotOutput,
     pub extract_bbo_as_quotes: bool,
+}
+
+impl Debug for TardisMachineClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TardisMachineClient))
+            .field("base_url", &url_origin(&self.base_url))
+            .field("replay_signal", &self.replay_signal)
+            .field("stream_signal", &self.stream_signal)
+            .field("instruments", &self.instruments)
+            .field("normalize_symbols", &self.normalize_symbols)
+            .field("book_snapshot_output", &self.book_snapshot_output)
+            .field("extract_bbo_as_quotes", &self.extract_bbo_as_quotes)
+            .finish()
+    }
 }
 
 impl TardisMachineClient {
@@ -194,15 +211,14 @@ where
                             yield Ok(data);
                         }
                     } else {
-                        log::error!("Missing instrument info for message: {msg:?}");
+                        log::debug!("Missing instrument info for message: {msg:?}");
                         yield Err(Error::ConnectionClosed {
-                            reason: "Missing instrument definition info".to_string()
+                            reason: super::MISSING_INSTRUMENT_INFO.to_string()
                         });
                         break;
                     }
                 }
                 Err(e) => {
-                    log::warn!("Error in WebSocket stream: {e:?}");
                     yield Err(e);
                     break;
                 }
@@ -216,20 +232,12 @@ pub fn determine_instrument_info(
     instrument_map: &AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>,
 ) -> Option<Arc<TardisInstrumentMiniInfo>> {
     let key = match msg {
-        WsMessage::BookChange(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
-        }
-        WsMessage::BookSnapshot(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
-        }
-        WsMessage::Trade(msg) => TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange),
-        WsMessage::TradeBar(msg) => TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange),
-        WsMessage::DerivativeTicker(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
-        }
-        WsMessage::OptionSummary(msg) => {
-            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange)
-        }
+        WsMessage::BookChange(msg) => TardisInstrumentKey::new(msg.symbol, msg.exchange),
+        WsMessage::BookSnapshot(msg) => TardisInstrumentKey::new(msg.symbol, msg.exchange),
+        WsMessage::Trade(msg) => TardisInstrumentKey::new(msg.symbol, msg.exchange),
+        WsMessage::TradeBar(msg) => TardisInstrumentKey::new(msg.symbol, msg.exchange),
+        WsMessage::DerivativeTicker(msg) => TardisInstrumentKey::new(msg.symbol, msg.exchange),
+        WsMessage::OptionSummary(msg) => TardisInstrumentKey::new(msg.symbol, msg.exchange),
         WsMessage::Disconnect(_) => return None,
     };
 
@@ -246,6 +254,21 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest::rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client =
+            TardisMachineClient::new(Some(url), true, BookSnapshotOutput::default()).unwrap();
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("base_url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.base_url, url);
+    }
 
     #[rstest]
     fn test_is_closed_initial_state() {

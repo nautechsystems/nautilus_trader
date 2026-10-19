@@ -17,7 +17,10 @@
 //!
 //! These models represent Binance venue-specific response types decoded from SBE.
 
-use nautilus_core::{UUID4, nanos::UnixNanos};
+use std::fmt::Debug;
+
+use anyhow::Context;
+use nautilus_core::{UUID4, nanos::UnixNanos, string::secret::SecretString};
 use nautilus_model::{
     enums::AccountType,
     events::AccountState,
@@ -25,17 +28,20 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money},
 };
 use rust_decimal::Decimal;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     common::{
         enums::{
             BinanceOrderStatus, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
         },
-        parse::parse_micros_or_init,
+        parse::{account_balance_from_free_locked, parse_micros_or_init, sbe_mantissa_to_decimal},
     },
     spot::sbe::spot::{
-        order_side::OrderSide, order_status::OrderStatus, order_type::OrderType,
-        self_trade_prevention_mode::SelfTradePreventionMode, time_in_force::TimeInForce,
+        contingency_type::ContingencyType, list_order_status::ListOrderStatus,
+        list_status_type::ListStatusType, order_side::OrderSide, order_status::OrderStatus,
+        order_type::OrderType, self_trade_prevention_mode::SelfTradePreventionMode,
+        time_in_force::TimeInForce,
     },
 };
 
@@ -226,6 +232,49 @@ pub struct BinanceCancelOrderResponse {
     pub symbol: String,
 }
 
+/// One order identity in a canceled order list.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinanceCancelOrderListOrder {
+    /// Trading pair symbol.
+    pub symbol: String,
+    /// Exchange order ID.
+    pub order_id: i64,
+    /// Original client order ID.
+    pub client_order_id: String,
+}
+
+/// Cancel order-list response.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinanceCancelOrderListResponse {
+    /// Exchange order-list ID.
+    pub order_list_id: i64,
+    /// Contingency type.
+    pub contingency_type: ContingencyType,
+    /// List status type.
+    pub list_status_type: ListStatusType,
+    /// Aggregate list order status.
+    pub list_order_status: ListOrderStatus,
+    /// Transaction time in microseconds.
+    pub transaction_time: i64,
+    /// Client order ID for the order list.
+    pub list_client_order_id: String,
+    /// Trading pair symbol.
+    pub symbol: String,
+    /// Orders in the list.
+    pub orders: Vec<BinanceCancelOrderListOrder>,
+    /// Canceled child order reports.
+    pub order_reports: Vec<BinanceCancelOrderResponse>,
+}
+
+/// One item returned by canceling all open orders.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BinanceCancelOpenOrdersResponse {
+    /// An ordinary canceled order.
+    Order(BinanceCancelOrderResponse),
+    /// A canceled order list and its child reports.
+    OrderList(BinanceCancelOrderListResponse),
+}
+
 /// Query order response.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinanceOrderResponse {
@@ -323,28 +372,33 @@ pub struct BinanceAccountInfo {
 
 impl BinanceAccountInfo {
     /// Converts this Binance account info to a Nautilus [`AccountState`].
-    #[must_use]
-    pub fn to_account_state(&self, account_id: AccountId, ts_init: UnixNanos) -> AccountState {
+    ///
+    /// An empty venue balance list still returns one zero USDT balance. A conversion error does
+    /// not use that placeholder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a balance mantissa and exponent cannot be converted to a decimal, if
+    /// free and locked overflow when added, or if an amount cannot be represented as money.
+    pub fn to_account_state(
+        &self,
+        account_id: AccountId,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<AccountState> {
         let mut balances = Vec::with_capacity(self.balances.len());
 
         for asset in &self.balances {
+            let free = sbe_mantissa_to_decimal(asset.free_mantissa, asset.exponent)
+                .with_context(|| format!("failed to convert free balance for {}", asset.asset))?;
+            let locked = sbe_mantissa_to_decimal(asset.locked_mantissa, asset.exponent)
+                .with_context(|| format!("failed to convert locked balance for {}", asset.asset))?;
             let currency =
                 Currency::get_or_create_crypto_with_context(&asset.asset, Some("spot balance"));
-
-            let exponent = asset.exponent as i32;
-            let multiplier = Decimal::new(1, (-exponent) as u32);
-
-            let free = Decimal::new(asset.free_mantissa, 0) * multiplier;
-            let locked = Decimal::new(asset.locked_mantissa, 0) * multiplier;
-            let total = free + locked;
-
-            match AccountBalance::from_total_and_locked(total, locked, currency) {
-                Ok(balance) => balances.push(balance),
-                Err(e) => log::warn!("Skipping spot balance for {}: {e}", currency.code.as_str()),
-            }
+            let balance = account_balance_from_free_locked(&asset.asset, free, locked, currency)?;
+            balances.push(balance);
         }
 
-        // Ensure at least one balance exists
+        // Ensure at least one balance exists when the venue reported none.
         if balances.is_empty() {
             let zero_currency = Currency::USDT();
             let zero_money = Money::zero(zero_currency);
@@ -355,7 +409,7 @@ impl BinanceAccountInfo {
         let ts_event =
             parse_micros_or_init(self.update_time, "Spot SBE account update time", ts_init);
 
-        AccountState::new(
+        Ok(AccountState::new(
             account_id,
             AccountType::Cash,
             balances,
@@ -365,7 +419,7 @@ impl BinanceAccountInfo {
             ts_event,
             ts_init,
             None, // No base currency for spot
-        )
+        ))
     }
 }
 
@@ -395,6 +449,21 @@ pub struct BinanceLotSizeFilterSbe {
     pub step_size: i64,
 }
 
+/// Decoded Binance Spot notional filter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinanceNotionalFilter {
+    /// Minimum quote-currency amount.
+    pub min: Decimal,
+    /// Maximum quote-currency amount, when specified.
+    pub max: Option<Decimal>,
+    /// Whether the minimum applies to market orders.
+    pub apply_min_to_market: bool,
+    /// Whether the maximum applies to market orders.
+    pub apply_max_to_market: bool,
+    /// Venue average-price window in minutes.
+    pub avg_price_mins: u32,
+}
+
 /// Symbol filters from SBE response.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BinanceSymbolFiltersSbe {
@@ -402,6 +471,8 @@ pub struct BinanceSymbolFiltersSbe {
     pub price_filter: Option<BinancePriceFilterSbe>,
     /// Lot size filter (required for trading).
     pub lot_size_filter: Option<BinanceLotSizeFilterSbe>,
+    /// Exact notional rules and their market applicability.
+    pub notional_filters: Vec<BinanceNotionalFilter>,
 }
 
 /// Symbol information from SBE exchange info response.
@@ -497,6 +568,18 @@ pub struct BinanceSymbolFilterJson {
     pub max_qty: Option<String>,
     /// Quantity step size.
     pub step_size: Option<String>,
+    /// Minimum quote notional.
+    pub min_notional: Option<String>,
+    /// Maximum quote notional.
+    pub max_notional: Option<String>,
+    /// Legacy minimum market applicability.
+    pub apply_to_market: Option<bool>,
+    /// Range minimum market applicability.
+    pub apply_min_to_market: Option<bool>,
+    /// Range maximum market applicability.
+    pub apply_max_to_market: Option<bool>,
+    /// Venue average-price window in minutes.
+    pub avg_price_mins: Option<u32>,
 }
 
 /// Account-specific Spot commission response.
@@ -505,7 +588,7 @@ pub struct BinanceSymbolFilterJson {
 pub struct BinanceAccountCommission {
     /// Venue symbol.
     pub symbol: String,
-    /// Standard commission rates representable on a Nautilus instrument.
+    /// Standard maker and taker commission rates from the venue.
     pub standard_commission: BinanceCommissionRates,
 }
 
@@ -575,11 +658,19 @@ pub struct BinanceKlines {
 }
 
 /// Listen key response for user data stream.
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "camelCase")]
 pub struct ListenKeyResponse {
     /// The listen key for WebSocket user data stream.
-    pub listen_key: String,
+    pub listen_key: SecretString,
+}
+
+impl ListenKeyResponse {
+    /// Consumes the response and returns the listen key.
+    #[must_use]
+    pub fn into_listen_key(mut self) -> SecretString {
+        std::mem::take(&mut self.listen_key)
+    }
 }
 
 /// 24-hour ticker statistics response.
@@ -856,15 +947,27 @@ pub struct BinanceKline {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use zeroize::Zeroize;
 
     use super::*;
     use crate::common::testing::load_fixture_string;
 
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
     #[rstest]
     fn test_listen_key_response_deserialize() {
+        assert_zeroize_on_drop::<ListenKeyResponse>();
+
         let json = r#"{"listenKey": "abc123xyz"}"#;
-        let response: ListenKeyResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.listen_key, "abc123xyz");
+        let mut response: ListenKeyResponse = serde_json::from_str(json).unwrap();
+
+        let debug = format!("{response:?}");
+        assert_eq!(response.listen_key.expose_secret(), "abc123xyz");
+        assert_eq!(debug, "ListenKeyResponse { listen_key: <redacted> }");
+        assert!(!debug.contains(response.listen_key.expose_secret()));
+
+        response.zeroize();
+        assert!(response.listen_key.expose_secret().is_empty());
     }
 
     #[rstest]
@@ -981,5 +1084,117 @@ mod tests {
         assert_eq!(response.symbol, "BNBBTC");
         assert_eq!(response.last_price, "4.00000200");
         assert_eq!(response.count, 76);
+    }
+
+    fn account_info(balances: Vec<BinanceBalance>) -> BinanceAccountInfo {
+        BinanceAccountInfo {
+            commission_exponent: -8,
+            maker_commission_mantissa: 10,
+            taker_commission_mantissa: 10,
+            buyer_commission_mantissa: 0,
+            seller_commission_mantissa: 0,
+            can_trade: true,
+            can_withdraw: true,
+            can_deposit: true,
+            require_self_trade_prevention: false,
+            prevent_sor: false,
+            update_time: 1_700_000_000_000_000,
+            account_type: "SPOT".to_string(),
+            balances,
+        }
+    }
+
+    fn balance(asset: &str, exponent: i8, free: i64, locked: i64) -> BinanceBalance {
+        BinanceBalance {
+            asset: asset.to_string(),
+            free_mantissa: free,
+            locked_mantissa: locked,
+            exponent,
+        }
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_keeps_exact_balance() {
+        let info = account_info(vec![balance("BTC", -8, 100_000_000, 50_000_000)]);
+
+        let state = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(
+            state.balances[0].total.as_decimal(),
+            Decimal::from_str_exact("1.5").unwrap()
+        );
+        assert_eq!(
+            state.balances[0].locked.as_decimal(),
+            Decimal::from_str_exact("0.5").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_positive_exponent_is_exact() {
+        let info = account_info(vec![balance("BTC", 2, 42, 7)]);
+
+        let state = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap();
+
+        assert_eq!(state.balances[0].total.as_decimal(), Decimal::from(4_900));
+        assert_eq!(state.balances[0].locked.as_decimal(), Decimal::from(700));
+    }
+
+    #[rstest]
+    #[case::scale_above_max(-29_i8, 1_i64)]
+    #[case::min_exponent(i8::MIN, 1_i64)]
+    #[case::positive_overflow(29_i8, 1_i64)]
+    #[case::product_overflow(18_i8, i64::MAX)]
+    fn test_account_info_to_account_state_rejects_unrepresentable_balance(
+        #[case] exponent: i8,
+        #[case] mantissa: i64,
+    ) {
+        let info = account_info(vec![
+            balance("BTC", -8, 100_000_000, 0),
+            balance("ETH", exponent, mantissa, mantissa),
+        ]);
+
+        let err = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains(&exponent.to_string()), "{message}");
+    }
+
+    #[rstest]
+    #[case::free_overflow(i64::MAX, 1_i64)]
+    #[case::locked_overflow(1_i64, i64::MAX)]
+    fn test_account_info_to_account_state_rejects_one_sided_overflow(
+        #[case] free: i64,
+        #[case] locked: i64,
+    ) {
+        let info = account_info(vec![balance("ETH", 10, free, locked)]);
+
+        let err = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains("10"), "{message}");
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_empty_list_uses_zero_usdt() {
+        let info = account_info(vec![]);
+
+        let state = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(state.balances[0].currency, Currency::USDT());
+        assert!(state.balances[0].total.is_zero());
     }
 }

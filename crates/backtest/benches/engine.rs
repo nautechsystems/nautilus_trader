@@ -15,26 +15,38 @@
 
 //! End-to-end benchmarks for the v2 [`BacktestEngine`] run path.
 //!
-//! Each case builds a full engine with a simulated venue, instrument, market data, and optional
-//! strategy outside the measured section. The timed section is `BacktestEngine::run`, while
-//! teardown happens after timing so global message-bus cleanup does not pollute the run profile.
+//! Each case runs a full engine with a simulated venue, instrument, market data, and optional
+//! strategy. Existing groups and `canonical/run_preloaded` build outside the measured section and
+//! time `BacktestEngine::run`. `canonical/load_build_run` includes data loading and engine setup.
+//! Teardown happens after timing so global message-bus cleanup does not pollute either profile.
 //!
 //! Workloads:
+//! - `canonical/run_preloaded`: replay-only, scheduled market-order, passive limit-order, and
+//!   bar-EMA workloads over the same preloaded checked-in data.
+//! - `canonical/load_build_run`: the same four workloads including CSV loading, engine setup, and
+//!   `BacktestEngine::run`.
+//! - `canonical/*/<scenario>_typed`: the same workloads under both boundaries with quotes and bars
+//!   submitted as two typed batches through `BacktestEngine::add_data_batch`.
 //! - `market_data_replay`: interleaved quote and trade ticks with no strategy orders.
 //! - `market_data_replay_4_streams`: the same events split across four streams to exercise heap
-//!   merging.
+//!   merging, with a separate two-instrument case.
 //! - `alternating_market_orders`: quote-driven strategy submitting market orders through the full
 //!   strategy, risk, execution client, exchange, matching engine, cache, and portfolio path.
+//! - `accumulating_market_orders`: the same full-stack path with one growing netting position, so
+//!   order cost is measured against increasing account and position histories.
 //! - `passive_limit_orders`: quote-driven strategy accumulating resting limit orders so
 //!   `OrderMatchingCore` maintains passive order state while quote and trade ticks iterate.
 //! - `gtd_limit_expiry`: quote-driven strategy submitting passive GTD limit orders which expire
 //!   on following trade ticks.
-//! - `data_routes`: bar, L2 delta, depth10, mark/index price, funding, status, and close event
+//! - `data_routes`: bar, L2 delta, depth, mark/index price, funding, status, and close event
 //!   routing through the engine and simulated exchange.
 //! - `order_type_sweep`: one strategy submits market, limit, stop, touched, and trailing orders
 //!   while quote and trade ticks drive matching and trigger evaluation.
 //!
 //! Run with `cargo bench -p nautilus-backtest --bench engine`.
+
+#[path = "engine/canonical.rs"]
+mod canonical;
 
 use std::{
     fmt::Debug,
@@ -47,13 +59,14 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
-use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig};
-use nautilus_core::UnixNanos;
+use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig, throttler::RateLimit};
+use nautilus_core::{DurationNanos, UnixNanos};
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick, depth::DEPTH10_LEN,
+        OrderBookDepth, QuoteTick, TradeTick, depth::DEPTH10_LEN,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookAction, BookType,
@@ -63,12 +76,14 @@ use nautilus_model::{
     identifiers::{InstrumentId, StrategyId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::Order,
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
+use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 
 const QUOTE_COUNTS: &[usize] = &[1_000, 10_000];
+const POSITION_HISTORY_ORDER_COUNTS: &[usize] = &[250, 1_000, 4_000];
 const DATA_STREAM_COUNT: usize = 4;
 const DATA_ROUTE_COUNT: usize = 1_000;
 const ORDER_SWEEP_QUOTE_COUNT: usize = 1_000;
@@ -80,6 +95,33 @@ const MARKET_ORDER_INTERVAL: usize = 10;
 const PASSIVE_ORDER_INTERVAL: usize = 20;
 const GTD_ORDER_INTERVAL: usize = 20;
 const GTD_EXPIRY_OFFSET_NS: u64 = TRADE_OFFSET_NS / 2;
+
+fn bench_canonical(c: &mut Criterion) {
+    canonical::verify_matrix().expect("canonical workload matrix should match its fingerprints");
+
+    let mut group = c.benchmark_group("backtest_engine/canonical");
+
+    for input in canonical::INPUTS {
+        for scenario in canonical::SCENARIOS {
+            let fixture =
+                canonical::load_fixture(input).expect("canonical workload fixture should load");
+            let data_count = fixture.len();
+            group.throughput(Throughput::Elements(data_count as u64));
+            let case = scenario.case_name(input);
+
+            group.bench_function(BenchmarkId::new("run_preloaded", &case), |b| {
+                b.iter_custom(|iters| {
+                    canonical::run_preloaded_iterations(iters, scenario, &fixture)
+                });
+            });
+            group.bench_function(BenchmarkId::new("load_build_run", &case), |b| {
+                b.iter_custom(|iters| canonical::run_full_iterations(iters, scenario, input));
+            });
+        }
+    }
+
+    group.finish();
+}
 
 fn bench_run(c: &mut Criterion) {
     let mut group = c.benchmark_group("backtest_engine/run");
@@ -98,6 +140,36 @@ fn bench_run(c: &mut Criterion) {
                     run_engine_iterations(iters, data_count, OrderCounts::default(), || {
                         build_market_data_replay(data.clone())
                     })
+                });
+            },
+        );
+
+        let multi_instrument_data = generate_market_data_multi_instrument(quote_count);
+        let multi_instrument_data_count = multi_instrument_data.len();
+        group.throughput(Throughput::Elements(multi_instrument_data_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new(
+                format!("market_data_replay_{DATA_STREAM_COUNT}_streams_2_instruments"),
+                multi_instrument_data_count,
+            ),
+            &multi_instrument_data,
+            |b, data| {
+                b.iter_custom(|iters| {
+                    run_engine_iterations(
+                        iters,
+                        multi_instrument_data_count,
+                        OrderCounts::default(),
+                        || {
+                            build_engine_with_data_streams(
+                                split_data_streams(data.clone(), DATA_STREAM_COUNT),
+                                None,
+                                EngineBuildConfig {
+                                    instrument_count: 2,
+                                    ..Default::default()
+                                },
+                            )
+                        },
+                    )
                 });
             },
         );
@@ -178,6 +250,30 @@ fn bench_run(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_position_history(c: &mut Criterion) {
+    let mut group = c.benchmark_group("backtest_engine/position_history");
+    let instrument_id = crypto_perpetual_ethusdt().id();
+
+    for &order_count in POSITION_HISTORY_ORDER_COUNTS {
+        let data = generate_market_data(instrument_id, order_count);
+        let data_count = data.len();
+        group.throughput(Throughput::Elements(order_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("accumulating_market_orders", order_count),
+            &data,
+            |b, data| {
+                b.iter_custom(|iters| {
+                    run_position_history_iterations(iters, data_count, order_count, || {
+                        build_accumulating_market_orders(data.clone(), order_count)
+                    })
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 fn bench_data_routes(c: &mut Criterion) {
     let mut group = c.benchmark_group("backtest_engine/data_routes");
     let instrument_id = crypto_perpetual_ethusdt().id();
@@ -201,8 +297,8 @@ fn bench_data_routes(c: &mut Criterion) {
             },
         ),
         (
-            "depth10",
-            generate_depth10_data(instrument_id, DATA_ROUTE_COUNT),
+            "depth",
+            generate_depth_data(instrument_id, DATA_ROUTE_COUNT),
             EngineBuildConfig {
                 book_type: BookType::L2_MBP,
                 ..Default::default()
@@ -315,6 +411,53 @@ where
     elapsed
 }
 
+fn run_position_history_iterations<F>(
+    iters: u64,
+    expected_iterations: usize,
+    expected_fills: usize,
+    mut build_engine: F,
+) -> Duration
+where
+    F: FnMut() -> BacktestEngine,
+{
+    let mut elapsed = Duration::ZERO;
+
+    for _ in 0..iters {
+        let mut engine = build_engine();
+        let started = Instant::now();
+        engine
+            .run(None, None, None, false)
+            .expect("backtest run should succeed");
+        elapsed += started.elapsed();
+
+        black_box(engine.iteration());
+        assert_eq!(engine.iteration(), expected_iterations);
+        assert_eq!(engine.get_result().total_orders, expected_fills);
+        assert_eq!(engine.get_result().total_positions, 1);
+        assert_eq!(
+            order_counts(&engine),
+            OrderCounts {
+                filled: expected_fills,
+                ..Default::default()
+            }
+        );
+
+        {
+            let cache = engine.kernel().cache();
+            let cache = cache.borrow();
+            let positions = cache.positions_open(None, None, None, None, None);
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].events.len(), expected_fills);
+            assert_eq!(positions[0].replay_events.len(), expected_fills);
+            assert_eq!(positions[0].trade_ids.len(), expected_fills);
+        }
+
+        engine.dispose();
+    }
+
+    elapsed
+}
+
 fn run_engine_iterations_with_expired_orders<F>(
     iters: u64,
     expected_iterations: usize,
@@ -418,11 +561,26 @@ fn build_alternating_market_orders(data: Vec<Data>, quote_count: usize) -> Backt
     let instrument_id = crypto_perpetual_ethusdt().id();
     build_engine_with_config(
         data,
-        Some(StrategyWorkload::Market(AlternatingMarketOrders::new(
+        Some(StrategyWorkload::Market(MarketOrders::alternating(
             instrument_id,
             quote_count / MARKET_ORDER_INTERVAL,
         ))),
         EngineBuildConfig::default(),
+    )
+}
+
+fn build_accumulating_market_orders(data: Vec<Data>, order_count: usize) -> BacktestEngine {
+    let instrument_id = crypto_perpetual_ethusdt().id();
+    build_engine_with_config(
+        data,
+        Some(StrategyWorkload::Market(MarketOrders::accumulating(
+            instrument_id,
+            order_count,
+        ))),
+        EngineBuildConfig {
+            max_order_submit: Some(RateLimit::new(1_000_000, DurationNanos::from_secs(1))),
+            ..Default::default()
+        },
     )
 }
 
@@ -453,14 +611,18 @@ fn build_gtd_limit_expiry(data: Vec<Data>, quote_count: usize) -> BacktestEngine
 #[derive(Clone, Copy)]
 struct EngineBuildConfig {
     book_type: BookType,
+    instrument_count: usize,
     reject_stop_orders: bool,
+    max_order_submit: Option<RateLimit>,
 }
 
 impl Default for EngineBuildConfig {
     fn default() -> Self {
         Self {
             book_type: BookType::L1_MBP,
+            instrument_count: 1,
             reject_stop_orders: true,
+            max_order_submit: None,
         }
     }
 }
@@ -481,6 +643,12 @@ fn build_engine_with_data_streams(
     let config = BacktestEngineConfig {
         logging: LoggerConfig::from_spec("bypass_logging")
             .expect("benchmark logger config should be valid"),
+        risk_engine: build_config
+            .max_order_submit
+            .map(|max_order_submit| RiskEngineConfig {
+                max_order_submit,
+                ..Default::default()
+            }),
         bypass_logging: true,
         run_analysis: false,
         ..Default::default()
@@ -496,6 +664,7 @@ fn build_engine_with_data_streams(
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .reject_stop_orders(build_config.reject_stop_orders)
                 .queue_position(true)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
                 .build()
                 .expect("venue config should be valid"),
         )
@@ -505,6 +674,12 @@ fn build_engine_with_data_streams(
     engine
         .add_instrument(&instrument)
         .expect("instrument should be added");
+
+    if build_config.instrument_count == 2 {
+        engine
+            .add_instrument(&second_instrument())
+            .expect("second instrument should be added");
+    }
 
     match strategy {
         Some(StrategyWorkload::Market(strategy)) => engine
@@ -540,9 +715,9 @@ fn generate_market_data(instrument_id: InstrumentId, quote_count: usize) -> Vec<
         let ask = price_from_cents(mid_cents + 5);
         let trade_price = price_from_cents(mid_cents);
         let aggressor_side = if i % 2 == 0 {
-            AggressorSide::Buyer
+            AggressorSide::Buy
         } else {
-            AggressorSide::Seller
+            AggressorSide::Sell
         };
 
         data.push(Data::Quote(QuoteTick::new(
@@ -568,6 +743,24 @@ fn generate_market_data(instrument_id: InstrumentId, quote_count: usize) -> Vec<
     }
 
     data
+}
+
+fn generate_market_data_multi_instrument(quote_count: usize) -> Vec<Data> {
+    let primary = crypto_perpetual_ethusdt().id();
+    let secondary = second_instrument().id();
+    let primary_count = quote_count.div_ceil(2);
+    let mut data = generate_market_data(primary, primary_count);
+    data.extend(generate_market_data(secondary, quote_count - primary_count));
+
+    data
+}
+
+fn second_instrument() -> InstrumentAny {
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    instrument.raw_symbol = "BTCUSDT".into();
+    instrument.base_currency = Currency::BTC();
+    InstrumentAny::CryptoPerpetual(instrument)
 }
 
 fn price_from_cents(cents: i64) -> String {
@@ -652,11 +845,12 @@ fn generate_l2_delta_data(instrument_id: InstrumentId, event_count: usize) -> Ve
         let ask = order_book_delta(instrument_id, OrderSide::Sell, base + 10, sequence + 1, ts);
 
         if i.is_multiple_of(2) {
-            data.push(Data::Delta(bid));
+            data.push(Data::BookDelta(bid));
         } else {
-            data.push(Data::Deltas(OrderBookDeltas_API::new(
-                OrderBookDeltas::new(instrument_id, vec![bid, ask]),
-            )));
+            data.push(Data::BookDeltas(Box::new(OrderBookDeltas::new(
+                instrument_id,
+                vec![bid, ask],
+            ))));
         }
     }
 
@@ -686,7 +880,7 @@ fn order_book_delta(
     )
 }
 
-fn generate_depth10_data(instrument_id: InstrumentId, depth_count: usize) -> Vec<Data> {
+fn generate_depth_data(instrument_id: InstrumentId, depth_count: usize) -> Vec<Data> {
     (0..depth_count)
         .map(|i| {
             let sequence = u64::try_from(i + 1).expect("sequence should fit in u64");
@@ -712,7 +906,7 @@ fn generate_depth10_data(instrument_id: InstrumentId, depth_count: usize) -> Vec
                 );
             }
 
-            Data::Depth10(Box::new(OrderBookDepth10::new(
+            Data::BookDepth(Box::new(OrderBookDepth::new(
                 instrument_id,
                 bids,
                 asks,
@@ -742,19 +936,19 @@ fn generate_price_status_funding_data(
             MarketStatusAction::Trading
         };
 
-        data.push(Data::MarkPriceUpdate(MarkPriceUpdate::new(
+        data.push(Data::MarkPrice(MarkPriceUpdate::new(
             instrument_id,
             price,
             UnixNanos::from(ts),
             UnixNanos::from(ts),
         )));
-        data.push(Data::IndexPriceUpdate(IndexPriceUpdate::new(
+        data.push(Data::IndexPrice(IndexPriceUpdate::new(
             instrument_id,
             price,
             UnixNanos::from(ts + 1),
             UnixNanos::from(ts + 1),
         )));
-        data.push(Data::FundingRateUpdate(FundingRateUpdate::new(
+        data.push(Data::FundingRate(FundingRateUpdate::new(
             instrument_id,
             Decimal::new(1, 4),
             None,
@@ -810,7 +1004,7 @@ fn generate_order_trigger_data(instrument_id: InstrumentId, quote_count: usize) 
             instrument_id,
             Price::from(trade_price.as_str()),
             Quantity::from("1.000"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from(format!("OT-{i}").as_str()),
             trade_ts.into(),
             trade_ts.into(),
@@ -821,32 +1015,68 @@ fn generate_order_trigger_data(instrument_id: InstrumentId, quote_count: usize) 
 }
 
 enum StrategyWorkload {
-    Market(AlternatingMarketOrders),
+    Market(MarketOrders),
     Passive(PassiveLimitOrders),
     Gtd(GtdLimitExpiry),
     OrderSweep(OrderTypeSweep),
 }
 
-struct AlternatingMarketOrders {
+#[derive(Clone, Copy)]
+enum MarketOrderSides {
+    Alternating,
+    Buy,
+}
+
+struct MarketOrders {
     core: StrategyCore,
     instrument_id: InstrumentId,
     trade_size: Quantity,
+    sides: MarketOrderSides,
+    interval: usize,
     max_orders: usize,
     quote_count: usize,
     orders_submitted: usize,
 }
 
-impl AlternatingMarketOrders {
-    fn new(instrument_id: InstrumentId, max_orders: usize) -> Self {
+impl MarketOrders {
+    fn alternating(instrument_id: InstrumentId, max_orders: usize) -> Self {
+        Self::new(
+            instrument_id,
+            MarketOrderSides::Alternating,
+            MARKET_ORDER_INTERVAL,
+            max_orders,
+            "BENCH-MARKET-001",
+        )
+    }
+
+    fn accumulating(instrument_id: InstrumentId, max_orders: usize) -> Self {
+        Self::new(
+            instrument_id,
+            MarketOrderSides::Buy,
+            1,
+            max_orders,
+            "BENCH-MARKET-HISTORY-001",
+        )
+    }
+
+    fn new(
+        instrument_id: InstrumentId,
+        sides: MarketOrderSides,
+        interval: usize,
+        max_orders: usize,
+        strategy_id: &str,
+    ) -> Self {
         let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("BENCH-MARKET-001")),
+            strategy_id: Some(StrategyId::from(strategy_id)),
             order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from("0.011"),
+            sides,
+            interval,
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
@@ -854,10 +1084,12 @@ impl AlternatingMarketOrders {
     }
 
     fn submit_market_order(&mut self) -> anyhow::Result<()> {
-        let side = if self.orders_submitted.is_multiple_of(2) {
-            OrderSide::Buy
-        } else {
-            OrderSide::Sell
+        let side = match self.sides {
+            MarketOrderSides::Alternating if self.orders_submitted.is_multiple_of(2) => {
+                OrderSide::Buy
+            }
+            MarketOrderSides::Alternating => OrderSide::Sell,
+            MarketOrderSides::Buy => OrderSide::Buy,
         };
         let order = self.order().market(
             self.instrument_id,
@@ -876,15 +1108,15 @@ impl AlternatingMarketOrders {
     }
 }
 
-nautilus_strategy!(AlternatingMarketOrders);
+nautilus_strategy!(MarketOrders);
 
-impl Debug for AlternatingMarketOrders {
+impl Debug for MarketOrders {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(AlternatingMarketOrders)).finish()
+        f.debug_struct(stringify!(MarketOrders)).finish()
     }
 }
 
-impl DataActor for AlternatingMarketOrders {
+impl DataActor for MarketOrders {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.subscribe_quotes(self.instrument_id, None, None);
         Ok(())
@@ -892,8 +1124,7 @@ impl DataActor for AlternatingMarketOrders {
 
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         self.quote_count += 1;
-        if self.quote_count.is_multiple_of(MARKET_ORDER_INTERVAL)
-            && self.orders_submitted < self.max_orders
+        if self.quote_count.is_multiple_of(self.interval) && self.orders_submitted < self.max_orders
         {
             self.submit_market_order()?;
         }
@@ -982,7 +1213,7 @@ impl DataActor for PassiveLimitOrders {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.cancel_all_orders(self.instrument_id, None, None, None)
+        self.cancel_all_orders(self.instrument_id, None, None, true, None)
     }
 }
 
@@ -1061,7 +1292,7 @@ impl DataActor for GtdLimitExpiry {
         if self.quote_count.is_multiple_of(GTD_ORDER_INTERVAL)
             && self.orders_submitted < self.max_orders
         {
-            self.submit_gtd_limit_order(quote.ts_event + GTD_EXPIRY_OFFSET_NS)?;
+            self.submit_gtd_limit_order(quote.ts_event + DurationNanos::new(GTD_EXPIRY_OFFSET_NS))?;
         }
         Ok(())
     }
@@ -1325,7 +1556,7 @@ impl DataActor for OrderTypeSweep {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.cancel_all_orders(self.instrument_id, None, None, None)
+        self.cancel_all_orders(self.instrument_id, None, None, true, None)
     }
 }
 
@@ -1334,10 +1565,16 @@ fn passive_limit_price(side: OrderSide, order_index: usize) -> Price {
     let cents = match side {
         OrderSide::Buy => 90_000 - offset,
         OrderSide::Sell => 110_000 + offset,
-        _ => unreachable!(),
     };
     Price::from(price_from_cents(cents).as_str())
 }
 
-criterion_group!(benches, bench_run, bench_data_routes, bench_order_types);
+criterion_group!(
+    benches,
+    bench_canonical,
+    bench_run,
+    bench_position_history,
+    bench_data_routes,
+    bench_order_types
+);
 criterion_main!(benches);

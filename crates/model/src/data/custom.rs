@@ -15,11 +15,11 @@
 
 #[cfg(feature = "python")]
 use std::collections::HashSet;
-#[cfg(feature = "python")]
-use std::sync::RwLock;
 use std::{any::Any, fmt::Debug, sync::Arc};
 
 use nautilus_core::UnixNanos;
+#[cfg(feature = "python")]
+use parking_lot::RwLock;
 #[cfg(feature = "python")]
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyAny};
 use serde::{Serialize, Serializer};
@@ -35,23 +35,19 @@ fn intern_type_name_static(name: String) -> &'static str {
         std::sync::OnceLock::new();
     let set = INTERNER.get_or_init(|| RwLock::new(HashSet::new()));
 
-    if let Ok(guard) = set.read()
-        && guard.contains(name.as_str())
-    {
-        return guard.get(name.as_str()).copied().unwrap();
+    let guard = set.read();
+    if let Some(&existing) = guard.get(name.as_str()) {
+        return existing;
     }
+    drop(guard);
 
-    if let Ok(mut guard) = set.write() {
-        if let Some(&existing) = guard.get(name.as_str()) {
-            return existing;
-        }
-        let leaked: &'static str = Box::leak(name.into_boxed_str());
-        guard.insert(leaked);
-        leaked
-    } else {
-        log::warn!("intern_type_name_static: RwLock poisoned, interning skipped for type name");
-        Box::leak(name.into_boxed_str())
+    let mut guard = set.write();
+    if let Some(&existing) = guard.get(name.as_str()) {
+        return existing;
     }
+    let leaked: &'static str = Box::leak(name.into_boxed_str());
+    guard.insert(leaked);
+    leaked
 }
 
 /// Wraps a Python custom data object so it can participate in the Rust data
@@ -244,7 +240,7 @@ pub fn get_python_data_class(py: Python<'_>, type_name: &str) -> Option<Py<PyAny
 ///
 /// # Errors
 ///
-/// Returns a Python error if no class is registered for `type_name` or JSON parsing fails.
+/// Returns an error if no class is registered for `type_name` or JSON parsing fails.
 #[cfg(feature = "python")]
 pub fn reconstruct_python_custom_data(
     py: Python<'_>,
@@ -261,7 +257,7 @@ pub fn reconstruct_python_custom_data(
     data_class
         .bind(py)
         .call_method1("from_json", (payload,))
-        .map(|obj| obj.unbind())
+        .map(Bound::unbind)
 }
 
 /// Converts a cloneable PyO3-backed custom data value into a Python object.
@@ -271,7 +267,7 @@ pub fn reconstruct_python_custom_data(
 ///
 /// # Errors
 ///
-/// Returns any conversion error reported by PyO3.
+/// Returns an error if PyO3 conversion fails.
 #[cfg(feature = "python")]
 pub fn clone_pyclass_to_pyobject<T>(value: &T, py: Python<'_>) -> PyResult<Py<PyAny>>
 where
@@ -362,8 +358,11 @@ pub fn register_custom_data_json<T: CustomDataTrait + Sized>() -> anyhow::Result
 /// Registers a custom data type for JSON deserialization if not already registered.
 /// Idempotent: safe to call multiple times for the same type (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 pub fn ensure_custom_data_json_registered<T: CustomDataTrait + Sized>() -> anyhow::Result<()> {
     let type_name = T::type_name_static();
     ensure_json_deserializer_registered(type_name, Box::new(|value| T::from_json(value)))
@@ -376,11 +375,7 @@ pub fn ensure_custom_data_json_registered<T: CustomDataTrait + Sized>() -> anyho
 /// Custom data is always Rust-defined (optionally with PyO3 bindings).
 #[cfg_attr(
     feature = "python",
-    pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        name = "CustomData",
-        from_py_object
-    )
+    pyclass(module = "nautilus_trader.model", name = "CustomData", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

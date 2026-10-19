@@ -13,22 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
+use anyhow::Context;
 use nautilus_common::{
     clients::DataClient,
     defi::RequestPoolSnapshot,
-    live::get_runtime,
     messages::{
         DataEvent,
         defi::{
             DefiDataCommand, DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand,
-            SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects, SubscribePoolFlashEvents,
-            SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
-            UnsubscribePoolFeeCollects, UnsubscribePoolFlashEvents,
-            UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+            PoolSnapshotResponse, SubscribeBlocks, SubscribePool, SubscribePoolFeeCollects,
+            SubscribePoolFlashEvents, SubscribePoolLiquidityUpdates, SubscribePoolSwaps,
+            UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolFeeCollects,
+            UnsubscribePoolFlashEvents, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
         },
     },
+};
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
     defi::{DefiData, DexType, PoolIdentifier, SharedChain, validation::validate_address},
@@ -72,17 +76,12 @@ pub struct BlockchainDataClient {
     /// The core client instance that handles blockchain operations.
     /// Wrapped in Option to allow moving it into the background processing task.
     pub core_client: Option<BlockchainDataClientCore>,
-    /// Channel receiver for messages from the HyperSync client.
+    socket_factory: SocketControlFactory,
     hypersync_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>>,
-    /// Channel sender for messages to the HyperSync client.
     hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
-    /// Channel sender for commands to be processed asynchronously.
     command_tx: tokio::sync::mpsc::UnboundedSender<DefiDataCommand>,
-    /// Channel receiver for commands to be processed asynchronously.
     command_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DefiDataCommand>>,
-    /// Background task for processing messages.
-    process_task: Option<tokio::task::JoinHandle<()>>,
-    /// Cancellation token for graceful shutdown of background tasks.
+    session_tasks: TaskGroup,
     cancellation_token: tokio_util::sync::CancellationToken,
 }
 
@@ -90,20 +89,23 @@ impl BlockchainDataClient {
     /// Creates a new [`BlockchainDataClient`] instance for the specified configuration.
     #[must_use]
     pub fn new(client_id: ClientId, config: BlockchainDataClientConfig) -> Self {
-        let chain = config.chain.clone();
+        let chain = Arc::clone(&config.chain);
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        let socket_factory = SocketControlFactory::new(client_id, None);
+        let session_tasks = TaskGroup::new();
         Self {
             client_id,
             chain,
             core_client: None,
+            socket_factory,
             config,
             hypersync_rx: Some(hypersync_rx),
             hypersync_tx: Some(hypersync_tx),
             command_tx,
             command_rx: Some(command_rx),
-            process_task: None,
-            cancellation_token: tokio_util::sync::CancellationToken::new(),
+            cancellation_token: session_tasks.cancellation_token(),
+            session_tasks,
         }
     }
 
@@ -114,12 +116,11 @@ impl BlockchainDataClient {
     /// 2. Handles incoming blockchain data from HyperSync
     /// 3. Processes RPC messages if RPC client is configured
     /// 4. Routes processed data to subscribers
-    fn spawn_process_task(&mut self) {
-        let command_rx = if let Some(r) = self.command_rx.take() {
-            r
-        } else {
-            log::error!("Command receiver already taken, not spawning handler");
-            return;
+    fn spawn_process_task(
+        &mut self,
+    ) -> anyhow::Result<tokio::sync::oneshot::Receiver<anyhow::Result<()>>> {
+        let Some(command_rx) = self.command_rx.take() else {
+            anyhow::bail!("Command receiver already taken");
         };
 
         let cancellation_token = self.cancellation_token.clone();
@@ -135,20 +136,17 @@ impl BlockchainDataClient {
             Some(data_tx),
             cancellation_token.clone(),
         );
+        core_client.set_socket_control(self.socket_factory.control("blockchain-rpc"));
 
-        let handle = get_runtime().spawn(async move {
+        let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
+        let future = async move {
             log::debug!("Started task 'process'");
 
             if let Err(e) = core_client.connect().await {
-                // TODO: connect() could return more granular error types to distinguish
-                // cancellation from actual failures without string matching
-                if e.to_string().contains("cancelled") || e.to_string().contains("Sync cancelled") {
-                    log::warn!("Blockchain core client connection interrupted: {e}");
-                } else {
-                    log::error!("Failed to connect blockchain core client: {e}");
-                }
+                let _ = startup_tx.send(Err(e));
                 return;
             }
+            let _ = startup_tx.send(Ok(()));
 
             let mut command_rx = command_rx;
             let mut pending_pool_messages = VecDeque::new();
@@ -198,33 +196,12 @@ impl BlockchainDataClient {
                     }
                     data = hypersync_rx.recv() => {
                         if let Some(msg) = data {
-                            let is_block = matches!(&msg, BlockchainMessage::Block(_));
-                            let Some(msg) = Self::ready_live_blockchain_message(
+                            Self::process_live_blockchain_message(
                                 msg,
-                                &core_client.cache,
+                                &mut core_client,
                                 &mut pending_pool_messages,
-                            ) else {
-                                continue;
-                            };
-
-                            let data_event =
-                                Self::data_event_from_blockchain_message(msg, &mut core_client)
-                                    .await;
-
-                            if let Some(event) = data_event {
-                                core_client.send_data(event);
-                            }
-
-                            if is_block {
-                                for data in Self::drain_pending_pool_messages(
-                                    &mut core_client,
-                                    &mut pending_pool_messages,
-                                )
-                                .await
-                                {
-                                    core_client.send_data(data);
-                                }
-                            }
+                            )
+                            .await;
                         } else {
                             log::debug!("HyperSync data channel closed");
                             break;
@@ -239,33 +216,12 @@ impl BlockchainDataClient {
                         // This branch only fires when we actually receive a message
                         match msg {
                             Ok(msg) => {
-                                let is_block = matches!(&msg, BlockchainMessage::Block(_));
-
-                                let Some(msg) = Self::ready_live_blockchain_message(
+                                Self::process_live_blockchain_message(
                                     msg,
-                                    &core_client.cache,
+                                    &mut core_client,
                                     &mut pending_pool_messages,
-                                ) else {
-                                    continue;
-                                };
-
-                                if let Some(data) =
-                                    Self::data_event_from_blockchain_message(msg, &mut core_client)
-                                        .await
-                                {
-                                    core_client.send_data(data);
-                                }
-
-                                if is_block {
-                                    for data in Self::drain_pending_pool_messages(
-                                        &mut core_client,
-                                        &mut pending_pool_messages,
-                                    )
-                                    .await
-                                    {
-                                        core_client.send_data(data);
-                                    }
-                                }
+                                )
+                                .await;
                             }
                             Err(e) => {
                                 log::error!("Error processing RPC message: {e}");
@@ -276,16 +232,43 @@ impl BlockchainDataClient {
             }
 
             log::debug!("Stopped task 'process'");
-        });
+        };
 
-        self.process_task = Some(handle);
+        self.session_tasks
+            .spawn(future)
+            .map_err(|e| anyhow::anyhow!("Failed to register blockchain process task: {e}"))?;
+        Ok(startup_rx)
+    }
+
+    async fn process_live_blockchain_message(
+        msg: BlockchainMessage,
+        core_client: &mut BlockchainDataClientCore,
+        pending_pool_messages: &mut VecDeque<BlockchainMessage>,
+    ) {
+        let is_block = matches!(&msg, BlockchainMessage::Block(_));
+        let Some(msg) =
+            Self::ready_live_blockchain_message(msg, &core_client.cache, pending_pool_messages)
+        else {
+            return;
+        };
+
+        if let Some(data) = Self::data_event_from_blockchain_message(msg, core_client).await {
+            core_client.send_data(data);
+        }
+
+        if is_block {
+            for data in Self::drain_pending_pool_messages(core_client, pending_pool_messages).await
+            {
+                core_client.send_data(data);
+            }
+        }
     }
 
     async fn drain_pending_pool_messages(
         core_client: &mut BlockchainDataClientCore,
         pending_pool_messages: &mut VecDeque<BlockchainMessage>,
     ) -> Vec<DataEvent> {
-        let ready_messages = Self::drain_pending_pool_messages_with_cached_timestamps(
+        let ready_messages = Self::drain_pending_pool_messages_with_cached_metadata(
             pending_pool_messages,
             &core_client.cache,
         );
@@ -300,7 +283,7 @@ impl BlockchainDataClient {
         data_events
     }
 
-    fn drain_pending_pool_messages_with_cached_timestamps(
+    fn drain_pending_pool_messages_with_cached_metadata(
         pending_pool_messages: &mut VecDeque<BlockchainMessage>,
         cache: &BlockchainCache,
     ) -> Vec<BlockchainMessage> {
@@ -312,7 +295,7 @@ impl BlockchainDataClient {
                 break;
             };
 
-            if Self::pool_event_missing_block_timestamp(&msg, cache).is_some() {
+            if Self::pool_event_missing_block_metadata(&msg, cache).is_some() {
                 pending_pool_messages.push_back(msg);
                 continue;
             }
@@ -344,8 +327,8 @@ impl BlockchainDataClient {
         cache: &BlockchainCache,
         pending_pool_messages: &mut VecDeque<BlockchainMessage>,
     ) -> Option<BlockchainMessage> {
-        if let Some(block_number) = Self::pool_event_missing_block_timestamp(&msg, cache) {
-            log::debug!("Deferring live pool event until block {block_number} timestamp is cached");
+        if let Some(block_number) = Self::pool_event_missing_block_metadata(&msg, cache) {
+            log::debug!("Deferring live pool event until block {block_number} metadata is cached");
             Self::queue_pending_pool_message(pending_pool_messages, msg);
             None
         } else {
@@ -353,15 +336,14 @@ impl BlockchainDataClient {
         }
     }
 
-    fn pool_event_missing_block_timestamp(
+    fn pool_event_missing_block_metadata(
         msg: &BlockchainMessage,
         cache: &BlockchainCache,
     ) -> Option<u64> {
         let block_number = Self::pool_event_block_number(msg)?;
-        cache
-            .get_block_timestamp(block_number)
-            .is_none()
-            .then_some(block_number)
+        (cache.get_block_timestamp(block_number).is_none()
+            || cache.get_block_hash(block_number).is_none())
+        .then_some(block_number)
     }
 
     fn pool_event_block_number(msg: &BlockchainMessage) -> Option<u64> {
@@ -585,28 +567,9 @@ impl BlockchainDataClient {
                             )
                         })?;
 
-                    // Subscribe to all pool event types
                     core_client
                         .subscription_manager
-                        .subscribe_swaps(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_burns(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_mints(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_collects(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_flashes(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_fee_protocol_updates(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .subscribe_fee_protocol_collects(dex, pool_address);
+                        .subscribe_pool(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
                     Self::update_hypersync_pool_event_stream(core_client, dex).await?;
 
@@ -765,28 +728,9 @@ impl BlockchainDataClient {
                             anyhow::anyhow!("Invalid pool address: {}", cmd.instrument_id)
                         })?;
 
-                    // Unsubscribe from all pool event types
                     core_client
                         .subscription_manager
-                        .unsubscribe_swaps(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_burns(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_mints(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_collects(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_flashes(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_fee_protocol_updates(dex, pool_address);
-                    core_client
-                        .subscription_manager
-                        .unsubscribe_fee_protocol_collects(dex, pool_address);
+                        .unsubscribe_pool(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
                     Self::update_hypersync_pool_event_stream(core_client, dex).await?;
 
@@ -1146,7 +1090,7 @@ impl BlockchainDataClient {
 
                 match core_client.get_pool(&pool_identifier) {
                     Ok(pool) => {
-                        let pool = pool.clone();
+                        let pool = Arc::clone(pool);
                         log::debug!("Found pool for snapshot request: {}", cmd.instrument_id);
 
                         // Send the pool definition
@@ -1179,9 +1123,10 @@ impl BlockchainDataClient {
                                         .await?
                                         .is_usable()
                                     {
-                                        let snapshot_data =
-                                            DataEvent::DeFi(DefiData::PoolSnapshot(snapshot));
-                                        core_client.send_data(snapshot_data);
+                                        let response =
+                                            PoolSnapshotResponse::new(cmd.request_id, snapshot);
+                                        core_client
+                                            .send_data(DataEvent::PoolSnapshotResponse(response));
                                     }
                                 }
                                 Err(e) => log::error!(
@@ -1209,12 +1154,38 @@ impl BlockchainDataClient {
     ///
     /// This method blocks until the spawned process task finishes execution,
     /// which typically happens after a shutdown signal is sent.
-    pub async fn await_process_task_close(&mut self) {
-        if let Some(handle) = self.process_task.take()
-            && let Err(e) = handle.await
-        {
-            log::error!("Process task join error: {e}");
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if bounded task shutdown fails.
+    pub async fn await_process_task_close(&self) -> anyhow::Result<()> {
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Blockchain process task shutdown failed: {e}"))?;
+        Ok(())
+    }
+
+    async fn prepare_task_group(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.await_process_task_close().await?;
+            self.reset_channels();
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start blockchain task generation: {e}"))?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
         }
+        Ok(())
+    }
+
+    fn reset_channels(&mut self) {
+        let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.hypersync_tx = Some(hypersync_tx);
+        self.hypersync_rx = Some(hypersync_rx);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.command_tx = command_tx;
+        self.command_rx = Some(command_rx);
     }
 }
 
@@ -1246,10 +1217,7 @@ impl DataClient for BlockchainDataClient {
             "Stopping blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
-        self.cancellation_token.cancel();
-
-        // Create fresh token for next start cycle
-        self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        self.session_tasks.begin_shutdown();
         Ok(())
     }
 
@@ -1258,7 +1226,7 @@ impl DataClient for BlockchainDataClient {
             "Resetting blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
-        self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        self.session_tasks.begin_shutdown();
         Ok(())
     }
 
@@ -1267,19 +1235,40 @@ impl DataClient for BlockchainDataClient {
             "Disposing blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
+        self.session_tasks.begin_shutdown();
         Ok(())
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        if self.session_tasks.is_open() && !self.session_tasks.is_empty() {
+            return Ok(());
+        }
+
         log::info!(
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
 
-        if self.process_task.is_none() {
-            self.spawn_process_task();
+        self.prepare_task_group().await?;
+        let setup_guard = TaskGroupGuard::new(&[&self.session_tasks], || {});
+        let startup = self.spawn_process_task()?;
+        if let Err(e) = startup
+            .await
+            .context("Blockchain process task stopped before startup")?
+        {
+            self.session_tasks.begin_shutdown();
+            let teardown_result = self.await_process_task_close().await;
+            self.reset_channels();
+
+            if let Err(teardown_error) = teardown_result {
+                return Err(e.context(format!(
+                    "Blockchain data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
+        setup_guard.disarm();
         Ok(())
     }
 
@@ -1289,25 +1278,17 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
-        self.cancellation_token.cancel();
-        self.await_process_task_close().await;
+        self.session_tasks.begin_shutdown();
+        let tasks_result = self.await_process_task_close().await;
+        self.reset_channels();
 
-        // Create fresh token and channels for next connect cycle
-        self.cancellation_token = tokio_util::sync::CancellationToken::new();
-        let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        self.hypersync_tx = Some(hypersync_tx);
-        self.hypersync_rx = Some(hypersync_rx);
-        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
-        self.command_tx = command_tx;
-        self.command_rx = Some(command_rx);
-
-        Ok(())
+        tasks_result
     }
 
     fn is_connected(&self) -> bool {
-        // TODO: Improve connection detection
-        // For now, we'll assume connected if we have either RPC or HyperSync configured
-        true
+        self.session_tasks.is_open()
+            && !self.session_tasks.is_empty()
+            && !self.session_tasks.all_finished()
     }
 
     fn is_disconnected(&self) -> bool {
@@ -1410,86 +1391,20 @@ impl DataClient for BlockchainDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::sync::Arc;
 
     use alloy::primitives::{I256, U160, U256, address};
-    use nautilus_common::defi::RequestPoolSnapshot;
-    use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_model::{
-        defi::{Block, Blockchain, Chain, DexType, Pool, PoolIdentifier, Token},
-        identifiers::{ClientId, InstrumentId},
-    };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::defi::{Block, Blockchain, Chain, DexType, Pool, PoolIdentifier, Token};
     use rstest::rstest;
-    use tokio_util::sync::CancellationToken;
 
     use super::*;
     use crate::events::{flash::FlashEvent, swap::SwapEvent};
 
     const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
 
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn pool_snapshot_request_does_not_emit_snapshot_when_bootstrap_fails() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        let pool = weth_usdt_pool();
-        let instrument_id = pool.instrument_id;
-        let (hypersync_tx, _hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
-        let config = BlockchainDataClientConfig::builder()
-            .chain(pool.chain.clone())
-            .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
-            .use_hypersync_for_live_data(true)
-            .maybe_from_block(Some(WETH_USDT_CREATION_BLOCK))
-            .build();
-        let mut core = BlockchainDataClientCore::new(
-            config,
-            Some(hypersync_tx),
-            Some(data_tx),
-            CancellationToken::new(),
-        );
-        core.cache
-            .add_pool(pool.as_ref().clone())
-            .await
-            .expect("Pool should be added to in-memory cache");
-
-        let request = RequestPoolSnapshot::new(
-            instrument_id,
-            Some(ClientId::new("BLOCKCHAIN")),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        BlockchainDataClient::handle_request_command(
-            DefiRequestCommand::PoolSnapshot(request),
-            &mut core,
-        )
-        .await
-        .expect("Bootstrap failure should not fail the request handler");
-
-        let mut events = Vec::new();
-        while let Ok(event) = data_rx.try_recv() {
-            events.push(event);
-        }
-
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            DataEvent::DeFi(DefiData::Pool(pool)) => {
-                assert_eq!(pool.instrument_id, instrument_id);
-            }
-            _ => panic!("expected only the pool definition event"),
-        }
-        assert!(
-            events
-                .iter()
-                .all(|event| !matches!(event, DataEvent::DeFi(DefiData::PoolSnapshot(_))))
-        );
-    }
-
     #[rstest]
-    fn pool_event_missing_block_timestamp_clears_after_timestamp_cache_update() {
+    fn pool_event_missing_block_metadata_clears_after_block_cache_update() {
         let chain = Arc::new(
             Chain::from_chain_id(1)
                 .expect("Ethereum chain should exist")
@@ -1503,14 +1418,15 @@ mod tests {
             Some(42)
         );
         assert_eq!(
-            BlockchainDataClient::pool_event_missing_block_timestamp(&msg, &cache),
+            BlockchainDataClient::pool_event_missing_block_metadata(&msg, &cache),
             Some(42)
         );
 
-        cache.cache_block_timestamp(42, UnixNanos::from(1_700_000_000_000_000_000));
+        let block = test_block(42, "0x1", 1_700_000_000_000_000_000);
+        cache.cache_block_metadata(&block);
 
         assert_eq!(
-            BlockchainDataClient::pool_event_missing_block_timestamp(&msg, &cache),
+            BlockchainDataClient::pool_event_missing_block_metadata(&msg, &cache),
             None
         );
     }
@@ -1543,21 +1459,21 @@ mod tests {
     }
 
     #[rstest]
-    fn drain_pending_pool_messages_releases_events_after_timestamps_are_cached() {
+    fn drain_pending_pool_messages_releases_events_after_block_metadata_is_cached() {
         let chain = Arc::new(
             Chain::from_chain_id(1)
                 .expect("Ethereum chain should exist")
                 .clone(),
         );
         let mut cache = BlockchainCache::new(chain);
-        cache.cache_block_timestamp(42, UnixNanos::from(1_700_000_000_000_000_000));
+        let block_42 = test_block(42, "0x42", 1_700_000_000_000_000_000);
+        cache.cache_block_metadata(&block_42);
         let mut pending = VecDeque::from([flash_message(41), flash_message(42)]);
 
-        let ready_messages =
-            BlockchainDataClient::drain_pending_pool_messages_with_cached_timestamps(
-                &mut pending,
-                &cache,
-            );
+        let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
+            &mut pending,
+            &cache,
+        );
 
         assert_eq!(ready_messages.len(), 1);
         assert_eq!(
@@ -1570,13 +1486,13 @@ mod tests {
             Some(41)
         );
 
-        cache.cache_block_timestamp(41, UnixNanos::from(1_700_000_000_000_000_001));
+        let block_41 = test_block(41, "0x41", 1_700_000_000_000_000_001);
+        cache.cache_block_metadata(&block_41);
 
-        let ready_messages =
-            BlockchainDataClient::drain_pending_pool_messages_with_cached_timestamps(
-                &mut pending,
-                &cache,
-            );
+        let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
+            &mut pending,
+            &cache,
+        );
 
         assert_eq!(ready_messages.len(), 1);
         assert_eq!(
@@ -1587,7 +1503,7 @@ mod tests {
     }
 
     #[rstest]
-    fn ready_live_blockchain_message_queues_until_block_timestamp_is_cached() {
+    fn ready_live_blockchain_message_queues_until_block_metadata_is_cached() {
         let chain = Arc::new(
             Chain::from_chain_id(1)
                 .expect("Ethereum chain should exist")
@@ -1609,28 +1525,18 @@ mod tests {
             Some(42)
         );
 
-        cache.cache_block_timestamp(42, UnixNanos::from(1_700_000_000_000_000_000));
-        let block = Block::new(
-            "0x1".to_string(),
-            "0x0".to_string(),
-            42,
-            Ustr::from("0x0000000000000000000000000000000000000000"),
-            30_000_000,
-            21_000,
-            UnixNanos::from(1_700_000_000_000_000_000),
-            Some(Blockchain::Ethereum),
-        );
+        let block = test_block(42, "0x1", 1_700_000_000_000_000_000);
+        cache.cache_block_metadata(&block);
 
         let message = BlockchainDataClient::ready_live_blockchain_message(
             BlockchainMessage::Block(block),
             &cache,
             &mut pending,
         );
-        let ready_messages =
-            BlockchainDataClient::drain_pending_pool_messages_with_cached_timestamps(
-                &mut pending,
-                &cache,
-            );
+        let ready_messages = BlockchainDataClient::drain_pending_pool_messages_with_cached_metadata(
+            &mut pending,
+            &cache,
+        );
 
         assert!(matches!(message, Some(BlockchainMessage::Block(_))));
         assert_eq!(ready_messages.len(), 1);
@@ -1641,107 +1547,12 @@ mod tests {
         assert!(pending.is_empty());
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
-    async fn live_hypersync_pool_swap_subscription_receives_tip_event_and_unsubscribes() {
-        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
-
-        let chain = Arc::new(
-            Chain::from_chain_id(42161)
-                .expect("Arbitrum chain should exist")
-                .clone(),
-        );
-        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Arbitrum UniswapV3 should be registered");
-        let pool_address = address!("C31E54c7A869B9FcBEcc14363CF510d1c41fa443");
-        let instrument_id_value = format!("{}.Arbitrum:UniswapV3", pool_address.to_checksum(None));
-        let instrument_id = InstrumentId::from(instrument_id_value.as_str());
-        let expected_pool_id = PoolIdentifier::from_address(pool_address);
-        let (hypersync_tx, mut hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        let config = BlockchainDataClientConfig::builder()
-            .chain(chain)
-            .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
-            .use_hypersync_for_live_data(true)
-            .build();
-        let mut core = BlockchainDataClientCore::new(
-            config,
-            Some(hypersync_tx),
-            None,
-            CancellationToken::new(),
-        );
-        core.cache
-            .add_dex(dex_extended.dex.clone())
-            .await
-            .expect("DEX should be added to in-memory cache");
-        core.subscription_manager.register_dex_for_subscriptions(
-            DexType::UniswapV3,
-            dex_extended.swap_created_event.as_ref(),
-            dex_extended.mint_created_event.as_ref(),
-            dex_extended.burn_created_event.as_ref(),
-            dex_extended.collect_created_event.as_ref(),
-            dex_extended.flash_created_event.as_deref(),
-        );
-        core.subscription_manager.register_dex_fee_protocol_events(
-            DexType::UniswapV3,
-            dex_extended.fee_protocol_update_event.as_deref(),
-            dex_extended.fee_protocol_collect_event.as_deref(),
-        );
-
-        BlockchainDataClient::handle_subscribe_command(
-            DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps::new(
-                instrument_id,
-                Some(ClientId::new("BLOCKCHAIN")),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-            )),
-            &mut core,
-        )
-        .await
-        .expect("live HyperSync pool swap subscribe should succeed");
-
-        let event = tokio::time::timeout(Duration::from_secs(240), async {
-            loop {
-                let msg = hypersync_rx
-                    .recv()
-                    .await
-                    .expect("HyperSync live stream channel should stay open");
-
-                if let BlockchainMessage::SwapEvent(event) = msg
-                    && event.pool_identifier == expected_pool_id
-                {
-                    break event;
-                }
-            }
-        })
-        .await
-        .expect("expected a live Arbitrum UniswapV3 swap within 240s");
-
-        BlockchainDataClient::handle_unsubscribe_command(
-            DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps::new(
-                instrument_id,
-                Some(ClientId::new("BLOCKCHAIN")),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-            )),
-            &mut core,
-        )
-        .await
-        .expect("live HyperSync pool swap unsubscribe should succeed");
-        core.disconnect().await;
-
-        assert_eq!(event.pool_identifier, expected_pool_id);
-        assert!(event.block_number > 0);
-    }
-
     fn swap_message(block_number: u64) -> BlockchainMessage {
         let pool = weth_usdt_pool();
         let address = address!("1111111111111111111111111111111111111111");
 
         BlockchainMessage::SwapEvent(SwapEvent::new(
-            pool.dex.clone(),
+            Arc::clone(&pool.dex),
             pool.pool_identifier,
             block_number,
             "0x1".to_string(),
@@ -1757,12 +1568,25 @@ mod tests {
         ))
     }
 
+    fn test_block(number: u64, hash: &str, timestamp: u64) -> Block {
+        Block::new(
+            hash.to_string(),
+            "0x0".to_string(),
+            number,
+            Ustr::from("0x0000000000000000000000000000000000000000"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(timestamp),
+            Some(Blockchain::Ethereum),
+        )
+    }
+
     fn flash_message(block_number: u64) -> BlockchainMessage {
         let pool = weth_usdt_pool();
         let address = address!("1111111111111111111111111111111111111111");
 
         BlockchainMessage::FlashEvent(FlashEvent::new(
-            pool.dex.clone(),
+            Arc::clone(&pool.dex),
             pool.pool_identifier,
             block_number,
             "0x1".to_string(),
@@ -1783,20 +1607,21 @@ mod tests {
                 .expect("Ethereum chain should exist")
                 .clone(),
         );
-        let dex = get_dex_extended(chain.name, &DexType::UniswapV3)
-            .expect("Ethereum UniswapV3 should be registered")
-            .dex
-            .clone();
+        let dex = Arc::clone(
+            &get_dex_extended(chain.name, &DexType::UniswapV3)
+                .expect("Ethereum UniswapV3 should be registered")
+                .dex,
+        );
         let pool_address = address!("4e68ccd3e89f51c3074ca5072bbac773960dfa36");
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
             18,
         );
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("dAC17F958D2ee523a2206206994597C13D831ec7"),
             "Tether USD".to_string(),
             "USDT".to_string(),

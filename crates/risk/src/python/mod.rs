@@ -20,11 +20,11 @@ pub mod sizing;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.risk`.
+/// Exposed through `nautilus_trader.risk`.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn risk(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::engine::config::RiskEngineConfig>()?;

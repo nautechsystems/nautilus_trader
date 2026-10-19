@@ -280,6 +280,7 @@ Generated stub:
 def process(x: int) -> int:
     """Process integer input"""
 
+
 @overload
 def process(x: float) -> float: ...  # Auto-generated from Rust
 ```
@@ -630,7 +631,7 @@ sys.path.insert(0, str(Path(__file__).parent / "api"))
 
 project = "your_project"
 extensions = [
-    "pyo3_stub_gen_ext",       # Generated extension — reads api_reference.json
+    "pyo3_stub_gen_ext",  # Generated extension — reads api_reference.json
     "sphinx.ext.intersphinx",  # Enables cross-references to external projects
 ]
 

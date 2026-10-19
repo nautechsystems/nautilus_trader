@@ -24,8 +24,6 @@ pub mod config;
 pub mod enums;
 pub mod factories;
 pub mod http;
-pub mod urls;
-pub mod websocket;
 
 #[cfg(feature = "arrow")]
 pub mod arrow;
@@ -40,26 +38,20 @@ use crate::{
     account::resolve_execution_account_address,
     common::{
         builder_fee::{approve_from_env, revoke_from_env},
-        consts::{
-            HYPERLIQUID, HYPERLIQUID_CLIENT_ID, HYPERLIQUID_POST_ONLY_WOULD_MATCH,
-            HYPERLIQUID_VENUE,
-        },
+        consts::{HYPERLIQUID, HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
         enums::{
             HyperliquidConditionalOrderType, HyperliquidEnvironment, HyperliquidProductType,
             HyperliquidTpSl, HyperliquidTrailingOffsetType,
         },
     },
-    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
     data_types::{
         HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidOpenInterest,
-        HyperliquidPublicTrade, register_hyperliquid_custom_data,
+        HyperliquidPublicTrade, HyperliquidTwapHistory, HyperliquidTwapSliceFill,
+        register_hyperliquid_custom_data,
     },
-    factories::{
-        HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
-        HyperliquidExecutionClientFactory,
-    },
+    factories::{HyperliquidDataClientFactory, HyperliquidExecutionClientFactory},
     http::{HyperliquidHttpClient, models::Cloid},
-    websocket::HyperliquidWebSocketClient,
 };
 
 /// Approve the Nautilus builder fee for Hyperliquid trading.
@@ -205,33 +197,26 @@ fn extract_hyperliquid_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<HyperliquidExecFactoryConfig>(py) {
+    match config.extract::<HyperliquidExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract HyperliquidExecFactoryConfig: {e}"
+            "Failed to extract HyperliquidExecutionClientConfig: {e}"
         ))),
     }
 }
 
-/// Loaded as `nautilus_pyo3.hyperliquid`.
+/// Exposed through `nautilus_trader.adapters.hyperliquid`.
 #[pymodule]
 pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(HYPERLIQUID), HYPERLIQUID)?;
     m.add(stringify!(HYPERLIQUID_CLIENT_ID), *HYPERLIQUID_CLIENT_ID)?;
     m.add(stringify!(HYPERLIQUID_VENUE), *HYPERLIQUID_VENUE)?;
-    m.add(
-        "HYPERLIQUID_POST_ONLY_WOULD_MATCH",
-        HYPERLIQUID_POST_ONLY_WOULD_MATCH,
-    )?;
     m.add_class::<HyperliquidHttpClient>()?;
-    m.add_class::<HyperliquidWebSocketClient>()?;
     m.add_class::<HyperliquidProductType>()?;
     m.add_class::<HyperliquidTpSl>()?;
     m.add_class::<HyperliquidConditionalOrderType>()?;
     m.add_class::<HyperliquidTrailingOffsetType>()?;
     m.add_class::<HyperliquidEnvironment>()?;
-    m.add_function(wrap_pyfunction!(urls::py_get_hyperliquid_http_base_url, m)?)?;
-    m.add_function(wrap_pyfunction!(urls::py_get_hyperliquid_ws_url, m)?)?;
     m.add_function(wrap_pyfunction!(
         py_hyperliquid_product_type_from_symbol,
         m
@@ -247,20 +232,23 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_builder_fee_approve, m)?)?;
     m.add_function(wrap_pyfunction!(py_builder_fee_revoke, m)?)?;
     m.add_class::<HyperliquidDataClientConfig>()?;
-    m.add_class::<HyperliquidExecClientConfig>()?;
-    m.add_class::<HyperliquidExecFactoryConfig>()?;
     m.add_class::<HyperliquidDataClientFactory>()?;
+    m.add_class::<HyperliquidExecutionClientConfig>()?;
     m.add_class::<HyperliquidExecutionClientFactory>()?;
     m.add_class::<HyperliquidAllDexsAssetCtxs>()?;
     m.add_class::<HyperliquidAllMids>()?;
     m.add_class::<HyperliquidOpenInterest>()?;
     m.add_class::<HyperliquidPublicTrade>()?;
+    m.add_class::<HyperliquidTwapHistory>()?;
+    m.add_class::<HyperliquidTwapSliceFill>()?;
 
     register_hyperliquid_custom_data();
     let _result = ensure_rust_extractor_registered::<HyperliquidAllDexsAssetCtxs>();
     let _result = ensure_rust_extractor_registered::<HyperliquidAllMids>();
     let _result = ensure_rust_extractor_registered::<HyperliquidOpenInterest>();
     let _result = ensure_rust_extractor_registered::<HyperliquidPublicTrade>();
+    let _result = ensure_rust_extractor_registered::<HyperliquidTwapHistory>();
+    let _result = ensure_rust_extractor_registered::<HyperliquidTwapSliceFill>();
 
     let registry = get_global_pyo3_registry();
 
@@ -290,7 +278,7 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "HyperliquidExecFactoryConfig".to_string(),
+        "HyperliquidExecutionClientConfig".to_string(),
         extract_hyperliquid_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

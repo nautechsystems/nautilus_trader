@@ -19,6 +19,8 @@
 //! used in blockchain applications to floating-point values, accounting for
 //! token decimal places and precision requirements.
 
+use std::fmt::Display;
+
 use alloy::primitives::{I256, U256};
 
 /// Convert an alloy's I256 value to f64, accounting for token decimals.
@@ -27,24 +29,11 @@ use alloy::primitives::{I256, U256};
 ///
 /// Returns an error if the I256 value cannot be parsed to f64.
 pub fn convert_i256_to_f64(amount: I256, decimals: u8) -> anyhow::Result<f64> {
-    // Handle the sign separately
     let is_negative = amount.is_negative();
     let abs_amount = if is_negative { -amount } else { amount };
+    let amount = convert_to_f64(abs_amount, decimals, "I256")?;
 
-    // Convert to string to avoid precision loss for large numbers
-    let amount_str = abs_amount.to_string();
-    let mut amount_f64: f64 = amount_str
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse I256 to f64: {e}"))?;
-
-    // Apply sign
-    if is_negative {
-        amount_f64 = -amount_f64;
-    }
-
-    // Apply decimal scaling
-    let factor = 10f64.powi(i32::from(decimals));
-    Ok(amount_f64 / factor)
+    Ok(if is_negative { -amount } else { amount })
 }
 
 /// Convert an alloy's U256 value to f64, accounting for token decimals.
@@ -53,15 +42,17 @@ pub fn convert_i256_to_f64(amount: I256, decimals: u8) -> anyhow::Result<f64> {
 ///
 /// Returns an error if the U256 value cannot be parsed to f64.
 pub fn convert_u256_to_f64(amount: U256, decimals: u8) -> anyhow::Result<f64> {
-    // Convert to string to avoid precision loss for large numbers
-    let amount_str = amount.to_string();
-    let amount_f64: f64 = amount_str
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Failed to parse U256 to f64: {e}"))?;
+    convert_to_f64(amount, decimals, "U256")
+}
 
-    // Apply decimal scaling
+fn convert_to_f64(amount: impl Display, decimals: u8, type_name: &str) -> anyhow::Result<f64> {
+    let amount: f64 = amount
+        .to_string()
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Failed to parse {type_name} to f64: {e}"))?;
+
     let factor = 10f64.powi(i32::from(decimals));
-    Ok(amount_f64 / factor)
+    Ok(amount / factor)
 }
 
 #[cfg(test)]

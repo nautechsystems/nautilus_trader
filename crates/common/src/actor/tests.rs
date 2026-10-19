@@ -27,13 +27,13 @@ use ahash::AHashSet;
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, BarType, BookOrder, CustomData, DataType, FundingRateUpdate, GreeksData, HasTsInit,
         IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
         custom::CustomDataTrait,
         greeks::OptionGreekValues,
@@ -44,8 +44,8 @@ use nautilus_model::{
         BookAction, BookType, GreeksConvention, OrderSide, OrderType, PositionSide, PriceType,
     },
     identifiers::{
-        AccountId, ActorId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OptionSeriesId, OrderListId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OptionSeriesId,
+        OrderListId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
     },
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::{OrderBook, own::OwnOrderBook},
@@ -61,36 +61,35 @@ use serde::Serialize;
 use ustr::Ustr;
 #[cfg(feature = "defi")]
 use {
-    alloy_primitives::{Address, I256, U160},
+    alloy_primitives::{Address, I256, U160, U256},
     nautilus_model::defi::{
-        Block, Blockchain, Dex, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler,
-        PoolSwap, Token, chain::chains, dex::AmmType,
+        Block, Blockchain, Dex, DexType, Pool, PoolFeeCollect, PoolFlash, PoolIdentifier,
+        PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolProfiler, PoolSwap, SharedChain,
+        SharedDex, Token, chain::chains, dex::AmmType,
     },
 };
 
 use super::{Actor, DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig};
-#[cfg(feature = "defi")]
-use crate::defi::switchboard::{
-    get_defi_blocks_topic, get_defi_pool_swaps_topic, get_defi_pool_topic,
-};
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
-    clock::{Clock, TestClock},
-    component::Component,
-    enums::{ComponentState, ComponentTrigger},
+    clock::{Clock, VirtualClock},
+    component::{Component, ComponentAccessError},
     logging::{logger::LogGuard, logging_is_initialized},
-    messages::data::{
-        BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-        DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-        PARAMS_IS_PARENT, QuotesResponse, RequestCommand, SubscribeCommand, TradesResponse,
-        UnsubscribeCommand,
+    messages::{
+        data::{
+            BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+            DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestCommand,
+            SubscribeCommand, TradesResponse, UnsubscribeCommand,
+        },
+        system::{QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged},
     },
     msgbus::{
-        self, MessageBus, get_message_bus,
+        self, MessageBus, ShareableMessageHandler, get_message_bus,
         stubs::get_typed_into_message_saving_handler,
         switchboard::{
-            MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_depth10_topic,
+            MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_depth_topic,
             get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
             get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
             get_instrument_topic, get_mark_price_topic, get_option_chain_topic,
@@ -98,11 +97,21 @@ use crate::{
         },
     },
     nautilus_actor,
-    runner::{SyncDataCommandSender, set_data_cmd_sender},
+    runner::{SyncDataCommandSender, SystemChannel, set_data_cmd_sender},
     signal::Signal,
     testing::init_logger_for_testing,
     timer::TimeEvent,
 };
+#[cfg(feature = "defi")]
+use crate::{
+    defi::switchboard::{
+        get_defi_blocks_topic, get_defi_collect_topic, get_defi_flash_topic,
+        get_defi_liquidity_topic, get_defi_pool_swaps_topic, get_defi_pool_topic,
+    },
+    messages::defi::{DefiSubscribeCommand, DefiUnsubscribeCommand},
+};
+#[cfg(feature = "live")]
+use crate::{live::runner::replace_system_command_sender, messages::SystemCommand};
 
 /// Minimal custom data type for actor tests.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -151,6 +160,115 @@ pub(crate) fn make_test_custom_data(label: &str) -> CustomData {
     }))
 }
 
+fn make_queue_state_changed(state: QueueState, queue_depth: usize) -> QueueStateChanged {
+    QueueStateChanged::new(
+        TraderId::from("TRADER-001"),
+        SystemChannel::ExecCommands,
+        QueueCondition::Backlogged,
+        state,
+        queue_depth,
+        59,
+        UUID4::new(),
+        UnixNanos::from(61),
+        UnixNanos::from(67),
+    )
+}
+
+fn make_socket_state_changed(state: SocketState) -> SocketStateChanged {
+    SocketStateChanged::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("BINANCE"),
+        Some(Venue::from("BINANCE")),
+        Ustr::from("binance-futures-market-streams"),
+        state,
+        UUID4::from("00000000-0000-4000-8000-000000000003"),
+        UnixNanos::from(71),
+        UnixNanos::from(73),
+    )
+}
+
+#[cfg(feature = "defi")]
+fn defi_event_context() -> (SharedChain, SharedDex, InstrumentId, PoolIdentifier) {
+    let chain = Arc::new(chains::ARBITRUM.clone());
+    let dex = Arc::new(Dex::new(
+        chains::ARBITRUM.clone(),
+        DexType::UniswapV3,
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        0,
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+        "Collect",
+    ));
+    let pool_address = Address::from([0x12; 20]);
+    let pool_identifier = PoolIdentifier::from_address(pool_address);
+    let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_ref());
+    (chain, dex, instrument_id, pool_identifier)
+}
+
+#[cfg(feature = "defi")]
+fn make_pool_event_set(block: u64) -> (PoolLiquidityUpdate, PoolFeeCollect, PoolFlash) {
+    let (chain, dex, instrument_id, pool_identifier) = defi_event_context();
+    let liquidity = PoolLiquidityUpdate::new(
+        chain.clone(),
+        dex.clone(),
+        instrument_id,
+        pool_identifier,
+        PoolLiquidityUpdateType::Mint,
+        block,
+        format!("0xliquidity{block}"),
+        3,
+        5,
+        Some(Address::from([0x21; 20])),
+        Address::from([0x22; 20]),
+        101,
+        U256::from(103_u64),
+        U256::from(107_u64),
+        -109,
+        113,
+        UnixNanos::from(127),
+        UnixNanos::from(131),
+    );
+    let collect = PoolFeeCollect::new(
+        chain.clone(),
+        dex.clone(),
+        instrument_id,
+        pool_identifier,
+        block,
+        format!("0xcollect{block}"),
+        7,
+        11,
+        Address::from([0x23; 20]),
+        137,
+        139,
+        -149,
+        151,
+        UnixNanos::from(157),
+        UnixNanos::from(163),
+    );
+    let flash = PoolFlash::new(
+        chain,
+        dex,
+        instrument_id,
+        pool_identifier,
+        block,
+        format!("0xflash{block}"),
+        13,
+        17,
+        UnixNanos::from(167),
+        UnixNanos::from(173),
+        Address::from([0x24; 20]),
+        Address::from([0x25; 20]),
+        U256::from(179_u64),
+        U256::from(181_u64),
+        U256::from(191_u64),
+        U256::from(193_u64),
+    );
+    (liquidity, collect, flash)
+}
+
 #[derive(Debug)]
 struct TestDataActor {
     core: DataActorCore,
@@ -159,7 +277,7 @@ struct TestDataActor {
     pub received_data: Vec<String>, // Use string for simplicity
     pub received_books: Vec<OrderBook>,
     pub received_deltas: Vec<OrderBookDelta>,
-    pub received_depths: Vec<OrderBookDepth10>,
+    pub received_depths: Vec<OrderBookDepth>,
     pub received_quotes: Vec<QuoteTick>,
     pub received_trades: Vec<TradeTick>,
     pub received_bars: Vec<Bar>,
@@ -171,6 +289,8 @@ struct TestDataActor {
     pub received_greeks: Vec<OptionGreeks>,
     pub received_chain_slices: Vec<OptionChainSlice>,
     pub received_signals: Vec<Signal>,
+    pub received_queue_state_changes: Vec<QueueStateChanged>,
+    pub received_socket_state_changes: Vec<SocketStateChanged>,
     pub received_custom_data: Vec<CustomData>,
     #[cfg(feature = "defi")]
     pub received_blocks: Vec<Block>,
@@ -180,36 +300,15 @@ struct TestDataActor {
     pub received_pool_swaps: Vec<PoolSwap>,
     #[cfg(feature = "defi")]
     pub received_pool_liquidity_updates: Vec<PoolLiquidityUpdate>,
+    #[cfg(feature = "defi")]
+    pub received_pool_fee_collects: Vec<PoolFeeCollect>,
+    #[cfg(feature = "defi")]
+    pub received_pool_flash_events: Vec<PoolFlash>,
 }
 
 #[derive(Debug)]
 struct FacadeOnlyActor {
-    state: ComponentState,
     started: bool,
-}
-
-impl Component for FacadeOnlyActor {
-    fn component_id(&self) -> ComponentId {
-        ComponentId::new("FacadeOnlyActor")
-    }
-
-    fn state(&self) -> ComponentState {
-        self.state
-    }
-
-    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-        self.state = self.state.transition(&trigger)?;
-        Ok(())
-    }
-
-    fn register(
-        &mut self,
-        _trader_id: TraderId,
-        _clock: Rc<RefCell<dyn Clock>>,
-        _cache: Rc<RefCell<Cache>>,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
 }
 
 impl DataActor for FacadeOnlyActor {
@@ -248,13 +347,23 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        self.received_queue_state_changes.push(event.clone());
+        Ok(())
+    }
+
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+        self.received_socket_state_changes.push(event.clone());
+        Ok(())
+    }
+
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.received_deltas.extend(&deltas.deltas);
         Ok(())
     }
 
-    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
-        self.received_depths.push(*depth);
+    fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
+        self.received_depths.push(depth.clone());
         Ok(())
     }
 
@@ -295,8 +404,8 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
-    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
-        self.received_depths.extend(depths);
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth]) -> anyhow::Result<()> {
+        self.received_depths.extend(depths.iter().cloned());
         Ok(())
     }
 
@@ -315,6 +424,12 @@ impl DataActor for TestDataActor {
     }
 
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        if let Some(custom_data) = data.downcast_ref::<CustomData>() {
+            self.received_custom_data.push(custom_data.clone());
+        } else if let Some(custom_data) = data.downcast_ref::<Vec<CustomData>>() {
+            self.received_custom_data.extend_from_slice(custom_data);
+        }
+
         self.received_data.push(format!("{data:?}"));
         Ok(())
     }
@@ -377,6 +492,18 @@ impl DataActor for TestDataActor {
         self.received_pool_liquidity_updates.push(update.clone());
         Ok(())
     }
+
+    #[cfg(feature = "defi")]
+    fn on_pool_fee_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
+        self.received_pool_fee_collects.push(collect.clone());
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn on_pool_flash(&mut self, flash: &PoolFlash) -> anyhow::Result<()> {
+        self.received_pool_flash_events.push(flash.clone());
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -410,6 +537,8 @@ impl TestDataActor {
             received_greeks: Vec::new(),
             received_chain_slices: Vec::new(),
             received_signals: Vec::new(),
+            received_queue_state_changes: Vec::new(),
+            received_socket_state_changes: Vec::new(),
             received_custom_data: Vec::new(),
             #[cfg(feature = "defi")]
             received_blocks: Vec::new(),
@@ -419,6 +548,10 @@ impl TestDataActor {
             received_pool_swaps: Vec::new(),
             #[cfg(feature = "defi")]
             received_pool_liquidity_updates: Vec::new(),
+            #[cfg(feature = "defi")]
+            received_pool_fee_collects: Vec::new(),
+            #[cfg(feature = "defi")]
+            received_pool_flash_events: Vec::new(),
         }
     }
 
@@ -427,8 +560,8 @@ impl TestDataActor {
 }
 
 #[fixture]
-pub fn clock() -> Rc<RefCell<TestClock>> {
-    Rc::new(RefCell::new(TestClock::new()))
+pub fn clock() -> Rc<RefCell<VirtualClock>> {
+    Rc::new(RefCell::new(VirtualClock::new()))
 }
 
 #[fixture]
@@ -481,7 +614,7 @@ impl Actor for DummyActor {
 }
 
 fn register_data_actor(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) -> Ustr {
@@ -503,14 +636,11 @@ fn register_data_actor(
 
 #[rstest]
 fn test_data_actor_facade_behavior_does_not_require_native_core_access() {
-    fn assert_data_actor<T: DataActor + Component>() {}
+    fn assert_data_actor<T: DataActor>() {}
 
     assert_data_actor::<FacadeOnlyActor>();
 
-    let mut actor = FacadeOnlyActor {
-        state: ComponentState::PreInitialized,
-        started: false,
-    };
+    let mut actor = FacadeOnlyActor { started: false };
 
     DataActor::on_start(&mut actor).unwrap();
     let state = DataActor::on_save(&actor).unwrap();
@@ -534,8 +664,95 @@ fn test_nautilus_actor_macro_custom_field_generates_native_core_access() {
 }
 
 #[rstest]
+fn test_data_actor_default_actor_id_is_the_type_name() {
+    let first = TestDataActor::new(DataActorConfig::default());
+    let second = TestDataActor::new(DataActorConfig::default());
+
+    assert_eq!(first.actor_id(), ActorId::from("DataActor"));
+    assert_eq!(second.actor_id(), ActorId::from("DataActor"));
+}
+
+#[rstest]
+fn test_data_actor_component_id_erases_actor_id() {
+    let actor = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::from("COMPONENT-ID-ACTOR-001")),
+        ..Default::default()
+    });
+
+    assert_eq!(actor.component_id().as_str(), "COMPONENT-ID-ACTOR-001");
+}
+
+#[rstest]
+fn test_registered_clock_dispatches_time_events_only_while_actor_is_running(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache, trader_id);
+    let dispatch_alert = |name, time| {
+        clock
+            .borrow_mut()
+            .set_time_alert_ns(name, time, None, None)
+            .unwrap();
+        let events = clock.borrow_mut().advance_time(time, true);
+        let handlers = clock.borrow().match_handlers(events.clone());
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+        events
+    };
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    drop(actor);
+
+    let expected = dispatch_alert("running-alert", UnixNanos::from(101));
+
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_time_events, expected);
+    actor.stop().unwrap();
+    drop(actor);
+
+    let _ = dispatch_alert("stopped-alert", UnixNanos::from(211));
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_time_events, expected);
+}
+
+#[rstest]
+fn test_data_actor_rejects_second_registration_without_replacing_dependencies(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = ActorId::from("REGISTER-ONCE-ACTOR");
+    let mut actor = TestDataActor::new(DataActorConfig {
+        actor_id: Some(actor_id),
+        ..Default::default()
+    });
+    let initial_clock: Rc<RefCell<dyn Clock>> = clock;
+    let replacement_clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let replacement_cache = Rc::new(RefCell::new(Cache::new(None, None)));
+    let replacement_trader_id = TraderId::from("REPLACEMENT-TRADER");
+
+    actor
+        .register(trader_id, initial_clock.clone(), cache.clone())
+        .unwrap();
+    let error = actor
+        .register(replacement_trader_id, replacement_clock, replacement_cache)
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("DataActor {actor_id} already registered with trader {trader_id}")
+    );
+    assert_eq!(actor.trader_id(), Some(trader_id));
+    assert!(Rc::ptr_eq(&actor.clock_rc(), &initial_clock));
+    assert!(Rc::ptr_eq(&actor.cache_rc(), &cache));
+}
+
+#[rstest]
 fn test_data_actor_clock_api(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -578,7 +795,7 @@ fn test_data_actor_clock_api(
         .clock()
         .set_timer_ns(
             "TEST-TIMER-NS",
-            2_000_000_000,
+            DurationNanos::from_secs(2),
             None,
             None,
             None,
@@ -600,7 +817,7 @@ fn test_data_actor_clock_api(
 
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_point_reads(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -690,7 +907,7 @@ fn test_data_actor_cache_api_returns_owned_point_reads(
 
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -739,8 +956,6 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
         ..stub_instrument_status
     };
     let greeks = GreeksData::new(
-        UnixNanos::from(7),
-        UnixNanos::from(8),
         instrument_id,
         true,
         1.0,
@@ -763,6 +978,8 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
             rho: 0.03,
         },
         0.6,
+        UnixNanos::from(8),
+        UnixNanos::from(7),
     );
     let option_greeks = OptionGreeks {
         instrument_id,
@@ -783,14 +1000,15 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
         ts_init: UnixNanos::from(10),
     };
     let synthetic_formula = format!("{instrument_id} * 1.0");
-    let synthetic = SyntheticInstrument::new(
-        Symbol::from("SYN"),
-        5,
-        vec![instrument_id],
-        &synthetic_formula,
-        UnixNanos::from(11),
-        UnixNanos::from(12),
-    );
+    let synthetic = SyntheticInstrument::builder()
+        .symbol(Symbol::from("SYN"))
+        .price_precision(5)
+        .components(vec![instrument_id])
+        .formula(&synthetic_formula)
+        .ts_event(UnixNanos::from(11))
+        .ts_init(UnixNanos::from(12))
+        .build()
+        .unwrap();
     let synthetic_id = synthetic.id;
     let usd = Currency::USD();
     let usdt = Currency::USDT();
@@ -893,7 +1111,7 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
 
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_market_data_collection_reads(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1000,23 +1218,25 @@ fn test_data_actor_cache_api_returns_owned_market_data_collection_reads(
         ..stub_instrument_status
     };
     let synthetic_one_formula = format!("{instrument_id} * 1.0");
-    let synthetic_one = SyntheticInstrument::new(
-        Symbol::from("SYN"),
-        5,
-        vec![instrument_id],
-        &synthetic_one_formula,
-        UnixNanos::from(29),
-        UnixNanos::from(30),
-    );
+    let synthetic_one = SyntheticInstrument::builder()
+        .symbol(Symbol::from("SYN"))
+        .price_precision(5)
+        .components(vec![instrument_id])
+        .formula(&synthetic_one_formula)
+        .ts_event(UnixNanos::from(29))
+        .ts_init(UnixNanos::from(30))
+        .build()
+        .unwrap();
     let synthetic_two_formula = format!("{instrument_id} * 2.0");
-    let synthetic_two = SyntheticInstrument::new(
-        Symbol::from("SYN2"),
-        5,
-        vec![instrument_id],
-        &synthetic_two_formula,
-        UnixNanos::from(31),
-        UnixNanos::from(32),
-    );
+    let synthetic_two = SyntheticInstrument::builder()
+        .symbol(Symbol::from("SYN2"))
+        .price_precision(5)
+        .components(vec![instrument_id])
+        .formula(&synthetic_two_formula)
+        .ts_event(UnixNanos::from(31))
+        .ts_init(UnixNanos::from(32))
+        .build()
+        .unwrap();
     let synthetic_one_id = synthetic_one.id;
     let synthetic_two_id = synthetic_two.id;
     let expected_order_book = {
@@ -1112,7 +1332,7 @@ fn test_data_actor_cache_api_returns_owned_market_data_collection_reads(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_data_actor_cache_api_returns_owned_pool(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1190,7 +1410,7 @@ fn test_data_actor_cache_api_returns_owned_pool(
 
 #[rstest]
 fn test_data_actor_cache_api_surface_returns_owned_values(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1270,7 +1490,6 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
         cache_api.try_account(&account_id);
     let _: Option<AccountAny> = cache_api.account_for_venue(&venue);
     let _: Option<AccountId> = cache_api.account_id(&venue);
-    let _: AHashSet<ComponentId> = cache_api.actor_ids();
     let _: AHashSet<StrategyId> = cache_api.strategy_ids();
     let _: AHashSet<ExecAlgorithmId> = cache_api.exec_algorithm_ids();
     let _: Option<OrderAny> = cache_api.order(&client_order_id);
@@ -1439,7 +1658,7 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     );
 }
 
-/// Helper to register a dummy actor and return its Rc.
+/// Registers a dummy actor and returns its `Rc`.
 fn register_dummy(name: &str) -> Rc<UnsafeCell<dyn Actor>> {
     let actor = DummyActor::new(name);
     register_actor(actor)
@@ -1489,8 +1708,1004 @@ fn test_get_actor_unchecked_mutate() {
 }
 
 #[rstest]
+fn test_subscription_facade_sends_exact_command_matrix(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let now_ns = UnixNanos::from(1_700_000_000_123_456_789);
+    clock.borrow_mut().set_time(now_ns);
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let instrument_id = audusd_sim.id;
+    let venue = instrument_id.venue;
+    let client_id = ClientId::from("MATRIX-CLIENT");
+    let data_type = DataType::new("MatrixData", None, None);
+    let depth = NonZeroUsize::new(19);
+    let interval_ms = NonZeroUsize::new(250).unwrap();
+    let bar_type = BarType::from_str(&format!("{instrument_id}-3-MINUTE-LAST-EXTERNAL")).unwrap();
+    let series_id = OptionSeriesId::new_derived(
+        Venue::from("OPRA"),
+        Ustr::from("AAPL"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_711_036_800_000_000_000),
+    );
+    let strike_range = StrikeRange::AtmRelative {
+        strikes_above: 7,
+        strikes_below: 11,
+    };
+    let snapshot_interval_ms = Some(1_003);
+    let mut params = Params::new();
+    params.insert("matrix".to_string(), serde_json::json!(23));
+    let caller_client_id = ClientId::from("CALLER-MATRIX-CLIENT");
+    let mut caller_params = Params::new();
+    caller_params.insert("matrix".to_string(), serde_json::json!(29));
+
+    for (client_id, params) in [
+        (client_id, params.clone()),
+        (caller_client_id, caller_params.clone()),
+    ] {
+        actor.subscribe_data(data_type.clone(), Some(client_id), Some(params.clone()));
+        actor.subscribe_instrument(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_instruments(venue, Some(client_id), Some(params.clone()));
+        actor.subscribe_book_deltas(
+            instrument_id,
+            BookType::L3_MBO,
+            depth,
+            Some(client_id),
+            true,
+            Some(params.clone()),
+        );
+        actor.subscribe_book_depth(
+            instrument_id,
+            BookType::L2_MBP,
+            depth,
+            Some(client_id),
+            false,
+            Some(params.clone()),
+        );
+        actor.subscribe_book_at_interval(
+            instrument_id,
+            BookType::L1_MBP,
+            depth,
+            interval_ms,
+            Some(client_id),
+            Some(params.clone()),
+        );
+        actor.subscribe_quotes(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_trades(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_bars(bar_type, Some(client_id), Some(params.clone()));
+        actor.subscribe_mark_prices(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_index_prices(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_funding_rates(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_instrument_status(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_instrument_close(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_option_greeks(instrument_id, Some(client_id), Some(params.clone()));
+    }
+    actor.subscribe_option_chain(
+        series_id,
+        strike_range.clone(),
+        snapshot_interval_ms,
+        Some(client_id),
+        Some(params.clone()),
+    );
+
+    actor.unsubscribe_data(
+        data_type.clone(),
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instrument(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instruments(venue, Some(caller_client_id), Some(caller_params.clone()));
+    actor.unsubscribe_book_deltas(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_book_depth(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_book_at_interval(
+        instrument_id,
+        interval_ms,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_quotes(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_trades(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_bars(
+        bar_type,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_mark_prices(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_index_prices(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_funding_rates(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instrument_status(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_instrument_close(
+        instrument_id,
+        Some(caller_client_id),
+        Some(caller_params.clone()),
+    );
+    actor.unsubscribe_option_greeks(instrument_id, Some(caller_client_id), Some(caller_params));
+    actor.unsubscribe_option_chain(series_id, Some(caller_client_id));
+
+    let commands = saver.get_messages();
+    let (subscribe_commands, unsubscribe_commands) = commands.split_at(16);
+    let [
+        DataCommand::Subscribe(SubscribeCommand::Data(data)),
+        DataCommand::Subscribe(SubscribeCommand::Instrument(instrument)),
+        DataCommand::Subscribe(SubscribeCommand::Instruments(instruments)),
+        DataCommand::Subscribe(SubscribeCommand::BookDeltas(deltas)),
+        DataCommand::Subscribe(SubscribeCommand::BookDepth(book_depth)),
+        DataCommand::Subscribe(SubscribeCommand::BookSnapshots(snapshots)),
+        DataCommand::Subscribe(SubscribeCommand::Quotes(quotes)),
+        DataCommand::Subscribe(SubscribeCommand::Trades(trades)),
+        DataCommand::Subscribe(SubscribeCommand::Bars(bars)),
+        DataCommand::Subscribe(SubscribeCommand::MarkPrices(mark_prices)),
+        DataCommand::Subscribe(SubscribeCommand::IndexPrices(index_prices)),
+        DataCommand::Subscribe(SubscribeCommand::FundingRates(funding_rates)),
+        DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(status)),
+        DataCommand::Subscribe(SubscribeCommand::InstrumentClose(close)),
+        DataCommand::Subscribe(SubscribeCommand::OptionGreeks(greeks)),
+        DataCommand::Subscribe(SubscribeCommand::OptionChain(chain)),
+    ] = subscribe_commands
+    else {
+        panic!("expected exact subscribe command matrix, was {subscribe_commands:?}");
+    };
+    let [
+        DataCommand::Unsubscribe(UnsubscribeCommand::Data(unsub_data)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::Instrument(unsub_instrument)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::Instruments(unsub_instruments)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(unsub_deltas)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(unsub_depth)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(unsub_snapshots)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub_quotes)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::Trades(unsub_trades)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub_bars)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(unsub_mark_prices)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(unsub_index_prices)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(unsub_funding_rates)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(unsub_status)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentClose(unsub_close)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(unsub_greeks)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(unsub_chain)),
+    ] = unsubscribe_commands
+    else {
+        panic!("expected exact unsubscribe command matrix, was {unsubscribe_commands:?}");
+    };
+
+    let subscriptions = subscribe_commands
+        .iter()
+        .map(|command| match command {
+            DataCommand::Subscribe(command) => command,
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
+    let unsubscriptions = unsubscribe_commands
+        .iter()
+        .map(|command| match command {
+            DataCommand::Unsubscribe(command) => command,
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
+    let expected_venues = [None]
+        .into_iter()
+        .chain(std::iter::repeat_n(Some(venue), 14))
+        .chain([Some(series_id.venue)])
+        .collect::<Vec<_>>();
+    assert_eq!(
+        subscriptions
+            .iter()
+            .map(|command| command.client_id().copied())
+            .collect::<Vec<_>>(),
+        vec![Some(client_id); 16]
+    );
+    assert_eq!(
+        unsubscriptions
+            .iter()
+            .map(|command| command.client_id().copied())
+            .collect::<Vec<_>>(),
+        vec![Some(client_id); 16]
+    );
+    assert_eq!(
+        subscriptions
+            .iter()
+            .map(|command| command.ts_init())
+            .collect::<Vec<_>>(),
+        vec![now_ns; 16]
+    );
+    assert_eq!(
+        unsubscriptions
+            .iter()
+            .map(|command| command.ts_init())
+            .collect::<Vec<_>>(),
+        vec![now_ns; 16]
+    );
+    assert!(
+        subscriptions
+            .iter()
+            .all(|command| command.correlation_id().is_none())
+    );
+
+    for (subscribe, unsubscribe) in subscriptions.iter().zip(&unsubscriptions) {
+        let expected = matches!(
+            subscribe,
+            SubscribeCommand::BookDeltas(_)
+                | SubscribeCommand::BookDepth(_)
+                | SubscribeCommand::BookSnapshots(_)
+        )
+        .then(|| subscribe.command_id());
+        assert_eq!(unsubscribe.correlation_id(), expected);
+    }
+
+    assert_eq!(
+        subscriptions
+            .iter()
+            .map(|command| command.params())
+            .collect::<Vec<_>>(),
+        vec![Some(&params); 16]
+    );
+    assert_eq!(
+        subscriptions
+            .iter()
+            .map(|command| command.venue().copied())
+            .collect::<Vec<_>>(),
+        expected_venues
+    );
+    assert_eq!(
+        unsubscriptions
+            .iter()
+            .map(|command| command.venue().copied())
+            .collect::<Vec<_>>(),
+        expected_venues
+    );
+    let command_ids = subscriptions
+        .iter()
+        .map(|command| command.command_id())
+        .chain(unsubscriptions.iter().map(|command| command.command_id()))
+        .collect::<AHashSet<_>>();
+    assert_eq!(command_ids.len(), 32);
+
+    assert_eq!((&data.data_type, data.venue), (&data_type, None));
+    assert_eq!(instruments.venue, venue);
+    assert_eq!(
+        [
+            instrument.instrument_id,
+            deltas.instrument_id,
+            book_depth.instrument_id,
+            snapshots.instrument_id,
+            quotes.instrument_id,
+            trades.instrument_id,
+            mark_prices.instrument_id,
+            index_prices.instrument_id,
+            funding_rates.instrument_id,
+            status.instrument_id,
+            close.instrument_id,
+            greeks.instrument_id,
+        ],
+        [instrument_id; 12]
+    );
+    assert_eq!(
+        (deltas.book_type, deltas.depth, deltas.managed),
+        (BookType::L3_MBO, depth, true)
+    );
+    assert_eq!(
+        (book_depth.book_type, book_depth.depth, book_depth.managed),
+        (BookType::L2_MBP, depth, false)
+    );
+    assert_eq!(
+        (snapshots.book_type, snapshots.depth, snapshots.interval_ms,),
+        (BookType::L1_MBP, depth, interval_ms)
+    );
+    assert_eq!(bars.bar_type, bar_type);
+    assert_eq!(
+        (
+            chain.series_id,
+            &chain.strike_range,
+            chain.snapshot_interval_ms,
+        ),
+        (series_id, &strike_range, snapshot_interval_ms)
+    );
+
+    assert_eq!(
+        (&unsub_data.data_type, unsub_data.venue),
+        (&data_type, None)
+    );
+    assert_eq!(unsub_instruments.venue, venue);
+    assert_eq!(
+        [
+            unsub_instrument.instrument_id,
+            unsub_deltas.instrument_id,
+            unsub_depth.instrument_id,
+            unsub_snapshots.instrument_id,
+            unsub_quotes.instrument_id,
+            unsub_trades.instrument_id,
+            unsub_mark_prices.instrument_id,
+            unsub_index_prices.instrument_id,
+            unsub_funding_rates.instrument_id,
+            unsub_status.instrument_id,
+            unsub_close.instrument_id,
+            unsub_greeks.instrument_id,
+        ],
+        [instrument_id; 12]
+    );
+    assert_eq!(unsub_snapshots.interval_ms, interval_ms);
+    assert_eq!(unsub_bars.bar_type, bar_type);
+    assert_eq!(unsub_chain.series_id, series_id);
+    assert_eq!(
+        [
+            unsub_data.params.as_ref(),
+            unsub_instrument.params.as_ref(),
+            unsub_instruments.params.as_ref(),
+            unsub_deltas.params.as_ref(),
+            unsub_depth.params.as_ref(),
+            unsub_snapshots.params.as_ref(),
+            unsub_quotes.params.as_ref(),
+            unsub_trades.params.as_ref(),
+            unsub_bars.params.as_ref(),
+            unsub_mark_prices.params.as_ref(),
+            unsub_index_prices.params.as_ref(),
+            unsub_funding_rates.params.as_ref(),
+            unsub_status.params.as_ref(),
+            unsub_close.params.as_ref(),
+            unsub_greeks.params.as_ref(),
+            unsub_chain.params.as_ref(),
+        ],
+        [Some(&params); 16]
+    );
+}
+
+#[rstest]
+fn test_release_subscriptions_emits_retained_unsubscribe_commands(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let subscribe_ns = UnixNanos::from(1_700_000_000_123_456_789);
+    let release_ns = UnixNanos::from(1_700_000_001_987_654_321);
+    clock.borrow_mut().set_time(subscribe_ns);
+    let actor_id = register_data_actor(clock.clone(), cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    let instrument_id = audusd_sim.id;
+    let data_type = DataType::new("RetainedData", None, None);
+    let data_client_id = ClientId::from("RETAINED-DATA-CLIENT");
+    let book_client_id = ClientId::from("RETAINED-BOOK-CLIENT");
+    let bar_client_id = ClientId::from("RETAINED-BAR-CLIENT");
+    let chain_client_id = ClientId::from("RETAINED-CHAIN-CLIENT");
+    let remaining_client_id = ClientId::from("RETAINED-REMAINING-CLIENT");
+    let interval_ms = NonZeroUsize::new(347).unwrap();
+    let bar_type = BarType::from_str(&format!("{instrument_id}-3-MINUTE-LAST-EXTERNAL")).unwrap();
+    let series_id = OptionSeriesId::new_derived(
+        Venue::from("OPRA"),
+        Ustr::from("MSFT"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_721_174_400_000_000_000),
+    );
+    let mut data_params = Params::new();
+    data_params.insert("data-route".to_string(), serde_json::json!(31));
+    let mut book_params = Params::new();
+    book_params.insert("book-route".to_string(), serde_json::json!(37));
+    let mut bar_params = Params::new();
+    bar_params.insert("bar-route".to_string(), serde_json::json!(41));
+    let mut chain_params = Params::new();
+    chain_params.insert("chain-route".to_string(), serde_json::json!(43));
+    let mut remaining_params = Params::new();
+    remaining_params.insert("remaining-route".to_string(), serde_json::json!(47));
+
+    actor.subscribe_data(
+        data_type.clone(),
+        Some(data_client_id),
+        Some(data_params.clone()),
+    );
+    actor.subscribe_book_at_interval(
+        instrument_id,
+        BookType::L3_MBO,
+        NonZeroUsize::new(29),
+        interval_ms,
+        Some(book_client_id),
+        Some(book_params.clone()),
+    );
+    actor.subscribe_bars(bar_type, Some(bar_client_id), Some(bar_params.clone()));
+    actor.subscribe_option_chain(
+        series_id,
+        StrikeRange::AtmRelative {
+            strikes_above: 13,
+            strikes_below: 17,
+        },
+        Some(1_009),
+        Some(chain_client_id),
+        Some(chain_params),
+    );
+    actor.subscribe_instrument(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_instruments(
+        instrument_id.venue,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_book_deltas(
+        instrument_id,
+        BookType::L2_MBP,
+        NonZeroUsize::new(23),
+        Some(remaining_client_id),
+        false,
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_book_depth(
+        instrument_id,
+        BookType::L2_MBP,
+        None,
+        Some(remaining_client_id),
+        false,
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_quotes(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_trades(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_mark_prices(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_index_prices(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_funding_rates(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_instrument_status(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_instrument_close(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+    actor.subscribe_option_greeks(
+        instrument_id,
+        Some(remaining_client_id),
+        Some(remaining_params.clone()),
+    );
+
+    let subscribe_ids = saver
+        .get_messages()
+        .iter()
+        .filter_map(|command| match command {
+            DataCommand::Subscribe(command) => Some(command.command_id()),
+            _ => None,
+        })
+        .collect::<AHashSet<_>>();
+    assert_eq!(subscribe_ids.len(), 16);
+
+    let snapshot_subscription_id = saver
+        .get_messages()
+        .iter()
+        .find_map(|command| match command {
+            DataCommand::Subscribe(SubscribeCommand::BookSnapshots(command)) => {
+                Some(command.command_id)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    saver.clear();
+    clock.borrow_mut().set_time(release_ns);
+
+    actor.release_subscriptions();
+    actor.release_subscriptions();
+
+    let commands = saver.get_messages();
+    assert_eq!(commands.len(), 16);
+    let command_ids = commands
+        .iter()
+        .map(|command| match command {
+            DataCommand::Unsubscribe(command) => command.command_id(),
+            other => panic!("expected unsubscribe command, was {other:?}"),
+        })
+        .collect::<AHashSet<_>>();
+    assert_eq!(command_ids.len(), 16);
+    assert!(command_ids.is_disjoint(&subscribe_ids));
+
+    let assert_remaining_identity = |client_id, params: Option<&Params>| {
+        assert_eq!(client_id, Some(remaining_client_id));
+        assert_eq!(params, Some(&remaining_params));
+    };
+    let mut released = commands
+        .iter()
+        .map(|command| match command {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Data(_)) => "data",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Instrument(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instrument"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Instruments(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instruments"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "book_deltas"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "book_depth"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(_)) => "book_snapshots",
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "quotes"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "trades"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Bars(_)) => "bars",
+            DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "mark_prices"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "index_prices"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::FundingRates(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "funding_rates"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instrument_status"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentClose(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "instrument_close"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(command)) => {
+                assert_remaining_identity(command.client_id, command.params.as_ref());
+                "option_greeks"
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(_)) => "option_chain",
+            other => panic!("expected standard unsubscribe command, was {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    released.sort_unstable();
+    assert_eq!(
+        released,
+        [
+            "bars",
+            "book_deltas",
+            "book_depth",
+            "book_snapshots",
+            "data",
+            "funding_rates",
+            "index_prices",
+            "instrument",
+            "instrument_close",
+            "instrument_status",
+            "instruments",
+            "mark_prices",
+            "option_chain",
+            "option_greeks",
+            "quotes",
+            "trades",
+        ]
+    );
+
+    let data = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::Data(command)) => Some(command),
+        _ => None,
+    });
+    let snapshots = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(command)) => Some(command),
+        _ => None,
+    });
+    let bars = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::Bars(command)) => Some(command),
+        _ => None,
+    });
+    let chain = commands.iter().find_map(|command| match command {
+        DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(command)) => Some(command),
+        _ => None,
+    });
+
+    assert_eq!(
+        data.map(|command| (
+            &command.data_type,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+            command.correlation_id,
+            command.params.as_ref(),
+        )),
+        Some((
+            &data_type,
+            Some(data_client_id),
+            None,
+            release_ns,
+            None,
+            Some(&data_params),
+        ))
+    );
+    assert_eq!(
+        snapshots.map(|command| (
+            command.instrument_id,
+            command.interval_ms,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+            command.correlation_id,
+            command.params.as_ref(),
+        )),
+        Some((
+            instrument_id,
+            interval_ms,
+            Some(book_client_id),
+            Some(instrument_id.venue),
+            release_ns,
+            Some(snapshot_subscription_id),
+            Some(&book_params),
+        ))
+    );
+    assert_eq!(
+        bars.map(|command| (
+            command.bar_type,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+            command.correlation_id,
+            command.params.as_ref(),
+        )),
+        Some((
+            bar_type,
+            Some(bar_client_id),
+            Some(instrument_id.venue),
+            release_ns,
+            None,
+            Some(&bar_params),
+        ))
+    );
+    assert_eq!(
+        chain.map(|command| (
+            command.series_id,
+            command.client_id,
+            command.venue,
+            command.ts_init,
+        )),
+        Some((
+            series_id,
+            Some(chain_client_id),
+            Some(series_id.venue),
+            release_ns,
+        ))
+    );
+}
+
+#[rstest]
+fn test_release_subscriptions_emits_commands_in_topic_order(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let instrument_ids = [
+        InstrumentId::from("AUD/USD.SIM"),
+        InstrumentId::from("CAD/USD.SIM"),
+        InstrumentId::from("CHF/USD.SIM"),
+        InstrumentId::from("EUR/USD.SIM"),
+        InstrumentId::from("GBP/USD.SIM"),
+        InstrumentId::from("JPY/USD.SIM"),
+        InstrumentId::from("NZD/USD.SIM"),
+        InstrumentId::from("SGD/USD.SIM"),
+    ];
+
+    for instrument_id in instrument_ids.iter().rev() {
+        actor.subscribe_quotes(*instrument_id, None, None);
+    }
+    saver.clear();
+
+    actor.release_subscriptions();
+
+    let released = saver
+        .get_messages()
+        .iter()
+        .map(|command| match command {
+            DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => command.instrument_id,
+            other => panic!("expected quotes unsubscribe command, was {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    let mut expected = instrument_ids;
+    expected.sort_unstable_by(|left, right| {
+        get_quotes_topic(*left)
+            .as_ref()
+            .cmp(get_quotes_topic(*right).as_ref())
+    });
+
+    assert_eq!(released, expected);
+}
+
+#[rstest]
+fn test_duplicate_subscription_keeps_first_identity(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let first_client_id = ClientId::from("FIRST-QUOTE-CLIENT");
+    let second_client_id = ClientId::from("SECOND-QUOTE-CLIENT");
+    let mut first_params = Params::new();
+    first_params.insert("route".to_string(), serde_json::json!(53));
+    let mut second_params = Params::new();
+    second_params.insert("route".to_string(), serde_json::json!(59));
+
+    actor.subscribe_quotes(
+        audusd_sim.id,
+        Some(first_client_id),
+        Some(first_params.clone()),
+    );
+    actor.subscribe_quotes(
+        audusd_sim.id,
+        Some(second_client_id),
+        Some(second_params.clone()),
+    );
+
+    assert_eq!(saver.get_messages().len(), 1);
+    saver.clear();
+    actor.unsubscribe_quotes(audusd_sim.id, Some(second_client_id), Some(second_params));
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))] = commands.as_slice()
+    else {
+        panic!("expected one retained quotes unsubscribe, was {commands:?}");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(first_client_id));
+    assert_eq!(command.venue, Some(audusd_sim.id.venue));
+    assert_eq!(command.params.as_ref(), Some(&first_params));
+}
+
+#[rstest]
+fn test_repeated_unsubscribe_does_not_emit_fallback_command(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let client_id = ClientId::from("QUOTE-CLIENT");
+
+    actor.subscribe_quotes(audusd_sim.id, Some(client_id), None);
+    saver.clear();
+
+    actor.unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
+    actor.unsubscribe_quotes(audusd_sim.id, Some(client_id), None);
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))] = commands.as_slice()
+    else {
+        panic!("expected one retained quotes unsubscribe, was {commands:?}");
+    };
+    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.client_id, Some(client_id));
+}
+
+#[rstest]
+fn test_reset_releases_subscription_before_restart(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
+
+    actor.start().unwrap();
+    actor.subscribe_bars(bar_type, None, None);
+    assert_eq!(actor.core.bar_handler_count(), 1);
+    saver.clear();
+
+    actor.stop().unwrap();
+    actor.reset().unwrap();
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Bars(command))] = commands.as_slice() else {
+        panic!("expected one bars unsubscribe on reset, was {commands:?}");
+    };
+    assert_eq!(command.bar_type, bar_type);
+    assert_eq!(actor.core.bar_handler_count(), 0);
+    saver.clear();
+
+    actor.start().unwrap();
+    actor.subscribe_bars(bar_type, None, None);
+
+    let commands = saver.get_messages();
+    let [DataCommand::Subscribe(SubscribeCommand::Bars(command))] = commands.as_slice() else {
+        panic!("expected one bars subscribe after restart, was {commands:?}");
+    };
+    assert_eq!(command.bar_type, bar_type);
+    assert_eq!(actor.core.bar_handler_count(), 1);
+}
+
+#[rstest]
+fn test_option_chain_resubscription_sends_edit_and_retains_latest_identity(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let series_id = OptionSeriesId::new_derived(
+        Venue::from("OPRA"),
+        Ustr::from("AAPL"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_711_036_800_000_000_000),
+    );
+    let first_client_id = ClientId::from("FIRST-CHAIN-CLIENT");
+    let second_client_id = ClientId::from("SECOND-CHAIN-CLIENT");
+    let fallback_client_id = ClientId::from("FALLBACK-CHAIN-CLIENT");
+    let first_range = StrikeRange::AtmRelative {
+        strikes_above: 3,
+        strikes_below: 5,
+    };
+    let second_range = StrikeRange::AtmRelative {
+        strikes_above: 7,
+        strikes_below: 11,
+    };
+
+    actor.subscribe_option_chain(
+        series_id,
+        first_range.clone(),
+        Some(1_000),
+        Some(first_client_id),
+        None,
+    );
+    actor.subscribe_option_chain(
+        series_id,
+        second_range.clone(),
+        Some(2_000),
+        Some(second_client_id),
+        None,
+    );
+
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_option_chain
+            .subscription_count(),
+        1,
+    );
+
+    let commands = saver.get_messages();
+    let [
+        DataCommand::Subscribe(SubscribeCommand::OptionChain(first)),
+        DataCommand::Subscribe(SubscribeCommand::OptionChain(second)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected two option chain subscribe commands, was {commands:?}");
+    };
+    assert_eq!(first.series_id, series_id);
+    assert_eq!(first.strike_range, first_range);
+    assert_eq!(first.snapshot_interval_ms, Some(1_000));
+    assert_eq!(first.client_id, Some(first_client_id));
+    assert_eq!(first.correlation_id, None);
+    assert_eq!(second.series_id, series_id);
+    assert_eq!(second.strike_range, second_range);
+    assert_eq!(second.snapshot_interval_ms, Some(2_000));
+    assert_eq!(second.client_id, Some(second_client_id));
+    assert_ne!(second.command_id, first.command_id);
+    assert_eq!(second.correlation_id, Some(first.command_id));
+
+    saver.clear();
+    actor.unsubscribe_option_chain(series_id, Some(fallback_client_id));
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(command))] = commands.as_slice()
+    else {
+        panic!("expected one option chain unsubscribe command, was {commands:?}");
+    };
+    assert_eq!(command.series_id, series_id);
+    assert_eq!(command.client_id, Some(second_client_id));
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_option_chain
+            .subscription_count(),
+        0,
+    );
+}
+
+#[rstest]
 fn test_subscribe_and_receive_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1511,8 +2726,56 @@ fn test_subscribe_and_receive_custom_data(
 }
 
 #[rstest]
+fn test_local_custom_subscription_upgrades_to_client_backed(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let data_type = DataType::new(TestActorCustomData::type_name_static(), None, None);
+    let topic = get_custom_topic(&data_type);
+    let client_id = ClientId::new("CUSTOM-DATA-CLIENT");
+    let mut params = Params::new();
+    params.insert("source".to_string(), serde_json::json!("remote"));
+
+    actor.subscribe_data(data_type.clone(), None, None);
+    assert!(saver.get_messages().is_empty());
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 1);
+
+    actor.subscribe_data(data_type.clone(), Some(client_id), Some(params.clone()));
+
+    let commands = saver.get_messages();
+    let [DataCommand::Subscribe(SubscribeCommand::Data(subscribe))] = commands.as_slice() else {
+        panic!("expected one custom-data subscribe, was {commands:?}");
+    };
+    assert_eq!(subscribe.data_type, data_type);
+    assert_eq!(subscribe.client_id, Some(client_id));
+    assert_eq!(subscribe.params.as_ref(), Some(&params));
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 1);
+    saver.clear();
+
+    actor.unsubscribe_data(data_type.clone(), None, None);
+
+    let commands = saver.get_messages();
+    let [DataCommand::Unsubscribe(UnsubscribeCommand::Data(unsubscribe))] = commands.as_slice()
+    else {
+        panic!("expected one custom-data unsubscribe, was {commands:?}");
+    };
+    assert_eq!(unsubscribe.data_type, data_type);
+    assert_eq!(unsubscribe.client_id, Some(client_id));
+    assert_eq!(unsubscribe.params.as_ref(), Some(&params));
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 0);
+}
+
+#[rstest]
 fn test_unsubscribe_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1543,7 +2806,7 @@ fn test_unsubscribe_custom_data(
 
 #[rstest]
 fn test_subscribe_and_receive_book_deltas(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1579,8 +2842,8 @@ fn test_subscribe_and_receive_book_deltas(
 }
 
 #[rstest]
-fn test_subscribe_and_receive_book_depth10(
-    clock: Rc<RefCell<TestClock>>,
+fn test_subscribe_and_receive_book_depth(
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1589,21 +2852,21 @@ fn test_subscribe_and_receive_book_depth10(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+    actor.subscribe_book_depth(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
 
-    let topic = get_book_depth10_topic(audusd_sim.id);
+    let topic = get_book_depth_topic(audusd_sim.id);
     let mut depth = stub_depth10();
     depth.instrument_id = audusd_sim.id;
-    msgbus::publish_depth10(topic, &depth);
+    msgbus::publish_depth(topic, &depth);
 
-    assert_eq!(actor.core.depth10_handler_count(), 1);
-    assert!(actor.core.has_depth10_handler(topic.as_str()));
+    assert_eq!(actor.core.depth_handler_count(), 1);
+    assert!(actor.core.has_depth_handler(topic.as_str()));
     assert_eq!(actor.received_depths, vec![depth]);
 }
 
 #[rstest]
-fn test_unsubscribe_book_depth10_stops_delivery(
-    clock: Rc<RefCell<TestClock>>,
+fn test_unsubscribe_book_depth_stops_delivery(
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1612,22 +2875,22 @@ fn test_unsubscribe_book_depth10_stops_delivery(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
-    actor.unsubscribe_book_depth10(audusd_sim.id, None, None);
+    actor.subscribe_book_depth(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
+    actor.unsubscribe_book_depth(audusd_sim.id, None, None);
 
-    let topic = get_book_depth10_topic(audusd_sim.id);
+    let topic = get_book_depth_topic(audusd_sim.id);
     let mut depth = stub_depth10();
     depth.instrument_id = audusd_sim.id;
-    msgbus::publish_depth10(topic, &depth);
+    msgbus::publish_depth(topic, &depth);
 
-    assert_eq!(actor.core.depth10_handler_count(), 0);
-    assert!(!actor.core.has_depth10_handler(topic.as_str()));
+    assert_eq!(actor.core.depth_handler_count(), 0);
+    assert!(!actor.core.has_depth_handler(topic.as_str()));
     assert!(actor.received_depths.is_empty());
 }
 
 #[rstest]
-fn test_stopped_actor_does_not_receive_book_depth10(
-    clock: Rc<RefCell<TestClock>>,
+fn test_stopped_actor_does_not_receive_book_depth(
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1635,20 +2898,20 @@ fn test_stopped_actor_does_not_receive_book_depth10(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+    actor.subscribe_book_depth(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
     actor.stop().unwrap();
 
-    let topic = get_book_depth10_topic(audusd_sim.id);
+    let topic = get_book_depth_topic(audusd_sim.id);
     let mut depth = stub_depth10();
     depth.instrument_id = audusd_sim.id;
-    msgbus::publish_depth10(topic, &depth);
+    msgbus::publish_depth(topic, &depth);
 
     assert!(actor.received_depths.is_empty());
 }
 
 #[rstest]
-fn test_duplicate_book_depth10_subscription_delivers_once(
-    clock: Rc<RefCell<TestClock>>,
+fn test_duplicate_book_depth_subscription_delivers_once(
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1656,21 +2919,21 @@ fn test_duplicate_book_depth10_subscription_delivers_once(
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
-    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
-    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+    actor.subscribe_book_depth(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
+    actor.subscribe_book_depth(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
 
-    let topic = get_book_depth10_topic(audusd_sim.id);
+    let topic = get_book_depth_topic(audusd_sim.id);
     let mut depth = stub_depth10();
     depth.instrument_id = audusd_sim.id;
-    msgbus::publish_depth10(topic, &depth);
+    msgbus::publish_depth(topic, &depth);
 
-    assert_eq!(actor.core.depth10_handler_count(), 1);
+    assert_eq!(actor.core.depth_handler_count(), 1);
     assert_eq!(actor.received_depths, vec![depth]);
 }
 
 #[rstest]
-fn test_book_depth10_facade_sends_subscribe_and_unsubscribe_commands(
-    clock: Rc<RefCell<TestClock>>,
+fn test_book_depth_facade_sends_subscribe_and_unsubscribe_commands(
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1685,23 +2948,23 @@ fn test_book_depth10_facade_sends_subscribe_and_unsubscribe_commands(
         handler,
     );
 
-    let client_id = Some(ClientId::new("DEPTH10-CLIENT"));
-    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, client_id, true, None);
+    let client_id = Some(ClientId::new("DEPTH-CLIENT"));
+    actor.subscribe_book_depth(audusd_sim.id, BookType::L2_MBP, None, client_id, true, None);
 
-    actor.unsubscribe_book_depth10(audusd_sim.id, client_id, None);
+    actor.unsubscribe_book_depth(audusd_sim.id, client_id, None);
 
     let commands = saver.get_messages();
     let [
-        DataCommand::Subscribe(SubscribeCommand::BookDepth10(subscribe)),
-        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(unsubscribe)),
+        DataCommand::Subscribe(SubscribeCommand::BookDepth(subscribe)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(unsubscribe)),
     ] = commands.as_slice()
     else {
-        panic!("expected BookDepth10 subscribe and unsubscribe commands, was {commands:?}");
+        panic!("expected BookDepth subscribe and unsubscribe commands, was {commands:?}");
     };
 
     assert_eq!(subscribe.instrument_id, audusd_sim.id);
     assert_eq!(subscribe.book_type, BookType::L2_MBP);
-    assert_eq!(subscribe.depth, NonZeroUsize::new(10));
+    assert_eq!(subscribe.depth, None);
     assert_eq!(subscribe.client_id, client_id);
     assert_eq!(subscribe.venue, Some(audusd_sim.id.venue));
     assert!(subscribe.managed);
@@ -1710,7 +2973,7 @@ fn test_book_depth10_facade_sends_subscribe_and_unsubscribe_commands(
     assert_eq!(unsubscribe.instrument_id, audusd_sim.id);
     assert_eq!(unsubscribe.client_id, client_id);
     assert_eq!(unsubscribe.venue, Some(audusd_sim.id.venue));
-    assert!(unsubscribe.correlation_id.is_none());
+    assert_eq!(unsubscribe.correlation_id, Some(subscribe.command_id));
     assert!(unsubscribe.params.is_none());
 }
 
@@ -1721,8 +2984,8 @@ fn parent_params() -> Params {
 }
 
 #[rstest]
-fn test_parent_book_depth10_subscription_receives_and_unsubscribes(
-    clock: Rc<RefCell<TestClock>>,
+fn test_parent_book_depth_subscription_receives_and_unsubscribes(
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1732,29 +2995,30 @@ fn test_parent_book_depth10_subscription_receives_and_unsubscribes(
 
     let parent_id = InstrumentId::from("ES.FUT.XCME");
     let underlying_id = InstrumentId::from("ESZ24.XCME");
-    actor.subscribe_book_depth10(
+    actor.subscribe_book_depth(
         parent_id,
         BookType::L2_MBP,
+        None,
         None,
         false,
         Some(parent_params()),
     );
 
-    let topic = get_book_depth10_topic(underlying_id);
+    let topic = get_book_depth_topic(underlying_id);
     let mut depth = stub_depth10();
     depth.instrument_id = underlying_id;
-    msgbus::publish_depth10(topic, &depth);
+    msgbus::publish_depth(topic, &depth);
 
-    actor.unsubscribe_book_depth10(parent_id, None, Some(parent_params()));
-    msgbus::publish_depth10(topic, &depth);
+    actor.unsubscribe_book_depth(parent_id, None, Some(parent_params()));
+    msgbus::publish_depth(topic, &depth);
 
-    assert_eq!(actor.core.depth10_handler_count(), 0);
+    assert_eq!(actor.core.depth_handler_count(), 0);
     assert_eq!(actor.received_depths, vec![depth]);
 }
 
 #[rstest]
 fn test_parent_book_deltas_subscription_receives_per_underlying(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1800,7 +3064,7 @@ fn test_parent_book_deltas_subscription_receives_per_underlying(
 
 #[rstest]
 fn test_parent_book_deltas_unsubscribe_removes_per_underlying_handler(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1849,7 +3113,7 @@ fn test_parent_book_deltas_unsubscribe_removes_per_underlying_handler(
 
 #[rstest]
 fn test_betfair_runner_subscription_does_not_cross_leak(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -1913,7 +3177,7 @@ fn test_betfair_runner_subscription_does_not_cross_leak(
 
 #[rstest]
 fn test_unsubscribe_book_deltas(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1968,7 +3232,7 @@ fn test_unsubscribe_book_deltas(
 
 #[rstest]
 fn test_subscribe_and_receive_book_at_interval(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -1992,7 +3256,7 @@ fn test_subscribe_and_receive_book_at_interval(
 
 #[rstest]
 fn test_unsubscribe_book_at_interval(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2025,7 +3289,7 @@ fn test_unsubscribe_book_at_interval(
 
 #[rstest]
 fn test_unsubscribe_book_at_interval_keeps_other_intervals(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2060,7 +3324,7 @@ fn test_unsubscribe_book_at_interval_keeps_other_intervals(
 
 #[rstest]
 fn test_subscribe_and_receive_quotes(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2081,7 +3345,7 @@ fn test_subscribe_and_receive_quotes(
 
 #[rstest]
 fn test_unsubscribe_quotes(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2109,7 +3373,7 @@ fn test_unsubscribe_quotes(
 
 #[rstest]
 fn test_subscribe_and_receive_trades(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2130,7 +3394,7 @@ fn test_subscribe_and_receive_trades(
 
 #[rstest]
 fn test_unsubscribe_trades(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2158,7 +3422,7 @@ fn test_unsubscribe_trades(
 
 #[rstest]
 fn test_subscribe_and_receive_bars(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2179,7 +3443,7 @@ fn test_subscribe_and_receive_bars(
 
 #[rstest]
 fn test_unsubscribe_bars(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2208,7 +3472,7 @@ fn test_unsubscribe_bars(
 
 #[rstest]
 fn test_request_instrument(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2245,7 +3509,7 @@ fn test_request_instrument(
 
 #[rstest]
 fn test_request_instruments(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2286,7 +3550,7 @@ fn test_request_instruments(
 
 #[rstest]
 fn test_request_quotes(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2323,7 +3587,7 @@ fn test_request_quotes(
 
 #[rstest]
 fn test_request_quotes_accepts_equal_start_and_end(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2374,7 +3638,7 @@ fn test_request_quotes_accepts_equal_start_and_end(
 #[case(None, Some(1), "end was > now")]
 #[case(Some(-1), Some(-2), "start was > end")]
 fn test_request_quotes_rejects_invalid_time_range(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2385,8 +3649,8 @@ fn test_request_quotes_rejects_invalid_time_range(
     let now_ns = UnixNanos::from(1_700_000_000_123_456_789);
     clock.borrow_mut().set_time(now_ns);
     let now = clock.borrow().utc_now();
-    let start = start_offset_secs.map(|offset| now + chrono::Duration::seconds(offset));
-    let end = end_offset_secs.map(|offset| now + chrono::Duration::seconds(offset));
+    let start = start_offset_secs.map(|offset| now + jiff::SignedDuration::from_secs(offset));
+    let end = end_offset_secs.map(|offset| now + jiff::SignedDuration::from_secs(offset));
     let actor_id = register_data_actor(clock, cache, trader_id);
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
@@ -2406,8 +3670,361 @@ fn test_request_quotes_rejects_invalid_time_range(
 }
 
 #[rstest]
+fn test_request_bars_rejects_composite_type_without_registering_or_sending(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let bar_type = BarType::from("AUD/USD.SIM-1-TICK-LAST-INTERNAL@1-TICK-EXTERNAL");
+
+    let error = actor
+        .request_bars(bar_type, None, None, None, None, None)
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Composite bar types are not supported for `request_bars`, was {bar_type}; \
+             request aggregation via the `bar_types` params instead"
+        )
+    );
+    assert!(saver.get_messages().is_empty());
+    assert!(get_message_bus().borrow().correlation_index.is_empty());
+}
+
+#[rstest]
+fn test_request_facade_sends_exact_command_matrix(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let now_ns = UnixNanos::from(1_700_000_000_123_456_789);
+    clock.borrow_mut().set_time(now_ns);
+    let now = clock.borrow().utc_now();
+    let start = now + jiff::SignedDuration::from_secs(-2);
+    let end = now + jiff::SignedDuration::from_secs(-1);
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let instrument_id = audusd_sim.id;
+    let venue = instrument_id.venue;
+    let client_id = ClientId::from("MATRIX-CLIENT");
+    let data_type = DataType::new("MatrixData", None, None);
+    let limit = NonZeroUsize::new(17);
+    let depth = NonZeroUsize::new(19);
+    let bar_type = BarType::from_str(&format!("{instrument_id}-3-MINUTE-LAST-EXTERNAL")).unwrap();
+    let mut params = Params::new();
+    params.insert("matrix".to_string(), serde_json::json!(23));
+
+    let data_id = actor
+        .request_data(
+            data_type.clone(),
+            client_id,
+            Some(start),
+            Some(end),
+            limit,
+            Some(params.clone()),
+        )
+        .unwrap();
+    let instrument_request_id = actor
+        .request_instrument(
+            instrument_id,
+            Some(start),
+            Some(end),
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
+    let instruments_id = actor
+        .request_instruments(
+            Some(venue),
+            Some(start),
+            Some(end),
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
+    let snapshot_id = actor
+        .request_book_snapshot(instrument_id, depth, Some(client_id), Some(params.clone()))
+        .unwrap();
+    let deltas_id = actor
+        .request_book_deltas(
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
+    let book_depth_id = actor
+        .request_book_depth(
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            depth,
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
+    let trades_id = actor
+        .request_trades(
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
+    let funding_id = actor
+        .request_funding_rates(
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
+    let bars_id = actor
+        .request_bars(
+            bar_type,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            Some(params.clone()),
+        )
+        .unwrap();
+
+    let commands = saver.get_messages();
+    let [
+        DataCommand::Request(RequestCommand::Data(data)),
+        DataCommand::Request(RequestCommand::Instrument(instrument)),
+        DataCommand::Request(RequestCommand::Instruments(instruments)),
+        DataCommand::Request(RequestCommand::BookSnapshot(snapshot)),
+        DataCommand::Request(RequestCommand::BookDeltas(deltas)),
+        DataCommand::Request(RequestCommand::BookDepth(book_depth)),
+        DataCommand::Request(RequestCommand::Trades(trades)),
+        DataCommand::Request(RequestCommand::FundingRates(funding)),
+        DataCommand::Request(RequestCommand::Bars(bars)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected exact request command matrix, was {commands:?}");
+    };
+
+    assert_eq!(
+        (
+            data.client_id,
+            &data.data_type,
+            data.start,
+            data.end,
+            data.limit,
+            data.request_id,
+            data.ts_init,
+            data.params.as_ref(),
+        ),
+        (
+            client_id,
+            &data_type,
+            Some(start),
+            Some(end),
+            limit,
+            data_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            instrument.instrument_id,
+            instrument.start,
+            instrument.end,
+            instrument.client_id,
+            instrument.request_id,
+            instrument.ts_init,
+            instrument.params.as_ref(),
+        ),
+        (
+            instrument_id,
+            Some(start),
+            Some(end),
+            Some(client_id),
+            instrument_request_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            instruments.venue,
+            instruments.start,
+            instruments.end,
+            instruments.client_id,
+            instruments.request_id,
+            instruments.ts_init,
+            instruments.params.as_ref(),
+        ),
+        (
+            Some(venue),
+            Some(start),
+            Some(end),
+            Some(client_id),
+            instruments_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            snapshot.instrument_id,
+            snapshot.depth,
+            snapshot.client_id,
+            snapshot.request_id,
+            snapshot.ts_init,
+            snapshot.params.as_ref(),
+        ),
+        (
+            instrument_id,
+            depth,
+            Some(client_id),
+            snapshot_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            deltas.instrument_id,
+            deltas.start,
+            deltas.end,
+            deltas.limit,
+            deltas.client_id,
+            deltas.request_id,
+            deltas.ts_init,
+            deltas.params.as_ref(),
+        ),
+        (
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            deltas_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            book_depth.instrument_id,
+            book_depth.start,
+            book_depth.end,
+            book_depth.limit,
+            book_depth.depth,
+            book_depth.client_id,
+            book_depth.request_id,
+            book_depth.ts_init,
+            book_depth.params.as_ref(),
+        ),
+        (
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            depth,
+            Some(client_id),
+            book_depth_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            trades.instrument_id,
+            trades.start,
+            trades.end,
+            trades.limit,
+            trades.client_id,
+            trades.request_id,
+            trades.ts_init,
+            trades.params.as_ref(),
+        ),
+        (
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            trades_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            funding.instrument_id,
+            funding.start,
+            funding.end,
+            funding.limit,
+            funding.client_id,
+            funding.request_id,
+            funding.ts_init,
+            funding.params.as_ref(),
+        ),
+        (
+            instrument_id,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            funding_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(
+        (
+            bars.bar_type,
+            bars.start,
+            bars.end,
+            bars.limit,
+            bars.client_id,
+            bars.request_id,
+            bars.ts_init,
+            bars.params.as_ref(),
+        ),
+        (
+            bar_type,
+            Some(start),
+            Some(end),
+            limit,
+            Some(client_id),
+            bars_id,
+            now_ns,
+            Some(&params),
+        )
+    );
+    assert_eq!(get_message_bus().borrow().correlation_index.len(), 9);
+}
+
+#[rstest]
 fn test_request_trades(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2444,7 +4061,7 @@ fn test_request_trades(
 
 #[rstest]
 fn test_request_book_deltas(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2478,7 +4095,7 @@ fn test_request_book_deltas(
 
 #[rstest]
 fn test_request_book_depth(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2498,7 +4115,7 @@ fn test_request_book_depth(
         request_id,
         client_id,
         audusd_sim.id,
-        vec![depth],
+        vec![depth.clone()],
         None,
         None,
         UnixNanos::default(),
@@ -2513,7 +4130,7 @@ fn test_request_book_depth(
 
 #[rstest]
 fn test_request_funding_rates(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2557,7 +4174,7 @@ fn test_request_funding_rates(
 
 #[rstest]
 fn test_request_bars(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2596,7 +4213,7 @@ fn test_request_bars(
 
 #[rstest]
 fn test_subscribe_and_receive_instruments(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2623,7 +4240,7 @@ fn test_subscribe_and_receive_instruments(
 
 #[rstest]
 fn test_subscribe_and_receive_instrument(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2648,7 +4265,7 @@ fn test_subscribe_and_receive_instrument(
 
 #[rstest]
 fn test_subscribe_and_receive_mark_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2682,7 +4299,7 @@ fn test_subscribe_and_receive_mark_prices(
 
 #[rstest]
 fn test_subscribe_and_receive_index_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2708,7 +4325,7 @@ fn test_subscribe_and_receive_index_prices(
 
 #[rstest]
 fn test_subscribe_and_receive_funding_rates(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2746,7 +4363,7 @@ fn test_subscribe_and_receive_funding_rates(
 
 #[rstest]
 fn test_subscribe_and_receive_instrument_status(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_status: InstrumentStatus,
@@ -2767,7 +4384,7 @@ fn test_subscribe_and_receive_instrument_status(
 
 #[rstest]
 fn test_subscribe_and_receive_instrument_close(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_close: InstrumentClose,
@@ -2788,7 +4405,7 @@ fn test_subscribe_and_receive_instrument_close(
 
 #[rstest]
 fn test_subscribe_and_receive_option_greeks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2827,7 +4444,7 @@ fn test_subscribe_and_receive_option_greeks(
 
 #[rstest]
 fn test_subscribe_and_receive_option_chain(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -2835,7 +4452,7 @@ fn test_subscribe_and_receive_option_chain(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("AAPL"),
         Ustr::from("USD"),
@@ -2865,7 +4482,7 @@ fn test_subscribe_and_receive_option_chain(
 
 #[rstest]
 fn test_unsubscribe_instruments(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2899,7 +4516,7 @@ fn test_unsubscribe_instruments(
 
 #[rstest]
 fn test_unsubscribe_instrument(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2930,7 +4547,7 @@ fn test_unsubscribe_instrument(
 
 #[rstest]
 fn test_unsubscribe_mark_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -2981,7 +4598,7 @@ fn test_unsubscribe_mark_prices(
 
 #[rstest]
 fn test_unsubscribe_index_prices(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3018,7 +4635,7 @@ fn test_unsubscribe_index_prices(
 
 #[rstest]
 fn test_unsubscribe_funding_rates(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3059,7 +4676,7 @@ fn test_unsubscribe_funding_rates(
 
 #[rstest]
 fn test_unsubscribe_instrument_status(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_status: InstrumentStatus,
@@ -3086,7 +4703,7 @@ fn test_unsubscribe_instrument_status(
 
 #[rstest]
 fn test_unsubscribe_instrument_close(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     stub_instrument_close: InstrumentClose,
@@ -3113,7 +4730,7 @@ fn test_unsubscribe_instrument_close(
 
 #[rstest]
 fn test_unsubscribe_option_greeks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3157,7 +4774,7 @@ fn test_unsubscribe_option_greeks(
 
 #[rstest]
 fn test_unsubscribe_option_chain(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3165,7 +4782,7 @@ fn test_unsubscribe_option_chain(
     let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         Venue::from("OPRA"),
         Ustr::from("AAPL"),
         Ustr::from("USD"),
@@ -3200,7 +4817,7 @@ fn test_unsubscribe_option_chain(
 
 #[rstest]
 fn test_request_book_snapshot(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3240,7 +4857,7 @@ fn test_request_book_snapshot(
 
 #[rstest]
 fn test_request_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3283,10 +4900,358 @@ fn test_request_data(
     assert_eq!(actor.received_data[0], "Any { .. }");
 }
 
+#[rstest]
+fn test_handle_data_response_preserves_custom_data_payload_shape(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    test_logging();
+
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+
+    let data = vec![
+        make_test_custom_data("CustomData-01"),
+        make_test_custom_data("CustomData-02"),
+    ];
+    let scalar = make_test_custom_data("CustomData-scalar");
+    let data_type = data[0].data_type.clone();
+    let scalar_response = CustomDataResponse::new(
+        UUID4::new(),
+        ClientId::new("TestClient"),
+        None,
+        scalar.data_type.clone(),
+        scalar.clone(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    actor.handle_data_response(&scalar_response);
+
+    assert_eq!(actor.received_data.len(), 1);
+    assert_eq!(actor.received_custom_data, vec![scalar.clone()]);
+
+    let empty_response = CustomDataResponse::new(
+        UUID4::new(),
+        ClientId::new("TestClient"),
+        None,
+        data_type.clone(),
+        Vec::<CustomData>::new(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    actor.handle_data_response(&empty_response);
+
+    assert_eq!(actor.received_data.len(), 2);
+    assert_eq!(actor.received_custom_data, vec![scalar.clone()]);
+
+    let client_id = ClientId::new("TestClient");
+    let response = CustomDataResponse::new(
+        UUID4::new(),
+        client_id,
+        None,
+        data_type,
+        data.clone(),
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    actor.handle_data_response(&response);
+
+    let mut expected = vec![scalar];
+    expected.extend(data);
+
+    assert_eq!(actor.received_data.len(), 3);
+    assert_eq!(actor.received_custom_data, expected);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_defi_subscription_facade_sends_exact_command_matrix(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let now_ns = UnixNanos::from(1_700_000_000_123_456_789);
+    clock.borrow_mut().set_time(now_ns);
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let (_, _, instrument_id, _) = defi_event_context();
+    let chain = Blockchain::Arbitrum;
+    let client_id = ClientId::from("DEFI-MATRIX-CLIENT");
+    let mut params = Params::new();
+    params.insert("matrix".to_string(), serde_json::json!(29));
+
+    let mut duplicate_params = Params::new();
+    duplicate_params.insert("matrix".to_string(), serde_json::json!(31));
+
+    for (client_id, params) in [
+        (client_id, params.clone()),
+        (ClientId::from("DUPLICATE-DEFI-CLIENT"), duplicate_params),
+    ] {
+        actor.subscribe_blocks(chain, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool_swaps(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool_liquidity_updates(
+            instrument_id,
+            Some(client_id),
+            Some(params.clone()),
+        );
+        actor.subscribe_pool_fee_collects(instrument_id, Some(client_id), Some(params.clone()));
+        actor.subscribe_pool_flash_events(instrument_id, Some(client_id), Some(params.clone()));
+    }
+    actor.unsubscribe_blocks(chain, Some(client_id), Some(params.clone()));
+    actor.unsubscribe_pool(instrument_id, Some(client_id), Some(params.clone()));
+    actor.unsubscribe_pool_swaps(instrument_id, Some(client_id), Some(params.clone()));
+    actor.unsubscribe_pool_liquidity_updates(instrument_id, Some(client_id), Some(params.clone()));
+    actor.unsubscribe_pool_fee_collects(instrument_id, Some(client_id), Some(params.clone()));
+    actor.unsubscribe_pool_flash_events(instrument_id, Some(client_id), Some(params.clone()));
+
+    let commands = saver.get_messages();
+    let [
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(blocks)),
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(pool)),
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(swaps)),
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolLiquidityUpdates(liquidity)),
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolFeeCollects(collects)),
+        DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolFlashEvents(flashes)),
+        DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Blocks(unsub_blocks)),
+        DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Pool(unsub_pool)),
+        DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolSwaps(unsub_swaps)),
+        DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(unsub_liquidity)),
+        DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(unsub_collects)),
+        DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(unsub_flashes)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected exact DeFi subscription command matrix, was {commands:?}");
+    };
+
+    let subscribe_commands = commands[..6]
+        .iter()
+        .map(|command| match command {
+            DataCommand::DefiSubscribe(command) => command,
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
+    let unsubscribe_commands = commands[6..]
+        .iter()
+        .map(|command| match command {
+            DataCommand::DefiUnsubscribe(command) => command,
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        subscribe_commands
+            .iter()
+            .map(|command| command.blockchain())
+            .collect::<Vec<_>>(),
+        vec![chain; 6]
+    );
+    assert_eq!(
+        unsubscribe_commands
+            .iter()
+            .map(|command| command.blockchain())
+            .collect::<Vec<_>>(),
+        vec![chain; 6]
+    );
+    assert_eq!(
+        subscribe_commands
+            .iter()
+            .map(|command| command.client_id().copied())
+            .collect::<Vec<_>>(),
+        vec![Some(client_id); 6]
+    );
+    assert_eq!(
+        unsubscribe_commands
+            .iter()
+            .map(|command| command.client_id().copied())
+            .collect::<Vec<_>>(),
+        vec![Some(client_id); 6]
+    );
+    assert_eq!(
+        subscribe_commands
+            .iter()
+            .map(|command| command.ts_init())
+            .collect::<Vec<_>>(),
+        vec![now_ns; 6]
+    );
+    assert_eq!(
+        unsubscribe_commands
+            .iter()
+            .map(|command| command.ts_init())
+            .collect::<Vec<_>>(),
+        vec![now_ns; 6]
+    );
+    assert!(
+        subscribe_commands
+            .iter()
+            .all(|command| command.venue().is_none())
+    );
+    assert!(
+        unsubscribe_commands
+            .iter()
+            .all(|command| command.venue().is_none())
+    );
+    let command_ids = subscribe_commands
+        .iter()
+        .map(|command| command.command_id())
+        .chain(
+            unsubscribe_commands
+                .iter()
+                .map(|command| command.command_id()),
+        )
+        .collect::<AHashSet<_>>();
+    assert_eq!(command_ids.len(), 12);
+
+    assert_eq!(blocks.chain, chain);
+    assert_eq!(unsub_blocks.chain, chain);
+    assert_eq!(
+        [
+            pool.instrument_id,
+            swaps.instrument_id,
+            liquidity.instrument_id,
+            collects.instrument_id,
+            flashes.instrument_id,
+            unsub_pool.instrument_id,
+            unsub_swaps.instrument_id,
+            unsub_liquidity.instrument_id,
+            unsub_collects.instrument_id,
+            unsub_flashes.instrument_id,
+        ],
+        [instrument_id; 10]
+    );
+    assert_eq!(
+        [
+            blocks.params.as_ref(),
+            pool.params.as_ref(),
+            swaps.params.as_ref(),
+            liquidity.params.as_ref(),
+            collects.params.as_ref(),
+            flashes.params.as_ref(),
+            unsub_blocks.params.as_ref(),
+            unsub_pool.params.as_ref(),
+            unsub_swaps.params.as_ref(),
+            unsub_liquidity.params.as_ref(),
+            unsub_collects.params.as_ref(),
+            unsub_flashes.params.as_ref(),
+        ],
+        [Some(&params); 12]
+    );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_release_subscriptions_emits_every_defi_unsubscribe_shape(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let release_ns = UnixNanos::from(1_700_000_009_123_456_789);
+    let actor_id = register_data_actor(clock.clone(), cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let (_, _, instrument_id, _) = defi_event_context();
+    let chain = Blockchain::Arbitrum;
+    let client_id = ClientId::from("RETAINED-DEFI-CLIENT");
+    let mut params = Params::new();
+    params.insert("defi-route".to_string(), serde_json::json!(47));
+
+    actor.subscribe_blocks(chain, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_swaps(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_liquidity_updates(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_fee_collects(instrument_id, Some(client_id), Some(params.clone()));
+    actor.subscribe_pool_flash_events(instrument_id, Some(client_id), Some(params.clone()));
+    saver.clear();
+    clock.borrow_mut().set_time(release_ns);
+
+    actor.release_subscriptions();
+
+    let mut released = saver
+        .get_messages()
+        .iter()
+        .map(|command| match command {
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Blocks(command)) => {
+                assert_eq!(command.chain, chain);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "blocks"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Pool(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "pool"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolSwaps(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "swaps"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "liquidity"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFeeCollects(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "collects"
+            }
+            DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::PoolFlashEvents(command)) => {
+                assert_eq!(command.instrument_id, instrument_id);
+                assert_eq!(command.client_id, Some(client_id));
+                assert_eq!(command.ts_init, release_ns);
+                assert_eq!(command.params.as_ref(), Some(&params));
+                "flashes"
+            }
+            other => panic!("expected DeFi unsubscribe command, was {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    released.sort_unstable();
+
+    assert_eq!(
+        released,
+        [
+            "blocks",
+            "collects",
+            "flashes",
+            "liquidity",
+            "pool",
+            "swaps"
+        ]
+    );
+}
+
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_subscribe_and_receive_blocks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3317,7 +5282,7 @@ fn test_subscribe_and_receive_blocks(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_unsubscribe_blocks(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3364,7 +5329,7 @@ fn test_unsubscribe_blocks(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_subscribe_and_receive_pools(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3421,6 +5386,11 @@ fn test_subscribe_and_receive_pools(
 
     msgbus::publish_defi_pool(topic, &pool);
 
+    actor.unsubscribe_pool(instrument_id, None, None);
+    let mut later_pool = pool.clone();
+    later_pool.creation_block = 2_000_000;
+    msgbus::publish_defi_pool(topic, &later_pool);
+
     assert_eq!(actor.received_pools.len(), 1);
     assert_eq!(actor.received_pools[0], pool);
 }
@@ -3428,7 +5398,7 @@ fn test_subscribe_and_receive_pools(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_subscribe_and_receive_pool_swaps(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3487,7 +5457,7 @@ fn test_subscribe_and_receive_pool_swaps(
 #[cfg(feature = "defi")]
 #[rstest]
 fn test_unsubscribe_pool_swaps(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3566,9 +5536,47 @@ fn test_unsubscribe_pool_swaps(
     assert_eq!(actor.received_pool_swaps[0], swap1);
 }
 
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_subscribe_receive_and_unsubscribe_remaining_pool_events(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    let (liquidity, collect, flash) = make_pool_event_set(197);
+    let instrument_id = liquidity.instrument_id;
+
+    actor.subscribe_pool_liquidity_updates(instrument_id, None, None);
+    actor.subscribe_pool_fee_collects(instrument_id, None, None);
+    actor.subscribe_pool_flash_events(instrument_id, None, None);
+
+    let liquidity_topic = get_defi_liquidity_topic(instrument_id);
+    let collect_topic = get_defi_collect_topic(instrument_id);
+    let flash_topic = get_defi_flash_topic(instrument_id);
+    msgbus::publish_defi_liquidity(liquidity_topic, &liquidity);
+    msgbus::publish_defi_collect(collect_topic, &collect);
+    msgbus::publish_defi_flash(flash_topic, &flash);
+
+    actor.unsubscribe_pool_liquidity_updates(instrument_id, None, None);
+    actor.unsubscribe_pool_fee_collects(instrument_id, None, None);
+    actor.unsubscribe_pool_flash_events(instrument_id, None, None);
+
+    let (later_liquidity, later_collect, later_flash) = make_pool_event_set(199);
+    msgbus::publish_defi_liquidity(liquidity_topic, &later_liquidity);
+    msgbus::publish_defi_collect(collect_topic, &later_collect);
+    msgbus::publish_defi_flash(flash_topic, &later_flash);
+
+    assert_eq!(actor.received_pool_liquidity_updates, vec![liquidity]);
+    assert_eq!(actor.received_pool_fee_collects, vec![collect]);
+    assert_eq!(actor.received_pool_flash_events, vec![flash]);
+}
+
 #[rstest]
 fn test_duplicate_subscribe_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3593,7 +5601,7 @@ fn test_duplicate_subscribe_custom_data(
 
 #[rstest]
 fn test_unsubscribe_before_subscribe_custom_data(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3611,6 +5619,112 @@ fn test_unsubscribe_before_subscribe_custom_data(
     msgbus::publish_any(topic, &payload);
 
     assert!(actor.received_data.is_empty());
+}
+
+#[derive(Debug)]
+struct FailingRetirementActor {
+    core: DataActorCore,
+}
+
+nautilus_actor!(FailingRetirementActor);
+
+impl DataActor for FailingRetirementActor {
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("reset failed");
+    }
+
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("fault failed");
+    }
+
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("dispose failed");
+    }
+}
+
+#[rstest]
+fn test_failed_reset_retains_subscriptions(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let mut actor = FailingRetirementActor {
+        core: DataActorCore::new(DataActorConfig::default()),
+    };
+    actor.register(trader_id, clock, cache).unwrap();
+    let actor_id = actor.actor_id().inner();
+    register_actor(actor);
+
+    let mut actor = get_actor_unchecked::<FailingRetirementActor>(&actor_id);
+    actor.subscribe_quotes(audusd_sim.id, None, None);
+    let error = actor.reset().unwrap_err();
+
+    assert_eq!(error.to_string(), "reset failed");
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_quotes
+            .subscription_count(),
+        1
+    );
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Retirement {
+    Fault,
+    Dispose,
+}
+
+#[rstest]
+#[case::fault(Retirement::Fault, "fault failed", 0)]
+#[case::dispose(Retirement::Dispose, "dispose failed", 1)]
+fn test_failed_retirement_subscription_release(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    #[case] retirement: Retirement,
+    #[case] expected_error: &str,
+    #[case] expected_subscriptions: usize,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let mut actor = FailingRetirementActor {
+        core: DataActorCore::new(DataActorConfig::default()),
+    };
+    actor.register(trader_id, clock, cache).unwrap();
+    let actor_id = actor.actor_id().inner();
+    register_actor(actor);
+
+    let mut actor = get_actor_unchecked::<FailingRetirementActor>(&actor_id);
+    if matches!(retirement, Retirement::Fault) {
+        actor.start().unwrap();
+    }
+    actor.subscribe_quotes(audusd_sim.id, None, None);
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_quotes
+            .subscription_count(),
+        1
+    );
+
+    let error = match retirement {
+        Retirement::Fault => actor.fault().unwrap_err(),
+        Retirement::Dispose => actor.dispose().unwrap_err(),
+    };
+
+    assert_eq!(error.to_string(), expected_error);
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .router_quotes
+            .subscription_count(),
+        expected_subscriptions
+    );
 }
 
 #[derive(Debug)]
@@ -3647,7 +5761,7 @@ impl DataActor for SaveLoadActor {
 #[case::with_reason(Some("graceful exit".to_string()))]
 #[case::no_reason(None)]
 fn test_shutdown_system_publishes_command(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] reason: Option<String>,
@@ -3677,7 +5791,7 @@ fn test_shutdown_system_publishes_command(
 
 #[rstest]
 fn test_on_save_and_on_load(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3706,7 +5820,7 @@ fn test_on_save_and_on_load(
 
 #[rstest]
 fn test_data_actor_core_tracks_quote_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3727,7 +5841,7 @@ fn test_data_actor_core_tracks_quote_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_quote_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3748,7 +5862,7 @@ fn test_data_actor_core_removes_quote_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_tracks_trade_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3769,7 +5883,7 @@ fn test_data_actor_core_tracks_trade_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_trade_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3787,7 +5901,7 @@ fn test_data_actor_core_removes_trade_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_tracks_bar_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3809,7 +5923,7 @@ fn test_data_actor_core_tracks_bar_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_bar_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3828,7 +5942,7 @@ fn test_data_actor_core_removes_bar_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_tracks_deltas_handlers(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3849,7 +5963,7 @@ fn test_data_actor_core_tracks_deltas_handlers(
 
 #[rstest]
 fn test_data_actor_core_removes_deltas_handler_on_unsubscribe(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3867,7 +5981,7 @@ fn test_data_actor_core_removes_deltas_handler_on_unsubscribe(
 
 #[rstest]
 fn test_data_actor_core_multiple_subscriptions_tracked(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
@@ -3896,8 +6010,108 @@ fn test_data_actor_core_multiple_subscriptions_tracked(
 }
 
 #[rstest]
+fn test_release_subscriptions_removes_every_handler_family_and_is_idempotent(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let instrument_id = audusd_sim.id;
+    let interval_ms = NonZeroUsize::new(100).unwrap();
+    let bar_type = BarType::from_str(&format!("{instrument_id}-1-MINUTE-LAST-INTERNAL")).unwrap();
+    let series_id = OptionSeriesId::new_derived(
+        Venue::from("OPRA"),
+        Ustr::from("AAPL"),
+        Ustr::from("USD"),
+        UnixNanos::from(1_711_036_800_000_000_000),
+    );
+    let strike_range = StrikeRange::AtmRelative {
+        strikes_above: 5,
+        strikes_below: 3,
+    };
+
+    actor.subscribe_signal("release", None);
+    actor.subscribe_instrument(instrument_id, None, None);
+    actor.subscribe_book_deltas(instrument_id, BookType::L2_MBP, None, None, false, None);
+    actor.subscribe_book_depth(instrument_id, BookType::L2_MBP, None, None, false, None);
+    actor.subscribe_book_at_interval(
+        instrument_id,
+        BookType::L2_MBP,
+        None,
+        interval_ms,
+        None,
+        None,
+    );
+    actor.subscribe_quotes(instrument_id, None, None);
+    actor.subscribe_trades(instrument_id, None, None);
+    actor.subscribe_bars(bar_type, None, None);
+    actor.subscribe_mark_prices(instrument_id, None, None);
+    actor.subscribe_index_prices(instrument_id, None, None);
+    actor.subscribe_funding_rates(instrument_id, None, None);
+    actor.subscribe_option_greeks(instrument_id, None, None);
+    actor.subscribe_option_chain(series_id, strike_range, Some(250), None, None);
+
+    #[cfg(feature = "defi")]
+    {
+        let (_, _, pool_id, _) = defi_event_context();
+        actor.subscribe_blocks(Blockchain::Arbitrum, None, None);
+        actor.subscribe_pool(pool_id, None, None);
+        actor.subscribe_pool_swaps(pool_id, None, None);
+        actor.subscribe_pool_liquidity_updates(pool_id, None, None);
+        actor.subscribe_pool_fee_collects(pool_id, None, None);
+        actor.subscribe_pool_flash_events(pool_id, None, None);
+    }
+
+    let standard_counts = || {
+        let message_bus = get_message_bus();
+        let bus = message_bus.borrow();
+        [
+            bus.subscriptions.len(),
+            bus.router_instruments.subscription_count(),
+            bus.router_deltas.subscription_count(),
+            bus.router_depth.subscription_count(),
+            bus.router_book_snapshots.subscription_count(),
+            bus.router_quotes.subscription_count(),
+            bus.router_trades.subscription_count(),
+            bus.router_bars.subscription_count(),
+            bus.router_mark_prices.subscription_count(),
+            bus.router_index_prices.subscription_count(),
+            bus.router_funding_rates.subscription_count(),
+            bus.router_option_greeks.subscription_count(),
+            bus.router_option_chain.subscription_count(),
+        ]
+    };
+    #[cfg(feature = "defi")]
+    let defi_counts = || {
+        let message_bus = get_message_bus();
+        let bus = message_bus.borrow();
+        [
+            bus.router_defi_blocks.subscription_count(),
+            bus.router_defi_pools.subscription_count(),
+            bus.router_defi_swaps.subscription_count(),
+            bus.router_defi_liquidity.subscription_count(),
+            bus.router_defi_collects.subscription_count(),
+            bus.router_defi_flash.subscription_count(),
+        ]
+    };
+
+    assert_eq!(standard_counts(), [1; 13]);
+    #[cfg(feature = "defi")]
+    assert_eq!(defi_counts(), [1; 6]);
+
+    actor.release_subscriptions();
+    actor.release_subscriptions();
+
+    assert_eq!(standard_counts(), [0; 13]);
+    #[cfg(feature = "defi")]
+    assert_eq!(defi_counts(), [0; 6]);
+}
+
+#[rstest]
 fn test_publish_data_reaches_subscriber(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -3945,6 +6159,34 @@ fn test_unsubscribe_signal_panics_when_unregistered() {
 
 #[rstest]
 #[should_panic(expected = "Actor has not been registered")]
+fn test_subscribe_queue_state_panics_when_unregistered() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.subscribe_queue_state(None, None);
+}
+
+#[rstest]
+#[should_panic(expected = "Actor has not been registered")]
+fn test_unsubscribe_queue_state_panics_when_unregistered() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.unsubscribe_queue_state(None);
+}
+
+#[rstest]
+#[should_panic(expected = "Actor has not been registered")]
+fn test_subscribe_socket_state_panics_when_unregistered() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.subscribe_socket_state(None, None, None);
+}
+
+#[rstest]
+#[should_panic(expected = "Actor has not been registered")]
+fn test_unsubscribe_socket_state_panics_when_unregistered() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor.unsubscribe_socket_state(None, None);
+}
+
+#[rstest]
+#[should_panic(expected = "Actor has not been registered")]
 fn test_add_synthetic_panics_when_unregistered() {
     use std::str::FromStr;
 
@@ -3957,14 +6199,15 @@ fn test_add_synthetic_panics_when_unregistered() {
     let comp1 = InstrumentId::from_str("BTC-USD.VENUE").unwrap();
     let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
     let formula = format!("({comp1} + {comp2}) / 2.0");
-    let synthetic = SyntheticInstrument::new(
-        Symbol::from("SYN"),
-        2,
-        vec![comp1, comp2],
-        &formula,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let synthetic = SyntheticInstrument::builder()
+        .symbol(Symbol::from("SYN"))
+        .price_precision(2)
+        .components(vec![comp1, comp2])
+        .formula(&formula)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     let _ = actor.add_synthetic(synthetic);
 }
 
@@ -3982,20 +6225,21 @@ fn test_update_synthetic_panics_when_unregistered() {
     let comp1 = InstrumentId::from_str("BTC-USD.VENUE").unwrap();
     let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
     let formula = format!("({comp1} + {comp2}) / 2.0");
-    let synthetic = SyntheticInstrument::new(
-        Symbol::from("SYN"),
-        2,
-        vec![comp1, comp2],
-        &formula,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let synthetic = SyntheticInstrument::builder()
+        .symbol(Symbol::from("SYN"))
+        .price_precision(2)
+        .components(vec![comp1, comp2])
+        .formula(&formula)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     let _ = actor.update_synthetic(synthetic);
 }
 
 #[rstest]
 fn test_subscribe_signal_multi_word_name_matches_published_topic(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4017,7 +6261,7 @@ fn test_subscribe_signal_multi_word_name_matches_published_topic(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 1);
-    assert_eq!(actor.received_signals[0].name.as_str(), "hello world");
+    assert_eq!(actor.received_signals[0].name, "hello world");
     assert_eq!(actor.received_signals[0].value, "ok");
 }
 
@@ -4025,7 +6269,7 @@ fn test_subscribe_signal_multi_word_name_matches_published_topic(
 #[case("example", "1.5", 0)]
 #[case("risk", "HIGH", 1_700_000_000_000_000_000)]
 fn test_publish_signal_reaches_subscriber(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] name: &str,
@@ -4046,7 +6290,7 @@ fn test_publish_signal_reaches_subscriber(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 1);
     let signal = &actor.received_signals[0];
-    assert_eq!(signal.name.as_str(), name);
+    assert_eq!(signal.name, name);
     assert_eq!(signal.value, value);
     if ts_event != 0 {
         assert_eq!(signal.ts_event, UnixNanos::from(ts_event));
@@ -4054,8 +6298,501 @@ fn test_publish_signal_reaches_subscriber(
 }
 
 #[rstest]
+#[case(None, None, vec![0, 1, 2, 3])]
+#[case(Some("BINANCE"), None, vec![0, 1])]
+#[case(None, Some("market"), vec![0, 2])]
+#[case(Some("BINANCE"), Some("market"), vec![0])]
+#[case(Some("MISSING"), None, vec![])]
+fn test_socket_state_filters_route_matching_events(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] client_id: Option<&str>,
+    #[case] endpoint: Option<&str>,
+    #[case] expected: Vec<usize>,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(client_id.map(ClientId::from), endpoint, Some(50));
+    drop(actor);
+
+    let mut events = Vec::new();
+
+    for (client, endpoint) in [
+        ("BINANCE", "market"),
+        ("BINANCE", "orders"),
+        ("BYBIT", "market"),
+        ("BYBIT", "orders"),
+    ] {
+        let mut event = make_socket_state_changed(SocketState::Connected);
+        event.client_id = ClientId::from(client);
+        event.endpoint = Ustr::from(endpoint);
+        msgbus::publish_any(
+            MessagingSwitchboard::socket_state_changed_topic(event.client_id, endpoint),
+            &event,
+        );
+        events.push(event);
+    }
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.received_socket_state_changes,
+        expected
+            .into_iter()
+            .map(|i| events[i].clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+#[case(None, vec![0, 1, 2, 3, 4])]
+#[case(Some(SystemChannel::ExecCommands), vec![2])]
+#[case(Some(SystemChannel::DataEvents), vec![3])]
+fn test_queue_state_filters_route_matching_events(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] channel: Option<SystemChannel>,
+    #[case] expected: Vec<usize>,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(channel, Some(50));
+    drop(actor);
+
+    let mut events = Vec::new();
+
+    for channel in [
+        SystemChannel::TimeEvents,
+        SystemChannel::ExecEvents,
+        SystemChannel::ExecCommands,
+        SystemChannel::DataEvents,
+        SystemChannel::DataCommands,
+    ] {
+        let mut event = make_queue_state_changed(QueueState::Triggered, 71);
+        event.channel = channel;
+        msgbus::publish_any(
+            MessagingSwitchboard::queue_state_changed_topic(channel),
+            &event,
+        );
+        events.push(event);
+    }
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.received_queue_state_changes,
+        expected
+            .into_iter()
+            .map(|i| events[i].clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[rstest]
+fn test_socket_state_unsubscribe_preserves_other_filters(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    let client_id = ClientId::from("BINANCE");
+    actor.subscribe_socket_state(Some(client_id), Some("market"), None);
+    actor.subscribe_socket_state(Some(client_id), Some("orders"), None);
+    actor.subscribe_socket_state(None, None, None);
+    actor.unsubscribe_socket_state(None, None);
+    actor.unsubscribe_socket_state(Some(client_id), Some("market"));
+    drop(actor);
+
+    let mut event = make_socket_state_changed(SocketState::Connected);
+    event.endpoint = Ustr::from("market");
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(client_id, "market"),
+        &event,
+    );
+    event.endpoint = Ustr::from("orders");
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(client_id, "orders"),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_queue_state_unsubscribe_preserves_other_filters(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(Some(SystemChannel::ExecCommands), None);
+    actor.subscribe_queue_state(Some(SystemChannel::DataEvents), None);
+    actor.subscribe_queue_state(None, None);
+    actor.unsubscribe_queue_state(None);
+    actor.unsubscribe_queue_state(Some(SystemChannel::ExecCommands));
+    drop(actor);
+
+    let mut event = make_queue_state_changed(QueueState::Triggered, 71);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(event.channel),
+        &event,
+    );
+    event.channel = SystemChannel::DataEvents;
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(event.channel),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_queue_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_queue_state_changed_reaches_typed_subscriber(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(None, None);
+    drop(actor);
+
+    let event = make_queue_state_changed(QueueState::Triggered, 71);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_queue_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_socket_state_changed_reaches_typed_subscriber(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(None, None, None);
+    drop(actor);
+
+    let event = make_socket_state_changed(SocketState::Connected);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, vec![event]);
+}
+
+#[cfg(feature = "live")]
+#[rstest]
+fn test_reconnect_socket_enqueues_typed_command(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_command_sender(system_tx);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor
+        .reconnect_socket(ClientId::from("POLYMARKET"), "polymarket-market-streams")
+        .expect("valid reconnect command");
+    drop(actor);
+
+    let SystemCommand::ReconnectSocket(command) =
+        system_rx.try_recv().expect("reconnect command queued");
+
+    assert_eq!(command.trader_id, trader_id);
+    assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
+    assert_eq!(command.endpoint, "polymarket-market-streams");
+    assert_eq!(command.ts_init, UnixNanos::default());
+}
+
+#[rstest]
+fn test_socket_state_changed_skips_delivery_when_not_running(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.subscribe_socket_state(None, None, None);
+    drop(actor);
+
+    let event = make_socket_state_changed(SocketState::Connected);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, Vec::new());
+}
+
+#[rstest]
+fn test_unsubscribe_socket_state_stops_delivery(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(None, None, None);
+    drop(actor);
+
+    let connected = make_socket_state_changed(SocketState::Connected);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &connected,
+    );
+
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.unsubscribe_socket_state(None, None);
+    drop(actor);
+
+    let disconnected = make_socket_state_changed(SocketState::Disconnected);
+    msgbus::publish_any(
+        MessagingSwitchboard::socket_state_changed_topic(
+            ClientId::from("BINANCE"),
+            "binance-futures-market-streams",
+        ),
+        &disconnected,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_socket_state_changes, vec![connected]);
+}
+
+#[rstest]
+fn test_subscribe_socket_state_dispatches_in_priority_order(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut actor_high = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-HIGH")),
+        ..DataActorConfig::default()
+    });
+    actor_high
+        .register(trader_id, clock.clone(), cache.clone())
+        .unwrap();
+    let high_id = actor_high.actor_id().inner();
+    register_actor(actor_high);
+
+    let mut actor_low = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-LOW")),
+        ..DataActorConfig::default()
+    });
+    actor_low.register(trader_id, clock, cache).unwrap();
+    let low_id = actor_low.actor_id().inner();
+    register_actor(actor_low);
+
+    let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
+    high.start().unwrap();
+    high.subscribe_socket_state(None, None, Some(100));
+    drop(high);
+
+    let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
+    low.start().unwrap();
+    low.subscribe_socket_state(None, None, Some(10));
+    drop(low);
+
+    let topic = MessagingSwitchboard::socket_state_changed_topic(
+        ClientId::from("BINANCE"),
+        "binance-futures-market-streams",
+    );
+    let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subscriptions.len(), 2);
+    assert_eq!(subscriptions[0].priority, 100);
+    assert_eq!(subscriptions[1].priority, 10);
+
+    let event = make_socket_state_changed(SocketState::Disconnected);
+    msgbus::publish_any(topic, &event);
+
+    let high = get_actor_unchecked::<TestDataActor>(&high_id);
+    let low = get_actor_unchecked::<TestDataActor>(&low_id);
+    assert_eq!(high.received_socket_state_changes, vec![event.clone()]);
+    assert_eq!(low.received_socket_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_subscribe_socket_state_resubscribe_does_not_update_priority(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_socket_state(None, None, Some(10));
+    actor.subscribe_socket_state(None, None, Some(100));
+    drop(actor);
+
+    let topic = MessagingSwitchboard::socket_state_changed_topic(
+        ClientId::from("BINANCE"),
+        "binance-futures-market-streams",
+    );
+    let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subscriptions.len(), 1);
+    assert_eq!(subscriptions[0].priority, 10);
+}
+
+#[rstest]
+fn test_queue_state_changed_skips_delivery_when_not_running(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.subscribe_queue_state(None, None);
+    drop(actor);
+
+    let event = make_queue_state_changed(QueueState::Triggered, 73);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &event,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_queue_state_changes, Vec::new());
+}
+
+#[rstest]
+fn test_unsubscribe_queue_state_stops_delivery(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(None, None);
+    drop(actor);
+
+    let triggered = make_queue_state_changed(QueueState::Triggered, 79);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &triggered,
+    );
+
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.unsubscribe_queue_state(None);
+    drop(actor);
+
+    let cleared = make_queue_state_changed(QueueState::Cleared, 83);
+    msgbus::publish_any(
+        MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands),
+        &cleared,
+    );
+
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(actor.received_queue_state_changes, vec![triggered]);
+}
+
+#[rstest]
+fn test_subscribe_queue_state_dispatches_in_priority_order(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut actor_high = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-HIGH")),
+        ..DataActorConfig::default()
+    });
+    actor_high
+        .register(trader_id, clock.clone(), cache.clone())
+        .unwrap();
+    let high_id = actor_high.actor_id().inner();
+    register_actor(actor_high);
+
+    let mut actor_low = TestDataActor::new(DataActorConfig {
+        actor_id: Some(ActorId::new("ACTOR-LOW")),
+        ..DataActorConfig::default()
+    });
+    actor_low.register(trader_id, clock, cache).unwrap();
+    let low_id = actor_low.actor_id().inner();
+    register_actor(actor_low);
+
+    let mut high = get_actor_unchecked::<TestDataActor>(&high_id);
+    high.start().unwrap();
+    high.subscribe_queue_state(None, Some(100));
+    drop(high);
+
+    let mut low = get_actor_unchecked::<TestDataActor>(&low_id);
+    low.start().unwrap();
+    low.subscribe_queue_state(None, Some(10));
+    drop(low);
+
+    let topic = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
+    let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subscriptions.len(), 2);
+    assert_eq!(subscriptions[0].priority, 100);
+    assert_eq!(subscriptions[1].priority, 10);
+
+    let event = make_queue_state_changed(QueueState::Triggered, 89);
+    msgbus::publish_any(topic, &event);
+
+    let high = get_actor_unchecked::<TestDataActor>(&high_id);
+    let low = get_actor_unchecked::<TestDataActor>(&low_id);
+    assert_eq!(high.received_queue_state_changes, vec![event.clone()]);
+    assert_eq!(low.received_queue_state_changes, vec![event]);
+}
+
+#[rstest]
+fn test_subscribe_queue_state_resubscribe_does_not_update_priority(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_queue_state(None, Some(10));
+    actor.subscribe_queue_state(None, Some(100));
+    drop(actor);
+
+    let topic = MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
+    let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    assert_eq!(subscriptions.len(), 1);
+    assert_eq!(subscriptions[0].priority, 10);
+}
+
+#[rstest]
 fn test_subscribe_signal_wildcard_matches_all_names(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4074,13 +6811,13 @@ fn test_subscribe_signal_wildcard_matches_all_names(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 2);
-    assert_eq!(actor.received_signals[0].name.as_str(), "alpha");
-    assert_eq!(actor.received_signals[1].name.as_str(), "beta");
+    assert_eq!(actor.received_signals[0].name, "alpha");
+    assert_eq!(actor.received_signals[1].name, "beta");
 }
 
 #[rstest]
 fn test_unsubscribe_signal_stops_delivery(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4114,7 +6851,7 @@ fn test_unsubscribe_signal_stops_delivery(
 #[case(1_000_000, 10)] // Above old u8 ceiling: locks in u32 widening
 #[case(u32::MAX, 0)] // Saturated boundary
 fn test_subscribe_signal_dispatches_in_priority_order(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
     #[case] high_priority: u32,
@@ -4174,7 +6911,7 @@ fn test_subscribe_signal_dispatches_in_priority_order(
 
 #[rstest]
 fn test_subscribe_signal_resubscribe_does_not_update_priority(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4197,7 +6934,7 @@ fn test_subscribe_signal_resubscribe_does_not_update_priority(
 
 #[rstest]
 fn test_add_synthetic_stores_in_cache(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4214,14 +6951,15 @@ fn test_add_synthetic_stores_in_cache(
     let comp1 = InstrumentId::from_str("BTC-USD.VENUE").unwrap();
     let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
     let formula = format!("({comp1} + {comp2}) / 2.0");
-    let synthetic = SyntheticInstrument::new(
-        Symbol::from("SYN"),
-        2,
-        vec![comp1, comp2],
-        &formula,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let synthetic = SyntheticInstrument::builder()
+        .symbol(Symbol::from("SYN"))
+        .price_precision(2)
+        .components(vec![comp1, comp2])
+        .formula(&formula)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     let synthetic_id = synthetic.id;
 
     actor.add_synthetic(synthetic.clone()).unwrap();
@@ -4235,7 +6973,7 @@ fn test_add_synthetic_stores_in_cache(
 
 #[rstest]
 fn test_update_synthetic_replaces_existing(
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) {
@@ -4253,14 +6991,15 @@ fn test_update_synthetic_replaces_existing(
     let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
     let symbol = Symbol::from("SYN");
     let original_formula = format!("({comp1} + {comp2}) / 2.0");
-    let synthetic = SyntheticInstrument::new(
-        symbol,
-        2,
-        vec![comp1, comp2],
-        &original_formula,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let synthetic = SyntheticInstrument::builder()
+        .symbol(symbol)
+        .price_precision(2)
+        .components(vec![comp1, comp2])
+        .formula(&original_formula)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     let synthetic_id = synthetic.id;
 
     // update before add should error
@@ -4273,17 +7012,226 @@ fn test_update_synthetic_replaces_existing(
     actor.add_synthetic(synthetic).unwrap();
 
     let new_formula = format!("{comp1} + {comp2}");
-    let updated = SyntheticInstrument::new(
-        symbol,
-        2,
-        vec![comp1, comp2],
-        &new_formula,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let updated = SyntheticInstrument::builder()
+        .symbol(symbol)
+        .price_precision(2)
+        .components(vec![comp1, comp2])
+        .formula(&new_formula)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     actor.update_synthetic(updated).unwrap();
 
     let guard = cache.borrow();
     let stored = guard.synthetic(&synthetic_id).unwrap();
     assert_eq!(stored.formula, new_formula);
+}
+
+#[rstest]
+fn test_signal_publication_orders_reserved_deliveries_after_raw_republication(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    super::clear_callbacks().unwrap();
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let mut publisher = DataActorCore::new(DataActorConfig::default());
+    publisher.register(trader_id, clock, cache.clone()).unwrap();
+    let publisher = Rc::new(publisher);
+    let nested = publisher.clone();
+    msgbus::subscribe_any(
+        "data.SignalReentry".into(),
+        ShareableMessageHandler::from_typed(move |data: &CustomData| {
+            let signal = data.data.as_any().downcast_ref::<Signal>().unwrap();
+            if signal.value == "outer" {
+                nested.publish_signal("reentry", "inner".to_string(), UnixNanos::from(2));
+            }
+        }),
+        Some(100),
+    );
+
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let captured = received.clone();
+    let callback_cache = cache.clone();
+    msgbus::subscribe_any(
+        "data.SignalReentry".into(),
+        ShareableMessageHandler::from_typed(move |data: &CustomData| {
+            let signal = data.data.as_any().downcast_ref::<Signal>().unwrap();
+            super::dispatch::reserve(signal.value.capacity())
+                .unwrap()
+                .commit(
+                    (captured.clone(), signal.clone(), callback_cache.clone()),
+                    |capture| {
+                        let _cache = capture.2.borrow_mut();
+                        capture.0.borrow_mut().push(capture.1.clone());
+                        true
+                    },
+                );
+        }),
+        None,
+    );
+
+    let cache_guard = cache.borrow_mut();
+    publisher.publish_signal("reentry", "outer".to_string(), UnixNanos::from(1));
+    assert!(received.borrow().is_empty());
+    drop(cache_guard);
+    assert_eq!(super::drain_callbacks(1), Ok(true));
+    assert_eq!(super::drain_callbacks(1), Ok(false));
+    assert_eq!(
+        *received.borrow(),
+        [
+            Signal::new(
+                "reentry".into(),
+                "outer".to_string(),
+                UnixNanos::from(1),
+                UnixNanos::default()
+            ),
+            Signal::new(
+                "reentry".into(),
+                "inner".to_string(),
+                UnixNanos::from(2),
+                UnixNanos::default()
+            ),
+        ]
+    );
+    super::clear_callbacks().unwrap();
+}
+
+#[rstest]
+#[case::self_publication(false)]
+#[case::nested_fanout(true)]
+#[ignore = "canonical signal callbacks reenter before the current publication completes"]
+fn test_reentrant_signal_publication_preserves_callback_order(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    #[case] fanout: bool,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let trace = Rc::new(RefCell::new(Vec::new()));
+
+    for (name, priority) in [("A", 100), ("B", 10)] {
+        if name == "B" && !fanout {
+            continue;
+        }
+
+        let mut actor = ReentrantSignalActor {
+            core: DataActorCore::new(DataActorConfig {
+                actor_id: Some(ActorId::new(name)),
+                ..DataActorConfig::default()
+            }),
+            name,
+            trace: trace.clone(),
+        };
+
+        actor
+            .register(trader_id, clock.clone(), cache.clone())
+            .unwrap();
+        let id = actor.actor_id().inner();
+        register_actor(actor);
+        let mut actor = get_actor_unchecked::<ReentrantSignalActor>(&id);
+        actor.start().unwrap();
+        actor.subscribe_signal("reentry", Some(priority));
+    }
+
+    let mut publisher = TestDataActor::new(DataActorConfig::default());
+    publisher.register(trader_id, clock, cache).unwrap();
+    publisher.publish_signal("reentry", "outer".to_string(), UnixNanos::from(1));
+    assert!(!super::drain_callbacks(8).unwrap());
+
+    let mut expected = Vec::new();
+
+    for value in ["outer", "inner"] {
+        for name in if fanout { &["A", "B"][..] } else { &["A"][..] } {
+            expected.push(format!("{name}:{value}:enter"));
+            expected.push(format!("{name}:{value}:exit"));
+        }
+    }
+
+    assert_eq!(*trace.borrow(), expected);
+}
+
+#[derive(Debug)]
+struct ReentrantSignalActor {
+    core: DataActorCore,
+    name: &'static str,
+    trace: Rc<RefCell<Vec<String>>>,
+}
+
+nautilus_actor!(ReentrantSignalActor);
+
+impl DataActor for ReentrantSignalActor {
+    fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+        self.trace
+            .borrow_mut()
+            .push(format!("{}:{}:enter", self.name, signal.value));
+
+        if self.name == "A" && signal.value == "outer" {
+            self.publish_signal("reentry", "inner".to_string(), UnixNanos::from(2));
+        }
+
+        self.trace
+            .borrow_mut()
+            .push(format!("{}:{}:exit", self.name, signal.value));
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_native_borrow_conflicts_return_component_access_errors(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    actor
+        .register(trader_id, clock.clone(), cache.clone())
+        .unwrap();
+    let cache_borrow = cache.borrow_mut();
+    let cache_error = actor.try_cache_ref().unwrap_err();
+    drop(cache_borrow);
+    let clock_borrow = clock.borrow();
+    let clock_error = actor.try_clock_mut().err().unwrap();
+    drop(clock_borrow);
+
+    assert_eq!(
+        cache_error,
+        ComponentAccessError::ReadConflict {
+            resource: "cache",
+            operation: "cache_ref",
+        }
+    );
+    assert_eq!(
+        clock_error,
+        ComponentAccessError::WriteConflict {
+            resource: "clock",
+            operation: "clock_mut",
+        }
+    );
+    assert!(actor.try_cache_ref().is_ok());
+    assert!(actor.try_clock_mut().is_ok());
+}
+
+#[rstest]
+fn test_native_borrow_before_registration_returns_component_access_error() {
+    let mut actor = TestDataActor::new(DataActorConfig::default());
+    let cache_error = actor.try_cache_ref().unwrap_err();
+    let clock_error = actor.try_clock_mut().err().unwrap();
+
+    assert_eq!(
+        cache_error,
+        ComponentAccessError::NotRegistered {
+            resource: "cache",
+            operation: "cache_ref",
+        }
+    );
+    assert_eq!(
+        clock_error,
+        ComponentAccessError::NotRegistered {
+            resource: "clock",
+            operation: "clock_mut",
+        }
+    );
 }

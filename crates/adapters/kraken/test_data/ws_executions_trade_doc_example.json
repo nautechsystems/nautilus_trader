@@ -1,0 +1,33 @@
+{
+  "channel": "executions",
+  "type": "update",
+  "data": [
+    {
+      "order_id": "OK4GJX-KSTLS-7DZZO5",
+      "order_userref": 3,
+      "exec_id": "TGBB7L-HT5LX-J3BZ4A",
+      "exec_type": "trade",
+      "trade_id": 62887576,
+      "symbol": "BTC/USD",
+      "side": "sell",
+      "last_qty": 0.005,
+      "last_price": 26599.9,
+      "liquidity_ind": "t",
+      "cost": 132.9995,
+      "order_type": "limit",
+      "timestamp": "2023-09-22T10:33:05.709993Z",
+      "order_status": "partially_filled",
+      "cum_qty": 0.005,
+      "cum_cost": 132.9995,
+      "avg_price": 26599.9,
+      "fee_usd_equiv": 0.3458,
+      "fees": [
+        {
+          "asset": "USD",
+          "qty": 0.3458
+        }
+      ]
+    }
+  ],
+  "sequence": 10
+}

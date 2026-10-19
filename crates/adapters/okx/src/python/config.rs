@@ -15,13 +15,14 @@
 
 //! Python bindings for OKX configuration.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::{enums::OmsType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::{OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXRegion, OKXVipLevel},
-    config::{OKXDataClientConfig, OKXExecClientConfig},
+    config::{OKXDataClientConfig, OKXExecutionClientConfig},
 };
 
 #[pymethods]
@@ -51,6 +52,7 @@ impl OKXDataClientConfig {
         vip_level = None,
         load_spreads = false,
         transport_backend = None,
+        instrument_families = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -75,20 +77,21 @@ impl OKXDataClientConfig {
         vip_level: Option<OKXVipLevel>,
         load_spreads: bool,
         transport_backend: Option<TransportBackend>,
+        instrument_families: Option<Vec<String>>,
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
-            api_passphrase,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
+            api_passphrase: api_passphrase.map(SecretString::from),
             instrument_types: instrument_types.unwrap_or(defaults.instrument_types),
             contract_types: None,
             load_spreads,
-            instrument_families: None,
+            instrument_families,
             base_url_http,
             base_url_ws_public,
             base_url_ws_business,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             region: region.unwrap_or(defaults.region),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
@@ -121,11 +124,10 @@ impl OKXDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl OKXExecClientConfig {
+impl OKXExecutionClientConfig {
     /// Configuration for the OKX execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id,
         account_id,
         instrument_types = None,
         environment = None,
@@ -145,10 +147,11 @@ impl OKXExecClientConfig {
         load_spreads = false,
         auth_timeout_secs = None,
         transport_backend = None,
+        spot_trade_quote_ccy = None,
+        oms_type = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        trader_id: TraderId,
         account_id: AccountId,
         instrument_types: Option<Vec<OKXInstrumentType>>,
         environment: Option<OKXEnvironment>,
@@ -168,25 +171,26 @@ impl OKXExecClientConfig {
         load_spreads: bool,
         auth_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
+        spot_trade_quote_ccy: Option<String>,
+        oms_type: Option<OmsType>,
     ) -> Self {
         let defaults = Self::default();
         Self {
-            trader_id,
             account_id,
-            api_key,
-            api_secret,
-            api_passphrase,
+            oms_type,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
+            api_passphrase: api_passphrase.map(SecretString::from),
             instrument_types: instrument_types.unwrap_or(defaults.instrument_types),
             contract_types: None,
             instrument_families: None,
             base_url_http,
             base_url_ws_private,
             base_url_ws_business,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             region: region.unwrap_or(defaults.region),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
-            use_fills_channel: defaults.use_fills_channel,
             use_mm_mass_cancel: defaults.use_mm_mass_cancel,
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -197,6 +201,7 @@ impl OKXExecClientConfig {
             use_spot_margin: defaults.use_spot_margin,
             auth_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            spot_trade_quote_ccy,
         }
     }
 
@@ -206,7 +211,7 @@ impl OKXExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(OKXExecClientConfig).to_string()
+        stringify!(OKXExecutionClientConfig).to_string()
     }
 }
 
@@ -217,22 +222,45 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_data_config_py_new_load_spreads() {
+    fn test_data_config_py_new() {
         let config = OKXDataClientConfig::py_new(
-            None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None, None, None, None, None, true, None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            None,
+            Some(vec!["BTC-USD".to_string()]),
         );
 
+        assert_eq!(
+            config.instrument_families,
+            Some(vec!["BTC-USD".to_string()]),
+        );
         assert!(config.load_spreads);
         assert_eq!(config.book_stale_check_interval_secs, 5);
         assert_eq!(config.book_stale_threshold_secs, 30);
-        assert_eq!(config.book_snapshot_timeout_secs, 3);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]
     fn test_exec_config_py_new_load_spreads() {
-        let config = OKXExecClientConfig::py_new(
-            TraderId::from("TRADER-001"),
+        let config = OKXExecutionClientConfig::py_new(
             AccountId::from("OKX-001"),
             None,
             None,
@@ -252,9 +280,13 @@ mod tests {
             true,
             None,
             None,
+            Some("USD".to_string()),
+            Some(OmsType::Hedging),
         );
 
         assert!(config.load_spreads);
         assert_eq!(config.auth_timeout_secs, None);
+        assert_eq!(config.spot_trade_quote_ccy.as_deref(), Some("USD"));
+        assert_eq!(config.oms_type, Some(OmsType::Hedging));
     }
 }

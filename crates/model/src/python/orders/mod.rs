@@ -44,7 +44,7 @@ pub mod trailing_stop_market;
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if extraction fails or the order type is unsupported.
+/// Returns an error if extraction fails or the order type is unsupported.
 #[expect(clippy::needless_pass_by_value)]
 pub fn pyobject_to_order_any(py: Python, order: Py<PyAny>) -> PyResult<OrderAny> {
     let order_type = order.getattr(py, "order_type")?.extract::<OrderType>(py)?;
@@ -84,24 +84,19 @@ pub fn pyobject_to_order_any(py: Python, order: Py<PyAny>) -> PyResult<OrderAny>
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if conversion to a Python object fails.
+/// Returns an error if conversion to a Python object fails.
+#[rustfmt::skip]
 pub fn order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<Py<PyAny>> {
     match order {
         OrderAny::Limit(limit_order) => limit_order.into_py_any(py),
         OrderAny::LimitIfTouched(limit_if_touched_order) => limit_if_touched_order.into_py_any(py),
         OrderAny::Market(market_order) => market_order.into_py_any(py),
-        OrderAny::MarketIfTouched(market_if_touched_order) => {
-            market_if_touched_order.into_py_any(py)
-        }
+        OrderAny::MarketIfTouched(market_if_touched_order) => market_if_touched_order.into_py_any(py),
         OrderAny::MarketToLimit(market_to_limit_order) => market_to_limit_order.into_py_any(py),
         OrderAny::StopLimit(stop_limit_order) => stop_limit_order.into_py_any(py),
         OrderAny::StopMarket(stop_market_order) => stop_market_order.into_py_any(py),
-        OrderAny::TrailingStopLimit(trailing_stop_limit_order) => {
-            trailing_stop_limit_order.into_py_any(py)
-        }
-        OrderAny::TrailingStopMarket(trailing_stop_market_order) => {
-            trailing_stop_market_order.into_py_any(py)
-        }
+        OrderAny::TrailingStopLimit(trailing_stop_limit_order) => trailing_stop_limit_order.into_py_any(py),
+        OrderAny::TrailingStopMarket(trailing_stop_market_order) => trailing_stop_market_order.into_py_any(py),
     }
 }
 

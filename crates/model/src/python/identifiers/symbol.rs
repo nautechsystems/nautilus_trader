@@ -46,7 +46,8 @@ impl Symbol {
         let py_tuple: &Bound<'_, PyTuple> = state.cast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
         let value = binding.cast::<PyString>()?.extract::<&str>()?;
-        self.set_inner(value);
+        let validated = Self::new_checked(value).map_err(to_pyvalue_err)?;
+        self.set_inner(validated.as_str());
         Ok(())
     }
 

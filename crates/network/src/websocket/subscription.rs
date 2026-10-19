@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Adapter‑managed subscription intent and acknowledgment tracking.
+//! Adapter-managed subscription intent and acknowledgment tracking.
 //!
 //! [`SubscriptionState`] keeps confirmed, `pending_subscribe`, and `pending_unsubscribe` topics
 //! separate. Server acknowledgments move topics between those states; late subscribe
-//! acknowledgments do not revive a pending unsubscribe, and stale unsubscribe acknowledgments do
-//! not remove a later resubscription. [`SubscriptionState::all_topics`] returns confirmed and
-//! pending subscribe intent for recovery, excluding pending unsubscriptions.
+//! acknowledgments do not revive cancelled intent, and stale unsubscribe acknowledgments do not
+//! remove a later resubscription. [`SubscriptionState::all_topics`] returns confirmed and pending
+//! subscribe intent for recovery, excluding pending unsubscriptions.
 //!
 //! Reference counts are independent of acknowledgment state. The first reference tells the caller
 //! to send a subscribe request, and removing the last tells it to send an unsubscribe request. The
@@ -32,11 +32,13 @@
 
 use std::{
     num::NonZeroUsize,
+    ops::Deref,
     sync::{Arc, LazyLock},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
+use parking_lot::RwLock;
 use ustr::Ustr;
 
 /// Marker for channel-level subscriptions (no specific symbol).
@@ -45,33 +47,66 @@ use ustr::Ustr;
 /// that applies to all symbols for that channel.
 pub(crate) static CHANNEL_LEVEL_MARKER: LazyLock<Ustr> = LazyLock::new(|| Ustr::from(""));
 
-/// Generic subscription state tracker for WebSocket connections.
+/// Read-only snapshot of subscription topics grouped by channel.
 ///
-/// Maintains three separate states for subscriptions:
-/// - **Confirmed**: Successfully subscribed and actively streaming data.
-/// - **Pending Subscribe**: Subscription requested but not yet confirmed by server.
-/// - **Pending Unsubscribe**: Unsubscription requested but not yet confirmed by server.
+/// The snapshot supports immutable map operations through [`Deref`], but cannot mutate the
+/// underlying [`SubscriptionState`]. Use the subscription lifecycle methods to change state.
 ///
-/// # Reference Counting
+/// ```compile_fail
+/// use nautilus_network::websocket::SubscriptionState;
 ///
-/// The tracker maintains reference counts for each topic. When multiple components
-/// subscribe to the same topic, only the first subscription sends a message to the
-/// server. Similarly, only the last unsubscription sends an unsubscribe message.
+/// let state = SubscriptionState::new('.');
+/// let mut confirmed = state.confirmed();
+/// confirmed.clear();
+/// ```
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SubscriptionSnapshot(AHashMap<Ustr, AHashSet<Ustr>>);
+
+impl Deref for SubscriptionSnapshot {
+    type Target = AHashMap<Ustr, AHashSet<Ustr>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Tracks subscription intent and acknowledgment state for WebSocket connections.
 ///
-/// # Thread Safety
+/// # State management
 ///
-/// All operations are thread-safe and can be called concurrently from multiple tasks.
+/// The tracker maintains desired subscription intent and three acknowledgment states:
+///
+/// - **Desired**: Topics that should be active, independent of response ordering or connection.
+/// - **Confirmed**: Subscriptions acknowledged by the server and expected to stream data.
+/// - **Pending subscribe**: Subscribe requests awaiting server acknowledgment.
+/// - **Pending unsubscribe**: Unsubscribe requests awaiting server acknowledgment.
+///
+/// Late subscribe acknowledgments do not revive cancelled intent, and stale unsubscribe
+/// acknowledgments do not remove a later resubscription.
+///
+/// # Reference counting
+///
+/// Reference counts remain independent of acknowledgment state. The first consumer tells the
+/// caller to send a subscribe request, while removing the last tells it to send an unsubscribe
+/// request. The tracker records these transitions but does not send protocol messages.
+///
+/// # Topic format
+///
+/// Topics use `channel{delimiter}symbol`, with delimiters such as `.` or `:`. A topic without the
+/// delimiter represents a channel-level subscription.
+///
+/// # Thread safety
+///
+/// Clones share all state. Operations are thread-safe and can run concurrently from multiple
+/// tasks.
 #[derive(Clone, Debug)]
 pub struct SubscriptionState {
-    /// Confirmed active subscriptions.
     confirmed: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Pending subscribe requests awaiting server confirmation.
     pending_subscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Pending unsubscribe requests awaiting server confirmation.
     pending_unsubscribe: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
-    /// Reference counts for topics to prevent duplicate messages.
+    desired: Arc<DashMap<Ustr, AHashSet<Ustr>>>,
     reference_counts: Arc<DashMap<Ustr, NonZeroUsize>>,
-    /// Topic delimiter character (e.g., '.' or ':').
+    state_lock: Arc<RwLock<()>>,
     delimiter: char,
 }
 
@@ -83,7 +118,9 @@ impl SubscriptionState {
             confirmed: Arc::new(DashMap::new()),
             pending_subscribe: Arc::new(DashMap::new()),
             pending_unsubscribe: Arc::new(DashMap::new()),
+            desired: Arc::new(DashMap::new()),
             reference_counts: Arc::new(DashMap::new()),
+            state_lock: Arc::new(RwLock::new(())),
             delimiter,
         }
     }
@@ -94,22 +131,25 @@ impl SubscriptionState {
         self.delimiter
     }
 
-    /// Returns a clone of the confirmed subscriptions map.
+    /// Returns a read-only snapshot of confirmed subscriptions.
     #[must_use]
-    pub fn confirmed(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
-        Arc::clone(&self.confirmed)
+    pub fn confirmed(&self) -> SubscriptionSnapshot {
+        let _guard = self.state_lock.read();
+        snapshot(&self.confirmed)
     }
 
-    /// Returns a clone of the pending subscribe map.
+    /// Returns a read-only snapshot of pending subscriptions.
     #[must_use]
-    pub fn pending_subscribe(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
-        Arc::clone(&self.pending_subscribe)
+    pub fn pending_subscribe(&self) -> SubscriptionSnapshot {
+        let _guard = self.state_lock.read();
+        snapshot(&self.pending_subscribe)
     }
 
-    /// Returns a clone of the pending unsubscribe map.
+    /// Returns a read-only snapshot of pending unsubscriptions.
     #[must_use]
-    pub fn pending_unsubscribe(&self) -> Arc<DashMap<Ustr, AHashSet<Ustr>>> {
-        Arc::clone(&self.pending_unsubscribe)
+    pub fn pending_unsubscribe(&self) -> SubscriptionSnapshot {
+        let _guard = self.state_lock.read();
+        snapshot(&self.pending_unsubscribe)
     }
 
     /// Returns the number of confirmed subscriptions.
@@ -117,20 +157,25 @@ impl SubscriptionState {
     /// Counts both channel-level and symbol-level subscriptions.
     #[must_use]
     pub fn len(&self) -> usize {
+        let _guard = self.state_lock.read();
         self.confirmed.iter().map(|entry| entry.value().len()).sum()
     }
 
     /// Returns true if there are no subscriptions (confirmed or pending).
     #[must_use]
     pub fn is_empty(&self) -> bool {
+        let _guard = self.state_lock.read();
         self.confirmed.is_empty()
             && self.pending_subscribe.is_empty()
             && self.pending_unsubscribe.is_empty()
+            && self.desired.is_empty()
     }
 
     /// Returns true if a channel:symbol pair is subscribed (confirmed or pending subscribe).
     #[must_use]
     pub fn is_subscribed(&self, channel: &Ustr, symbol: &Ustr) -> bool {
+        let _guard = self.state_lock.read();
+
         if let Some(symbols) = self.confirmed.get(channel)
             && symbols.contains(symbol)
         {
@@ -142,16 +187,44 @@ impl SubscriptionState {
         {
             return true;
         }
+
         false
+    }
+
+    /// Returns all pending subscribe topics as strings.
+    #[must_use]
+    pub fn pending_subscribe_topics(&self) -> Vec<String> {
+        let _guard = self.state_lock.read();
+        self.topics_from_map(&self.pending_subscribe)
+    }
+
+    /// Returns all pending unsubscribe topics as strings.
+    #[must_use]
+    pub fn pending_unsubscribe_topics(&self) -> Vec<String> {
+        let _guard = self.state_lock.read();
+        self.topics_from_map(&self.pending_unsubscribe)
+    }
+
+    /// Returns all topics that should be active after reconnect recovery.
+    ///
+    /// The result includes confirmed and pending subscribe topics, but excludes pending
+    /// unsubscribe topics.
+    #[must_use]
+    pub fn all_topics(&self) -> Vec<String> {
+        let _guard = self.state_lock.read();
+        let mut topics = self.topics_from_map(&self.confirmed);
+        topics.extend(self.topics_from_map(&self.pending_subscribe));
+        topics
     }
 
     /// Marks a topic as pending subscription.
     ///
-    /// This should be called after sending a subscribe request to the server.
-    /// Idempotent: if topic is already confirmed, this is a no-op.
-    /// If topic is pending unsubscription, removes it.
+    /// Call this after sending a subscribe request. This operation is idempotent for a confirmed
+    /// topic and cancels any pending unsubscription for the same topic.
     pub fn mark_subscribe(&self, topic: &str) {
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
+        track_topic(&self.desired, channel, symbol);
 
         // If already confirmed, don't re-add to pending (idempotent)
         if is_tracked(&self.confirmed, channel, symbol) {
@@ -169,23 +242,18 @@ impl SubscriptionState {
     /// Returns `true` if the topic was newly marked as pending (should send subscribe).
     /// Returns `false` if the topic was already confirmed or pending (skip sending).
     ///
-    /// This provides atomic check-and-set semantics for concurrent subscribe calls.
+    /// The check and state transition are atomic across concurrent subscribe calls.
+    #[must_use]
     pub fn try_mark_subscribe(&self, topic: &str) -> bool {
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
-        // If already confirmed, no action needed
-        if is_tracked(&self.confirmed, channel, symbol) {
+        // If already desired, no action needed
+        if !track_topic(&self.desired, channel, symbol) {
             return false;
         }
 
-        // Atomically try to insert into pending_subscribe
-        let channel_ustr = Ustr::from(channel);
-        let symbol_ustr = symbol.map_or(*CHANNEL_LEVEL_MARKER, Ustr::from);
-
-        let mut entry = self.pending_subscribe.entry(channel_ustr).or_default();
-        let inserted = entry.insert(symbol_ustr);
-
-        // Remove from pending_unsubscribe if present
+        let inserted = track_topic(&self.pending_subscribe, channel, symbol);
         if inserted {
             untrack_topic(&self.pending_unsubscribe, channel, symbol);
         }
@@ -193,28 +261,17 @@ impl SubscriptionState {
         inserted
     }
 
-    /// Marks a topic as pending unsubscription.
-    ///
-    /// This removes the topic from both confirmed and `pending_subscribe`,
-    /// then adds it to `pending_unsubscribe`. This handles the case where
-    /// a user unsubscribes before the initial subscription is confirmed.
-    pub fn mark_unsubscribe(&self, topic: &str) {
-        let (channel, symbol) = split_topic(topic, self.delimiter);
-        track_topic(&self.pending_unsubscribe, channel, symbol);
-        untrack_topic(&self.confirmed, channel, symbol);
-        untrack_topic(&self.pending_subscribe, channel, symbol);
-    }
-
     /// Confirms a subscription by moving it from pending to confirmed.
     ///
-    /// This should be called when the server acknowledges a subscribe request.
-    /// Ignores the confirmation if the topic is pending unsubscription (handles
-    /// late confirmations after user has already unsubscribed).
+    /// Call this when the server acknowledges a subscribe request. A late confirmation cannot
+    /// restore a topic that is no longer desired.
     pub fn confirm_subscribe(&self, topic: &str) {
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
-        // Ignore late confirmations if topic is pending unsubscribe
-        if is_tracked(&self.pending_unsubscribe, channel, symbol) {
+        if !is_tracked(&self.desired, channel, symbol)
+            || is_tracked(&self.pending_unsubscribe, channel, symbol)
+        {
             return;
         }
 
@@ -222,17 +279,26 @@ impl SubscriptionState {
         track_topic(&self.confirmed, channel, symbol);
     }
 
+    /// Marks a topic as pending unsubscription.
+    ///
+    /// Removes the topic from confirmed and `pending_subscribe` state before adding it to
+    /// `pending_unsubscribe`. This also handles unsubscription before initial confirmation.
+    pub fn mark_unsubscribe(&self, topic: &str) {
+        let _guard = self.state_lock.write();
+        let (channel, symbol) = split_topic(topic, self.delimiter);
+        untrack_topic(&self.desired, channel, symbol);
+        track_topic(&self.pending_unsubscribe, channel, symbol);
+        untrack_topic(&self.confirmed, channel, symbol);
+        untrack_topic(&self.pending_subscribe, channel, symbol);
+    }
+
     /// Confirms an unsubscription by removing it from pending and confirmed state.
     ///
-    /// This should be called when the server acknowledges an unsubscribe request.
-    /// Removes the topic from `pending_unsubscribe` and confirmed.
-    /// Does NOT clear `pending_subscribe` to support immediate re-subscribe patterns
-    /// (e.g., user calls `subscribe()` before unsubscribe ack arrives).
-    ///
-    /// **Stale ACK handling**: Ignores unsubscribe ACKs if the topic is no longer
-    /// in `pending_unsubscribe` (meaning user has already re-subscribed). This prevents
-    /// stale ACKs from removing topics that were re-confirmed after the re-subscribe.
+    /// Call this when the server acknowledges an unsubscribe request. A stale acknowledgment is
+    /// ignored if the topic is no longer pending unsubscription. `pending_subscribe` remains intact
+    /// so an immediate resubscription survives a late unsubscribe acknowledgment.
     pub fn confirm_unsubscribe(&self, topic: &str) {
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
         // Only process if topic is actually pending unsubscription
@@ -248,13 +314,15 @@ impl SubscriptionState {
 
     /// Marks a subscription as failed, moving it from confirmed back to pending.
     ///
-    /// This is useful when a subscription fails but should be retried on reconnect.
-    /// Ignores the failure if the topic is pending unsubscription (user cancelled it).
+    /// This keeps failed subscriptions available for retry after reconnect. A topic pending
+    /// unsubscription is unchanged because its subscription was cancelled.
     pub fn mark_failure(&self, topic: &str) {
+        let _guard = self.state_lock.write();
         let (channel, symbol) = split_topic(topic, self.delimiter);
 
-        // Ignore failures for topics being unsubscribed
-        if is_tracked(&self.pending_unsubscribe, channel, symbol) {
+        if !is_tracked(&self.desired, channel, symbol)
+            || is_tracked(&self.pending_unsubscribe, channel, symbol)
+        {
             return;
         }
 
@@ -262,62 +330,29 @@ impl SubscriptionState {
         track_topic(&self.pending_subscribe, channel, symbol);
     }
 
-    /// Returns all pending subscribe topics as strings.
-    #[must_use]
-    pub fn pending_subscribe_topics(&self) -> Vec<String> {
-        self.topics_from_map(&self.pending_subscribe)
-    }
-
-    /// Returns all pending unsubscribe topics as strings.
-    #[must_use]
-    pub fn pending_unsubscribe_topics(&self) -> Vec<String> {
-        self.topics_from_map(&self.pending_unsubscribe)
-    }
-
-    /// Returns all topics that should be active (confirmed + `pending_subscribe`).
+    /// Resets acknowledgment state for a replacement connection.
     ///
-    /// This is the key method for reconnection: it returns all topics that should
-    /// be resubscribed after a connection is re-established.
-    ///
-    /// Note: Does NOT include `pending_unsubscribe` topics, as those are being removed.
-    #[must_use]
-    pub fn all_topics(&self) -> Vec<String> {
-        let mut topics = Vec::new();
-        topics.extend(self.topics_from_map(&self.confirmed));
+    /// Returns the desired topics to replay. Confirmed topics become pending subscriptions,
+    /// pending unsubscriptions are completed by the closed connection, and reference counts are
+    /// preserved.
+    #[allow(
+        clippy::must_use_candidate,
+        reason = "some adapters replay from separate subscription registries"
+    )]
+    pub fn reset_after_reconnect(&self) -> Vec<String> {
+        let _guard = self.state_lock.write();
+        let mut topics = self.topics_from_map(&self.confirmed);
         topics.extend(self.topics_from_map(&self.pending_subscribe));
-        topics
-    }
 
-    /// Helper to convert a map to topic strings.
-    fn topics_from_map(&self, map: &DashMap<Ustr, AHashSet<Ustr>>) -> Vec<String> {
-        let mut topics = Vec::new();
-        let marker = *CHANNEL_LEVEL_MARKER;
+        self.confirmed.clear();
+        self.pending_subscribe.clear();
+        self.pending_unsubscribe.clear();
 
-        for entry in map {
-            let channel = entry.key();
-            let symbols = entry.value();
-
-            // Check for channel-level subscription marker
-            if symbols.contains(&marker) {
-                topics.push(channel.to_string());
-            }
-
-            // Add symbol-level subscriptions (skip marker)
-            for symbol in symbols {
-                if *symbol != marker {
-                    topics.push(format!(
-                        "{}{}{}",
-                        channel.as_str(),
-                        self.delimiter,
-                        symbol.as_str()
-                    ));
-                }
-            }
+        for topic in &topics {
+            let (channel, symbol) = split_topic(topic, self.delimiter);
+            track_topic(&self.pending_subscribe, channel, symbol);
         }
 
-        // Sort so resubscription after a reconnect replays topics in the same sequence
-        // across runs; both the outer DashMap and the inner symbol sets are unordered.
-        topics.sort();
         topics
     }
 
@@ -344,7 +379,7 @@ impl SubscriptionState {
             })
             .or_insert_with(|| {
                 should_subscribe = true;
-                NonZeroUsize::new(1).expect("NonZeroUsize::new(1) should never fail")
+                NonZeroUsize::MIN
             });
 
         should_subscribe
@@ -364,7 +399,9 @@ impl SubscriptionState {
         reason = "callers use this for side effects"
     )]
     pub fn remove_reference(&self, topic: &str) -> bool {
-        let topic_ustr = Ustr::from(topic);
+        let Some(topic_ustr) = Ustr::from_existing(topic) else {
+            return false;
+        };
 
         // Use entry API to atomically decrement and remove if zero
         // This prevents race where another thread adds a reference between the check and remove
@@ -372,7 +409,6 @@ impl SubscriptionState {
             self.reference_counts.entry(topic_ustr)
         {
             let current = entry.get().get();
-
             if current == 1 {
                 entry.remove();
                 return true;
@@ -390,7 +426,10 @@ impl SubscriptionState {
     /// Returns 0 if the topic has no references.
     #[must_use]
     pub fn get_reference_count(&self, topic: &str) -> usize {
-        let topic_ustr = Ustr::from(topic);
+        let Some(topic_ustr) = Ustr::from_existing(topic) else {
+            return 0;
+        };
+
         self.reference_counts
             .get(&topic_ustr)
             .map_or(0, |count| count.get())
@@ -398,12 +437,42 @@ impl SubscriptionState {
 
     /// Clears all subscription state.
     ///
-    /// This is useful when reconnecting or resetting the client.
+    /// This resets desired intent, acknowledgment state, and reference counts.
     pub fn clear(&self) {
+        let _guard = self.state_lock.write();
         self.confirmed.clear();
         self.pending_subscribe.clear();
         self.pending_unsubscribe.clear();
+        self.desired.clear();
         self.reference_counts.clear();
+    }
+
+    // Converts a subscription map to sorted topic strings
+    fn topics_from_map(&self, map: &DashMap<Ustr, AHashSet<Ustr>>) -> Vec<String> {
+        let mut topics = Vec::new();
+        let marker = *CHANNEL_LEVEL_MARKER;
+
+        for entry in map {
+            let channel = entry.key();
+            let symbols = entry.value();
+
+            // Check for channel-level subscription marker
+            if symbols.contains(&marker) {
+                topics.push(channel.to_string());
+            }
+
+            // Add symbol-level subscriptions (skip marker)
+            for symbol in symbols {
+                if *symbol != marker {
+                    topics.push(format!("{channel}{}{symbol}", self.delimiter));
+                }
+            }
+        }
+
+        // Sort so resubscription after a reconnect replays topics in the same sequence
+        // across runs; both the outer DashMap and the inner symbol sets are unordered.
+        topics.sort();
+        topics
     }
 }
 
@@ -415,36 +484,36 @@ pub fn split_topic(topic: &str, delimiter: char) -> (&str, Option<&str>) {
         .map_or((topic, None), |(channel, symbol)| (channel, Some(symbol)))
 }
 
+fn snapshot(map: &DashMap<Ustr, AHashSet<Ustr>>) -> SubscriptionSnapshot {
+    SubscriptionSnapshot(
+        map.iter()
+            .map(|entry| (*entry.key(), entry.value().clone()))
+            .collect(),
+    )
+}
+
 /// Tracks a topic in the given map by adding it to the channel's symbol set.
 ///
 /// Channel-level subscriptions are stored using an empty string marker,
 /// allowing both channel-level and symbol-level subscriptions to coexist.
-fn track_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Option<&str>) {
-    let channel_ustr = Ustr::from(channel);
-    let mut entry = map.entry(channel_ustr).or_default();
-
-    if let Some(symbol) = symbol {
-        entry.insert(Ustr::from(symbol));
-    } else {
-        entry.insert(*CHANNEL_LEVEL_MARKER);
-    }
+fn track_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Option<&str>) -> bool {
+    map.entry(Ustr::from(channel))
+        .or_default()
+        .insert(topic_symbol(symbol))
 }
 
 /// Removes a topic from the given map by removing it from the channel's symbol set.
 ///
 /// Removes the entire channel entry if no subscriptions remain after removal.
 fn untrack_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Option<&str>) {
-    let channel_ustr = Ustr::from(channel);
-    let symbol_to_remove = if let Some(symbol) = symbol {
-        Ustr::from(symbol)
-    } else {
-        *CHANNEL_LEVEL_MARKER
+    let Some((channel, symbol)) = existing_topic(channel, symbol) else {
+        return;
     };
 
     // Use entry API to atomically remove symbol and check if empty
     // This prevents race conditions where another thread adds a symbol between operations
-    if let dashmap::mapref::entry::Entry::Occupied(mut entry) = map.entry(channel_ustr) {
-        entry.get_mut().remove(&symbol_to_remove);
+    if let dashmap::mapref::entry::Entry::Occupied(mut entry) = map.entry(channel) {
+        entry.get_mut().remove(&symbol);
         if entry.get().is_empty() {
             entry.remove();
         }
@@ -453,22 +522,36 @@ fn untrack_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Opt
 
 /// Checks if a topic exists in the given map.
 fn is_tracked(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Option<&str>) -> bool {
-    let channel_ustr = Ustr::from(channel);
-    let symbol_to_check = if let Some(symbol) = symbol {
-        Ustr::from(symbol)
-    } else {
-        *CHANNEL_LEVEL_MARKER
+    let Some((channel, symbol)) = existing_topic(channel, symbol) else {
+        return false;
     };
 
-    if let Some(entry) = map.get(&channel_ustr) {
-        entry.contains(&symbol_to_check)
-    } else {
-        false
-    }
+    map.get(&channel)
+        .is_some_and(|entry| entry.contains(&symbol))
+}
+
+fn existing_topic(channel: &str, symbol: Option<&str>) -> Option<(Ustr, Ustr)> {
+    let channel = Ustr::from_existing(channel)?;
+
+    let symbol = match symbol {
+        Some(symbol) => Ustr::from_existing(symbol)?,
+        None => *CHANNEL_LEVEL_MARKER,
+    };
+
+    Some((channel, symbol))
+}
+
+fn topic_symbol(symbol: Option<&str>) -> Ustr {
+    symbol.map_or(*CHANNEL_LEVEL_MARKER, Ustr::from)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Barrier,
+        atomic::{AtomicUsize, Ordering},
+    };
+
     use rstest::rstest;
 
     use super::*;
@@ -492,6 +575,199 @@ mod tests {
     }
 
     #[rstest]
+    fn test_topic_without_symbol() {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("orderbook");
+        state.confirm_subscribe("orderbook");
+
+        assert_eq!(state.len(), 1);
+        assert_eq!(state.all_topics(), vec!["orderbook"]);
+    }
+
+    #[rstest]
+    fn test_different_delimiters() {
+        let state_dot = SubscriptionState::new('.');
+        state_dot.mark_subscribe("tickers.BTCUSDT");
+        assert_eq!(
+            state_dot.pending_subscribe_topics(),
+            vec!["tickers.BTCUSDT"]
+        );
+
+        let state_colon = SubscriptionState::new(':');
+        state_colon.mark_subscribe("orderBookL2:XBTUSD");
+        assert_eq!(
+            state_colon.pending_subscribe_topics(),
+            vec!["orderBookL2:XBTUSD"]
+        );
+    }
+
+    #[rstest]
+    fn test_different_delimiter_does_not_affect_storage() {
+        // Verify delimiter is only used for parsing, not storage
+        let state_dot = SubscriptionState::new('.');
+        let state_colon = SubscriptionState::new(':');
+
+        // Add same logical subscription with different delimiters
+        state_dot.mark_subscribe("channel.SYMBOL");
+        state_colon.mark_subscribe("channel:SYMBOL");
+
+        // Both should work correctly
+        assert_eq!(state_dot.pending_subscribe_topics(), vec!["channel.SYMBOL"]);
+        assert_eq!(
+            state_colon.pending_subscribe_topics(),
+            vec!["channel:SYMBOL"]
+        );
+    }
+
+    #[rstest]
+    fn test_multiple_symbols_same_channel() {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.mark_subscribe("tickers.ETHUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.ETHUSDT");
+
+        assert_eq!(state.len(), 2);
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
+    }
+
+    #[rstest]
+    fn test_mixed_channel_and_symbol_subscriptions() {
+        let state = SubscriptionState::new('.');
+
+        // Subscribe to channel-level first
+        state.mark_subscribe("tickers");
+        state.confirm_subscribe("tickers");
+        assert_eq!(state.len(), 1);
+        assert_eq!(state.all_topics(), vec!["tickers"]);
+
+        // Add symbol-level subscription to same channel
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 2);
+
+        // Both should be present
+        assert_eq!(state.all_topics(), vec!["tickers", "tickers.BTCUSDT"]);
+
+        // Add another symbol
+        state.mark_subscribe("tickers.ETHUSDT");
+        state.confirm_subscribe("tickers.ETHUSDT");
+        assert_eq!(state.len(), 3);
+
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers", "tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
+
+        // Unsubscribe from channel-level only
+        state.mark_unsubscribe("tickers");
+        state.confirm_unsubscribe("tickers");
+        assert_eq!(state.len(), 2);
+
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
+    }
+
+    #[rstest]
+    fn test_symbol_subscription_before_channel() {
+        let state = SubscriptionState::new('.');
+
+        // Subscribe to symbol first
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 1);
+
+        // Then add channel-level
+        state.mark_subscribe("tickers");
+        state.confirm_subscribe("tickers");
+        assert_eq!(state.len(), 2);
+
+        // Both should be present after reconnect
+        assert_eq!(state.all_topics(), vec!["tickers", "tickers.BTCUSDT"]);
+    }
+
+    #[rstest]
+    fn test_edge_case_empty_channel_name() {
+        let state = SubscriptionState::new('.');
+
+        // Edge case: empty string as topic
+        state.mark_subscribe("");
+        state.confirm_subscribe("");
+
+        assert_eq!(state.len(), 1);
+        assert_eq!(state.all_topics(), vec![""]);
+    }
+
+    #[rstest]
+    fn test_special_characters_in_topics() {
+        let state = SubscriptionState::new('.');
+
+        // Topics with special characters
+        let special_topics = vec![
+            "channel.symbol-with-dash",
+            "channel.SYMBOL_WITH_UNDERSCORE",
+            "channel.symbol123",
+            "channel.symbol@special",
+        ];
+
+        for topic in &special_topics {
+            state.mark_subscribe(topic);
+            state.confirm_subscribe(topic);
+        }
+
+        assert_eq!(state.len(), special_topics.len());
+
+        let all_topics = state.all_topics();
+
+        for topic in &special_topics {
+            assert!(
+                all_topics.contains(&(*topic).to_string()),
+                "Missing topic: {topic}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_edge_case_malformed_topics() {
+        let state = SubscriptionState::new('.');
+
+        // Topics with multiple delimiters (splits on first delimiter)
+        state.mark_subscribe("channel.symbol.extra");
+        state.confirm_subscribe("channel.symbol.extra");
+        let topics = state.all_topics();
+        assert!(topics.contains(&"channel.symbol.extra".to_string()));
+
+        // Topic with leading delimiter (empty channel, symbol is "channel")
+        state.mark_subscribe(".channel");
+        state.confirm_subscribe(".channel");
+        assert_eq!(state.len(), 2);
+
+        // Topic with trailing delimiter - treated as channel-level (empty symbol = marker)
+        // "channel." splits to ("channel", Some("")), and empty string is the channel marker
+        state.mark_subscribe("channel.");
+        state.confirm_subscribe("channel.");
+        assert_eq!(state.len(), 3);
+
+        // Topic without delimiter - explicitly channel-level
+        state.mark_subscribe("tickers");
+        state.confirm_subscribe("tickers");
+        assert_eq!(state.len(), 4);
+
+        // Verify all are retrievable (note: "channel." becomes "channel")
+        let all = state.all_topics();
+        assert_eq!(all.len(), 4);
+        assert!(all.contains(&"channel.symbol.extra".to_string()));
+        assert!(all.contains(&".channel".to_string()));
+        assert!(all.contains(&"channel".to_string())); // "channel." treated as channel-level
+        assert!(all.contains(&"tickers".to_string()));
+    }
+
+    #[rstest]
     fn test_new_state_is_empty() {
         let state = SubscriptionState::new('.');
         assert!(state.is_empty());
@@ -499,22 +775,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_mark_subscribe() {
-        let state = SubscriptionState::new('.');
-        state.mark_subscribe("tickers.BTCUSDT");
-
-        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
-        assert_eq!(state.len(), 0); // Not confirmed yet
-    }
-
-    #[rstest]
-    fn test_confirm_subscribe() {
+    fn test_subscription_map_accessors_return_isolated_snapshots() {
         let state = SubscriptionState::new('.');
         state.mark_subscribe("tickers.BTCUSDT");
         state.confirm_subscribe("tickers.BTCUSDT");
 
-        assert!(state.pending_subscribe_topics().is_empty());
-        assert_eq!(state.len(), 1);
+        let confirmed = state.confirmed();
+        let pending_subscribe = state.pending_subscribe();
+        let pending_unsubscribe = state.pending_unsubscribe();
+
+        state.mark_unsubscribe("tickers.BTCUSDT");
+
+        assert_eq!(
+            confirmed.get(&Ustr::from("tickers")),
+            Some(&AHashSet::from_iter([Ustr::from("BTCUSDT")]))
+        );
+        assert!(pending_subscribe.is_empty());
+        assert!(pending_unsubscribe.is_empty());
+        assert!(state.confirmed().is_empty());
+        assert_eq!(
+            state.pending_unsubscribe().get(&Ustr::from("tickers")),
+            Some(&AHashSet::from_iter([Ustr::from("BTCUSDT")]))
+        );
     }
 
     #[rstest]
@@ -578,6 +860,144 @@ mod tests {
     }
 
     #[rstest]
+    fn test_all_topics_includes_confirmed_and_pending_subscribe() {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        state.mark_subscribe("tickers.ETHUSDT");
+
+        assert_eq!(
+            state.all_topics(),
+            vec!["tickers.BTCUSDT", "tickers.ETHUSDT"]
+        );
+    }
+
+    #[rstest]
+    fn test_all_topics_excludes_pending_unsubscribe() {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        state.mark_unsubscribe("tickers.BTCUSDT");
+
+        let topics = state.all_topics();
+        assert!(topics.is_empty());
+    }
+
+    #[rstest]
+    fn test_all_topics_is_sorted_within_each_group() {
+        let state = SubscriptionState::new('.');
+
+        // Insert scrambled across channels and symbols so hash order cannot pass.
+        for topic in [
+            "trades.SOLUSDT",
+            "tickers.ETHUSDT",
+            "trades.BTCUSDT",
+            "tickers.BTCUSDT",
+        ] {
+            state.mark_subscribe(topic);
+            state.confirm_subscribe(topic);
+        }
+
+        state.mark_subscribe("orders.XRPUSDT");
+        state.mark_subscribe("orders.ADAUSDT");
+
+        // Confirmed topics sort among themselves, then pending ones do the same.
+        assert_eq!(
+            state.all_topics(),
+            vec![
+                "tickers.BTCUSDT",
+                "tickers.ETHUSDT",
+                "trades.BTCUSDT",
+                "trades.SOLUSDT",
+                "orders.ADAUSDT",
+                "orders.XRPUSDT",
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_pending_subscribe_excludes_pending_unsubscribe() {
+        let state = SubscriptionState::new('.');
+
+        // Subscribe and confirm
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+
+        // Mark for unsubscribe
+        state.mark_unsubscribe("tickers.BTCUSDT");
+
+        // Should be in pending_unsubscribe but NOT in all_topics
+        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
+        assert!(state.all_topics().is_empty());
+        assert_eq!(state.len(), 0);
+    }
+
+    #[rstest]
+    fn test_mark_subscribe() {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("tickers.BTCUSDT");
+
+        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
+        assert_eq!(state.len(), 0); // Not confirmed yet
+    }
+
+    #[rstest]
+    fn test_try_mark_subscribe_returns_true_once_across_concurrent_calls() {
+        const CALLERS: usize = 32;
+
+        let state = Arc::new(SubscriptionState::new('.'));
+        let start = Arc::new(Barrier::new(CALLERS));
+        let send_count = Arc::new(AtomicUsize::new(0));
+
+        std::thread::scope(|scope| {
+            for _ in 0..CALLERS {
+                let state = Arc::clone(&state);
+                let start = Arc::clone(&start);
+                let send_count = Arc::clone(&send_count);
+
+                scope.spawn(move || {
+                    start.wait();
+
+                    if state.try_mark_subscribe("tickers.BTCUSDT") {
+                        send_count.fetch_add(1, Ordering::SeqCst);
+                    }
+                });
+            }
+        });
+
+        assert_eq!(send_count.load(Ordering::SeqCst), 1);
+        assert_eq!(state.pending_subscribe_topics(), ["tickers.BTCUSDT"]);
+        assert!(state.pending_unsubscribe_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_try_mark_subscribe_respects_lifecycle_state() {
+        let state = SubscriptionState::new('.');
+        let topic = "tickers.BTCUSDT";
+
+        assert!(state.try_mark_subscribe(topic));
+        assert!(!state.try_mark_subscribe(topic));
+
+        state.confirm_subscribe(topic);
+        assert!(!state.try_mark_subscribe(topic));
+
+        state.mark_unsubscribe(topic);
+        assert!(state.try_mark_subscribe(topic));
+        assert_eq!(state.pending_subscribe_topics(), [topic]);
+        assert!(state.pending_unsubscribe_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_confirm_subscribe() {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert_eq!(state.len(), 1);
+    }
+
+    #[rstest]
     fn test_mark_unsubscribe() {
         let state = SubscriptionState::new('.');
         state.mark_subscribe("tickers.BTCUSDT");
@@ -597,6 +1017,70 @@ mod tests {
         state.confirm_unsubscribe("tickers.BTCUSDT");
 
         assert!(state.is_empty());
+    }
+
+    #[rstest]
+    fn test_unsubscribe_before_subscribe_confirmed() {
+        let state = SubscriptionState::new('.');
+
+        // User subscribes
+        state.mark_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // User immediately changes mind before server confirms
+        state.mark_unsubscribe("tickers.BTCUSDT");
+
+        // Should be removed from pending_subscribe and added to pending_unsubscribe
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // Confirm the unsubscribe
+        state.confirm_unsubscribe("tickers.BTCUSDT");
+
+        // Should be completely gone
+        assert!(state.is_empty());
+        assert!(state.all_topics().is_empty());
+        assert_eq!(state.len(), 0);
+    }
+
+    #[rstest]
+    fn test_late_subscribe_confirmation_after_unsubscribe() {
+        let state = SubscriptionState::new('.');
+
+        // User subscribes
+        state.mark_subscribe("tickers.BTCUSDT");
+
+        // User immediately unsubscribes
+        state.mark_unsubscribe("tickers.BTCUSDT");
+
+        // Late subscribe confirmation arrives from server
+        state.confirm_subscribe("tickers.BTCUSDT");
+
+        // Should NOT be added to confirmed (unsubscribe takes precedence)
+        assert_eq!(state.len(), 0);
+        assert!(state.pending_subscribe_topics().is_empty());
+
+        // Confirm the unsubscribe
+        state.confirm_unsubscribe("tickers.BTCUSDT");
+
+        // Should still be empty
+        assert!(state.is_empty());
+        assert!(state.all_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_late_subscribe_ack_after_unsubscribe_ack_does_not_restore_topic() {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.mark_unsubscribe("tickers.BTCUSDT");
+
+        state.confirm_unsubscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+
+        assert!(state.is_empty());
+        assert!(state.all_topics().is_empty());
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert!(state.pending_unsubscribe_topics().is_empty());
     }
 
     #[rstest]
@@ -678,6 +1162,221 @@ mod tests {
     }
 
     #[rstest]
+    fn test_unsubscribe_clears_all_states() {
+        let state = SubscriptionState::new('.');
+
+        // Subscribe and confirm
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 1);
+
+        // Unsubscribe
+        state.mark_unsubscribe("tickers.BTCUSDT");
+
+        // Should be removed from confirmed
+        assert_eq!(state.len(), 0);
+        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // Late subscribe confirmation somehow arrives (race condition)
+        state.confirm_subscribe("tickers.BTCUSDT");
+
+        // confirm_unsubscribe should clean everything
+        state.confirm_unsubscribe("tickers.BTCUSDT");
+
+        // Completely empty
+        assert!(state.is_empty());
+        assert_eq!(state.len(), 0);
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert!(state.pending_unsubscribe_topics().is_empty());
+        assert!(state.all_topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_concurrent_subscribe_confirmation_and_unsubscribe_preserve_intent() {
+        const ITERATIONS: usize = 10_000;
+
+        let state = Arc::new(SubscriptionState::new('.'));
+        let start = Arc::new(Barrier::new(3));
+        let finish = Arc::new(Barrier::new(3));
+        let failed_iteration = Arc::new(AtomicUsize::new(usize::MAX));
+
+        std::thread::scope(|scope| {
+            let confirming_state = Arc::clone(&state);
+            let confirming_start = Arc::clone(&start);
+            let confirming_finish = Arc::clone(&finish);
+
+            scope.spawn(move || {
+                for _ in 0..ITERATIONS {
+                    confirming_start.wait();
+                    confirming_state.confirm_subscribe("tickers.BTCUSDT");
+                    confirming_finish.wait();
+                }
+            });
+
+            let unsubscribing_state = Arc::clone(&state);
+            let unsubscribing_start = Arc::clone(&start);
+            let unsubscribing_finish = Arc::clone(&finish);
+
+            scope.spawn(move || {
+                for _ in 0..ITERATIONS {
+                    unsubscribing_start.wait();
+                    unsubscribing_state.mark_unsubscribe("tickers.BTCUSDT");
+                    unsubscribing_finish.wait();
+                }
+            });
+
+            for iteration in 0..ITERATIONS {
+                state.clear();
+                state.mark_subscribe("tickers.BTCUSDT");
+                start.wait();
+                finish.wait();
+
+                if !state.all_topics().is_empty()
+                    || state.pending_unsubscribe_topics() != ["tickers.BTCUSDT"]
+                {
+                    _ = failed_iteration.compare_exchange(
+                        usize::MAX,
+                        iteration,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    );
+                }
+            }
+        });
+
+        assert_eq!(
+            failed_iteration.load(Ordering::SeqCst),
+            usize::MAX,
+            "late subscribe confirmation restored the unsubscribe intent"
+        );
+    }
+
+    #[rstest]
+    #[case::unknown_components(false, false, true)]
+    #[case::known_channel(true, false, true)]
+    #[case::known_symbol(false, true, true)]
+    #[case::channel_only(false, false, false)]
+    #[case::interned_untracked_pair(true, true, true)]
+    fn test_unknown_acknowledgments_do_not_intern(
+        #[values("confirm_subscribe", "confirm_unsubscribe", "mark_failure")] operation: &str,
+        #[case] channel_known: bool,
+        #[case] symbol_known: bool,
+        #[case] has_symbol: bool,
+    ) {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("cache_confirmed.active");
+        state.confirm_subscribe("cache_confirmed.active");
+        state.mark_subscribe("cache_pending.waiting");
+        state.mark_unsubscribe("cache_cancelled.leaving");
+        state.add_reference("cache_confirmed.active");
+        state.add_reference("cache_confirmed.active");
+        let confirmed = state.confirmed();
+        let pending_subscribe = state.pending_subscribe();
+        let pending_unsubscribe = state.pending_unsubscribe();
+        let desired = snapshot(&state.desired);
+        let prefix = format!("unknown_ack_{operation}_{channel_known}_{symbol_known}_{has_symbol}");
+
+        let channel = if channel_known {
+            "cache_confirmed".to_string()
+        } else {
+            format!("{prefix}_channel")
+        };
+
+        let symbol = if symbol_known {
+            "waiting".to_string()
+        } else {
+            format!("{prefix}_symbol")
+        };
+
+        let topic = if has_symbol {
+            format!("{channel}.{symbol}")
+        } else {
+            channel.clone()
+        };
+
+        let channel_before = Ustr::from_existing(&channel);
+        let symbol_before = Ustr::from_existing(&symbol);
+        assert_eq!(channel_before.is_some(), channel_known);
+        assert_eq!(symbol_before.is_some(), symbol_known);
+
+        apply_op(&state, operation, &topic);
+
+        assert_eq!(Ustr::from_existing(&channel), channel_before);
+        assert_eq!(Ustr::from_existing(&symbol), symbol_before);
+        assert_eq!(state.confirmed(), confirmed);
+        assert_eq!(state.pending_subscribe(), pending_subscribe);
+        assert_eq!(state.pending_unsubscribe(), pending_unsubscribe);
+        assert_eq!(snapshot(&state.desired), desired);
+        assert_eq!(state.reference_counts.len(), 1);
+        assert_eq!(state.get_reference_count("cache_confirmed.active"), 2);
+    }
+
+    #[rstest]
+    fn test_unknown_reference_operations_do_not_intern(#[values(false, true)] remove: bool) {
+        let state = SubscriptionState::new('.');
+        let topic = format!("unknown_reference_lookup_{remove}");
+        assert_eq!(Ustr::from_existing(&topic), None);
+
+        if remove {
+            assert!(!state.remove_reference(&topic));
+        } else {
+            assert_eq!(state.get_reference_count(&topic), 0);
+        }
+
+        assert_eq!(Ustr::from_existing(&topic), None);
+        assert!(state.is_empty());
+        assert!(state.reference_counts.is_empty());
+    }
+
+    #[rstest]
+    fn test_untrack_unknown_topic_does_not_intern(#[values(false, true)] channel_known: bool) {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("untrack_known.retained");
+        let pending = state.pending_subscribe();
+
+        let channel = if channel_known {
+            "untrack_known".to_string()
+        } else {
+            "untrack_unknown_channel".to_string()
+        };
+
+        let symbol = format!("untrack_unknown_symbol_{channel_known}");
+        let channel_before = Ustr::from_existing(&channel);
+        assert_eq!(channel_before.is_some(), channel_known);
+        assert_eq!(Ustr::from_existing(&symbol), None);
+
+        untrack_topic(&state.pending_subscribe, &channel, Some(&symbol));
+
+        assert_eq!(Ustr::from_existing(&channel), channel_before);
+        assert_eq!(Ustr::from_existing(&symbol), None);
+        assert_eq!(state.pending_subscribe(), pending);
+    }
+
+    #[rstest]
+    fn test_state_machine_invalid_transitions() {
+        let state = SubscriptionState::new('.');
+
+        // Confirm subscribe without matching intent - should be ignored
+        state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 0);
+
+        // Confirm unsubscribe without marking first - should not crash
+        state.confirm_unsubscribe("tickers.ETHUSDT");
+        assert_eq!(state.len(), 0); // Nothing changes
+
+        // Double confirm subscribe
+        state.mark_subscribe("orderbook");
+        state.confirm_subscribe("orderbook");
+        state.confirm_subscribe("orderbook"); // Second confirm is idempotent
+        assert_eq!(state.len(), 1);
+
+        // Unsubscribe something that was never subscribed
+        state.mark_unsubscribe("nonexistent");
+        state.confirm_unsubscribe("nonexistent");
+        assert_eq!(state.len(), 1); // Still 1
+    }
+
+    #[rstest]
     fn test_mark_failure() {
         let state = SubscriptionState::new('.');
         state.mark_subscribe("tickers.BTCUSDT");
@@ -689,311 +1388,53 @@ mod tests {
     }
 
     #[rstest]
-    fn test_all_topics_includes_confirmed_and_pending_subscribe() {
+    fn test_mark_failure_moves_to_pending() {
         let state = SubscriptionState::new('.');
+
+        // Subscribe and confirm
         state.mark_subscribe("tickers.BTCUSDT");
         state.confirm_subscribe("tickers.BTCUSDT");
-        state.mark_subscribe("tickers.ETHUSDT");
+        assert_eq!(state.len(), 1);
+        assert!(state.pending_subscribe_topics().is_empty());
 
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
+        // Mark as failed
+        state.mark_failure("tickers.BTCUSDT");
+
+        // Should be removed from confirmed and back in pending
+        assert_eq!(state.len(), 0);
+        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
+
+        // all_topics should still include it for reconnection
+        assert_eq!(state.all_topics(), vec!["tickers.BTCUSDT"]);
     }
 
     #[rstest]
-    fn test_all_topics_excludes_pending_unsubscribe() {
+    fn test_mark_failure_respects_pending_unsubscribe() {
         let state = SubscriptionState::new('.');
+
+        // Subscribe and confirm
         state.mark_subscribe("tickers.BTCUSDT");
         state.confirm_subscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 1);
+
+        // User unsubscribes
         state.mark_unsubscribe("tickers.BTCUSDT");
+        assert_eq!(state.len(), 0);
+        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
 
-        let topics = state.all_topics();
-        assert!(topics.is_empty());
-    }
+        // Meanwhile, a network error triggers mark_failure
+        state.mark_failure("tickers.BTCUSDT");
 
-    #[rstest]
-    fn test_reference_counting_single_topic() {
-        let state = SubscriptionState::new('.');
+        // Should NOT be added to pending_subscribe (user wanted to unsubscribe)
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
 
-        assert!(state.add_reference("tickers.BTCUSDT"));
-        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 1);
+        // all_topics should NOT include it
+        assert!(state.all_topics().is_empty());
 
-        assert!(!state.add_reference("tickers.BTCUSDT"));
-        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 2);
-
-        assert!(!state.remove_reference("tickers.BTCUSDT"));
-        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 1);
-
-        assert!(state.remove_reference("tickers.BTCUSDT"));
-        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 0);
-    }
-
-    #[rstest]
-    fn test_reference_counting_multiple_topics() {
-        let state = SubscriptionState::new('.');
-
-        assert!(state.add_reference("tickers.BTCUSDT"));
-        assert!(state.add_reference("tickers.ETHUSDT"));
-
-        assert!(!state.add_reference("tickers.BTCUSDT"));
-        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 2);
-        assert_eq!(state.get_reference_count("tickers.ETHUSDT"), 1);
-
-        assert!(!state.remove_reference("tickers.BTCUSDT"));
-        assert!(state.remove_reference("tickers.ETHUSDT"));
-    }
-
-    #[rstest]
-    fn test_topic_without_symbol() {
-        let state = SubscriptionState::new('.');
-        state.mark_subscribe("orderbook");
-        state.confirm_subscribe("orderbook");
-
-        assert_eq!(state.len(), 1);
-        assert_eq!(state.all_topics(), vec!["orderbook"]);
-    }
-
-    #[rstest]
-    fn test_different_delimiters() {
-        let state_dot = SubscriptionState::new('.');
-        state_dot.mark_subscribe("tickers.BTCUSDT");
-        assert_eq!(
-            state_dot.pending_subscribe_topics(),
-            vec!["tickers.BTCUSDT"]
-        );
-
-        let state_colon = SubscriptionState::new(':');
-        state_colon.mark_subscribe("orderBookL2:XBTUSD");
-        assert_eq!(
-            state_colon.pending_subscribe_topics(),
-            vec!["orderBookL2:XBTUSD"]
-        );
-    }
-
-    #[rstest]
-    fn test_clear() {
-        let state = SubscriptionState::new('.');
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
-        state.add_reference("tickers.BTCUSDT");
-
-        state.clear();
-
+        // Confirm unsubscribe
+        state.confirm_unsubscribe("tickers.BTCUSDT");
         assert!(state.is_empty());
-        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 0);
-    }
-
-    #[rstest]
-    fn test_multiple_symbols_same_channel() {
-        let state = SubscriptionState::new('.');
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.mark_subscribe("tickers.ETHUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.ETHUSDT");
-
-        assert_eq!(state.len(), 2);
-        let topics = state.all_topics();
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
-    }
-
-    #[rstest]
-    fn test_all_topics_is_sorted_within_each_group() {
-        let state = SubscriptionState::new('.');
-
-        // Insert scrambled across channels and symbols so hash order cannot pass.
-        for topic in [
-            "trades.SOLUSDT",
-            "tickers.ETHUSDT",
-            "trades.BTCUSDT",
-            "tickers.BTCUSDT",
-        ] {
-            state.mark_subscribe(topic);
-            state.confirm_subscribe(topic);
-        }
-
-        state.mark_subscribe("orders.XRPUSDT");
-        state.mark_subscribe("orders.ADAUSDT");
-
-        // Confirmed topics sort among themselves, then pending ones do the same.
-        assert_eq!(
-            state.all_topics(),
-            vec![
-                "tickers.BTCUSDT",
-                "tickers.ETHUSDT",
-                "trades.BTCUSDT",
-                "trades.SOLUSDT",
-                "orders.ADAUSDT",
-                "orders.XRPUSDT",
-            ]
-        );
-    }
-
-    #[rstest]
-    fn test_mixed_channel_and_symbol_subscriptions() {
-        let state = SubscriptionState::new('.');
-
-        // Subscribe to channel-level first
-        state.mark_subscribe("tickers");
-        state.confirm_subscribe("tickers");
-        assert_eq!(state.len(), 1);
-        assert_eq!(state.all_topics(), vec!["tickers"]);
-
-        // Add symbol-level subscription to same channel
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
-        assert_eq!(state.len(), 2);
-
-        // Both should be present
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-
-        // Add another symbol
-        state.mark_subscribe("tickers.ETHUSDT");
-        state.confirm_subscribe("tickers.ETHUSDT");
-        assert_eq!(state.len(), 3);
-
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 3);
-        assert!(topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
-
-        // Unsubscribe from channel-level only
-        state.mark_unsubscribe("tickers");
-        state.confirm_unsubscribe("tickers");
-        assert_eq!(state.len(), 2);
-
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(!topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-        assert!(topics.contains(&"tickers.ETHUSDT".to_string()));
-    }
-
-    #[rstest]
-    fn test_symbol_subscription_before_channel() {
-        let state = SubscriptionState::new('.');
-
-        // Subscribe to symbol first
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
-        assert_eq!(state.len(), 1);
-
-        // Then add channel-level
-        state.mark_subscribe("tickers");
-        state.confirm_subscribe("tickers");
-        assert_eq!(state.len(), 2);
-
-        // Both should be present after reconnect
-        let topics = state.all_topics();
-        assert_eq!(topics.len(), 2);
-        assert!(topics.contains(&"tickers".to_string()));
-        assert!(topics.contains(&"tickers.BTCUSDT".to_string()));
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn test_concurrent_subscribe_same_topic() {
-        let state = Arc::new(SubscriptionState::new('.'));
-        let mut handles = vec![];
-
-        // Spawn 10 tasks all subscribing to the same topic
-        for _ in 0..10 {
-            let state_clone = Arc::clone(&state);
-            let handle = tokio::spawn(async move {
-                state_clone.add_reference("tickers.BTCUSDT");
-                state_clone.mark_subscribe("tickers.BTCUSDT");
-                state_clone.confirm_subscribe("tickers.BTCUSDT");
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        // Reference count should be exactly 10
-        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 10);
-        assert_eq!(state.len(), 1);
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn test_concurrent_subscribe_unsubscribe() {
-        let state = Arc::new(SubscriptionState::new('.'));
-        let mut handles = vec![];
-
-        // Spawn 20 tasks, each adding 2 references to their own unique topic
-        // This ensures deterministic behavior - we know exactly what the final state should be
-        for i in 0..20 {
-            let state_clone = Arc::clone(&state);
-
-            let handle = tokio::spawn(async move {
-                let topic = format!("tickers.SYMBOL{i}");
-                // Add 2 references
-                state_clone.add_reference(&topic);
-                state_clone.add_reference(&topic);
-                state_clone.mark_subscribe(&topic);
-                state_clone.confirm_subscribe(&topic);
-
-                // Remove 1 reference (should still have 1 remaining)
-                state_clone.remove_reference(&topic);
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        // Each of the 20 topics should still have 1 reference
-        for i in 0..20 {
-            let topic = format!("tickers.SYMBOL{i}");
-            assert_eq!(state.get_reference_count(&topic), 1);
-        }
-
-        // Should have exactly 20 confirmed subscriptions
-        assert_eq!(state.len(), 20);
-        assert!(!state.is_empty());
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn test_concurrent_reference_counting_same_topic() {
-        let state = Arc::new(SubscriptionState::new('.'));
-        let topic = "tickers.BTCUSDT";
-        let mut handles = vec![];
-
-        // Spawn 10 tasks all adding 10 references to the same topic
-        for _ in 0..10 {
-            let state_clone = Arc::clone(&state);
-
-            let handle = tokio::spawn(async move {
-                for _ in 0..10 {
-                    state_clone.add_reference(topic);
-                }
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        // Should have exactly 100 references (10 tasks * 10 refs each)
-        assert_eq!(state.get_reference_count(topic), 100);
-
-        // Now remove 50 references sequentially
-        for _ in 0..50 {
-            state.remove_reference(topic);
-        }
-
-        // Should have exactly 50 references remaining
-        assert_eq!(state.get_reference_count(topic), 50);
     }
 
     #[rstest]
@@ -1038,65 +1479,98 @@ mod tests {
     }
 
     #[rstest]
-    fn test_state_machine_invalid_transitions() {
+    fn test_reconnection_with_partial_state() {
         let state = SubscriptionState::new('.');
 
-        // Confirm subscribe without marking first - should not crash
-        state.confirm_subscribe("tickers.BTCUSDT");
-        assert_eq!(state.len(), 1); // Gets added to confirmed
+        // Setup: Some confirmed, some pending subscribe, some pending unsubscribe
+        // Confirmed
+        state.add_reference("confirmed.BTCUSDT");
+        state.mark_subscribe("confirmed.BTCUSDT");
+        state.confirm_subscribe("confirmed.BTCUSDT");
 
-        // Confirm unsubscribe without marking first - should not crash
-        state.confirm_unsubscribe("tickers.ETHUSDT");
-        assert_eq!(state.len(), 1); // Nothing changes
+        // Pending subscribe (not yet confirmed)
+        state.add_reference("pending.ETHUSDT");
+        state.mark_subscribe("pending.ETHUSDT");
 
-        // Double confirm subscribe
-        state.mark_subscribe("orderbook");
-        state.confirm_subscribe("orderbook");
-        state.confirm_subscribe("orderbook"); // Second confirm is idempotent
-        assert_eq!(state.len(), 2);
+        // Pending unsubscribe (user cancelled)
+        state.mark_subscribe("cancelled.XRPUSDT");
+        state.confirm_subscribe("cancelled.XRPUSDT");
+        state.mark_unsubscribe("cancelled.XRPUSDT");
 
-        // Unsubscribe something that was never subscribed
-        state.mark_unsubscribe("nonexistent");
-        state.confirm_unsubscribe("nonexistent");
-        assert_eq!(state.len(), 2); // Still 2
+        // Verify state before reconnect
+        assert_eq!(state.len(), 1); // Only confirmed.BTCUSDT
+        let all = state.all_topics();
+        assert_eq!(all.len(), 2); // confirmed + pending_subscribe (not pending_unsubscribe)
+        assert!(all.contains(&"confirmed.BTCUSDT".to_string()));
+        assert!(all.contains(&"pending.ETHUSDT".to_string()));
+        assert!(!all.contains(&"cancelled.XRPUSDT".to_string())); // Should NOT be included
+
+        // Simulate disconnect and reconnect
+        let topics_to_resubscribe = state.reset_after_reconnect();
+        assert_eq!(
+            topics_to_resubscribe,
+            [
+                "confirmed.BTCUSDT".to_string(),
+                "pending.ETHUSDT".to_string()
+            ]
+        );
+        assert_eq!(state.reset_after_reconnect(), topics_to_resubscribe);
+        assert_eq!(state.len(), 0);
+        assert_eq!(
+            state.pending_subscribe_topics(),
+            [
+                "confirmed.BTCUSDT".to_string(),
+                "pending.ETHUSDT".to_string()
+            ]
+        );
+        assert!(state.pending_unsubscribe_topics().is_empty());
+        assert_eq!(state.get_reference_count("confirmed.BTCUSDT"), 1);
+        assert_eq!(state.get_reference_count("pending.ETHUSDT"), 1);
+
+        // Server confirms both
+        for topic in &topics_to_resubscribe {
+            state.confirm_subscribe(topic);
+        }
+
+        // Verify final state
+        assert_eq!(state.len(), 2); // Both confirmed
+        let final_topics = state.all_topics();
+        assert_eq!(final_topics.len(), 2);
+        assert!(final_topics.contains(&"confirmed.BTCUSDT".to_string()));
+        assert!(final_topics.contains(&"pending.ETHUSDT".to_string()));
+        assert!(!final_topics.contains(&"cancelled.XRPUSDT".to_string()));
     }
 
     #[rstest]
-    fn test_mark_failure_moves_to_pending() {
+    fn test_reference_counting_single_topic() {
         let state = SubscriptionState::new('.');
 
-        // Subscribe and confirm
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
-        assert_eq!(state.len(), 1);
-        assert!(state.pending_subscribe_topics().is_empty());
+        assert!(state.add_reference("tickers.BTCUSDT"));
+        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 1);
 
-        // Mark as failed
-        state.mark_failure("tickers.BTCUSDT");
+        assert!(!state.add_reference("tickers.BTCUSDT"));
+        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 2);
 
-        // Should be removed from confirmed and back in pending
-        assert_eq!(state.len(), 0);
-        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
+        assert!(!state.remove_reference("tickers.BTCUSDT"));
+        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 1);
 
-        // all_topics should still include it for reconnection
-        assert_eq!(state.all_topics(), vec!["tickers.BTCUSDT"]);
+        assert!(state.remove_reference("tickers.BTCUSDT"));
+        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 0);
     }
 
     #[rstest]
-    fn test_pending_subscribe_excludes_pending_unsubscribe() {
+    fn test_reference_counting_multiple_topics() {
         let state = SubscriptionState::new('.');
 
-        // Subscribe and confirm
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
+        assert!(state.add_reference("tickers.BTCUSDT"));
+        assert!(state.add_reference("tickers.ETHUSDT"));
 
-        // Mark for unsubscribe
-        state.mark_unsubscribe("tickers.BTCUSDT");
+        assert!(!state.add_reference("tickers.BTCUSDT"));
+        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 2);
+        assert_eq!(state.get_reference_count("tickers.ETHUSDT"), 1);
 
-        // Should be in pending_unsubscribe but NOT in all_topics
-        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
-        assert!(state.all_topics().is_empty());
-        assert_eq!(state.len(), 0);
+        assert!(!state.remove_reference("tickers.BTCUSDT"));
+        assert!(state.remove_reference("tickers.ETHUSDT"));
     }
 
     #[rstest]
@@ -1112,44 +1586,76 @@ mod tests {
     }
 
     #[rstest]
-    fn test_edge_case_empty_channel_name() {
+    fn test_reference_count_underflow_safety() {
         let state = SubscriptionState::new('.');
 
-        // Edge case: empty string as topic
-        state.mark_subscribe("");
-        state.confirm_subscribe("");
+        // Remove without ever adding
+        assert!(!state.remove_reference("never.added"));
+        assert_eq!(state.get_reference_count("never.added"), 0);
 
-        assert_eq!(state.len(), 1);
-        assert_eq!(state.all_topics(), vec![""]);
+        // Add one, remove multiple times
+        state.add_reference("once.added");
+        assert_eq!(state.get_reference_count("once.added"), 1);
+
+        assert!(state.remove_reference("once.added")); // Should return true (last ref)
+        assert_eq!(state.get_reference_count("once.added"), 0);
+
+        assert!(!state.remove_reference("once.added")); // Should not crash, returns false
+        assert!(!state.remove_reference("once.added")); // Multiple times
+        assert_eq!(state.get_reference_count("once.added"), 0);
+
+        // Verify we can add again after underflow attempts
+        assert!(state.add_reference("once.added"));
+        assert_eq!(state.get_reference_count("once.added"), 1);
     }
 
     #[rstest]
-    fn test_special_characters_in_topics() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_reference_counting_same_topic() {
+        let state = Arc::new(SubscriptionState::new('.'));
+        let topic = "tickers.BTCUSDT";
+        let mut handles = vec![];
+
+        // Spawn 10 tasks all adding 10 references to the same topic
+        for _ in 0..10 {
+            let state_clone = Arc::clone(&state);
+
+            let handle = tokio::spawn(async move {
+                for _ in 0..10 {
+                    state_clone.add_reference(topic);
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // Should have exactly 100 references (10 tasks * 10 refs each)
+        assert_eq!(state.get_reference_count(topic), 100);
+
+        // Now remove 50 references sequentially
+        for _ in 0..50 {
+            state.remove_reference(topic);
+        }
+
+        // Should have exactly 50 references remaining
+        assert_eq!(state.get_reference_count(topic), 50);
+    }
+
+    #[rstest]
+    fn test_clear() {
         let state = SubscriptionState::new('.');
+        state.mark_subscribe("tickers.BTCUSDT");
+        state.confirm_subscribe("tickers.BTCUSDT");
+        state.add_reference("tickers.BTCUSDT");
 
-        // Topics with special characters
-        let special_topics = vec![
-            "channel.symbol-with-dash",
-            "channel.SYMBOL_WITH_UNDERSCORE",
-            "channel.symbol123",
-            "channel.symbol@special",
-        ];
+        state.clear();
 
-        for topic in &special_topics {
-            state.mark_subscribe(topic);
-            state.confirm_subscribe(topic);
-        }
-
-        assert_eq!(state.len(), special_topics.len());
-
-        let all_topics = state.all_topics();
-
-        for topic in &special_topics {
-            assert!(
-                all_topics.contains(&(*topic).to_string()),
-                "Missing topic: {topic}"
-            );
-        }
+        assert!(state.is_empty());
+        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 0);
     }
 
     #[rstest]
@@ -1186,129 +1692,71 @@ mod tests {
     }
 
     #[rstest]
-    fn test_different_delimiter_does_not_affect_storage() {
-        // Verify delimiter is only used for parsing, not storage
-        let state_dot = SubscriptionState::new('.');
-        let state_colon = SubscriptionState::new(':');
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_subscribe_same_topic() {
+        let state = Arc::new(SubscriptionState::new('.'));
+        let mut handles = vec![];
 
-        // Add same logical subscription with different delimiters
-        state_dot.mark_subscribe("channel.SYMBOL");
-        state_colon.mark_subscribe("channel:SYMBOL");
+        // Spawn 10 tasks all subscribing to the same topic
+        for _ in 0..10 {
+            let state_clone = Arc::clone(&state);
+            let handle = tokio::spawn(async move {
+                state_clone.add_reference("tickers.BTCUSDT");
+                state_clone.mark_subscribe("tickers.BTCUSDT");
+                state_clone.confirm_subscribe("tickers.BTCUSDT");
+            });
 
-        // Both should work correctly
-        assert_eq!(state_dot.pending_subscribe_topics(), vec!["channel.SYMBOL"]);
-        assert_eq!(
-            state_colon.pending_subscribe_topics(),
-            vec!["channel:SYMBOL"]
-        );
-    }
+            handles.push(handle);
+        }
 
-    #[rstest]
-    fn test_unsubscribe_before_subscribe_confirmed() {
-        let state = SubscriptionState::new('.');
+        for handle in handles {
+            handle.await.unwrap();
+        }
 
-        // User subscribes
-        state.mark_subscribe("tickers.BTCUSDT");
-        assert_eq!(state.pending_subscribe_topics(), vec!["tickers.BTCUSDT"]);
-
-        // User immediately changes mind before server confirms
-        state.mark_unsubscribe("tickers.BTCUSDT");
-
-        // Should be removed from pending_subscribe and added to pending_unsubscribe
-        assert!(state.pending_subscribe_topics().is_empty());
-        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
-
-        // Confirm the unsubscribe
-        state.confirm_unsubscribe("tickers.BTCUSDT");
-
-        // Should be completely gone
-        assert!(state.is_empty());
-        assert!(state.all_topics().is_empty());
-        assert_eq!(state.len(), 0);
-    }
-
-    #[rstest]
-    fn test_late_subscribe_confirmation_after_unsubscribe() {
-        let state = SubscriptionState::new('.');
-
-        // User subscribes
-        state.mark_subscribe("tickers.BTCUSDT");
-
-        // User immediately unsubscribes
-        state.mark_unsubscribe("tickers.BTCUSDT");
-
-        // Late subscribe confirmation arrives from server
-        state.confirm_subscribe("tickers.BTCUSDT");
-
-        // Should NOT be added to confirmed (unsubscribe takes precedence)
-        assert_eq!(state.len(), 0);
-        assert!(state.pending_subscribe_topics().is_empty());
-
-        // Confirm the unsubscribe
-        state.confirm_unsubscribe("tickers.BTCUSDT");
-
-        // Should still be empty
-        assert!(state.is_empty());
-        assert!(state.all_topics().is_empty());
-    }
-
-    #[rstest]
-    fn test_unsubscribe_clears_all_states() {
-        let state = SubscriptionState::new('.');
-
-        // Subscribe and confirm
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
+        // Reference count should be exactly 10
+        assert_eq!(state.get_reference_count("tickers.BTCUSDT"), 10);
         assert_eq!(state.len(), 1);
-
-        // Unsubscribe
-        state.mark_unsubscribe("tickers.BTCUSDT");
-
-        // Should be removed from confirmed
-        assert_eq!(state.len(), 0);
-        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
-
-        // Late subscribe confirmation somehow arrives (race condition)
-        state.confirm_subscribe("tickers.BTCUSDT");
-
-        // confirm_unsubscribe should clean everything
-        state.confirm_unsubscribe("tickers.BTCUSDT");
-
-        // Completely empty
-        assert!(state.is_empty());
-        assert_eq!(state.len(), 0);
-        assert!(state.pending_subscribe_topics().is_empty());
-        assert!(state.pending_unsubscribe_topics().is_empty());
-        assert!(state.all_topics().is_empty());
     }
 
     #[rstest]
-    fn test_mark_failure_respects_pending_unsubscribe() {
-        let state = SubscriptionState::new('.');
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_subscribe_unsubscribe() {
+        let state = Arc::new(SubscriptionState::new('.'));
+        let mut handles = vec![];
 
-        // Subscribe and confirm
-        state.mark_subscribe("tickers.BTCUSDT");
-        state.confirm_subscribe("tickers.BTCUSDT");
-        assert_eq!(state.len(), 1);
+        // Spawn 20 tasks, each adding 2 references to their own unique topic
+        // This ensures deterministic behavior - we know exactly what the final state should be
+        for i in 0..20 {
+            let state_clone = Arc::clone(&state);
 
-        // User unsubscribes
-        state.mark_unsubscribe("tickers.BTCUSDT");
-        assert_eq!(state.len(), 0);
-        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
+            let handle = tokio::spawn(async move {
+                let topic = format!("tickers.SYMBOL{i}");
+                // Add 2 references
+                state_clone.add_reference(&topic);
+                state_clone.add_reference(&topic);
+                state_clone.mark_subscribe(&topic);
+                state_clone.confirm_subscribe(&topic);
 
-        // Meanwhile, a network error triggers mark_failure
-        state.mark_failure("tickers.BTCUSDT");
+                // Remove 1 reference (should still have 1 remaining)
+                state_clone.remove_reference(&topic);
+            });
 
-        // Should NOT be added to pending_subscribe (user wanted to unsubscribe)
-        assert!(state.pending_subscribe_topics().is_empty());
-        assert_eq!(state.pending_unsubscribe_topics(), vec!["tickers.BTCUSDT"]);
+            handles.push(handle);
+        }
 
-        // all_topics should NOT include it
-        assert!(state.all_topics().is_empty());
+        for handle in handles {
+            handle.await.unwrap();
+        }
 
-        // Confirm unsubscribe
-        state.confirm_unsubscribe("tickers.BTCUSDT");
-        assert!(state.is_empty());
+        // Each of the 20 topics should still have 1 reference
+        for i in 0..20 {
+            let topic = format!("tickers.SYMBOL{i}");
+            assert_eq!(state.get_reference_count(&topic), 1);
+        }
+
+        // Should have exactly 20 confirmed subscriptions
+        assert_eq!(state.len(), 20);
+        assert!(!state.is_empty());
     }
 
     #[rstest]
@@ -1347,6 +1795,7 @@ mod tests {
                 // Confirm topic2
                 state_clone.confirm_subscribe(&topic2);
             });
+
             handles.push(handle);
         }
 
@@ -1354,127 +1803,135 @@ mod tests {
             handle.await.unwrap();
         }
 
-        // Verify state is consistent (no panics, all maps accessible)
-        let all = state.all_topics();
-        let confirmed_count = state.len();
+        let actual = state.all_topics().into_iter().collect::<AHashSet<_>>();
 
-        // We have 50 topic2s (always confirmed) + topic1s (50 - number unsubscribed)
-        // About 17 topic1s get unsubscribed (i % 3 == 0), leaving ~33 topic1s + 50 topic2s = ~83
-        assert!(confirmed_count > 50); // At least all topic2s
-        assert!(confirmed_count <= 100); // At most all topic1s + topic2s
-        assert_eq!(
-            all.len(),
-            confirmed_count + state.pending_subscribe_topics().len()
-        );
+        let expected = (0..50)
+            .flat_map(|i| {
+                let topic2 = format!("channel.SYMBOL{}", i + 100);
+                (i % 3 != 0)
+                    .then(|| format!("channel.SYMBOL{i}"))
+                    .into_iter()
+                    .chain(std::iter::once(topic2))
+            })
+            .collect::<AHashSet<_>>();
+
+        assert_eq!(actual, expected);
+        assert_eq!(state.len(), 83);
+        assert!(state.pending_subscribe_topics().is_empty());
+        assert!(state.pending_unsubscribe_topics().is_empty());
+        assert_eq!(state.reference_counts.len(), 100);
     }
 
     #[rstest]
-    fn test_edge_case_malformed_topics() {
-        let state = SubscriptionState::new('.');
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn test_stress_rapid_resubscribe_pattern() {
+        // Stress test the race condition we fixed: rapid unsubscribe -> resubscribe
+        let state = Arc::new(SubscriptionState::new('.'));
+        let mut handles = vec![];
 
-        // Topics with multiple delimiters (splits on first delimiter)
-        state.mark_subscribe("channel.symbol.extra");
-        state.confirm_subscribe("channel.symbol.extra");
-        let topics = state.all_topics();
-        assert!(topics.contains(&"channel.symbol.extra".to_string()));
+        for i in 0..100 {
+            let state_clone = Arc::clone(&state);
 
-        // Topic with leading delimiter (empty channel, symbol is "channel")
-        state.mark_subscribe(".channel");
-        state.confirm_subscribe(".channel");
-        assert_eq!(state.len(), 2);
+            let handle = tokio::spawn(async move {
+                let topic = format!("rapid.SYMBOL{}", i % 10); // 10 unique topics, lots of contention
 
-        // Topic with trailing delimiter - treated as channel-level (empty symbol = marker)
-        // "channel." splits to ("channel", Some("")), and empty string is the channel marker
-        state.mark_subscribe("channel.");
-        state.confirm_subscribe("channel.");
-        assert_eq!(state.len(), 3);
+                // Initial subscribe
+                state_clone.mark_subscribe(&topic);
+                state_clone.confirm_subscribe(&topic);
 
-        // Topic without delimiter - explicitly channel-level
-        state.mark_subscribe("tickers");
-        state.confirm_subscribe("tickers");
-        assert_eq!(state.len(), 4);
+                // Rapid unsubscribe -> resubscribe (race condition scenario)
+                state_clone.mark_unsubscribe(&topic);
+                // Immediately resubscribe before unsubscribe ACK
+                state_clone.mark_subscribe(&topic);
+                // Now unsubscribe ACK arrives
+                state_clone.confirm_unsubscribe(&topic);
+                // Subscribe ACK arrives
+                state_clone.confirm_subscribe(&topic);
+            });
 
-        // Verify all are retrievable (note: "channel." becomes "channel")
-        let all = state.all_topics();
-        assert_eq!(all.len(), 4);
-        assert!(all.contains(&"channel.symbol.extra".to_string()));
-        assert!(all.contains(&".channel".to_string()));
-        assert!(all.contains(&"channel".to_string())); // "channel." treated as channel-level
-        assert!(all.contains(&"tickers".to_string()));
-    }
-
-    #[rstest]
-    fn test_reference_count_underflow_safety() {
-        let state = SubscriptionState::new('.');
-
-        // Remove without ever adding
-        assert!(!state.remove_reference("never.added"));
-        assert_eq!(state.get_reference_count("never.added"), 0);
-
-        // Add one, remove multiple times
-        state.add_reference("once.added");
-        assert_eq!(state.get_reference_count("once.added"), 1);
-
-        assert!(state.remove_reference("once.added")); // Should return true (last ref)
-        assert_eq!(state.get_reference_count("once.added"), 0);
-
-        assert!(!state.remove_reference("once.added")); // Should not crash, returns false
-        assert!(!state.remove_reference("once.added")); // Multiple times
-        assert_eq!(state.get_reference_count("once.added"), 0);
-
-        // Verify we can add again after underflow attempts
-        assert!(state.add_reference("once.added"));
-        assert_eq!(state.get_reference_count("once.added"), 1);
-    }
-
-    #[rstest]
-    fn test_reconnection_with_partial_state() {
-        let state = SubscriptionState::new('.');
-
-        // Setup: Some confirmed, some pending subscribe, some pending unsubscribe
-        // Confirmed
-        state.mark_subscribe("confirmed.BTCUSDT");
-        state.confirm_subscribe("confirmed.BTCUSDT");
-
-        // Pending subscribe (not yet confirmed)
-        state.mark_subscribe("pending.ETHUSDT");
-
-        // Pending unsubscribe (user cancelled)
-        state.mark_subscribe("cancelled.XRPUSDT");
-        state.confirm_subscribe("cancelled.XRPUSDT");
-        state.mark_unsubscribe("cancelled.XRPUSDT");
-
-        // Verify state before reconnect
-        assert_eq!(state.len(), 1); // Only confirmed.BTCUSDT
-        let all = state.all_topics();
-        assert_eq!(all.len(), 2); // confirmed + pending_subscribe (not pending_unsubscribe)
-        assert!(all.contains(&"confirmed.BTCUSDT".to_string()));
-        assert!(all.contains(&"pending.ETHUSDT".to_string()));
-        assert!(!all.contains(&"cancelled.XRPUSDT".to_string())); // Should NOT be included
-
-        // Simulate disconnect and reconnect
-        let topics_to_resubscribe = state.all_topics();
-
-        // Clear confirmed on disconnect (simulate connection drop)
-        state.confirmed().clear();
-
-        // Mark all for resubscription
-        for topic in &topics_to_resubscribe {
-            state.mark_subscribe(topic);
+            handles.push(handle);
         }
 
-        // Server confirms both
-        for topic in &topics_to_resubscribe {
-            state.confirm_subscribe(topic);
+        for handle in handles {
+            handle.await.unwrap();
         }
 
-        // Verify final state
-        assert_eq!(state.len(), 2); // Both confirmed
-        let final_topics = state.all_topics();
-        assert_eq!(final_topics.len(), 2);
-        assert!(final_topics.contains(&"confirmed.BTCUSDT".to_string()));
-        assert!(final_topics.contains(&"pending.ETHUSDT".to_string()));
-        assert!(!final_topics.contains(&"cancelled.XRPUSDT".to_string()));
+        check_invariants(&state, "After rapid resubscribe stress test");
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn test_stress_failure_recovery_loop() {
+        // Stress test failure -> recovery loops
+        // Each task gets its own unique topic to avoid race conditions in the test itself
+        let state = Arc::new(SubscriptionState::new('.'));
+        let mut handles = vec![];
+
+        for i in 0..30 {
+            let state_clone = Arc::clone(&state);
+
+            let handle = tokio::spawn(async move {
+                let topic = format!("failure.SYMBOL{i}"); // Unique topic per task
+
+                // Subscribe and confirm
+                state_clone.mark_subscribe(&topic);
+                state_clone.confirm_subscribe(&topic);
+
+                // Simulate multiple failures and recoveries
+                for _ in 0..5 {
+                    state_clone.mark_failure(&topic);
+                    state_clone.confirm_subscribe(&topic); // Re-confirm after retry
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        check_invariants(&state, "After failure recovery loops");
+
+        // All should eventually be confirmed (30 unique topics)
+        assert_eq!(state.len(), 30);
+    }
+
+    #[rstest]
+    fn test_exhaustive_two_step_transitions() {
+        let operations = [
+            "mark_subscribe",
+            "confirm_subscribe",
+            "mark_unsubscribe",
+            "confirm_unsubscribe",
+            "mark_failure",
+        ];
+
+        for &op1 in &operations {
+            for &op2 in &operations {
+                let state = SubscriptionState::new('.');
+                let topic = "test.TOPIC";
+
+                // Apply two operations
+                apply_op(&state, op1, topic);
+                apply_op(&state, op2, topic);
+
+                // Verify invariants hold
+                check_invariants(&state, &format!("{op1} -> {op2}"));
+                check_topic_exclusivity(&state, topic, &format!("{op1} -> {op2}"));
+            }
+        }
+    }
+
+    fn apply_op(state: &SubscriptionState, op: &str, topic: &str) {
+        match op {
+            "mark_subscribe" => state.mark_subscribe(topic),
+            "confirm_subscribe" => state.confirm_subscribe(topic),
+            "mark_unsubscribe" => state.mark_unsubscribe(topic),
+            "confirm_unsubscribe" => state.confirm_unsubscribe(topic),
+            "mark_failure" => state.mark_failure(topic),
+            _ => panic!("Unknown operation: {op}"),
+        }
     }
 
     /// Verifies all invariants of the subscription state.
@@ -1615,6 +2072,13 @@ mod tests {
             Clear,
         }
 
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        enum ModelState {
+            Confirmed,
+            PendingSubscribe,
+            PendingUnsubscribe,
+        }
+
         // Strategy for generating valid topics
         fn topic_strategy() -> impl Strategy<Value = String> {
             prop_oneof![
@@ -1660,6 +2124,83 @@ mod tests {
             }
         }
 
+        fn apply_model_operation(model: &mut AHashMap<String, ModelState>, op: &Operation) {
+            match op {
+                Operation::MarkSubscribe(topic) => {
+                    if model.get(topic) != Some(&ModelState::Confirmed) {
+                        model.insert(topic.clone(), ModelState::PendingSubscribe);
+                    }
+                }
+                Operation::ConfirmSubscribe(topic) => {
+                    if matches!(
+                        model.get(topic),
+                        Some(ModelState::PendingSubscribe | ModelState::Confirmed)
+                    ) {
+                        model.insert(topic.clone(), ModelState::Confirmed);
+                    }
+                }
+                Operation::MarkUnsubscribe(topic) => {
+                    model.insert(topic.clone(), ModelState::PendingUnsubscribe);
+                }
+                Operation::ConfirmUnsubscribe(topic) => {
+                    if model.get(topic) == Some(&ModelState::PendingUnsubscribe) {
+                        model.remove(topic);
+                    }
+                }
+                Operation::MarkFailure(topic) => {
+                    if matches!(
+                        model.get(topic),
+                        Some(ModelState::PendingSubscribe | ModelState::Confirmed)
+                    ) {
+                        model.insert(topic.clone(), ModelState::PendingSubscribe);
+                    }
+                }
+                Operation::AddReference(_) | Operation::RemoveReference(_) => {}
+                Operation::Clear => model.clear(),
+            }
+        }
+
+        fn assert_state_matches_model(
+            state: &SubscriptionState,
+            model: &AHashMap<String, ModelState>,
+        ) {
+            let topics_for = |expected_state| {
+                model
+                    .iter()
+                    .filter(|&(_topic, state)| *state == expected_state)
+                    .map(|(topic, _state)| topic.clone())
+                    .collect::<AHashSet<_>>()
+            };
+
+            let confirmed = state
+                .topics_from_map(&state.confirmed)
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let pending_subscribe = state
+                .pending_subscribe_topics()
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let pending_unsubscribe = state
+                .pending_unsubscribe_topics()
+                .into_iter()
+                .collect::<AHashSet<_>>();
+            let expected_confirmed = topics_for(ModelState::Confirmed);
+            let expected_pending_subscribe = topics_for(ModelState::PendingSubscribe);
+            let expected_pending_unsubscribe = topics_for(ModelState::PendingUnsubscribe);
+            let expected_all = expected_confirmed
+                .union(&expected_pending_subscribe)
+                .cloned()
+                .collect::<AHashSet<_>>();
+            let all = state.all_topics().into_iter().collect::<AHashSet<_>>();
+
+            assert_eq!(confirmed, expected_confirmed);
+            assert_eq!(pending_subscribe, expected_pending_subscribe);
+            assert_eq!(pending_unsubscribe, expected_pending_unsubscribe);
+            assert_eq!(all, expected_all);
+            assert_eq!(state.len(), confirmed.len());
+            assert_eq!(state.is_empty(), model.is_empty());
+        }
+
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(500))]
 
@@ -1669,17 +2210,18 @@ mod tests {
                 operations in prop::collection::vec(operation_strategy(), 1..50)
             ) {
                 let state = SubscriptionState::new('.');
+                let mut model = AHashMap::new();
 
-                // Apply all operations
                 for (i, op) in operations.iter().enumerate() {
                     apply_operation(&state, op);
+                    apply_model_operation(&mut model, op);
 
-                    // Check invariants after each operation
                     check_invariants(&state, &format!("After op {i}: {op:?}"));
+                    assert_state_matches_model(&state, &model);
                 }
 
-                // Final invariant check
                 check_invariants(&state, "Final state");
+                assert_state_matches_model(&state, &model);
             }
 
             /// Reference-count operations match an independent count model.
@@ -1792,115 +2334,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[rstest]
-    fn test_exhaustive_two_step_transitions() {
-        let operations = [
-            "mark_subscribe",
-            "confirm_subscribe",
-            "mark_unsubscribe",
-            "confirm_unsubscribe",
-            "mark_failure",
-        ];
-
-        for &op1 in &operations {
-            for &op2 in &operations {
-                let state = SubscriptionState::new('.');
-                let topic = "test.TOPIC";
-
-                // Apply two operations
-                apply_op(&state, op1, topic);
-                apply_op(&state, op2, topic);
-
-                // Verify invariants hold
-                check_invariants(&state, &format!("{op1} → {op2}"));
-                check_topic_exclusivity(&state, topic, &format!("{op1} → {op2}"));
-            }
-        }
-    }
-
-    fn apply_op(state: &SubscriptionState, op: &str, topic: &str) {
-        match op {
-            "mark_subscribe" => state.mark_subscribe(topic),
-            "confirm_subscribe" => state.confirm_subscribe(topic),
-            "mark_unsubscribe" => state.mark_unsubscribe(topic),
-            "confirm_unsubscribe" => state.confirm_unsubscribe(topic),
-            "mark_failure" => state.mark_failure(topic),
-            _ => panic!("Unknown operation: {op}"),
-        }
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-    async fn test_stress_rapid_resubscribe_pattern() {
-        // Stress test the race condition we fixed: rapid unsubscribe → resubscribe
-        let state = Arc::new(SubscriptionState::new('.'));
-        let mut handles = vec![];
-
-        for i in 0..100 {
-            let state_clone = Arc::clone(&state);
-
-            let handle = tokio::spawn(async move {
-                let topic = format!("rapid.SYMBOL{}", i % 10); // 10 unique topics, lots of contention
-
-                // Initial subscribe
-                state_clone.mark_subscribe(&topic);
-                state_clone.confirm_subscribe(&topic);
-
-                // Rapid unsubscribe → resubscribe (race condition scenario)
-                state_clone.mark_unsubscribe(&topic);
-                // Immediately resubscribe before unsubscribe ACK
-                state_clone.mark_subscribe(&topic);
-                // Now unsubscribe ACK arrives
-                state_clone.confirm_unsubscribe(&topic);
-                // Subscribe ACK arrives
-                state_clone.confirm_subscribe(&topic);
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        check_invariants(&state, "After rapid resubscribe stress test");
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-    async fn test_stress_failure_recovery_loop() {
-        // Stress test failure → recovery loops
-        // Each task gets its own unique topic to avoid race conditions in the test itself
-        let state = Arc::new(SubscriptionState::new('.'));
-        let mut handles = vec![];
-
-        for i in 0..30 {
-            let state_clone = Arc::clone(&state);
-
-            let handle = tokio::spawn(async move {
-                let topic = format!("failure.SYMBOL{i}"); // Unique topic per task
-
-                // Subscribe and confirm
-                state_clone.mark_subscribe(&topic);
-                state_clone.confirm_subscribe(&topic);
-
-                // Simulate multiple failures and recoveries
-                for _ in 0..5 {
-                    state_clone.mark_failure(&topic);
-                    state_clone.confirm_subscribe(&topic); // Re-confirm after retry
-                }
-            });
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        check_invariants(&state, "After failure recovery loops");
-
-        // All should eventually be confirmed (30 unique topics)
-        assert_eq!(state.len(), 30);
     }
 }

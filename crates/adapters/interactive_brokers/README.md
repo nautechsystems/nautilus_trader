@@ -1,7 +1,7 @@
 # nautilus-interactive-brokers
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-interactive-brokers)](https://docs.rs/nautilus-interactive-brokers/latest/nautilus-interactive-brokers/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-interactive-brokers)](https://docs.rs/nautilus-interactive-brokers/latest/nautilus_interactive_brokers/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-interactive-brokers.svg)](https://crates.io/crates/nautilus-interactive-brokers)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -16,11 +16,11 @@ loading infrastructure. Optional PyO3 bindings expose the same implementation th
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open‑source, production‑grade, Rust‑native
-engine for multi‑asset, multi‑venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+engine for multi-asset, multi-venue trading systems.
 
 The system spans research, deterministic simulation, and live execution within a single
-event‑driven architecture, providing research‑to‑live semantic parity.
+event-driven architecture, providing research-to-live semantic parity.
 
 ## What this crate provides
 
@@ -32,20 +32,23 @@ event‑driven architecture, providing research‑to‑live semantic parity.
   and symbology conversion.
 - `gateway`: `DockerizedIBGateway` for managing a Dockerized IB Gateway when the `gateway` feature
   is enabled.
-- `python`: PyO3 bindings exposed as `nautilus_pyo3.interactive_brokers` when the `python` feature
-  is enabled.
+- `python`: PyO3 bindings exposed through `nautilus_trader.adapters.interactive_brokers` when the
+  `python` feature is enabled.
 
 ## Feature flags
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables PyO3 bindings for configs, enums, the historical client,
-  and the instrument provider.
-- `gateway`: Enables Dockerized IB Gateway support via `bollard`, including PyO3 bindings when
-  combined with `python`.
+- `examples`: Enables the crate's example binaries.
+- `execution` (default): Enables order execution and networking support.
 - `extension-module`: Builds the crate as a Python extension module. This is
   the feature used by the `nautilus_trader` package and includes `python` and
   `gateway`.
+- `gateway`: Enables the Dockerized IB Gateway manager via
+  [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
+  `python`.
+- `python`: Enables [PyO3](https://pyo3.rs) bindings for configs, enums, the historical client,
+  and the instrument provider.
 
 ## Default ports
 
@@ -60,7 +63,7 @@ Use `127.0.0.1` unless you are connecting to a remote host.
 | Dockerized IB Gateway | Paper        |       `4002` |
 | Dockerized IB Gateway | Live         |       `4001` |
 
-This crate defaults to `4002`, which matches paper‑trading IB Gateway and the
+This crate defaults to `4002`, which matches paper-trading IB Gateway and the
 default Dockerized IB Gateway paper setup. If you are connecting to TWS or to a
 live Gateway session, set the port explicitly in your config.
 
@@ -72,10 +75,10 @@ NautilusTrader. The adapter does not convert these timestamps automatically at r
 ## Documentation
 
 - [Crate docs](https://docs.rs/nautilus-interactive-brokers): generated Rust API reference.
-- [Interactive Brokers integration guide](https://nautilustrader.io/docs/nightly/integrations/ib/):
+- [Interactive Brokers integration guide](https://nautilustrader.io/docs/nightly/integrations/interactive_brokers/):
   setup, configuration, symbology, and usage.
 - [Rust node examples](examples): live data and execution testers.
-- [Python live‑node examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers):
+- [Python live-node examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers):
   Python configuration examples.
 
 ## License
@@ -86,7 +89,7 @@ The source code for NautilusTrader is available on GitHub under the
 ---
 
 NautilusTrader™ is developed and maintained by Nautech Systems, a technology
-company specializing in the development of high‑performance trading systems.
+company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
 
 Use of this software is subject to the [Disclaimer](https://nautilustrader.io/legal/disclaimer/).

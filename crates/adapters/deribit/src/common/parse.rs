@@ -15,8 +15,6 @@
 
 //! Parsing functions for Deribit API responses into Nautilus domain types.
 
-use std::str::FromStr;
-
 use anyhow::Context;
 use nautilus_core::{
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND},
@@ -162,9 +160,9 @@ pub fn extract_server_timestamp(us_out: Option<u64>) -> anyhow::Result<UnixNanos
 /// # Errors
 ///
 /// Returns an error if:
-/// - Required fields are missing (e.g., strike price for options)
-/// - Timestamp conversion fails
-/// - Decimal conversion fails for fees
+/// - Required fields are missing (e.g., strike price for options).
+/// - Timestamp conversion fails.
+/// - Decimal conversion fails for fees.
 pub fn parse_deribit_instrument_any(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
@@ -174,7 +172,7 @@ pub fn parse_deribit_instrument_any(
         DeribitProductType::Spot => parse_spot_instrument(instrument, ts_init, ts_event).map(Some),
         DeribitProductType::Future => {
             // Check if it's a perpetual
-            if instrument.instrument_name.as_str().contains("PERPETUAL") {
+            if instrument.instrument_name.contains("PERPETUAL") {
                 parse_perpetual_instrument(instrument, ts_init, ts_event).map(Some)
             } else {
                 parse_future_instrument(instrument, ts_init, ts_event).map(Some)
@@ -204,40 +202,23 @@ fn parse_spot_instrument(
     let quote_currency = Currency::get_or_create_crypto(instrument.quote_currency);
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
+    let min_quantity = parse_min_trade_amount(instrument)?;
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
-    let currency_pair = CurrencyPair::new(
-        instrument_id,
-        instrument.instrument_name.into(),
-        base_currency,
-        quote_currency,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None, // multiplier
-        None, // lot_size
-        None, // max_quantity
-        Some(min_quantity),
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let currency_pair = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument.instrument_name.into())
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .min_quantity(min_quantity)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(currency_pair))
 }
@@ -262,45 +243,31 @@ fn parse_perpetual_instrument(
         .is_some_and(|t| t == "reversed");
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
+    let min_quantity = parse_min_trade_amount(instrument)?;
 
     let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment);
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
-    let perpetual = CryptoPerpetual::new(
-        instrument_id,
-        instrument.instrument_name.into(),
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        lot_size,
-        None, // max_quantity - Deribit doesn't specify a hard max
-        Some(min_quantity),
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let perpetual = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument.instrument_name.into())
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_lot_size(lot_size)
+        // max_quantity - Deribit doesn't specify a hard max
+        .min_quantity(min_quantity)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoPerpetual(perpetual))
 }
@@ -332,47 +299,33 @@ fn parse_future_instrument(
         * 1_000_000; // milliseconds to nanoseconds
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_quantity = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
+    let min_quantity = parse_min_trade_amount(instrument)?;
 
     let multiplier = Some(deribit_amount_quantity_multiplier());
     let lot_size = Some(size_increment); // Use min_trade_amount as lot size
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
-    let future = CryptoFuture::new(
-        instrument_id,
-        instrument.instrument_name.into(),
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        UnixNanos::from(activation_ns),
-        UnixNanos::from(expiration_ns),
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        lot_size,
-        None, // max_quantity - Deribit doesn't specify a hard max
-        Some(min_quantity),
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let future = CryptoFuture::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument.instrument_name.into())
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .activation_ns(UnixNanos::from(activation_ns))
+        .expiration_ns(UnixNanos::from(expiration_ns))
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_lot_size(lot_size)
+        // max_quantity - Deribit doesn't specify a hard max
+        .min_quantity(min_quantity)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoFuture(future))
 }
@@ -418,46 +371,31 @@ fn parse_option_instrument(
     let price_increment = Price::from_decimal(instrument.tick_size)?;
 
     let multiplier = deribit_amount_quantity_multiplier();
-    let lot_size = Quantity::from_decimal(instrument.min_trade_amount)?;
-    let min_trade_amount = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let lot_size = parse_min_trade_amount(instrument)?;
+    let min_trade_amount = parse_min_trade_amount(instrument)?;
 
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
-
-    let option = CryptoOption::new(
-        instrument_id,
-        instrument.instrument_name.into(),
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        option_kind,
-        strike_price,
-        UnixNanos::from(activation_ns),
-        UnixNanos::from(expiration_ns),
-        price_increment.precision,
-        lot_size.precision,
-        price_increment,
-        lot_size,
-        Some(multiplier),
-        Some(lot_size),
-        None,
-        Some(min_trade_amount),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let option = CryptoOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument.instrument_name.into())
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .option_kind(option_kind)
+        .strike_price(strike_price)
+        .activation_ns(UnixNanos::from(activation_ns))
+        .expiration_ns(UnixNanos::from(expiration_ns))
+        .price_precision(price_increment.precision)
+        .size_precision(lot_size.precision)
+        .price_increment(price_increment)
+        .size_increment(lot_size)
+        .multiplier(multiplier)
+        .lot_size(lot_size)
+        .min_quantity(min_trade_amount)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoOption(option))
 }
@@ -469,37 +407,27 @@ fn parse_option_combo_instrument(
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let spread = build_spread_common(instrument, ts_init, ts_event)?;
-    let option_spread = CryptoOptionSpread::new(
-        spread.id,
-        spread.raw_symbol,
-        spread.underlying,
-        spread.quote_currency,
-        spread.settlement_currency,
-        spread.is_inverse,
-        spread.strategy_type,
-        spread.activation_ns,
-        spread.expiration_ns,
-        spread.price_precision,
-        spread.size_precision,
-        spread.price_increment,
-        spread.size_increment,
-        Some(spread.multiplier),
-        Some(spread.lot_size),
-        None,
-        Some(spread.size_increment),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(spread.maker_fee),
-        Some(spread.taker_fee),
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let option_spread = CryptoOptionSpread::builder()
+        .instrument_id(spread.id)
+        .raw_symbol(spread.raw_symbol)
+        .underlying(spread.underlying)
+        .quote_currency(spread.quote_currency)
+        .settlement_currency(spread.settlement_currency)
+        .is_inverse(spread.is_inverse)
+        .strategy_type(spread.strategy_type)
+        .activation_ns(spread.activation_ns)
+        .expiration_ns(spread.expiration_ns)
+        .price_precision(spread.price_precision)
+        .size_precision(spread.size_precision)
+        .price_increment(spread.price_increment)
+        .size_increment(spread.size_increment)
+        .multiplier(spread.multiplier)
+        .lot_size(spread.lot_size)
+        .min_quantity(spread.size_increment)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
     Ok(InstrumentAny::CryptoOptionSpread(option_spread))
 }
 
@@ -510,37 +438,27 @@ fn parse_future_combo_instrument(
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let spread = build_spread_common(instrument, ts_init, ts_event)?;
-    let futures_spread = CryptoFuturesSpread::new(
-        spread.id,
-        spread.raw_symbol,
-        spread.underlying,
-        spread.quote_currency,
-        spread.settlement_currency,
-        spread.is_inverse,
-        spread.strategy_type,
-        spread.activation_ns,
-        spread.expiration_ns,
-        spread.price_precision,
-        spread.size_precision,
-        spread.price_increment,
-        spread.size_increment,
-        Some(spread.multiplier),
-        Some(spread.lot_size),
-        None,
-        Some(spread.size_increment),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(spread.maker_fee),
-        Some(spread.taker_fee),
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let futures_spread = CryptoFuturesSpread::builder()
+        .instrument_id(spread.id)
+        .raw_symbol(spread.raw_symbol)
+        .underlying(spread.underlying)
+        .quote_currency(spread.quote_currency)
+        .settlement_currency(spread.settlement_currency)
+        .is_inverse(spread.is_inverse)
+        .strategy_type(spread.strategy_type)
+        .activation_ns(spread.activation_ns)
+        .expiration_ns(spread.expiration_ns)
+        .price_precision(spread.price_precision)
+        .size_precision(spread.size_precision)
+        .price_increment(spread.price_increment)
+        .size_increment(spread.size_increment)
+        .multiplier(spread.multiplier)
+        .lot_size(spread.lot_size)
+        .min_quantity(spread.size_increment)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
     Ok(InstrumentAny::CryptoFuturesSpread(futures_spread))
 }
 
@@ -562,8 +480,6 @@ struct DeribitSpreadCommon {
     size_increment: Quantity,
     multiplier: Quantity,
     lot_size: Quantity,
-    maker_fee: Decimal,
-    taker_fee: Decimal,
 }
 
 fn build_spread_common(
@@ -594,13 +510,8 @@ fn build_spread_common(
     );
 
     let price_increment = Price::from_decimal(instrument.tick_size)?;
-    let size_increment = Quantity::from_decimal(instrument.min_trade_amount)?;
+    let size_increment = parse_min_trade_amount(instrument)?;
     let multiplier = deribit_amount_quantity_multiplier();
-
-    let maker_fee = Decimal::from_str(&instrument.maker_commission.to_string())
-        .context("Failed to parse maker_commission")?;
-    let taker_fee = Decimal::from_str(&instrument.taker_commission.to_string())
-        .context("Failed to parse taker_commission")?;
 
     Ok(DeribitSpreadCommon {
         id,
@@ -618,9 +529,14 @@ fn build_spread_common(
         size_increment,
         multiplier,
         lot_size: size_increment,
-        maker_fee,
-        taker_fee,
     })
+}
+
+fn parse_min_trade_amount(instrument: &DeribitInstrument) -> anyhow::Result<Quantity> {
+    // Arbitrary-precision JSON keeps trailing zeros (`10.0`) that the default float route
+    // drops; normalize so size precision does not depend on the JSON feature set.
+    let min_trade_amount = instrument.min_trade_amount.normalize();
+    Ok(Quantity::from_decimal(min_trade_amount)?)
 }
 
 fn deribit_amount_quantity_multiplier() -> Quantity {
@@ -635,8 +551,8 @@ fn deribit_amount_quantity_multiplier() -> Quantity {
 /// # Errors
 ///
 /// Returns an error if:
-/// - Money conversion fails for any balance field
-/// - Decimal conversion fails for margin values
+/// - Money conversion fails for any balance field.
+/// - Decimal conversion fails for margin values.
 pub fn parse_account_state(
     summaries: &[DeribitAccountSummary],
     account_id: AccountId,
@@ -648,7 +564,7 @@ pub fn parse_account_state(
 
     // Parse each currency summary
     for summary in summaries {
-        let ccy_str = summary.currency.as_str().trim();
+        let ccy_str = summary.currency.trim();
 
         // Skip balances with empty currency codes
         if ccy_str.is_empty() {
@@ -832,8 +748,8 @@ pub fn build_public_trade_id(
 /// # Errors
 ///
 /// Returns an error if:
-/// - The direction is not "buy" or "sell"
-/// - Decimal conversion fails for price or size
+/// - The direction is not "buy" or "sell".
+/// - Decimal conversion fails for price or size.
 pub fn parse_trade_tick(
     trade: &DeribitPublicTrade,
     instrument_id: InstrumentId,
@@ -843,8 +759,8 @@ pub fn parse_trade_tick(
 ) -> anyhow::Result<TradeTick> {
     // Parse aggressor side from direction
     let aggressor_side = match trade.direction.as_str() {
-        "buy" => AggressorSide::Buyer,
-        "sell" => AggressorSide::Seller,
+        "buy" => AggressorSide::Buy,
+        "sell" => AggressorSide::Sell,
         other => anyhow::bail!("Invalid trade direction: {other}"),
     };
     let price = Price::from_decimal_dp(trade.price, price_precision)?;
@@ -900,9 +816,9 @@ pub fn use_cost_for_bar_volume(instrument: &InstrumentAny) -> bool {
 /// # Errors
 ///
 /// Returns an error if:
-/// - The status is not "ok"
-/// - Array lengths are inconsistent
-/// - No data points are present
+/// - The status is not "ok".
+/// - Array lengths are inconsistent.
+/// - No data points are present.
 pub fn parse_bars(
     chart_data: &DeribitTradingViewChartData,
     bar_type: BarType,
@@ -939,20 +855,21 @@ pub fn parse_bars(
     let mut bars = Vec::with_capacity(num_bars);
 
     for i in 0..num_bars {
-        let open = Price::new_checked(chart_data.open[i], price_precision)
+        let open = Price::from_decimal_dp(chart_data.open[i], price_precision)
             .with_context(|| format!("Invalid open price at index {i}"))?;
-        let high = Price::new_checked(chart_data.high[i], price_precision)
+        let high = Price::from_decimal_dp(chart_data.high[i], price_precision)
             .with_context(|| format!("Invalid high price at index {i}"))?;
-        let low = Price::new_checked(chart_data.low[i], price_precision)
+        let low = Price::from_decimal_dp(chart_data.low[i], price_precision)
             .with_context(|| format!("Invalid low price at index {i}"))?;
-        let close = Price::new_checked(chart_data.close[i], price_precision)
+        let close = Price::from_decimal_dp(chart_data.close[i], price_precision)
             .with_context(|| format!("Invalid close price at index {i}"))?;
         let raw_volume = if use_cost_for_volume {
             chart_data.cost[i]
         } else {
             chart_data.volume[i]
         };
-        let volume = Quantity::new_checked(raw_volume, size_precision)
+
+        let volume = Quantity::from_decimal_dp(raw_volume, size_precision)
             .with_context(|| format!("Invalid volume at index {i}"))?;
 
         // Convert timestamp from milliseconds to nanoseconds
@@ -973,7 +890,7 @@ pub fn parse_bars(
 ///
 /// # Errors
 ///
-/// Returns an error if order book creation fails.
+/// Returns an error if order book creation fails or a level price or amount is invalid.
 pub fn parse_order_book(
     order_book_data: &DeribitOrderBook,
     instrument_id: InstrumentId,
@@ -985,23 +902,17 @@ pub fn parse_order_book(
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
     for (idx, [price, amount]) in order_book_data.bids.iter().enumerate() {
-        let order = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(*price, price_precision),
-            Quantity::new(*amount, size_precision),
-            idx as u64,
-        );
+        let price = Price::from_decimal_dp(*price, price_precision)?;
+        let size = Quantity::from_decimal_dp(*amount, size_precision)?;
+        let order = BookOrder::new(OrderSide::Buy, price, size, idx as u64);
         book.add(order, 0, idx as u64, ts_event);
     }
 
     let bids_len = order_book_data.bids.len();
     for (idx, [price, amount]) in order_book_data.asks.iter().enumerate() {
-        let order = BookOrder::new(
-            OrderSide::Sell,
-            Price::new(*price, price_precision),
-            Quantity::new(*amount, size_precision),
-            (bids_len + idx) as u64,
-        );
+        let price = Price::from_decimal_dp(*price, price_precision)?;
+        let size = Quantity::from_decimal_dp(*amount, size_precision)?;
+        let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + idx) as u64);
         book.add(order, 0, (bids_len + idx) as u64, ts_event);
     }
 
@@ -1115,8 +1026,6 @@ mod tests {
             Money::from("10 USD")
         );
         assert_eq!(perpetual.lot_size(), Some(Quantity::from("10")));
-        assert_eq!(perpetual.maker_fee(), dec!(0));
-        assert_eq!(perpetual.taker_fee(), dec!(0.0005));
         assert_eq!(perpetual.max_quantity(), None);
         assert_eq!(perpetual.min_quantity(), Some(Quantity::from("10")));
     }
@@ -1129,7 +1038,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let deribit_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24")
+            .find(|i| i.instrument_name == "BTC-27DEC24")
             .expect("Test data must contain BTC-27DEC24");
 
         let instrument_any =
@@ -1162,8 +1071,6 @@ mod tests {
         assert_eq!(future.size_increment(), Quantity::from("10"));
         assert_eq!(future.multiplier(), Quantity::from("1"));
         assert_eq!(future.lot_size(), Some(Quantity::from("10")));
-        assert_eq!(future.maker_fee, dec!(0));
-        assert_eq!(future.taker_fee, dec!(0.0005));
     }
 
     #[rstest]
@@ -1174,7 +1081,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let deribit_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24-100000-C")
+            .find(|i| i.instrument_name == "BTC-27DEC24-100000-C")
             .expect("Test data must contain BTC-27DEC24-100000-C");
 
         let instrument_any =
@@ -1192,9 +1099,9 @@ mod tests {
             InstrumentId::from("BTC-27DEC24-100000-C.DERIBIT")
         );
         assert_eq!(option.raw_symbol(), Symbol::from("BTC-27DEC24-100000-C"));
-        assert_eq!(option.underlying.code.as_str(), "BTC");
-        assert_eq!(option.quote_currency.code.as_str(), "BTC");
-        assert_eq!(option.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(option.underlying.code, "BTC");
+        assert_eq!(option.quote_currency.code, "BTC");
+        assert_eq!(option.settlement_currency.code, "BTC");
         assert!(option.is_inverse);
         assert_eq!(option.option_kind, OptionKind::Call);
         assert_eq!(option.strike_price, Price::from("100000"));
@@ -1212,8 +1119,6 @@ mod tests {
         assert_eq!(option.size_increment, Quantity::from("0.1"));
         assert_eq!(option.multiplier, Quantity::from("1"));
         assert_eq!(option.lot_size, Quantity::from("0.1"));
-        assert_eq!(option.maker_fee, dec!(0.0003));
-        assert_eq!(option.taker_fee, dec!(0.0003));
     }
 
     #[rstest]
@@ -1383,7 +1288,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("2968.3"));
         assert_eq!(trade.size, Quantity::from("1"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::new("ETH-284830839"));
         // timestamp 1766332040636 ms -> ns
         assert_eq!(
@@ -1411,12 +1316,12 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("2968.3"));
         assert_eq!(trade.size, Quantity::from("106"));
-        assert_eq!(trade.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(trade.aggressor_side, AggressorSide::Buy);
         assert_eq!(trade.trade_id, TradeId::new("ETH-284830854"));
     }
 
     /// Builds a minimal [`DeribitPublicTrade`] via JSON to exercise the HTTP
-    /// trade-tick path. Mirrors the WS-side `make_trade_msg` helper.
+    /// trade-tick path. Mirrors the WS-side `make_trade_msg` fixture constructor.
     fn make_public_trade(
         trade_id: &str,
         block_trade_id: Option<&str>,
@@ -1436,7 +1341,7 @@ mod tests {
             "block_rfq_id": block_rfq_id,
             "combo_id": combo_id,
         });
-        serde_json::from_value(raw).unwrap()
+        serde_json::from_str(&raw.to_string()).unwrap()
     }
 
     #[rstest]
@@ -1480,7 +1385,7 @@ mod tests {
 
         let option_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24-100000-C")
+            .find(|i| i.instrument_name == "BTC-27DEC24-100000-C")
             .expect("Test data must contain BTC-27DEC24-100000-C");
         let option =
             parse_deribit_instrument_any(option_inst, UnixNanos::default(), UnixNanos::default())
@@ -1495,7 +1400,7 @@ mod tests {
         // Inverse future: same convention as perp - cost (USD)
         let future_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24")
+            .find(|i| i.instrument_name == "BTC-27DEC24")
             .expect("Test data must contain BTC-27DEC24");
         let future =
             parse_deribit_instrument_any(future_inst, UnixNanos::default(), UnixNanos::default())
@@ -1563,6 +1468,40 @@ mod tests {
         assert_eq!(bars.len(), 5);
         assert_eq!(bars[0].volume, Quantity::from("257490"));
         assert_eq!(bars[4].volume, Quantity::from("8910"));
+    }
+
+    #[rstest]
+    fn test_parse_order_book_keeps_decimals_that_collapse_in_f64() {
+        let json_data = load_test_json("http_get_order_book_exact.json");
+        let response: DeribitJsonRpcResponse<DeribitOrderBook> =
+            serde_json::from_str(&json_data).unwrap();
+        let order_book_data = response.result.expect("Test data must have result");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+        let book =
+            parse_order_book(&order_book_data, instrument_id, 9, 9, UnixNanos::default()).unwrap();
+
+        assert_eq!(
+            order_book_data.bids,
+            vec![[dec!(100000000.123456789), dec!(100000000.123456789)]]
+        );
+        assert_eq!(
+            order_book_data.asks,
+            vec![[dec!(100000000.123456788), dec!(0.00011403)]]
+        );
+        assert_eq!(
+            book.best_bid_price(),
+            Some(Price::from("100000000.123456789"))
+        );
+        assert_eq!(
+            book.best_bid_size(),
+            Some(Quantity::from("100000000.123456789"))
+        );
+        assert_eq!(
+            book.best_ask_price(),
+            Some(Price::from("100000000.123456788"))
+        );
+        assert_eq!(book.best_ask_size(), Some(Quantity::from("0.000114030")));
     }
 
     #[rstest]
@@ -1760,7 +1699,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let raw = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-STRG-19MAY26-74000_79000")
+            .find(|i| i.instrument_name == "BTC-STRG-19MAY26-74000_79000")
             .expect("fixture must contain BTC-STRG-19MAY26-74000_79000");
 
         let any = parse_deribit_instrument_any(raw, UnixNanos::default(), UnixNanos::default())
@@ -1774,10 +1713,10 @@ mod tests {
             spread.id,
             InstrumentId::from("BTC-STRG-19MAY26-74000_79000.DERIBIT")
         );
-        assert_eq!(spread.underlying.code.as_str(), "BTC");
-        assert_eq!(spread.strategy_type.as_str(), "STRG");
-        assert_eq!(spread.quote_currency.code.as_str(), "BTC");
-        assert_eq!(spread.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(spread.underlying.code, "BTC");
+        assert_eq!(spread.strategy_type, "STRG");
+        assert_eq!(spread.quote_currency.code, "BTC");
+        assert_eq!(spread.settlement_currency.code, "BTC");
         assert!(spread.is_inverse);
         assert_eq!(spread.price_precision, 4);
         assert_eq!(spread.price_increment, Price::from("0.0001"));
@@ -1793,8 +1732,6 @@ mod tests {
             spread.activation_ns,
             UnixNanos::from(1779100724000_u64 * 1_000_000)
         );
-        assert_eq!(spread.maker_fee, dec!(0));
-        assert_eq!(spread.taker_fee, dec!(0));
     }
 
     #[rstest]
@@ -1878,7 +1815,7 @@ mod tests {
     #[rstest]
     fn test_deserialize_historical_combo_leg_with_missing_optional_fields() {
         // Pins the review-fix loop's optionality decisions on DeribitTradeLeg.
-        // Synthesised fixture: one combo trade where the parent omits
+        // Synthesized fixture: one combo trade where the parent omits
         // contracts/index_price/mark_price (already optional pre-patch), and
         // legs omit varying subsets of the same Option<Decimal> fields plus
         // `iv`. A regression that re-tightens any of them will fail here.
@@ -1938,7 +1875,7 @@ mod tests {
         let mut instruments = response.result.expect("Test data must have result");
         let raw = instruments
             .iter_mut()
-            .find(|i| i.instrument_name.as_str() == "BTC-STRG-19MAY26-74000_79000")
+            .find(|i| i.instrument_name == "BTC-STRG-19MAY26-74000_79000")
             .expect("fixture must contain BTC-STRG-19MAY26-74000_79000");
         raw.expiration_timestamp = None;
 
@@ -1980,7 +1917,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let raw = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-FS-19MAY26_PERP")
+            .find(|i| i.instrument_name == "BTC-FS-19MAY26_PERP")
             .expect("fixture must contain BTC-FS-19MAY26_PERP");
 
         let any = parse_deribit_instrument_any(raw, UnixNanos::default(), UnixNanos::default())
@@ -1991,11 +1928,11 @@ mod tests {
             panic!("Expected CryptoFuturesSpread, was {any:?}");
         };
         assert_eq!(spread.id, InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"));
-        assert_eq!(spread.underlying.code.as_str(), "BTC");
-        assert_eq!(spread.strategy_type.as_str(), "FS");
+        assert_eq!(spread.underlying.code, "BTC");
+        assert_eq!(spread.strategy_type, "FS");
         // Future combo quote_currency on BTC contracts is USD.
-        assert_eq!(spread.quote_currency.code.as_str(), "USD");
-        assert_eq!(spread.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(spread.quote_currency.code, "USD");
+        assert_eq!(spread.settlement_currency.code, "BTC");
         assert!(spread.is_inverse);
         assert_eq!(spread.price_precision, 1);
         assert_eq!(spread.price_increment, Price::from("0.5"));
@@ -2087,7 +2024,7 @@ mod tests {
             .expect("Test data must have params.data");
 
         let portfolio: DeribitPortfolioMsg =
-            serde_json::from_value(data.clone()).expect("Should deserialize portfolio message");
+            serde_json::from_str(&data.to_string()).expect("Should deserialize portfolio message");
 
         // Verify deserialization
         assert_eq!(portfolio.currency, "USDT");
@@ -2133,7 +2070,7 @@ mod tests {
         assert_eq!(margin.initial.as_f64(), 1.100011);
         assert_eq!(margin.maintenance.as_f64(), 0.0);
         assert!(margin.instrument_id.is_none());
-        assert_eq!(margin.currency.code.as_str(), "USDT");
+        assert_eq!(margin.currency.code, "USDT");
     }
 
     #[rstest]

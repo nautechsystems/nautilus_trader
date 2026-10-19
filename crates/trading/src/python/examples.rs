@@ -15,6 +15,7 @@
 
 //! Python bindings for the example strategy and actor configs.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_model::{
     data::BarType,
     enums::TimeInForce,
@@ -191,6 +192,8 @@ impl GridMarketMakerConfig {
         requote_threshold_bps=5,
         expire_time_secs=None,
         on_cancel_resubmit=false,
+        use_uuid_client_order_ids=false,
+        use_hyphens_in_client_order_ids=true,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -205,6 +208,8 @@ impl GridMarketMakerConfig {
         requote_threshold_bps: u32,
         expire_time_secs: Option<u64>,
         on_cancel_resubmit: bool,
+        use_uuid_client_order_ids: bool,
+        use_hyphens_in_client_order_ids: bool,
     ) -> Self {
         let mut config = Self::builder()
             .instrument_id(instrument_id)
@@ -225,6 +230,9 @@ impl GridMarketMakerConfig {
         if let Some(tag) = order_id_tag {
             config.base.order_id_tag = Some(tag);
         }
+
+        config.base.use_uuid_client_order_ids = use_uuid_client_order_ids;
+        config.base.use_hyphens_in_client_order_ids = use_hyphens_in_client_order_ids;
 
         config
     }
@@ -272,6 +280,16 @@ impl GridMarketMakerConfig {
     #[getter]
     fn on_cancel_resubmit(&self) -> bool {
         self.on_cancel_resubmit
+    }
+
+    #[getter]
+    fn use_uuid_client_order_ids(&self) -> bool {
+        self.base.use_uuid_client_order_ids
+    }
+
+    #[getter]
+    fn use_hyphens_in_client_order_ids(&self) -> bool {
+        self.base.use_hyphens_in_client_order_ids
     }
 }
 
@@ -489,6 +507,8 @@ impl HurstVpinDirectionalConfig {
     /// Combines a rescaled-range Hurst regime filter on dollar bars with a
     /// VPIN-derived informed-flow signal, and gates entry timing on the
     /// live quote stream.
+    ///
+    /// The Hurst and VPIN rolling windows must each be in the range `[1, 16_384]`.
     #[new]
     #[pyo3(signature = (
         instrument_id,
@@ -518,7 +538,7 @@ impl HurstVpinDirectionalConfig {
         vpin_window: usize,
         vpin_threshold: f64,
         max_holding_secs: u64,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let mut config = Self::builder()
             .instrument_id(instrument_id)
             .bar_type(bar_type)
@@ -540,7 +560,8 @@ impl HurstVpinDirectionalConfig {
             config.base.order_id_tag = Some(tag);
         }
 
-        config
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]

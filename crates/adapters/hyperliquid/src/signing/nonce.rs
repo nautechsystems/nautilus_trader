@@ -16,11 +16,11 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use nautilus_core::MUTEX_POISONED;
+use parking_lot::Mutex;
 
 use super::types::SignerId;
 use crate::http::error::{Error, Result};
@@ -199,12 +199,8 @@ impl NonceManager {
     }
 
     /// Generate the next nonce for a given signer.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn next(&self, signer: SignerId) -> Result<TimeNonce> {
-        let mut states = self.signer_states.lock().expect(MUTEX_POISONED);
+        let mut states = self.signer_states.lock();
         let state = states.entry(signer).or_insert_with(|| {
             SignerState::new(TimeNonce::now_millis().0, self.policy.keep_last_n)
         });
@@ -212,24 +208,16 @@ impl NonceManager {
     }
 
     /// Fast-forward all signers to a given time.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn fast_forward_to(&self, now_ms: i128) {
-        let mut states = self.signer_states.lock().expect(MUTEX_POISONED);
+        let mut states = self.signer_states.lock();
         for state in states.values_mut() {
             state.fast_forward_to(now_ms);
         }
     }
 
     /// Validate a nonce locally without network calls.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn validate_local(&self, signer: &SignerId, nonce: TimeNonce) -> Result<()> {
-        let states = self.signer_states.lock().expect(MUTEX_POISONED);
+        let states = self.signer_states.lock();
 
         // Always validate time window, even for new signers
         let now_ms = TimeNonce::now_millis().0;

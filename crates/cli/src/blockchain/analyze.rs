@@ -15,6 +15,7 @@
 
 use std::{fs, sync::Arc};
 
+use anyhow::Context;
 use nautilus_blockchain::{
     config::BlockchainDataClientConfig,
     data::core::{BlockchainDataClientCore, SnapshotValidation},
@@ -159,11 +160,10 @@ pub(crate) async fn run_analyze_pools(
     )> = Vec::with_capacity(pool_addresses.len());
 
     for pool_address in pool_addresses {
-        let permit = semaphore
-            .clone()
+        let permit = Arc::clone(&semaphore)
             .acquire_owned()
             .await
-            .expect("semaphore is never closed");
+            .context("pool analysis semaphore closed unexpectedly")?;
         let chain = chain.clone();
         let rpc_url = rpc_url.clone();
         let database = database.clone();
@@ -214,7 +214,7 @@ pub(crate) async fn run_analyze_pools(
                 }
             }
             Err(e) => {
-                failures += 1;
+                failures = failures.saturating_add(1);
                 println!(
                     "{}",
                     pool_failure_json(
@@ -270,16 +270,14 @@ async fn analyze_pool_with_client(
     let checkpoints = if checkpoint_blocks.is_empty() {
         vec![to_block]
     } else {
-        let checkpoints = normalize_checkpoints(checkpoint_blocks, to_block);
-        if checkpoints.is_empty() {
-            anyhow::bail!("All --checkpoint-blocks exceed --to-block {to_block}");
-        }
-        checkpoints
+        normalize_checkpoints(checkpoint_blocks, to_block)
+    };
+    let Some(first_checkpoint) = checkpoints.first().copied() else {
+        anyhow::bail!("All --checkpoint-blocks exceed --to-block {to_block}");
     };
 
     // Bounded-replay mode: a usable snapshot must already exist at or before the first checkpoint,
     // otherwise the caller wants needs_bootstrap rather than a full creation-to-target bootstrap.
-    let first_checkpoint = checkpoints[0];
     if require_existing_snapshot
         && needs_bootstrap_before_target(data_client, &pool_identifier, first_checkpoint).await?
     {
@@ -291,7 +289,7 @@ async fn analyze_pool_with_client(
         )]);
     }
 
-    let last_checkpoint = *checkpoints.last().expect("checkpoints is non-empty");
+    let last_checkpoint = checkpoints.last().copied().unwrap_or(first_checkpoint);
 
     if !snapshot_from_rpc {
         // Sync once up to the final checkpoint, honoring reset/from_block. Each checkpoint then
@@ -312,8 +310,8 @@ async fn analyze_pool_with_client(
     let pool = data_client
         .cache
         .get_pool(&pool_identifier)
-        .ok_or_else(|| anyhow::anyhow!("Pool {pool_identifier} not found in cache"))?
-        .clone();
+        .map(Arc::clone)
+        .ok_or_else(|| anyhow::anyhow!("Pool {pool_identifier} not found in cache"))?;
 
     let mut outcomes = Vec::with_capacity(checkpoints.len());
     let mut rpc_profiler = None;
@@ -487,7 +485,7 @@ async fn create_data_client(
     let config = BlockchainDataClientConfig::builder()
         .chain(Arc::new(chain.clone()))
         .dex_ids(vec![dex_type])
-        .http_rpc_url(rpc_http_url)
+        .http_rpc_url(rpc_http_url.into())
         .maybe_multicall_calls_per_rpc_request(multicall_calls_per_rpc_request)
         .use_hypersync_for_live_data(true)
         .postgres_cache_database_config(postgres_connect_options)

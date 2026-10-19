@@ -33,14 +33,17 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `arrow`: Enables Apache Arrow schema and `RecordBatch` registries for custom data.
-//! - `python-arrow`: Enables Python bindings together with `PyArrow` `RecordBatch` bridging.
-//! - `stubs`: Enables type stubs for use in testing scenarios.
-//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 //! - `defi`: Enables the DeFi (Decentralized Finance) domain model.
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `ffi`: Enables the C foreign function interface (FFI) from
+//!   [cbindgen](https://crates.io/crates/cbindgen).
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `python-arrow`: Enables Python bindings together with `PyArrow` `RecordBatch` bridging.
+//! - `test-support`: Enables test fixtures, builders, specs, and defaults.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -59,10 +62,6 @@
 #![allow(
     clippy::manual_let_else,
     reason = "match can be clearer than let-else for some patterns"
-)]
-#![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
 )]
 #![allow(
     clippy::float_cmp,
@@ -107,12 +106,25 @@
     clippy::large_types_passed_by_value,
     reason = "PyO3 methods require owned values extracted from Python objects"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
+
+// Re-exported so `enum_strum_serde!` can reach serde through `$crate`, which works in a consumer
+// that renames its serde dependency or does not depend on it directly.
+#[doc(hidden)]
+pub use serde as __serde;
 
 pub mod accounts;
 pub mod currencies;
 pub mod data;
 pub mod enums;
 pub mod events;
+pub mod fees;
 pub mod identifiers;
 pub mod instruments;
 pub mod macros;
@@ -131,8 +143,11 @@ pub mod ffi;
 #[cfg(feature = "python")]
 pub mod python;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 #[cfg(feature = "defi")]
 pub mod defi;
+
+/// Generates custom-data model behavior.
+pub use nautilus_macros::custom_data;

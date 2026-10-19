@@ -20,10 +20,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `Portfolio` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.portfolio",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.portfolio", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -100,8 +97,7 @@ impl<S: portfolio_config_builder::IsComplete> PortfolioConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`PortfolioConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`PortfolioConfig::validate`]).
     pub fn build(self) -> ConfigResult<PortfolioConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -114,8 +110,8 @@ impl PortfolioConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 

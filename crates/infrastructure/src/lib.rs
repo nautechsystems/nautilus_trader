@@ -43,13 +43,14 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `redis`: Enables the Redis cache database and message bus backing implementations.
+//! - `extension-module`: Builds as a Python extension module.
 //! - `postgres`: Enables the PostgreSQL SQLx models and cache database backend.
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `redis` (default): Enables the Redis cache database and message bus backing implementations.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
+#![warn(clippy::clone_on_ref_ptr)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -60,6 +61,10 @@
 #![allow(
     clippy::similar_names,
     reason = "domain terms such as trader_id/trade_id and price_precision/size_precision are intentionally parallel"
+)]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
 )]
 
 #[cfg(feature = "python")]

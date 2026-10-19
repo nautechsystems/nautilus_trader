@@ -23,17 +23,21 @@
 //!
 //! ```text
 //! Adapter
-//! ├── core: ExecutionClientCore    (identity + connection state)
-//! └── emitter: ExecutionEventEmitter   (event generation + async dispatch)
-//!     ├── factory: OrderEventFactory
-//!     └── sender: Option<Sender>   (set in start())
+//! |-- core: ExecutionClientCore    (identity + connection state)
+//! `-- emitter: ExecutionEventEmitter   (event generation + async dispatch)
+//!     |-- factory: OrderEventFactory
+//!     `-- sender: ArcSwapOption<Sender>   (shared slot, installed at create() and start())
 //! ```
 
+use std::sync::Arc;
+
+use arc_swap::ArcSwapOption;
 use nautilus_common::{
     factories::OrderEventFactory,
+    live::sender::EventSender,
     messages::{ExecutionEvent, ExecutionReport},
 };
-use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
+use nautilus_core::{Params, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
@@ -55,18 +59,21 @@ use nautilus_model::{
 /// channel sender for async dispatch. It provides `emit_*` convenience methods that
 /// generate and send events in a single call.
 ///
-/// The sender is set during the adapter's `start()` phase via [`set_sender`](Self::set_sender).
+/// The sender is installed via [`set_sender`](Self::set_sender) in the client's `start`, and in the
+/// execution client factory's `create` when the calling thread has one.
+/// Clones share the sender slot and observe later sender installations and replacements.
 #[derive(Debug, Clone)]
 pub struct ExecutionEventEmitter {
     clock: &'static AtomicTime,
     factory: OrderEventFactory,
-    sender: Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>,
+    sender: Arc<ArcSwapOption<EventSender<ExecutionEvent>>>,
 }
 
 impl ExecutionEventEmitter {
     /// Creates a new [`ExecutionEventEmitter`] with no sender.
     ///
-    /// Call [`set_sender`](Self::set_sender) in the adapter's `start()` method.
+    /// Call [`set_sender`](Self::set_sender) in the client's `start`, and in the factory's `create`
+    /// when `try_get_exec_event_sender` returns `Some`.
     #[must_use]
     pub fn new(
         clock: &'static AtomicTime,
@@ -78,7 +85,7 @@ impl ExecutionEventEmitter {
         Self {
             clock,
             factory: OrderEventFactory::new(trader_id, account_id, account_type, base_currency),
-            sender: None,
+            sender: Arc::new(ArcSwapOption::empty()),
         }
     }
 
@@ -86,15 +93,25 @@ impl ExecutionEventEmitter {
         self.clock.get_time_ns()
     }
 
-    /// Sets the sender. Call in adapter's `start()`.
-    pub fn set_sender(&mut self, sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
-        self.sender = Some(sender);
+    /// Installs or replaces the sender for this emitter and all its clones.
+    ///
+    /// The slot is shared, so a clone taken before this call observes the sender it installs.
+    /// Events emitted before any install are dropped with a warning.
+    ///
+    /// Call in the client's `start`, resolved from `get_exec_event_sender`: `LiveNode` rebinds the
+    /// runner's senders on the calling thread before it starts clients, so the `start` install is
+    /// the authoritative one. Call it in the execution client factory's `create` as well when
+    /// `try_get_exec_event_sender` returns `Some`; `None` there means the calling thread has no
+    /// bound senders and is not a construction failure. See the adapter guide for hosts that drive
+    /// a client outside `LiveNode`.
+    pub fn set_sender(&mut self, sender: impl Into<EventSender<ExecutionEvent>>) {
+        self.sender.store(Some(Arc::new(sender.into())));
     }
 
-    /// Returns true if the sender is initialized.
+    /// Returns true if the sender is initialized for this emitter and its clones.
     #[must_use]
     pub fn is_initialized(&self) -> bool {
-        self.sender.is_some()
+        self.sender.load().is_some()
     }
 
     /// Returns the trader ID.
@@ -121,15 +138,35 @@ impl ExecutionEventEmitter {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) {
+        if let Err(e) = self.try_emit_account_state(balances, margins, reported, ts_event, info) {
+            log::warn!("{e}");
+        }
+    }
+
+    /// Generates and emits an account state event, reporting dispatch failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_emit_account_state(
+        &self,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
+        reported: bool,
+        ts_event: UnixNanos,
+        info: Option<Params>,
+    ) -> anyhow::Result<()> {
         let state = self.factory.generate_account_state(
             balances,
             margins,
             reported,
             ts_event,
             self.ts_init(),
+            info,
         );
-        self.send_account_state(state);
+        self.try_send_account_state(state)
     }
 
     /// Generates and emits an order denied event.
@@ -388,68 +425,80 @@ impl ExecutionEventEmitter {
 
     /// Emits an order event.
     pub fn send_order_event(&self, event: OrderEventAny) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
-                log::warn!("Failed to send order event: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order event: sender not initialized");
+        if let Err(e) = self.try_send_order_event(event) {
+            log::warn!("{e}");
         }
+    }
+
+    /// Emits an order event and returns any channel error to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_send_order_event(&self, event: OrderEventAny) -> anyhow::Result<()> {
+        self.try_send(ExecutionEvent::Order(event), "order event")
     }
 
     /// Emits a batch of order submitted events as a single channel message.
     pub fn send_order_submitted_batch(&self, batch: OrderSubmittedBatch) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::OrderSubmittedBatch(batch)) {
-                log::warn!("Failed to send order submitted batch: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order submitted batch: sender not initialized");
+        if let Err(e) = self.try_send(
+            ExecutionEvent::OrderSubmittedBatch(batch),
+            "order submitted batch",
+        ) {
+            log::warn!("{e}");
         }
     }
 
     /// Emits a batch of order accepted events as a single channel message.
     pub fn send_order_accepted_batch(&self, batch: OrderAcceptedBatch) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::OrderAcceptedBatch(batch)) {
-                log::warn!("Failed to send order accepted batch: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order accepted batch: sender not initialized");
+        if let Err(e) = self.try_send(
+            ExecutionEvent::OrderAcceptedBatch(batch),
+            "order accepted batch",
+        ) {
+            log::warn!("{e}");
         }
     }
 
     /// Emits a batch of order canceled events as a single channel message.
     pub fn send_order_canceled_batch(&self, batch: OrderCanceledBatch) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::OrderCanceledBatch(batch)) {
-                log::warn!("Failed to send order canceled batch: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order canceled batch: sender not initialized");
+        if let Err(e) = self.try_send(
+            ExecutionEvent::OrderCanceledBatch(batch),
+            "order canceled batch",
+        ) {
+            log::warn!("{e}");
         }
     }
 
     /// Emits an account state event.
     pub fn send_account_state(&self, state: AccountState) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::Account(state)) {
-                log::warn!("Failed to send account state: {e}");
-            }
-        } else {
-            log::warn!("Cannot send account state: sender not initialized");
+        if let Err(e) = self.try_send_account_state(state) {
+            log::warn!("{e}");
         }
+    }
+
+    /// Emits an account state event and returns any channel error to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_send_account_state(&self, state: AccountState) -> anyhow::Result<()> {
+        self.try_send(ExecutionEvent::Account(state), "account state")
     }
 
     /// Emits an execution report.
     pub fn send_execution_report(&self, report: ExecutionReport) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::Report(report)) {
-                log::warn!("Failed to send execution report: {e}");
-            }
-        } else {
-            log::warn!("Cannot send execution report: sender not initialized");
+        if let Err(e) = self.try_send_execution_report(report) {
+            log::warn!("{e}");
         }
+    }
+
+    /// Emits an execution report and returns any channel error to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is not initialized or the receiving channel is closed.
+    pub fn try_send_execution_report(&self, report: ExecutionReport) -> anyhow::Result<()> {
+        self.try_send(ExecutionEvent::Report(report), "execution report")
     }
 
     /// Emits an order status report.
@@ -470,5 +519,93 @@ impl ExecutionEventEmitter {
     /// Emits a position status report.
     pub fn send_position_report(&self, report: PositionStatusReport) {
         self.send_execution_report(ExecutionReport::Position(Box::new(report)));
+    }
+
+    fn try_send(&self, event: ExecutionEvent, kind: &str) -> anyhow::Result<()> {
+        let sender = self.sender.load();
+        let sender = sender
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Cannot send {kind}: sender not initialized"))?;
+        sender
+            .send(event)
+            .map_err(|e| anyhow::anyhow!("Failed to send {kind}: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::time::get_atomic_clock_static;
+    use nautilus_model::events::order::spec::OrderSubmittedSpec;
+    use rstest::rstest;
+
+    use super::*;
+
+    fn create_emitter() -> ExecutionEventEmitter {
+        ExecutionEventEmitter::new(
+            get_atomic_clock_static(),
+            TraderId::from("TRADER-001"),
+            AccountId::from("SIM-001"),
+            AccountType::Cash,
+            None,
+        )
+    }
+
+    fn create_order_event() -> OrderEventAny {
+        OrderEventAny::Submitted(
+            OrderSubmittedSpec::builder()
+                .client_order_id(ClientOrderId::from("O-001"))
+                .build(),
+        )
+    }
+
+    #[rstest]
+    fn test_clone_before_set_sender_observes_sender() {
+        let mut emitter = create_emitter();
+        let cloned = emitter.clone();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        emitter.set_sender(tx);
+
+        assert!(cloned.is_initialized());
+        cloned.send_order_event(create_order_event());
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(ExecutionEvent::Order(OrderEventAny::Submitted(_)))
+        ));
+    }
+
+    #[rstest]
+    fn test_set_sender_replaces_existing_sender() {
+        let mut emitter = create_emitter();
+        let (tx_a, mut rx_a) = tokio::sync::mpsc::unbounded_channel();
+        let (tx_b, mut rx_b) = tokio::sync::mpsc::unbounded_channel();
+
+        emitter.set_sender(tx_a);
+        emitter.set_sender(tx_b);
+        emitter.send_order_event(create_order_event());
+
+        assert!(matches!(
+            rx_a.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+        ));
+        assert!(matches!(
+            rx_b.try_recv(),
+            Ok(ExecutionEvent::Order(OrderEventAny::Submitted(_)))
+        ));
+    }
+
+    #[rstest]
+    fn test_never_initialized_sender_drops_or_errors() {
+        let emitter = create_emitter();
+
+        emitter.send_order_event(create_order_event());
+        let error = emitter
+            .try_send_order_event(create_order_event())
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot send order event: sender not initialized"
+        );
     }
 }

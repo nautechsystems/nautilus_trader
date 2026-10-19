@@ -27,7 +27,7 @@
 //! - Handlers implement `Handler<T>`, receive `&T` directly.
 //! - No runtime type checking enables inlining and static dispatch.
 //! - Built-in routers: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDeltas`,
-//!   `OrderBookDepth10`, `OrderEventAny`, `PositionEvent`, `AccountState`.
+//!   `OrderBookDepth`, `OrderEventAny`, `PositionEvent`, `AccountState`.
 //!
 //! **Any-based routing** provides flexibility for extensibility:
 //! - `subscriptions`/`topics` maps with `ShareableMessageHandler`.
@@ -98,7 +98,7 @@ use nautilus_core::UUID4;
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -135,7 +135,6 @@ use crate::{
 ///
 /// This is an internal class intended to be used by the message bus to organize
 /// topics and their subscribers.
-///
 #[derive(Clone, Debug)]
 pub struct Subscription {
     /// The shareable message handler for the subscription.
@@ -242,7 +241,7 @@ pub struct MessageBus {
     pub(crate) router_trades: TopicRouter<TradeTick>,
     pub(crate) router_bars: TopicRouter<Bar>,
     pub(crate) router_deltas: TopicRouter<OrderBookDeltas>,
-    pub(crate) router_depth10: TopicRouter<OrderBookDepth10>,
+    pub(crate) router_depth: TopicRouter<OrderBookDepth>,
     pub(crate) router_book_snapshots: TopicRouter<OrderBook>,
     pub(crate) router_mark_prices: TopicRouter<MarkPriceUpdate>,
     pub(crate) router_index_prices: TopicRouter<IndexPriceUpdate>,
@@ -287,7 +286,8 @@ pub struct MessageBus {
     req_count: u64,
     res_count: u64,
     pub_count: u64,
-    external_egress: Option<Box<dyn MessageBusExternalEgress>>,
+    external_egress: Option<Rc<RefCell<Box<dyn MessageBusExternalEgress>>>>,
+    has_external_streams: bool,
     encoding: SerializationEncoding,
     encoding_market_data: Option<SerializationEncoding>,
     encoding_builtin: Option<SerializationEncoding>,
@@ -337,7 +337,7 @@ impl MessageBus {
             router_trades: TopicRouter::new(),
             router_bars: TopicRouter::new(),
             router_deltas: TopicRouter::new(),
-            router_depth10: TopicRouter::new(),
+            router_depth: TopicRouter::new(),
             router_book_snapshots: TopicRouter::new(),
             router_mark_prices: TopicRouter::new(),
             router_index_prices: TopicRouter::new(),
@@ -383,6 +383,7 @@ impl MessageBus {
             res_count: 0,
             pub_count: 0,
             external_egress: None,
+            has_external_streams: false,
             encoding: SerializationEncoding::Json,
             encoding_market_data: None,
             encoding_builtin: None,
@@ -425,12 +426,15 @@ impl MessageBus {
     }
 
     /// Sets external egress for serialized published messages.
+    ///
+    /// Typed message variants remain local because this method does not configure external streams.
     pub fn set_external_egress(
         &mut self,
         external_egress: Box<dyn MessageBusExternalEgress>,
         encoding: SerializationEncoding,
     ) {
-        self.external_egress = Some(external_egress);
+        self.external_egress = Some(Rc::new(RefCell::new(external_egress)));
+        self.has_external_streams = false;
         self.encoding = encoding;
         self.encoding_market_data = None;
         self.encoding_builtin = None;
@@ -440,9 +444,11 @@ impl MessageBus {
 
     /// Sets external egress and category encoding policy from a validated config.
     ///
+    /// Typed message variants are enabled only when `config.external_streams` is non-empty.
+    ///
     /// # Errors
     ///
-    /// Returns a [`crate::config::ConfigError`] if the config selects an unsupported encoding.
+    /// Returns an error if the config selects an unsupported encoding.
     pub fn set_external_egress_config(
         &mut self,
         external_egress: Box<dyn MessageBusExternalEgress>,
@@ -450,7 +456,11 @@ impl MessageBus {
     ) -> crate::config::ConfigResult<()> {
         config.validate()?;
 
-        self.external_egress = Some(external_egress);
+        self.external_egress = Some(Rc::new(RefCell::new(external_egress)));
+        self.has_external_streams = config
+            .external_streams
+            .as_ref()
+            .is_some_and(|streams| !streams.is_empty());
         self.encoding = config.encoding;
         self.encoding_market_data = config.encoding_market_data;
         self.encoding_builtin = config.encoding_builtin;
@@ -460,13 +470,20 @@ impl MessageBus {
         Ok(())
     }
 
-    /// Sets the type names excluded from external publishing.
+    /// Sets the payload type names excluded from external publishing.
     pub fn set_types_filter(&mut self, filter: Vec<String>) {
-        self.types_filter = filter
-            .into_iter()
-            .map(|type_name| BusPayloadType::from_name(&type_name))
-            .filter(|payload_type| !payload_type.as_str().is_empty())
-            .collect();
+        self.types_filter.clear();
+
+        for type_name in filter {
+            let payload_type = BusPayloadType::from_name(&type_name);
+            if !payload_type.as_str().is_empty() {
+                self.types_filter.insert(payload_type);
+            }
+
+            if let Some(payload_type) = BusPayloadType::from_typed_name(&type_name) {
+                self.types_filter.insert(payload_type);
+            }
+        }
     }
 
     /// Registers a payload type for external-to-internal streaming.
@@ -492,8 +509,12 @@ impl MessageBus {
         self.external_egress.is_some()
     }
 
-    pub(crate) fn external_egress(&self) -> Option<&dyn MessageBusExternalEgress> {
-        self.external_egress.as_deref()
+    pub(crate) fn has_external_streams(&self) -> bool {
+        self.has_external_streams
+    }
+
+    pub(crate) fn external_egress(&self) -> Option<Rc<RefCell<Box<dyn MessageBusExternalEgress>>>> {
+        self.external_egress.clone()
     }
 
     pub(crate) fn encoding_for(&self, payload_type: BusPayloadType) -> SerializationEncoding {
@@ -520,7 +541,7 @@ impl MessageBus {
         self.router_trades.clear();
         self.router_bars.clear();
         self.router_deltas.clear();
-        self.router_depth10.clear();
+        self.router_depth.clear();
         self.router_book_snapshots.clear();
         self.router_mark_prices.clear();
         self.router_index_prices.clear();
@@ -557,7 +578,6 @@ impl MessageBus {
         self.endpoints_exec_reports.clear();
         self.endpoints_order_events.clear();
         self.endpoints_data.clear();
-
         self.routers_typed.clear();
         self.endpoints_typed.clear();
         self.clear_streaming_types();
@@ -566,9 +586,10 @@ impl MessageBus {
         self.res_count = 0;
         self.pub_count = 0;
 
-        if let Some(mut external_egress) = self.external_egress.take() {
-            external_egress.close();
+        if let Some(external_egress) = self.external_egress.take() {
+            external_egress.borrow_mut().close();
         }
+        self.has_external_streams = false;
         self.has_backing = false;
         HAS_EXTERNAL_EGRESS.with(|flag| flag.set(false));
     }
@@ -702,13 +723,16 @@ impl MessageBus {
 
     /// Close the message bus which will close the sender channel and join the thread.
     ///
-    /// # Errors
-    ///
-    /// This function never returns an error (TBD once backing database added).
+    /// This function does not return an error.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "closing the in-memory message bus returns no errors"
+    )]
     pub fn close(&mut self) -> anyhow::Result<()> {
-        if let Some(mut external_egress) = self.external_egress.take() {
-            external_egress.close();
+        if let Some(external_egress) = self.external_egress.take() {
+            external_egress.borrow_mut().close();
         }
+        self.has_external_streams = false;
         self.has_backing = false;
         HAS_EXTERNAL_EGRESS.with(|flag| flag.set(false));
         Ok(())
@@ -735,7 +759,7 @@ impl MessageBus {
     }
 
     /// Finds the subscriptions with pattern matching the `topic`.
-    pub(crate) fn find_topic_matches(&self, topic: MStr<Topic>) -> Vec<Subscription> {
+    fn find_topic_matches(&self, topic: MStr<Topic>) -> Vec<Subscription> {
         self.subscriptions
             .iter()
             .filter_map(|sub| {
@@ -755,7 +779,7 @@ impl MessageBus {
         self.inner_matching_subscriptions(topic.into())
     }
 
-    pub(crate) fn inner_matching_subscriptions(&mut self, topic: MStr<Topic>) -> Vec<Subscription> {
+    fn inner_matching_subscriptions(&mut self, topic: MStr<Topic>) -> Vec<Subscription> {
         self.topics.get(&topic).cloned().unwrap_or_else(|| {
             let mut matches = self.find_topic_matches(topic);
             matches.sort_by(Subscription::delivery_order);
@@ -803,6 +827,33 @@ impl MessageBus {
         self.correlation_index.insert(*correlation_id, handler);
 
         Ok(())
+    }
+
+    pub(crate) fn unsubscribe_any(
+        &mut self,
+        pattern: MStr<Pattern>,
+        handler: &ShareableMessageHandler,
+    ) {
+        log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
+
+        let handler_id = handler.0.id();
+
+        let count_before = self.subscriptions.len();
+
+        self.topics.values_mut().for_each(|subs| {
+            subs.retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
+        });
+
+        self.subscriptions
+            .retain(|s| !(s.pattern == pattern && s.handler_id == handler_id));
+
+        let removed = self.subscriptions.len() < count_before;
+
+        if removed {
+            log::debug!("Handler for pattern '{pattern}' was removed");
+        } else {
+            log::debug!("No matching handler for pattern '{pattern}' was found");
+        }
     }
 }
 
@@ -967,19 +1018,22 @@ mod tests {
     }
 
     #[rstest]
-    fn set_types_filter_resolves_canonical_and_custom_names() {
+    fn set_types_filter_resolves_untyped_and_typed_names() {
         let mut msgbus = MessageBus::default();
 
         msgbus.set_types_filter(vec![
             "QuoteTick".to_string(),
             "ExternalCustomPayload".to_string(),
+            "OrderStatusReport".to_string(),
             String::new(),
         ]);
 
         let filter = msgbus.types_filter();
-        assert_eq!(filter.len(), 2);
+        assert_eq!(filter.len(), 4);
         assert!(filter.contains(&BusPayloadType::QuoteTick));
         assert!(filter.contains(&BusPayloadType::Custom(Ustr::from("ExternalCustomPayload"))));
+        assert!(filter.contains(&BusPayloadType::Custom(Ustr::from("OrderStatusReport"))));
+        assert!(filter.contains(&BusPayloadType::OrderStatusReport));
         assert!(!filter.contains(&BusPayloadType::Custom(Ustr::default())));
     }
 

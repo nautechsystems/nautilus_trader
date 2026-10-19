@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for `DataEngine` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.data", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.data", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -54,6 +54,8 @@ pub struct DataEngineConfig {
     /// A dictionary mapping time bar aggregations to their origin time offsets.
     #[builder(default)]
     pub time_bars_origin_offset: HashMap<BarAggregation, Duration>,
+    /// The IANA time zone for day and longer bars, defaulting to UTC.
+    pub time_bars_time_zone: Option<String>,
     /// If data objects timestamp sequencing will be validated and handled.
     #[builder(default)]
     pub validate_data_sequence: bool,

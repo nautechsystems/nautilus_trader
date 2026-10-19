@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
+#[cfg(feature = "arrow")]
 use parquet::basic::{Compression, ZstdLevel};
 use serde::{Deserialize, Serialize};
 
@@ -25,8 +29,9 @@ pub enum BookSnapshotOutput {
     /// Convert book snapshots to `OrderBookDeltas` and write to `order_book_deltas/`.
     #[default]
     Deltas,
-    /// Convert book snapshots to `OrderBookDepth10` and write to `order_book_depths/`.
-    Depth10,
+    /// Convert book snapshots to `OrderBookDepth` and write to `order_book_depths/`.
+    #[serde(alias = "depth10")]
+    Depth,
 }
 
 /// Determines the compression codec for Parquet files written by Tardis replay.
@@ -42,6 +47,7 @@ pub enum ParquetCompression {
     Uncompressed,
 }
 
+#[cfg(feature = "arrow")]
 impl ParquetCompression {
     /// Converts the replay config compression value to a Parquet compression value.
     ///
@@ -65,8 +71,13 @@ impl ParquetCompression {
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 pub struct TardisReplayConfig {
+    /// The Tardis HTTP API base URL override.
+    pub tardis_http_url: Option<SecretString>,
     /// The Tardis Machine websocket url.
-    pub tardis_ws_url: Option<String>,
+    pub tardis_ws_url: Option<SecretString>,
+    /// Optional proxy URL for the Tardis HTTP API client.
+    /// The Tardis Machine WebSocket transport does not yet support proxying.
+    pub proxy_url: Option<SecretString>,
     /// If symbols should be normalized with Nautilus conventions.
     pub normalize_symbols: Option<bool>,
     /// The output directory for writing Nautilus format Parquet files.
@@ -75,13 +86,10 @@ pub struct TardisReplayConfig {
     #[builder(default)]
     #[serde(default)]
     pub options: Vec<ReplayNormalizedRequestOptions>,
-    /// Optional proxy URL for the Tardis HTTP API client.
-    /// The Tardis Machine WebSocket transport does not yet support proxying.
-    pub proxy_url: Option<String>,
     /// The output format for `book_snapshot_*` messages.
     ///
     /// - `deltas`: Convert to `OrderBookDeltas` and write to `order_book_deltas/` (default).
-    /// - `depth10`: Convert to `OrderBookDepth10` and write to `order_book_depths/`.
+    /// - `depth`: Convert to `OrderBookDepth` and write to `order_book_depths/`.
     pub book_snapshot_output: Option<BookSnapshotOutput>,
     /// If best bid/offer fields from Tardis `option_summary` messages should emit `QuoteTick`.
     pub extract_bbo_as_quotes: Option<bool>,
@@ -98,7 +106,7 @@ pub struct TardisReplayConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -107,13 +115,15 @@ pub struct TardisReplayConfig {
 pub struct TardisDataClientConfig {
     /// Tardis API key for HTTP instrument fetching.
     /// Falls back to `TARDIS_API_KEY` env var if not set.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
+    /// The Tardis HTTP API base URL override.
+    pub tardis_http_url: Option<SecretString>,
     /// Tardis Machine Server WebSocket URL.
     /// Falls back to `TARDIS_MACHINE_WS_URL` env var if not set.
-    pub tardis_ws_url: Option<String>,
+    pub tardis_ws_url: Option<SecretString>,
     /// Optional proxy URL for the Tardis HTTP API client.
     /// The Tardis Machine WebSocket transport does not yet support proxying.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// Whether to normalize symbols to Nautilus conventions.
     #[builder(default = true)]
     pub normalize_symbols: bool,
@@ -136,7 +146,6 @@ pub struct TardisDataClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(TardisDataClientConfig {
-    tardis_ws_url: Option<String>,
     normalize_symbols: bool,
     extract_bbo_as_quotes: bool,
     options: Vec<ReplayNormalizedRequestOptions>,
@@ -160,6 +169,7 @@ mod tests {
         let config = TardisDataClientConfig::default();
         assert!(config.api_key.is_none());
         assert!(config.tardis_ws_url.is_none());
+        assert!(config.tardis_http_url.is_none());
         assert!(config.proxy_url.is_none());
         assert!(config.normalize_symbols);
         assert!(matches!(
@@ -169,6 +179,25 @@ mod tests {
         assert!(!config.extract_bbo_as_quotes);
         assert!(config.options.is_empty());
         assert!(config.stream_options.is_empty());
+    }
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials_and_urls() {
+        let config = TardisDataClientConfig {
+            api_key: Some("api-key-value".into()),
+            tardis_ws_url: Some("wss://user:ws-secret@localhost".into()),
+            tardis_http_url: Some("https://user:http-secret@localhost".into()),
+            proxy_url: Some("http://user:proxy-secret@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{config:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 4);
+        assert!(!formatted.contains("api-key-value"));
+        assert!(!formatted.contains("ws-secret"));
+        assert!(!formatted.contains("http-secret"));
+        assert!(!formatted.contains("proxy-secret"));
     }
 
     #[rstest]
@@ -189,14 +218,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_book_snapshot_output_serde_roundtrip_depth10() {
-        let json = serde_json::to_string(&BookSnapshotOutput::Depth10).unwrap();
-        assert_eq!(json, "\"depth10\"");
+    fn test_book_snapshot_output_serde_roundtrip_depth() {
+        let json = serde_json::to_string(&BookSnapshotOutput::Depth).unwrap();
+        assert_eq!(json, "\"depth\"");
 
         let deserialized: BookSnapshotOutput = serde_json::from_str(&json).unwrap();
-        assert!(matches!(deserialized, BookSnapshotOutput::Depth10));
+        assert!(matches!(deserialized, BookSnapshotOutput::Depth));
     }
 
+    #[rstest]
+    fn test_book_snapshot_output_accepts_legacy_depth10_spelling() {
+        let deserialized: BookSnapshotOutput = serde_json::from_str("\"depth10\"").unwrap();
+        assert!(matches!(deserialized, BookSnapshotOutput::Depth));
+    }
+
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_parquet_compression_default_is_zstd() {
         assert!(matches!(
@@ -209,6 +245,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "arrow")]
     #[rstest]
     fn test_parquet_compression_serde_roundtrip() {
         let cases = [
@@ -234,7 +271,7 @@ mod tests {
         let config: TardisDataClientConfig = toml::from_str(
             r#"
 normalize_symbols = false
-book_snapshot_output = "depth10"
+book_snapshot_output = "depth"
 "#,
         )
         .unwrap();
@@ -242,7 +279,7 @@ book_snapshot_output = "depth10"
         assert!(!config.normalize_symbols);
         assert!(matches!(
             config.book_snapshot_output,
-            BookSnapshotOutput::Depth10
+            BookSnapshotOutput::Depth
         ));
         assert!(!config.extract_bbo_as_quotes);
         assert!(config.options.is_empty());
@@ -259,7 +296,13 @@ normalize_symbols = false
         .unwrap();
 
         assert!(config.options.is_empty());
-        assert_eq!(config.tardis_ws_url.as_deref(), Some("wss://example.com"));
+        assert_eq!(
+            config
+                .tardis_ws_url
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("wss://example.com")
+        );
         assert_eq!(config.normalize_symbols, Some(false));
         assert_eq!(config.extract_bbo_as_quotes, None);
     }
@@ -272,7 +315,7 @@ normalize_symbols = false
             "output_path": null,
             "options": [],
             "proxy_url": null,
-            "book_snapshot_output": "depth10",
+            "book_snapshot_output": "depth",
             "extract_bbo_as_quotes": true,
             "compression": "zstd"
         }"#;
@@ -281,7 +324,7 @@ normalize_symbols = false
 
         assert!(matches!(
             config.book_snapshot_output,
-            Some(BookSnapshotOutput::Depth10)
+            Some(BookSnapshotOutput::Depth)
         ));
         assert_eq!(config.extract_bbo_as_quotes, Some(true));
         assert!(matches!(config.compression, Some(ParquetCompression::Zstd)));

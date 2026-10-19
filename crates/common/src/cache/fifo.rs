@@ -75,7 +75,7 @@ where
     ///
     /// # Panics
     ///
-    /// Compile-time panic if `N == 0`.
+    /// Panics if `N == 0`. The panic occurs at compile time.
     #[must_use]
     pub fn new() -> Self {
         const { assert!(N > 0, "FifoCache capacity must be greater than zero") };
@@ -110,13 +110,15 @@ where
         self.index.contains(id)
     }
 
-    /// Adds an ID to the cache.
+    /// Inserts an ID into the cache.
     ///
-    /// If the ID already exists, this is a no-op.
-    /// If the cache is at capacity, the oldest entry is evicted.
-    pub fn add(&mut self, id: T) {
-        if self.index.contains(&id) {
-            return;
+    /// Returns `true` when the ID was newly inserted and `false` when it was already present.
+    /// A duplicate does not change the eviction order. If the cache is at capacity, inserting a
+    /// new ID evicts the oldest entry.
+    #[must_use]
+    pub fn insert(&mut self, id: T) -> bool {
+        if !self.index.insert(id.clone()) {
+            return false;
         }
 
         if self.order.len() == N
@@ -125,8 +127,16 @@ where
             self.index.remove(&evicted);
         }
 
-        self.order.push_front(id.clone());
-        self.index.insert(id);
+        self.order.push_front(id);
+        true
+    }
+
+    /// Adds an ID to the cache.
+    ///
+    /// If the ID already exists, this is a no-op.
+    /// If the cache is at capacity, the oldest entry is evicted.
+    pub fn add(&mut self, id: T) {
+        let _ = self.insert(id);
     }
 
     /// Removes an ID from the cache.
@@ -199,7 +209,7 @@ where
     ///
     /// # Panics
     ///
-    /// Compile-time panic if `N == 0`.
+    /// Panics if `N == 0`. The panic occurs at compile time.
     #[must_use]
     pub fn new() -> Self {
         const { assert!(N > 0, "FifoCacheMap capacity must be greater than zero") };
@@ -245,6 +255,11 @@ where
         self.index.get_mut(key)
     }
 
+    /// Returns an iterator over the key-value pairs in arbitrary order.
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.index.iter()
+    }
+
     /// Inserts a key-value pair into the cache.
     ///
     /// If the key already exists, the value is updated (no eviction occurs).
@@ -280,6 +295,15 @@ where
         self.order.clear();
         self.index.clear();
     }
+
+    /// Removes all entries from the cache and returns them oldest first.
+    pub fn drain(&mut self) -> Vec<(K, V)> {
+        self.order
+            .drain(..)
+            .rev()
+            .filter_map(|key| self.index.remove_entry(&key))
+            .collect()
+    }
 }
 
 impl<K, V, const N: usize> Default for FifoCacheMap<K, V, N>
@@ -309,6 +333,16 @@ mod tests {
         assert!(cache.contains(&3));
         assert!(!cache.contains(&4));
         assert_eq!(cache.len(), 3);
+    }
+
+    #[rstest]
+    fn test_insert_reports_whether_id_is_new() {
+        let mut cache: FifoCache<u32, 4> = FifoCache::new();
+
+        assert!(cache.insert(1));
+        assert!(!cache.insert(1));
+        assert!(cache.insert(2));
+        assert_eq!(cache.len(), 2);
     }
 
     #[rstest]
@@ -449,19 +483,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_duplicate_add_does_not_refresh_position() {
+    fn test_duplicate_insert_does_not_refresh_position() {
         let mut cache: FifoCache<u32, 3> = FifoCache::new();
 
         // Add 1, 2, 3 (1 is oldest)
-        cache.add(1);
-        cache.add(2);
-        cache.add(3);
+        assert!(cache.insert(1));
+        assert!(cache.insert(2));
+        assert!(cache.insert(3));
 
         // Re-add 1 (should be no-op, 1 stays oldest)
-        cache.add(1);
+        assert!(!cache.insert(1));
 
         // Add 4: should evict 1 (still oldest), not 2
-        cache.add(4);
+        assert!(cache.insert(4));
         assert!(!cache.contains(&1));
         assert!(cache.contains(&2));
         assert!(cache.contains(&3));
@@ -596,6 +630,44 @@ mod tests {
         }
 
         assert_eq!(cache.get(&1), Some(&"one_modified".to_string()));
+    }
+
+    #[rstest]
+    fn test_map_iter() {
+        let mut cache: FifoCacheMap<u32, &str, 4> = FifoCacheMap::new();
+        cache.insert(1, "one");
+        cache.insert(2, "two");
+        cache.insert(3, "three");
+
+        let mut entries: Vec<_> = cache.iter().map(|(k, v)| (*k, *v)).collect();
+        entries.sort_unstable();
+
+        assert_eq!(entries, vec![(1, "one"), (2, "two"), (3, "three")]);
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[rstest]
+    fn test_map_drain_returns_oldest_first() {
+        let mut cache: FifoCacheMap<u32, &str, 3> = FifoCacheMap::new();
+        cache.insert(1, "one");
+        cache.insert(2, "two");
+        cache.insert(3, "three");
+        cache.insert(4, "four"); // Evicts 1
+        cache.insert(3, "THREE"); // Updates in place without reordering
+
+        let drained = cache.drain();
+
+        assert_eq!(drained, vec![(2, "two"), (3, "THREE"), (4, "four")]);
+        assert!(cache.is_empty());
+
+        // A stale eviction order would evict the reinserted key before capacity
+        cache.insert(4, "four");
+        cache.insert(5, "five");
+        cache.insert(6, "six");
+        let mut entries: Vec<_> = cache.iter().map(|(k, v)| (*k, *v)).collect();
+        entries.sort_unstable();
+
+        assert_eq!(entries, vec![(4, "four"), (5, "five"), (6, "six")]);
     }
 
     #[rstest]

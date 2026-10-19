@@ -13,7 +13,16 @@ fail() {
 }
 
 sha256_file() {
-  sha256sum "$1" | awk '{print $1}'
+  local path=$1
+
+  if command -v sha256sum > /dev/null; then
+    sha256sum "$path" | awk '{ print $1 }'
+  elif command -v shasum > /dev/null; then
+    shasum -a 256 "$path" | awk '{ print $1 }'
+  else
+    echo "::error::sha256sum or shasum not found."
+    exit 1
+  fi
 }
 
 mock_bin="${work_dir}/mock-bin"
@@ -301,6 +310,7 @@ run_verifier() {
     env \
       PATH="${mock_bin}:${PATH}" \
       TAG_NAME=v1.2.3 \
+      GITHUB_REPOSITORY=nautechsystems/nautilus_trader \
       GITHUB_SHA=abc123 \
       REGISTRY_PROPAGATION_TIMEOUT_SECONDS=1 \
       REGISTRY_PROPAGATION_POLL_SECONDS=1 \
@@ -627,4 +637,4 @@ if ! grep -q "Unused CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS entries" "$unused_excep
   fail "unused manual token publish exception did not report the unused entry."
 fi
 
-echo "verify published registries crates tests passed."
+echo "verify published registries crates tests passed"

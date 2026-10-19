@@ -19,6 +19,9 @@
 #   CARGO_PUBLISH_USER_AGENT           - crates.io API User-Agent header
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+consumer_check="${script_dir}/check-cargo-publish-consumer.bash"
+
 publish_mode=publish
 case "${1:-}" in
   "")
@@ -523,12 +526,19 @@ check_blocked_dependencies
 echo "Publishing crates in dependency order:"
 nl -w1 -s'. ' "$publish_plan_file"
 
+run_consumer_check() {
+  env \
+    -u CARGO_REGISTRY_TOKEN \
+    -u CARGO_REGISTRIES_CRATES_IO_TOKEN \
+    bash "$consumer_check" "$publish_plan_file"
+}
+
 case "$publish_mode" in
   check)
     echo "Cargo crate publish plan is valid."
     ;;
   dry_run)
-    cargo publish --dry-run --workspace --locked --no-verify
+    run_consumer_check
     echo "Finished dry-running Cargo crates."
     ;;
   publish)

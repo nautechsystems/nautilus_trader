@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Shared helpers for adapter unit tests.
+//! Shared fixtures for adapter unit tests.
 
 use std::{fs, path::PathBuf};
 

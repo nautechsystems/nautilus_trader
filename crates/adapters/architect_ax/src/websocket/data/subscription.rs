@@ -91,8 +91,50 @@ impl AxMdSubscriptionSpec {
     }
 }
 
+/// Orders subscription changes that run as separate tasks.
+///
+/// Each change waits until every earlier change completes, so the WebSocket client applies them in
+/// command order. A change completes when its [`SubscriptionTurn`] drops, including when its task is
+/// cancelled, so a lost change never blocks later ones.
+#[derive(Debug, Default)]
+pub(crate) struct SubscriptionOrder {
+    last: Option<tokio::sync::oneshot::Receiver<()>>,
+}
+
+impl SubscriptionOrder {
+    /// Returns the turn of the next change in command order.
+    pub(crate) fn next(&mut self) -> SubscriptionTurn {
+        let (done, last) = tokio::sync::oneshot::channel();
+
+        SubscriptionTurn {
+            previous: self.last.replace(last),
+            _done: done,
+        }
+    }
+}
+
+/// One subscription change's place in command order; dropping it lets the next change run.
+#[derive(Debug)]
+pub(crate) struct SubscriptionTurn {
+    previous: Option<tokio::sync::oneshot::Receiver<()>>,
+    _done: tokio::sync::oneshot::Sender<()>,
+}
+
+impl SubscriptionTurn {
+    /// Waits until every earlier change has completed.
+    pub(crate) async fn wait(&mut self) {
+        if let Some(previous) = self.previous.as_mut() {
+            // The sender only drops, so an error marks the earlier change complete
+            let _ = previous.await;
+            self.previous = None;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use rstest::rstest;
 
     use super::*;
@@ -119,5 +161,37 @@ mod tests {
     #[rstest]
     fn test_parse_topic_rejects_invalid_flags() {
         assert!(AxMdSubscriptionSpec::parse_topic("EURUSD-PERP:Level1:false:nope").is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscription_turn_waits_for_earlier_change() {
+        let mut order = SubscriptionOrder::default();
+        let mut first = order.next();
+        let mut second = order.next();
+        first.wait().await;
+
+        let while_first_runs = tokio::time::timeout(Duration::from_millis(50), second.wait()).await;
+        drop(first);
+        let after_first = tokio::time::timeout(Duration::from_secs(1), second.wait()).await;
+
+        assert!(while_first_runs.is_err());
+        assert!(after_first.is_ok());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscription_turn_skips_cancelled_change() {
+        let mut order = SubscriptionOrder::default();
+        let first = order.next();
+        let second = order.next();
+        let mut third = order.next();
+
+        // The earlier changes end without running, as an aborted task drops its turn
+        drop(first);
+        drop(second);
+        let waited = tokio::time::timeout(Duration::from_secs(1), third.wait()).await;
+
+        assert!(waited.is_ok());
     }
 }

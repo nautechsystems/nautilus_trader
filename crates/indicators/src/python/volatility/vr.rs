@@ -17,27 +17,19 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, volatility::vr::VolatilityRatio};
+use crate::{indicator::Indicator, python::float_precision, volatility::vr::VolatilityRatio};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl VolatilityRatio {
-    /// Creates a new `VolatilityRatio` instance.
+    /// Schwager volatility ratio.
     #[new]
-    #[pyo3(signature = (fast_period, slow_period, use_previous=None, value_floor=None, ma_type=None))]
-    #[must_use]
-    pub fn py_new(
-        fast_period: usize,
-        slow_period: usize,
-        use_previous: Option<bool>,
-        value_floor: Option<f64>,
-        ma_type: Option<MovingAverageType>,
-    ) -> Self {
-        Self::new(fast_period, slow_period, ma_type, use_previous, value_floor)
+    fn py_new(period: usize) -> PyResult<Self> {
+        Self::new_checked(period).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
-        format!("VolatilityRatio({},{})", self.fast_period, self.slow_period)
+        format!("VolatilityRatio({})", self.period)
     }
 
     #[getter]
@@ -47,15 +39,9 @@ impl VolatilityRatio {
     }
 
     #[getter]
-    #[pyo3(name = "fast_period")]
-    const fn py_fast_period(&self) -> usize {
-        self.fast_period
-    }
-
-    #[getter]
-    #[pyo3(name = "slow_period")]
-    const fn py_slow_period(&self) -> usize {
-        self.slow_period
+    #[pyo3(name = "period")]
+    const fn py_period(&self) -> usize {
+        self.period
     }
 
     #[getter]
@@ -65,21 +51,15 @@ impl VolatilityRatio {
     }
 
     #[getter]
-    #[pyo3(name = "use_previous")]
-    const fn py_use_previous(&self) -> bool {
-        self.use_previous
-    }
-
-    #[getter]
-    #[pyo3(name = "value_floor")]
-    const fn py_value_floor(&self) -> f64 {
-        self.value_floor
-    }
-
-    #[getter]
     #[pyo3(name = "value")]
     const fn py_value(&self) -> f64 {
         self.value
+    }
+
+    #[getter]
+    #[pyo3(name = "count")]
+    const fn py_count(&self) -> usize {
+        self.count
     }
 
     #[getter]
@@ -88,6 +68,7 @@ impl VolatilityRatio {
         self.initialized
     }
 
+    /// Updates the indicator from high, low, and close prices.
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, high: f64, low: f64, close: f64) {
         self.update_raw(high, low, close);
@@ -104,8 +85,10 @@ impl VolatilityRatio {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

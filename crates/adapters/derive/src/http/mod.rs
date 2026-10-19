@@ -18,7 +18,7 @@
 //! The wire format mirrors `derive_client`'s upstream Python SDK:
 //!
 //! - Each method is addressed at `${base_url}/<method-name>` (e.g.
-//!   `/public/get_instruments`, `/private/order`).
+//!   `/public/get_all_instruments`, `/private/order`).
 //! - Request bodies are the raw `params` object; the method is encoded by the
 //!   URL path, not by a wrapping envelope.
 //! - Successful responses carry `{ "id": <int>, "result": <T> }`; failures

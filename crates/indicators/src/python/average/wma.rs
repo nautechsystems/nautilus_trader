@@ -13,16 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pytype_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
-use pyo3::prelude::*;
+use pyo3::{ffi, prelude::*, types::PyString};
 
 use crate::{
     average::wma::WeightedMovingAverage,
     indicator::{Indicator, MovingAverage},
+    python::float_precision,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -30,13 +31,45 @@ use crate::{
 impl WeightedMovingAverage {
     /// An indicator which calculates a weighted moving average across a rolling window.
     #[new]
-    #[pyo3(signature = (period, weights, price_type=None))]
+    #[pyo3(signature = (period, weights=None, price_type=None))]
     pub fn py_new(
         period: usize,
-        weights: Vec<f64>,
+        #[gen_stub(override_type(type_repr = "typing.Sequence[float] | None"))] weights: Option<
+            &Bound<'_, PyAny>,
+        >,
         price_type: Option<PriceType>,
     ) -> PyResult<Self> {
-        Self::new_checked(period, weights, price_type).map_err(to_pyvalue_err)
+        Self::check_period(period).map_err(to_pyvalue_err)?;
+
+        match weights {
+            Some(weights) => {
+                if weights.is_instance_of::<PyString>() {
+                    return Err(to_pytype_err("Can't extract `str` to `Vec`"));
+                }
+
+                #[allow(
+                    unsafe_code,
+                    reason = "preserve PyO3 Vec extraction's sequence predicate for custom Python sequences"
+                )]
+                // SAFETY: weights is a live Python object bound to the interpreter
+                let is_sequence = unsafe { ffi::PySequence_Check(weights.as_ptr()) } != 0;
+                if !is_sequence {
+                    return Err(to_pytype_err("weights must be a sequence"));
+                }
+
+                let mut values = Vec::new();
+
+                // Python length hints are untrusted; consume at most one past the valid window
+                for item in weights.try_iter()?.take(period + 1) {
+                    values.try_reserve(1).map_err(to_pyvalue_err)?;
+                    values.push(item?.extract::<f64>()?);
+                }
+
+                Self::with_weights_checked(period, values, price_type)
+            }
+            None => Self::new_checked(period, price_type),
+        }
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -93,17 +126,22 @@ impl WeightedMovingAverage {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        float_precision::check_quote(quote)?;
         self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) -> PyResult<()> {
+        float_precision::check_trade(trade)?;
         self.handle_trade(trade);
+        Ok(())
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

@@ -1,0 +1,6 @@
+{
+  "type": "error",
+  "code": 30012,
+  "channel": "order_book:0",
+  "message": "failed to subscribe"
+}

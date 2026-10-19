@@ -20,9 +20,9 @@
 //! Run with: `cargo run --example okx-data-tester --package nautilus-okx --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `OKX_API_KEY`.
-//! - `OKX_API_SECRET`.
-//! - `OKX_API_PASSPHRASE`.
+//! - `OKX_API_KEY`
+//! - `OKX_API_SECRET`
+//! - `OKX_API_PASSPHRASE`
 
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
@@ -72,6 +72,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = DataTesterConfig::builder()
         .client_id(client_id)
         .instrument_ids(instrument_ids)
+        .subscribe_book_deltas(true)
+        .subscribe_book_depth(true)
+        .subscribe_book_at_interval(true)
         .subscribe_quotes(true)
         .subscribe_trades(true)
         .subscribe_mark_prices(true)

@@ -13,28 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Exposes Rust live-node, engine, and client configuration types through PyO3.
+//!
+//! Implements Python constructors and property access, converting Python inputs into Rust
+//! configuration values and reporting invalid inputs as Python exceptions. Includes routing,
+//! instrument-provider, plugin, and queue-monitor settings used when constructing a live node.
+
 use std::{collections::HashMap, hash::BuildHasher, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::MessageBusConfig, python::config_error_to_pyvalue_err,
 };
-use nautilus_core::{UUID4, python::to_pyvalue_err};
+use nautilus_core::{UUID4, datetime::get_timezone, python::to_pyvalue_err};
 use nautilus_model::{
     enums::BarIntervalType,
-    identifiers::{ClientId, TraderId},
+    identifiers::{ClientId, TraderId, Venue},
 };
+use nautilus_persistence::config::{DataCatalogConfig, StreamingConfig};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_trading::ImportableControllerConfig;
 use pyo3::{
-    IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
-    types::{PyAnyMethods, PyDict, PyDictMethods},
+    Bound, IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
+    types::{PyAnyMethods, PyBytes, PyDict, PyDictMethods, PyTuple},
 };
 
 use crate::config::{
-    InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
-    LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, RoutingConfig,
-    duration_from_secs_f64, parse_rate_limit, validate_max_notional_per_order,
+    DataClientConfig, ExecutionClientConfig, InstrumentProviderConfig, LiveDataEngineConfig,
+    LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig,
+    QueueMonitorConfig, RoutingConfig, SubmissionRecoveryPolicy, duration_from_secs_f64,
+    parse_rate_limit, validate_max_notional_per_order,
 };
 
 // Coerces a PyO3 input into `BarIntervalType`, accepting both the enum (modern Rust
@@ -77,6 +85,7 @@ fn py_to_json_value(bound: &pyo3::Bound<'_, PyAny>) -> PyResult<serde_json::Valu
         for (key, value) in dict.iter() {
             obj.insert(key.extract::<String>()?, py_to_json_value(&value)?);
         }
+
         Ok(serde_json::Value::Object(obj))
     } else if let Ok(items) = bound.extract::<Vec<Py<PyAny>>>() {
         // Handle list/tuple/set
@@ -105,6 +114,8 @@ pub fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<P
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 Ok(i.into_pyobject(py)?.into_any().unbind())
+            } else if let Some(u) = n.as_u64() {
+                Ok(u.into_pyobject(py)?.into_any().unbind())
             } else if let Some(f) = n.as_f64() {
                 Ok(f.into_pyobject(py)?.into_any().unbind())
             } else {
@@ -121,9 +132,11 @@ pub fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<P
         }
         serde_json::Value::Object(obj) => {
             let dict = pyo3::types::PyDict::new(py);
+
             for (k, v) in obj {
                 dict.set_item(k, json_value_to_py(py, v)?)?;
             }
+
             Ok(dict.into_any().unbind())
         }
     }
@@ -143,6 +156,7 @@ pub fn coerce_json_config<S: BuildHasher>(
             let json_value = py_to_json_value(value.bind(py))?;
             result.insert(key, json_value);
         }
+
         Ok(result)
     })
 }
@@ -159,6 +173,7 @@ fn coerce_max_notional_per_order(
             let value_str: String = value.bind(py).str()?.extract()?;
             result.insert(instrument_id, value_str);
         }
+
         Ok(result)
     })
 }
@@ -173,7 +188,7 @@ impl LiveDataEngineConfig {
         clippy::needless_pass_by_value,
         reason = "PyO3 #[new] requires owned params"
     )]
-    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origin_offset=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None))]
+    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origin_offset=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None, time_bars_time_zone=None))]
     fn py_new(
         time_bars_build_with_no_updates: Option<bool>,
         time_bars_timestamp_on_close: Option<bool>,
@@ -187,12 +202,19 @@ impl LiveDataEngineConfig {
         emit_quotes_from_book_depths: Option<bool>,
         external_clients: Option<Vec<ClientId>>,
         debug: Option<bool>,
+        time_bars_time_zone: Option<String>,
     ) -> PyResult<Self> {
+        if let Some(name) = &time_bars_time_zone {
+            get_timezone(name).map_err(to_pyvalue_err)?;
+        }
+
         let default = Self::default();
+
         let time_bars_interval_type = match time_bars_interval_type {
             Some(ref obj) => coerce_bar_interval_type(obj)?,
             None => default.time_bars_interval_type,
         };
+
         Ok(Self {
             time_bars_build_with_no_updates: time_bars_build_with_no_updates
                 .unwrap_or(default.time_bars_build_with_no_updates),
@@ -203,6 +225,7 @@ impl LiveDataEngineConfig {
             time_bars_interval_type,
             time_bars_build_delay: time_bars_build_delay.unwrap_or(default.time_bars_build_delay),
             time_bars_origin_offset: time_bars_origin_offset.unwrap_or_default(),
+            time_bars_time_zone,
             validate_data_sequence: validate_data_sequence
                 .unwrap_or(default.validate_data_sequence),
             buffer_deltas: buffer_deltas.unwrap_or(default.buffer_deltas),
@@ -213,6 +236,12 @@ impl LiveDataEngineConfig {
             debug: debug.unwrap_or(default.debug),
             qsize: default.qsize,
         })
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_time_zone")]
+    fn py_time_bars_time_zone(&self) -> Option<String> {
+        self.time_bars_time_zone.clone()
     }
 
     #[getter]
@@ -301,12 +330,13 @@ impl LiveDataEngineConfig {
 impl LiveRiskEngineConfig {
     /// Configuration for live risk engines.
     #[new]
-    #[pyo3(signature = (bypass=None, max_order_submit_rate=None, max_order_modify_rate=None, max_notional_per_order=None, debug=None))]
+    #[pyo3(signature = (bypass=None, max_order_submit_rate=None, max_order_modify_rate=None, max_notional_per_order=None, full_position_exit_venues=None, debug=None))]
     fn py_new(
         bypass: Option<bool>,
         max_order_submit_rate: Option<String>,
         max_order_modify_rate: Option<String>,
         max_notional_per_order: Option<HashMap<String, Py<PyAny>>>,
+        full_position_exit_venues: Option<Vec<Venue>>,
         debug: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
@@ -314,10 +344,13 @@ impl LiveRiskEngineConfig {
             max_order_submit_rate.unwrap_or_else(|| default.max_order_submit_rate.clone());
         let max_order_modify_rate =
             max_order_modify_rate.unwrap_or_else(|| default.max_order_modify_rate.clone());
+
         let max_notional_per_order = match max_notional_per_order {
             Some(raw) => coerce_max_notional_per_order(raw)?,
             None => HashMap::new(),
         };
+
+        let full_position_exit_venues = full_position_exit_venues.unwrap_or_default();
 
         parse_rate_limit(
             "LiveRiskEngineConfig.max_order_submit_rate",
@@ -340,6 +373,7 @@ impl LiveRiskEngineConfig {
             max_order_submit_rate,
             max_order_modify_rate,
             max_notional_per_order,
+            full_position_exit_venues,
             debug: debug.unwrap_or(default.debug),
             qsize: default.qsize,
         })
@@ -370,6 +404,12 @@ impl LiveRiskEngineConfig {
     }
 
     #[getter]
+    #[pyo3(name = "full_position_exit_venues")]
+    fn py_full_position_exit_venues(&self) -> Vec<Venue> {
+        self.full_position_exit_venues.clone()
+    }
+
+    #[getter]
     #[pyo3(name = "debug")]
     const fn py_debug(&self) -> bool {
         self.debug
@@ -386,11 +426,11 @@ impl LiveRiskEngineConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveExecEngineConfig {
+impl LiveExecutionEngineConfig {
     /// Configuration for live execution engines.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (load_cache=None, manage_own_order_books=None, snapshot_positions_interval_secs=None, external_clients=None, allow_overfills=None, reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, own_books_audit_interval_secs=None, debug=None))]
+    #[pyo3(signature = (load_cache=None, manage_own_order_books=None, snapshot_positions_interval_secs=None, external_clients=None, allow_overfills=None, reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, own_books_audit_interval_secs=None, debug=None, snapshot_orders=None, snapshot_positions=None, submission_recovery_policy=None))]
     fn py_new(
         load_cache: Option<bool>,
         manage_own_order_books: Option<bool>,
@@ -427,6 +467,9 @@ impl LiveExecEngineConfig {
         purge_account_events_lookback_mins: Option<u32>,
         own_books_audit_interval_secs: Option<f64>,
         debug: Option<bool>,
+        snapshot_orders: Option<bool>,
+        snapshot_positions: Option<bool>,
+        submission_recovery_policy: Option<SubmissionRecoveryPolicy>,
     ) -> PyResult<Self> {
         let default = Self::default();
 
@@ -434,8 +477,8 @@ impl LiveExecEngineConfig {
             load_cache: load_cache.unwrap_or(default.load_cache),
             manage_own_order_books: manage_own_order_books
                 .unwrap_or(default.manage_own_order_books),
-            snapshot_orders: default.snapshot_orders,
-            snapshot_positions: default.snapshot_positions,
+            snapshot_orders: snapshot_orders.unwrap_or(default.snapshot_orders),
+            snapshot_positions: snapshot_positions.unwrap_or(default.snapshot_positions),
             snapshot_positions_interval_secs,
             external_clients,
             allow_overfills: allow_overfills.unwrap_or(default.allow_overfills),
@@ -457,6 +500,8 @@ impl LiveExecEngineConfig {
                 .unwrap_or(default.inflight_check_threshold_ms),
             inflight_check_retries: inflight_check_retries
                 .unwrap_or(default.inflight_check_retries),
+            submission_recovery_policy: submission_recovery_policy
+                .unwrap_or(default.submission_recovery_policy),
             open_check_interval_secs,
             open_check_lookback_mins: open_check_lookback_mins.or(default.open_check_lookback_mins),
             open_check_threshold_ms: open_check_threshold_ms
@@ -486,6 +531,7 @@ impl LiveExecEngineConfig {
             own_books_audit_interval_secs,
             qsize: default.qsize,
         };
+
         config
             .validate_runtime_support()
             .map_err(config_error_to_pyvalue_err)?;
@@ -502,6 +548,18 @@ impl LiveExecEngineConfig {
     #[pyo3(name = "manage_own_order_books")]
     const fn py_manage_own_order_books(&self) -> bool {
         self.manage_own_order_books
+    }
+
+    #[getter]
+    #[pyo3(name = "snapshot_orders")]
+    const fn py_snapshot_orders(&self) -> bool {
+        self.snapshot_orders
+    }
+
+    #[getter]
+    #[pyo3(name = "snapshot_positions")]
+    const fn py_snapshot_positions(&self) -> bool {
+        self.snapshot_positions
     }
 
     #[getter]
@@ -580,6 +638,12 @@ impl LiveExecEngineConfig {
     #[pyo3(name = "inflight_check_threshold_ms")]
     const fn py_inflight_check_threshold_ms(&self) -> u32 {
         self.inflight_check_threshold_ms
+    }
+
+    #[getter]
+    #[pyo3(name = "submission_recovery_policy")]
+    const fn py_submission_recovery_policy(&self) -> SubmissionRecoveryPolicy {
+        self.submission_recovery_policy
     }
 
     #[getter]
@@ -761,10 +825,12 @@ impl InstrumentProviderConfig {
         log_warnings: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
+
         let filters = match filters {
             Some(raw) => coerce_json_config(raw)?,
             None => HashMap::new(),
         };
+
         Ok(Self {
             load_all: load_all.unwrap_or(default.load_all),
             load_ids,
@@ -795,10 +861,12 @@ impl InstrumentProviderConfig {
     #[getter]
     fn filters(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = pyo3::types::PyDict::new(py);
+
         for (k, v) in &self.filters {
             let py_val = json_value_to_py(py, v)?;
             dict.set_item(k, py_val)?;
         }
+
         Ok(dict.into_any().unbind())
     }
 
@@ -815,20 +883,56 @@ impl InstrumentProviderConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveDataClientConfig {
-    /// Configuration for live data clients.
+impl DataClientConfig {
+    /// Shared configuration for data clients registered with a live node.
     #[new]
-    #[pyo3(signature = (handle_revised_bars=None, instrument_provider=None, routing=None))]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    #[pyo3(signature = (handle_revised_bars=None, instrument_provider=None, routing=None, **_kwargs))]
     fn py_new(
         handle_revised_bars: Option<bool>,
         instrument_provider: Option<InstrumentProviderConfig>,
         routing: Option<RoutingConfig>,
+        _kwargs: Option<&Bound<'_, PyDict>>,
     ) -> Self {
         Self {
             handle_revised_bars: handle_revised_bars.unwrap_or(false),
             instrument_provider: instrument_provider.unwrap_or_default(),
             routing: routing.unwrap_or_default(),
         }
+    }
+
+    #[pyo3(signature = ())]
+    fn dict(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_values")?
+            .call1((slf,))?
+            .cast::<PyDict>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = ())]
+    fn json(slf: &Bound<'_, Self>) -> PyResult<Py<PyBytes>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_json")?
+            .call1((slf,))?
+            .cast::<PyBytes>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = (factory=None))]
+    fn to_importable(slf: &Bound<'_, Self>, factory: Option<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_importable")?
+            .call1((slf, factory))?
+            .unbind())
     }
 
     fn __repr__(&self) -> String {
@@ -857,18 +961,54 @@ impl LiveDataClientConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveExecClientConfig {
-    /// Configuration for live execution clients.
+impl ExecutionClientConfig {
+    /// Shared configuration for execution clients registered with a live node.
     #[new]
-    #[pyo3(signature = (instrument_provider=None, routing=None))]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    #[pyo3(signature = (instrument_provider=None, routing=None, **_kwargs))]
     fn py_new(
         instrument_provider: Option<InstrumentProviderConfig>,
         routing: Option<RoutingConfig>,
+        _kwargs: Option<Bound<'_, PyDict>>,
     ) -> Self {
         Self {
             instrument_provider: instrument_provider.unwrap_or_default(),
             routing: routing.unwrap_or_default(),
         }
+    }
+
+    #[pyo3(signature = ())]
+    fn dict(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_values")?
+            .call1((slf,))?
+            .cast::<PyDict>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = ())]
+    fn json(slf: &Bound<'_, Self>) -> PyResult<Py<PyBytes>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_json")?
+            .call1((slf,))?
+            .cast::<PyBytes>()?
+            .clone()
+            .unbind())
+    }
+
+    #[pyo3(signature = (factory=None))]
+    fn to_importable(slf: &Bound<'_, Self>, factory: Option<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        Ok(slf
+            .py()
+            .import("nautilus_trader.live.config")?
+            .getattr("config_importable")?
+            .call1((slf, factory))?
+            .unbind())
     }
 
     fn __repr__(&self) -> String {
@@ -928,9 +1068,11 @@ impl PluginConfig {
     #[getter]
     fn config(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let dict = PyDict::new(py);
+
         for (key, value) in &self.config {
             dict.set_item(key, json_value_to_py(py, value)?)?;
         }
+
         Ok(dict.unbind())
     }
 
@@ -942,11 +1084,59 @@ impl PluginConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
+impl QueueMonitorConfig {
+    /// Configuration for runner queue pressure monitoring.
+    #[new]
+    const fn py_new(
+        queue_depth_trigger: usize,
+        queue_depth_clear: usize,
+        mean_dispatch_ns_trigger: u64,
+        mean_dispatch_ns_clear: u64,
+    ) -> Self {
+        Self {
+            queue_depth_trigger,
+            queue_depth_clear,
+            mean_dispatch_ns_trigger,
+            mean_dispatch_ns_clear,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    #[getter]
+    const fn queue_depth_trigger(&self) -> usize {
+        self.queue_depth_trigger
+    }
+
+    #[getter]
+    const fn queue_depth_clear(&self) -> usize {
+        self.queue_depth_clear
+    }
+
+    #[getter]
+    const fn mean_dispatch_ns_trigger(&self) -> u64 {
+        self.mean_dispatch_ns_trigger
+    }
+
+    #[getter]
+    const fn mean_dispatch_ns_clear(&self) -> u64 {
+        self.mean_dispatch_ns_clear
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None, streaming=None, catalogs=None, *, data_clients=None, exec_clients=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
@@ -964,13 +1154,19 @@ impl LiveNodeConfig {
         cache: Option<CacheConfig>,
         msgbus: Option<MessageBusConfig>,
         portfolio: Option<PortfolioConfig>,
+        queue_monitor: Option<QueueMonitorConfig>,
         loop_debug: Option<bool>,
         data_engine: Option<LiveDataEngineConfig>,
         risk_engine: Option<LiveRiskEngineConfig>,
-        exec_engine: Option<LiveExecEngineConfig>,
+        exec_engine: Option<LiveExecutionEngineConfig>,
         controller: Option<ImportableControllerConfig>,
         plugins: Option<Vec<PluginConfig>>,
+        streaming: Option<StreamingConfig>,
+        catalogs: Option<Vec<DataCatalogConfig>>,
+        data_clients: Option<Bound<'_, PyDict>>,
+        exec_clients: Option<Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
+        let _ = (data_clients, exec_clients);
         let default = Self::default();
 
         let to_duration = |value: f64, name: &str| -> PyResult<Duration> {
@@ -1013,7 +1209,9 @@ impl LiveNodeConfig {
             msgbus,
             portfolio,
             emulator: None,
-            streaming: None,
+            streaming,
+            catalogs: catalogs.unwrap_or_default(),
+            queue_monitor,
             event_store: None,
             loop_debug: loop_debug.unwrap_or(false),
             data_engine: data_engine.unwrap_or_default(),
@@ -1026,12 +1224,78 @@ impl LiveNodeConfig {
         })
     }
 
+    #[gen_stub(skip)]
+    #[pyo3(signature = (*_args, **kwargs))]
+    fn __init__(
+        slf: &Bound<'_, Self>,
+        _args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
+        for name in ["data_clients", "exec_clients"] {
+            let values = kwargs
+                .map(|kwargs| kwargs.get_item(name))
+                .transpose()?
+                .flatten();
+
+            let values = match values {
+                Some(values) if !values.is_none() => values.cast::<PyDict>()?.copy()?,
+                _ => PyDict::new(slf.py()),
+            };
+
+            slf.setattr(format!("_{name}"), values)?;
+        }
+
+        Ok(())
+    }
+
+    #[getter]
+    fn data_clients(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        let values = slf.getattr("__dict__")?;
+        let values = values.cast::<PyDict>()?;
+        match values.get_item("_data_clients")? {
+            Some(values) => Ok(values.cast::<PyDict>()?.copy()?.unbind()),
+            None => Ok(slf
+                .borrow()
+                .data_clients
+                .clone()
+                .into_pyobject(slf.py())?
+                .unbind()),
+        }
+    }
+
+    #[getter]
+    fn exec_clients(slf: &Bound<'_, Self>) -> PyResult<Py<PyDict>> {
+        let values = slf.getattr("__dict__")?;
+        let values = values.cast::<PyDict>()?;
+        match values.get_item("_exec_clients")? {
+            Some(values) => Ok(values.cast::<PyDict>()?.copy()?.unbind()),
+            None => Ok(slf
+                .borrow()
+                .exec_clients
+                .clone()
+                .into_pyobject(slf.py())?
+                .unbind()),
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
 
     fn __str__(&self) -> String {
         format!("{self:?}")
+    }
+
+    #[getter]
+    #[pyo3(name = "streaming")]
+    fn py_streaming(&self) -> Option<StreamingConfig> {
+        self.streaming.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "catalogs")]
+    fn py_catalogs(&self) -> Vec<DataCatalogConfig> {
+        self.catalogs.clone()
     }
 
     #[getter]
@@ -1120,6 +1384,12 @@ impl LiveNodeConfig {
     }
 
     #[getter]
+    #[pyo3(name = "queue_monitor")]
+    fn py_queue_monitor(&self) -> Option<QueueMonitorConfig> {
+        self.queue_monitor.clone()
+    }
+
+    #[getter]
     #[pyo3(name = "loop_debug")]
     const fn py_loop_debug(&self) -> bool {
         self.loop_debug
@@ -1139,7 +1409,7 @@ impl LiveNodeConfig {
 
     #[getter]
     #[pyo3(name = "exec_engine")]
-    fn py_exec_engine(&self) -> LiveExecEngineConfig {
+    fn py_exec_engine(&self) -> LiveExecutionEngineConfig {
         self.exec_engine.clone()
     }
 
@@ -1151,5 +1421,29 @@ impl LiveNodeConfig {
     #[getter]
     fn controller(&self) -> Option<ImportableControllerConfig> {
         self.controller.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn json_value_to_py_preserves_unsigned_integer() {
+        Python::initialize();
+        Python::attach(|py| {
+            let expected = u64::MAX;
+            let value = serde_json::Value::from(expected);
+            let result = json_value_to_py(py, &value).expect("JSON value must convert to Python");
+
+            assert_eq!(
+                result
+                    .extract::<u64>(py)
+                    .expect("Python value must remain an unsigned integer"),
+                expected
+            );
+        });
     }
 }

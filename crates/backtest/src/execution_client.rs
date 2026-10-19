@@ -29,7 +29,7 @@ use nautilus_common::{
     },
     msgbus::{self, MessagingSwitchboard},
 };
-use nautilus_core::{SharedCell, UnixNanos, WeakCell};
+use nautilus_core::{Params, UnixNanos, WeakCell};
 use nautilus_execution::client::core::ExecutionClientCore;
 use nautilus_model::{
     accounts::AccountAny,
@@ -89,8 +89,7 @@ impl BacktestExecutionClient {
     ) -> Self {
         let routing = routing.unwrap_or(false);
         let frozen_account = frozen_account.unwrap_or(false);
-        let exchange_shared: SharedCell<SimulatedExchange> = SharedCell::from(exchange.clone());
-        let exchange_id = exchange_shared.borrow().id;
+        let exchange_id = exchange.borrow().id;
         let account_type = exchange.borrow().account_type;
         let base_currency = exchange.borrow().base_currency;
 
@@ -110,7 +109,7 @@ impl BacktestExecutionClient {
         Self {
             core,
             factory,
-            exchange: exchange_shared.downgrade(),
+            exchange: WeakCell::from(Rc::downgrade(exchange)),
             cache,
             clock,
             queued_events: Rc::new(RefCell::new(Vec::new())),
@@ -130,6 +129,11 @@ impl BacktestExecutionClient {
         for event in events {
             msgbus::send_order_event(endpoint, event);
         }
+    }
+
+    pub(crate) fn order_event_handler(&self) -> Rc<dyn Fn(OrderEventAny)> {
+        let queued_events = Rc::clone(&self.queued_events);
+        Rc::new(move |event| queued_events.borrow_mut().push(event))
     }
 }
 
@@ -165,11 +169,12 @@ impl ExecutionClient for BacktestExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()> {
         let ts_init = self.clock.borrow().timestamp_ns();
         let state = self
             .factory
-            .generate_account_state(balances, margins, reported, ts_event, ts_init);
+            .generate_account_state(balances, margins, reported, ts_event, ts_init, info);
         let endpoint = MessagingSwitchboard::portfolio_update_account();
         msgbus::send_account_state(endpoint, &state);
         Ok(())
@@ -294,9 +299,12 @@ impl ExecutionClient for BacktestExecutionClient {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::TestClock, messages::execution::QueryOrder};
-    use nautilus_core::UUID4;
-    use nautilus_execution::models::latency::StaticLatencyModel;
+    use nautilus_common::{clock::VirtualClock, messages::execution::QueryOrder};
+    use nautilus_core::{DurationNanos, UUID4};
+    use nautilus_execution::models::{
+        fee::{FeeModelAny, MakerTakerFeeModel},
+        latency::{LatencyModelHandle, StaticLatencyModel},
+    };
     use nautilus_model::{
         enums::{AccountType, BookType, OmsType},
         identifiers::{InstrumentId, StrategyId},
@@ -310,12 +318,12 @@ mod tests {
 
     fn setup_client_with_latency() -> (BacktestExecutionClient, Rc<RefCell<SimulatedExchange>>) {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let latency_model = StaticLatencyModel::new(
-            UnixNanos::default(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            UnixNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
         );
         let config = SimulatedVenueConfig::builder()
             .venue(Venue::new("SIM"))
@@ -323,7 +331,8 @@ mod tests {
             .account_type(AccountType::Margin)
             .book_type(BookType::L2_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
-            .latency_model(Box::new(latency_model))
+            .latency_model(LatencyModelHandle::new(latency_model))
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
             .build()
             .unwrap();
         let exchange = Rc::new(RefCell::new(
@@ -367,6 +376,23 @@ mod tests {
             None,
             None,
         )
+    }
+
+    #[rstest]
+    fn test_new_holds_weak_reference_to_source_exchange() {
+        let (client, exchange) = setup_client_with_latency();
+
+        // The client must not co-own the exchange, otherwise the exchange owning the
+        // client closes an unbreakable cycle.
+        assert_eq!(Rc::strong_count(&exchange), 1);
+
+        let upgraded: Rc<RefCell<SimulatedExchange>> = client
+            .exchange
+            .upgrade()
+            .expect("exchange outlives the client here")
+            .into();
+
+        assert!(Rc::ptr_eq(&upgraded, &exchange));
     }
 
     #[rstest]

@@ -15,18 +15,14 @@
 
 #![allow(unused_assignments)] // Fields are accessed via methods, false positive from nightly
 
-use std::{
-    fmt::{Debug, Display},
-    fs,
-    path::Path,
-};
+use std::fmt::{Debug, Display};
 
 use nautilus_core::{
     env::{get_or_env_var, get_or_env_var_opt},
     hex,
+    string::secret::REDACTED,
 };
-use serde::Deserialize;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{
     common::enums::HyperliquidEnvironment,
@@ -55,7 +51,7 @@ pub struct EvmPrivateKey {
 impl EvmPrivateKey {
     /// Creates a new EVM private key from hex string.
     pub fn new(key: &str) -> Result<Self> {
-        let key = key.trim().to_string();
+        let key = Zeroizing::new(key.trim().to_string());
         let hex_key = key.strip_prefix("0x").unwrap_or(&key);
 
         // Validate hex format and length
@@ -70,8 +66,8 @@ impl EvmPrivateKey {
         }
 
         // Convert to lowercase for consistency
-        let normalized = hex_key.to_lowercase();
-        let formatted = format!("0x{normalized}");
+        let normalized = Zeroizing::new(hex_key.to_lowercase());
+        let formatted = format!("0x{}", normalized.as_str());
 
         // Parse to bytes for validation
         let raw_bytes = hex::decode(&normalized)
@@ -102,13 +98,13 @@ impl EvmPrivateKey {
 
 impl Debug for EvmPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("EvmPrivateKey(***redacted***)")
+        write!(f, "EvmPrivateKey({REDACTED})")
     }
 }
 
 impl Display for EvmPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("EvmPrivateKey(***redacted***)")
+        write!(f, "EvmPrivateKey({REDACTED})")
     }
 }
 
@@ -198,13 +194,17 @@ impl Secrets {
     ) -> Result<Self> {
         let (pk_env_var, vault_env_var) = credential_env_vars(environment);
 
-        let pk_str = get_or_env_var(
-            private_key
-                .filter(|s| !s.trim().is_empty())
-                .map(String::from),
-            pk_env_var,
-        )
-        .map_err(|_| Error::bad_request(format!("{pk_env_var} environment variable is not set")))?;
+        let pk_str = Zeroizing::new(
+            get_or_env_var(
+                private_key
+                    .filter(|s| !s.trim().is_empty())
+                    .map(String::from),
+                pk_env_var,
+            )
+            .map_err(|_| {
+                Error::bad_request(format!("{pk_env_var} environment variable is not set"))
+            })?,
+        );
 
         let vault_str = get_or_env_var_opt(
             vault_address
@@ -253,62 +253,6 @@ impl Secrets {
         let vault_address = match vault_address_str {
             Some(addr_str) if !addr_str.trim().is_empty() => Some(VaultAddress::parse(addr_str)?),
             _ => None,
-        };
-
-        Ok(Self {
-            private_key,
-            vault_address,
-            environment,
-        })
-    }
-
-    /// Load secrets from JSON file
-    ///
-    /// Expected JSON format:
-    /// ```json
-    /// {
-    ///   "privateKey": "0x...",
-    ///   "vaultAddress": "0x..." (optional),
-    ///   "network": "mainnet" | "testnet" (optional)
-    /// }
-    /// ```
-    pub fn from_file(path: &Path) -> Result<Self> {
-        let mut content = fs::read_to_string(path).map_err(Error::Io)?;
-
-        let result = Self::from_json(&content);
-
-        // Zeroize the file content from memory
-        content.zeroize();
-
-        result
-    }
-
-    /// Parse secrets from JSON string
-    pub fn from_json(json: &str) -> Result<Self> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct RawSecrets {
-            private_key: String,
-            #[serde(default)]
-            vault_address: Option<String>,
-            #[serde(default)]
-            network: Option<String>,
-        }
-
-        let raw: RawSecrets = serde_json::from_str(json)
-            .map_err(|e| Error::bad_request(format!("Invalid JSON: {e}")))?;
-
-        let private_key = EvmPrivateKey::new(&raw.private_key)?;
-
-        let vault_address = match raw.vault_address {
-            Some(addr) => Some(VaultAddress::parse(&addr)?),
-            None => None,
-        };
-
-        let environment = if matches!(raw.network.as_deref(), Some("testnet" | "test")) {
-            HyperliquidEnvironment::Testnet
-        } else {
-            HyperliquidEnvironment::Mainnet
         };
 
         Ok(Self {
@@ -382,7 +326,7 @@ mod tests {
     fn test_evm_private_key_debug_redacts() {
         let key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
         let debug_str = format!("{key:?}");
-        assert_eq!(debug_str, "EvmPrivateKey(***redacted***)");
+        assert_eq!(debug_str, format!("EvmPrivateKey({REDACTED})"));
         assert!(!debug_str.contains("1234"));
     }
 
@@ -407,37 +351,6 @@ mod tests {
         assert!(debug_str.starts_with("VaultAddress(0x1234"));
         assert!(debug_str.ends_with("7890)"));
         assert!(debug_str.contains("..."));
-    }
-
-    #[rstest]
-    fn test_secrets_from_json() {
-        let json = format!(
-            r#"{{
-            "privateKey": "{TEST_PRIVATE_KEY}",
-            "vaultAddress": "{TEST_VAULT_ADDRESS}",
-            "network": "testnet"
-        }}"#
-        );
-
-        let secrets = Secrets::from_json(&json).unwrap();
-        assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
-        assert!(secrets.vault_address.is_some());
-        assert_eq!(secrets.vault_address.unwrap().to_hex(), TEST_VAULT_ADDRESS);
-        assert_eq!(secrets.environment, HyperliquidEnvironment::Testnet);
-    }
-
-    #[rstest]
-    fn test_secrets_from_json_minimal() {
-        let json = format!(
-            r#"{{
-            "privateKey": "{TEST_PRIVATE_KEY}"
-        }}"#
-        );
-
-        let secrets = Secrets::from_json(&json).unwrap();
-        assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
-        assert!(secrets.vault_address.is_none());
-        assert_eq!(secrets.environment, HyperliquidEnvironment::Mainnet);
     }
 
     #[rstest]

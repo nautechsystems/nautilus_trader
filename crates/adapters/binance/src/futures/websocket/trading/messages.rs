@@ -86,6 +86,8 @@ pub enum BinanceFuturesWsTradingMessage {
     OrderRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.
@@ -102,6 +104,8 @@ pub enum BinanceFuturesWsTradingMessage {
     CancelRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.
@@ -118,6 +122,8 @@ pub enum BinanceFuturesWsTradingMessage {
     ModifyRejected {
         /// Request ID for correlation.
         request_id: String,
+        /// Venue response status.
+        status: u16,
         /// Error code from venue.
         code: i32,
         /// Error message from venue.

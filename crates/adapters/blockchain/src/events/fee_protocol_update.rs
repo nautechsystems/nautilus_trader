@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     defi::{PoolIdentifier, SharedChain, SharedDex, data::PoolFeeProtocolUpdate},
@@ -79,7 +81,7 @@ impl FeeProtocolUpdateEvent {
     ) -> PoolFeeProtocolUpdate {
         PoolFeeProtocolUpdate::new(
             chain,
-            self.dex.clone(),
+            Arc::clone(&self.dex),
             instrument_id,
             self.pool_identifier,
             self.block_number,

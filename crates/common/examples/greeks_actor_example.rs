@@ -36,7 +36,6 @@ use nautilus_model::{
         CustomData,
         greeks::{GreeksData, PortfolioGreeks},
     },
-    enums::PositionSide,
     identifiers::{InstrumentId, TraderId},
 };
 
@@ -79,7 +78,6 @@ impl GreeksActor {
     /// Calculates portfolio greeks.
     pub(crate) fn calculate_portfolio_greeks(&self) -> anyhow::Result<PortfolioGreeks> {
         PortfolioGreeksParams::builder()
-            .side(PositionSide::NoPositionSide)
             .cache_greeks(true)
             .publish_greeks(true)
             .build()

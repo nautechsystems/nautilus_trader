@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-polymarket"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -26,6 +25,7 @@ examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
+  "nautilus-execution/extension-module",
   "nautilus-live/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
@@ -36,6 +36,7 @@ python = [
   "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
+  "nautilus-execution/python",
   "nautilus-live/python",
   "nautilus-model/python",
   "nautilus-network/python",
@@ -54,27 +55,34 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
+nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
-nautilus-persistence-macros = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true, features = ["provider-http", "network", "reqwest"] }
+alloy = { workspace = true, features = [
+  "contract",
+  "signer-local",
+  "provider-http",
+  "reqwest",
+  "reqwest-rustls-tls",
+] }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -96,7 +104,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-execution = { workspace = true }
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
 nautilus-sandbox = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
@@ -112,6 +120,10 @@ toml = { workspace = true }
 
 [[bench]]
 name = "data"
+harness = false
+
+[[bench]]
+name = "effective_deltas"
 harness = false
 
 [[bench]]
@@ -192,7 +204,16 @@ path = "examples/new_market_monitor.rs"
 required-features = ["examples"]
 doc = false
 
+[[example]]
+name = "polymarket-session-keys"
+path = "examples/session_keys.rs"
+doc = false
+
+# Public market-data validation; explicitly connects to Polymarket mainnet from a served region.
+# Run with `cargo test --package nautilus-polymarket --features examples --test polymarket-book-stress -- --timeout 10 --rounds 12`
 [[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]
+name = "polymarket-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

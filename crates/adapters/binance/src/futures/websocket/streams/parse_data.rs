@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parsing utilities for Binance Futures WebSocket JSON messages.
+//! Parsing for Binance Futures WebSocket JSON messages.
 
 use std::str::FromStr;
 
@@ -29,7 +29,7 @@ use nautilus_model::{
     },
     identifiers::TradeId,
     instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+    types::Price,
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -68,19 +68,15 @@ pub fn parse_agg_trade(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = msg
-        .price
-        .parse::<f64>()
+    let price = parse_required_price_at_precision(&msg.price, price_precision, "price")
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
-    let size = msg
-        .quantity
-        .parse::<f64>()
+    let size = parse_required_quantity_at_precision(&msg.quantity, size_precision, "quantity")
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
     let aggressor_side = if msg.is_buyer_maker {
-        AggressorSide::Seller
+        AggressorSide::Sell
     } else {
-        AggressorSide::Buyer
+        AggressorSide::Buy
     };
 
     let ts_event = parse_millis_or_init(msg.trade_time, "Futures aggregate trade time", ts_init);
@@ -88,8 +84,8 @@ pub fn parse_agg_trade(
 
     Ok(TradeTick::new(
         instrument_id,
-        Price::new(price, price_precision),
-        Quantity::new(size, size_precision),
+        price,
+        size,
         aggressor_side,
         trade_id,
         ts_event,
@@ -111,19 +107,15 @@ pub fn parse_trade(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let price = msg
-        .price
-        .parse::<f64>()
+    let price = parse_required_price_at_precision(&msg.price, price_precision, "price")
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
-    let size = msg
-        .quantity
-        .parse::<f64>()
+    let size = parse_required_quantity_at_precision(&msg.quantity, size_precision, "quantity")
         .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
     let aggressor_side = if msg.is_buyer_maker {
-        AggressorSide::Seller
+        AggressorSide::Sell
     } else {
-        AggressorSide::Buyer
+        AggressorSide::Buy
     };
 
     let ts_event = parse_millis_or_init(msg.trade_time, "Futures trade time", ts_init);
@@ -131,8 +123,8 @@ pub fn parse_trade(
 
     Ok(TradeTick::new(
         instrument_id,
-        Price::new(price, price_precision),
-        Quantity::new(size, size_precision),
+        price,
+        size,
         aggressor_side,
         trade_id,
         ts_event,
@@ -154,22 +146,18 @@ pub fn parse_book_ticker(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let bid_price = msg
-        .best_bid_price
-        .parse::<f64>()
-        .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
-    let bid_size = msg
-        .best_bid_qty
-        .parse::<f64>()
-        .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
-    let ask_price = msg
-        .best_ask_price
-        .parse::<f64>()
-        .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
-    let ask_size = msg
-        .best_ask_qty
-        .parse::<f64>()
-        .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
+    let bid_price =
+        parse_required_price_at_precision(&msg.best_bid_price, price_precision, "best_bid_price")
+            .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
+    let bid_size =
+        parse_required_quantity_at_precision(&msg.best_bid_qty, size_precision, "best_bid_qty")
+            .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
+    let ask_price =
+        parse_required_price_at_precision(&msg.best_ask_price, price_precision, "best_ask_price")
+            .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
+    let ask_size =
+        parse_required_quantity_at_precision(&msg.best_ask_qty, size_precision, "best_ask_qty")
+            .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
     let ts_event = parse_millis_or_init(
         msg.transaction_time,
@@ -179,10 +167,10 @@ pub fn parse_book_ticker(
 
     Ok(QuoteTick::new(
         instrument_id,
-        Price::new(bid_price, price_precision),
-        Price::new(ask_price, price_precision),
-        Quantity::new(bid_size, size_precision),
-        Quantity::new(ask_size, size_precision),
+        bid_price,
+        ask_price,
+        bid_size,
+        ask_size,
         ts_event,
         ts_init,
     ))
@@ -192,11 +180,28 @@ pub fn parse_book_ticker(
 ///
 /// # Errors
 ///
-/// Returns an error if parsing fails.
+/// Returns an error if parsing fails or the update contains no levels.
 pub fn parse_depth_update(
     msg: &BinanceFuturesDepthUpdateMsg,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
+) -> BinanceWsResult<OrderBookDeltas> {
+    parse_book_depth(msg, instrument, ts_init, false)
+}
+
+pub(crate) fn parse_depth_snapshot(
+    msg: &BinanceFuturesDepthUpdateMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> BinanceWsResult<OrderBookDeltas> {
+    parse_book_depth(msg, instrument, ts_init, true)
+}
+
+fn parse_book_depth(
+    msg: &BinanceFuturesDepthUpdateMsg,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+    snapshot: bool,
 ) -> BinanceWsResult<OrderBookDeltas> {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
@@ -208,32 +213,38 @@ pub fn parse_depth_update(
         ts_init,
     );
 
-    let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len());
+    let mut deltas = Vec::with_capacity(msg.bids.len() + msg.asks.len() + usize::from(snapshot));
+    if snapshot {
+        deltas.push(OrderBookDelta::clear(
+            instrument_id,
+            msg.final_update_id,
+            ts_event,
+            ts_init,
+        ));
+    }
+
+    let flags = if snapshot {
+        RecordFlag::F_SNAPSHOT as u8
+    } else {
+        0
+    };
 
     // Process bids
-    for (i, bid) in msg.bids.iter().enumerate() {
-        let price = bid[0]
-            .parse::<f64>()
+    for bid in &msg.bids {
+        let price = parse_required_price_at_precision(&bid[0], price_precision, "bid_price")
             .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
-        let size = bid[1]
-            .parse::<f64>()
+        let size = parse_required_quantity_at_precision(&bid[1], size_precision, "bid_quantity")
             .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
-        let action = if size == 0.0 {
+        let action = if size.is_zero() {
             BookAction::Delete
+        } else if snapshot {
+            BookAction::Add
         } else {
             BookAction::Update
         };
 
-        let is_last = i == msg.bids.len() - 1 && msg.asks.is_empty();
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-        let order = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(price, price_precision),
-            Quantity::new(size, size_precision),
-            0,
-        );
+        let order = BookOrder::new(OrderSide::Buy, price, size, 0);
 
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -247,29 +258,21 @@ pub fn parse_depth_update(
     }
 
     // Process asks
-    for (i, ask) in msg.asks.iter().enumerate() {
-        let price = ask[0]
-            .parse::<f64>()
+    for ask in &msg.asks {
+        let price = parse_required_price_at_precision(&ask[0], price_precision, "ask_price")
             .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
-        let size = ask[1]
-            .parse::<f64>()
+        let size = parse_required_quantity_at_precision(&ask[1], size_precision, "ask_quantity")
             .map_err(|e| BinanceWsError::ParseError(e.to_string()))?;
 
-        let action = if size == 0.0 {
+        let action = if size.is_zero() {
             BookAction::Delete
+        } else if snapshot {
+            BookAction::Add
         } else {
             BookAction::Update
         };
 
-        let is_last = i == msg.asks.len() - 1;
-        let flags = if is_last { RecordFlag::F_LAST as u8 } else { 0 };
-
-        let order = BookOrder::new(
-            OrderSide::Sell,
-            Price::new(price, price_precision),
-            Quantity::new(size, size_precision),
-            0,
-        );
+        let order = BookOrder::new(OrderSide::Sell, price, size, 0);
 
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -282,7 +285,12 @@ pub fn parse_depth_update(
         ));
     }
 
-    Ok(OrderBookDeltas::new(instrument_id, deltas))
+    if let Some(last) = deltas.last_mut() {
+        last.flags |= RecordFlag::F_LAST as u8;
+    }
+
+    OrderBookDeltas::new_checked(instrument_id, deltas)
+        .map_err(|e| BinanceWsError::ParseError(e.to_string()))
 }
 
 /// Parses a mark price message into `MarkPriceUpdate`, `IndexPriceUpdate`, and `FundingRateUpdate`.
@@ -528,6 +536,7 @@ pub fn extract_event_type(json: &serde_json::Value) -> Option<BinanceWsEventType
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{enums::BookType, orderbook::OrderBook, types::Quantity};
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde::de::DeserializeOwned;
@@ -613,7 +622,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument.id());
         assert_eq!(trade.price, Price::new(0.001, PRICE_PRECISION));
         assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::new("5933014"));
         assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
         assert_eq!(trade.ts_init, ts_init);
@@ -645,7 +654,7 @@ mod tests {
         assert_eq!(trade.instrument_id, instrument.id());
         assert_eq!(trade.price, Price::new(0.001, PRICE_PRECISION));
         assert_eq!(trade.size, Quantity::new(100.0, SIZE_PRECISION));
-        assert_eq!(trade.aggressor_side, AggressorSide::Seller);
+        assert_eq!(trade.aggressor_side, AggressorSide::Sell);
         assert_eq!(trade.trade_id, TradeId::new("5933014"));
         assert_eq!(trade.ts_event, UnixNanos::from(123_456_785_000_000u64));
         assert_eq!(trade.ts_init, ts_init);
@@ -685,7 +694,7 @@ mod tests {
         assert_eq!(deltas.ts_event, UnixNanos::from(123_456_788_000_000u64));
         assert_eq!(deltas.ts_init, ts_init);
         assert_eq!(deltas.deltas[0].action, BookAction::Update);
-        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy.into());
         assert_eq!(
             deltas.deltas[0].order.price,
             Price::new(0.0024, PRICE_PRECISION)
@@ -695,7 +704,7 @@ mod tests {
             Quantity::new(10.0, SIZE_PRECISION)
         );
         assert_eq!(deltas.deltas[1].action, BookAction::Update);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell.into());
         assert_eq!(
             deltas.deltas[1].order.price,
             Price::new(0.0026, PRICE_PRECISION)
@@ -705,6 +714,136 @@ mod tests {
             Quantity::new(100.0, SIZE_PRECISION)
         );
         assert_eq!(deltas.deltas[1].flags, RecordFlag::F_LAST as u8);
+    }
+
+    #[rstest]
+    fn test_parse_depth_update_without_levels_returns_error() {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesDepthUpdateMsg = load_market_fixture("depth_update_stream.json");
+        msg.bids.clear();
+        msg.asks.clear();
+
+        let result = parse_depth_update(&msg, &instrument, UnixNanos::from(1));
+
+        assert!(matches!(result, Err(BinanceWsError::ParseError(_))));
+    }
+
+    #[rstest]
+    #[case::five(5)]
+    #[case::ten(10)]
+    #[case::twenty(20)]
+    fn test_parse_depth_snapshot_replaces_levels(#[case] depth: usize) {
+        let instrument = sample_instrument();
+        let mut msg: BinanceFuturesDepthUpdateMsg = load_market_fixture("depth_update_stream.json");
+        let ts_init = UnixNanos::from(1_700_000_001_000_000_000u64);
+        let mut book = OrderBook::new(instrument.id(), BookType::L2_MBP);
+
+        for offset in [0, 100] {
+            msg.bids = (0..depth)
+                .map(|i| [(1000 - offset - i).to_string(), "2.000".into()])
+                .collect();
+            msg.asks = (0..depth)
+                .map(|i| [(2000 + offset + i).to_string(), "3.000".into()])
+                .collect();
+            let snapshot = parse_depth_snapshot(&msg, &instrument, ts_init).unwrap();
+            let mut expected = vec![OrderBookDelta::clear(
+                instrument.id(),
+                msg.final_update_id,
+                snapshot.ts_event,
+                ts_init,
+            )];
+
+            for (side, levels) in [(OrderSide::Buy, &msg.bids), (OrderSide::Sell, &msg.asks)] {
+                for level in levels {
+                    expected.push(OrderBookDelta::new(
+                        instrument.id(),
+                        BookAction::Add,
+                        BookOrder::new(
+                            side,
+                            Price::from_str(&format!("{}.00000000", level[0])).unwrap(),
+                            Quantity::from_str(&level[1]).unwrap(),
+                            0,
+                        ),
+                        RecordFlag::F_SNAPSHOT as u8,
+                        msg.final_update_id,
+                        UnixNanos::from(123_456_788_000_000u64),
+                        ts_init,
+                    ));
+                }
+            }
+
+            expected.last_mut().unwrap().flags =
+                RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8;
+            assert_eq!(snapshot.instrument_id, instrument.id());
+            assert_eq!(snapshot.sequence, msg.final_update_id);
+            assert_eq!(snapshot.deltas, expected);
+            book.apply_deltas(&snapshot).unwrap();
+            assert_eq!(book.bids(None).count(), depth);
+            assert_eq!(book.asks(None).count(), depth);
+            for (actual, input) in book.bids(None).zip(&msg.bids) {
+                assert_eq!(
+                    actual.price.value.as_decimal(),
+                    Decimal::from_str(&input[0]).unwrap()
+                );
+                assert_eq!(actual.size_decimal(), dec!(2));
+            }
+
+            for (actual, input) in book.asks(None).zip(&msg.asks) {
+                assert_eq!(
+                    actual.price.value.as_decimal(),
+                    Decimal::from_str(&input[0]).unwrap()
+                );
+                assert_eq!(actual.size_decimal(), dec!(3));
+            }
+        }
+
+        msg.bids.clear();
+        msg.asks.clear();
+        let empty = parse_depth_snapshot(&msg, &instrument, ts_init).unwrap();
+        book.apply_deltas(&empty).unwrap();
+        assert_eq!(empty.deltas.len(), 1);
+        assert_eq!(
+            empty.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+        assert_eq!(book.bids(None).count(), 0);
+        assert_eq!(book.asks(None).count(), 0);
+    }
+
+    #[rstest]
+    fn test_market_data_parsers_preserve_decimal_prices() {
+        let instrument = sample_instrument();
+        let ts_init = UnixNanos::from(1);
+        let price = "123456789.12345678";
+        let mut agg: BinanceFuturesAggTradeMsg = load_market_fixture("agg_trade_stream.json");
+        agg.price = price.to_string();
+        let mut trade: BinanceFuturesTradeMsg = load_market_fixture("trade_stream.json");
+        trade.price = price.to_string();
+        let mut book: BinanceFuturesBookTickerMsg = load_market_fixture("book_ticker_stream.json");
+        book.best_bid_price = price.to_string();
+        book.best_ask_price = "123456789.87654321".to_string();
+        let mut depth: BinanceFuturesDepthUpdateMsg =
+            load_market_fixture("depth_update_stream.json");
+        depth.bids[0][0] = price.to_string();
+        depth.asks[0][0] = book.best_ask_price.clone();
+        depth.asks[0][1] = "0.000".to_string();
+
+        let agg = parse_agg_trade(&agg, &instrument, ts_init).unwrap();
+        let trade = parse_trade(&trade, &instrument, ts_init).unwrap();
+        let book = parse_book_ticker(&book, &instrument, ts_init).unwrap();
+        let depth = parse_depth_update(&depth, &instrument, ts_init).unwrap();
+
+        assert_eq!(agg.price, Price::from(price));
+        assert_eq!(trade.price, Price::from(price));
+        assert_eq!(book.bid_price, Price::from(price));
+        assert_eq!(book.ask_price, Price::from("123456789.87654321"));
+        assert_eq!(depth.deltas[0].order.price, Price::from(price));
+        assert_eq!(
+            depth.deltas[1].order.price,
+            Price::from("123456789.87654321")
+        );
+        assert_eq!(depth.deltas[1].order.size, Quantity::from("0.000"));
+        assert_eq!(depth.deltas[1].action, BookAction::Delete);
     }
 
     #[rstest]

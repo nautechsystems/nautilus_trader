@@ -29,18 +29,16 @@ Examples include `XAUUSD.IDEALPRO` and venue-specific commodity cash symbols.
 | `min_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`    | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `Commodity` has instrument class `Spot`.
-- It allows negative prices: spot markets such as electricity or oil can trade below zero,
-  and the `RiskEngine` accepts negative prices on both order submission and modification.
+- It allows negative prices: spot markets such as electricity or oil can trade below zero. The `RiskEngine`
+  accepts negative prices on both order submission and modification.
 - It is never inverse, and its cost currency is the quote currency.
 - It has no activation timestamp, expiry, strike, option kind, or settlement currency field.
 - Use `FuturesContract` for dated exchange-traded commodity futures.
@@ -98,9 +96,8 @@ gold = Commodity(
 
 ## Adapters
 
-Representative adapters that create or consume `Commodity` instruments include:
-
-- [Interactive Brokers](../../integrations/ib.md) for spot commodity and metal contracts.
+The [Interactive Brokers](../../integrations/interactive_brokers.md) adapter creates or consumes
+`Commodity` instruments for spot commodity and metal contracts.
 
 ## Related guides
 

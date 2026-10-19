@@ -1,9 +1,9 @@
 # Backtesting
 
-Backtesting simulates trading against historical data using the same core system components used in
-live trading: built-in engines, the `Cache`, the [MessageBus](../message_bus.md), `Portfolio`,
-[Actors](../actors.md), [Strategies](../strategies.md), [Execution Algorithms](../execution.md), and
-user-defined modules.
+Backtesting simulates trading against historical data with the same core components as live trading. These
+components include built-in engines, the `Cache`, the [MessageBus](../message_bus.md), `Portfolio`,
+[Actors](../actors.md), [Strategies](../strategies.md), [Execution Algorithms](../execution/algorithms.md),
+and user-defined modules.
 
 A `BacktestEngine` processes a stream of historical data. When the stream is exhausted, the engine
 produces results and performance metrics for analysis. NautilusTrader offers two API levels for
@@ -11,11 +11,10 @@ backtesting:
 
 | API level  | Use when                                                                |
 | ---------- | ----------------------------------------------------------------------- |
-| High‑level | You want `BacktestNode`, config objects, data catalogs, and batch runs. |
-| Low‑level  | You want direct `BacktestEngine` control and manual component setup.    |
+| High-level | You want `BacktestNode`, config objects, data catalogs, and batch runs. |
+| Low-level  | You want direct `BacktestEngine` control and manual component setup.    |
 
-The pages in this section describe the current Rust backtest engine and its Python package-root
-API.
+This section describes the Rust backtest engine and its Python package-root API.
 
 ## Reading guide
 
@@ -32,6 +31,11 @@ end to end:
 | 6    | [Bar execution](bar-execution.md)                       | Use bars, OHLC sequencing, and bar timing.      |
 | 7    | [Fill models](fill-models.md)                           | Configure slippage and probabilistic fills.     |
 | 8    | [Accounts and margin](accounts-and-margin.md)           | Configure funding, balances, and margin models. |
+
+## Simulation modules
+
+[Simulation modules](simulation-modules.md) describes module configuration, lifecycle, failure
+handling, and built-in FX rollover and CFD swap behavior.
 
 ## Related guides
 

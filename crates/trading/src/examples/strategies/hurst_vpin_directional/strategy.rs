@@ -18,7 +18,11 @@
 use std::{collections::VecDeque, fmt::Debug};
 
 use ahash::AHashSet;
-use nautilus_common::actor::DataActor;
+use nautilus_common::{
+    actor::DataActor,
+    config::{ConfigError, ConfigResult},
+};
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::{AggressorSide, OrderSide, PositionSide, TimeInForce},
@@ -59,20 +63,27 @@ pub struct HurstVpinDirectional {
     pub(super) hurst: Option<f64>,
     pub(super) vpin: Option<f64>,
     pub(super) signed_vpin: Option<f64>,
-    pub(super) position_opened_ns: Option<u64>,
+    pub(super) position_opened_ns: Option<UnixNanos>,
     pub(super) exit_cooldown: bool,
     pub(super) entry_order_id: Option<ClientOrderId>,
     pub(super) exit_order_ids: AHashSet<ClientOrderId>,
 }
 
 impl HurstVpinDirectional {
-    /// Creates a new [`HurstVpinDirectional`] instance from config.
-    #[must_use]
-    pub fn new(config: HurstVpinDirectionalConfig) -> Self {
+    /// Creates a new [`HurstVpinDirectional`] instance from config with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either rolling window is outside `[1, 16_384]` or the base strategy
+    /// configuration is invalid.
+    pub fn new_checked(config: HurstVpinDirectionalConfig) -> ConfigResult<Self> {
+        config.validate()?;
         let hurst_window = config.hurst_window;
         let vpin_window = config.vpin_window;
-        Self {
-            core: StrategyCore::new(config.base.clone()),
+        let core = StrategyCore::new_checked(config.base.clone())
+            .map_err(|e| ConfigError::invalid_value("order_id_tag", e.to_string()))?;
+        Ok(Self {
+            core,
             config,
             returns: VecDeque::with_capacity(hurst_window),
             abs_imbalances: VecDeque::with_capacity(vpin_window),
@@ -87,7 +98,18 @@ impl HurstVpinDirectional {
             exit_cooldown: false,
             entry_order_id: None,
             exit_order_ids: AHashSet::new(),
-        }
+        })
+    }
+
+    /// Creates a new [`HurstVpinDirectional`] instance from config.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either rolling window is outside `[1, 16_384]` or the base strategy configuration
+    /// is invalid.
+    #[must_use]
+    pub fn new(config: HurstVpinDirectionalConfig) -> Self {
+        Self::new_checked(config).expect("invalid Hurst/VPIN config")
     }
 
     pub(super) fn signals_ready(&self) -> bool {
@@ -232,8 +254,8 @@ impl HurstVpinDirectional {
             Some(ns) => ns,
             None => return Ok(()),
         };
-        let held_ns = tick.ts_event.as_u64().saturating_sub(opened_ns);
-        if held_ns < self.config.max_holding_secs * 1_000_000_000 {
+        let held = tick.ts_event.saturating_duration_since(opened_ns);
+        if held < DurationNanos::try_from_secs(self.config.max_holding_secs)? {
             return Ok(());
         }
 
@@ -278,7 +300,9 @@ impl HurstVpinDirectional {
         self.exit_cooldown = true;
 
         for (position_id, quantity, side) in positions {
-            let closing_side = OrderCore::closing_side(side);
+            let Some(closing_side) = OrderCore::closing_side(side) else {
+                continue;
+            };
             let close_order = self.order().market(
                 instrument_id,
                 closing_side,
@@ -318,7 +342,7 @@ impl HurstVpinDirectional {
 nautilus_strategy!(HurstVpinDirectional, {
     fn on_position_opened(&mut self, event: PositionOpened) {
         if event.instrument_id == self.config.instrument_id {
-            self.position_opened_ns = Some(event.ts_event.as_u64());
+            self.position_opened_ns = Some(event.ts_event);
         }
     }
 
@@ -402,7 +426,7 @@ impl DataActor for HurstVpinDirectional {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        self.cancel_all_orders(instrument_id, None, None, None)?;
+        self.cancel_all_orders(instrument_id, None, None, true, None)?;
         self.close_all_positions(instrument_id, None, None, None, None, None, None, None)?;
         self.unsubscribe_bars(self.config.bar_type, None, None);
         self.unsubscribe_quotes(instrument_id, None, None);
@@ -413,8 +437,8 @@ impl DataActor for HurstVpinDirectional {
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         let size = tick.size.as_f64();
         match tick.aggressor_side {
-            AggressorSide::Buyer => self.bucket_buy_volume += size,
-            AggressorSide::Seller => self.bucket_sell_volume += size,
+            AggressorSide::Buy => self.bucket_buy_volume += size,
+            AggressorSide::Sell => self.bucket_sell_volume += size,
             _ => {}
         }
         Ok(())

@@ -18,26 +18,26 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::{
-    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_predicate_true,
+    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::IgnoredAny,
+    ser::{SerializeSeq, SerializeStruct},
+};
 
 use crate::{
+    enums::CurrencyType,
     identifiers::InstrumentId,
-    types::{Currency, Money},
+    types::{Currency, Money, fixed::FIXED_PRECISION, money::MoneyRaw},
 };
 
 /// Represents an account balance denominated in a particular currency.
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        eq,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, eq, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -65,24 +65,31 @@ impl AccountBalance {
     ///
     /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(total: Money, locked: Money, free: Money) -> CorrectnessResult<Self> {
-        check_predicate_true(
-            total.currency == locked.currency,
-            &format!(
-                "`total` currency ({}) != `locked` currency ({})",
-                total.currency, locked.currency
-            ),
-        )?;
-        check_predicate_true(
-            total.currency == free.currency,
-            &format!(
-                "`total` currency ({}) != `free` currency ({})",
-                total.currency, free.currency
-            ),
-        )?;
-        check_predicate_true(
-            locked.checked_add(free) == Some(total),
-            &format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
-        )?;
+        // Inline checks keep message formatting off this per-update hot path
+        if total.currency != locked.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`total` currency ({}) != `locked` currency ({})",
+                    total.currency, locked.currency
+                ),
+            });
+        }
+
+        if total.currency != free.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`total` currency ({}) != `free` currency ({})",
+                    total.currency, free.currency
+                ),
+            });
+        }
+
+        if locked.checked_add(free) != Some(total) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!("`total` ({total}) - `locked` ({locked}) != `free` ({free})"),
+            });
+        }
+
         Ok(Self {
             currency: total.currency,
             total,
@@ -122,20 +129,21 @@ impl AccountBalance {
     ) -> CorrectnessResult<Self> {
         let total = Money::from_decimal(total, currency)?;
         let locked = Money::from_decimal(locked, currency)?;
-        let locked_raw = if total.raw >= 0 {
-            locked.raw.clamp(0, total.raw)
+
+        let clamped_locked = if total.is_negative() {
+            locked
         } else {
-            locked.raw
+            locked.clamp(Money::zero(currency), total)
         };
-        let clamped_locked = Money::from_raw(locked_raw, currency);
-        let free_raw = total.raw.checked_sub(clamped_locked.raw).ok_or_else(|| {
+
+        let free = total.checked_sub(clamped_locked).ok_or_else(|| {
             CorrectnessError::PredicateViolation {
                 message: format!(
-                    "Derived `free` overflows MoneyRaw for `total` {total} and `locked` {clamped_locked}"
+                    "Derived `free` exceeds Money bounds for `total` {total} and `locked` {clamped_locked}"
                 ),
             }
         })?;
-        let free = Money::from_raw_checked(free_raw, currency)?;
+
         Ok(Self::new(total, clamped_locked, free))
     }
 
@@ -159,22 +167,226 @@ impl AccountBalance {
     ) -> CorrectnessResult<Self> {
         let total = Money::from_decimal(total, currency)?;
         let free = Money::from_decimal(free, currency)?;
-        let free_raw = if total.raw >= 0 {
-            free.raw.clamp(0, total.raw)
+
+        let clamped_free = if total.is_negative() {
+            free
         } else {
-            free.raw
+            free.clamp(Money::zero(currency), total)
         };
-        let clamped_free = Money::from_raw(free_raw, currency);
-        let locked_raw = total.raw.checked_sub(clamped_free.raw).ok_or_else(|| {
+
+        let locked = total.checked_sub(clamped_free).ok_or_else(|| {
             CorrectnessError::PredicateViolation {
                 message: format!(
-                    "Derived `locked` overflows MoneyRaw for `total` {total} and `free` {clamped_free}"
+                    "Derived `locked` exceeds Money bounds for `total` {total} and `free` {clamped_free}"
                 ),
             }
         })?;
-        let locked = Money::from_raw_checked(locked_raw, currency)?;
+
         Ok(Self::new(total, locked, clamped_free))
     }
+}
+
+pub(crate) struct WalletAccountBalances<'a> {
+    balances: &'a [AccountBalance],
+}
+
+impl<'a> WalletAccountBalances<'a> {
+    pub(crate) const fn new(balances: &'a [AccountBalance]) -> Self {
+        Self { balances }
+    }
+}
+
+impl Serialize for WalletAccountBalances<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.balances.len()))?;
+        for balance in self.balances {
+            sequence.serialize_element(&WalletAccountBalance(balance))?;
+        }
+        sequence.end()
+    }
+}
+
+struct WalletAccountBalance<'a>(&'a AccountBalance);
+
+impl Serialize for WalletAccountBalance<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let balance = self.0;
+        for money in [balance.total, balance.locked, balance.free] {
+            if !has_same_currency_identity(balance.currency, money.currency) {
+                return Err(serde::ser::Error::custom(format!(
+                    "Wallet account balance currency identity {} does not match {money}",
+                    balance.currency
+                )));
+            }
+        }
+
+        let mut state = serializer.serialize_struct("AccountBalance", 8)?;
+        state.serialize_field("currency", &balance.currency)?;
+        state.serialize_field("total", &balance.total)?;
+        state.serialize_field("locked", &balance.locked)?;
+        state.serialize_field("free", &balance.free)?;
+        state.serialize_field(
+            "currency_identity",
+            &CurrencyIdentity::from(balance.currency),
+        )?;
+        state.serialize_field(
+            "total_minor",
+            &minor_units(balance.total).map_err(serde::ser::Error::custom)?,
+        )?;
+        state.serialize_field(
+            "locked_minor",
+            &minor_units(balance.locked).map_err(serde::ser::Error::custom)?,
+        )?;
+        state.serialize_field(
+            "free_minor",
+            &minor_units(balance.free).map_err(serde::ser::Error::custom)?,
+        )?;
+        state.end()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CurrencyIdentity {
+    code: String,
+    precision: u8,
+    iso4217: u16,
+    name: String,
+    currency_type: CurrencyType,
+}
+
+impl From<Currency> for CurrencyIdentity {
+    fn from(currency: Currency) -> Self {
+        Self {
+            code: currency.code.to_string(),
+            precision: currency.precision,
+            iso4217: currency.iso4217,
+            name: currency.name.to_string(),
+            currency_type: currency.currency_type,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct WalletAccountBalanceOwned {
+    #[serde(rename = "currency")]
+    _legacy_currency: IgnoredAny,
+    #[serde(rename = "total")]
+    _legacy_total: IgnoredAny,
+    #[serde(rename = "locked")]
+    _legacy_locked: IgnoredAny,
+    #[serde(rename = "free")]
+    _legacy_free: IgnoredAny,
+    currency_identity: CurrencyIdentity,
+    total_minor: String,
+    locked_minor: String,
+    free_minor: String,
+}
+
+#[derive(Deserialize)]
+struct AccountBalanceLegacy {
+    currency: Currency,
+    total: Money,
+    locked: Money,
+    free: Money,
+}
+
+impl<'de> Deserialize<'de> for AccountBalance {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value
+            .as_object()
+            .is_some_and(|balance| balance.contains_key("currency_identity"))
+        {
+            let balance =
+                WalletAccountBalanceOwned::deserialize(value).map_err(serde::de::Error::custom)?;
+            let currency = Currency::new_checked(
+                balance.currency_identity.code,
+                balance.currency_identity.precision,
+                balance.currency_identity.iso4217,
+                balance.currency_identity.name,
+                balance.currency_identity.currency_type,
+            )
+            .map_err(serde::de::Error::custom)?;
+            let total = money_from_minor_units(&balance.total_minor, currency)
+                .map_err(serde::de::Error::custom)?;
+            let locked = money_from_minor_units(&balance.locked_minor, currency)
+                .map_err(serde::de::Error::custom)?;
+            let free = money_from_minor_units(&balance.free_minor, currency)
+                .map_err(serde::de::Error::custom)?;
+            Self::new_checked(total, locked, free).map_err(serde::de::Error::custom)
+        } else {
+            let balance =
+                AccountBalanceLegacy::deserialize(value).map_err(serde::de::Error::custom)?;
+            Ok(Self {
+                currency: balance.currency,
+                total: balance.total,
+                locked: balance.locked,
+                free: balance.free,
+            })
+        }
+    }
+}
+
+fn has_same_currency_identity(left: Currency, right: Currency) -> bool {
+    left.code == right.code
+        && left.precision == right.precision
+        && left.iso4217 == right.iso4217
+        && left.name == right.name
+        && left.currency_type == right.currency_type
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "i128::from narrows MoneyRaw when high-precision is disabled"
+)]
+fn minor_units(money: Money) -> Result<String, String> {
+    let scale = raw_per_minor(money.currency.precision);
+    let raw = i128::from(money.raw());
+    if raw % scale != 0 {
+        return Err(format!(
+            "Wallet money raw value {} is not aligned to currency precision {}",
+            money.raw(),
+            money.currency.precision
+        ));
+    }
+    Ok((raw / scale).to_string())
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "MoneyRaw::try_from narrows i128 when high-precision is disabled"
+)]
+fn money_from_minor_units(value: &str, currency: Currency) -> Result<Money, String> {
+    let minor = value
+        .parse::<i128>()
+        .map_err(|e| format!("Invalid wallet money minor units '{value}': {e}"))?;
+    let scale = raw_per_minor(currency.precision);
+    let raw = minor.checked_mul(scale).ok_or_else(|| {
+        format!(
+            "Wallet money minor units {minor} overflow at currency precision {}",
+            currency.precision
+        )
+    })?;
+    let raw = MoneyRaw::try_from(raw).map_err(|e| {
+        format!(
+            "Wallet money minor units {minor} exceed the raw range at currency precision {}: {e}",
+            currency.precision
+        )
+    })?;
+    Money::from_raw_checked(raw, currency).map_err(|e| e.to_string())
+}
+
+fn raw_per_minor(precision: u8) -> i128 {
+    10_i128.pow(u32::from(FIXED_PRECISION.saturating_sub(precision)))
 }
 
 impl PartialEq for AccountBalance {
@@ -205,12 +417,7 @@ impl Display for AccountBalance {
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        eq,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, eq, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -248,13 +455,15 @@ impl MarginBalance {
         maintenance: Money,
         instrument_id: Option<InstrumentId>,
     ) -> CorrectnessResult<Self> {
-        check_predicate_true(
-            initial.currency == maintenance.currency,
-            &format!(
-                "`initial` currency ({}) != `maintenance` currency ({})",
-                initial.currency, maintenance.currency
-            ),
-        )?;
+        if initial.currency != maintenance.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`initial` currency ({}) != `maintenance` currency ({})",
+                    initial.currency, maintenance.currency
+                ),
+            });
+        }
+
         Ok(Self {
             initial,
             maintenance,
@@ -313,17 +522,124 @@ impl Display for MarginBalance {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
+    use super::{has_same_currency_identity, money_from_minor_units};
     use crate::{
+        enums::CurrencyType,
         identifiers::InstrumentId,
         types::{
             AccountBalance, Currency, MarginBalance, Money,
             stubs::{stub_account_balance, stub_margin_balance},
         },
     };
+
+    #[rstest]
+    fn test_has_same_currency_identity_requires_every_field() {
+        let usd = Currency::USD();
+
+        assert!(has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("XXX", 2, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 8, 840, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 0, "United States dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "US dollar", CurrencyType::Fiat)
+        ));
+        assert!(!has_same_currency_identity(
+            usd,
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Crypto)
+        ));
+    }
+
+    #[rstest]
+    fn test_margin_balance_equality_compares_every_field() {
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        let balance = MarginBalance::new(
+            Money::from("100 USD"),
+            Money::from("50 USD"),
+            Some(instrument_id),
+        );
+
+        assert_eq!(
+            balance,
+            MarginBalance::new(
+                Money::from("100 USD"),
+                Money::from("50 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(
+                Money::from("100 USD"),
+                Money::from("60 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(
+                Money::from("200 USD"),
+                Money::from("50 USD"),
+                Some(instrument_id),
+            )
+        );
+        assert_ne!(
+            balance,
+            MarginBalance::new(Money::from("100 USD"), Money::from("50 USD"), None)
+        );
+    }
+
+    #[rstest]
+    fn test_account_balance_equality_compares_every_amount() {
+        let balance = AccountBalance::new(
+            Money::from("100 USD"),
+            Money::from("25 USD"),
+            Money::from("75 USD"),
+        );
+
+        assert_eq!(
+            balance,
+            AccountBalance::new(
+                Money::from("100 USD"),
+                Money::from("25 USD"),
+                Money::from("75 USD"),
+            )
+        );
+        assert_ne!(
+            balance,
+            AccountBalance::new(
+                Money::from("100 USD"),
+                Money::from("50 USD"),
+                Money::from("50 USD"),
+            )
+        );
+        assert_ne!(
+            balance,
+            AccountBalance::new(
+                Money::from("200 USD"),
+                Money::from("125 USD"),
+                Money::from("75 USD"),
+            )
+        );
+    }
 
     #[rstest]
     fn test_account_balance_equality() {
@@ -349,15 +665,35 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_balance_new_checked_with_currency_mismatch_returns_error() {
+    #[case::locked(
+        Currency::EUR(),
+        Currency::USD(),
+        "`total` currency (USD) != `locked` currency (EUR)"
+    )]
+    #[case::free(
+        Currency::USD(),
+        Currency::EUR(),
+        "`total` currency (USD) != `free` currency (EUR)"
+    )]
+    fn test_account_balance_new_checked_with_currency_mismatch_returns_error(
+        #[case] locked_currency: Currency,
+        #[case] free_currency: Currency,
+        #[case] message: &str,
+    ) {
         let usd = Currency::USD();
-        let eur = Currency::EUR();
-        let result = AccountBalance::new_checked(
+        let error = AccountBalance::new_checked(
             Money::new(1000.0, usd),
-            Money::new(250.0, eur),
-            Money::new(750.0, usd),
+            Money::new(250.0, locked_currency),
+            Money::new(750.0, free_currency),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: message.to_string(),
+            }
         );
-        assert!(result.is_err());
     }
 
     #[rstest]
@@ -369,6 +705,30 @@ mod tests {
             Money::new(1000.0, usd),
             Money::new(250.0, eur),
             Money::new(750.0, usd),
+        );
+    }
+
+    #[rstest]
+    fn test_money_from_minor_units_rejects_invalid_integer() {
+        let error = money_from_minor_units("invalid", Currency::USD()).unwrap_err();
+
+        assert_eq!(
+            error,
+            "Invalid wallet money minor units 'invalid': invalid digit found in string"
+        );
+    }
+
+    #[rstest]
+    fn test_money_from_minor_units_rejects_scaling_overflow() {
+        let value = i128::MAX.to_string();
+        let error = money_from_minor_units(&value, Currency::USD()).unwrap_err();
+
+        assert_eq!(
+            error,
+            format!(
+                "Wallet money minor units {} overflow at currency precision 2",
+                i128::MAX
+            )
         );
     }
 
@@ -405,18 +765,18 @@ mod tests {
             let balance = AccountBalance::from_total_and_locked(total, locked, currency).unwrap();
 
             assert_eq!(
-                balance.total.raw,
-                balance.locked.raw + balance.free.raw,
+                balance.total,
+                balance.locked + balance.free,
                 "invariant violated for total={total}, locked={locked}, currency={}",
                 currency.code,
             );
             // When total is non-negative, locked must also be non-negative; when total is
-            // negative the helper passes venue values through so locked may be negative too.
-            if balance.total.raw >= 0 {
+            // negative the constructor passes venue values through so locked may be negative too.
+            if !balance.total.is_negative() {
                 assert!(
-                    balance.locked.raw >= 0,
+                    !balance.locked.is_negative(),
                     "locked must be non-negative for non-negative total (found raw={})",
-                    balance.locked.raw,
+                    balance.locked.raw(),
                 );
             }
             assert_eq!(balance.total.currency, currency);
@@ -448,17 +808,17 @@ mod tests {
             let balance = AccountBalance::from_total_and_free(total, free, currency).unwrap();
 
             assert_eq!(
-                balance.total.raw,
-                balance.locked.raw + balance.free.raw,
+                balance.total,
+                balance.locked + balance.free,
                 "invariant violated for total={total}, free={free}, currency={}",
                 currency.code,
             );
 
-            if balance.total.raw >= 0 {
+            if !balance.total.is_negative() {
                 assert!(
-                    balance.free.raw >= 0,
+                    !balance.free.is_negative(),
                     "free must be non-negative for non-negative total (found raw={})",
-                    balance.free.raw,
+                    balance.free.raw(),
                 );
             }
             assert_eq!(balance.total.currency, currency);
@@ -539,7 +899,7 @@ mod tests {
 
         let balance = AccountBalance::from_total_and_locked(amount, locked, btc).unwrap();
 
-        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
+        assert_eq!(balance.total, balance.locked + balance.free);
     }
 
     #[rstest]
@@ -553,10 +913,10 @@ mod tests {
         let usd = Currency::USD();
         let balance = AccountBalance::from_total_and_locked(total, locked, usd).unwrap();
         assert!(
-            balance.free.raw >= 0,
+            !balance.free.is_negative(),
             "free went negative: total={total}, locked={locked}"
         );
-        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
+        assert_eq!(balance.total, balance.locked + balance.free);
     }
 
     #[rstest]
@@ -601,7 +961,7 @@ mod tests {
             balance.free,
             Money::from_decimal(expected_free, usd).unwrap()
         );
-        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
+        assert_eq!(balance.total, balance.locked + balance.free);
     }
 
     #[rstest]
@@ -629,7 +989,7 @@ mod tests {
             balance.free,
             Money::from_decimal(expected_free, usd).unwrap()
         );
-        assert_eq!(balance.total.raw, balance.locked.raw + balance.free.raw);
+        assert_eq!(balance.total, balance.locked + balance.free);
     }
 
     #[rstest]

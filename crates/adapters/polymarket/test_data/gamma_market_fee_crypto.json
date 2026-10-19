@@ -1,0 +1,20 @@
+{
+  "id": "fee-crypto-1",
+  "conditionId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "question": "Crypto fee market",
+  "clobTokenIds": "[\"11111111111111111111111111111111111111111111111111111111111111111111111111111\", \"22222222222222222222222222222222222222222222222222222222222222222222222222222\"]",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "feesEnabled": true,
+  "feeType": "crypto_fees",
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0.07,
+    "takerOnly": true,
+    "rebateRate": 0
+  }
+}

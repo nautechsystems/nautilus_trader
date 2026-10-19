@@ -1,0 +1,27 @@
+{
+  "t": "c",
+  "ts": 1790228415,
+  "tn": 424163482,
+  "eid": "fixture-live-0143",
+  "o": {
+    "oid": "fixture-live-0144",
+    "u": "fixture-0001",
+    "aid": "fixture-0001",
+    "s": "EURUSD-PERP",
+    "p": "1.1282",
+    "q": 100,
+    "xq": 0,
+    "rq": 0,
+    "o": "CANCELED",
+    "d": "B",
+    "tif": "GTC",
+    "cid": 10075,
+    "tag": "fixture-live-0047",
+    "po": true,
+    "rb": "rej",
+    "ts": 1790228413,
+    "tn": 460859755
+  },
+  "xr": "",
+  "txt": ""
+}

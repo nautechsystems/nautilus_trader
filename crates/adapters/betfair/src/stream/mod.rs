@@ -24,3 +24,8 @@ pub mod error;
 pub mod messages;
 pub mod ocm;
 pub mod parse;
+
+pub(crate) const CRICKET_STREAMS_ENDPOINT: &str = "betfair-cricket-streams";
+pub(crate) const DATA_STREAMS_ENDPOINT: &str = "betfair-data-streams";
+pub(crate) const RACE_STREAMS_ENDPOINT: &str = "betfair-race-streams";
+pub(crate) const USER_STREAMS_ENDPOINT: &str = "betfair-user-streams";

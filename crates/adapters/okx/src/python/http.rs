@@ -13,15 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings exposing OKX HTTP helper functions and data conversions.
+//! Python bindings for OKX HTTP methods and data conversions.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::python::{
     IntoPyObjectNautilusExt, params::value_to_pyobject, to_pyruntime_err, to_pyvalue_err,
 };
 use nautilus_model::{
-    data::{BarType, forward::ForwardPrice},
-    enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
+    data::BarType,
+    enums::{AccountType, OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
     types::{Price, Quantity},
@@ -237,7 +237,7 @@ impl OKXHttpClient {
 
     /// Sets the position mode for the account.
     ///
-    /// Defaults to NetMode if no position mode is provided.
+    /// Defaults to `NetMode` if no position mode is provided.
     ///
     /// # Errors
     ///
@@ -265,17 +265,60 @@ impl OKXHttpClient {
         })
     }
 
-    /// Requests all instruments for the `instrument_type` from OKX.
+    /// Activates an account feature such as USDC order book trading.
+    ///
+    /// This does not run at client start. Call it only after OKX rejects a
+    /// `Crypto-USDC` order with error code `54109`. Activation is shared between a
+    /// master account and its sub-accounts, so one successful call covers all of
+    /// them. Error code `51773` means the account does not support activation, not
+    /// that USDC trading is unavailable; a successful order confirms the account can
+    /// trade the instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails or instrument parsing fails.
+    /// Returns an error if the HTTP request fails.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/log_en/#upcoming-changes-okx-to-migrate-usd-spot-trading-pairs-new-endpoint-activate-usdc-trading>
+    #[pyo3(name = "activate_feature")]
+    fn py_activate_feature<'py>(
+        &self,
+        py: Python<'py>,
+        feature: String,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .activate_feature(&feature)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    /// Sets the optional SPOT `tradeQuoteCcy` override for subsequent order placement.
+    #[pyo3(name = "set_spot_trade_quote_ccy")]
+    fn py_set_spot_trade_quote_ccy(&self, ccy: Option<String>) {
+        self.set_spot_trade_quote_ccy(ccy);
+    }
+
+    /// Requests all instruments for the `instrument_type` from OKX.
+    ///
+    /// Option requests require `instrument_family` (OKX `instFamily`), for example `BTC-USD`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `instrument_type` is option and `instrument_family` is missing,
+    /// the HTTP request fails, or instrument parsing fails.
     ///
     /// # Returns
     ///
     /// A tuple containing:
     /// - `Vec<InstrumentAny>`: The parsed instruments
-    /// - `Vec<(Ustr, u64)>`: Mappings of inst_id to inst_id_code for WebSocket order operations
+    /// - `Vec<(Ustr, u64)>`: Mappings of `inst_id` to `inst_id_code` for WebSocket order operations
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (instrument_type, instrument_family=None))]
     fn py_request_instruments<'py>(
@@ -358,7 +401,7 @@ impl OKXHttpClient {
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// Returns an error if:
     /// - The API request fails.
     /// - The instrument is not found.
     /// - Failed to parse instrument data.
@@ -482,20 +525,25 @@ impl OKXHttpClient {
 
     /// Requests the account state for the `account_id` from OKX.
     ///
+    /// Pass the execution client's configured account type; the OKX balance payload carries
+    /// no account-mode field.
+    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or no account state is returned.
     #[pyo3(name = "request_account_state")]
+    #[pyo3(signature = (account_id, account_type=AccountType::Margin))]
     fn py_request_account_state<'py>(
         &self,
         py: Python<'py>,
         account_id: AccountId,
+        account_type: AccountType,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let account_state = client
-                .request_account_state(account_id)
+                .request_account_state(account_id, account_type)
                 .await
                 .map_err(to_pyvalue_err)?;
 
@@ -514,8 +562,8 @@ impl OKXHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -541,6 +589,9 @@ impl OKXHttpClient {
     ///
     /// The aggregation source must be `EXTERNAL`. Time range validation ensures start < end.
     /// Returns bars sorted oldest to newest.
+    /// Each bar uses the candle open time as `ts_event` and its close time as `ts_init`.
+    /// Requests without an end may include an unconfirmed candle with a future `ts_init`.
+    /// With bounds, candle open times are at or after `start` and close times are at or before `end`.
     ///
     /// # Errors
     ///
@@ -548,13 +599,14 @@ impl OKXHttpClient {
     ///
     /// # Endpoint Selection
     ///
-    /// The OKX API has different endpoints with different limits:
+    /// Normal pagination selects between endpoints with different limits:
     /// - Regular endpoint (`/api/v5/market/candles`): ≤ 300 rows/call, ≤ 40 req/2s
-    ///   - Used when: start is None OR age ≤ 100 days
+    ///   - Used when the pagination cursor is less than two hours old
     /// - History endpoint (`/api/v5/market/history-candles`): ≤ 100 rows/call, ≤ 20 req/2s
-    ///   - Used when: start is Some AND age > 100 days
+    ///   - Used when the pagination cursor is at least two hours old
     ///
-    /// Age is calculated as `Utc::now() - start` at the time of the first request.
+    /// Cursor age uses the clock time captured when the request starts. Empty-page fallbacks
+    /// can select a different endpoint.
     ///
     /// # Supported Aggregations
     ///
@@ -568,7 +620,8 @@ impl OKXHttpClient {
     ///
     /// # Pagination
     ///
-    /// - Uses `before` parameter for backwards pagination
+    /// - Range requests use exclusive `after` and `before` cursors, adjusting `before` to include
+    ///   the floored start boundary
     /// - Pages backwards from end time (or now) to start time
     /// - Stops when: limit reached, time window covered, or API returns empty
     /// - Rate limit safety: ≥ 50ms between requests
@@ -583,8 +636,8 @@ impl OKXHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -642,8 +695,8 @@ impl OKXHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -660,38 +713,6 @@ impl OKXHttpClient {
                     .map(|rate| rate.into_py_any(py))
                     .collect::<PyResult<Vec<_>>>()?;
                 let pylist = PyList::new(py, py_rates)?;
-                Ok(pylist.into_py_any_unwrap(py))
-            })
-        })
-    }
-
-    /// Requests forward prices for OKX options using the option summary endpoint.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the HTTP request fails or no usable instrument family can be resolved.
-    #[pyo3(name = "request_forward_prices")]
-    #[pyo3(signature = (underlying, instrument_id=None))]
-    fn py_request_forward_prices<'py>(
-        &self,
-        py: Python<'py>,
-        underlying: String,
-        instrument_id: Option<InstrumentId>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.clone();
-
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let forward_prices: Vec<ForwardPrice> = client
-                .request_forward_prices(&underlying, instrument_id)
-                .await
-                .map_err(to_pyvalue_err)?;
-
-            Python::attach(|py| {
-                let py_prices = forward_prices
-                    .into_iter()
-                    .map(|price| price.into_py_any(py))
-                    .collect::<PyResult<Vec<_>>>()?;
-                let pylist = PyList::new(py, py_prices)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -788,8 +809,8 @@ impl OKXHttpClient {
         account_id: AccountId,
         instrument_type: Option<OKXInstrumentType>,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -912,8 +933,8 @@ impl OKXHttpClient {
         account_id: AccountId,
         instrument_type: Option<OKXInstrumentType>,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -963,7 +984,8 @@ impl OKXHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails.
+    /// Returns an error if the request fails, a position cannot be parsed, or multiple
+    /// nonzero positions map to the same hedge leg.
     ///
     /// # References
     ///
@@ -1024,7 +1046,6 @@ impl OKXHttpClient {
         attach_algo_ords=None,
         px_usd=None,
         px_vol=None,
-        speed_bump=None,
         outcome=None,
         slippage_pct=None,
     ))]
@@ -1049,7 +1070,6 @@ impl OKXHttpClient {
         attach_algo_ords: Option<Vec<Py<PyDict>>>,
         px_usd: Option<String>,
         px_vol: Option<String>,
-        speed_bump: Option<String>,
         outcome: Option<String>,
         slippage_pct: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -1076,7 +1096,6 @@ impl OKXHttpClient {
                     attach_algo_ords,
                     px_usd,
                     px_vol,
-                    speed_bump,
                     outcome,
                     slippage_pct,
                     None,
@@ -1181,6 +1200,7 @@ impl OKXHttpClient {
                     trigger_type,
                     limit_price,
                     reduce_only,
+                    None,
                     close_fraction,
                     callback_ratio,
                     callback_spread,
@@ -1433,7 +1453,7 @@ impl OKXHttpClient {
 
     /// Cancels multiple algo orders via HTTP in a single request.
     ///
-    /// Items with non-zero `sCode` are logged as warnings but do not
+    /// Items with non-zero `sCode` are logged at debug level but do not
     /// fail the entire batch.
     ///
     /// # Errors
@@ -1574,9 +1594,30 @@ impl From<OKXHttpError> for PyErr {
             // Runtime/operational errors
             OKXHttpError::Canceled(msg) => to_pyruntime_err(format!("Request canceled: {msg}")),
             OKXHttpError::HttpClientError(e) => to_pyruntime_err(format!("Network error: {e}")),
+            OKXHttpError::RetryableStatus { status, body, .. } => {
+                to_pyruntime_err(format!("Temporary HTTP status code {status}: {body}"))
+            }
             OKXHttpError::UnexpectedStatus { status, body } => {
                 to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
             }
+            OKXHttpError::RetryableOkxError {
+                error_code,
+                message,
+                ..
+            } => to_pyruntime_err(format!("Temporary OKX error {error_code}: {message}")),
+            OKXHttpError::MalformedResponse(msg) => {
+                to_pyruntime_err(format!("Malformed response: {msg}"))
+            }
+            OKXHttpError::ResponseDecoding(msg) => {
+                to_pyruntime_err(format!("Response decoding error: {msg}"))
+            }
+            OKXHttpError::OperationTimeout { timeout_ms } => {
+                to_pyruntime_err(format!("Operation timed out after {timeout_ms}ms"))
+            }
+            OKXHttpError::RetryBudgetExceeded(msg) => {
+                to_pyruntime_err(format!("Retry budget exceeded: {msg}"))
+            }
+            OKXHttpError::EmptyResponse => to_pyruntime_err("Empty response"),
             // Validation/configuration errors
             OKXHttpError::MissingCredentials => {
                 to_pyvalue_err("Missing credentials for authenticated request")
@@ -1584,7 +1625,9 @@ impl From<OKXHttpError> for PyErr {
             OKXHttpError::ValidationError(msg) => {
                 to_pyvalue_err(format!("Parameter validation error: {msg}"))
             }
-            OKXHttpError::JsonError(msg) => to_pyvalue_err(format!("JSON error: {msg}")),
+            OKXHttpError::RequestSerialization(msg) => {
+                to_pyvalue_err(format!("Request serialization error: {msg}"))
+            }
             OKXHttpError::OkxError {
                 error_code,
                 message,

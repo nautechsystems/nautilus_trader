@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-lighter"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,7 +23,7 @@ crate-type = ["rlib"]
 default = ["high-precision"]
 fuzz = ["nautilus-live/fuzz"]
 examples = [
-  "dep:reqwest",
+  "dep:serde_urlencoded",
   "nautilus-live/node",
   "nautilus-network/transport-sockudo",
 ]
@@ -56,8 +55,9 @@ cargo-fuzz = true
 
 [package.metadata.cargo-machete]
 ignored = [
-  "nautilus-system",
-] # Optional dep activated only via the python feature
+  "nautilus-system", # Optional dep activated only via the python feature
+  "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
+]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -69,7 +69,7 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -78,13 +78,13 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -101,8 +101,11 @@ zeroize = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
+serde_urlencoded = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-execution = { workspace = true }
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -114,6 +117,8 @@ dotenvy = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
+toml = { workspace = true }
 
 [[bench]]
 name = "signing_sign_verify"
@@ -178,7 +183,7 @@ doc = false
 test = false
 
 [[bin]]
-name = "fuzz_verify"
+name = "fuzz-verify"
 path = "fuzz/fuzz_targets/fuzz_verify.rs"
 required-features = ["fuzz"]
 test = false
@@ -186,7 +191,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_point_decode"
+name = "fuzz-point-decode"
 path = "fuzz/fuzz_targets/fuzz_point_decode.rs"
 required-features = ["fuzz"]
 test = false
@@ -194,7 +199,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_signature_codec"
+name = "fuzz-signature-codec"
 path = "fuzz/fuzz_targets/fuzz_signature_codec.rs"
 required-features = ["fuzz"]
 test = false
@@ -202,7 +207,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_hash_no_pad"
+name = "fuzz-hash-no-pad"
 path = "fuzz/fuzz_targets/fuzz_hash_no_pad.rs"
 required-features = ["fuzz"]
 test = false
@@ -210,7 +215,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_auth_message"
+name = "fuzz-auth-message"
 path = "fuzz/fuzz_targets/fuzz_auth_message.rs"
 required-features = ["fuzz"]
 test = false
@@ -218,7 +223,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_compute_tx_hash"
+name = "fuzz-compute-tx-hash"
 path = "fuzz/fuzz_targets/fuzz_compute_tx_hash.rs"
 required-features = ["fuzz"]
 test = false
@@ -226,7 +231,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_scalar_mul_ct_diff"
+name = "fuzz-scalar-mul-ct-diff"
 path = "fuzz/fuzz_targets/fuzz_scalar_mul_ct_diff.rs"
 required-features = ["fuzz"]
 test = false
@@ -247,7 +252,11 @@ path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
 
+# Public market-data validation; explicitly connects to Lighter mainnet.
+# Run with `cargo test --package nautilus-lighter --features examples --test lighter-book-stress -- --timeout 10 --rounds 12`
 [[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]
+name = "lighter-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

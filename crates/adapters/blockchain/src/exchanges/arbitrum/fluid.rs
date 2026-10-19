@@ -27,9 +27,7 @@ use crate::{
     exchanges::extended::DexExtended,
     hypersync::{
         HypersyncLog,
-        helpers::{
-            extract_address_from_topic, extract_block_number, validate_event_signature_hash,
-        },
+        log::{extract_address_from_topic, extract_block_number, validate_event_signature_hash},
     },
 };
 

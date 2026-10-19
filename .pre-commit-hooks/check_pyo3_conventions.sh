@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Enforces PyO3 conventions:
 # - Functions with #[pyo3(name = "...")] must have Rust names prefixed with py_
+# - Python wrapper functions and classes must expose names without Rust affixes
 # - Adapter stub metadata must use the public adapter package path
-# - Standard Python exceptions must use error helper functions
+# - Standard Python exceptions must use the shared error conversion functions
 
 set -euo pipefail
 
@@ -31,7 +32,6 @@ while IFS=: read -r file line_num match; do
   if [[ "$match" =~ fn[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
     fn_name="${BASH_REMATCH[1]}"
 
-    # Skip if already has py_ prefix
     [[ "$fn_name" =~ ^py_ ]] && continue
 
     echo -e "${RED}Error:${NC} PyO3 function missing py_ prefix in $file:$line_num"
@@ -53,6 +53,8 @@ fi
 
 echo "✓ All PyO3 naming conventions are valid"
 
+python3 -B "$(dirname "$0")/check_pyo3_names.py"
+
 # Check adapter module naming.
 echo "Checking adapter module paths..."
 ADAPTER_VIOLATIONS=0
@@ -63,15 +65,14 @@ while IFS=: read -r file line_num match; do
   module_path="$(echo "$match" | sed -E 's/.*(module|stub_module)[[:space:]]*=[[:space:]]*"([^"]+)".*/\2/')"
 
   case "$module_path" in
-    nautilus_trader.adapters.* | nautilus_trader.core.nautilus_pyo3.*)
+    nautilus_trader.adapters.*)
       continue
       ;;
   esac
 
   echo -e "${RED}Error:${NC} Adapter module path is not canonical in $file:$line_num"
   echo "  Found: $(echo "$match" | xargs)"
-  echo "  Use: nautilus_trader.adapters.<adapter_name> for stub metadata"
-  echo "  Runtime PyO3 paths may use nautilus_trader.core.nautilus_pyo3.<adapter_name>"
+  echo "  Use: nautilus_trader.adapters.<adapter_name> for runtime and stub metadata"
   echo
   ADAPTER_VIOLATIONS=$((ADAPTER_VIOLATIONS + 1))
 done < <(rg -n '(module|stub_module)\s*=\s*"nautilus_trader\.[^"]+"' crates/adapters --type rust 2> /dev/null || true)
@@ -80,27 +81,26 @@ if [ $ADAPTER_VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $ADAPTER_VIOLATIONS adapter module path violation(s)${NC}"
   echo
   echo "Convention:"
-  echo "  - Public adapter stub paths use nautilus_trader.adapters.<adapter_name>"
-  echo "  - Runtime PyO3 paths use nautilus_trader.core.nautilus_pyo3.<adapter_name>"
+  echo "  - Adapter runtime and stub paths use nautilus_trader.adapters.<adapter_name>"
   exit 1
 fi
 
 echo "✓ All adapter module paths are valid"
 
-# Check for raw PyErr construction that should use error helpers
-echo "Checking PyO3 error helper usage..."
+# Check for raw PyErr construction that should use shared error conversions
+echo "Checking PyO3 error conversion usage..."
 RAW_ERR_VIOLATIONS=0
 
 while IFS=: read -r file line_num match; do
   [[ -z "$file" ]] && continue
 
-  # Skip the helper definitions themselves
+  # Skip the conversion definitions themselves
   [[ "$file" == "crates/core/src/python/mod.rs" ]] && continue
 
   # Skip test assertions (e.g., is_instance_of::<pyo3::exceptions::PyRuntimeError>)
   [[ "$match" =~ is_instance_of ]] && continue
 
-  # Determine which helper to suggest
+  # Determine which conversion to suggest
   if [[ "$match" =~ PyValueError ]]; then
     suggestion="to_pyvalue_err"
   elif [[ "$match" =~ PyTypeError ]]; then
@@ -134,9 +134,9 @@ if [ $RAW_ERR_VIOLATIONS -gt 0 ]; then
   echo "  - Use to_pykey_err(...) instead of PyKeyError::new_err(...)"
   echo "  - Use to_pyexception(...) instead of PyException::new_err(...)"
   echo "  - Use to_pynotimplemented_err(...) instead of PyNotImplementedError::new_err(...)"
-  echo "  - Helpers are in nautilus_core::python"
+  echo "  - Error conversions are in nautilus_core::python"
   exit 1
 fi
 
-echo "✓ All PyO3 error constructions use helpers"
+echo "✓ All PyO3 error constructions use shared conversions"
 exit 0

@@ -1,0 +1,34 @@
+{
+  "t": "f",
+  "ts": 1790228429,
+  "tn": 155292018,
+  "eid": "fixture-live-0152",
+  "o": {
+    "oid": "fixture-live-0153",
+    "u": "fixture-0001",
+    "aid": "fixture-0001",
+    "s": "EURUSD-PERP",
+    "p": "1.1363",
+    "q": 100,
+    "xq": 100,
+    "rq": 0,
+    "o": "FILLED",
+    "d": "S",
+    "tif": "IOC",
+    "cid": 10079,
+    "tag": "fixture-live-0047",
+    "po": false,
+    "rb": "rej",
+    "ts": 1790228429,
+    "tn": 147007627
+  },
+  "xs": {
+    "tid": "fixture-live-0154",
+    "aid": "fixture-0001",
+    "s": "EURUSD-PERP",
+    "q": 100,
+    "p": "1.1383",
+    "d": "S",
+    "agg": true
+  }
+}

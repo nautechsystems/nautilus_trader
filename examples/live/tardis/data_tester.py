@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+"""
+Stream Tardis market data with the built-in DataTester actor.
+
+Running this example connects to Tardis Machine and starts subscriptions for the
+configured instrument immediately, logging all received data. It expects Tardis
+Machine at `TARDIS_MACHINE_WS_URL` (default `ws://localhost:8001`) and uses
+`TARDIS_API_KEY` to load instrument metadata. No orders are placed.
+
+"""
+
+from __future__ import annotations
+
+import os
+
+from nautilus_trader.adapters.tardis import StreamNormalizedRequestOptions
+from nautilus_trader.adapters.tardis import TardisDataClientConfig
+from nautilus_trader.adapters.tardis import TardisDataClientFactory
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import ClientId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import TraderId
+from nautilus_trader.testkit import DataTesterConfig
+
+
+TARDIS = "TARDIS"
+TRADER_ID = TraderId.from_str("TESTER-001")
+INSTRUMENT_ID = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+TARDIS_WS_URL = os.getenv("TARDIS_MACHINE_WS_URL", "ws://localhost:8001")
+STREAM_OPTIONS = StreamNormalizedRequestOptions.from_json(
+    b'{"exchange":"binance-futures","symbols":["BTCUSDT"],"dataTypes":["trade","quote"]}',
+)
+
+
+def main() -> None:
+    """
+    Run the example.
+    """
+    node = (
+        LiveNode.builder("TARDIS-DATA-TESTER-001", TRADER_ID, Environment.SANDBOX)
+        .add_data_client(
+            None,
+            TardisDataClientFactory(),
+            TardisDataClientConfig(
+                tardis_ws_url=TARDIS_WS_URL,
+                stream_options=[STREAM_OPTIONS],
+            ),
+        )
+        .build()
+    )
+    node.add_builtin_actor(
+        "DataTester",
+        DataTesterConfig(
+            client_id=ClientId.from_str(TARDIS),
+            instrument_ids=[INSTRUMENT_ID],
+            subscribe_quotes=True,
+            subscribe_trades=True,
+            subscribe_mark_prices=True,
+            subscribe_index_prices=True,
+            subscribe_funding_rates=True,
+            manage_book=True,
+            log_data=True,
+        ),
+    )
+
+    node.run()
+
+
+if __name__ == "__main__":
+    main()

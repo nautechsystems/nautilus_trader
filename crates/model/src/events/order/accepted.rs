@@ -41,7 +41,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -209,7 +209,7 @@ impl OrderEvent for OrderAccepted {
     }
 
     fn reconciliation(&self) -> bool {
-        false
+        self.reconciliation
     }
 
     fn price(&self) -> Option<Price> {
@@ -310,6 +310,9 @@ impl OrderEvent for OrderAccepted {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
     }
 }
 

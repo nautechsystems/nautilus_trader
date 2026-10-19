@@ -15,13 +15,14 @@
 
 //! Python bindings for Deribit configuration.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::DeribitEnvironment,
-    config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    config::{DeribitDataClientConfig, DeribitExecutionClientConfig},
     http::models::DeribitProductType,
 };
 
@@ -69,12 +70,12 @@ impl DeribitDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
@@ -104,11 +105,10 @@ impl DeribitDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl DeribitExecClientConfig {
+impl DeribitExecutionClientConfig {
     /// Configuration for the Deribit execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id,
         account_id,
         product_types = None,
         environment = None,
@@ -126,7 +126,6 @@ impl DeribitExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        trader_id: TraderId,
         account_id: AccountId,
         product_types: Option<Vec<DeribitProductType>>,
         environment: Option<DeribitEnvironment>,
@@ -144,14 +143,13 @@ impl DeribitExecClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            trader_id,
             account_id,
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
@@ -169,6 +167,6 @@ impl DeribitExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(DeribitExecClientConfig).to_string()
+        stringify!(DeribitExecutionClientConfig).to_string()
     }
 }

@@ -165,8 +165,8 @@ pub(crate) fn fixed_signed_tx() -> SignedTx {
 pub(crate) const TRADER_ID: &str = "BENCH-001";
 pub(crate) const ACCOUNT_ID: &str = "LIGHTER-001";
 pub(crate) const BENCH_ACCOUNT_INDEX: i64 = 1234;
-pub(crate) const ETH_MARKET_INDEX: i16 = 0;
-pub(crate) const BTC_MARKET_INDEX: i16 = 1;
+pub(crate) const ETH_MARKET_INDEX: i64 = 0;
+pub(crate) const BTC_MARKET_INDEX: i64 = 1;
 
 #[must_use]
 pub(crate) fn clock() -> &'static AtomicTime {
@@ -198,39 +198,28 @@ fn perp_instrument(coin: &str, price_precision: u8, size_precision: u8) -> Instr
     let instrument_id = InstrumentId::new(raw_symbol, *LIGHTER_VENUE);
     let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
     let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        Currency::from(coin),
-        Currency::from("USDC"),
-        Currency::from("USDC"),
-        false,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(Currency::from(coin))
+            .quote_currency(Currency::from("USDC"))
+            .settlement_currency(Currency::from("USDC"))
+            .is_inverse(false)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 /// Maps market index -> instrument for hot-path lookups in the data benches.
 #[must_use]
-pub(crate) fn instrument_cache() -> AHashMap<i16, InstrumentAny> {
+pub(crate) fn instrument_cache() -> AHashMap<i64, InstrumentAny> {
     let mut cache = AHashMap::new();
     cache.insert(ETH_MARKET_INDEX, eth_perp());
     cache.insert(BTC_MARKET_INDEX, btc_perp());

@@ -37,8 +37,9 @@ use sqlx::postgres::PgConnectOptions;
 
 use crate::{
     cache::{
-        consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase,
-        rows::PoolRow,
+        consistency::CachedBlocksConsistencyStatus,
+        database::BlockchainCacheDatabase,
+        rows::{ExecutionTransactionRow, PoolRow},
     },
     events::initialize::InitializeEvent,
 };
@@ -63,6 +64,8 @@ pub struct BlockchainCache {
     chain: SharedChain,
     /// Map of block numbers to their corresponding timestamp
     block_timestamps: BTreeMap<u64, UnixNanos>,
+    /// Map of block numbers to the hashes observed with those timestamps.
+    block_hashes: BTreeMap<u64, String>,
     /// Map of DEX identifiers to their corresponding DEX objects.
     dexes: HashMap<DexType, SharedDex>,
     /// Map of token addresses to their corresponding `Token` objects.
@@ -86,6 +89,7 @@ impl BlockchainCache {
             invalid_tokens: HashSet::new(),
             pools: HashMap::new(),
             block_timestamps: BTreeMap::new(),
+            block_hashes: BTreeMap::new(),
             database: None,
         }
     }
@@ -117,6 +121,12 @@ impl BlockchainCache {
         self.block_timestamps.get(&block_number)
     }
 
+    /// Returns the observed hash for the specified block number, if cached.
+    #[must_use]
+    pub fn get_block_hash(&self, block_number: u64) -> Option<&str> {
+        self.block_hashes.get(&block_number).map(String::as_str)
+    }
+
     /// Records a block timestamp in the in-memory cache without persisting it.
     ///
     /// Used while streaming pool events so event conversion can resolve `ts_event` for blocks
@@ -125,10 +135,117 @@ impl BlockchainCache {
         self.block_timestamps.insert(number, timestamp);
     }
 
+    /// Records the hash and timestamp observed for one block without persisting it.
+    pub fn cache_block_metadata(&mut self, block: &Block) {
+        self.block_timestamps.insert(block.number, block.timestamp);
+        self.block_hashes.insert(block.number, block.hash.clone());
+    }
+
     /// Initializes the database connection for persistent storage.
     pub async fn initialize_database(&mut self, pg_connect_options: PgConnectOptions) {
         let database = BlockchainCacheDatabase::init(pg_connect_options).await;
         self.database = Some(database);
+    }
+
+    /// Returns whether a persistent database is attached to the cache.
+    #[must_use]
+    pub const fn has_database(&self) -> bool {
+        self.database.is_some()
+    }
+
+    /// Persists an execution transaction record, failing closed when no database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parameters mirror the persisted execution transaction fields"
+    )]
+    pub async fn add_execution_transaction(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+        nonce: u64,
+        transaction_hash: &str,
+        purpose: &str,
+        status: &str,
+        client_order_id: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No durable store configured; refusing to persist execution transaction"
+            )
+        })?;
+
+        database
+            .add_execution_transaction(
+                chain_id,
+                wallet_address,
+                nonce,
+                transaction_hash,
+                purpose,
+                status,
+                client_order_id,
+            )
+            .await
+    }
+
+    /// Migrates the execution transaction table and installs its signer and order uniqueness
+    /// constraints, failing closed when no database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    pub async fn ensure_execution_transaction_schema(&self) -> anyhow::Result<()> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No durable store configured; refusing to migrate execution transaction"
+            )
+        })?;
+
+        database.ensure_execution_transaction_schema().await
+    }
+
+    /// Updates the status of a persisted execution transaction record, failing closed when no
+    /// database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    pub async fn update_execution_transaction_status(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+        status: &str,
+    ) -> anyhow::Result<()> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("No durable store configured; refusing to update execution transaction")
+        })?;
+
+        database
+            .update_execution_transaction_status(chain_id, transaction_hash, status)
+            .await
+    }
+
+    /// Loads an execution transaction record by chain ID and transaction hash, failing closed
+    /// when no database is attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no database is configured or the database operation fails.
+    pub async fn get_execution_transaction(
+        &self,
+        chain_id: u32,
+        transaction_hash: &str,
+    ) -> anyhow::Result<Option<ExecutionTransactionRow>> {
+        let database = self.database.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("No durable store configured; refusing to load execution transaction")
+        })?;
+
+        database
+            .get_execution_transaction(chain_id, transaction_hash)
+            .await
     }
 
     /// Toggles performance optimization settings in the database.
@@ -140,7 +257,7 @@ impl BlockchainCache {
         if let Some(database) = &self.database {
             database.toggle_perf_sync_settings(enable).await
         } else {
-            log::warn!("Database not initialized, skipping performance settings toggle");
+            log::debug!("Database not initialized, skipping performance settings toggle");
             Ok(())
         }
     }
@@ -159,6 +276,11 @@ impl BlockchainCache {
                 return;
             }
             log::debug!("Chain seeded in the database");
+
+            if let Err(e) = database.ensure_pool_event_block_hash_schema().await {
+                log::error!("Error adding pool event block hash storage: {e}");
+                return;
+            }
 
             match database.create_block_partition(&self.chain).await {
                 Ok(message) => log::debug!("Executing block partition creation: {message}"),
@@ -206,7 +328,7 @@ impl BlockchainCache {
     async fn load_tokens(&mut self) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let (tokens, invalid_tokens) = tokio::try_join!(
-                database.load_tokens(self.chain.clone()),
+                database.load_tokens(Arc::clone(&self.chain)),
                 database.load_invalid_token_addresses(self.chain.chain_id)
             )?;
 
@@ -238,7 +360,7 @@ impl BlockchainCache {
                 .get_dex(dex_id)
                 .ok_or_else(|| anyhow::anyhow!("DEX {dex_id:?} has not been registered"))?;
             let pool_rows = database
-                .load_pools(self.chain.clone(), &dex_id.to_string())
+                .load_pools(Arc::clone(&self.chain), &dex_id.to_string())
                 .await?;
             log::debug!(
                 "Loading {} pools for DEX {} from cache database",
@@ -279,7 +401,11 @@ impl BlockchainCache {
                 return Ok(None);
             };
             database
-                .load_pool(self.chain.clone(), &dex_id.to_string(), pool_identifier)
+                .load_pool(
+                    Arc::clone(&self.chain),
+                    &dex_id.to_string(),
+                    pool_identifier,
+                )
                 .await?
         };
 
@@ -333,17 +459,15 @@ impl BlockchainCache {
         let ts_init = pool_row.creation_block_timestamp.unwrap_or_default();
 
         let mut pool = Pool::new(
-            self.chain.clone(),
-            dex.clone(),
+            Arc::clone(&self.chain),
+            Arc::clone(dex),
             pool_row.address,
             pool_identifier,
-            pool_row.creation_block as u64,
+            pool_row.creation_block,
             token0.clone(),
             token1.clone(),
-            pool_row.fee.map(|fee| fee as u32),
-            pool_row
-                .tick_spacing
-                .map(|tick_spacing| tick_spacing as u32),
+            pool_row.fee,
+            pool_row.tick_spacing,
             ts_init,
         );
 
@@ -369,7 +493,7 @@ impl BlockchainCache {
     async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             let block_timestamps = database
-                .load_block_timestamps(self.chain.clone(), from_block)
+                .load_block_timestamps(Arc::clone(&self.chain), from_block)
                 .await?;
 
             // Verify block number sequence consistency
@@ -410,7 +534,7 @@ impl BlockchainCache {
     /// Returns an error if adding the block to the database fails.
     pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
         // Populate in-memory first so the timestamp resolves even if persistence fails
-        self.block_timestamps.insert(block.number, block.timestamp);
+        self.cache_block_metadata(&block);
         if let Some(database) = &self.database {
             database.add_block(self.chain.chain_id, &block).await?;
         }
@@ -446,6 +570,7 @@ impl BlockchainCache {
         // Update in-memory cache
         for block in blocks {
             self.block_timestamps.insert(block.number, block.timestamp);
+            self.block_hashes.insert(block.number, block.hash);
         }
 
         Ok(())
@@ -469,6 +594,7 @@ impl BlockchainCache {
 
         for block in blocks {
             self.block_timestamps.insert(block.number, block.timestamp);
+            self.block_hashes.insert(block.number, block.hash);
         }
 
         Ok(())
@@ -483,7 +609,7 @@ impl BlockchainCache {
         log::debug!("Adding dex {} to the cache", dex.name);
 
         if let Some(database) = &self.database {
-            database.add_dex(dex.clone()).await?;
+            database.add_dex(Arc::clone(&dex)).await?;
         }
 
         self.dexes.insert(dex.name, dex);
@@ -1100,7 +1226,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn add_block_populates_timestamp_without_database() {
+    async fn add_block_populates_metadata_without_database() {
         let mut cache = test_cache();
         let block = Block::new(
             "0x1".to_string(),
@@ -1119,10 +1245,49 @@ mod tests {
             cache.get_block_timestamp(42),
             Some(&UnixNanos::from(1_700_000_000_000_000_000))
         );
+        assert_eq!(cache.get_block_hash(42), Some("0x1"));
     }
 
     #[tokio::test]
-    async fn stream_pool_events_uses_pool_event_block_timestamp_without_full_block()
+    async fn pool_event_block_hash_schema_upgrades_legacy_table() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        execute_schema_statement(
+            &schema.admin_pool,
+            format!(
+                "ALTER TABLE {}.pool_event_block DROP COLUMN hash",
+                schema.name
+            ),
+        )
+        .await?;
+
+        database.ensure_pool_event_block_hash_schema().await?;
+        database
+            .add_pool_event_blocks_batch(
+                1,
+                &[test_block(42, UnixNanos::from(1_700_000_000_000_000_000))],
+            )
+            .await?;
+
+        let hash: String = sqlx::query_scalar(AssertSqlSafe(format!(
+            "SELECT hash FROM {}.pool_event_block WHERE chain_id = 1 AND number = 42",
+            schema.name
+        )))
+        .fetch_one(&schema.admin_pool)
+        .await?;
+        let expected_hash = format!("0x{:064x}", 42);
+        anyhow::ensure!(
+            hash == expected_hash,
+            "Unexpected persisted pool event block hash: {hash}"
+        );
+
+        schema.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_uses_pool_event_block_metadata_without_full_block()
     -> anyhow::Result<()> {
         let Some((database, schema)) = connect_cache_test_database().await? else {
             return Ok(());
@@ -1154,15 +1319,17 @@ mod tests {
         schema.cleanup().await?;
 
         let events = events_result?;
-        let observed_timestamps = match events.as_slice() {
-            [DexPoolData::Swap(swap)] => Some((swap.ts_event, swap.ts_init)),
+        let observed_metadata = match events.as_slice() {
+            [DexPoolData::Swap(swap)] => {
+                Some((swap.ts_event, swap.ts_init, swap.block_hash.clone()))
+            }
             _ => None,
         };
 
-        let expected_timestamps = Some((expected_ts, expected_ts));
-        if observed_timestamps != expected_timestamps {
+        let expected_metadata = Some((expected_ts, expected_ts, Some(format!("0x{:064x}", 12))));
+        if observed_metadata != expected_metadata {
             anyhow::bail!(
-                "unexpected stream timestamps: expected {expected_timestamps:?}, observed {observed_timestamps:?}"
+                "unexpected stream metadata: expected {expected_metadata:?}, observed {observed_metadata:?}"
             );
         }
         Ok(())
@@ -1194,8 +1361,8 @@ mod tests {
         .await?;
         // Asymmetric values (4, 6) catch a token0/token1 column swap.
         let update = PoolFeeProtocolUpdate::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             instrument_id,
             pool_identifier,
             13,
@@ -1258,8 +1425,8 @@ mod tests {
             .add_pool_event_blocks_batch(chain.chain_id, &[test_block(13, ts)])
             .await?;
         let update = PoolFeeProtocolUpdate::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             instrument_id,
             pool_identifier,
             13,
@@ -1323,8 +1490,8 @@ mod tests {
         .await?;
         // Asymmetric amounts (111, 222) catch a token0/token1 column swap.
         let collect = PoolFeeProtocolCollect::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             instrument_id,
             pool_identifier,
             13,
@@ -1419,7 +1586,7 @@ mod tests {
             .await?;
         }
 
-        let (update, collect) = protocol_fee_events(&clean);
+        let (mut update, mut collect) = protocol_fee_events(&clean);
         clean
             .database()
             .add_pool_fee_protocol_updates_batch(
@@ -1521,8 +1688,12 @@ mod tests {
             .await?;
         let clean_events = clean.events(target_block).await?;
         let migrated_events = migrated.events(target_block).await?;
+        let mut swap = expected_swap(&clean);
+        swap.block_hash = Some(blocks[0].hash.clone());
+        update.block_hash = Some(blocks[1].hash.clone());
+        collect.block_hash = Some(blocks[2].hash.clone());
         let expected_events = vec![
-            DexPoolData::Swap(expected_swap(&clean)),
+            DexPoolData::Swap(swap),
             DexPoolData::FeeProtocolUpdate(update),
             DexPoolData::FeeProtocolCollect(collect),
         ];
@@ -1661,8 +1832,8 @@ mod tests {
         let creation_ts = UnixNanos::from(1_700_000_003_000_000_000);
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             creation_block,
@@ -1673,7 +1844,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
 
         cache.add_dex(dex).await?;
@@ -1719,8 +1890,8 @@ mod tests {
         let pool_identifier = PoolIdentifier::from_address(pool_address);
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             10, // creation block, distinct from the snapshot blocks below
@@ -1731,7 +1902,7 @@ mod tests {
             UnixNanos::default(),
         );
         let instrument_id = pool.instrument_id;
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
         cache.add_dex(dex).await?;
         cache.add_token(token0).await?;
@@ -1801,7 +1972,12 @@ mod tests {
         cache.database = None;
         schema.cleanup().await?;
 
-        let latest_valid_block = latest_valid?.map(|s| s.block_position.number);
+        let latest_valid_metadata = latest_valid?.map(|snapshot| {
+            (
+                snapshot.block_position.number,
+                snapshot.block_position.block_hash,
+            )
+        });
         let latest_any_block = latest_any?.map(|s| s.block_position.number);
         let stored_invalid = stored_invalid?;
         let stored_on_chain = stored_on_chain?;
@@ -1809,13 +1985,13 @@ mod tests {
         // require_valid excludes 'invalid', so the latest usable snapshot is on_chain@150; without
         // the filter the newest row (invalid@200) wins. The stored verdict stays readable by primary
         // key and untouched by the load filter.
-        if latest_valid_block != Some(150)
+        if latest_valid_metadata != Some((150, Some(format!("0x{:064x}", 150))))
             || latest_any_block != Some(200)
             || stored_invalid.as_deref() != Some("invalid")
             || stored_on_chain.as_deref() != Some("on_chain")
         {
             anyhow::bail!(
-                "unexpected load filter result: latest_valid_block={latest_valid_block:?}, latest_any_block={latest_any_block:?}, stored_invalid={stored_invalid:?}, stored_on_chain={stored_on_chain:?}"
+                "unexpected load filter result: latest_valid_metadata={latest_valid_metadata:?}, latest_any_block={latest_any_block:?}, stored_invalid={stored_invalid:?}, stored_on_chain={stored_on_chain:?}"
             );
         }
 
@@ -1835,8 +2011,8 @@ mod tests {
         let pool_identifier = PoolIdentifier::from_address(pool_address);
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             10,
@@ -1847,7 +2023,7 @@ mod tests {
             UnixNanos::default(),
         );
         let instrument_id = pool.instrument_id;
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
         cache.add_dex(dex).await?;
         cache.add_token(token0).await?;
@@ -1957,8 +2133,8 @@ mod tests {
             PoolIdentifier::from_address(address!("0x1111111111111111111111111111111111111111"));
 
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             30,
@@ -1968,7 +2144,7 @@ mod tests {
             Some(10),
             UnixNanos::default(),
         );
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
         cache.add_dex(dex).await?;
         cache.add_token(token0).await?;
@@ -2021,8 +2197,8 @@ mod tests {
         let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
         let pool_identifier = PoolIdentifier::from_address(pool_address);
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             pool_identifier,
             10,
@@ -2037,9 +2213,9 @@ mod tests {
         // Unreachable RPC so the on-chain compare cannot fetch the block and must fall back to the
         // stored verdict.
         let config = BlockchainDataClientConfig::builder()
-            .chain(chain.clone())
+            .chain(Arc::clone(&chain))
             .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .http_rpc_url("http://127.0.0.1:9".into())
             .use_hypersync_for_live_data(true)
             .build();
         let mut core = BlockchainDataClientCore::new(config, None, None, CancellationToken::new());
@@ -2134,8 +2310,8 @@ mod tests {
         async fn events(&self, to_block: u64) -> anyhow::Result<Vec<DexPoolData>> {
             self.database()
                 .stream_pool_events(
-                    self.chain.clone(),
-                    self.dex.clone(),
+                    Arc::clone(&self.chain),
+                    Arc::clone(&self.dex),
                     self.pool.instrument_id,
                     self.pool.pool_identifier,
                     None,
@@ -2156,8 +2332,8 @@ mod tests {
         let token1 = usdc(&chain);
         let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
         let pool = Pool::new(
-            chain.clone(),
-            dex.clone(),
+            Arc::clone(&chain),
+            Arc::clone(&dex),
             pool_address,
             PoolIdentifier::from_address(pool_address),
             10,
@@ -2167,9 +2343,9 @@ mod tests {
             Some(10),
             UnixNanos::default(),
         );
-        let mut cache = BlockchainCache::new(chain.clone());
+        let mut cache = BlockchainCache::new(Arc::clone(&chain));
         cache.database = Some(database);
-        cache.add_dex(dex.clone()).await?;
+        cache.add_dex(Arc::clone(&dex)).await?;
         cache.add_token(token0).await?;
         cache.add_token(token1).await?;
         cache.add_pool(pool.clone()).await?;
@@ -2187,8 +2363,8 @@ mod tests {
         fixture: &PoolEventSyncFixture,
     ) -> (PoolFeeProtocolUpdate, PoolFeeProtocolCollect) {
         let update = PoolFeeProtocolUpdate::new(
-            fixture.chain.clone(),
-            fixture.dex.clone(),
+            Arc::clone(&fixture.chain),
+            Arc::clone(&fixture.dex),
             fixture.pool.instrument_id,
             fixture.pool.pool_identifier,
             12,
@@ -2201,8 +2377,8 @@ mod tests {
             UnixNanos::from(1_700_000_012_000_000_000),
         );
         let collect = PoolFeeProtocolCollect::new(
-            fixture.chain.clone(),
-            fixture.dex.clone(),
+            Arc::clone(&fixture.chain),
+            Arc::clone(&fixture.dex),
             fixture.pool.instrument_id,
             fixture.pool.pool_identifier,
             13,
@@ -2221,8 +2397,8 @@ mod tests {
 
     fn expected_swap(fixture: &PoolEventSyncFixture) -> PoolSwap {
         PoolSwap::new(
-            fixture.chain.clone(),
-            fixture.dex.clone(),
+            Arc::clone(&fixture.chain),
+            Arc::clone(&fixture.dex),
             fixture.pool.instrument_id,
             fixture.pool.pool_identifier,
             11,
@@ -2272,7 +2448,7 @@ mod tests {
             create_cache_test_schema(&admin_pool, &schema_name).await?;
         }
 
-        let database = BlockchainCacheDatabase::connect(
+        let database = crate::cache::database::tests::connect_test_database(
             connect_options.options([("search_path", format!("{schema_name},public"))]),
         )
         .await?;
@@ -2388,6 +2564,7 @@ mod tests {
                 CREATE TABLE {schema}."pool_event_block" (
                     chain_id INTEGER NOT NULL,
                     number BIGINT NOT NULL,
+                    hash TEXT,
                     timestamp TEXT NOT NULL,
                     PRIMARY KEY (chain_id, number)
                 )
@@ -2781,7 +2958,7 @@ mod tests {
 
     fn weth(chain: &SharedChain) -> Token {
         Token::new(
-            chain.clone(),
+            Arc::clone(chain),
             address!("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),
@@ -2791,7 +2968,7 @@ mod tests {
 
     fn usdc(chain: &SharedChain) -> Token {
         Token::new(
-            chain.clone(),
+            Arc::clone(chain),
             address!("0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"),
             "USD Coin".to_string(),
             "USDC".to_string(),

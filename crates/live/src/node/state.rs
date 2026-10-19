@@ -24,8 +24,23 @@ const STOP_REQUESTED: u8 = 1 << 7;
 const STATE_MASK: u8 = !STOP_REQUESTED;
 
 /// Lifecycle state of the `LiveNode` runner.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[repr(u8)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.live",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.live")
+)]
 pub enum NodeState {
     #[default]
     Idle = 0,
@@ -63,6 +78,27 @@ impl NodeState {
     #[must_use]
     pub const fn is_running(&self) -> bool {
         matches!(self, Self::Running)
+    }
+}
+
+/// Determines which lifecycle responsibilities the node owns while running.
+///
+/// Both modes run the same event loop. The mode only decides whether the node installs process
+/// signal handlers, which a host application must own for itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum NodeRunMode {
+    /// The node owns the thread it runs on and installs its own signal handlers.
+    #[default]
+    Owned,
+    /// A host event loop drives the node, and the host owns signal handling and shutdown.
+    Hosted,
+}
+
+impl NodeRunMode {
+    /// Returns whether the node installs process signal handlers in this mode.
+    #[must_use]
+    pub const fn owns_signals(self) -> bool {
+        matches!(self, Self::Owned)
     }
 }
 

@@ -21,11 +21,16 @@
 //!
 //! # Arithmetic behavior
 //!
+//! Adding or subtracting two `Quantity` values requires matching effective fixed-point scales.
+//! These operations panic on a scale mismatch.
+//! Comparisons and hashes account for scale differences without rounding.
+//! Without the `defi` feature, constructors restrict values to a single storage scale.
+//!
 //! | Operation               | Result     | Notes                               |
 //! |-------------------------|------------|-------------------------------------|
 //! | `Quantity + Quantity`   | `Quantity` | Precision is max of both operands.  |
 //! | `Quantity - Quantity`   | `Quantity` | Panics if result would be negative. |
-//! | `Quantity * Quantity`   | `Quantity` | Scales back by `FIXED_SCALAR`.      |
+//! | `Quantity * Quantity`   | `Quantity` | Precision is max of both operands.  |
 //! | `Quantity + Decimal`    | `Decimal`  |                                     |
 //! | `Quantity - Decimal`    | `Decimal`  |                                     |
 //! | `Quantity * Decimal`    | `Decimal`  |                                     |
@@ -35,6 +40,8 @@
 //! | `Quantity * f64`        | `f64`      |                                     |
 //! | `Quantity / f64`        | `f64`      |                                     |
 //!
+//! Multiplication accepts mixed scales and truncates the result toward zero at the result scale.
+//!
 //! # Immutability
 //!
 //! `Quantity` is immutable. All arithmetic operations return new instances.
@@ -43,6 +50,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
+    iter::Sum,
     ops::{Add, Deref, Div, Mul, Sub},
     str::FromStr,
 };
@@ -52,22 +60,29 @@ use alloy_primitives::U256;
 use nautilus_core::{
     correctness::{
         CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
-        check_in_range_inclusive_f64, check_predicate_true,
+        check_in_range_inclusive_f64,
     },
     string::formatting::Separable,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[cfg(not(feature = "defi"))]
+use super::fixed::FIXED_SCALAR_RAW;
+#[cfg(feature = "defi")]
+use super::fixed::compare_raw;
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, MAX_FLOAT_PRECISION, check_fixed_precision,
-    checked_mul_div_fixed, mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked,
-    raw_scales_match, scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, checked_mul_div_fixed,
+    checked_mul_div_raw, format_scaled_u128, mantissa_exponent_to_fixed_i128,
+    mantissa_exponent_to_raw_checked, parse_decimal_mantissa, raw_scale, raw_scales_match,
+    scaled_raw_to_decimal,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+#[cfg(feature = "defi")]
+use crate::types::fixed::MAX_FLOAT_PRECISION;
 
 // -----------------------------------------------------------------------------
 // QuantityRaw
@@ -126,19 +141,14 @@ pub const QUANTITY_MIN: f64 = 0.0;
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Quantity {
-    /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
-    pub raw: QuantityRaw,
+    pub(crate) raw: QuantityRaw,
     /// The number of decimal places, with a maximum of [`FIXED_PRECISION`].
     pub precision: u8,
 }
@@ -178,32 +188,6 @@ impl Quantity {
         Ok(Self { raw, precision })
     }
 
-    /// Creates a new [`Quantity`] instance with a guaranteed non zero value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - `value` is zero.
-    /// - `value` becomes zero after rounding to `precision`.
-    /// - `value` is invalid outside the representable range [0, `QUANTITY_MAX`].
-    /// - `precision` is invalid outside the representable range [0, `FIXED_PRECISION`].
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn non_zero_checked(value: f64, precision: u8) -> CorrectnessResult<Self> {
-        check_predicate_true(value != 0.0, "value was zero")?;
-        check_fixed_precision(precision)?;
-        let rounded_value = (value * 10.0_f64.powi(i32::from(precision))).round()
-            / 10.0_f64.powi(i32::from(precision));
-        check_predicate_true(
-            rounded_value != 0.0,
-            &format!("value {value} was zero after rounding to precision {precision}"),
-        )?;
-
-        Self::new_checked(value, precision)
-    }
-
     /// Creates a new [`Quantity`] instance.
     ///
     /// # Panics
@@ -212,16 +196,6 @@ impl Quantity {
     #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect_display(FAILED)
-    }
-
-    /// Creates a new [`Quantity`] instance with a guaranteed non zero value.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a correctness check fails. See [`Quantity::non_zero_checked`] for more details.
-    #[must_use]
-    pub fn non_zero(value: f64, precision: u8) -> Self {
-        Self::non_zero_checked(value, precision).expect_display(FAILED)
     }
 
     /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`.
@@ -243,6 +217,7 @@ impl Quantity {
                 "`precision` must be 0 when `raw` is QUANTITY_UNDEF"
             );
         }
+
         check_fixed_precision(precision).expect_display(FAILED);
 
         // TODO: Enforce spurious bits validation in v2
@@ -298,10 +273,12 @@ impl Quantity {
         if !raw_scales_match(self.precision, rhs.precision) {
             return None;
         }
+
         let raw = self.raw.checked_add(rhs.raw)?;
         if raw > QUANTITY_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             precision: self.precision.max(rhs.precision),
@@ -322,19 +299,52 @@ impl Quantity {
         if !raw_scales_match(self.precision, rhs.precision) {
             return None;
         }
+
         let raw = self.raw.checked_sub(rhs.raw)?;
+
         Some(Self {
             raw,
             precision: self.precision.max(rhs.precision),
         })
     }
 
+    /// Adds two quantities, clamping the result to [`QUANTITY_RAW_MAX`].
+    ///
+    /// Precision follows `Add`: the result uses the maximum operand precision.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the operands have mismatched effective fixed-point scales.
+    #[must_use]
+    pub fn saturating_add(self, rhs: Self) -> Self {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot add `Quantity` values with mismatched decimal scales"
+        );
+
+        Self {
+            raw: self.raw.saturating_add(rhs.raw).min(QUANTITY_RAW_MAX),
+            precision: self.precision.max(rhs.precision),
+        }
+    }
+
     /// Computes a saturating subtraction between two quantities, logging when clamped.
+    ///
+    /// Operands must use the same effective fixed-point scale. The Python binding raises
+    /// `ValueError` for mismatched scales.
     ///
     /// When `rhs` is greater than `self`, the result is clamped to zero and a warning is logged.
     /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the operands have mismatched effective fixed-point scales.
     #[must_use]
     pub fn saturating_sub(self, rhs: Self) -> Self {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot subtract `Quantity` values with mismatched decimal scales"
+        );
         let precision = self.precision.max(rhs.precision);
         let raw = self.raw.saturating_sub(rhs.raw);
         if raw == 0 && self.raw < rhs.raw {
@@ -363,14 +373,41 @@ impl Quantity {
         self.raw == QUANTITY_UNDEF
     }
 
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Quantity;
+    /// let value = Quantity::from("1");
+    /// let raw = value.raw;
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn raw(&self) -> QuantityRaw {
+        self.raw
+    }
+
     /// Returns `true` if the value of this instance is zero.
     #[must_use]
+    #[inline]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
 
+    /// Returns `true` if the stored value of this instance is nonzero.
+    #[must_use]
+    #[inline]
+    pub fn non_zero(&self) -> bool {
+        self.raw != 0
+    }
+
     /// Returns `true` if the value of this instance is position (> 0).
     #[must_use]
+    #[inline]
     pub fn is_positive(&self) -> bool {
         self.raw != QUANTITY_UNDEF && self.raw > 0
     }
@@ -380,7 +417,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
+    /// Panics if the `defi` feature is enabled and precision exceeds `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]
@@ -394,17 +431,8 @@ impl Quantity {
 
     #[cfg(not(feature = "high-precision"))]
     /// Returns the value of this instance as an `f64`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
-        #[cfg(feature = "defi")]
-        if self.precision > MAX_FLOAT_PRECISION {
-            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
-        }
-
         fixed_u64_to_f64(self.raw)
     }
 
@@ -432,6 +460,7 @@ impl Quantity {
         clippy::unnecessary_fallible_conversions,
         reason = "try_from is infallible when QuantityRaw is u64, fallible when u128"
     )]
+    #[cfg(not(feature = "defi"))]
     pub(crate) fn raw_as_decimal(raw: QuantityRaw) -> Decimal {
         let whole =
             i128::try_from(raw / FIXED_SCALAR_RAW).expect("Whole raw quantity must fit in Decimal");
@@ -445,6 +474,19 @@ impl Quantity {
     #[must_use]
     pub fn to_formatted_string(&self) -> String {
         format!("{self}").separate_with_underscores()
+    }
+
+    fn raw_at_precision(&self) -> QuantityRaw {
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
+        self.raw / QuantityRaw::pow(10, u32::from(precision_diff))
+    }
+
+    fn raw_as_u128(raw: QuantityRaw) -> u128 {
+        #[allow(
+            clippy::useless_conversion,
+            reason = "u128::from is a widening conversion when QuantityRaw is u64"
+        )]
+        u128::from(raw)
     }
 
     /// Creates a new [`Quantity`] from a `Decimal` value with specified precision.
@@ -652,41 +694,36 @@ impl From<u64> for Quantity {
 
 impl Hash for Quantity {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.raw.hash(state);
+        canonical_raw(self.raw, self.precision).hash(state);
     }
 }
 
 impl PartialEq for Quantity {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw
+        self.cmp(other) == Ordering::Equal
     }
 }
 
 impl PartialOrd for Quantity {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
-    }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.raw.lt(&other.raw)
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.raw.le(&other.raw)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.raw.gt(&other.raw)
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.raw.ge(&other.raw)
     }
 }
 
 impl Ord for Quantity {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        self.raw.cmp(&other.raw)
+        #[cfg(feature = "defi")]
+        {
+            compare_raw(self.raw, self.precision, other.raw, other.precision)
+        }
+
+        #[cfg(not(feature = "defi"))]
+        {
+            self.raw.cmp(&other.raw)
+        }
     }
 }
 
@@ -700,7 +737,13 @@ impl Deref for Quantity {
 
 impl Add for Quantity {
     type Output = Self;
+    #[inline]
     fn add(self, rhs: Self) -> Self::Output {
+        #[cfg(feature = "defi")]
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot add `Quantity` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -711,9 +754,28 @@ impl Add for Quantity {
     }
 }
 
+impl Sum for Quantity {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.reduce(|acc, x| acc + x)
+            .unwrap_or_else(|| Self::zero(0))
+    }
+}
+
+impl<'a> Sum<&'a Self> for Quantity {
+    fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
+        iter.copied().sum()
+    }
+}
+
 impl Sub for Quantity {
     type Output = Self;
+    #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
+        #[cfg(feature = "defi")]
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot subtract `Quantity` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -732,12 +794,13 @@ impl Mul for Quantity {
             && self.precision <= FIXED_PRECISION
             && rhs.precision <= FIXED_PRECISION
         {
-            checked_mul_div_fixed(self.raw, rhs.raw).filter(|raw| *raw <= QUANTITY_RAW_MAX)
+            checked_mul_div_fixed(self.raw, rhs.raw)
         } else {
-            self.raw
-                .checked_mul(rhs.raw)
-                .map(|raw| raw / FIXED_SCALAR_RAW)
+            let scalar = QuantityRaw::try_from(raw_scale(self.precision.min(rhs.precision)))
+                .expect("Fixed-point scale fits QuantityRaw");
+            checked_mul_div_raw(self.raw, rhs.raw, scalar)
         }
+        .filter(|raw| *raw <= QUANTITY_RAW_MAX)
         .expect("Overflow occurred when multiplying `Quantity`");
 
         Self {
@@ -833,18 +896,31 @@ impl FromStr for Quantity {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let clean_value = value.replace('_', "");
 
-        let decimal = if clean_value.contains('e') || clean_value.contains('E') {
-            Decimal::from_scientific(&clean_value)
-                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
-        } else {
-            Decimal::from_str(&clean_value)
-                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?
-        };
+        if clean_value.contains('e') || clean_value.contains('E') {
+            let decimal = Decimal::from_scientific(&clean_value)
+                .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
+            let precision = decimal.scale() as u8;
+            return Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string());
+        }
 
-        // Use decimal scale to preserve caller-specified precision (including trailing zeros)
-        let precision = decimal.scale() as u8;
-
-        Self::from_decimal_dp(decimal, precision).map_err(|e| e.to_string())
+        let (mantissa, precision) = parse_decimal_mantissa(&clean_value)
+            .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
+        if mantissa < 0 {
+            return Err(format!(
+                "Decimal value '{clean_value}' is negative, Quantity must be non-negative"
+            ));
+        }
+        let exponent = -i8::try_from(precision).map_err(|e| e.to_string())?;
+        let raw = mantissa_exponent_to_raw_checked::<QuantityRaw>(
+            mantissa,
+            exponent,
+            precision,
+            "Quantity::from_str",
+            "QuantityRaw",
+            "Quantity",
+        )
+        .map_err(|e| e.to_string())?;
+        Self::from_raw_checked(raw, precision).map_err(|e| e.to_string())
     }
 }
 
@@ -868,21 +944,22 @@ impl From<&String> for Quantity {
 
 impl Debug for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
-            write!(f, "{}({})", stringify!(Quantity), self.raw)
-        } else {
-            write!(f, "{}({})", stringify!(Quantity), self.as_decimal())
-        }
+        write!(
+            f,
+            "{}({})",
+            stringify!(Quantity),
+            format_scaled_u128(Self::raw_as_u128(self.raw_at_precision()), self.precision),
+        )
     }
 }
 
 impl Display for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
-            write!(f, "{}", self.raw)
-        } else {
-            write!(f, "{}", self.as_decimal())
-        }
+        write!(
+            f,
+            "{}",
+            format_scaled_u128(Self::raw_as_u128(self.raw_at_precision()), self.precision),
+        )
     }
 }
 
@@ -930,6 +1007,21 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::types::fixed::FIXED_SCALAR_RAW;
+    #[cfg(not(feature = "defi"))]
+    use crate::types::fixed::MAX_FLOAT_PRECISION;
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(QUANTITY_RAW_MAX, dec!(34028236692093))]
+    #[case(80_000_000_000_000_000_000_000_000_000, dec!(8000000000000))]
+    fn test_as_decimal_above_decimal_mantissa(#[case] raw: QuantityRaw, #[case] expected: Decimal) {
+        // Regression: a precision-16 quantity above roughly 7.92e12 rescales to a raw value
+        // beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let qty = Quantity::from_raw(raw, 16);
+
+        assert_eq!(qty.as_decimal(), expected);
+    }
 
     #[rstest]
     fn test_max_quantity_round_trips_through_raw() {
@@ -1003,6 +1095,45 @@ mod tests {
     }
 
     #[rstest]
+    fn test_sum_owned_quantities() {
+        let quantities = [Quantity::new(1.25, 2), Quantity::new(2.75, 2)];
+        let result: Quantity = quantities.into_iter().sum();
+
+        assert_eq!(result.as_decimal(), dec!(4.00));
+        assert_eq!(result.precision, 2);
+    }
+
+    #[rstest]
+    fn test_sum_borrowed_quantities() {
+        let quantities = [Quantity::new(0.125, 3), Quantity::new(0.375, 3)];
+        let result: Quantity = quantities.iter().sum();
+
+        assert_eq!(result.as_decimal(), dec!(0.500));
+        assert_eq!(result.precision, 3);
+    }
+
+    #[rstest]
+    fn test_sum_mixed_precision_quantities() {
+        let quantities = [
+            Quantity::new(1.2, 1),
+            Quantity::new(3.45, 2),
+            Quantity::new(0.006, 3),
+        ];
+        let result: Quantity = quantities.into_iter().sum();
+
+        assert_eq!(result.as_decimal(), dec!(4.656));
+        assert_eq!(result.precision, 3);
+    }
+
+    #[rstest]
+    fn test_sum_empty_quantity_iterator() {
+        let result: Quantity = std::iter::empty::<Quantity>().sum();
+
+        assert_eq!(result.as_decimal(), dec!(0));
+        assert_eq!(result.precision, 0);
+    }
+
+    #[rstest]
     fn test_mixed_precision_sub() {
         let q1 = Quantity::new(2.0, 1);
         let q2 = Quantity::new(1.0, 2);
@@ -1021,36 +1152,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_non_zero_ok() {
-        let qty = Quantity::non_zero_checked(123.456, 3).unwrap();
-        assert_eq!(qty.raw, Quantity::new(123.456, 3).raw);
-        assert!(qty.is_positive());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_zero_input() {
-        assert!(Quantity::non_zero_checked(0.0, 0).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_rounds_to_zero() {
-        // 0.0004 rounded to 3 dp ⇒ 0.000
-        assert!(Quantity::non_zero_checked(0.0004, 3).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_negative() {
-        assert!(Quantity::non_zero_checked(-1.0, 0).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_exceeds_max() {
-        assert!(Quantity::non_zero_checked(QUANTITY_MAX * 10.0, 0).is_err());
-    }
-
-    #[rstest]
-    fn test_new_non_zero_invalid_precision() {
-        assert!(Quantity::non_zero_checked(1.0, FIXED_PRECISION + 1).is_err());
+    #[case(0, false)]
+    #[case(1, true)]
+    #[case(QUANTITY_UNDEF, true)]
+    fn test_non_zero(#[case] raw: QuantityRaw, #[case] expected: bool) {
+        let qty = Quantity::from_raw(raw, 0);
+        assert_eq!(qty.non_zero(), expected);
     }
 
     #[rstest]
@@ -1063,7 +1170,7 @@ mod tests {
         assert_eq!(qty, Quantity::from("0.00812000"));
         assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert_eq!(qty.to_string(), "0.00812000");
-        assert!(!qty.is_zero());
+        assert!(qty.non_zero());
         assert!(qty.is_positive());
         assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000_001));
     }
@@ -1468,6 +1575,36 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "high-precision"))]
+    #[rstest]
+    fn test_from_decimal_dp_rejects_quantity_raw_overflow() {
+        let error = Quantity::from_decimal_dp(dec!(20_000_000_000), 0).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!("Decimal value exceeds QuantityRaw range [0, {QUANTITY_RAW_MAX}]"),
+            }
+        );
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_from_decimal_dp_rejects_value_above_quantity_max() {
+        let value = 34_028_236_692_094_u64;
+        let raw = u128::from(value) * FIXED_SCALAR_RAW;
+        let error = Quantity::from_decimal_dp(Decimal::from(value), 0).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
+                ),
+            }
+        );
+    }
+
     #[rstest]
     fn test_add() {
         let a = 1.0;
@@ -1520,6 +1657,34 @@ mod tests {
     fn test_quantity_checked_sub_to_zero() {
         let a = Quantity::new(5.0, 2);
         assert_eq!(a.checked_sub(a), Some(Quantity::zero(2)));
+    }
+
+    #[rstest]
+    fn test_quantity_from_raw_checked_allows_undef_and_rejects_above_max() {
+        assert_eq!(
+            Quantity::from_raw_checked(QUANTITY_UNDEF, 0).unwrap().raw,
+            QUANTITY_UNDEF
+        );
+        assert_eq!(
+            Quantity::from_raw_checked(QUANTITY_RAW_MAX + 1, 0)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "raw value {} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}",
+                QUANTITY_RAW_MAX + 1
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_as_f64() {
+        assert_eq!(Quantity::new(2.5, 1).as_f64(), 2.5);
+        assert_eq!(Quantity::new(0.0, 1).as_f64(), 0.0);
+    }
+
+    #[rstest]
+    fn test_quantity_deref_yields_raw() {
+        assert_eq!(*Quantity::from_raw(2_500, 1), 2_500);
     }
 
     #[rstest]
@@ -1631,8 +1796,8 @@ mod tests {
         case(
             1_000_000_000_000_000_000.0,
             18,
-            "Quantity(1000000000000000000)",
-            "1000000000000000000"
+            "Quantity(1.000000000000000000)",
+            "1.000000000000000000"
         )
     )] // High precision
     fn test_debug_display_precision_handling(
@@ -1800,14 +1965,23 @@ mod tests {
 
     #[cfg(feature = "high-precision")]
     #[rstest]
-    #[case(QUANTITY_RAW_MAX, dec!(34028236692093))]
-    #[case(80_000_000_000_000_000_000_000_000_000, dec!(8000000000000))]
-    fn test_as_decimal_above_decimal_mantissa(#[case] raw: QuantityRaw, #[case] expected: Decimal) {
-        // Regression: a precision-16 quantity above roughly 7.92e12 rescales to a raw value
-        // beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
-        let qty = Quantity::from_raw(raw, 16);
+    fn test_max_raw_precision_16_string_round_trip() {
+        let quantity = Quantity::from_raw(QUANTITY_RAW_MAX, 16);
 
-        assert_eq!(qty.as_decimal(), expected);
+        let decoded = quantity.to_string().parse::<Quantity>().unwrap();
+
+        assert_eq!(decoded, quantity);
+        assert_eq!(decoded.raw, QUANTITY_RAW_MAX);
+        assert_eq!(decoded.precision, 16);
+    }
+
+    #[cfg(all(feature = "defi", feature = "high-precision"))]
+    #[rstest]
+    fn test_wei_above_decimal_mantissa_formats_exactly() {
+        let raw = 80_000_000_000_000_000_250_000_000_000_u128;
+        let qty = Quantity::from_raw(raw, 18);
+
+        assert_eq!(qty.to_string(), "80000000000.000000250000000000");
     }
 
     #[rstest]
@@ -1927,6 +2101,20 @@ mod tests {
 
     #[rstest]
     #[cfg(feature = "defi")]
+    fn test_from_u256_rejects_amount_above_quantity_raw_range() {
+        let amount = U256::from(u128::MAX) + U256::from(1_u8);
+        let error = Quantity::from_u256(amount, 18).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!("U256 scaled amount {amount} exceeds QuantityRaw range"),
+            }
+        );
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
     fn test_from_u256_invalid_precision_returns_typed_error() {
         let error = Quantity::from_u256(U256::from(1u8), 19).unwrap_err();
         match error {
@@ -1965,6 +2153,9 @@ mod property_tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::types::fixed::FIXED_SCALAR_RAW;
+    #[cfg(not(feature = "defi"))]
+    use crate::types::fixed::MAX_FLOAT_PRECISION;
 
     /// Strategy to generate valid quantity values (non-negative).
     fn quantity_value_strategy() -> impl Strategy<Value = f64> {
@@ -2038,9 +2229,6 @@ mod property_tests {
         fn prop_quantity_serde_round_trip(
             (raw, precision) in raw_for_precision_strategy()
         ) {
-            // Only run string-based round-trip checks where decimal formatting is supported.
-            prop_assume!(decimal_compatible(raw, precision));
-
             let original = Quantity::from_raw(raw, precision);
 
             // String round-trip (this should be exact and is the most important)

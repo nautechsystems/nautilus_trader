@@ -15,7 +15,7 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 | `currency`        | `Currency`         | `Currency`         | Required         | Quote and settlement currency.           |
 | `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.       |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.               |
-| `lot_size`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Board lot or whole‑share lot size.       |
+| `lot_size`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Board lot or whole-share lot size.       |
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 | `isin`            | `Option<Ustr>`     | `str \| None`      | `None`           | International Securities ID when known.  |
@@ -25,12 +25,10 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 | `min_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`    | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -39,6 +37,11 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 - The multiplier and size increment are one.
 - It has no base currency, expiry, strike, option kind, or inverse costing flag.
 - Use price limits only when the venue publishes them.
+
+:::warning
+`Equity` fixes size precision at zero. The `RiskEngine` denies any order whose quantity
+precision exceeds the instrument size precision, so fractional-share quantities are rejected.
+:::
 
 ## Example
 
@@ -88,10 +91,10 @@ aapl = Equity(
 
 ## Adapters
 
-Representative adapters that create or consume `Equity` instruments include:
+**Adapters that create or consume `Equity` instruments include**:
 
 - [Databento](../../integrations/databento.md) for listed US equities and ETFs.
-- [Interactive Brokers](../../integrations/ib.md) for listed equity contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for listed equity contracts.
 
 ## Related guides
 

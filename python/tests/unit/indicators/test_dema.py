@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test dema behavior.
+"""
 
 import pytest
 
@@ -22,26 +25,41 @@ from tests.stubs import TestDataProviderPyo3
 
 @pytest.fixture
 def dema() -> DoubleExponentialMovingAverage:
+    """
+    Dema.
+    """
     return DoubleExponentialMovingAverage(10)
 
 
 def test_name_returns_expected_string(dema: DoubleExponentialMovingAverage) -> None:
+    """
+    Test name returns expected string.
+    """
     # Arrange, Act, Assert
     assert dema.name == "DoubleExponentialMovingAverage"
 
 
 def test_str_repr_returns_expected_string(dema: DoubleExponentialMovingAverage) -> None:
+    """
+    Test str repr returns expected string.
+    """
     # Arrange, Act, Assert
     assert str(dema) == "DoubleExponentialMovingAverage(10)"
     assert repr(dema) == "DoubleExponentialMovingAverage(10)"
 
 
 def test_period_returns_expected_value(dema: DoubleExponentialMovingAverage) -> None:
+    """
+    Test period returns expected value.
+    """
     # Arrange, Act, Assert
     assert dema.period == 10
 
 
 def test_initialized_without_inputs_returns_false(dema: DoubleExponentialMovingAverage) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not dema.initialized
 
@@ -49,27 +67,25 @@ def test_initialized_without_inputs_returns_false(dema: DoubleExponentialMovingA
 def test_initialized_with_required_inputs_returns_true(
     dema: DoubleExponentialMovingAverage,
 ) -> None:
+    """
+    Test initialized with required inputs returns true.
+    """
     # Arrange
-    dema.update_raw(1.00000)
-    dema.update_raw(2.00000)
-    dema.update_raw(3.00000)
-    dema.update_raw(4.00000)
-    dema.update_raw(5.00000)
-    dema.update_raw(6.00000)
-    dema.update_raw(7.00000)
-    dema.update_raw(8.00000)
-    dema.update_raw(9.00000)
-    dema.update_raw(10.00000)
+    for value in range(1, 19):
+        dema.update_raw(float(value))
+    assert not dema.initialized
+    dema.update_raw(19.0)
 
-    # Act
-
-    # Assert
+    # Act, Assert
     assert dema.initialized
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
+    """
+    Test handle quote tick updates indicator.
+    """
     # Arrange
-    indicator = DoubleExponentialMovingAverage(10, PriceType.MID)
+    indicator = DoubleExponentialMovingAverage(1, PriceType.MID)
 
     tick = TestDataProviderPyo3.quote_tick()
 
@@ -82,8 +98,11 @@ def test_handle_quote_tick_updates_indicator() -> None:
 
 
 def test_handle_trade_tick_updates_indicator() -> None:
+    """
+    Test handle trade tick updates indicator.
+    """
     # Arrange
-    indicator = DoubleExponentialMovingAverage(10)
+    indicator = DoubleExponentialMovingAverage(1)
 
     tick = TestDataProviderPyo3.trade_tick()
 
@@ -95,7 +114,11 @@ def test_handle_trade_tick_updates_indicator() -> None:
     assert indicator.value == pytest.approx(1987.0)
 
 
-def test_handle_bar_updates_indicator(dema: DoubleExponentialMovingAverage) -> None:
+def test_handle_bar_updates_indicator() -> None:
+    """
+    Test handle bar updates indicator.
+    """
+    dema = DoubleExponentialMovingAverage(1)
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -108,28 +131,37 @@ def test_handle_bar_updates_indicator(dema: DoubleExponentialMovingAverage) -> N
 
 
 def test_value_with_one_input_returns_expected_value(dema: DoubleExponentialMovingAverage) -> None:
+    """
+    Test value with one input returns expected value.
+    """
     # Arrange
     dema.update_raw(1.00000)
 
     # Act, Assert
-    assert dema.value == 1.0
+    assert not dema.initialized
+    assert dema.value == 0.0
 
 
-def test_value_with_three_inputs_returns_expected_value(
-    dema: DoubleExponentialMovingAverage,
-) -> None:
+def test_value_with_three_inputs_returns_expected_value() -> None:
+    """
+    Test value with three inputs returns expected value.
+    """
+    dema = DoubleExponentialMovingAverage(2)
     # Arrange
     dema.update_raw(1.00000)
     dema.update_raw(2.00000)
     dema.update_raw(3.00000)
 
     # Act, Assert
-    assert dema.value == pytest.approx(1.904583020285499, rel=1e-9)
+    assert dema.value == 3.0
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(
     dema: DoubleExponentialMovingAverage,
 ) -> None:
+    """
+    Test reset successfully returns indicator to fresh state.
+    """
     # Arrange
     for _i in range(1000):
         dema.update_raw(1.00000)

@@ -15,12 +15,14 @@
 
 //! Python bindings for Hyperliquid configuration.
 
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::HyperliquidEnvironment,
-    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
 };
 
 #[pymethods]
@@ -29,17 +31,19 @@ impl HyperliquidDataClientConfig {
     /// Configuration for the Hyperliquid data client.
     ///
     /// The `stale_stream_*` options control the stream health monitor. With recovery
-    /// enabled, a stale stream is warned about first, targeted-resubscribed once per
-    /// recovery cooldown (preserving its original `l2Book` options), and escalated to
-    /// a full WebSocket reconnect after `stale_stream_max_targeted_resubscribes`
-    /// failed attempts; fresh data resets the ladder. See the Hyperliquid integration
-    /// guide ("Stream health and recovery") for details.
+    /// enabled, a stale stream is warned about first, then acted on once per recovery
+    /// cooldown. A stale order book delta stream, including depth that shares its stream,
+    /// starts shared book recovery, which resubscribes until a fresh snapshot arrives.
+    /// Depth-only and BBO streams receive a targeted resubscribe (preserving the original
+    /// `l2Book` options) and escalate to a full WebSocket reconnect after
+    /// `stale_stream_max_targeted_resubscribes` failed attempts. Fresh data resets the ladder. See the Hyperliquid integration guide
+    /// ("Stream health and recovery") for details.
     #[new]
     #[pyo3(signature = (
         environment = None,
         private_key = None,
-        base_url_ws = None,
         base_url_http = None,
+        base_url_ws = None,
         proxy_url = None,
         http_timeout_secs = None,
         ws_timeout_secs = None,
@@ -51,13 +55,14 @@ impl HyperliquidDataClientConfig {
         stale_stream_recovery_enabled = None,
         stale_stream_recovery_cooldown_secs = None,
         stale_stream_max_targeted_resubscribes = None,
+        book_snapshot_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         environment: Option<HyperliquidEnvironment>,
         private_key: Option<String>,
-        base_url_ws: Option<String>,
         base_url_http: Option<String>,
+        base_url_ws: Option<String>,
         proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         ws_timeout_secs: Option<u64>,
@@ -69,13 +74,14 @@ impl HyperliquidDataClientConfig {
         stale_stream_recovery_enabled: Option<bool>,
         stale_stream_recovery_cooldown_secs: Option<u64>,
         stale_stream_max_targeted_resubscribes: Option<u32>,
+        book_snapshot_timeout_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
         Self {
-            private_key,
-            base_url_ws,
+            private_key: private_key.map(SecretString::from),
             base_url_http,
-            proxy_url,
+            base_url_ws,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
@@ -91,6 +97,8 @@ impl HyperliquidDataClientConfig {
                 .unwrap_or(defaults.stale_stream_recovery_cooldown_secs),
             stale_stream_max_targeted_resubscribes: stale_stream_max_targeted_resubscribes
                 .unwrap_or(defaults.stale_stream_max_targeted_resubscribes),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
@@ -109,16 +117,17 @@ impl HyperliquidDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl HyperliquidExecClientConfig {
+impl HyperliquidExecutionClientConfig {
     /// Configuration for the Hyperliquid execution client.
     #[new]
     #[pyo3(signature = (
+        account_id = None,
         private_key = None,
         vault_address = None,
         account_address = None,
         environment = None,
-        base_url_ws = None,
         base_url_http = None,
+        base_url_ws = None,
         base_url_exchange = None,
         proxy_url = None,
         http_timeout_secs = None,
@@ -133,12 +142,13 @@ impl HyperliquidExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
+        account_id: Option<AccountId>,
         private_key: Option<String>,
         vault_address: Option<String>,
         account_address: Option<String>,
         environment: Option<HyperliquidEnvironment>,
-        base_url_ws: Option<String>,
         base_url_http: Option<String>,
+        base_url_ws: Option<String>,
         base_url_exchange: Option<String>,
         proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
@@ -153,13 +163,14 @@ impl HyperliquidExecClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            private_key,
+            account_id: account_id.unwrap_or(defaults.account_id),
+            private_key: private_key.map(SecretString::from),
             vault_address,
             account_address,
-            base_url_ws,
             base_url_http,
+            base_url_ws,
             base_url_exchange,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
@@ -183,6 +194,6 @@ impl HyperliquidExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(HyperliquidExecClientConfig).to_string()
+        stringify!(HyperliquidExecutionClientConfig).to_string()
     }
 }

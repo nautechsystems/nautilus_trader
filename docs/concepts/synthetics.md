@@ -1,18 +1,20 @@
 # Synthetics
 
-Synthetic instruments are locally defined instruments whose prices derive from other instruments.
+**Synthetic instruments** are locally defined instruments whose prices derive from other instruments.
 They can combine components from one venue or many venues and expose the result as a standard
 Nautilus instrument with the synthetic venue code `SYNTH`.
 
 Synthetic instruments are useful for:
 
-- Enabling `Actor` and `Strategy` components to subscribe to quote or trade feeds.
+- Enabling `DataActor` and `Strategy` components to subscribe to quote or trade feeds.
 - Triggering emulated orders from derived prices.
 - Constructing bars from synthetic quotes or trades.
 
+:::info
 Synthetic instruments cannot be traded directly. They exist locally within the platform and serve
 as analytical tools. In the future, Nautilus may support trading component instruments based
 on synthetic instrument behavior.
+:::
 
 ## Formula language
 
@@ -39,8 +41,8 @@ and `-`.
 | Comments            | `// line`, `/* block */`                       | Comments are ignored.                                                 |
 
 :::note
-New formulas should use raw `InstrumentId` values. For backward compatibility, formulas that
-replace `-` with `_` in component IDs remain accepted.
+New formulas should use raw `InstrumentId` values. For backward compatibility, formulas that replace `-` with
+`_` in component IDs stay accepted.
 :::
 
 ### Operator precedence
@@ -63,15 +65,15 @@ statement the value you want the synthetic to produce.
 
 ### Built-in functions
 
-| Function | Signature                              | Notes                                                                                   |
-| -------- | -------------------------------------- | --------------------------------------------------------------------------------------- |
-| `abs`    | `abs(x)`                               | Absolute value.                                                                         |
-| `ceil`   | `ceil(x)`                              | Ceiling.                                                                                |
-| `floor`  | `floor(x)`                             | Floor.                                                                                  |
-| `round`  | `round(x)`                             | Round to the nearest integer using Rust `f64` rules.                                    |
-| `min`    | `min(x1, x2, ...)`                     | Accepts one or more numeric arguments.                                                  |
-| `max`    | `max(x1, x2, ...)`                     | Accepts one or more numeric arguments.                                                  |
-| `if`     | `if(condition, when_true, when_false)` | The condition must be boolean. Both branches match. Only the selected branch evaluates. |
+| Function | Signature                              | Notes                                                                                                     |
+| -------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `abs`    | `abs(x)`                               | Absolute value.                                                                                           |
+| `ceil`   | `ceil(x)`                              | Ceiling.                                                                                                  |
+| `floor`  | `floor(x)`                             | Floor.                                                                                                    |
+| `round`  | `round(x)`                             | Round to the nearest integer using Rust `f64` rules.                                                      |
+| `min`    | `min(x1, x2, ...)`                     | Accepts one or more numeric arguments.                                                                    |
+| `max`    | `max(x1, x2, ...)`                     | Accepts one or more numeric arguments.                                                                    |
+| `if`     | `if(condition, when_true, when_false)` | The condition must be boolean. Both branches must have the same type. Only the selected branch evaluates. |
 
 ### Type rules
 
@@ -83,7 +85,8 @@ statement the value you want the synthetic to produce.
 - `&&`, `||`, and unary `!` require boolean operands.
 - `&&` and `||` short-circuit. The right-hand side evaluates only when needed.
 - Local variables must be assigned before use.
-- Local variable names must start with a letter or `_` and then use letters, digits, or `_`.
+- Local variable names must start with an ASCII letter or `_` and then use ASCII letters, digits,
+  or `_`.
 - The final formula result must be numeric. A formula that ends with an assignment or produces a
   boolean result is invalid for a synthetic instrument.
 
@@ -92,13 +95,15 @@ statement the value you want the synthetic to produce.
 The expression engine enforces the following compile-time limits. Formulas that exceed them
 produce a clear error at construction time.
 
-| Limit           | Value | Description                                                    |
-| --------------- | ----- | -------------------------------------------------------------- |
-| Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack. |
-| Local variables | 16    | Maximum number of distinct local variable names.               |
+| Limit           | Value | Description                                                                                     |
+| --------------- | ----- | ----------------------------------------------------------------------------------------------- |
+| Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack.                                  |
+| Local variables | 16    | Maximum number of distinct local variable names.                                                |
+| Nesting depth   | 128   | Maximum syntax nesting and expression tree depth. The top-level expression counts as one level. |
 
-These limits are generous for any realistic pricing formula. A weighted sum of 8 components
-uses a peak stack depth of 3 and zero locals.
+A weighted sum of 8 components uses a peak stack depth of 3 and zero locals. A weighted sum of
+N components builds a tree of depth N + 1, so the nesting depth limit caps a weighted sum at
+127 components.
 
 ### Examples
 
@@ -118,15 +123,20 @@ formula = "if(BTCUSDT.BINANCE > ETHUSDT.BINANCE, BTCUSDT.BINANCE, ETHUSDT.BINANC
 
 ## Creating a synthetic instrument
 
-Before defining a new synthetic instrument, make sure all component instruments already exist in
-the cache.
+Before creating a synthetic instrument, ensure all component instruments exist in the cache. Subscribe to each
+component's quote or trade feed as well as the synthetic's. Synthetic quotes derive only from component
+quotes, and synthetic trades only from component trades.
+
+When a component tick arrives, the engine combines it with the latest cached prices of the other components to
+calculate the synthetic price. Until **each component has produced at least one tick**, the synthetic
+publishes nothing.
 
 The following example creates a synthetic instrument with an actor or strategy. This synthetic
 represents a simple spread between Bitcoin and Ethereum spot prices on Binance. It assumes that
 `BTCUSDT.BINANCE` and `ETHUSDT.BINANCE` already exist in the cache.
 
 ```python
-from nautilus_trader.model.instruments import SyntheticInstrument
+from nautilus_trader.model import SyntheticInstrument
 
 btcusdt_binance_id = InstrumentId.from_str("BTCUSDT.BINANCE")
 ethusdt_binance_id = InstrumentId.from_str("ETHUSDT.BINANCE")
@@ -145,7 +155,7 @@ synthetic = SyntheticInstrument(
 
 self._synthetic_id = synthetic.id
 self.add_synthetic(synthetic)
-self.subscribe_quote_ticks(self._synthetic_id)
+self.subscribe_quotes(self._synthetic_id)
 ```
 
 :::note
@@ -172,8 +182,8 @@ You can trigger emulated orders from synthetic prices. In the following example,
 instrument releases an emulated order once the synthetic price reaches the trigger condition.
 
 ```python
-order = self.strategy.order_factory.limit(
-    instrument_id=ETHUSDT_BINANCE.id,
+order = self.order_factory.limit(
+    instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
     order_side=OrderSide.BUY,
     quantity=Quantity.from_str("1.5"),
     price=Price.from_str("30000.00000000"),
@@ -181,14 +191,14 @@ order = self.strategy.order_factory.limit(
     trigger_instrument_id=self._synthetic_id,
 )
 
-self.strategy.submit_order(order)
+self.submit_order(order)
 ```
 
 ## Performance
 
-Formulas compile once at construction time and evaluate on every incoming component price tick.
-The expression engine uses a compile-once/eval-many architecture with a zero-allocation f64
-stack, so evaluation adds negligible overhead to the tick-processing path.
+Formulas compile once at construction time and evaluate on each incoming component price tick. The expression
+engine uses a zero-allocation `f64` stack for evaluation, adding negligible overhead to the tick-processing
+path.
 
 Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 
@@ -222,12 +232,12 @@ Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 
 ## Error handling
 
-Nautilus validates synthetic instruments at every boundary. Formula compilation rejects
-unknown symbols, type errors, and capacity overflows. Evaluation rejects wrong input counts and
-non-finite prices (NaN, Infinity) before they reach the formula.
+Nautilus validates synthetic instruments at each boundary. Formula compilation rejects unknown symbols, type
+errors, and capacity overflows. Evaluation rejects wrong input counts and non-finite prices (NaN, Infinity)
+before they reach the formula.
 
 See the
-[`SyntheticInstrument` API Reference](/docs/python-api-latest/model/instruments.html#nautilus_trader.model.instruments.synthetic.SyntheticInstrument)
+[`SyntheticInstrument` API Reference](/docs/python-api-latest/model/instruments.html#nautilus_trader.model.SyntheticInstrument)
 for input requirements and exceptions.
 
 ## Related guides

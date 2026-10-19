@@ -45,29 +45,29 @@ pub(crate) fn normalize_futures_asset<T: AsRef<str>>(
 /// Determines the Binance `positionSide` for hedge mode from the Nautilus order side.
 ///
 /// Returns `None` when not in hedge mode (one-way mode orders omit `positionSide`).
-/// In hedge mode, `reduce_only` flips the mapping so that Buy closes Short and
-/// Sell closes Long.
+/// In hedge mode, `is_closing` flips the mapping so that Buy closes Short and
+/// Sell closes Long. Close intent comes from the Nautilus `reduce_only` flag for
+/// explicit-quantity orders and from the `close_position` order parameter for
+/// whole-leg exits, which cannot carry `reduce_only`.
 #[must_use]
 pub(crate) fn determine_position_side(
     is_hedge_mode: bool,
     order_side: OrderSide,
-    reduce_only: bool,
+    is_closing: bool,
 ) -> Option<BinancePositionSide> {
     if !is_hedge_mode {
         return None;
     }
 
-    Some(if reduce_only {
+    Some(if is_closing {
         match order_side {
             OrderSide::Buy => BinancePositionSide::Short,
             OrderSide::Sell => BinancePositionSide::Long,
-            _ => BinancePositionSide::Both,
         }
     } else {
         match order_side {
             OrderSide::Buy => BinancePositionSide::Long,
             OrderSide::Sell => BinancePositionSide::Short,
-            _ => BinancePositionSide::Both,
         }
     })
 }
@@ -198,15 +198,14 @@ mod tests {
     #[case::hedge_open_sell(true, OrderSide::Sell, false, Some(BinancePositionSide::Short))]
     #[case::hedge_close_buy(true, OrderSide::Buy, true, Some(BinancePositionSide::Short))]
     #[case::hedge_close_sell(true, OrderSide::Sell, true, Some(BinancePositionSide::Long))]
-    #[case::hedge_no_side(true, OrderSide::NoOrderSide, false, Some(BinancePositionSide::Both))]
     fn test_determine_position_side(
         #[case] is_hedge_mode: bool,
         #[case] order_side: OrderSide,
-        #[case] reduce_only: bool,
+        #[case] is_closing: bool,
         #[case] expected: Option<BinancePositionSide>,
     ) {
         assert_eq!(
-            determine_position_side(is_hedge_mode, order_side, reduce_only),
+            determine_position_side(is_hedge_mode, order_side, is_closing),
             expected,
         );
     }
@@ -242,7 +241,7 @@ mod tests {
     fn test_normalize_futures_asset_registers_unknown_as_crypto() {
         let currency = normalize_futures_asset("XYZ", Currency::USDT());
 
-        assert_eq!(currency.code.as_str(), "XYZ");
+        assert_eq!(currency.code, "XYZ");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 }

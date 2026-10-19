@@ -15,7 +15,7 @@
 
 //! Stateful cache database test double.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -28,12 +28,12 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
-        greeks::{GreeksData, YieldCurveData},
+        Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
+        greeks::{GreeksData, YieldCurve},
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
@@ -42,21 +42,26 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 #[expect(
     clippy::struct_excessive_bools,
-    reason = "independent switches cover actor and strategy load and update failures"
+    reason = "independent switches cover lifecycle persistence failure modes"
 )]
 #[derive(Debug, Default)]
 struct TestCacheDatabaseState {
-    actors: AHashMap<ComponentId, AHashMap<String, Bytes>>,
+    actors: AHashMap<ActorId, AHashMap<String, Bytes>>,
     strategies: AHashMap<StrategyId, AHashMap<String, Bytes>>,
+    instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
     events: Vec<String>,
     fail_load_actor: bool,
     fail_load_strategy: bool,
     fail_update_actor: bool,
     fail_update_strategy: bool,
+    fail_update_position: bool,
+    fail_update_position_id: Option<PositionId>,
+    updated_positions: Vec<Position>,
 }
 
 /// Shared control and observation handle for [`TestCacheDatabase`].
@@ -65,10 +70,6 @@ pub struct TestCacheDatabaseControl {
     state: Arc<Mutex<TestCacheDatabaseState>>,
 }
 
-#[allow(
-    clippy::missing_panics_doc,
-    reason = "mutex poisoning is not expected in lifecycle tests"
-)]
 impl TestCacheDatabaseControl {
     /// Creates an adapter and its shared control handle.
     #[must_use]
@@ -84,41 +85,38 @@ impl TestCacheDatabaseControl {
 
     /// Records an event in the shared lifecycle log.
     pub fn record(&self, event: impl Into<String>) {
-        self.state.lock().unwrap().events.push(event.into());
+        self.state.lock().events.push(event.into());
     }
 
     /// Returns the recorded lifecycle events.
     #[must_use]
     pub fn events(&self) -> Vec<String> {
-        self.state.lock().unwrap().events.clone()
+        self.state.lock().events.clone()
     }
 
     /// Seeds actor state for a later load.
-    pub fn set_actor_state(&self, component_id: ComponentId, state: &IndexMap<String, Vec<u8>>) {
+    pub fn set_actor_state(&self, actor_id: ActorId, state: &IndexMap<String, Vec<u8>>) {
         self.state
             .lock()
-            .unwrap()
             .actors
-            .insert(component_id, encode_state(state));
+            .insert(actor_id, encode_state(state));
     }
 
     /// Seeds strategy state for a later load.
     pub fn set_strategy_state(&self, strategy_id: StrategyId, state: &IndexMap<String, Vec<u8>>) {
         self.state
             .lock()
-            .unwrap()
             .strategies
             .insert(strategy_id, encode_state(state));
     }
 
     /// Returns persisted actor state.
     #[must_use]
-    pub fn actor_state(&self, component_id: &ComponentId) -> Option<IndexMap<String, Vec<u8>>> {
+    pub fn actor_state(&self, actor_id: &ActorId) -> Option<IndexMap<String, Vec<u8>>> {
         self.state
             .lock()
-            .unwrap()
             .actors
-            .get(component_id)
+            .get(actor_id)
             .cloned()
             .map(decode_state)
     }
@@ -128,7 +126,6 @@ impl TestCacheDatabaseControl {
     pub fn strategy_state(&self, strategy_id: &StrategyId) -> Option<IndexMap<String, Vec<u8>>> {
         self.state
             .lock()
-            .unwrap()
             .strategies
             .get(strategy_id)
             .cloned()
@@ -137,22 +134,38 @@ impl TestCacheDatabaseControl {
 
     /// Configures actor loads to fail.
     pub fn set_fail_load_actor(&self, fail: bool) {
-        self.state.lock().unwrap().fail_load_actor = fail;
+        self.state.lock().fail_load_actor = fail;
     }
 
     /// Configures strategy loads to fail.
     pub fn set_fail_load_strategy(&self, fail: bool) {
-        self.state.lock().unwrap().fail_load_strategy = fail;
+        self.state.lock().fail_load_strategy = fail;
     }
 
     /// Configures actor updates to fail.
     pub fn set_fail_update_actor(&self, fail: bool) {
-        self.state.lock().unwrap().fail_update_actor = fail;
+        self.state.lock().fail_update_actor = fail;
     }
 
     /// Configures strategy updates to fail.
     pub fn set_fail_update_strategy(&self, fail: bool) {
-        self.state.lock().unwrap().fail_update_strategy = fail;
+        self.state.lock().fail_update_strategy = fail;
+    }
+
+    /// Configures position updates to fail.
+    pub fn set_fail_update_position(&self, fail: bool) {
+        self.state.lock().fail_update_position = fail;
+    }
+
+    /// Configures updates of a single position to fail.
+    pub fn set_fail_update_position_id(&self, position_id: Option<PositionId>) {
+        self.state.lock().fail_update_position_id = position_id;
+    }
+
+    /// Returns the positions persisted by successful updates, in update order.
+    #[must_use]
+    pub fn updated_positions(&self) -> Vec<Position> {
+        self.state.lock().updated_positions.clone()
     }
 }
 
@@ -174,7 +187,10 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
-        Ok(CacheMap::default())
+        Ok(CacheMap {
+            instrument_closes: self.control.state.lock().instrument_closes.clone(),
+            ..Default::default()
+        })
     }
 
     fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
@@ -187,6 +203,12 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         Ok(AHashMap::new())
+    }
+
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        Ok(self.control.state.lock().instrument_closes.clone())
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
@@ -246,18 +268,18 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         Ok(None)
     }
 
-    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        self.control.record(format!("actor.load:{component_id}"));
-        let state = self.control.state.lock().unwrap();
+    fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        self.control.record(format!("actor.load:{actor_id}"));
+        let state = self.control.state.lock();
         if state.fail_load_actor {
             anyhow::bail!("test actor load failure");
         }
-        Ok(state.actors.get(component_id).cloned().unwrap_or_default())
+        Ok(state.actors.get(actor_id).cloned().unwrap_or_default())
     }
 
     fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
         self.control.record(format!("strategy.load:{strategy_id}"));
-        let state = self.control.state.lock().unwrap();
+        let state = self.control.state.lock();
         if state.fail_load_strategy {
             anyhow::bail!("test strategy load failure");
         }
@@ -321,6 +343,12 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         Ok(())
     }
 
+    fn add_instrument_close(&self, close: &InstrumentClose) -> anyhow::Result<()> {
+        let mut state = self.control.state.lock();
+        state.instrument_closes.insert(close.instrument_id, *close);
+        Ok(())
+    }
+
     fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
         Ok(())
     }
@@ -377,11 +405,11 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         Ok(())
     }
 
-    fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+    fn add_yield_curve(&self, _yield_curve: &YieldCurve) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+    fn delete_actor(&self, _actor_id: &ActorId) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -419,15 +447,15 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
 
     fn update_actor(
         &self,
-        component_id: &ComponentId,
+        actor_id: &ActorId,
         actor_state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
-        self.control.record(format!("actor.update:{component_id}"));
-        let mut state = self.control.state.lock().unwrap();
+        self.control.record(format!("actor.update:{actor_id}"));
+        let mut state = self.control.state.lock();
         if state.fail_update_actor {
             anyhow::bail!("test actor update failure");
         }
-        state.actors.insert(*component_id, actor_state.clone());
+        state.actors.insert(*actor_id, actor_state.clone());
         Ok(())
     }
 
@@ -438,7 +466,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     ) -> anyhow::Result<()> {
         self.control
             .record(format!("strategy.update:{strategy_id}"));
-        let mut state = self.control.state.lock().unwrap();
+        let mut state = self.control.state.lock();
         if state.fail_update_strategy {
             anyhow::bail!("test strategy update failure");
         }
@@ -456,7 +484,12 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         Ok(())
     }
 
-    fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
+    fn update_position(&self, position: &Position) -> anyhow::Result<()> {
+        let mut state = self.control.state.lock();
+        if state.fail_update_position || state.fail_update_position_id == Some(position.id) {
+            anyhow::bail!("test position update failure");
+        }
+        state.updated_positions.push(position.clone());
         Ok(())
     }
 
@@ -490,4 +523,41 @@ fn encode_state(state: &IndexMap<String, Vec<u8>>) -> AHashMap<String, Bytes> {
         .iter()
         .map(|(key, value)| (key.clone(), Bytes::copy_from_slice(value)))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{data::InstrumentClose, enums::InstrumentCloseType, types::Price};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_instrument_close_persistence_stores_latest_value() {
+        let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
+        let first = InstrumentClose::new(
+            instrument_id,
+            Price::from("1.00000"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(10),
+            UnixNanos::from(11),
+        );
+        let replacement = InstrumentClose::new(
+            instrument_id,
+            Price::from("0.00000"),
+            InstrumentCloseType::EndOfSession,
+            UnixNanos::from(20),
+            UnixNanos::from(21),
+        );
+        let (database, _) = TestCacheDatabaseControl::create();
+
+        database.add_instrument_close(&first).unwrap();
+        database.add_instrument_close(&replacement).unwrap();
+        let loaded = database.load_instrument_closes().await.unwrap();
+        let loaded_all = database.load_all().await.unwrap();
+
+        assert_eq!(loaded, AHashMap::from([(instrument_id, replacement)]));
+        assert_eq!(loaded_all.instrument_closes, loaded);
+    }
 }

@@ -15,19 +15,27 @@
 
 //! Configuration types for the Interactive Brokers adapter.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
-use nautilus_model::identifiers::InstrumentId;
-use serde::{Deserialize, Serialize};
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::{identifiers::InstrumentId, types::Currency};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
-use crate::common::consts::{DEFAULT_CLIENT_ID, DEFAULT_HOST, DEFAULT_PORT};
+use crate::common::{
+    consts::{DEFAULT_CLIENT_ID, DEFAULT_HOST, DEFAULT_PORT},
+    contracts::{ConfiguredContract, parse_configured_contract_from_json},
+    enums::IbSecurityType,
+};
 
 /// Market data type for switching between real-time and frozen/delayed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -68,7 +76,7 @@ impl From<MarketDataType> for ibapi::market_data::MarketDataType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         subclass,
         from_py_object
     )
@@ -106,15 +114,44 @@ pub struct InteractiveBrokersDataClientConfig {
     /// execution/account.rs for call sites.
     #[builder(default = 60)]
     pub request_timeout: u64,
-    /// Whether to handle revised bars.
+    /// Whether to publish every revision of an open bar.
+    ///
+    /// When `false`, a bar that IB keeps up to date is published once it completes: on IB's
+    /// update after the bar closes, 2 seconds after the close, or on the next bar's first update,
+    /// whichever comes first.
     #[builder(default)]
     pub handle_revised_bars: bool,
     /// Whether to use batch quotes (reqMktData) by default instead of tick-by-tick.
     #[builder(default = true)]
     pub batch_quotes: bool,
+    /// Whether to include special-condition trades in tick-by-tick subscriptions.
+    #[builder(default = true)]
+    pub all_last_trades: bool,
+    /// Optional interval without incoming market data before emitting a subscription idle event.
+    pub subscription_idle_timeout_secs: Option<u64>,
     /// Instrument provider configuration.
     #[builder(default)]
     pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,
+}
+
+impl InteractiveBrokersDataClientConfig {
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.subscription_idle_timeout_secs != Some(0),
+            "subscription_idle_timeout_secs must be positive when set",
+        );
+
+        if let Some(timeout) = self.subscription_idle_timeout_secs {
+            anyhow::ensure!(
+                std::time::Instant::now()
+                    .checked_add(std::time::Duration::from_secs(timeout))
+                    .is_some(),
+                "subscription_idle_timeout_secs exceeds the supported clock range",
+            );
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for InteractiveBrokersDataClientConfig {
@@ -129,7 +166,7 @@ impl Default for InteractiveBrokersDataClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         subclass,
         from_py_object
     )
@@ -140,7 +177,7 @@ impl Default for InteractiveBrokersDataClientConfig {
         module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
-pub struct InteractiveBrokersExecClientConfig {
+pub struct InteractiveBrokersExecutionClientConfig {
     /// Host for IB Gateway/TWS.
     #[builder(default = DEFAULT_HOST.to_string())]
     pub host: String,
@@ -150,8 +187,12 @@ pub struct InteractiveBrokersExecClientConfig {
     /// Client ID.
     #[builder(default = DEFAULT_CLIENT_ID)]
     pub client_id: i32,
-    /// Account ID.
+    /// Raw IB account code, such as `DU123456`. The Nautilus account ID becomes
+    /// `{client name}-{code}`.
     pub account_id: Option<String>,
+    /// Base currency for the account, normally the currency IB reports the account summary in.
+    /// `None` keeps a multi-currency account with one balance per currency.
+    pub base_currency: Option<Currency>,
     /// Connection timeout in seconds.
     #[builder(default = 300)]
     pub connection_timeout: u64,
@@ -169,7 +210,7 @@ pub struct InteractiveBrokersExecClientConfig {
     pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,
 }
 
-impl Default for InteractiveBrokersExecClientConfig {
+impl Default for InteractiveBrokersExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
@@ -180,7 +221,7 @@ impl Default for InteractiveBrokersExecClientConfig {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -208,7 +249,7 @@ pub enum SymbologyMethod {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         subclass,
         from_py_object
     )
@@ -228,7 +269,11 @@ pub struct InteractiveBrokersInstrumentProviderConfig {
     pub load_ids: HashSet<InstrumentId>,
     /// IB contracts to load on startup.
     #[builder(default)]
-    pub load_contracts: Vec<serde_json::Value>,
+    #[serde(
+        deserialize_with = "deserialize_configured_contracts",
+        serialize_with = "serialize_configured_contracts"
+    )]
+    pub load_contracts: Vec<ConfiguredContract>,
     /// Minimum expiry days for options and futures chains.
     pub min_expiry_days: Option<u32>,
     /// Maximum expiry days for options and futures chains.
@@ -247,7 +292,7 @@ pub struct InteractiveBrokersInstrumentProviderConfig {
     pub symbol_to_mic_venue: HashMap<String, String>,
     /// Security types to filter out.
     #[builder(default)]
-    pub filter_sec_types: HashSet<String>,
+    pub filter_sec_types: HashSet<IbSecurityType>,
     /// Fully-qualified Python callable path for custom instrument filtering.
     ///
     /// Configuring this without the Python feature enabled is an error.
@@ -263,12 +308,39 @@ impl Default for InteractiveBrokersInstrumentProviderConfig {
     }
 }
 
+fn deserialize_configured_contracts<'de, D>(
+    deserializer: D,
+) -> Result<Vec<ConfiguredContract>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<serde_json::Value>::deserialize(deserializer)?
+        .iter()
+        .map(parse_configured_contract_from_json)
+        .collect::<anyhow::Result<Vec<_>>>()
+        .map_err(D::Error::custom)
+}
+
+fn serialize_configured_contracts<S>(
+    contracts: &[ConfiguredContract],
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    contracts
+        .iter()
+        .map(ConfiguredContract::to_json_value)
+        .collect::<Vec<_>>()
+        .serialize(serializer)
+}
+
 /// Trading mode for Dockerized IB Gateway.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -294,12 +366,12 @@ pub enum TradingMode {
 ///
 /// This configuration is for managing containerized IB Gateway instances.
 /// It supports environment variable loading and sensitive data masking.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         subclass,
         from_py_object
     )
@@ -312,9 +384,10 @@ pub enum TradingMode {
 )]
 pub struct DockerizedIBGatewayConfig {
     /// Username for IB account (falls back to `TWS_USERNAME` env var via [`Default`]).
-    pub username: Option<String>,
+    pub username: Option<SecretString>,
     /// Password for IB account (falls back to `TWS_PASSWORD` env var via [`Default`]).
-    pub password: Option<String>,
+    #[serde(skip_serializing)]
+    pub password: Option<SecretString>,
     /// Trading mode (paper or live).
     #[builder(default)]
     pub trading_mode: TradingMode,
@@ -332,20 +405,6 @@ pub struct DockerizedIBGatewayConfig {
 }
 
 impl DockerizedIBGatewayConfig {
-    /// Mask sensitive information for display.
-    pub fn mask_sensitive_info(value: &str) -> String {
-        if value.len() <= 2 {
-            "*".repeat(value.len())
-        } else {
-            format!(
-                "{}{}{}",
-                &value[0..1],
-                "*".repeat(value.len() - 2),
-                &value[value.len() - 1..]
-            )
-        }
-    }
-
     /// Validate configuration.
     ///
     /// # Errors
@@ -370,11 +429,196 @@ impl DockerizedIBGatewayConfig {
     }
 }
 
+impl Debug for DockerizedIBGatewayConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(DockerizedIBGatewayConfig))
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("trading_mode", &self.trading_mode)
+            .field("read_only_api", &self.read_only_api)
+            .field("timeout", &self.timeout)
+            .field("container_image", &self.container_image)
+            .field("vnc_port", &self.vnc_port)
+            .finish()
+    }
+}
+
 impl Default for DockerizedIBGatewayConfig {
     fn default() -> Self {
         Self::builder()
-            .maybe_username(std::env::var("TWS_USERNAME").ok())
-            .maybe_password(std::env::var("TWS_PASSWORD").ok())
+            .maybe_username(std::env::var("TWS_USERNAME").ok().map(SecretString::from))
+            .maybe_password(std::env::var("TWS_PASSWORD").ok().map(SecretString::from))
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::types::Currency;
+    use rstest::rstest;
+
+    use super::{
+        DockerizedIBGatewayConfig, InteractiveBrokersExecutionClientConfig,
+        InteractiveBrokersInstrumentProviderConfig,
+    };
+    use crate::common::enums::IbSecurityType;
+
+    #[rstest]
+    fn test_gateway_password_is_redacted_from_debug_and_serialization() {
+        let config = DockerizedIBGatewayConfig::builder()
+            .username(String::from("user").into())
+            .password(String::from("secret-password").into())
+            .build();
+
+        let debug = format!("{config:?}");
+        let json = serde_json::to_string(&config).unwrap();
+
+        assert!(!debug.contains("secret-password"));
+        assert!(debug.contains("<redacted>"));
+        assert!(!json.contains("secret-password"));
+        assert!(!json.contains("password"));
+    }
+
+    #[rstest]
+    fn test_execution_client_config_base_currency() {
+        let config: InteractiveBrokersExecutionClientConfig =
+            serde_json::from_value(serde_json::json!({"base_currency": "EUR"})).unwrap();
+
+        assert_eq!(config.base_currency, Some(Currency::EUR()));
+        assert_eq!(
+            InteractiveBrokersExecutionClientConfig::default().base_currency,
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_provider_config_decodes_typed_contracts_and_filters() {
+        let config: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(serde_json::json!({
+                "load_contracts": [{
+                    "secType": "STK",
+                    "symbol": "AAPL",
+                    "exchange": "SMART",
+                    "conId": 265598
+                }],
+                "filter_sec_types": ["opt"]
+            }))
+            .unwrap();
+
+        assert_eq!(config.load_contracts.len(), 1);
+        assert_eq!(config.load_contracts[0].contract.contract_id, 265598);
+        assert_eq!(
+            config.load_contracts[0].contract.security_type,
+            ibapi::contracts::SecurityType::Stock
+        );
+        assert!(config.filter_sec_types.contains(&IbSecurityType::Option));
+    }
+
+    #[rstest]
+    fn test_instrument_provider_config_keeps_per_contract_chain_settings() {
+        let config: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(serde_json::json!({
+                "build_futures_chain": true,
+                "load_contracts": [
+                    {
+                        "secType": "STK",
+                        "symbol": "SPY",
+                        "exchange": "SMART",
+                        "primaryExchange": "ARCA",
+                        "build_options_chain": true,
+                        "min_expiry_days": 7,
+                        "max_expiry_days": 14
+                    },
+                    {
+                        "secType": "FUT",
+                        "exchange": "NYMEX",
+                        "localSymbol": "CLZ6",
+                        "build_futures_chain": false
+                    }
+                ]
+            }))
+            .unwrap();
+
+        let spy = &config.load_contracts[0];
+        assert_eq!(spy.build_options_chain, Some(true));
+        assert_eq!(spy.build_futures_chain, None);
+        assert_eq!(spy.min_expiry_days, Some(7));
+        assert_eq!(spy.max_expiry_days, Some(14));
+        assert_eq!(spy.options_chain_exchange, None);
+        assert_eq!(
+            spy.chain_spec_json().unwrap(),
+            serde_json::json!({
+                "build_options_chain": true,
+                "min_expiry_days": 7,
+                "max_expiry_days": 14
+            })
+        );
+
+        let cl = &config.load_contracts[1];
+        assert_eq!(cl.build_futures_chain, Some(false));
+        assert_eq!(
+            cl.chain_spec_json().unwrap(),
+            serde_json::json!({"build_futures_chain": false})
+        );
+
+        let round_trip = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            round_trip["load_contracts"][0]["build_options_chain"],
+            serde_json::json!(true)
+        );
+        assert_eq!(
+            round_trip["load_contracts"][1]["build_futures_chain"],
+            serde_json::json!(false)
+        );
+    }
+
+    #[rstest]
+    fn test_instrument_provider_config_accepts_con_id_only_contract() {
+        let config: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(serde_json::json!({
+                "load_contracts": [{"conId": 265598}]
+            }))
+            .unwrap();
+
+        assert_eq!(config.load_contracts[0].contract.contract_id, 265598);
+        assert_eq!(
+            config.load_contracts[0].contract.security_type,
+            ibapi::contracts::SecurityType::Stock
+        );
+    }
+
+    #[rstest]
+    #[case(
+        serde_json::json!({"load_contracts": [{"secType": "UNKNOWN"}]}),
+        "Unknown IB security type: UNKNOWN"
+    )]
+    #[case(
+        serde_json::json!({"load_contracts": [{"secType": "STK", "conId": "265598"}]}),
+        "Configured contract field 'conId' must be an integer"
+    )]
+    #[case(
+        serde_json::json!({"load_contracts": [{"symbol": "SPY"}]}),
+        "Configured contract requires 'secType' as a known IB security type string, or a positive 'conId'"
+    )]
+    #[case(
+        serde_json::json!({"load_contracts": [{"secType": "STK", "build_options_chain": "yes"}]}),
+        "Configured contract field 'build_options_chain' must be a boolean"
+    )]
+    #[case(
+        serde_json::json!({"load_contracts": [{"secType": "STK", "min_expiry_days": -1}]}),
+        "Configured contract field 'min_expiry_days' must be a non-negative integer"
+    )]
+    #[case(
+        serde_json::json!({"filter_sec_types": ["UNKNOWN"]}),
+        "Unknown IB security type: UNKNOWN"
+    )]
+    fn test_instrument_provider_config_rejects_invalid_typed_values(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        let error = serde_json::from_value::<InteractiveBrokersInstrumentProviderConfig>(value)
+            .unwrap_err();
+
+        assert!(error.to_string().contains(expected), "{error}");
     }
 }

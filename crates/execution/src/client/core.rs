@@ -186,3 +186,121 @@ impl ExecutionClientCore {
         self.account_id = account_id;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::cache::OrderLookupError;
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::{OrderSide, OrderType},
+        identifiers::OrderListId,
+        orders::{Order, builder::OrderTestBuilder},
+        types::{Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_get_orders_for_list_preserves_order_and_cached_fields() {
+        let first = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(ClientOrderId::from("O-SECOND"))
+            .instrument_id("AUD/USD.SIM".into())
+            .side(OrderSide::Buy)
+            .price(Price::from("0.65001"))
+            .quantity(Quantity::from(17))
+            .build();
+        let second = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(ClientOrderId::from("O-FIRST"))
+            .instrument_id("EUR/USD.SIM".into())
+            .side(OrderSide::Sell)
+            .price(Price::from("1.08002"))
+            .quantity(Quantity::from(29))
+            .build();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        for order in [&second, &first] {
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let core = core(cache);
+        let list = OrderList::new(
+            OrderListId::from("OL-001"),
+            first.instrument_id(),
+            first.strategy_id(),
+            vec![first.client_order_id(), second.client_order_id()],
+            UnixNanos::new(123),
+        );
+
+        let orders = core.get_orders_for_list(&list).unwrap();
+
+        assert_eq!(orders.len(), 2);
+        for (actual, expected) in orders.iter().zip([&first, &second]) {
+            // OrderAny equality compares only client_order_id
+            assert_eq!(actual.init_event(), expected.init_event());
+            assert_eq!(actual.status(), expected.status());
+            assert_eq!(actual.filled_qty(), expected.filled_qty());
+        }
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    fn test_get_orders_for_list_rejects_missing_member(#[case] missing_index: usize) {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::from("O-PRESENT"))
+            .instrument_id("AUD/USD.SIM".into())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(17))
+            .build();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        let core = core(cache);
+        let missing_id = ClientOrderId::from("O-MISSING");
+        let mut ids = vec![order.client_order_id()];
+        ids.insert(missing_index, missing_id);
+        let list = OrderList::new(
+            OrderListId::from("OL-001"),
+            order.instrument_id(),
+            order.strategy_id(),
+            ids,
+            UnixNanos::new(123),
+        );
+
+        let error = core.get_orders_for_list(&list).unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<OrderLookupError>(),
+            Some(&OrderLookupError::NotFound {
+                client_order_id: missing_id
+            }),
+        );
+        assert_eq!(
+            core.get_order(&order.client_order_id())
+                .unwrap()
+                .init_event(),
+            order.init_event()
+        );
+    }
+
+    fn core(cache: Rc<RefCell<Cache>>) -> ExecutionClientCore {
+        ExecutionClientCore::new(
+            TraderId::from("TRADER-007"),
+            ClientId::from("CLIENT-003"),
+            Venue::from("SIM"),
+            OmsType::Hedging,
+            AccountId::from("SIM-009"),
+            AccountType::Margin,
+            Some(Currency::USD()),
+            cache,
+        )
+    }
+}

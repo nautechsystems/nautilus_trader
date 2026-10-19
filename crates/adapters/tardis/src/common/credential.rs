@@ -49,10 +49,11 @@ impl Credential {
 
     /// Returns the API key associated with this credential.
     ///
-    /// # Panics
-    ///
-    /// This method should never panic as the API key is always valid UTF-8,
-    /// having been created from a String.
+    /// The API key is always valid UTF-8 because it is created from a `String`.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "the API key is created from a UTF-8 String"
+    )]
     #[must_use]
     pub fn api_key(&self) -> &str {
         std::str::from_utf8(&self.api_key).expect("API key is valid UTF-8")

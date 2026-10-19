@@ -15,11 +15,11 @@ and environments.
 
 ## Immutability
 
-All value types are **immutable**. Once a value is constructed, it cannot be changed.
+In Python, all value types are **immutable**. Once a value is constructed, it cannot be changed.
 Operations do not mutate the original object.
 
 ```python
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import Quantity
 
 qty1 = Quantity(100, precision=0)
 qty2 = Quantity(50, precision=0)
@@ -59,13 +59,13 @@ domain meaning (a price plus a price is still a price):
 | `Money - Money`       | `Money`    |
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 price1 = Price(100.50, precision=2)
 price2 = Price(0.25, precision=2)
 
 result = price1 + price2  # Returns Price(100.75, precision=2)
-print(type(result))  # <class 'Price'>
+print(type(result))  # <class 'nautilus_trader.model.Price'>
 ```
 
 Multiplication, division, floor division, and modulo between two values of the
@@ -80,11 +80,13 @@ same type return `Decimal`:
 
 The same pattern applies to `Quantity` and `Money`.
 
-These operations do not return the original type because the result has different
-dimensional meaning. Multiplying a price by a price produces "price squared", not
-a price. Dividing a quantity by a quantity produces a dimensionless ratio, not a
-quantity. Returning `Decimal` makes the unit change explicit and prevents
-misinterpretation of the result as a value with the original unit.
+These operations return `Decimal` because the result has different dimensional meaning:
+
+- Multiplying a price by a price produces "price squared", not a price.
+- Dividing a quantity by a quantity produces a dimensionless ratio, not a quantity.
+
+Returning `Decimal` makes the unit change explicit and prevents misinterpretation of the result as a value
+with the original unit.
 
 ### Unary operations
 
@@ -103,28 +105,29 @@ Unary operators preserve the value type where the result is valid for that type:
 unsigned and cannot represent a negative value.
 
 ```python
-from nautilus_trader.model.objects import Price, Quantity, Money
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model import Currency, Money, Price, Quantity
+
+USD = Currency.from_str("USD")
 
 price = Price(100.50, precision=2)
 print(-price)  # -100.50
-print(type(-price))  # <class 'Price'>
+print(type(-price))  # <class 'nautilus_trader.model.Price'>
 
 money = Money(-50.00, USD)
 print(abs(money))  # 50.00 USD
-print(type(abs(money)))  # <class 'Money'>
+print(type(abs(money)))  # <class 'nautilus_trader.model.Money'>
 
 qty = Quantity(10, precision=0)
 print(+qty)  # 10
-print(type(+qty))  # <class 'Quantity'>
+print(type(+qty))  # <class 'nautilus_trader.model.Quantity'>
 ```
 
 ### Mixed-type operations
 
 When operating with other numeric types, the result type follows Python's
-[numeric tower](https://docs.python.org/3/library/numbers.html) conventions. The general
-principle is that operations widen to the more general type: `float` operations return
-`float`, while `int` and `Decimal` operations return `Decimal` for precision preservation.
+[numeric tower](https://docs.python.org/3/library/numbers.html) conventions. Operations widen to the more
+general type. `float` operations return `float`, while `int` and `Decimal` operations return `Decimal` for
+precision preservation.
 
 This applies to all six binary operators (`+`, `-`, `*`, `/`, `//`, `%`) and works
 in both directions (`value op scalar` and `scalar op value`):
@@ -140,7 +143,8 @@ in both directions (`value op scalar` and `scalar op value`):
 
 ```python
 from decimal import Decimal
-from nautilus_trader.model.objects import Quantity
+
+from nautilus_trader.model import Quantity
 
 qty = Quantity(100, precision=0)
 
@@ -159,18 +163,19 @@ print(type(result3))  # <class 'decimal.Decimal'>
 
 ## Precision handling
 
-Each value type stores a precision field indicating the number of decimal places.
-Precision is set at construction and is immutable. There is no "unspecified" precision.
+Each value type carries a precision that indicates the number of decimal places. `Price` and `Quantity` store
+an explicit `precision` field, while `Money` uses its currency's precision. Precision is set at construction
+and is immutable. The types have no "unspecified" precision.
 
 ### Fixed-point representation
 
-Value types are stored internally as integers scaled to a global fixed precision
-(e.g., 10^16 in high-precision mode), not floating-point numbers. The `precision`
-field tracks the number of decimal places used at construction, controlling display
-formatting and serialization, but the underlying raw value always uses the global scale.
+Value types are stored internally as integers scaled to a global fixed precision (for example, 10^16 in
+high-precision mode), not floating-point numbers. The precision tracks the number of decimal places used at
+construction and controls display formatting and serialization. But the underlying raw value always uses the
+global scale.
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 p1 = Price(1.23, precision=2)  # displays as "1.23"
 p2 = Price(1.230, precision=3)  # displays as "1.230"
@@ -180,19 +185,17 @@ str(p1)  # "1.23"
 str(p2)  # "1.230"
 ```
 
-**Precision controls display, not identity.** Two prices with the same decimal value but
-different precisions are equal. The `precision` field determines string formatting and
-how many decimal places are shown, but equality is based on the underlying numeric value.
+**Precision and identity**: two prices with the same decimal value but different precisions are equal.
+Precision controls display, not identity. The `precision` field determines string formatting and how many
+decimal places are shown. Equality is based on the underlying numeric value.
 
-**Market data serialization uses precision metadata.** When market data types (quotes,
-trades, order book deltas) are written to Parquet or Arrow format, precision is stored in
-the file metadata so that values can be correctly decoded. All market data values within
-a single file must share the same precision.
+**Market data serialization**: when market data types (such as quotes, trades, and order book deltas) are
+written to Parquet or Arrow, file metadata stores their precision. This lets readers decode the values
+correctly. All market data values within a single file must share the same precision.
 
-:::note
-If a venue changes an instrument's tick size (and thus its precision), data files written
-before and after the change will have different precision metadata and should not be
-consolidated into a single file.
+:::warning
+If a venue changes an instrument's tick size (and thus its precision), data files written before and after the
+change have different precision metadata. Do not consolidate them into a single file.
 :::
 
 For how instrument-level precision constrains valid prices and quantities, see the
@@ -204,7 +207,7 @@ When performing arithmetic between values with different precisions, the result
 uses the maximum precision of the operands.
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 price1 = Price(100.5, precision=1)  # 1 decimal place
 price2 = Price(0.125, precision=3)  # 3 decimal places
@@ -222,7 +225,7 @@ print(result.precision)  # 3 (max of 1 and 3)
 or subtract a larger quantity from a smaller one raises an error:
 
 ```python
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import Quantity
 
 # This raises ValueError: Quantity cannot be negative
 qty = Quantity(-100, precision=0)
@@ -236,11 +239,13 @@ result = qty1 - qty2  # Would be -50, which is invalid
 ### Money
 
 `Money` values include a currency. Addition and subtraction between `Money` values
-require matching currencies:
+require **matching currencies**:
 
 ```python
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.currencies import USD, EUR
+from nautilus_trader.model import Currency, Money
+
+USD = Currency.from_str("USD")
+EUR = Currency.from_str("EUR")
 
 usd_amount = Money(100.00, USD)
 eur_amount = Money(50.00, EUR)
@@ -259,8 +264,9 @@ result = usd_amount + eur_amount
 Since value types are immutable, accumulate by reassigning:
 
 ```python
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model import Currency, Money
+
+USD = Currency.from_str("USD")
 
 total = Money(0.00, USD)
 amounts = [Money(100.00, USD), Money(50.00, USD), Money(25.00, USD)]
@@ -276,7 +282,7 @@ print(total)  # 175.00 USD
 Value types provide conversion methods:
 
 ```python
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Price
 
 price = Price(123.456, precision=3)
 
@@ -290,12 +296,17 @@ float_value = price.as_double()
 string_value = str(price)  # "123.456"
 ```
 
+Float conversion supports precision up to 16. `float()`, `as_double()`, and arithmetic with a
+`float` operand raise `ValueError` for precision 17 or 18 rather than round away the extra digits.
+Conversions at precision 16 or below can still round, since a float holds about 16 significant
+digits. Use `as_decimal()` for an exact value.
+
 ### Creating from strings
 
 Parse value types from string representations:
 
 ```python
-from nautilus_trader.model.objects import Quantity, Price, Money
+from nautilus_trader.model import Money, Price, Quantity
 
 qty = Quantity.from_str("100.5")
 price = Price.from_str("99.95")

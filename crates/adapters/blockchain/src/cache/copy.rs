@@ -18,40 +18,12 @@
 //! This module provides utilities for using PostgreSQL's COPY command with binary format,
 //! which offers significantly better performance than standard INSERT operations for bulk data loading.
 
+use std::fmt::Display;
+
 use nautilus_model::defi::{
     Block, Pool, PoolLiquidityUpdate, PoolSwap, Token, data::PoolFeeCollect,
 };
 use sqlx::{PgPool, postgres::PgPoolCopyExt};
-
-// Helper to convert scientific notation to decimal
-fn format_scientific_to_decimal(s: &str) -> String {
-    use std::str::FromStr;
-
-    use rust_decimal::Decimal;
-
-    match Decimal::from_str(s) {
-        Ok(decimal) => decimal.to_string(),
-        Err(_) => s.to_string(), // Fallback
-    }
-}
-
-/// Formats a numeric value for PostgreSQL NUMERIC type
-fn format_numeric<T: ToString>(value: &T) -> String {
-    let s = value.to_string();
-
-    // Remove any '+' prefix
-    let s = s.trim_start_matches('+');
-
-    // Handle scientific notation by converting to decimal
-    if s.contains('e') || s.contains('E') {
-        return format_scientific_to_decimal(s);
-    }
-
-    // For very large numbers that rust_decimal can't handle,
-    // just return the cleaned string since alloy_primitives already
-    // produces clean decimal format
-    s.to_string()
-}
 
 /// Handles PostgreSQL COPY BINARY operations for blockchain data.
 #[derive(Debug)]
@@ -514,25 +486,15 @@ impl<'a> PostgresCopyHandler<'a> {
         row_data.write_all(&(recipient_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&recipient_bytes)?;
 
-        let sqrt_price_bytes = format_numeric(&swap.sqrt_price_x96).as_bytes().to_vec();
-        row_data.write_all(&(sqrt_price_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&sqrt_price_bytes)?;
-
-        let liquidity_bytes = format_numeric(&swap.liquidity).as_bytes().to_vec();
-        row_data.write_all(&(liquidity_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&liquidity_bytes)?;
+        write_copy_numeric(&mut row_data, swap.sqrt_price_x96);
+        write_copy_numeric(&mut row_data, swap.liquidity);
 
         let tick_bytes = swap.tick.to_be_bytes();
         row_data.write_all(&(tick_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&tick_bytes)?;
 
-        let amount0_bytes = format_numeric(&swap.amount0).as_bytes().to_vec();
-        row_data.write_all(&(amount0_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&amount0_bytes)?;
-
-        let amount1_bytes = format_numeric(&swap.amount1).as_bytes().to_vec();
-        row_data.write_all(&(amount1_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&amount1_bytes)?;
+        write_copy_numeric(&mut row_data, swap.amount0);
+        write_copy_numeric(&mut row_data, swap.amount1);
 
         if let Some(trade_info) = &swap.trade_info {
             let side_bytes = trade_info.order_side.to_string().as_bytes().to_vec();
@@ -638,19 +600,9 @@ impl<'a> PostgresCopyHandler<'a> {
         row_data.write_all(&(owner_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&owner_bytes)?;
 
-        let position_liquidity_bytes = format_numeric(&update.position_liquidity)
-            .as_bytes()
-            .to_vec();
-        row_data.write_all(&(position_liquidity_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&position_liquidity_bytes)?;
-
-        let amount0_bytes = format_numeric(&update.amount0).as_bytes().to_vec();
-        row_data.write_all(&(amount0_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&amount0_bytes)?;
-
-        let amount1_bytes = format_numeric(&update.amount1).as_bytes().to_vec();
-        row_data.write_all(&(amount1_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&amount1_bytes)?;
+        write_copy_numeric(&mut row_data, update.position_liquidity);
+        write_copy_numeric(&mut row_data, update.amount0);
+        write_copy_numeric(&mut row_data, update.amount1);
 
         let tick_lower_bytes = update.tick_lower.to_be_bytes();
         row_data.write_all(&(tick_lower_bytes.len() as i32).to_be_bytes())?;
@@ -793,13 +745,8 @@ impl<'a> PostgresCopyHandler<'a> {
         row_data.write_all(&(owner_bytes.len() as i32).to_be_bytes())?;
         row_data.write_all(&owner_bytes)?;
 
-        let fee0_bytes = format_numeric(&collect.amount0).as_bytes().to_vec();
-        row_data.write_all(&(fee0_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&fee0_bytes)?;
-
-        let fee1_bytes = format_numeric(&collect.amount1).as_bytes().to_vec();
-        row_data.write_all(&(fee1_bytes.len() as i32).to_be_bytes())?;
-        row_data.write_all(&fee1_bytes)?;
+        write_copy_numeric(&mut row_data, collect.amount0);
+        write_copy_numeric(&mut row_data, collect.amount1);
 
         let tick_lower_bytes = collect.tick_lower.to_be_bytes();
         row_data.write_all(&(tick_lower_bytes.len() as i32).to_be_bytes())?;
@@ -936,9 +883,7 @@ impl<'a> PostgresCopyHandler<'a> {
         }
 
         if let Some(ref initial_sqrt_price) = pool.initial_sqrt_price_x96 {
-            let sqrt_price_bytes = format_numeric(initial_sqrt_price).as_bytes().to_vec();
-            row_data.write_all(&(sqrt_price_bytes.len() as i32).to_be_bytes())?;
-            row_data.write_all(&sqrt_price_bytes)?;
+            write_copy_numeric(&mut row_data, initial_sqrt_price);
         } else {
             row_data.write_all(&(-1i32).to_be_bytes())?; // NULL
         }
@@ -973,4 +918,10 @@ impl<'a> PostgresCopyHandler<'a> {
             .map_err(|e| anyhow::anyhow!("Failed to write COPY trailer: {e}"))?;
         Ok(())
     }
+}
+
+fn write_copy_numeric(row: &mut Vec<u8>, value: impl Display) {
+    let value = value.to_string();
+    row.extend_from_slice(&(value.len() as i32).to_be_bytes());
+    row.extend_from_slice(value.as_bytes());
 }

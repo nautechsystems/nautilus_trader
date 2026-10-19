@@ -18,7 +18,7 @@ write_versions() {
   local miri_rustc_version="$1"
   local workspace_rust_version="$2"
 
-  printf '[miri]\nversion = "nightly-test"\nrustc-version = "%s"\n' \
+  printf '[miri]\nversion = "nightly-2026-07-14"\nrustc-version = "%s"\n' \
     "$miri_rustc_version" > "${test_root}/tools.toml"
   printf '[workspace.package]\nrust-version = "%s"\n' \
     "$workspace_rust_version" > "${test_root}/Cargo.toml"

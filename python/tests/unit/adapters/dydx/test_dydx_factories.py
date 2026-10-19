@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test dydx factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
@@ -20,7 +23,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.dydx import DydxDataClientConfig
 from nautilus_trader.adapters.dydx import DydxDataClientFactory
-from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxExecutionClientConfig
 from nautilus_trader.adapters.dydx import DydxExecutionClientFactory
 from nautilus_trader.adapters.dydx import DydxNetwork
 from nautilus_trader.common import Environment
@@ -38,11 +41,17 @@ dydx_exec_tester = load_example_module("dydx", "exec_tester")
 
 
 def test_dydx_factories_expose_python_names() -> None:
+    """
+    Test dydx factories expose python names.
+    """
     assert DydxDataClientFactory().name() == DYDX
     assert DydxExecutionClientFactory().name() == DYDX
 
 
 def test_live_node_builder_accepts_dydx_data_factory() -> None:
+    """
+    Test live node builder accepts dydx data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -60,6 +69,9 @@ def test_live_node_builder_accepts_dydx_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_dydx_exec_factory() -> None:
+    """
+    Test live node builder accepts dydx exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("DYDX-001")
 
@@ -74,8 +86,7 @@ def test_live_node_builder_accepts_dydx_exec_factory() -> None:
         .add_exec_client(
             None,
             DydxExecutionClientFactory(),
-            DydxExecClientConfig(
-                trader_id=trader_id,
+            DydxExecutionClientConfig(
                 account_id=account_id,
                 network=DydxNetwork.MAINNET,
                 private_key=SMOKE_PRIVATE_KEY,
@@ -89,32 +100,27 @@ def test_live_node_builder_accepts_dydx_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_dydx_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = capture_data_tester_main(monkeypatch, dydx_data_tester, [])
+def test_dydx_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test dydx data tester runs.
+    """
+    captured = capture_data_tester_main(monkeypatch, dydx_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
     assert kwargs["subscribe_book_at_interval"] is True
-    assert "run_called" not in captured
+    assert captured["run_called"] is True
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_dry_run", "expected_limit_sells"),
-    [
-        ([], True, False),
-        (["--live-orders", "--limit-sells"], False, True),
-    ],
-)
-def test_dydx_exec_tester_gates_live_orders(
-    monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_dry_run: bool,
-    expected_limit_sells: bool,
-) -> None:
-    captured = capture_exec_tester_main(monkeypatch, dydx_exec_tester, extra_args)
+def test_dydx_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test dydx exec tester runs live orders.
+    """
+    captured = capture_exec_tester_main(monkeypatch, dydx_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
     assert isinstance(kwargs, dict)
-    assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_sells"] is expected_limit_sells
-    assert "run_called" not in captured
+    assert kwargs["dry_run"] is False
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
+    assert captured["run_called"] is True

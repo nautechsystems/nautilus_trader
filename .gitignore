@@ -42,13 +42,13 @@ logs/
 # Benchmarking and coverage
 .benchmarks*
 .coverage*
+*.profraw
 htmlcov/
 perf.data
 perf.data.old
 
 # Rust related
 *target/
-*target-v2/
 **/*.rs.bk
 
 # Fuzz testing artifacts (cargo-fuzz)
@@ -73,7 +73,6 @@ crates/adapters/*/coverage/
 .ruff_cache/
 *dask-worker-space*
 __pycache__/
-cython_debug/
 requirements*
 venv*/
 .venv*/
@@ -85,6 +84,10 @@ build/
 dist/
 env/
 .tmp-pre-commit/
+.tmp-doc-links/
+.nautilus-engineering.syncing
+.nautilus-engineering.sync-lock
+.nautilus-engineering.tmp.*
 *.bak
 *.sh
 !**/fuzz/**/grind.sh
@@ -95,6 +98,7 @@ env/
 !scripts/check-outdated.sh
 !scripts/fuzz-adapter.sh
 !scripts/check-no-build-packages.sh
+!scripts/install-security-tools.sh
 !scripts/ci/check-crates-io-trusted-publishing.sh
 !scripts/ci/check-workspace-test-coverage.sh
 !scripts/ci/check-github-action-shas.sh
@@ -120,31 +124,21 @@ env/
 !scripts/ci/publish-wheels-r2-upload-index.sh
 !scripts/ci/publish-wheels-r2-upload-new-wheels.sh
 !scripts/ci/publish-wheels-r2-verify-files.sh
-!scripts/ci/retry-on-corruption.sh
 !scripts/ci/security-audit-gate.sh
 !scripts/ci/set-cargo-build-jobs.sh
-!scripts/ci/smoke-test-v2-wheel.sh
 !scripts/ci/update-pyproject-version.sh
-!scripts/ci/validate-wheel-count.sh
 !scripts/ci/verify-ci-inputs.sh
 !scripts/cli/install.sh
 !scripts/clippy-changed.sh
 !scripts/crate-test-features.sh
 !scripts/curate-dataset.sh
 !scripts/doc-changed.sh
-!scripts/find-replace.sh
 !scripts/install-capnp.sh
 !scripts/install-osv-scanner.sh
 !scripts/package-version.sh
 !scripts/purge-orphan-dev-wheels.sh
-!scripts/python-version.sh
-!scripts/regen-capnp.sh
 !scripts/rust-toolchain.sh
 !scripts/soak-network-turmoil.sh
-!scripts/test-coverage.sh
-!scripts/test-examples.sh
-!scripts/test-performance.sh
-!scripts/test.sh
 !scripts/tool-version.sh
 !scripts/uv-version.sh
 *tmp/
@@ -171,8 +165,6 @@ claude.config.json
 .review_scratch/
 superpowers/
 
-AGENTS.md
-CLAUDE.md
 CODEX.md
 GEMINI.md
 
@@ -189,19 +181,21 @@ bench_data/
 /examples/backtest/notebooks/catalog/
 /examples/notebooks/catalog/
 nautilus_trader/**/.gitignore
-nautilus_trader/test_kit/mocks/.nautilus/
 nautilus_trader.egg-info
-tests/test_data/catalog/
-tests/test_data/large/*
-tests/test_data/local/
+/test_data/catalog/
+/test_data/large/*
+/test_data/local/
+/test_data/**/data/**
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
-tests/test_data/**/backtest/**
+/test_data/**/backtest/**
 
 
 # Exceptions
-!tests/test_data/large/checksums.json
-!tests/test_data/large/*.metadata.json
-!tests/test_data/nautilus/*/**.parquet
+!/test_data/large/checksums.json
+!/test_data/large/*.metadata.json
+!/test_data/nautilus/*/**.parquet
+!/test_data/nautilus/catalog_1_231_0/**/
+!/test_data/nautilus/catalog_1_231_0/**/*.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*

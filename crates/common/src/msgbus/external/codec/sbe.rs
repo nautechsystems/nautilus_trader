@@ -18,7 +18,7 @@ use std::any::Any;
 use bytes::Bytes;
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
-    OrderBookDepth10, QuoteTick, TradeTick,
+    OrderBookDepth, QuoteTick, TradeTick,
 };
 use nautilus_serialization::sbe::{FromSbe, ToSbe};
 
@@ -46,9 +46,9 @@ define_deserializer!(
     "OrderBookDeltas"
 );
 define_deserializer!(
-    deserialize_order_book_depth10,
-    OrderBookDepth10,
-    "OrderBookDepth10"
+    deserialize_order_book_depth,
+    OrderBookDepth,
+    "OrderBookDepth"
 );
 define_deserializer!(deserialize_quote, QuoteTick, "QuoteTick");
 define_deserializer!(deserialize_trade, TradeTick, "TradeTick");
@@ -71,30 +71,22 @@ pub(super) fn serialize_payload(
     message: &dyn Any,
 ) -> Result<Bytes, PayloadCodecError> {
     let type_name = payload_type.as_str();
-    match payload_type {
-        BusPayloadType::OrderBookDeltas => {
-            serialize_payload_as::<OrderBookDeltas>(type_name, message)
-        }
-        BusPayloadType::OrderBookDepth10 => {
-            serialize_payload_as::<OrderBookDepth10>(type_name, message)
-        }
+    #[rustfmt::skip]
+    let result = match payload_type {
+        BusPayloadType::OrderBookDeltas => serialize_payload_as::<OrderBookDeltas>(type_name, message),
+        BusPayloadType::OrderBookDepth => serialize_payload_as::<OrderBookDepth>(type_name, message),
         BusPayloadType::QuoteTick => serialize_payload_as::<QuoteTick>(type_name, message),
         BusPayloadType::TradeTick => serialize_payload_as::<TradeTick>(type_name, message),
         BusPayloadType::Bar => serialize_payload_as::<Bar>(type_name, message),
-        BusPayloadType::MarkPriceUpdate => {
-            serialize_payload_as::<MarkPriceUpdate>(type_name, message)
-        }
-        BusPayloadType::IndexPriceUpdate => {
-            serialize_payload_as::<IndexPriceUpdate>(type_name, message)
-        }
-        BusPayloadType::FundingRateUpdate => {
-            serialize_payload_as::<FundingRateUpdate>(type_name, message)
-        }
+        BusPayloadType::MarkPriceUpdate => serialize_payload_as::<MarkPriceUpdate>(type_name, message),
+        BusPayloadType::IndexPriceUpdate => serialize_payload_as::<IndexPriceUpdate>(type_name, message),
+        BusPayloadType::FundingRateUpdate => serialize_payload_as::<FundingRateUpdate>(type_name, message),
         BusPayloadType::OptionGreeks => serialize_payload_as::<OptionGreeks>(type_name, message),
         _ => Err(PayloadCodecError::Dropped(format!(
             "SBE serialization is not supported for {type_name}"
         ))),
-    }
+    };
+    result
 }
 
 fn serialize_payload_as<T>(type_name: &str, message: &dyn Any) -> Result<Bytes, PayloadCodecError>

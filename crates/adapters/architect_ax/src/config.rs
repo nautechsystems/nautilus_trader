@@ -15,7 +15,11 @@
 
 //! Configuration structures for the AX Exchange adapter.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -24,10 +28,7 @@ use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
 /// Configuration for the AX Exchange live data client.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.architect_ax", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -37,9 +38,9 @@ use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
 #[serde(default, deny_unknown_fields)]
 pub struct AxDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated REST/WebSocket requests.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Trading environment (Sandbox or Production).
     #[builder(default)]
     pub environment: AxEnvironment,
@@ -50,7 +51,7 @@ pub struct AxDataClientConfig {
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -75,6 +76,12 @@ pub struct AxDataClientConfig {
     /// Funding rate poll interval in minutes.
     #[builder(default = 15)]
     pub funding_rate_poll_interval_mins: u64,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Set to 0 to disable snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// WebSocket transport backend.
     ///
     /// Defaults to `Sockudo` when `transport-sockudo` is enabled, otherwise `Tungstenite`.
@@ -96,6 +103,7 @@ nautilus_core::impl_pyo3_config_getters!(AxDataClientConfig {
     recv_window_ms: u64,
     update_instruments_interval_mins: u64,
     funding_rate_poll_interval_mins: u64,
+    book_snapshot_timeout_secs: u64,
     transport_backend: TransportBackend,
 });
 
@@ -149,10 +157,7 @@ impl AxDataClientConfig {
 /// Configuration for the AX Exchange live execution client.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.architect_ax", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -160,17 +165,14 @@ impl AxDataClientConfig {
 )]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
-pub struct AxExecClientConfig {
-    /// The trader ID for the client.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct AxExecutionClientConfig {
     /// The account ID for the client.
     #[builder(default = AccountId::from("AX-001"))]
     pub account_id: AccountId,
     /// API key for authenticated requests.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// API secret for authenticated requests.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Trading environment (Sandbox or Production).
     #[builder(default)]
     pub environment: AxEnvironment,
@@ -181,7 +183,7 @@ pub struct AxExecClientConfig {
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -211,8 +213,7 @@ pub struct AxExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(AxExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(AxExecutionClientConfig {
     account_id: AccountId,
     environment: AxEnvironment,
     base_url_http: Option<String>,
@@ -228,13 +229,13 @@ nautilus_core::impl_pyo3_config_getters!(AxExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for AxExecClientConfig {
+impl Default for AxExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl AxExecClientConfig {
+impl AxExecutionClientConfig {
     /// Creates a configuration with default values.
     #[must_use]
     pub fn new() -> Self {
@@ -319,7 +320,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_sandbox_urls_match_consts() {
-        let config = AxExecClientConfig::builder()
+        let config = AxExecutionClientConfig::builder()
             .environment(AxEnvironment::Sandbox)
             .build();
         assert_eq!(config.http_base_url(), AX_HTTP_SANDBOX_URL);
@@ -329,7 +330,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_production_urls_match_consts() {
-        let config = AxExecClientConfig::builder()
+        let config = AxExecutionClientConfig::builder()
             .environment(AxEnvironment::Production)
             .build();
         assert_eq!(config.http_base_url(), AX_HTTP_URL);
@@ -339,13 +340,13 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_cancel_on_disconnect_default_false() {
-        let config = AxExecClientConfig::default();
+        let config = AxExecutionClientConfig::default();
         assert!(!config.cancel_on_disconnect);
     }
 
     #[rstest]
     fn test_exec_config_cancel_on_disconnect_enabled() {
-        let config = AxExecClientConfig::builder()
+        let config = AxExecutionClientConfig::builder()
             .cancel_on_disconnect(true)
             .build();
         assert!(config.cancel_on_disconnect);
@@ -356,7 +357,7 @@ mod tests {
         let data = AxDataClientConfig::default();
         assert_eq!(data.environment, AxEnvironment::Sandbox);
 
-        let exec = AxExecClientConfig::default();
+        let exec = AxExecutionClientConfig::default();
         assert_eq!(exec.environment, AxEnvironment::Sandbox);
     }
 
@@ -368,6 +369,7 @@ environment = "PRODUCTION"
 http_timeout_secs = 30
 heartbeat_interval_secs = 10
 update_instruments_interval_mins = 5
+book_snapshot_timeout_secs = 4
 "#,
         )
         .unwrap();
@@ -376,14 +378,20 @@ update_instruments_interval_mins = 5
         assert_eq!(config.http_timeout_secs, 30);
         assert_eq!(config.heartbeat_interval_secs, 10);
         assert_eq!(config.update_instruments_interval_mins, 5);
+        assert_eq!(config.book_snapshot_timeout_secs, 4);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_empty_uses_book_snapshot_timeout_default() {
+        let config: AxDataClientConfig = toml::from_str("").unwrap();
+
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: AxExecClientConfig = toml::from_str("").unwrap();
-        let expected = AxExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: AxExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = AxExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
@@ -394,5 +402,36 @@ update_instruments_interval_mins = 5
         assert_eq!(config.recv_window_ms, expected.recv_window_ms);
         assert_eq!(config.cancel_on_disconnect, expected.cancel_on_disconnect);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = AxDataClientConfig {
+            api_key: Some("data-key".into()),
+            api_secret: Some("data-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = AxExecutionClientConfig {
+            api_key: Some("exec-key".into()),
+            api_secret: Some("exec-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-key",
+            "data-secret",
+            "data-proxy",
+            "exec-key",
+            "exec-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
     }
 }

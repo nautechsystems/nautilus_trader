@@ -14,10 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the
-//! [Binance](https://www.binance.com/) cryptocurrency exchange.
+//! [Binance](https://www.binance.com) cryptocurrency exchange.
 //!
-//! The `nautilus-binance` crate provides client bindings (HTTP & WebSocket), data
-//! models, and helper utilities that wrap the official **Binance API**. Live data and
+//! The `nautilus-binance` crate provides client bindings (HTTP & WebSocket) and data
+//! models for the official **Binance API**. Live data and
 //! execution clients are available for:
 //!
 //! - Spot markets, including Binance US (api.binance.com)
@@ -43,14 +43,13 @@
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
-//! - `python`: Enables Python bindings via [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds as a Python extension module (used together with `python`).
-//!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
-//!
-//! # Documentation
-//!
-//! See <https://docs.rs/nautilus-binance> for the latest API documentation.
+//! - `arrow`: Enables Apache Arrow data support.
+//! - `examples`: Enables the crate's example binaries.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -59,14 +58,21 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 
-pub mod arrow;
 pub mod common;
 pub mod config;
 pub mod data_types;
 pub mod factories;
 pub mod futures;
 pub mod spot;
+
+pub(crate) mod book;
+
+#[cfg(feature = "arrow")]
+pub mod arrow;
 
 #[cfg(feature = "python")]
 pub mod python;

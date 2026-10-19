@@ -19,13 +19,13 @@
 //! handles live market data subscriptions, and provides access to historical data on demand.
 
 use std::{
-    fmt::Debug,
     path::PathBuf,
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::AHashMap;
@@ -33,44 +33,47 @@ use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
+    live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, InstrumentResponse,
             InstrumentsResponse, QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth,
-            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-            SubscribeBookDeltas, SubscribeInstrument, SubscribeInstrumentStatus, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBookDeltas, UnsubscribeInstrumentStatus,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
+            UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
-    datetime::{NANOSECONDS_IN_DAY, datetime_to_unix_nanos},
-    string::secret::REDACTED,
+    AtomicMap, DurationNanos, Params, UnixNanos,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::task::TaskGroup;
 use nautilus_model::{
-    data::{CustomData, Data},
-    enums::BarAggregation,
+    data::{BarType, CustomData, Data, DataType, custom::CustomDataTrait},
+    enums::{BarAggregation, PriceType},
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{Credential, DATABENTO_VENUE},
+    common::{Credential, DATABENTO_VENUE, ohlcv_schema_from_aggregation},
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
     loader::DatabentoDataLoader,
-    symbology::instrument_id_to_symbol_string,
-    types::{Dataset, PublisherId},
+    symbology::{infer_symbology_type, instrument_id_to_symbol_string},
+    types::{DatabentoImbalance, DatabentoStatistics, Dataset, PublisherId},
 };
 
 const PRICE_PRECISION_PARAM: &str = "price_precision";
 const SCHEMA_PARAM: &str = "schema";
+const MBP10_DEPTH: usize = 10;
 const QUOTE_SCHEMAS: &[dbn::Schema] = &[
     dbn::Schema::Mbp1,
     dbn::Schema::Bbo1S,
@@ -90,12 +93,24 @@ const TRADE_SCHEMAS: &[dbn::Schema] = &[
 ];
 
 /// Configuration for the Databento data client.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.databento", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
+)]
 pub struct DatabentoDataClientConfig {
     /// Databento API credential.
     pub(crate) credential: Credential,
     /// Path to publishers.json file.
     pub publishers_filepath: PathBuf,
+    /// Override for the Databento Historical API base URL.
+    pub historical_base_url: Option<String>,
+    /// Override for the Databento live gateway address.
+    pub live_gateway_addr: Option<String>,
     /// Venue-to-dataset overrides applied on top of the publishers.json mappings.
     pub venue_dataset_map: IndexMap<String, String>,
     /// Whether to use exchange as venue for GLBX instruments.
@@ -106,18 +121,15 @@ pub struct DatabentoDataClientConfig {
     pub reconnect_timeout_mins: Option<u64>,
 }
 
-impl Debug for DatabentoDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(DatabentoDataClientConfig))
-            .field("credential", &REDACTED)
-            .field("publishers_filepath", &self.publishers_filepath)
-            .field("venue_dataset_map", &self.venue_dataset_map)
-            .field("use_exchange_as_venue", &self.use_exchange_as_venue)
-            .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
-            .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
-            .finish()
-    }
-}
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(DatabentoDataClientConfig {
+    publishers_filepath: PathBuf,
+    historical_base_url: Option<String>,
+    live_gateway_addr: Option<String>,
+    use_exchange_as_venue: bool,
+    bars_timestamp_on_close: bool,
+    venue_dataset_map: IndexMap<String, String>,
+});
 
 impl DatabentoDataClientConfig {
     /// Creates a new [`DatabentoDataClientConfig`] instance.
@@ -135,6 +147,8 @@ impl DatabentoDataClientConfig {
             use_exchange_as_venue,
             bars_timestamp_on_close,
             reconnect_timeout_mins: Some(10), // Default: 10 minutes
+            historical_base_url: None,
+            live_gateway_addr: None,
         }
     }
 
@@ -163,28 +177,17 @@ impl DatabentoDataClientConfig {
 )]
 #[derive(Debug)]
 pub struct DatabentoDataClient {
-    /// Client identifier.
     client_id: ClientId,
-    /// Client configuration.
     config: DatabentoDataClientConfig,
-    /// Connection state.
     is_connected: AtomicBool,
-    /// Historical client for on-demand data requests.
     historical: DatabentoHistoricalClient,
-    /// Data loader for venue-to-dataset mapping.
     loader: DatabentoDataLoader,
-    /// Feed handler command senders per dataset.
     cmd_channels: Arc<Mutex<AHashMap<String, tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>>,
-    /// Task handles for lifecycle management.
-    task_handles: Arc<TaskHandles>,
-    /// Cancellation token for graceful shutdown.
+    task_handles: TaskGroup,
     cancellation_token: CancellationToken,
-    /// Publisher to venue mapping.
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
-    /// Symbol to venue mapping (for caching).
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
-    /// Data event sender for forwarding data to the async runner.
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: EventSender<DataEvent>,
 }
 
 impl DatabentoDataClient {
@@ -198,12 +201,21 @@ impl DatabentoDataClient {
         config: DatabentoDataClientConfig,
         clock: &'static AtomicTime,
     ) -> anyhow::Result<Self> {
-        let historical = DatabentoHistoricalClient::new(
-            config.credential.clone(),
-            config.publishers_filepath.clone(),
-            clock,
-            config.use_exchange_as_venue,
-        )?;
+        let historical = match &config.historical_base_url {
+            Some(base_url) => DatabentoHistoricalClient::new_with_base_url(
+                config.credential.clone(),
+                config.publishers_filepath.clone(),
+                clock,
+                config.use_exchange_as_venue,
+                base_url,
+            )?,
+            None => DatabentoHistoricalClient::new(
+                config.credential.clone(),
+                config.publishers_filepath.clone(),
+                clock,
+                config.use_exchange_as_venue,
+            )?,
+        };
 
         // Create data loader for venue-to-dataset mapping
         let mut loader = DatabentoDataLoader::new(Some(config.publishers_filepath.clone()))?;
@@ -226,6 +238,8 @@ impl DatabentoDataClient {
 
         let data_sender = get_data_event_sender();
 
+        let task_handles = TaskGroup::new();
+
         Ok(Self {
             client_id,
             config,
@@ -233,8 +247,8 @@ impl DatabentoDataClient {
             historical,
             loader,
             cmd_channels: Arc::new(Mutex::new(AHashMap::new())),
-            task_handles: Arc::new(TaskHandles::default()),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: task_handles.cancellation_token(),
+            task_handles,
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(AtomicMap::new()),
             data_sender,
@@ -267,7 +281,7 @@ impl DatabentoDataClient {
 
     /// Gets or creates a feed handler for the specified dataset.
     fn get_or_create_feed_handler(&self, dataset: &str) -> bool {
-        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let mut channels = self.cmd_channels.lock();
 
         if !channels.contains_key(dataset) {
             log::debug!("Creating new feed handler for dataset: {dataset}");
@@ -289,7 +303,7 @@ impl DatabentoDataClient {
         start_after_subscribe: bool,
     ) -> anyhow::Result<()> {
         let tx = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+            let channels = self.cmd_channels.lock();
             channels
                 .get(dataset)
                 .cloned()
@@ -305,8 +319,36 @@ impl DatabentoDataClient {
         )
     }
 
+    fn subscribe_schema(
+        &self,
+        instrument_id: InstrumentId,
+        schema: dbn::Schema,
+    ) -> anyhow::Result<()> {
+        let symbol = instrument_id.symbol.to_string();
+        // Records resolve to the underlying contract, so a continuous or parent symbol would
+        // publish on topics that its subscriber does not listen on
+        anyhow::ensure!(
+            infer_symbology_type(&symbol) == dbn::SType::RawSymbol,
+            "Unsupported symbol {symbol} for a Databento {schema} subscription, only raw symbols \
+             are available (not continuous or parent symbols)",
+        );
+
+        let dataset = self.get_dataset_for_venue(instrument_id.venue)?;
+        let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
+
+        self.symbol_venue_map
+            .insert(instrument_id.symbol, instrument_id.venue);
+
+        let subscription = Subscription::builder()
+            .schema(schema)
+            .symbols(symbol)
+            .build();
+
+        self.send_subscription_to_dataset(&dataset, None, subscription, start_after_subscribe)
+    }
+
     fn send_close_to_active_feeds(&self) {
-        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let channels = self.cmd_channels.lock();
         for (dataset, tx) in channels.iter() {
             if let Err(e) = tx.send(HandlerCommand::Close) {
                 log::warn!("Failed to send close command to dataset {dataset}: {e}");
@@ -315,12 +357,21 @@ impl DatabentoDataClient {
     }
 
     fn clear_feed_channels(&self) {
-        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let mut channels = self.cmd_channels.lock();
         channels.clear();
     }
 
     fn abort_active_tasks(&self) {
-        self.task_handles.abort_all();
+        self.task_handles.begin_shutdown();
+    }
+
+    fn spawn_task<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.task_handles.spawn(future) {
+            log::debug!("Skipping Databento task after shutdown began: {e}");
+        }
     }
 
     /// Initializes the live feed handler for streaming data.
@@ -345,21 +396,21 @@ impl DatabentoDataClient {
             self.config.reconnect_timeout_mins,
         );
 
-        let feed_handle = get_runtime().spawn(async move {
-            if let Err(e) = feed_handler.run().await {
-                log::error!("Feed handler error: {e}");
-            }
-            feed_channels
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&feed_dataset);
-        });
+        if let Some(addr) = &self.config.live_gateway_addr {
+            feed_handler = feed_handler.with_gateway_addr(addr.clone());
+        }
+
+        let feed_future = async move {
+            // run() logs its terminal error and forwards it as `DatabentoMessage::Error`
+            let _ = feed_handler.run().await;
+            feed_channels.lock().remove(&feed_dataset);
+        };
 
         let cancellation_token = self.cancellation_token.clone();
         let data_sender = self.data_sender.clone();
 
         // Spawn message processing task with cancellation support
-        let msg_handle = get_runtime().spawn(async move {
+        let msg_future = async move {
             let mut msg_rx = msg_rx;
 
             loop {
@@ -388,14 +439,16 @@ impl DatabentoDataClient {
                             }
                             Some(DatabentoMessage::Imbalance(imbalance)) => {
                                 log::debug!("Received imbalance: {imbalance:?}");
-                                let data = Data::Custom(CustomData::from_arc(Arc::new(imbalance)));
+                                let instrument_id = imbalance.instrument_id;
+                                let data = Data::Custom(custom_data_for_instrument(Arc::new(imbalance), instrument_id));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send imbalance data event: {e}");
                                 }
                             }
                             Some(DatabentoMessage::Statistics(statistics)) => {
                                 log::debug!("Received statistics: {statistics:?}");
-                                let data = Data::Custom(CustomData::from_arc(Arc::new(statistics)));
+                                let instrument_id = statistics.instrument_id;
+                                let data = Data::Custom(custom_data_for_instrument(Arc::new(statistics), instrument_id));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send statistics data event: {e}");
                                 }
@@ -422,10 +475,15 @@ impl DatabentoDataClient {
                     }
                 }
             }
-        });
+        };
 
-        self.task_handles.push(feed_handle);
-        self.task_handles.push(msg_handle);
+        if let Err(e) = self.task_handles.spawn(feed_future) {
+            log::warn!("Skipping Databento feed task after shutdown began: {e}");
+        }
+
+        if let Err(e) = self.task_handles.spawn(msg_future) {
+            log::warn!("Skipping Databento message task after shutdown began: {e}");
+        }
 
         cmd_tx
     }
@@ -465,15 +523,16 @@ impl DataClient for DatabentoDataClient {
         self.clear_feed_channels();
         self.cancellation_token.cancel();
         self.abort_active_tasks();
-
-        self.cancellation_token = CancellationToken::new();
-
         self.is_connected.store(false, Ordering::Relaxed);
+
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting");
+        self.send_close_to_active_feeds();
+        self.clear_feed_channels();
+        self.abort_active_tasks();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -486,8 +545,15 @@ impl DataClient for DatabentoDataClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         log::debug!("Connecting...");
 
-        if self.cancellation_token.is_cancelled() {
-            self.cancellation_token = CancellationToken::new();
+        if !self.task_handles.is_open() {
+            self.task_handles
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to terminate Databento tasks: {e}"))?;
+            self.task_handles
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Databento task generation: {e}"))?;
+            self.cancellation_token = self.task_handles.cancellation_token();
         }
 
         self.is_connected.store(true, Ordering::Relaxed);
@@ -501,20 +567,18 @@ impl DataClient for DatabentoDataClient {
 
         self.send_close_to_active_feeds();
         self.clear_feed_channels();
+        self.task_handles.begin_shutdown();
 
-        for handle in self.task_handles.take_all() {
-            if let Err(e) = handle.await
-                && !e.is_cancelled()
-            {
-                log::error!("Task join error: {e}");
-            }
-        }
+        let tasks_result = self
+            .task_handles
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Databento tasks: {e}"));
 
         self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
 
         log::info!("Disconnected");
-        Ok(())
+        tasks_result
     }
 
     /// Returns whether the client is currently connected.
@@ -634,6 +698,47 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
+    /// Subscribes to `DatabentoStatistics` or `DatabentoImbalance` for the instrument given by the
+    /// identifier of the data type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data type is not supported, has metadata, has a missing or invalid
+    /// instrument ID identifier, or the subscription request fails.
+    fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        let schema = custom_data_schema(&cmd.data_type)?;
+        let instrument_id = custom_data_instrument_id(&cmd.data_type)?;
+        self.subscribe_schema(instrument_id, schema)
+    }
+
+    /// Subscribes to 10-level order book depth snapshots for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the requested depth is not 10, the symbol is not a raw symbol, or the
+    /// subscription request fails.
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
+        if let Some(depth) = cmd.depth {
+            anyhow::ensure!(
+                depth.get() == MBP10_DEPTH,
+                "Unsupported book depth {depth} for Databento `mbp-10`, only a depth of {MBP10_DEPTH} is available",
+            );
+        }
+
+        self.subscribe_schema(cmd.instrument_id, dbn::Schema::Mbp10)
+    }
+
+    /// Subscribes to OHLCV bars for the specified bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bar type has no matching OHLCV schema or the subscription request
+    /// fails.
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
+        let schema = ohlcv_schema(cmd.bar_type)?;
+        self.subscribe_schema(cmd.bar_type.instrument_id(), schema)
+    }
+
     /// Subscribes to instrument status updates for the specified instruments.
     ///
     /// # Errors
@@ -665,7 +770,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -677,7 +782,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -689,9 +794,45 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        // Note: Databento live API doesn't support granular unsubscribing.
+        // The feed handler manages subscriptions and can handle reconnections
+        // with the appropriate subscription state.
+        log::debug!(
+            "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
+            cmd.data_type
+        );
+
+        Ok(())
+    }
+
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
+        // Note: Databento live API doesn't support granular unsubscribing.
+        // The feed handler manages subscriptions and can handle reconnections
+        // with the appropriate subscription state.
+        log::debug!(
+            "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
+            cmd.instrument_id
+        );
+
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        // Note: Databento live API doesn't support granular unsubscribing.
+        // The feed handler manages subscriptions and can handle reconnections
+        // with the appropriate subscription state.
+        log::debug!(
+            "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
+            cmd.bar_type
         );
 
         Ok(())
@@ -704,7 +845,7 @@ impl DataClient for DatabentoDataClient {
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
-        log::warn!(
+        log::debug!(
             "Databento does not support granular unsubscribing - ignoring unsubscribe request for {}",
             cmd.instrument_id
         );
@@ -730,7 +871,7 @@ impl DataClient for DatabentoDataClient {
         let request_params = request.params;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             let query_params = instruments_query_params(dataset, query_start, query_end);
 
             match historical_client.get_range_instruments(query_params).await {
@@ -787,7 +928,7 @@ impl DataClient for DatabentoDataClient {
         let request_params = request.params;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             let query_params =
                 instrument_query_params(dataset, instrument_id, query_start, query_end);
 
@@ -843,7 +984,7 @@ impl DataClient for DatabentoDataClient {
             .to_string();
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -925,7 +1066,7 @@ impl DataClient for DatabentoDataClient {
                 .to_string();
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1006,7 +1147,7 @@ impl DataClient for DatabentoDataClient {
         let timestamp_on_close = self.config.bars_timestamp_on_close;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1112,7 +1253,7 @@ impl DataClient for DatabentoDataClient {
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1133,7 +1274,7 @@ impl DataClient for DatabentoDataClient {
             };
 
             match historical_client
-                .get_range_order_book_depth10(params, depth)
+                .get_range_order_book_depth(params, depth)
                 .await
             {
                 Ok(depths) => {
@@ -1189,7 +1330,7 @@ impl DataClient for DatabentoDataClient {
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1212,7 +1353,7 @@ impl DataClient for DatabentoDataClient {
             match historical_client.get_range_order_book_deltas(params).await {
                 Ok(deltas) => {
                     log::debug!("Retrieved {} order book deltas", deltas.len());
-                    let response = DataResponse::BookDeltas(BookDeltasResponse::new(
+                    let response = BookDeltasResponse::new(
                         request_id,
                         client_id,
                         instrument_id,
@@ -1221,9 +1362,15 @@ impl DataClient for DatabentoDataClient {
                         end_nanos,
                         get_atomic_clock_realtime().get_time_ns(),
                         request_params,
-                    ));
+                    );
 
-                    send_data_response(&data_sender, response, "book deltas");
+                    for response in partition_book_deltas_response(response) {
+                        send_data_response(
+                            &data_sender,
+                            DataResponse::BookDeltas(response),
+                            "book deltas",
+                        );
+                    }
                 }
                 Err(e) => {
                     log::error!("Failed to request order book deltas: {e}");
@@ -1293,10 +1440,10 @@ fn resolve_request_time_range(
     }
 
     if start == end {
-        if end.as_u64() > 0 {
-            start = UnixNanos::from(end.as_u64() - 1);
+        if end.is_zero() {
+            end += DurationNanos::new(1);
         } else {
-            end = UnixNanos::from(1);
+            start -= DurationNanos::new(1);
         }
     }
 
@@ -1304,7 +1451,7 @@ fn resolve_request_time_range(
 }
 
 fn start_of_utc_day(timestamp: UnixNanos) -> UnixNanos {
-    UnixNanos::from((timestamp.as_u64() / NANOSECONDS_IN_DAY) * NANOSECONDS_IN_DAY)
+    timestamp.floor(DurationNanos::from_days(1))
 }
 
 async fn seed_price_precision_if_needed(
@@ -1323,22 +1470,44 @@ async fn seed_price_precision_if_needed(
         return;
     }
 
+    let query_start = start_of_utc_day(start_nanos);
     let query_params =
-        instrument_query_params(dataset.to_string(), instrument_id, start_nanos, end_nanos);
+        instrument_query_params(dataset.to_string(), instrument_id, query_start, end_nanos);
 
     if let Err(e) = historical_client.get_range_instruments(query_params).await {
         log::warn!("Failed to seed price precision for {instrument_id}: {e}");
     }
 }
 
-fn send_data_response(
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    response: DataResponse,
-    label: &str,
-) {
+fn send_data_response(data_sender: &EventSender<DataEvent>, response: DataResponse, label: &str) {
     if let Err(e) = data_sender.send(DataEvent::Response(response)) {
         log::error!("Failed to send {label} response: {e}");
     }
+}
+
+fn partition_book_deltas_response(mut response: BookDeltasResponse) -> Vec<BookDeltasResponse> {
+    if response.data.is_empty() {
+        return vec![response];
+    }
+
+    let mut partitions = IndexMap::new();
+
+    for delta in std::mem::take(&mut response.data) {
+        partitions
+            .entry(delta.instrument_id)
+            .or_insert_with(Vec::new)
+            .push(delta);
+    }
+
+    partitions
+        .into_iter()
+        .map(|(instrument_id, data)| {
+            let mut child = response.clone();
+            child.instrument_id = instrument_id;
+            child.data = data;
+            child
+        })
+        .collect()
 }
 
 fn requested_instrument(
@@ -1363,6 +1532,62 @@ fn price_precision_from_params(params: Option<&Params>) -> anyhow::Result<Option
             u8::MAX
         )
     })?))
+}
+
+fn custom_data_for_instrument(
+    data: Arc<dyn CustomDataTrait>,
+    instrument_id: InstrumentId,
+) -> CustomData {
+    let data_type = DataType::new(data.type_name(), None, Some(instrument_id.to_string()));
+    CustomData::new(data, data_type)
+}
+
+fn custom_data_schema(data_type: &DataType) -> anyhow::Result<dbn::Schema> {
+    match data_type.type_name() {
+        name if name == DatabentoStatistics::type_name_static() => Ok(dbn::Schema::Statistics),
+        name if name == DatabentoImbalance::type_name_static() => Ok(dbn::Schema::Imbalance),
+        name => anyhow::bail!(
+            "Unsupported custom data type for Databento live subscription: {name}, expected {} or {}",
+            DatabentoStatistics::type_name_static(),
+            DatabentoImbalance::type_name_static(),
+        ),
+    }
+}
+
+fn custom_data_instrument_id(data_type: &DataType) -> anyhow::Result<InstrumentId> {
+    // Records are published without metadata, so metadata would change the subscribed topic
+    anyhow::ensure!(
+        data_type
+            .metadata()
+            .is_none_or(|metadata| metadata.is_empty()),
+        "{} subscriptions do not support metadata, received {}",
+        data_type.type_name(),
+        data_type.metadata_str(),
+    );
+
+    let identifier = data_type.identifier().ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} subscriptions require an instrument ID identifier",
+            data_type.type_name()
+        )
+    })?;
+
+    InstrumentId::from_str(identifier)
+        .map_err(|e| anyhow::anyhow!("Invalid instrument ID identifier `{identifier}`: {e}"))
+}
+
+fn ohlcv_schema(bar_type: BarType) -> anyhow::Result<dbn::Schema> {
+    let spec = bar_type.spec();
+    anyhow::ensure!(
+        spec.price_type == PriceType::Last,
+        "Unsupported bar price type for Databento OHLCV: {spec}, only LAST is emitted",
+    );
+    anyhow::ensure!(
+        spec.step.get() == 1,
+        "Unsupported bar step for Databento OHLCV: {spec}, only a step of 1 is available",
+    );
+
+    ohlcv_schema_from_aggregation(spec.aggregation)
 }
 
 fn schema_from_params(
@@ -1416,19 +1641,35 @@ fn send_subscription_commands(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{num::NonZeroUsize, path::PathBuf};
 
-    use nautilus_common::live::runner::replace_data_event_sender;
+    use databento::dbn::{
+        MappingInterval, SymbolMapping,
+        decode::{DbnMetadata, DecodeRecord, dbn::Decoder},
+        encode::EncodeRecord,
+    };
+    use nautilus_common::{
+        live::runner::replace_data_event_sender,
+        msgbus::{self, switchboard::get_custom_topic},
+    };
     use nautilus_core::UUID4;
     use nautilus_model::{
+        data::OrderBookDelta,
+        enums::BookType,
         identifiers::{ClientId, InstrumentId},
         instruments::{CurrencyPair, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
     use serde_json::json;
+    use time::macros::date;
+    use tokio::{
+        io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+        net::TcpListener,
+    };
 
     use super::*;
+    use crate::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
 
     #[derive(Clone, Copy)]
     enum SubscribeKind {
@@ -1460,17 +1701,22 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_stop_aborts_active_tasks_and_marks_disconnected() {
+    async fn test_stop_closes_task_admission_until_disconnect_drains() {
         let mut client = test_data_client();
 
-        let handle = tokio::spawn(async { std::future::pending::<()>().await });
-        client.task_handles.push(handle);
+        client
+            .task_handles
+            .spawn(async { std::future::pending::<()>().await })
+            .unwrap();
         client.is_connected.store(true, Ordering::Relaxed);
 
         client.stop().unwrap();
 
-        assert!(client.task_handles.is_empty());
+        assert!(!client.task_handles.is_open());
         assert!(client.is_disconnected());
+
+        client.disconnect().await.unwrap();
+        assert!(client.task_handles.is_empty());
     }
 
     #[rstest]
@@ -1507,6 +1753,41 @@ mod tests {
         );
     }
 
+    #[rstest]
+    fn test_config_base_url_overrides_default_to_none() {
+        let config = DatabentoDataClientConfig::new(
+            "32-character-with-lots-of-filler",
+            PathBuf::from("test_publishers.json"),
+            true,
+            true,
+        );
+
+        assert!(config.historical_base_url.is_none());
+        assert!(config.live_gateway_addr.is_none());
+    }
+
+    #[rstest]
+    fn test_historical_base_url_override_invalid_errors() {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(sender);
+
+        let mut config = DatabentoDataClientConfig::new(
+            "32-character-with-lots-of-filler",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            true,
+        );
+        config.historical_base_url = Some("not a url".to_string());
+
+        let result = DatabentoDataClient::new(
+            ClientId::from("DATABENTO-TEST"),
+            config,
+            get_atomic_clock_realtime(),
+        );
+
+        assert!(result.is_err());
+    }
+
     fn subscribe_quotes_cmd(params: Option<Params>) -> SubscribeQuotes {
         SubscribeQuotes::new(
             InstrumentId::from("ESM4.GLBX"),
@@ -1531,34 +1812,38 @@ mod tests {
         )
     }
 
+    fn subscribe_book_depth_cmd(depth: Option<NonZeroUsize>) -> SubscribeBookDepth {
+        SubscribeBookDepth::new(
+            InstrumentId::from("ESM4.GLBX"),
+            BookType::L2_MBP,
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            depth,
+            true,
+            None,
+            None,
+        )
+    }
+
     fn currency_pair_with_ts_init(instrument_id: &str, ts_init: UnixNanos) -> InstrumentAny {
         let instrument_id = InstrumentId::from(instrument_id);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            instrument_id.symbol,
-            Currency::from("BTC"),
-            Currency::from("USDT"),
-            2,
-            6,
-            Price::from("0.01"),
-            Quantity::from("0.000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            ts_init,
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(instrument_id.symbol)
+                .base_currency(Currency::from("BTC"))
+                .quote_currency(Currency::from("USDT"))
+                .price_precision(2)
+                .size_precision(6)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(ts_init)
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -1595,6 +1880,161 @@ mod tests {
     }
 
     #[rstest]
+    #[case::intraday(1_782_302_400_000_000_001)]
+    #[case::midnight(1_782_259_200_000_000_000)]
+    #[case::day_end(1_782_345_599_999_999_999)]
+    #[tokio::test]
+    async fn test_seed_price_precision_includes_midnight(#[case] start: u64) {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data/test_data.definition.futures_contract.dbn.zst");
+        let mut decoder = Decoder::from_zstd_file(path).unwrap();
+        let mut metadata = decoder.metadata().clone();
+        let record = decoder
+            .decode_record::<dbn::InstrumentDefMsg>()
+            .unwrap()
+            .unwrap();
+        metadata.symbols = vec!["ESU6".to_string()];
+
+        metadata.mappings = vec![SymbolMapping {
+            raw_symbol: "ESU6".to_string(),
+            intervals: vec![MappingInterval {
+                start_date: date!(2026 - 06 - 24),
+                end_date: date!(2026 - 06 - 25),
+                symbol: record.hd.instrument_id.to_string(),
+            }],
+        }];
+
+        let mut body = Vec::new();
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut body, &metadata).unwrap();
+            encoder.encode_record(record).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(serve_historical_response(listener, body));
+
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new("32-character-with-lots-of-filler"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+        let instrument_id = InstrumentId::from("ESU6.GLBX");
+        let end = UnixNanos::from(1_782_345_600_000_000_123);
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            seed_price_precision_if_needed(
+                &client,
+                "GLBX.MDP3",
+                instrument_id,
+                start.into(),
+                Some(end),
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+        let request = server.await.unwrap();
+        let fields: AHashMap<_, _> = request
+            .split('&')
+            .map(|field| field.split_once('=').unwrap())
+            .collect();
+
+        assert_eq!(fields["dataset"], "GLBX.MDP3");
+        assert_eq!(fields["schema"], "definition");
+        assert_eq!(fields["symbols"], "ESU6");
+        assert_eq!(fields["start"], "1782259200000000000");
+        assert_eq!(fields["end"], end.to_string());
+        assert_eq!(client.price_precision(instrument_id.symbol), Some(2));
+    }
+
+    async fn serve_historical_response(listener: TcpListener, body: Vec<u8>) -> String {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).await.unwrap();
+        assert_eq!(line, "POST /v0/timeseries.get_range HTTP/1.1\r\n");
+        let mut content_length = None;
+
+        loop {
+            line.clear();
+            stream.read_line(&mut line).await.unwrap();
+
+            if line == "\r\n" {
+                break;
+            }
+
+            if let Some((name, value)) = line.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                content_length = Some(value.trim().parse::<usize>().unwrap());
+            }
+        }
+
+        let mut request = vec![0; content_length.unwrap()];
+        stream.read_exact(&mut request).await.unwrap();
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len(),
+        );
+        stream.write_all(headers.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+        stream.shutdown().await.unwrap();
+        String::from_utf8(request).unwrap()
+    }
+
+    #[rstest]
+    #[case::explicit(Some(5), None)]
+    #[case::cached(None, Some(3))]
+    #[tokio::test]
+    async fn test_seed_price_precision_skips_known_precision(
+        #[case] price_precision: Option<u8>,
+        #[case] cached_precision: Option<u8>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new("32-character-with-lots-of-filler"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+        let instrument_id = InstrumentId::from("ESU6.GLBX");
+        if let Some(precision) = cached_precision {
+            client.set_price_precision(instrument_id.symbol, precision);
+        }
+
+        tokio::select! {
+            () = seed_price_precision_if_needed(
+                &client,
+                "GLBX.MDP3",
+                instrument_id,
+                1_706_443_200_000_000_001.into(),
+                Some(1_706_486_400_000_000_123.into()),
+                price_precision,
+            ) => {}
+            result = listener.accept() => panic!("Unexpected definition request: {result:?}"),
+            () = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+                panic!("Precision seeding did not finish");
+            }
+        }
+
+        assert_eq!(
+            client.price_precision(instrument_id.symbol),
+            cached_precision
+        );
+    }
+
+    #[rstest]
     fn test_resolve_request_time_range_defaults_to_end_day() {
         let end = UnixNanos::from(1_706_443_200_000_000_001);
 
@@ -1610,7 +2050,7 @@ mod tests {
 
         let (start, resolved_end) = resolve_request_time_range(Some(end), Some(end));
 
-        assert_eq!(start, UnixNanos::from(end.as_u64() - 1));
+        assert_eq!(start, end - DurationNanos::new(1));
         assert_eq!(resolved_end, Some(end));
     }
 
@@ -1673,6 +2113,111 @@ mod tests {
     }
 
     #[rstest]
+    fn test_partition_book_deltas_response_by_child_instrument() {
+        let correlation_id = UUID4::new();
+        let client_id = ClientId::from("DATABENTO-TEST");
+        let parent = InstrumentId::from("ES.FUT.GLBX");
+        let child_a = InstrumentId::from("ESM6.GLBX");
+        let child_b = InstrumentId::from("ESU6.GLBX");
+        let deltas = vec![
+            OrderBookDelta::clear(child_a, 1, UnixNanos::from(1_000), UnixNanos::from(1_000)),
+            OrderBookDelta::clear(child_b, 2, UnixNanos::from(2_000), UnixNanos::from(2_000)),
+            OrderBookDelta::clear(child_a, 3, UnixNanos::from(3_000), UnixNanos::from(3_000)),
+        ];
+        let mut params = Params::new();
+        params.insert(PRICE_PRECISION_PARAM.to_string(), json!(5));
+        let response = BookDeltasResponse::new(
+            correlation_id,
+            client_id,
+            parent,
+            deltas.clone(),
+            Some(UnixNanos::from(500)),
+            Some(UnixNanos::from(4_000)),
+            UnixNanos::from(5_000),
+            Some(params.clone()),
+        );
+
+        let responses = partition_book_deltas_response(response);
+
+        assert_eq!(responses.len(), 2);
+        assert_eq!(responses[0].correlation_id, correlation_id);
+        assert_eq!(responses[1].correlation_id, correlation_id);
+        assert_eq!(responses[0].client_id, client_id);
+        assert_eq!(responses[1].client_id, client_id);
+        assert_eq!(responses[0].instrument_id, child_a);
+        assert_eq!(responses[1].instrument_id, child_b);
+        assert_eq!(responses[0].data, vec![deltas[0], deltas[2]]);
+        assert_eq!(responses[1].data, vec![deltas[1]]);
+        assert_eq!(responses[0].start, Some(UnixNanos::from(500)));
+        assert_eq!(responses[1].start, Some(UnixNanos::from(500)));
+        assert_eq!(responses[0].end, Some(UnixNanos::from(4_000)));
+        assert_eq!(responses[1].end, Some(UnixNanos::from(4_000)));
+        assert_eq!(responses[0].ts_init, UnixNanos::from(5_000));
+        assert_eq!(responses[1].ts_init, UnixNanos::from(5_000));
+        assert_eq!(responses[0].params, Some(params.clone()));
+        assert_eq!(responses[1].params, Some(params));
+    }
+
+    #[rstest]
+    fn test_partition_book_deltas_response_preserves_homogeneous_response() {
+        let correlation_id = UUID4::new();
+        let client_id = ClientId::from("DATABENTO-TEST");
+        let instrument_id = InstrumentId::from("ESM6.GLBX");
+        let delta = OrderBookDelta::clear(
+            instrument_id,
+            1,
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        let response = BookDeltasResponse::new(
+            correlation_id,
+            client_id,
+            instrument_id,
+            vec![delta],
+            Some(UnixNanos::from(500)),
+            Some(UnixNanos::from(1_500)),
+            UnixNanos::from(2_000),
+            None,
+        );
+
+        let responses = partition_book_deltas_response(response);
+
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0].correlation_id, correlation_id);
+        assert_eq!(responses[0].client_id, client_id);
+        assert_eq!(responses[0].instrument_id, instrument_id);
+        assert_eq!(responses[0].data, vec![delta]);
+        assert_eq!(responses[0].start, Some(UnixNanos::from(500)));
+        assert_eq!(responses[0].end, Some(UnixNanos::from(1_500)));
+        assert_eq!(responses[0].ts_init, UnixNanos::from(2_000));
+        assert_eq!(responses[0].params, None);
+    }
+
+    #[rstest]
+    fn test_partition_book_deltas_response_preserves_empty_parent_response() {
+        let correlation_id = UUID4::new();
+        let parent = InstrumentId::from("ES.FUT.GLBX");
+        let response = BookDeltasResponse::new(
+            correlation_id,
+            ClientId::from("DATABENTO-TEST"),
+            parent,
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::from(1_000),
+            None,
+        );
+
+        let responses = partition_book_deltas_response(response);
+
+        assert_eq!(responses.len(), 1);
+        let response = &responses[0];
+        assert_eq!(response.correlation_id, correlation_id);
+        assert_eq!(response.instrument_id, parent);
+        assert!(response.data.is_empty());
+    }
+
+    #[rstest]
     fn test_schema_from_params_returns_default() {
         let schema = schema_from_params(None, dbn::Schema::Mbp1, QUOTE_SCHEMAS).unwrap();
 
@@ -1713,7 +2258,7 @@ mod tests {
         };
 
         assert!(result.is_err());
-        assert!(client.cmd_channels.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(client.cmd_channels.lock().is_empty());
     }
 
     #[rstest]
@@ -1742,6 +2287,291 @@ mod tests {
             HandlerCommand::Subscribe(sub) if sub.schema == dbn::Schema::Mbp1
         ));
         assert!(matches!(rx.try_recv().unwrap(), HandlerCommand::Start));
+    }
+
+    #[rstest]
+    #[case::second("ESM4.GLBX-1-SECOND-LAST-EXTERNAL", dbn::Schema::Ohlcv1S)]
+    #[case::minute("ESM4.GLBX-1-MINUTE-LAST-EXTERNAL", dbn::Schema::Ohlcv1M)]
+    #[case::hour("ESM4.GLBX-1-HOUR-LAST-EXTERNAL", dbn::Schema::Ohlcv1H)]
+    #[case::day("ESM4.GLBX-1-DAY-LAST-EXTERNAL", dbn::Schema::Ohlcv1D)]
+    fn test_ohlcv_schema_maps_aggregation(#[case] bar_type: &str, #[case] expected: dbn::Schema) {
+        let schema = ohlcv_schema(BarType::from(bar_type)).unwrap();
+
+        assert_eq!(schema, expected);
+    }
+
+    #[rstest]
+    #[case::step("ESM4.GLBX-5-MINUTE-LAST-EXTERNAL")]
+    #[case::aggregation("ESM4.GLBX-100-TICK-LAST-EXTERNAL")]
+    #[case::bid("ESM4.GLBX-1-MINUTE-BID-EXTERNAL")]
+    #[case::mid("ESM4.GLBX-1-MINUTE-MID-EXTERNAL")]
+    fn test_ohlcv_schema_rejects_unsupported_bar_type(#[case] bar_type: &str) {
+        assert!(ohlcv_schema(BarType::from(bar_type)).is_err());
+    }
+
+    #[rstest]
+    #[case::statistics("DatabentoStatistics", dbn::Schema::Statistics)]
+    #[case::imbalance("DatabentoImbalance", dbn::Schema::Imbalance)]
+    fn test_subscribe_custom_data_sends_schema_subscription(
+        #[case] type_name: &str,
+        #[case] expected: dbn::Schema,
+    ) {
+        let mut client = test_data_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client
+            .cmd_channels
+            .lock()
+            .insert("GLBX.MDP3".to_string(), tx);
+        let command = SubscribeCustomData::new(
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            DataType::new(type_name, None, Some("ESM4.GLBX".to_string())),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        client.subscribe(command).unwrap();
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+        assert_eq!(subscription.schema, expected);
+        assert_eq!(
+            subscription.symbols,
+            databento::Symbols::Symbols(vec!["ESM4".to_string()])
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::unsupported_type("DatabentoOther", Some("ESM4.GLBX"))]
+    #[case::missing_identifier("DatabentoStatistics", None)]
+    #[case::invalid_identifier("DatabentoStatistics", Some("ESM4"))]
+    fn test_subscribe_custom_data_rejects_invalid_data_type(
+        #[case] type_name: &str,
+        #[case] identifier: Option<&str>,
+    ) {
+        let mut client = test_data_client();
+        let command = SubscribeCustomData::new(
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            DataType::new(type_name, None, identifier.map(str::to_string)),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        assert!(client.subscribe(command).is_err());
+        assert!(client.cmd_channels.lock().is_empty());
+    }
+
+    #[rstest]
+    fn test_custom_data_for_instrument_matches_subscribed_topic() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let statistics = DatabentoStatistics::new(
+            instrument_id,
+            DatabentoStatisticType::SettlementPrice,
+            DatabentoStatisticUpdateAction::Added,
+            Some(Price::from("5000.25")),
+            None,
+            1,
+            2,
+            3,
+            UnixNanos::from(4),
+            5,
+            UnixNanos::from(6),
+            UnixNanos::from(7),
+            UnixNanos::from(8),
+        );
+        let subscribed = DataType::new("DatabentoStatistics", None, Some("ESM4.GLBX".to_string()));
+
+        let custom = custom_data_for_instrument(Arc::new(statistics), instrument_id);
+
+        assert_eq!(custom.data_type, subscribed);
+        assert_eq!(
+            get_custom_topic(&custom.data_type),
+            get_custom_topic(&subscribed)
+        );
+        assert_eq!(custom.data_type.identifier(), Some("ESM4.GLBX"));
+    }
+
+    #[rstest]
+    fn test_subscribe_schema_sends_raw_symbol() {
+        let client = test_data_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client
+            .cmd_channels
+            .lock()
+            .insert("GLBX.MDP3".to_string(), tx);
+
+        client
+            .subscribe_schema(InstrumentId::from("ESM4.GLBX"), dbn::Schema::Ohlcv1M)
+            .unwrap();
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+        assert_eq!(subscription.stype_in, dbn::SType::RawSymbol);
+        assert_eq!(
+            subscription.symbols,
+            databento::Symbols::Symbols(vec!["ESM4".to_string()])
+        );
+    }
+
+    #[rstest]
+    #[case::continuous("ES.c.0.GLBX")]
+    #[case::parent("ES.FUT.GLBX")]
+    #[case::instrument_id("12345.GLBX")]
+    fn test_subscribe_schema_rejects_non_raw_symbols(#[case] instrument_id: &str) {
+        let client = test_data_client();
+
+        let result = client.subscribe_schema(InstrumentId::from(instrument_id), dbn::Schema::Mbp10);
+
+        assert!(result.is_err());
+        assert!(client.cmd_channels.lock().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribe_custom_data_rejects_metadata() {
+        let mut client = test_data_client();
+        let mut metadata = Params::new();
+        metadata.insert("venue".to_string(), json!("GLBX"));
+        let command = SubscribeCustomData::new(
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            DataType::new(
+                "DatabentoStatistics",
+                Some(metadata),
+                Some("ESM4.GLBX".to_string()),
+            ),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        assert!(client.subscribe(command).is_err());
+        assert!(client.cmd_channels.lock().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribed_custom_data_reaches_subscriber() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let subscribed = DataType::new("DatabentoStatistics", None, Some("ESM4.GLBX".to_string()));
+        let other = DataType::new("DatabentoStatistics", None, Some("ESU4.GLBX".to_string()));
+        let handler = msgbus::stubs::get_message_saving_handler::<CustomData>(None);
+        msgbus::subscribe_any(get_custom_topic(&subscribed).into(), handler.clone(), None);
+        let statistics = DatabentoStatistics::new(
+            instrument_id,
+            DatabentoStatisticType::SettlementPrice,
+            DatabentoStatisticUpdateAction::Added,
+            Some(Price::from("5000.25")),
+            None,
+            1,
+            2,
+            3,
+            UnixNanos::from(4),
+            5,
+            UnixNanos::from(6),
+            UnixNanos::from(7),
+            UnixNanos::from(8),
+        );
+        let custom = custom_data_for_instrument(Arc::new(statistics), instrument_id);
+
+        msgbus::publish_any(get_custom_topic(&custom.data_type), &custom);
+        msgbus::publish_any(get_custom_topic(&other), &custom);
+
+        let received = msgbus::stubs::get_saved_messages::<CustomData>(&handler);
+        assert_eq!(received, vec![custom]);
+    }
+
+    #[rstest]
+    fn test_subscribe_book_depth_accepts_depth_ten() {
+        let mut client = test_data_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client
+            .cmd_channels
+            .lock()
+            .insert("GLBX.MDP3".to_string(), tx);
+
+        client
+            .subscribe_book_depth(subscribe_book_depth_cmd(NonZeroUsize::new(10)))
+            .unwrap();
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+        assert_eq!(subscription.schema, dbn::Schema::Mbp10);
+    }
+
+    #[rstest]
+    #[case::five(5)]
+    #[case::twenty(20)]
+    fn test_subscribe_book_depth_rejects_other_depths(#[case] depth: usize) {
+        let mut client = test_data_client();
+
+        let result =
+            client.subscribe_book_depth(subscribe_book_depth_cmd(NonZeroUsize::new(depth)));
+
+        assert!(result.is_err());
+        assert!(client.cmd_channels.lock().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribe_bars_sends_ohlcv_subscription() {
+        let mut client = test_data_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client
+            .cmd_channels
+            .lock()
+            .insert("GLBX.MDP3".to_string(), tx);
+        let command = SubscribeBars::new(
+            BarType::from("ESM4.GLBX-1-MINUTE-LAST-EXTERNAL"),
+            Some(ClientId::from("DATABENTO-TEST")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        client.subscribe_bars(command).unwrap();
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+        assert_eq!(subscription.schema, dbn::Schema::Ohlcv1M);
+        assert_eq!(
+            subscription.symbols,
+            databento::Symbols::Symbols(vec!["ESM4".to_string()])
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_subscribe_book_depth_sends_mbp10_subscription() {
+        let mut client = test_data_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client
+            .cmd_channels
+            .lock()
+            .insert("GLBX.MDP3".to_string(), tx);
+        client
+            .subscribe_book_depth(subscribe_book_depth_cmd(None))
+            .unwrap();
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+        assert_eq!(subscription.schema, dbn::Schema::Mbp10);
+        assert_eq!(
+            subscription.symbols,
+            databento::Symbols::Symbols(vec!["ESM4".to_string()])
+        );
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

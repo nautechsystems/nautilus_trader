@@ -35,6 +35,14 @@ pub enum TransportError {
     #[error("handshake failed: {0}")]
     Handshake(String),
 
+    /// Server rejected the WebSocket HTTP upgrade.
+    #[error("WebSocket upgrade rejected with status {0}")]
+    UpgradeRejected(u16),
+
+    /// Proxy rejected the HTTP CONNECT request.
+    #[error("proxy CONNECT rejected with status {0}")]
+    ProxyConnectRejected(u16),
+
     /// URL was invalid or unsupported.
     #[error("invalid URL: {0}")]
     InvalidUrl(String),
@@ -81,6 +89,29 @@ pub enum TransportError {
 }
 
 impl TransportError {
+    /// Returns an error description without URL, server, or operating-system error text.
+    ///
+    /// Retains the transport error category, I/O kind, and HTTP rejection status.
+    #[must_use]
+    pub fn redacted_message(&self) -> String {
+        match self {
+            Self::Io(e) => format!("I/O error: {:?}", e.kind()),
+            Self::Handshake(_) => "handshake failed".to_string(),
+            Self::InvalidUrl(_) => "invalid URL".to_string(),
+            Self::Tls(_) => "TLS error".to_string(),
+            Self::Protocol(_) => "protocol error".to_string(),
+            Self::Other(_) => "transport error".to_string(),
+            Self::UpgradeRejected(_)
+            | Self::ProxyConnectRejected(_)
+            | Self::ClosedByPeer(_)
+            | Self::ConnectionClosed
+            | Self::ConnectionReset
+            | Self::MessageTooLarge
+            | Self::FrameTooLarge
+            | Self::InvalidUtf8 => self.to_string(),
+        }
+    }
+
     /// Returns `true` if the error indicates the connection is no longer usable.
     ///
     /// `InvalidUrl` is the only non-fatal variant: a bad URL is a caller-side
@@ -102,11 +133,50 @@ impl TransportError {
     }
 }
 
+// Keep initial-connect retry policy and handshake log severity consistent
+pub(crate) const fn retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 425 | 429 | 500..=599)
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(
+        TransportError::Io(io::Error::new(io::ErrorKind::ConnectionRefused, "SYN-secret")),
+        "I/O error: ConnectionRefused"
+    )]
+    #[case(
+        TransportError::UpgradeRejected(401),
+        "WebSocket upgrade rejected with status 401"
+    )]
+    #[case(
+        TransportError::ProxyConnectRejected(407),
+        "proxy CONNECT rejected with status 407"
+    )]
+    #[case(TransportError::Handshake("SYN-secret".to_string()), "handshake failed")]
+    #[case(TransportError::InvalidUrl("SYN-secret".to_string()), "invalid URL")]
+    #[case(TransportError::Tls("SYN-secret".to_string()), "TLS error")]
+    #[case(TransportError::Protocol("SYN-secret".to_string()), "protocol error")]
+    #[case(
+        TransportError::ClosedByPeer(Some(CloseFrame::new(1000, "SYN-secret"))),
+        "connection closed by peer"
+    )]
+    #[case(TransportError::ConnectionClosed, "connection closed")]
+    #[case(TransportError::ConnectionReset, "connection reset")]
+    #[case(TransportError::MessageTooLarge, "message too large")]
+    #[case(TransportError::FrameTooLarge, "frame too large")]
+    #[case(TransportError::InvalidUtf8, "invalid UTF-8 in text frame")]
+    #[case(TransportError::Other("SYN-secret".to_string()), "transport error")]
+    fn test_redacted_message_preserves_classification(
+        #[case] error: TransportError,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(error.redacted_message(), expected);
+    }
 
     #[rstest]
     fn io_error_is_fatal() {
@@ -159,6 +229,8 @@ mod tests {
             TransportError::InvalidUtf8,
             TransportError::Tls("bad".into()),
             TransportError::Handshake("bad".into()),
+            TransportError::UpgradeRejected(429),
+            TransportError::ProxyConnectRejected(503),
         ] {
             assert!(err.is_fatal(), "expected fatal: {err:?}");
             assert!(!err.is_closed(), "expected not closed: {err:?}");

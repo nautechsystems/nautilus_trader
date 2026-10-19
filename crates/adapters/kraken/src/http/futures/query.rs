@@ -19,7 +19,9 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::enums::{KrakenFuturesOrderType, KrakenOrderSide, KrakenTriggerSignal};
+use crate::common::enums::{
+    KrakenFuturesOrderType, KrakenFuturesQtyMode, KrakenOrderSide, KrakenTriggerSignal,
+};
 
 /// Parameters for sending an order via `POST /api/v3/sendorder`.
 ///
@@ -248,8 +250,8 @@ pub struct KrakenFuturesBatchEditItem {
     #[serde(rename = "order_tag")]
     pub order_tag: String,
 
-    /// The venue order ID to edit.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The venue order ID to edit, which a batch instruction names `order_id`.
+    #[serde(rename = "order_id", skip_serializing_if = "Option::is_none")]
     pub order_id: Option<String>,
 
     /// The client order ID to edit.
@@ -267,6 +269,10 @@ pub struct KrakenFuturesBatchEditItem {
     /// New stop price.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_price: Option<String>,
+
+    /// Whether `size` sets the order's total size or its open size.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qty_mode: Option<KrakenFuturesQtyMode>,
 }
 
 impl KrakenFuturesBatchEditItem {
@@ -281,6 +287,7 @@ impl KrakenFuturesBatchEditItem {
             size: params.size,
             limit_price: params.limit_price,
             stop_price: params.stop_price,
+            qty_mode: params.qty_mode,
         }
     }
 }
@@ -345,6 +352,11 @@ pub struct KrakenFuturesEditOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_price: Option<String>,
+
+    /// Whether `size` sets the order's total size or its open size.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qty_mode: Option<KrakenFuturesQtyMode>,
 }
 
 /// Parameters for canceling all orders via `POST /api/v3/cancelallorders`.
@@ -557,6 +569,30 @@ mod tests {
                 "orderType": "mkt",
                 "size": "500",
                 "reduceOnly": true,
+            }),
+        );
+    }
+
+    /// A batch edit instruction names the venue order ID `order_id`, as the batch-order API
+    /// documents it, unlike the camel-case fields beside it.
+    #[rstest]
+    fn test_batch_edit_item_names_the_venue_order_id_order_id() {
+        let params = KrakenFuturesEditOrderParamsBuilder::default()
+            .order_id("order-123")
+            .size("2000")
+            .build()
+            .unwrap();
+
+        let item = KrakenFuturesBatchEditItem::from_params(params, "1");
+        let value = serde_json::to_value(&item).unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "order": "edit",
+                "order_tag": "1",
+                "order_id": "order-123",
+                "size": "2000",
             }),
         );
     }

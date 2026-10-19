@@ -107,8 +107,7 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format string.
 ///
-/// Returns the raw nanosecond value as a string if it exceeds the representable
-/// datetime range (`i64::MAX`, approximately year 2262).
+/// All `UnixNanos` values are representable by this formatter.
 #[pyfunction(
     name = "unix_nanos_to_iso8601",
     signature = (timestamp_ns, nanos_precision=Some(true))
@@ -154,23 +153,80 @@ pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
 
 #[cfg(test)]
 mod tests {
+    use jiff::Timestamp;
+    use pyo3::ffi::c_str;
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
-    #[case(Some(true))]
-    #[case(Some(false))]
-    fn test_py_unix_nanos_to_iso8601_falls_back_for_out_of_range_timestamp(
+    #[case(Some(true), 30)]
+    #[case(Some(false), 24)]
+    fn test_py_unix_nanos_to_iso8601_supports_full_range(
         #[case] nanos_precision: Option<bool>,
+        #[case] expected_len: usize,
     ) {
         let result = py_unix_nanos_to_iso8601(u64::MAX, nanos_precision);
-        assert_eq!(result.unwrap(), u64::MAX.to_string());
+        assert_eq!(result.unwrap().len(), expected_len);
     }
 
     #[rstest]
     fn test_py_unix_nanos_to_iso8601_formats_valid_timestamp() {
         let output = py_unix_nanos_to_iso8601(0, Some(false)).unwrap();
         assert_eq!(output, "1970-01-01T00:00:00.000Z");
+    }
+
+    #[rstest]
+    fn test_jiff_timestamp_python_input_accepts_aware_non_utc_datetime() {
+        Python::initialize();
+        Python::attach(|py| {
+            let datetime = py
+                .eval(
+                    c_str!(
+                        "__import__('datetime').datetime(2024, 1, 15, 13, 30, 45, tzinfo=__import__('datetime').timezone(__import__('datetime').timedelta(hours=-5)))"
+                    ),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            let timestamp = datetime.extract::<Timestamp>().unwrap();
+            assert_eq!(timestamp, "2024-01-15T18:30:45Z".parse().unwrap());
+        });
+    }
+
+    #[rstest]
+    fn test_jiff_timestamp_python_input_accepts_zoneinfo_datetime() {
+        Python::initialize();
+        Python::attach(|py| {
+            let datetime = py
+                .eval(
+                    c_str!(
+                        "__import__('datetime').datetime(2024, 1, 15, 13, 30, 45, tzinfo=__import__('zoneinfo').ZoneInfo('America/New_York'))"
+                    ),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            let timestamp = datetime.extract::<Timestamp>().unwrap();
+            assert_eq!(timestamp, "2024-01-15T18:30:45Z".parse().unwrap());
+        });
+    }
+
+    #[rstest]
+    fn test_jiff_timestamp_python_input_rejects_naive_datetime() {
+        Python::initialize();
+        Python::attach(|py| {
+            let datetime = py
+                .eval(
+                    c_str!("__import__('datetime').datetime(2024, 1, 15, 13, 30, 45)"),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            assert!(datetime.extract::<Timestamp>().is_err());
+        });
     }
 }

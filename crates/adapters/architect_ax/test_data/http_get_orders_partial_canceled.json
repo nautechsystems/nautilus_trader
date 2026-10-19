@@ -1,0 +1,21 @@
+{
+  "orders": [
+    {
+      "ts": 1704067200,
+      "tn": 500000000,
+      "oid": "O-PARTIAL-CANCELED",
+      "aid": "account-1",
+      "u": "test_user",
+      "s": "EURUSD-PERP",
+      "p": "1.08400",
+      "q": 200,
+      "xq": 100,
+      "rq": 0,
+      "o": "CANCELED",
+      "d": "B",
+      "tif": "IOC",
+      "cid": 42,
+      "po": false
+    }
+  ]
+}

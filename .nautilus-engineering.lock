@@ -1,0 +1,156 @@
+version = 1
+repository = "https://github.com/nautechsystems/nautilus_engineering"
+revision = "83d1ac8b4974f687cfaf071f387029faffd8571f"
+manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
+marker_file = ".nautilus-engineering.syncing"
+profiles = ["sync"]
+
+[[file]]
+artifact = "markdownlint-config"
+path = ".markdownlint.jsonc"
+sha256 = "cd378aae2eb91d098732b00df44c565b7f61460b562ce47af1ab2e155d2a78c6"
+executable = false
+
+[[file]]
+artifact = "pre-commit-shell"
+path = ".nautilus-engineering/pre-commit/shell.yaml"
+sha256 = "e7bc92530160b85a1774328d443ef46c5f706cf1cf2fedb0a75e89588c35453d"
+executable = false
+
+[[file]]
+artifact = "pre-commit-sync"
+path = ".nautilus-engineering/pre-commit/sync.yaml"
+sha256 = "37be0528de30ed529fb1b1862bbcffb174ebd91bbd0457dc9d0e5f173de037d6"
+executable = false
+
+[[file]]
+artifact = "pre-commit-toml"
+path = ".nautilus-engineering/pre-commit/toml.yaml"
+sha256 = "41cfb8b4a4d14880cdfc265dc031e637fcccf927daa988663d699707b0b95bdd"
+executable = false
+
+[[file]]
+artifact = "pre-commit-yaml"
+path = ".nautilus-engineering/pre-commit/yaml.yaml"
+sha256 = "f9d1883fdafe45d8b8e70f706f06360a342c106caddc679a3f53a9fe70e6bec0"
+executable = false
+
+[[file]]
+artifact = "pre-commit-zizmor"
+path = ".nautilus-engineering/pre-commit/zizmor.yaml"
+sha256 = "c156b701b14fea09ed9e6af84c20e3065a26d5240a22c85ce174ce8388c215f0"
+executable = false
+
+[[file]]
+artifact = "shared-tool-catalog"
+path = ".nautilus-engineering/tools.toml"
+sha256 = "aafc64db529cea2b9e206992dca4d1038910f463b77485e3ba73c41e5f249912"
+executable = false
+
+[[file]]
+artifact = "taplo-config"
+path = ".taplo.toml"
+sha256 = "2ebf46fbb3a9f63bc11c46154e7312cfec48cb99a3af6258c707bb0a318b15f9"
+executable = false
+
+[[file]]
+artifact = "yamllint-config"
+path = ".yamllint.yaml"
+sha256 = "56edcb6426e45ad4646493831bfa66e8c454a098114baf24e9be0b8e032970db"
+executable = false
+
+[[file]]
+artifact = "markdown-standard"
+path = "docs/developer_guide/markdown_style.md"
+sha256 = "392d51f8f317b6c0ea73acac5767d547c7ed3085db8962af662350a47016e553"
+executable = false
+
+[[file]]
+artifact = "rustfmt-config"
+path = "rustfmt.toml"
+sha256 = "a8d6b13a334b7ed058811f355e4d6601dfe5f0f32280c0a055a5c36f5a7b1076"
+executable = false
+
+[[file]]
+artifact = "cargo-tool-version"
+path = "scripts/cargo-tool-version.sh"
+sha256 = "d59b21a6c97ba43be334e230ace18f53b8fb41e4c0c0f0ed8cd78179ea1c1411"
+executable = true
+
+[[file]]
+artifact = "cargo-cooldown-check"
+path = "scripts/check-cargo-cooldown.sh"
+sha256 = "4972e595ec3c014a05bb9d00fef77b2dc5b507e2f4de3832076681677cfcbdb9"
+executable = true
+
+[[file]]
+artifact = "markdown-table-check"
+path = "scripts/check-markdown-tables.py"
+sha256 = "7fff7ae1ad25b752badb749ad6e238b438ed61b1011c81a78821f3cf16ff0b0a"
+executable = false
+
+[[file]]
+artifact = "sync-check"
+path = "scripts/check-nautilus-engineering-sync.bash"
+sha256 = "4d9fd0173ef208e40d55c7aef2939143b564f0b135f35dbc969bcb710b2a4ce9"
+executable = true
+
+[[file]]
+artifact = "no-build-package-check"
+path = "scripts/check-no-build-packages.sh"
+sha256 = "e3a0ba4a63ab95b8634ea39c19d98c255180e8118d0de9fcfcbb92ff2bde2263"
+executable = true
+
+[[file]]
+artifact = "github-action-pin-check"
+path = "scripts/ci/check-github-action-shas.sh"
+sha256 = "96d69ba4c985fb7e19b9274d40c2bfdd5f54f607735af73f8f21f7a0c81d7191"
+executable = true
+
+[[file]]
+artifact = "osv-scanner-install"
+path = "scripts/install-osv-scanner.sh"
+sha256 = "c0f7b6055dcbfc568c95606f9cef1bf0e8368c6b760f46948836f6cc3319bfb2"
+executable = true
+
+[[file]]
+artifact = "security-tools-install"
+path = "scripts/install-security-tools.sh"
+sha256 = "a70e76e456a94c9ec06332f752cf6ebfcd06d9beac5f4dc2062794015bf22d43"
+executable = true
+
+[[file]]
+artifact = "pre-commit-manager"
+path = "scripts/manage-nautilus-engineering-pre-commit.py"
+sha256 = "52148d1f8b329181bb6ae4de9db933e521b7b8f1f7697d78bc7871eec8641276"
+executable = true
+
+[[file]]
+artifact = "rust-toolchain-version"
+path = "scripts/rust-toolchain.sh"
+sha256 = "2e3e67f1442386ff26c05665c55b6a2016d5076b63b30a24fe501427a4be5032"
+executable = true
+
+[[file]]
+artifact = "security-audit"
+path = "scripts/security-audit.py"
+sha256 = "19e3739aed79265c576125f73c72a3a171947193cae8b99f70d56745d306f2fb"
+executable = false
+
+[[file]]
+artifact = "tool-version"
+path = "scripts/tool-version.sh"
+sha256 = "2cff99f661fd9a6644aa25dfbd78db1a710877f8af92fbcd5ccfecc84e9e410c"
+executable = true
+
+[[file]]
+artifact = "cargo-dependency-update"
+path = "scripts/update-cargo-dependencies.bash"
+sha256 = "e466808b185c45c357f0947224116edced67235630bff95e68fcb9db33c97833"
+executable = true
+
+[[file]]
+artifact = "uv-version"
+path = "scripts/uv-version.sh"
+sha256 = "6210a88e69fdfe7fb51ae77d18ba6019a5b2a143d54e7feaf4d9d83caab4aa49"
+executable = true

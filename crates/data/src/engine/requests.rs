@@ -16,8 +16,9 @@
 use std::{cmp, str::FromStr};
 
 use anyhow::Context;
+use jiff::tz::TimeZone;
 use nautilus_common::messages::data::{DataResponse, RequestBars, RequestCommand, SubscribeBars};
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos, datetime::get_timezone};
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, ContinuousFutureAdjustmentType, PriceType},
@@ -25,6 +26,8 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use serde_json::Value;
+
+use super::time_range::TIME_RANGE_GENERATOR;
 
 pub(super) const CONTINUOUS_FUTURE_PARENT_REQUEST_ID: &str = "continuous_future_parent_request_id";
 
@@ -40,6 +43,7 @@ pub(super) struct RequestBarAggregation {
     pub(super) update_subscriptions: bool,
     pub(super) disable_build_with_no_updates: bool,
     pub(super) skip_first_non_full_bar: Option<bool>,
+    pub(super) time_zone: Option<TimeZone>,
 }
 
 impl RequestBarAggregation {
@@ -198,6 +202,10 @@ impl ContinuousFutureRequest {
         child_params.shift_remove(LAST_POST_INSTRUMENT_ID);
         child_params.shift_remove(FIRST_PRE_INSTRUMENT_ID);
         child_params.shift_remove(BAR_TYPES);
+
+        // The parent consumes each segment as one response, so a segment must not fan out into
+        // time-range windows.
+        child_params.shift_remove(TIME_RANGE_GENERATOR);
         child_params.insert(
             CONTINUOUS_FUTURE_PARENT_REQUEST_ID.to_string(),
             Value::String(parent_id.to_string()),
@@ -241,7 +249,7 @@ pub(super) fn request_params(req: &RequestCommand) -> Option<&Params> {
         RequestCommand::Quotes(cmd) => cmd.params.as_ref(),
         RequestCommand::Trades(cmd) => cmd.params.as_ref(),
         RequestCommand::FundingRates(cmd) => cmd.params.as_ref(),
-        RequestCommand::ForwardPrices(cmd) => cmd.params.as_ref(),
+        RequestCommand::OptionChainReferencePrice(cmd) => cmd.params.as_ref(),
         RequestCommand::Bars(cmd) => cmd.params.as_ref(),
         RequestCommand::Join(cmd) => cmd.params.as_ref(),
     }
@@ -258,7 +266,7 @@ pub(super) fn response_params(resp: &DataResponse) -> Option<&Params> {
         DataResponse::Quotes(resp) => resp.params.as_ref(),
         DataResponse::Trades(resp) => resp.params.as_ref(),
         DataResponse::FundingRates(resp) => resp.params.as_ref(),
-        DataResponse::ForwardPrices(resp) => resp.params.as_ref(),
+        DataResponse::OptionChainReferencePrice(resp) => resp.params.as_ref(),
         DataResponse::Bars(resp) => resp.params.as_ref(),
     }
 }
@@ -311,7 +319,21 @@ pub(super) fn request_bar_aggregation_from_params(
         update_subscriptions,
         disable_build_with_no_updates: false,
         skip_first_non_full_bar,
+        time_zone: time_zone_from_params(Some(params))?,
     }))
+}
+
+pub(super) fn time_zone_from_params(params: Option<&Params>) -> anyhow::Result<Option<TimeZone>> {
+    let Some(value) = params.and_then(|params| params.get("time_zone")) else {
+        return Ok(None);
+    };
+
+    let name = value
+        .as_str()
+        .context("`time_zone` parameter must be a string")?;
+    Ok(Some(get_timezone(name).with_context(|| {
+        format!("invalid `time_zone` parameter {name:?}")
+    })?))
 }
 
 pub(super) fn remove_request_bar_aggregation_params(params: &mut Params) {
@@ -427,6 +449,7 @@ fn parse_continuous_future(
             // Roll gaps and weekends must not emit synthetic last-close bars (v1 parity)
             disable_build_with_no_updates: true,
             skip_first_non_full_bar: None,
+            time_zone: time_zone_from_params(Some(params))?,
         },
         transitions,
         adjustment_mode,

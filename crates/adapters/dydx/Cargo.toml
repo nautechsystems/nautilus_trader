@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-dydx"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -60,7 +59,7 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -70,14 +69,15 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 cosmrs = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 dydx-proto = { workspace = true }
 futures-util = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
@@ -89,6 +89,7 @@ tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
 ustr = { workspace = true }
+zeroize = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
@@ -101,9 +102,14 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
+criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 toml = { workspace = true }
+
+[[bench]]
+name = "market_data"
+harness = false
 
 [[bin]]
 name = "dydx-http-public"
@@ -155,8 +161,3 @@ name = "dydx-grid-mm"
 path = "examples/node_grid_mm.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

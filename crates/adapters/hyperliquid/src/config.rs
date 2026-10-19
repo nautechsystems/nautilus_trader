@@ -15,6 +15,11 @@
 
 //! Configuration structures for the Hyperliquid adapter.
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -26,19 +31,18 @@ use crate::common::{
 /// Configuration for the Hyperliquid data client.
 ///
 /// The `stale_stream_*` options control the stream health monitor. With recovery
-/// enabled, a stale stream is warned about first, targeted-resubscribed once per
-/// recovery cooldown (preserving its original `l2Book` options), and escalated to
-/// a full WebSocket reconnect after `stale_stream_max_targeted_resubscribes`
-/// failed attempts; fresh data resets the ladder. See the Hyperliquid integration
-/// guide ("Stream health and recovery") for details.
+/// enabled, a stale stream is warned about first, then acted on once per recovery
+/// cooldown. A stale order book delta stream, including depth that shares its stream,
+/// starts shared book recovery, which resubscribes until a fresh snapshot arrives.
+/// Depth-only and BBO streams receive a targeted resubscribe (preserving the original
+/// `l2Book` options) and escalate to a full WebSocket reconnect after
+/// `stale_stream_max_targeted_resubscribes` failed attempts. Fresh data resets the ladder. See the Hyperliquid integration guide
+/// ("Stream health and recovery") for details.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -46,16 +50,16 @@ use crate::common::{
 )]
 pub struct HyperliquidDataClientConfig {
     /// Optional private key for authenticated endpoints.
-    pub private_key: Option<String>,
-    /// Override for the WebSocket URL.
-    pub base_url_ws: Option<String>,
-    /// Override for the HTTP info URL.
-    pub base_url_http: Option<String>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub private_key: Option<SecretString>,
     /// The target environment (mainnet or testnet).
     #[builder(default)]
     pub environment: HyperliquidEnvironment,
+    /// Override for the HTTP info URL.
+    pub base_url_http: Option<String>,
+    /// Override for the WebSocket URL.
+    pub base_url_ws: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -82,11 +86,19 @@ pub struct HyperliquidDataClientConfig {
     /// Must be positive for recovery to run.
     #[builder(default = 120)]
     pub stale_stream_recovery_cooldown_secs: u64,
-    /// Targeted resubscribe attempts for a stale stream before escalating to a
-    /// full WebSocket reconnect.
+    /// Targeted resubscribe attempts for a stale depth-only or BBO stream before
+    /// escalating to a full WebSocket reconnect.
     #[builder(default = 3)]
     pub stale_stream_max_targeted_resubscribes: u32,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Set to 0 to disable snapshot deadlines.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// Interval for refreshing instruments in minutes.
+    ///
+    /// Set to 0 to disable the periodic refresh.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// WebSocket transport backend (`Sockudo` by default; `Tungstenite` when
@@ -98,8 +110,8 @@ pub struct HyperliquidDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(HyperliquidDataClientConfig {
     environment: HyperliquidEnvironment,
-    base_url_ws: Option<String>,
     base_url_http: Option<String>,
+    base_url_ws: Option<String>,
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     update_instruments_interval_mins: u64,
@@ -110,6 +122,7 @@ nautilus_core::impl_pyo3_config_getters!(HyperliquidDataClientConfig {
     stale_stream_recovery_enabled: bool,
     stale_stream_recovery_cooldown_secs: u64,
     stale_stream_max_targeted_resubscribes: u32,
+    book_snapshot_timeout_secs: u64,
 });
 
 impl Default for HyperliquidDataClientConfig {
@@ -129,7 +142,8 @@ impl HyperliquidDataClientConfig {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -155,22 +169,22 @@ impl HyperliquidDataClientConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
-pub struct HyperliquidExecClientConfig {
+pub struct HyperliquidExecutionClientConfig {
+    /// Account identifier for the execution client.
+    #[builder(default = AccountId::from("HYPERLIQUID-001"))]
+    pub account_id: AccountId,
     /// Private key for signing transactions.
     ///
     /// If not provided, falls back to environment variable:
     /// - Mainnet: `HYPERLIQUID_PK`
     /// - Testnet: `HYPERLIQUID_TESTNET_PK`
-    pub private_key: Option<String>,
+    pub private_key: Option<SecretString>,
     /// Optional vault address for vault operations.
     ///
     /// If not provided, falls back to environment variable:
@@ -184,27 +198,30 @@ pub struct HyperliquidExecClientConfig {
     /// If not provided and no explicit vault address is set, falls back to
     /// the `HYPERLIQUID_ACCOUNT_ADDRESS` environment variable.
     pub account_address: Option<String>,
-    /// Override for the WebSocket URL.
-    pub base_url_ws: Option<String>,
-    /// Override for the HTTP info URL.
-    pub base_url_http: Option<String>,
-    /// Override for the exchange API URL.
-    pub base_url_exchange: Option<String>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
     /// The target environment (mainnet or testnet).
     #[builder(default)]
     pub environment: HyperliquidEnvironment,
+    /// Override for the HTTP info URL.
+    pub base_url_http: Option<String>,
+    /// Override for the WebSocket URL.
+    pub base_url_ws: Option<String>,
+    /// Override for the exchange API URL.
+    pub base_url_exchange: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// Maximum number of retry attempts for HTTP requests.
+    /// Maximum retries after the initial attempt for read-only HTTP info requests.
+    /// Zero disables retries. Does not apply to exchange actions or WebSocket posts.
     #[builder(default = 3)]
     pub max_retries: u32,
-    /// Initial retry delay in milliseconds.
+    /// Initial full-jitter backoff bound for HTTP info retries, in milliseconds.
+    /// Zero disables backoff. A valid `Retry-After` header overrides backoff.
     #[builder(default = 100)]
     pub retry_delay_initial_ms: u64,
-    /// Maximum retry delay in milliseconds.
+    /// Maximum full-jitter backoff bound for HTTP info retries, in milliseconds.
+    /// Zero disables backoff. Does not cap a valid `Retry-After` header.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
     /// When true, normalize order prices to 5 significant figures
@@ -228,19 +245,20 @@ pub struct HyperliquidExecClientConfig {
     pub ws_post_timeout_secs: u64,
     /// Poll interval in seconds for `outcomeMeta` settlement detection.
     /// Disabled by default; venue `Settlement` fills drive HIP-4 settlement
-    /// through the standard user-fills stream. Set to a non-zero value only
-    /// when the venue fill stream is unavailable.
+    /// through the standard user-fills stream. Keep disabled: metadata inference
+    /// can emit closing fills for markets that are still trading.
     #[builder(default = 0)]
     pub outcome_settlement_poll_secs: u64,
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(HyperliquidExecClientConfig {
+nautilus_core::impl_pyo3_config_getters!(HyperliquidExecutionClientConfig {
+    account_id: AccountId,
     vault_address: Option<String>,
     account_address: Option<String>,
     environment: HyperliquidEnvironment,
-    base_url_ws: Option<String>,
     base_url_http: Option<String>,
+    base_url_ws: Option<String>,
     base_url_exchange: Option<String>,
     http_timeout_secs: u64,
     max_retries: u32,
@@ -253,18 +271,19 @@ nautilus_core::impl_pyo3_config_getters!(HyperliquidExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for HyperliquidExecClientConfig {
+impl Default for HyperliquidExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl HyperliquidExecClientConfig {
+impl HyperliquidExecutionClientConfig {
     /// Returns `true` when private key is populated and non-empty.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -293,15 +312,15 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_default_account_address_is_none() {
-        let config = HyperliquidExecClientConfig::default();
+        let config = HyperliquidExecutionClientConfig::default();
         assert!(config.account_address.is_none());
     }
 
     #[rstest]
     fn test_exec_config_with_account_address() {
-        let config = HyperliquidExecClientConfig {
+        let config = HyperliquidExecutionClientConfig {
             account_address: Some("0x1234".to_string()),
-            ..HyperliquidExecClientConfig::default()
+            ..HyperliquidExecutionClientConfig::default()
         };
         assert_eq!(config.account_address.as_deref(), Some("0x1234"));
     }
@@ -328,6 +347,7 @@ transport_backend = "tungstenite"
         assert!(!config.stale_stream_recovery_enabled);
         assert_eq!(config.stale_stream_recovery_cooldown_secs, 120);
         assert_eq!(config.stale_stream_max_targeted_resubscribes, 3);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]
@@ -340,6 +360,7 @@ stale_stream_warning_cooldown_secs = 20
 stale_stream_recovery_enabled = true
 stale_stream_recovery_cooldown_secs = 45
 stale_stream_max_targeted_resubscribes = 5
+book_snapshot_timeout_secs = 4
 ",
         )
         .unwrap();
@@ -350,12 +371,13 @@ stale_stream_max_targeted_resubscribes = 5
         assert!(config.stale_stream_recovery_enabled);
         assert_eq!(config.stale_stream_recovery_cooldown_secs, 45);
         assert_eq!(config.stale_stream_max_targeted_resubscribes, 5);
+        assert_eq!(config.book_snapshot_timeout_secs, 4);
     }
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: HyperliquidExecClientConfig = toml::from_str("").unwrap();
-        let expected = HyperliquidExecClientConfig::default();
+        let config: HyperliquidExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = HyperliquidExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
@@ -379,9 +401,37 @@ stale_stream_max_targeted_resubscribes = 5
 
     #[rstest]
     fn test_exec_config_toml_include_builder_attribution_false() {
-        let config: HyperliquidExecClientConfig =
+        let config: HyperliquidExecutionClientConfig =
             toml::from_str("include_builder_attribution = false").unwrap();
 
         assert!(!config.include_builder_attribution);
+    }
+
+    #[rstest]
+    fn test_data_config_debug_redacts_private_key() {
+        let config = HyperliquidDataClientConfig {
+            private_key: Some(
+                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+            ),
+            ..HyperliquidDataClientConfig::default()
+        };
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("0123456789abcdef"));
+    }
+
+    #[rstest]
+    fn test_exec_config_debug_redacts_private_key() {
+        let config = HyperliquidExecutionClientConfig {
+            private_key: Some(
+                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+            ),
+            ..HyperliquidExecutionClientConfig::default()
+        };
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("0123456789abcdef"));
     }
 }

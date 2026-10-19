@@ -25,7 +25,13 @@
 //! Any reordering breaks the byte-equality property the Layer 2 oracle
 //! vectors enforce.
 
-use crate::{common::enums::LighterTxType, signing::field::Fp};
+use crate::{
+    common::enums::{LighterGroupingType, LighterTxType},
+    signing::{
+        field::Fp,
+        hash::{HASH_OUT, hash_no_pad, hash_two_to_one},
+    },
+};
 
 /// Number of attribute slots reserved per L2 transaction.
 ///
@@ -99,12 +105,14 @@ impl L2TxAttributes {
     }
 }
 
-/// Common per-order body fields shared by [`CreateOrderTxInfo`] and the
-/// not-yet-implemented `CreateGroupedOrders` variant.
+/// Common per-order body fields shared by [`CreateOrderTxInfo`] and [`CreateGroupedOrdersTxInfo`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct OrderInfo {
-    /// Market identifier. Spot markets use `2048..=4094`, perps `0..=254`.
-    pub market_index: i16,
+    /// Market identifier in the venue's 64-bit allocation. Legacy markets keep
+    /// their range-partitioned ids (perps `0..=254`, spot `2048..=4094`);
+    /// markets listed after the September 2026 upgrade take the next free
+    /// index from `4095` for either product type.
+    pub market_index: i64,
     /// Caller-supplied unique-per-account order index.
     pub client_order_index: i64,
     /// Order size in base-asset ticks.
@@ -127,7 +135,7 @@ pub struct OrderInfo {
 
 impl OrderInfo {
     fn append_body_elements(&self, elems: &mut Vec<Fp>) {
-        elems.push(field_from_i16(self.market_index));
+        elems.push(field_from_i64(self.market_index));
         elems.push(field_from_i64(self.client_order_index));
         elems.push(field_from_i64(self.base_amount));
         elems.push(field_from_u32(self.price));
@@ -223,6 +231,54 @@ impl LighterTx for CreateOrderTxInfo {
     }
 }
 
+/// `CreateGroupedOrders` (`tx_type = 28`): creates native OTO, OCO, or OTOCO relationships.
+///
+/// Orders are hashed individually and compressed in submission order. OTO and OTOCO put
+/// the parent first and submit reduce-only children with zero base amount.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CreateGroupedOrdersTxInfo {
+    /// Common preamble fields.
+    pub context: TxContext,
+    /// Native venue relationship.
+    pub grouping_type: LighterGroupingType,
+    /// Order bodies, with the parent first for OTO and OTOCO.
+    pub orders: Vec<OrderInfo>,
+    /// L2 attributes.
+    pub attributes: L2TxAttributes,
+}
+
+impl LighterTx for CreateGroupedOrdersTxInfo {
+    fn tx_type(&self) -> LighterTxType {
+        LighterTxType::CreateGroupedOrders
+    }
+
+    fn context(&self) -> TxContext {
+        self.context
+    }
+
+    fn attributes(&self) -> L2TxAttributes {
+        self.attributes
+    }
+
+    fn push_body_elements(&self, elems: &mut Vec<Fp>) {
+        elems.push(field_from_u8(self.grouping_type as u8));
+        let mut aggregate = [Fp::ZERO; HASH_OUT];
+
+        for (index, order) in self.orders.iter().enumerate() {
+            let mut body = Vec::with_capacity(10);
+            order.append_body_elements(&mut body);
+            let digest = hash_no_pad(&body);
+            aggregate = if index == 0 {
+                digest
+            } else {
+                hash_two_to_one(aggregate, digest)
+            };
+        }
+
+        elems.extend_from_slice(&aggregate);
+    }
+}
+
 /// `CancelOrder` (`tx_type = 15`): cancels a single live order by index.
 ///
 /// `CancelOrder` only accepts the `skip_nonce` L2 attribute.
@@ -231,7 +287,7 @@ pub struct CancelOrderTxInfo {
     /// Common preamble fields.
     pub context: TxContext,
     /// Market the order lives on.
-    pub market_index: i16,
+    pub market_index: i64,
     /// Either the venue's order index or the caller's client order index.
     pub index: i64,
     /// `1` to instruct the sequencer to skip nonce bookkeeping for this tx.
@@ -255,7 +311,7 @@ impl LighterTx for CancelOrderTxInfo {
     }
 
     fn push_body_elements(&self, elems: &mut Vec<Fp>) {
-        elems.push(field_from_i16(self.market_index));
+        elems.push(field_from_i64(self.market_index));
         elems.push(field_from_i64(self.index));
     }
 }
@@ -266,7 +322,7 @@ pub struct ModifyOrderTxInfo {
     /// Common preamble fields.
     pub context: TxContext,
     /// Market the order lives on.
-    pub market_index: i16,
+    pub market_index: i64,
     /// Either the venue's order index or the caller's client order index.
     pub index: i64,
     /// Replacement size in base-asset ticks.
@@ -293,7 +349,7 @@ impl LighterTx for ModifyOrderTxInfo {
     }
 
     fn push_body_elements(&self, elems: &mut Vec<Fp>) {
-        elems.push(field_from_i16(self.market_index));
+        elems.push(field_from_i64(self.market_index));
         elems.push(field_from_i64(self.index));
         elems.push(field_from_i64(self.base_amount));
         elems.push(field_from_u32(self.price));
@@ -399,8 +455,9 @@ impl LighterTx for CancelAllOrdersTxInfo {
 /// `UpdateLeverage` (`tx_type = 20`): change leverage / margin mode for a market.
 ///
 /// Body fields mirror the upstream `txtypes.L2UpdateLeverageTxInfo` Go
-/// struct: `MarketIndex int16`, `InitialMarginFraction uint16`,
-/// `MarginMode uint8`. `initial_margin_fraction` is in 1e-4 ticks
+/// struct: `MarketIndex` (64-bit venue allocation),
+/// `InitialMarginFraction uint16`, `MarginMode uint8`.
+/// `initial_margin_fraction` is in 1e-4 ticks
 /// (`500` = 5% initial margin = 20x leverage), capped at the venue's
 /// `MarginFractionTick = 10_000`. `margin_mode` is
 /// [`crate::common::enums::LighterPositionMarginMode`] (`Cross`, `Isolated`).
@@ -411,7 +468,7 @@ pub struct UpdateLeverageTxInfo {
     /// Common preamble fields.
     pub context: TxContext,
     /// Market the change applies to.
-    pub market_index: i16,
+    pub market_index: i64,
     /// Initial margin fraction in 1e-4 ticks; `500` = 5% = 20x leverage.
     pub initial_margin_fraction: u16,
     /// Margin-mode discriminant (`Cross`, `Isolated`).
@@ -437,7 +494,7 @@ impl LighterTx for UpdateLeverageTxInfo {
     }
 
     fn push_body_elements(&self, elems: &mut Vec<Fp>) {
-        elems.push(field_from_i16(self.market_index));
+        elems.push(field_from_i64(self.market_index));
         elems.push(field_from_u16(self.initial_margin_fraction));
         elems.push(field_from_u8(self.margin_mode));
     }
@@ -456,11 +513,6 @@ fn field_from_u16(v: u16) -> Fp {
 #[inline]
 fn field_from_u32(v: u32) -> Fp {
     Fp::from_u64_reduce(u64::from(v))
-}
-
-#[inline]
-fn field_from_i16(v: i16) -> Fp {
-    field_from_i64(i64::from(v))
 }
 
 // Negative values reach the field via Go's `GoldilocksField(int64)` cast,
@@ -517,7 +569,7 @@ mod tests {
             field_from_i64(1_777_804_395_089), // expired_at
             field_from_i64(12_345),            // account_index
             field_from_u8(5),                  // api_key_index
-            field_from_i16(0),                 // market_index
+            field_from_i64(0),                 // market_index
             field_from_i64(123),               // client_order_index
             field_from_i64(1_000),             // base_amount
             field_from_u32(405_000),           // price
@@ -529,6 +581,35 @@ mod tests {
             field_from_i64(1_735_689_600_000), // order_expiry
         ];
         assert_eq!(elems.as_slice(), expected.as_slice());
+    }
+
+    #[rstest]
+    fn create_order_preimage_encodes_widened_market_index() {
+        let tx = CreateOrderTxInfo {
+            context: ctx(),
+            order: OrderInfo {
+                market_index: 40_000,
+                client_order_index: 123,
+                base_amount: 1_000,
+                price: 405_000,
+                is_ask: true,
+                order_type: 0,
+                time_in_force: 1,
+                reduce_only: false,
+                trigger_price: 0,
+                order_expiry: 1_735_689_600_000,
+            },
+            attributes: L2TxAttributes::default(),
+        };
+
+        let elems = tx.hash_elements(300);
+
+        // The official signer still caps MarketIndex at the legacy i16 range,
+        // so ids above it cannot be byte-compared against the SDK oracle. This
+        // pins the widened id to the same branch-free GoldilocksField(int64)
+        // cast the oracle verifies for ids the SDK accepts.
+        assert_eq!(elems.len(), 16);
+        assert_eq!(elems[6], Fp::from_u64_reduce(40_000));
     }
 
     #[rstest]
@@ -548,7 +629,7 @@ mod tests {
             field_from_i64(1_777_804_395_089), // expired_at
             field_from_i64(12_345),            // account_index
             field_from_u8(5),                  // api_key_index
-            field_from_i16(0),                 // market_index
+            field_from_i64(0),                 // market_index
             field_from_i64(123),               // index
         ];
         assert_eq!(elems.as_slice(), expected.as_slice());
@@ -574,7 +655,7 @@ mod tests {
             field_from_i64(1_777_804_395_089), // expired_at
             field_from_i64(12_345),            // account_index
             field_from_u8(5),                  // api_key_index
-            field_from_i16(0),                 // market_index
+            field_from_i64(0),                 // market_index
             field_from_i64(123),               // index
             field_from_i64(1_100),             // base_amount
             field_from_u32(410_000),           // price
@@ -663,7 +744,7 @@ mod tests {
             field_from_i64(1_777_804_395_089), // expired_at
             field_from_i64(12_345),            // account_index
             field_from_u8(5),                  // api_key_index
-            field_from_i16(3),                 // market_index
+            field_from_i64(3),                 // market_index
             field_from_u16(500),               // initial_margin_fraction
             field_from_u8(margin_mode),        // margin_mode
         ];
@@ -746,12 +827,6 @@ mod tests {
         #[rstest]
         fn prop_field_from_i64_matches_u64_cast(v in any::<i64>()) {
             prop_assert_eq!(field_from_i64(v), Fp::from_u64_reduce(v as u64));
-        }
-
-        /// `field_from_i16` round-trips through the same cast.
-        #[rstest]
-        fn prop_field_from_i16_matches_u64_cast(v in any::<i16>()) {
-            prop_assert_eq!(field_from_i16(v), Fp::from_u64_reduce(i64::from(v) as u64));
         }
     }
 }

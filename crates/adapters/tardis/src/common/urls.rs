@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Tardis base URL constants and resolution helpers.
+//! Tardis base URL constants and environment-aware resolution.
 
 use super::consts::TARDIS_MACHINE_WS_URL;
 

@@ -16,8 +16,10 @@
 //! Python bindings for the Ax HTTP client.
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
-use nautilus_core::{datetime::datetime_to_unix_nanos, python::to_pyvalue_err};
+use jiff::Timestamp;
+use nautilus_core::{
+    datetime::datetime_to_unix_nanos, python::to_pyvalue_err, string::secret::SecretString,
+};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
@@ -26,7 +28,6 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
-use rust_decimal::Decimal;
 
 use crate::{
     common::{
@@ -191,6 +192,7 @@ impl AxHttpClient {
             client
                 .authenticate(&api_key, &api_secret, expiration_seconds)
                 .await
+                .map(SecretString::into_inner)
                 .map_err(to_pyvalue_err)
         })
     }
@@ -208,9 +210,9 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are available from either source
-    /// - The HTTP request fails
-    /// - The credentials are invalid
+    /// - No credentials are available from either source.
+    /// - The HTTP request fails.
+    /// - The credentials are invalid.
     #[pyo3(name = "authenticate_auto")]
     #[pyo3(signature = (expiration_seconds=86400))]
     fn py_authenticate_auto<'py>(
@@ -224,33 +226,22 @@ impl AxHttpClient {
             client
                 .authenticate_auto(expiration_seconds)
                 .await
+                .map(SecretString::into_inner)
                 .map_err(to_pyvalue_err)
         })
     }
 
     /// Requests all instruments from Ax.
     ///
-    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
-    /// rates have been resolved.
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (maker_fee=None, taker_fee=None))]
-    fn py_request_instruments<'py>(
-        &self,
-        py: Python<'py>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let instruments = client
-                .request_instruments(maker_fee, taker_fee)
-                .await
-                .map_err(to_pyvalue_err)?;
+            let instruments = client.request_instruments().await.map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
                 let py_instruments: PyResult<Vec<_>> = instruments
@@ -283,8 +274,8 @@ impl AxHttpClient {
         py: Python<'py>,
         instrument_id: InstrumentId,
         limit: Option<i32>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let symbol = instrument_id.symbol.inner();
@@ -324,8 +315,8 @@ impl AxHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
         let symbol = bar_type.instrument_id().symbol.inner();
@@ -390,8 +381,8 @@ impl AxHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -440,12 +431,15 @@ impl AxHttpClient {
     ///
     /// The caller must supply `order_side`, `order_type`, and `time_in_force`
     /// because the endpoint does not return these fields.
+    /// Canceled, expired, and rejected orders with no remaining quantity use `/orders`
+    /// to recover their original quantity.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
+    /// - The original quantity is unavailable in order history.
     #[pyo3(name = "request_order_status")]
     #[pyo3(signature = (
         account_id,
@@ -477,7 +471,7 @@ impl AxHttpClient {
                     instrument_id,
                     client_order_id,
                     venue_order_id,
-                    order_side,
+                    Some(order_side),
                     order_type,
                     time_in_force,
                 )
@@ -500,10 +494,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - An order's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Order parsing failures are skipped with a warning.
+    /// - An order cannot be mapped to a complete status report.
     #[pyo3(name = "request_order_status_reports", signature = (account_id, client_order_ids=None))]
     fn py_request_order_status_reports<'py>(
         &self,
@@ -582,10 +573,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - A position's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Position parsing failures are skipped with a warning.
+    /// - A position cannot be parsed.
     #[pyo3(name = "request_position_reports")]
     fn py_request_position_reports<'py>(
         &self,
@@ -620,7 +608,7 @@ impl AxHttpClient {
         side: OrderSide,
     ) -> PyResult<Bound<'py, PyAny>> {
         let symbol = instrument_id.symbol.inner();
-        let ax_side = AxOrderSide::try_from(side).map_err(to_pyvalue_err)?;
+        let ax_side = AxOrderSide::from(side);
         let qty_contracts = quantity_to_contracts(quantity).map_err(to_pyvalue_err)?;
 
         let client = self.clone();

@@ -1,27 +1,26 @@
-# Version pins for external binaries without a native manifest.
+# NautilusTrader-specific version pins for tools without a native manifest.
 #
-# Rust toolchain: rust-toolchain.toml
-# Miri toolchain: tools.toml [miri]
-# Cargo CLIs:     Cargo.toml [workspace.metadata.tools]
-# Python CLIs:    tools.toml
-# uv:             pyproject.toml [tool.uv]
+# Shared tools:      .nautilus-engineering/tools.toml
+# Shared source:     https://github.com/nautechsystems/nautilus_engineering
+# Rust toolchain:    rust-toolchain.toml
+# Nightly pins:      tools.toml [nightly], [miri]
+# Local Cargo CLIs:  Cargo.toml [workspace.metadata.tools]
+# Local CLIs:        tools.toml
+# uv range:          python/pyproject.toml [tool.uv]
+
+# Temporary docs.rs pin for rust-lang/rust#159228
+[nightly]
+version = "nightly-2026-08-21"
 
 [miri]
-version = "nightly-2026-07-15"
-rustc-version = "1.99.0"
-
-[prek]
-version = "0.4.10"
-
-[pip-audit]
-version = "2.10.1"
+version = "nightly-2026-08-23"
+rustc-version = "1.100.0"
 
 [pypi-attestations]
-version = "0.0.29"
+version = "0.0.30"
 
-[osv-scanner]
-version = "2.4.0"
+[socket-cli]
+version = "1.8.2"
 
-[capnp]
-version = "1.5.0"
-optional = true
+[tokei]
+version = "15.0.0"

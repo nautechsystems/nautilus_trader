@@ -42,7 +42,7 @@ impl PerpetualContract {
     /// commodities, indexes, and cryptocurrencies.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, underlying, asset_class, quote_currency, settlement_currency, is_inverse, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, base_currency=None, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, tick_scheme=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, underlying, asset_class, quote_currency, settlement_currency, is_inverse, price_precision, size_precision, price_increment, size_increment, ts_event, ts_init, base_currency=None, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -68,8 +68,6 @@ impl PerpetualContract {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
     ) -> PyResult<Self> {
@@ -79,37 +77,35 @@ impl PerpetualContract {
             None
         };
 
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            Ustr::from(underlying),
-            asset_class,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme.map(|name| ustr::Ustr::from(name.as_str())),
-            info_map,
-            ts_event.into(),
-            ts_init.into(),
-        )
-        .map_err(to_pyvalue_err)
+        Self::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .underlying(Ustr::from(underlying))
+            .asset_class(asset_class)
+            .maybe_base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_multiplier(multiplier)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_tick_scheme(tick_scheme.map(|name| ustr::Ustr::from(name.as_str())))
+            .maybe_info(info_map)
+            .ts_event(ts_event.into())
+            .ts_init(ts_init.into())
+            .build()
+            .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -264,18 +260,6 @@ impl PerpetualContract {
     }
 
     #[getter]
-    #[pyo3(name = "maker_fee")]
-    fn py_maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    #[getter]
-    #[pyo3(name = "taker_fee")]
-    fn py_taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
-
-    #[getter]
     #[pyo3(name = "ts_event")]
     fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
@@ -333,8 +317,6 @@ impl PerpetualContract {
         dict.set_item("lot_size", self.lot_size.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
-        dict.set_item("maker_fee", self.maker_fee.to_string())?;
-        dict.set_item("taker_fee", self.taker_fee.to_string())?;
 
         if let Some(ref info_map) = self.info {
             let info_dict = PyDict::new(py);

@@ -43,6 +43,9 @@ pub enum BinanceSpotExecutionType {
     Expired,
     /// Self-trade prevention triggered.
     TradePrevention,
+    /// Unknown or undocumented execution type.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Execution report event (`executionReport`) from the Spot user data stream.
@@ -135,6 +138,21 @@ pub struct BinanceSpotExecutionReport {
     /// Expiry reason for expired orders.
     #[serde(rename = "eR", default)]
     pub expiry_reason: Option<String>,
+}
+
+impl BinanceSpotExecutionReport {
+    /// Returns the client order ID of the order this report belongs to.
+    ///
+    /// When a report results from a cancel request, Binance carries the request's
+    /// ID in `c` and the ID of the order being canceled in `C`, which is empty
+    /// otherwise.
+    #[must_use]
+    pub fn order_client_order_id(&self) -> &str {
+        match self.original_client_order_id.as_deref() {
+            Some(id) if !id.is_empty() => id,
+            _ => &self.client_order_id,
+        }
+    }
 }
 
 /// Account position update event (`outboundAccountPosition`).

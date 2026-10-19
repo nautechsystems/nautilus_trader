@@ -23,21 +23,18 @@ use nautilus_core::correctness::{
 };
 use ustr::Ustr;
 
+/// The order ID tag reported for a strategy which has not been assigned one.
+pub const UNASSIGNED_ORDER_ID_TAG: &str = "None";
+
 /// The identifier for all 'external' strategy IDs (not local to this system instance).
 const EXTERNAL_STRATEGY_ID: &str = "EXTERNAL";
-
-/// Returns a usable order ID tag, filtering unset sentinel values.
-#[must_use]
-pub fn normalize_order_id_tag(order_id_tag: Option<&str>) -> Option<&str> {
-    order_id_tag.filter(|tag| !tag.is_empty() && *tag != "None")
-}
 
 /// Represents a valid strategy ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -143,12 +140,33 @@ impl Display for StrategyId {
     }
 }
 
+/// Returns a usable order ID tag, filtering unset sentinel values.
+#[must_use]
+pub fn normalize_order_id_tag(order_id_tag: Option<&str>) -> Option<&str> {
+    order_id_tag.filter(|tag| !tag.is_empty() && *tag != UNASSIGNED_ORDER_ID_TAG)
+}
+
+/// Checks the `order_id_tag` survives composition into a strategy ID.
+///
+/// # Errors
+///
+/// Returns an error if `order_id_tag` contains the '-' separator, because
+/// [`StrategyId::get_tag`] splits on the final separator and would report a truncated tag.
+pub fn check_order_id_tag(order_id_tag: &str) -> CorrectnessResult<()> {
+    check_predicate_false(
+        order_id_tag.contains('-'),
+        &format!(
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
 
-    use super::{StrategyId, normalize_order_id_tag};
+    use super::{StrategyId, check_order_id_tag, normalize_order_id_tag};
     use crate::identifiers::stubs::*;
 
     #[rstest]
@@ -165,6 +183,7 @@ mod tests {
     #[rstest]
     fn test_is_external() {
         assert!(StrategyId::external().is_external());
+        assert!(!StrategyId::new("EMACross-001").is_external());
     }
 
     #[rstest]
@@ -191,6 +210,43 @@ mod tests {
     }
 
     #[rstest]
+    #[case("001")]
+    #[case("ABC")]
+    #[case("None")]
+    #[case("")]
+    fn test_check_order_id_tag_accepts_tag_without_separator(#[case] order_id_tag: &str) {
+        assert!(check_order_id_tag(order_id_tag).is_ok());
+    }
+
+    #[rstest]
+    #[case("A-B")]
+    #[case("-001")]
+    #[case("001-")]
+    fn test_check_order_id_tag_rejects_tag_with_separator(#[case] order_id_tag: &str) {
+        let error = check_order_id_tag(order_id_tag).unwrap_err();
+
+        match error {
+            CorrectnessError::PredicateViolation { ref message } => {
+                assert_eq!(
+                    message,
+                    &format!(
+                        "`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+                    )
+                );
+            }
+            other => panic!("Expected typed predicate violation, was: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_check_order_id_tag_rejects_tag_that_get_tag_would_truncate() {
+        let strategy_id = StrategyId::new("HyphenTagStrategy-A-B");
+
+        assert_eq!(strategy_id.get_tag(), "B");
+        assert!(check_order_id_tag("A-B").is_err());
+    }
+
+    #[rstest]
     #[should_panic(expected = "name part (before '-') cannot be empty")]
     fn test_new_with_empty_name_panics() {
         let _ = StrategyId::new("-001");
@@ -203,47 +259,39 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_checked_with_empty_name_returns_error() {
-        assert!(StrategyId::new_checked("-001").is_err());
-    }
-
-    #[rstest]
-    fn test_new_checked_with_empty_tag_returns_error() {
-        assert!(StrategyId::new_checked("EMACross-").is_err());
-    }
-
-    #[rstest]
-    fn test_new_checked_with_empty_name_returns_typed_error_with_stable_display() {
-        let error = StrategyId::new_checked("-001").unwrap_err();
-
-        match error {
-            CorrectnessError::PredicateViolation { ref message } => {
-                assert_eq!(message, "`value` name part (before '-') cannot be empty");
-            }
-            other => panic!("Expected typed predicate violation, was: {other:?}"),
-        }
+    fn test_new_checked_without_separator_returns_typed_error() {
+        let error = StrategyId::new_checked("EMACross001").unwrap_err();
 
         assert_eq!(
+            error,
+            CorrectnessError::MissingSubstring {
+                param: "value".to_string(),
+                pattern: "-".to_string(),
+                value: "EMACross001".to_string(),
+            }
+        );
+        assert_eq!(
             error.to_string(),
-            "`value` name part (before '-') cannot be empty"
+            "invalid string for 'value' did not contain '-', was 'EMACross001'"
         );
     }
 
     #[rstest]
-    fn test_new_checked_with_empty_tag_returns_typed_error_with_stable_display() {
-        let error = StrategyId::new_checked("EMACross-").unwrap_err();
-
-        match error {
-            CorrectnessError::PredicateViolation { ref message } => {
-                assert_eq!(message, "`value` tag part (after '-') cannot be empty");
-            }
-            other => panic!("Expected typed predicate violation, was: {other:?}"),
-        }
+    #[case("-001", "`value` name part (before '-') cannot be empty")]
+    #[case("EMACross-", "`value` tag part (after '-') cannot be empty")]
+    fn test_new_checked_with_empty_component_returns_typed_error(
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let error = StrategyId::new_checked(value).unwrap_err();
 
         assert_eq!(
-            error.to_string(),
-            "`value` tag part (after '-') cannot be empty"
+            error,
+            CorrectnessError::PredicateViolation {
+                message: expected.to_string(),
+            }
         );
+        assert_eq!(error.to_string(), expected);
     }
 
     // Tagged enums force serde to buffer the content and replay it, which

@@ -23,8 +23,7 @@ use nautilus_model::{
         TradeTick,
     },
     enums::{
-        AggressorSide, BookAction, ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        AggressorSide, BookAction, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
@@ -37,7 +36,7 @@ use super::messages::{
     KrakenFuturesBookDelta, KrakenFuturesBookSnapshot, KrakenFuturesFill, KrakenFuturesOpenOrder,
     KrakenFuturesTickerData, KrakenFuturesTradeData,
 };
-use crate::common::enums::KrakenOrderSide;
+use crate::common::{enums::KrakenOrderSide, parse::fee_currency};
 
 fn millis_to_nanos(millis: i64) -> UnixNanos {
     UnixNanos::from((millis as u64) * NANOSECONDS_IN_MILLISECOND)
@@ -92,8 +91,8 @@ pub fn parse_futures_ws_trade_tick(
         .context("Failed to construct trade Quantity")?;
 
     let aggressor = match trade.side {
-        KrakenOrderSide::Buy => AggressorSide::Buyer,
-        KrakenOrderSide::Sell => AggressorSide::Seller,
+        KrakenOrderSide::Buy => AggressorSide::Buy,
+        KrakenOrderSide::Sell => AggressorSide::Sell,
     };
 
     let trade_id = trade
@@ -140,7 +139,8 @@ pub fn parse_futures_ws_book_snapshot_deltas(
         }
         let price = Price::from_decimal_dp(level.price, price_precision)?;
         let size = Quantity::from_decimal_dp(level.qty, size_precision)?;
-        let order_id = price.raw as u64;
+        let order_id = price.raw() as u64;
+
         let order = BookOrder::new(OrderSide::Buy, price, size, order_id);
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -160,7 +160,8 @@ pub fn parse_futures_ws_book_snapshot_deltas(
         }
         let price = Price::from_decimal_dp(level.price, price_precision)?;
         let size = Quantity::from_decimal_dp(level.qty, size_precision)?;
-        let order_id = price.raw as u64;
+        let order_id = price.raw() as u64;
+
         let order = BookOrder::new(OrderSide::Sell, price, size, order_id);
         deltas.push(OrderBookDelta::new(
             instrument_id,
@@ -189,7 +190,7 @@ pub fn parse_futures_ws_book_delta(
     let price = Price::from_decimal_dp(delta.price, price_precision)?;
     let size = Quantity::from_decimal_dp(delta.qty, size_precision)?;
 
-    let action = if size.raw == 0 {
+    let action = if size.is_zero() {
         BookAction::Delete
     } else {
         BookAction::Update
@@ -200,7 +201,8 @@ pub fn parse_futures_ws_book_delta(
         KrakenOrderSide::Sell => OrderSide::Sell,
     };
 
-    let order_id = price.raw as u64;
+    let order_id = price.raw() as u64;
+
     let order = BookOrder::new(side, price, size, order_id);
     let ts_event = millis_to_nanos(delta.timestamp);
 
@@ -269,7 +271,7 @@ pub fn parse_futures_ws_order_status_report(
         instrument_id: instrument.id(),
         client_order_id: order.cli_ord_id.as_ref().map(ClientOrderId::new),
         venue_order_id,
-        order_side,
+        order_side: order_side.into(),
         order_type,
         time_in_force: TimeInForce::Gtc,
         order_status,
@@ -283,7 +285,7 @@ pub fn parse_futures_ws_order_status_report(
         venue_position_id: None,
         linked_order_ids: None,
         parent_order_id: None,
-        contingency_type: ContingencyType::NoContingency,
+        contingency_type: None,
         expire_time: None,
         price: None,
         activation_price: None,
@@ -291,7 +293,7 @@ pub fn parse_futures_ws_order_status_report(
         trigger_type: None,
         limit_offset: None,
         trailing_offset: None,
-        trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+        trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
         post_only: false,
@@ -350,7 +352,11 @@ pub fn parse_futures_ws_fill_report(
     let liquidity_side = fill.fill_type.into();
 
     let fee = fill.fee_paid.unwrap_or(Decimal::ZERO);
-    let commission_currency = instrument.quote_currency();
+    // The venue reports the fee currency, which on an inverse contract is not the quote.
+    let commission_currency = fill.fee_currency.as_deref().map_or_else(
+        || instrument.quote_currency(),
+        |reported| fee_currency(reported, instrument),
+    );
     let commission = Money::from_decimal(fee, commission_currency)?;
 
     let ts_event = millis_to_nanos(fill.time);
@@ -434,7 +440,7 @@ pub fn parse_futures_ws_funding_rate(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{CurrencyType, LiquiditySide},
+        enums::{CurrencyType, LiquiditySide, OrderSide},
         identifiers::{InstrumentId, Symbol},
         instruments::crypto_perpetual::CryptoPerpetual,
         types::Currency,
@@ -452,34 +458,23 @@ mod tests {
 
     fn create_mock_perp() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("PI_XBTUSD"), *KRAKEN_VENUE);
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("PI_XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            1,
-            0,
-            Price::from("0.5"),
-            Quantity::from("1"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            TS,
-            TS,
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PI_XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(0)
+                .price_increment(Price::from("0.5"))
+                .size_increment(Quantity::from("1"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -508,7 +503,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, Price::from("34969.5"));
         assert_eq!(tick.size, Quantity::from("15000.0"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
     }
 
     #[rstest]
@@ -523,8 +518,8 @@ mod tests {
         assert_eq!(deltas.len(), 5);
         assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(deltas[1].action, BookAction::Add);
-        assert_eq!(deltas[1].order.side, OrderSide::Buy);
-        assert_eq!(deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas[1].order.side, OrderSide::Buy.into());
+        assert_eq!(deltas[3].order.side, OrderSide::Sell.into());
     }
 
     #[rstest]
@@ -538,11 +533,11 @@ mod tests {
         // CLEAR + 2 bids (skipped qty=0) + 1 ask (skipped qty=0) = 4
         assert_eq!(deltas.len(), 4);
         assert_eq!(deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas[1].order.price, Price::from("34892.5"));
-        assert_eq!(deltas[2].order.side, OrderSide::Buy);
+        assert_eq!(deltas[2].order.side, OrderSide::Buy.into());
         assert_eq!(deltas[2].order.price, Price::from("34891.5"));
-        assert_eq!(deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas[3].order.side, OrderSide::Sell.into());
         assert_eq!(deltas[3].order.price, Price::from("34912.0"));
     }
 
@@ -555,7 +550,7 @@ mod tests {
         let delta = parse_futures_ws_book_delta(&delta_msg, &instrument, 10, TS).unwrap();
 
         assert_eq!(delta.instrument_id, instrument.id());
-        assert_eq!(delta.order.side, OrderSide::Sell);
+        assert_eq!(delta.order.side, OrderSide::Sell.into());
         assert_eq!(delta.action, BookAction::Delete); // qty=0
         assert_eq!(delta.sequence, 10);
     }
@@ -585,7 +580,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Accepted);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.quantity.as_decimal(), dec!(1000));
         assert_eq!(report.filled_qty.as_decimal(), Decimal::ZERO);
@@ -623,7 +618,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.cancel_reason.as_deref(), Some("cancelled_by_user"));
     }
 
@@ -684,7 +679,7 @@ mod tests {
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
         assert_eq!(report.price.unwrap().as_decimal(), dec!(35500));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
     }
 
     #[rstest]
@@ -729,34 +724,23 @@ mod tests {
 
         let instrument_id = InstrumentId::new(Symbol::new("PF_ETHUSD"), *KRAKEN_VENUE);
         let usd = Currency::new("USD", 6, 0, "USD", CurrencyType::Fiat);
-        let instrument = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("PF_ETHUSD"),
-            Currency::ETH(),
-            usd,
-            usd,
-            false,
-            1,
-            3,
-            Price::from("0.5"),
-            Quantity::from("0.001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            TS,
-            TS,
-        ));
+        let instrument = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PF_ETHUSD"))
+                .base_currency(Currency::ETH())
+                .quote_currency(usd)
+                .settlement_currency(usd)
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::from("0.5"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
 
         let account_id = AccountId::from("KRAKEN-001");
         let report = parse_futures_ws_fill_report(&fill, &instrument, account_id, TS).unwrap();
@@ -766,6 +750,49 @@ mod tests {
         assert_eq!(report.last_px.as_decimal(), dec!(3162));
         assert_eq!(report.last_qty.as_decimal(), dec!(0.001));
         assert_eq!(report.liquidity_side, expected_liquidity_side);
+        assert_eq!(report.commission.as_decimal(), dec!(0.001581));
+        // The fixture reports the quote currency, so the commission stays in it.
+        assert_eq!(report.commission.currency.code, "USD");
+    }
+
+    /// A fee the venue reports in something other than the quote must be booked in that currency.
+    ///
+    /// An inverse contract charges in the base currency, so assuming the quote would record the
+    /// wrong currency against the amount.
+    #[rstest]
+    fn test_parse_futures_ws_fill_report_honors_the_reported_fee_currency() {
+        let json = include_str!("../../../test_data/ws_futures_fills_delta.json");
+        let fills_delta: super::super::messages::KrakenFuturesFillsDelta =
+            serde_json::from_str(json).unwrap();
+        let mut fill = fills_delta.fills[0].clone();
+        fill.fee_currency = Some("XXBT".to_string());
+
+        let instrument_id = InstrumentId::new(Symbol::new("PI_XBTUSD"), *KRAKEN_VENUE);
+        let usd = Currency::new("USD", 6, 0, "USD", CurrencyType::Fiat);
+        let instrument = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PI_XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(usd)
+                .settlement_currency(Currency::BTC())
+                .is_inverse(true)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::from("0.5"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
+
+        let report =
+            parse_futures_ws_fill_report(&fill, &instrument, AccountId::from("KRAKEN-001"), TS)
+                .unwrap();
+
+        // `XXBT` is Kraken's spelling; the report carries the standard code.
+        assert_eq!(report.commission.currency.code, "BTC");
         assert_eq!(report.commission.as_decimal(), dec!(0.001581));
     }
 }

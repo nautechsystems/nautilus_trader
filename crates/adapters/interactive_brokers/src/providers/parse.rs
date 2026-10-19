@@ -19,13 +19,20 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use ibapi::contracts::SecurityType;
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use jiff::{
+    Timestamp,
+    civil::DateTime,
+    tz::{AmbiguousOffset, Offset},
+};
+use nautilus_core::{
+    DurationNanos, UnixNanos, datetime::get_timezone, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::{
-        Cfd, Commodity, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread,
-        IndexInstrument, InstrumentAny, OptionContract, OptionSpread,
+        Cfd, Commodity, CurrencyPair, Equity, FuturesContract, FuturesSpread, IndexInstrument,
+        InstrumentAny, OptionContract, OptionSpread,
     },
     types::{Currency, Price, Quantity},
 };
@@ -37,6 +44,8 @@ use crate::common::{
     enums::{IbOptionRight, IbSecurityType},
 };
 
+const NINETY_DAYS: DurationNanos = DurationNanos::from_days(90);
+
 /// Convert tick size to precision value.
 #[must_use]
 pub fn tick_size_to_precision(tick_size: f64) -> u8 {
@@ -45,10 +54,9 @@ pub fn tick_size_to_precision(tick_size: f64) -> u8 {
     }
 
     // Count decimal places
-    let s = format!("{:.10}", tick_size);
+    let s = format!("{tick_size:.10}");
     let s = s.trim_end_matches('0');
     let parts: Vec<&str> = s.split('.').collect();
-
     if parts.len() == 2 {
         parts[1].len().min(8) as u8
     } else {
@@ -56,9 +64,47 @@ pub fn tick_size_to_precision(tick_size: f64) -> u8 {
     }
 }
 
+/// Moves the last trade time and zone that follow the date in `lastTradeDateOrContractMonth`
+/// (`20261218 08:30:00 US/Central`) to `last_trade_time` (`08:30:00 US/Central`), leaving the
+/// date alone in the contract.
+///
+/// IB Gateway 10.51 sends that form over protobuf, ibapi keeps it whole for every contract but a
+/// bond, and IB refuses it when the contract is sent back in a request (error 10372). IB's own
+/// API client moves only the time; the zone moves with it because the contract's `time_zone_id`
+/// may be empty or differ from it, and the expiration must stay the instant IB stated.
+pub(crate) fn split_last_trade_date(details: &mut ibapi::contracts::ContractDetails) {
+    if let Some(time_and_zone) = trim_last_trade_date(&mut details.contract) {
+        details.last_trade_time = time_and_zone;
+    }
+}
+
+/// Cuts `lastTradeDateOrContractMonth` to its date, returning the time and zone that followed
+/// it (see [`split_last_trade_date`]).
+pub(crate) fn trim_last_trade_date(contract: &mut ibapi::contracts::Contract) -> Option<String> {
+    // ibapi reads a bond's maturity, time and zone from the value and keeps it whole, as IB's
+    // own client does
+    if contract.security_type == SecurityType::Bond {
+        return None;
+    }
+
+    let mut parts = contract
+        .last_trade_date_or_contract_month
+        .split_whitespace();
+    let date = parts.next()?.to_string();
+    let time_and_zone = parts.collect::<Vec<_>>().join(" ");
+    if time_and_zone.is_empty() {
+        return None;
+    }
+    contract.last_trade_date_or_contract_month = date;
+
+    Some(time_and_zone)
+}
+
 /// Convert timestamp string to UnixNanos.
 ///
-/// Handles formats like "20230101" or "20230101 00:00:00 UTC".
+/// Handles formats like "20230101" or "20230101 00:00:00 UTC". A date alone takes its time
+/// from the `last_trade_time` of `details` if it holds one, otherwise from its trading session.
+/// A time without a zone is in the contract's `time_zone_id`, or in UTC if that is empty.
 ///
 /// # Errors
 ///
@@ -71,87 +117,107 @@ pub fn expiry_timestring_to_unix_nanos(
         anyhow::bail!("Empty expiry string");
     }
 
-    // Parse timestamp string - Most contract expirations are %Y%m%d format
-    // Some exchanges have expirations in %Y%m%d %H:%M:%S %Z
-    let dt = if expiry.len() == 8 {
-        // Format: YYYYMMDD
-        let year = &expiry[0..4];
-        let month = &expiry[4..6];
-        let day = &expiry[6..8];
-        let date = time::Date::from_calendar_date(
-            year.parse()?,
-            time::Month::try_from(month.parse::<u8>()?)?,
-            day.parse()?,
+    let contract_timezone = details
+        .map(|details| details.time_zone_id.as_str())
+        .filter(|timezone| !timezone.is_empty())
+        .unwrap_or("UTC");
+    let last_trade_time = details
+        .map(|details| details.last_trade_time.as_str())
+        .filter(|time| !time.is_empty());
+
+    let (date, time, timezone) = if expiry.len() == 8
+        && let Some(last_trade_time) = last_trade_time
+    {
+        let (time, timezone) = read_time_and_zone(
+            last_trade_time.split_whitespace(),
+            contract_timezone,
+            last_trade_time,
         )?;
+        (expiry, time.to_string(), timezone)
+    } else if expiry.len() == 8 {
+        let session_end = details.and_then(|details| {
+            details
+                .trading_hours
+                .iter()
+                .find(|session| session.starts_with(expiry))
+                .and_then(|session| session.split_once('-'))
+                .map(|(_, end)| end)
+        });
 
-        // If we have trading hours, try to extract the last trade time
-        // Trading hours format: "20240411:0000-20240411:1800;..."
-        let mut expiry_time = time::Time::MIDNIGHT;
+        let (date, time) = match session_end {
+            Some(end) => end.split_once(':').unwrap_or((expiry, end)),
+            // IB lists only the coming week of sessions, so a later expiry takes the
+            // closing time of the last listed session
+            None => (
+                expiry,
+                details.and_then(last_session_close).unwrap_or("0000"),
+            ),
+        };
 
-        if let Some(details) = details {
-            if !details.trading_hours.is_empty()
-                && !details.trading_hours.contains(&"CLOSED".to_string())
-            {
-                // Find the session for this date
-                let expiry_str: &str = expiry;
-                for session in &details.trading_hours {
-                    if session.as_str().starts_with(expiry_str) && session.as_str().contains('-') {
-                        let parts: Vec<&str> = session.as_str().split('-').collect();
-                        if let Some(end_part) = parts.get(1) {
-                            let inner_parts: Vec<&str> = end_part.split(':').collect();
-                            if let Some(time_part) = inner_parts.get(1) {
-                                if time_part.len() >= 4 {
-                                    let hour = time_part
-                                        .get(0..2)
-                                        .and_then(|s: &str| s.parse::<u8>().ok())
-                                        .unwrap_or(0);
-                                    let minute = time_part
-                                        .get(2..4)
-                                        .and_then(|s: &str| s.parse::<u8>().ok())
-                                        .unwrap_or(0);
-                                    expiry_time = time::Time::from_hms(hour, minute, 0)
-                                        .unwrap_or(time::Time::MIDNIGHT);
-                                }
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        time::PrimitiveDateTime::new(date, expiry_time)
+        let time = match time.len() {
+            4 => format!("{}:{}:00", &time[0..2], &time[2..4]),
+            _ => anyhow::bail!("Invalid expiry session end '{time}' for {expiry}"),
+        };
+
+        (date, time, contract_timezone)
     } else {
-        // Format: YYYYMMDD HH:MM:SS TZ
-        let parts: Vec<&str> = expiry.split(' ').collect();
-        if parts.len() >= 3 {
-            let date_part = parts[0];
-            let time_part = parts[1];
-            let year = &date_part[0..4];
-            let month = &date_part[4..6];
-            let day = &date_part[6..8];
+        let mut parts = expiry.split_whitespace();
+        let date = parts.next().context("Expiry timestamp is missing a date")?;
+        let (time, timezone) = read_time_and_zone(parts, contract_timezone, expiry)?;
 
-            let time_parts: Vec<&str> = time_part.split(':').collect();
-            let hour = time_parts.first().unwrap_or(&"0").parse::<u8>()?;
-            let minute = time_parts.get(1).unwrap_or(&"0").parse::<u8>()?;
-            let second = time_parts.get(2).unwrap_or(&"0").parse::<u8>()?;
-
-            let date = time::Date::from_calendar_date(
-                year.parse()?,
-                time::Month::try_from(month.parse::<u8>()?)?,
-                day.parse()?,
-            )?;
-            let time_obj = time::Time::from_hms(hour, minute, second)?;
-            time::PrimitiveDateTime::new(date, time_obj)
-        } else {
-            anyhow::bail!("Invalid expiry format: {}", expiry);
-        }
+        (date, time.to_string(), timezone)
     };
 
-    // Treat the parsed expiry timestamp as UTC. NautilusTrader expects IB timestamps
-    // to be configured and interpreted in UTC.
-    let offset_dt = dt.assume_utc();
-    let nanos = offset_dt.unix_timestamp_nanos();
-    Ok(UnixNanos::new(nanos as u64))
+    let datetime = DateTime::strptime("%Y%m%d %H:%M:%S", format!("{date} {time}"))
+        .with_context(|| format!("Invalid expiry timestamp: {expiry}"))?;
+    let timestamp = localize_expiry(datetime, timezone, expiry)?;
+    let nanos = u64::try_from(timestamp.as_nanosecond())
+        .with_context(|| format!("Expiry timestamp precedes the Unix epoch: {expiry}"))?;
+    Ok(UnixNanos::new(nanos))
+}
+
+// Reads `HH:MM:SS [zone]` from the `parts` of `value`, the zone defaulting to
+// `default_timezone`
+fn read_time_and_zone<'a>(
+    mut parts: std::str::SplitWhitespace<'a>,
+    default_timezone: &'a str,
+    value: &str,
+) -> anyhow::Result<(&'a str, &'a str)> {
+    let time = parts.next().context("Expiry timestamp is missing a time")?;
+    let timezone = parts.next().unwrap_or(default_timezone);
+    if parts.next().is_some() {
+        anyhow::bail!("Invalid expiry format: {value}");
+    }
+
+    Ok((time, timezone))
+}
+
+// Returns the `HHMM` closing time of the last listed trading session that is not closed
+fn last_session_close(details: &ibapi::contracts::ContractDetails) -> Option<&str> {
+    details.trading_hours.iter().rev().find_map(|session| {
+        let (_, end) = session.rsplit_once('-')?;
+        let close = end.rsplit_once(':').map_or(end, |(_, time)| time);
+        (close.len() == 4 && close.bytes().all(|byte| byte.is_ascii_digit())).then_some(close)
+    })
+}
+
+fn localize_expiry(datetime: DateTime, timezone: &str, expiry: &str) -> anyhow::Result<Timestamp> {
+    if timezone.eq_ignore_ascii_case("UTC") || timezone.eq_ignore_ascii_case("Z") {
+        return Ok(Offset::UTC.to_timestamp(datetime)?);
+    }
+
+    let zone = get_timezone(timezone).with_context(|| {
+        format!("Unknown IB contract timezone '{timezone}' for expiry {expiry}")
+    })?;
+
+    let ambiguous = zone.to_ambiguous_timestamp(datetime);
+    match ambiguous.offset() {
+        AmbiguousOffset::Unambiguous { .. } => Ok(ambiguous.unambiguous()?),
+        AmbiguousOffset::Fold { .. } => Ok(ambiguous.earlier()?),
+        AmbiguousOffset::Gap { .. } => {
+            anyhow::bail!("Expiry {expiry} does not exist in timezone '{timezone}'")
+        }
+    }
 }
 
 /// Parse an IB ContractDetails to a Nautilus instrument.
@@ -164,13 +230,12 @@ pub fn parse_ib_contract_to_instrument(
     instrument_id: InstrumentId,
 ) -> anyhow::Result<InstrumentAny> {
     let sec_type = &details.contract.security_type;
-
     match sec_type {
         SecurityType::Stock => Ok(parse_equity_contract(details, instrument_id)),
         SecurityType::ForexPair => Ok(parse_forex_contract(details, instrument_id)),
         SecurityType::Crypto => Ok(parse_crypto_contract(details, instrument_id)),
         SecurityType::Future | SecurityType::ContinuousFuture => {
-            Ok(parse_futures_contract(details, instrument_id))
+            parse_futures_contract(details, instrument_id)
         }
         SecurityType::Option => parse_option_contract(details, instrument_id),
         SecurityType::FuturesOption => parse_option_contract(details, instrument_id), // FOP uses same parsing as OPT
@@ -178,20 +243,12 @@ pub fn parse_ib_contract_to_instrument(
         SecurityType::CFD => Ok(parse_cfd_contract(details, instrument_id)),
         SecurityType::Commodity => Ok(parse_commodity_contract(details, instrument_id)),
         SecurityType::Bond => Ok(parse_bond_contract(details, instrument_id)),
-        _ => anyhow::bail!("Unsupported security type: {:?}", sec_type),
+        _ => anyhow::bail!("Unsupported security type: {sec_type:?}"),
     }
 }
 
 fn ib_contract_info(details: &ibapi::contracts::ContractDetails) -> nautilus_core::Params {
-    let mut info = nautilus_core::Params::new();
-    let mut contract = serde_json::Map::new();
-
-    let contract_params = contract_to_params(&details.contract);
-    for (key, value) in &contract_params {
-        contract.insert(key.clone(), value.clone());
-    }
-
-    info.insert("contract".to_string(), serde_json::Value::Object(contract));
+    let mut info = ib_contract_info_for_contract(&details.contract);
     info.insert(
         "priceMagnifier".to_string(),
         serde_json::Value::from(details.price_magnifier),
@@ -235,27 +292,19 @@ fn parse_equity_contract(
     let price_precision = tick_size_to_precision(details.min_tick);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = Equity::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        None, // isin
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        Some(Quantity::new(100.0, 0)),   // Standard lot size for stocks
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = Equity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        // Standard lot size for stocks
+        .lot_size(Quantity::new(100.0, 0))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -266,35 +315,24 @@ fn parse_forex_contract(
     instrument_id: InstrumentId,
 ) -> InstrumentAny {
     let price_precision = tick_size_to_precision(details.min_tick);
-    let size_precision = tick_size_to_precision(details.min_size);
+    let (size_precision, size_increment, min_quantity) = parse_contract_size_rules(details, 1.0);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        Currency::from(details.contract.symbol.to_string()),
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,                            // multiplier
-        None,                            // lot_size
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_notional
-        None,                            // min_notional
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .base_currency(Currency::from(details.contract.symbol.to_string()))
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(size_increment)
+        .maybe_min_quantity(min_quantity)
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -305,37 +343,25 @@ fn parse_crypto_contract(
     instrument_id: InstrumentId,
 ) -> InstrumentAny {
     let price_precision = tick_size_to_precision(details.min_tick);
-    let size_precision = tick_size_to_precision(details.min_size);
+    let (size_precision, size_increment, min_quantity) =
+        parse_contract_size_rules(details, 0.00000001);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        Currency::from(details.contract.symbol.to_string()),
-        Currency::from(details.contract.currency.to_string()),
-        Currency::from(details.contract.currency.to_string()),
-        true, // is_inverse
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None, // multiplier
-        None, // lot_size
-        None, // max_quantity
-        Some(Quantity::new(details.min_size, size_precision)),
-        None,                            // max_notional
-        None,                            // min_notional
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .base_currency(Currency::from(details.contract.symbol.to_string()))
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(size_increment)
+        .maybe_min_quantity(min_quantity)
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -357,33 +383,35 @@ fn parse_contract_multiplier(multiplier: &str, default: f64) -> Quantity {
 fn parse_futures_contract(
     details: &ibapi::contracts::ContractDetails,
     instrument_id: InstrumentId,
-) -> InstrumentAny {
+) -> anyhow::Result<InstrumentAny> {
     let price_precision = tick_size_to_precision(details.min_tick);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    // Parse expiration
-    let expiration_ns = if !details
-        .contract
-        .last_trade_date_or_contract_month
-        .is_empty()
-    {
-        expiry_timestring_to_unix_nanos(
-            &details.contract.last_trade_date_or_contract_month,
-            Some(details),
-        )
-        .unwrap_or_else(|_| UnixNanos::from(timestamp.as_u64() + 90 * 24 * 60 * 60 * 1_000_000_000))
-    // Default to +90 days on error
-    } else {
-        UnixNanos::from(timestamp.as_u64() + 90 * 24 * 60 * 60 * 1_000_000_000) // Default to +90 days if empty
+    let expiry = &details.contract.last_trade_date_or_contract_month;
+
+    let expiration_ns = match expiry_timestring_to_unix_nanos(expiry, Some(details)) {
+        Ok(expiration_ns) => expiration_ns,
+        // Continuous futures can report contract details without a last-trade date.
+        Err(e)
+            if matches!(
+                details.contract.security_type,
+                SecurityType::ContinuousFuture
+            ) =>
+        {
+            tracing::warn!(
+                "Continuous future {} reported expiry '{expiry}', defaulting to 90 days out: {e}",
+                details.contract.symbol.as_str(),
+            );
+            timestamp + NINETY_DAYS
+        }
+        Err(e) => {
+            return Err(e).with_context(|| format!("Failed to parse futures expiry '{expiry}'"));
+        }
     };
 
-    let ninety_days_ns: u64 = 90 * 24 * 60 * 60 * 1_000_000_000;
-    let activation_ns = expiration_ns
-        .checked_sub(ninety_days_ns)
-        .unwrap_or(UnixNanos::from(0)); // -90 days or 0 if underflow
+    let activation_ns = activation_from_expiration(expiration_ns);
 
     let multiplier = parse_contract_multiplier(&details.contract.multiplier, 1.0);
-
     let raw_symbol = if matches!(
         details.contract.security_type,
         SecurityType::ContinuousFuture
@@ -394,34 +422,27 @@ fn parse_futures_contract(
         details.contract.local_symbol.as_str()
     };
 
-    let instrument = FuturesContract::new(
-        instrument_id,
-        Symbol::from(raw_symbol),
-        sec_type_to_asset_class(details.under_security_type.as_str()),
-        None, // exchange
-        Ustr::from(details.under_symbol.as_str()),
-        activation_ns,
-        expiration_ns,
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        multiplier,
-        Quantity::new(1.0, 0),
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = FuturesContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(raw_symbol))
+        .asset_class(sec_type_to_asset_class(
+            details.under_security_type.as_str(),
+        ))
+        .underlying(Ustr::from(details.under_symbol.as_str()))
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .multiplier(multiplier)
+        .lot_size(Quantity::new(1.0, 0))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
-    InstrumentAny::from(instrument)
+    Ok(InstrumentAny::from(instrument))
 }
 
 /// Parse option contract (OPT).
@@ -432,26 +453,11 @@ fn parse_option_contract(
     let price_precision = tick_size_to_precision(details.min_tick);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    // Parse expiration
-    let expiration_ns = if !details
-        .contract
-        .last_trade_date_or_contract_month
-        .is_empty()
-    {
-        expiry_timestring_to_unix_nanos(
-            &details.contract.last_trade_date_or_contract_month,
-            Some(details),
-        )
-        .unwrap_or_else(|_| UnixNanos::from(timestamp.as_u64() + 90 * 24 * 60 * 60 * 1_000_000_000))
-    // Default to +90 days on error
-    } else {
-        UnixNanos::from(timestamp.as_u64() + 90 * 24 * 60 * 60 * 1_000_000_000) // Default to +90 days if empty
-    };
+    let expiry = &details.contract.last_trade_date_or_contract_month;
+    let expiration_ns = expiry_timestring_to_unix_nanos(expiry, Some(details))
+        .with_context(|| format!("Failed to parse option expiry '{expiry}'"))?;
 
-    let ninety_days_ns: u64 = 90 * 24 * 60 * 60 * 1_000_000_000;
-    let activation_ns = expiration_ns
-        .checked_sub(ninety_days_ns)
-        .unwrap_or(UnixNanos::from(0)); // -90 days or 0 if underflow
+    let activation_ns = activation_from_expiration(expiration_ns);
 
     // Parse option kind (CALL or PUT)
     let option_kind = details
@@ -464,6 +470,10 @@ fn parse_option_contract(
 
     let multiplier = parse_contract_multiplier(&details.contract.multiplier, 100.0);
     let asset_class = sec_type_to_asset_class(details.under_security_type.as_str());
+
+    // IB reports a magnified contract's strike in the same sub-unit as its market data
+    let strike = details.contract.strike / f64::from(details.price_magnifier.max(1));
+
     let underlying =
         if details.under_security_type == "IND" && !details.under_symbol.starts_with('^') {
             format!("^{}", details.under_symbol)
@@ -471,40 +481,61 @@ fn parse_option_contract(
             details.under_symbol.clone()
         };
 
-    let instrument = OptionContract::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        asset_class,
-        None, // exchange
-        Ustr::from(underlying.as_str()),
-        option_kind,
-        Price::new(details.contract.strike, price_precision),
-        Currency::from(details.contract.currency.to_string()),
-        activation_ns,
-        expiration_ns,
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        multiplier,
-        multiplier,
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = OptionContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .asset_class(asset_class)
+        .underlying(Ustr::from(underlying.as_str()))
+        .option_kind(option_kind)
+        .strike_price(Price::new(strike, price_precision))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .multiplier(multiplier)
+        .lot_size(multiplier)
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::from(instrument))
 }
 
-#[allow(clippy::items_after_test_module)]
+fn activation_from_expiration(expiration_ns: UnixNanos) -> UnixNanos {
+    expiration_ns.checked_sub(NINETY_DAYS).unwrap_or_default()
+}
+
+fn parse_contract_size_rules(
+    details: &ibapi::contracts::ContractDetails,
+    default_increment: f64,
+) -> (u8, Quantity, Option<Quantity>) {
+    let size_increment = details
+        .size_increment
+        .or(details.min_size)
+        .unwrap_or(default_increment);
+    let size_precision = details.min_size.map_or_else(
+        || tick_size_to_precision(size_increment),
+        |min_size| tick_size_to_precision(min_size).max(tick_size_to_precision(size_increment)),
+    );
+    let min_quantity = details
+        .min_size
+        .map(|min_size| Quantity::new(min_size, size_precision));
+
+    (
+        size_precision,
+        Quantity::new(size_increment, size_precision),
+        min_quantity,
+    )
+}
+
 #[cfg(test)]
+#[allow(
+    clippy::items_after_test_module,
+    reason = "private parser tests remain beside the contract helpers they exercise"
+)]
 mod tests {
     use ibapi::contracts::{
         Contract, ContractDetails, Currency, Exchange, OptionRight, SecurityType, Symbol,
@@ -519,9 +550,266 @@ mod tests {
     use ustr::Ustr;
 
     use super::{
-        parse_contract_multiplier, parse_ib_contract_to_instrument,
-        parse_option_spread_instrument_id,
+        expiry_timestring_to_unix_nanos, parse_contract_multiplier,
+        parse_ib_contract_to_instrument, parse_option_spread_instrument_id, split_last_trade_date,
     };
+
+    fn es_future_details(expiry: &str) -> ContractDetails {
+        ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ES"),
+                security_type: SecurityType::Future,
+                exchange: Exchange::from("CME"),
+                currency: Currency::from("USD"),
+                local_symbol: String::from("ESZ6"),
+                last_trade_date_or_contract_month: expiry.to_string(),
+                multiplier: "50".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.25,
+            under_symbol: String::from("ES"),
+            under_security_type: String::from("IND"),
+            time_zone_id: String::from("US/Central"),
+            ..Default::default()
+        }
+    }
+
+    #[rstest]
+    fn test_parse_crypto_contract_creates_spot_currency_pair() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("BTC"),
+                security_type: SecurityType::Crypto,
+                exchange: Exchange::from("PAXOS"),
+                currency: Currency::from("USD"),
+                local_symbol: String::from("BTC.USD"),
+                ..Default::default()
+            },
+            min_tick: 0.01,
+            min_size: Some(0.0001),
+            size_increment: Some(0.0001),
+            ..Default::default()
+        };
+
+        let instrument_id = InstrumentId::from("BTC/USD.PAXOS");
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let InstrumentAny::CurrencyPair(pair) = instrument else {
+            panic!("expected spot currency pair");
+        };
+
+        assert_eq!(pair.base_currency.code.as_str(), "BTC");
+        assert_eq!(pair.quote_currency.code.as_str(), "USD");
+        assert_eq!(pair.size_precision, 4);
+        assert_eq!(pair.size_increment, Quantity::from("0.0001"));
+    }
+
+    #[rstest]
+    fn test_expiry_session_end_uses_contract_timezone() {
+        let details = ContractDetails {
+            time_zone_id: String::from("America/New_York"),
+            trading_hours: vec![String::from("20260313:0930-20260313:1600")],
+            ..Default::default()
+        };
+
+        let expiry = expiry_timestring_to_unix_nanos("20260313", Some(&details)).unwrap();
+        let expected = "2026-03-13T20:00:00Z".parse::<jiff::Timestamp>().unwrap();
+
+        assert_eq!(
+            expiry.as_u64(),
+            u64::try_from(expected.as_nanosecond()).unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case::listed_session_closes_later_than_expiry(
+        vec!["20260929:0930-20260929:1600", "20260930:0930-20260930:1600", "20261001:CLOSED"],
+        "2026-10-30T20:00:00Z"
+    )]
+    #[case::overnight_sessions(
+        vec!["20260928:1700-20260929:1600", "20260929:1700-20260930:1600"],
+        "2026-10-30T20:00:00Z"
+    )]
+    #[case::only_closed_sessions(vec!["20261001:CLOSED"], "2026-10-30T04:00:00Z")]
+    #[case::no_sessions(vec![], "2026-10-30T04:00:00Z")]
+    fn test_expiry_beyond_listed_sessions_uses_last_session_close(
+        #[case] trading_hours: Vec<&str>,
+        #[case] expected: &str,
+    ) {
+        let details = ContractDetails {
+            time_zone_id: String::from("America/New_York"),
+            trading_hours: trading_hours.into_iter().map(String::from).collect(),
+            ..Default::default()
+        };
+
+        let expiry = expiry_timestring_to_unix_nanos("20261030", Some(&details)).unwrap();
+        let expected = expected.parse::<jiff::Timestamp>().unwrap();
+
+        assert_eq!(
+            expiry.as_u64(),
+            u64::try_from(expected.as_nanosecond()).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_expiry_date_takes_last_trade_time_over_session() {
+        let details = ContractDetails {
+            time_zone_id: String::from("US/Central"),
+            last_trade_time: String::from("08:30:00"),
+            trading_hours: vec![String::from("20261218:1700-20261219:1600")],
+            ..Default::default()
+        };
+
+        let expiry = expiry_timestring_to_unix_nanos("20261218", Some(&details)).unwrap();
+        let expected = "2026-12-18T14:30:00Z".parse::<jiff::Timestamp>().unwrap();
+
+        assert_eq!(
+            expiry.as_u64(),
+            u64::try_from(expected.as_nanosecond()).unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case::no_contract_timezone("")]
+    #[case::same_contract_timezone("US/Central")]
+    #[case::other_contract_timezone("Asia/Tokyo")]
+    fn test_expiry_date_takes_last_trade_time_zone_over_contract_timezone(
+        #[case] time_zone_id: &str,
+    ) {
+        let details = ContractDetails {
+            time_zone_id: time_zone_id.to_string(),
+            last_trade_time: String::from("08:30:00 US/Central"),
+            ..Default::default()
+        };
+
+        let expiry = expiry_timestring_to_unix_nanos("20261218", Some(&details)).unwrap();
+        let expected = "2026-12-18T14:30:00Z".parse::<jiff::Timestamp>().unwrap();
+
+        assert_eq!(
+            expiry.as_u64(),
+            u64::try_from(expected.as_nanosecond()).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_expiry_rejects_last_trade_time_with_extra_token() {
+        let details = ContractDetails {
+            last_trade_time: String::from("08:30:00 US/Central extra"),
+            ..Default::default()
+        };
+
+        let result = expiry_timestring_to_unix_nanos("20261218", Some(&details));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid expiry format: 08:30:00 US/Central extra"
+        );
+    }
+
+    #[rstest]
+    fn test_split_last_trade_date_moves_time_and_zone_out_of_expiry() {
+        let mut details = es_future_details("20261218 08:30:00 US/Central");
+
+        split_last_trade_date(&mut details);
+
+        assert_eq!(
+            details.contract.last_trade_date_or_contract_month,
+            "20261218"
+        );
+        assert_eq!(details.last_trade_time, "08:30:00 US/Central");
+    }
+
+    #[rstest]
+    #[case::date("20261218")]
+    #[case::contract_month("202612")]
+    #[case::empty("")]
+    fn test_split_last_trade_date_keeps_expiry_without_time(#[case] expiry: &str) {
+        let mut details = es_future_details(expiry);
+
+        split_last_trade_date(&mut details);
+
+        assert_eq!(details.contract.last_trade_date_or_contract_month, expiry);
+        assert!(details.last_trade_time.is_empty());
+    }
+
+    #[rstest]
+    fn test_split_last_trade_date_keeps_bond_expiry() {
+        let mut details = ContractDetails {
+            contract: Contract {
+                security_type: SecurityType::Bond,
+                last_trade_date_or_contract_month: String::from("20301115 16:00:00 US/Eastern"),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        split_last_trade_date(&mut details);
+
+        assert_eq!(
+            details.contract.last_trade_date_or_contract_month,
+            "20301115 16:00:00 US/Eastern"
+        );
+        assert!(details.last_trade_time.is_empty());
+    }
+
+    #[rstest]
+    #[case::same_contract_timezone("US/Central", "")]
+    #[case::no_contract_timezone("", "")]
+    #[case::other_contract_timezone("America/New_York", "")]
+    #[case::other_last_trade_time("America/New_York", "10:00:00")]
+    fn test_parse_future_after_split_keeps_expiry_and_stores_date(
+        #[case] time_zone_id: &str,
+        #[case] last_trade_time: &str,
+    ) {
+        let instrument_id = InstrumentId::from("ESZ6.CME");
+        let mut details = es_future_details("20261218 08:30:00 US/Central");
+        details.time_zone_id = time_zone_id.to_string();
+        details.last_trade_time = last_trade_time.to_string();
+        let unsplit = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        split_last_trade_date(&mut details);
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let expected = "2026-12-18T14:30:00Z".parse::<jiff::Timestamp>().unwrap();
+        assert_eq!(
+            instrument.expiration_ns().unwrap().as_u64(),
+            u64::try_from(expected.as_nanosecond()).unwrap()
+        );
+        assert_eq!(instrument.expiration_ns(), unsplit.expiration_ns());
+        let InstrumentAny::FuturesContract(future) = instrument else {
+            panic!("expected futures contract");
+        };
+        let info = future.info.unwrap();
+        assert_eq!(
+            info.get("contract")
+                .and_then(|contract| contract.get("lastTradeDateOrContractMonth")),
+            Some(&serde_json::Value::from("20261218"))
+        );
+    }
+
+    #[rstest]
+    fn test_parse_future_rejects_missing_expiry() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ES"),
+                security_type: SecurityType::Future,
+                exchange: Exchange::from("CME"),
+                currency: Currency::from("USD"),
+                local_symbol: String::from("ESZ6"),
+                ..Default::default()
+            },
+            min_tick: 0.25,
+            ..Default::default()
+        };
+
+        let result = parse_ib_contract_to_instrument(&details, InstrumentId::from("ESZ6.CME"));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to parse futures expiry ''"
+        );
+    }
 
     #[rstest]
     fn test_parse_option_contract_prefixes_index_underlying() {
@@ -543,6 +831,7 @@ mod tests {
             under_security_type: "IND".to_string(),
             ..Default::default()
         };
+
         let instrument_id = InstrumentId::new(
             NautilusSymbol::from("SPXW  260313P06630000"),
             Venue::from("SMART"),
@@ -574,9 +863,11 @@ mod tests {
             price_magnifier: 100,
             ..Default::default()
         };
+
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("XNAS"));
 
         let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
         let InstrumentAny::Equity(equity) = instrument else {
             panic!("expected equity");
         };
@@ -618,6 +909,7 @@ mod tests {
             under_security_type: "IND".to_string(),
             ..Default::default()
         };
+
         let instrument_id = InstrumentId::new(NautilusSymbol::from("ES"), Venue::from("CME"));
 
         let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
@@ -645,6 +937,7 @@ mod tests {
             under_symbol: "SPY".to_string(),
             ..Default::default()
         };
+
         let leg2 = ContractDetails {
             contract: Contract {
                 symbol: Symbol::from("SPY"),
@@ -659,6 +952,7 @@ mod tests {
             under_symbol: "SPY".to_string(),
             ..Default::default()
         };
+
         let instrument_id =
             InstrumentId::from("(1)SPY   260120C00400000_((-1))SPY   260120C00410000.SMART");
 
@@ -673,6 +967,74 @@ mod tests {
         assert_eq!(spread.price_precision(), 2);
         assert_eq!(spread.price_increment(), Price::from("0.01"));
     }
+
+    #[rstest]
+    fn test_parse_futures_option_contract_divides_magnified_strike() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ZC"),
+                security_type: SecurityType::FuturesOption,
+                exchange: Exchange::from("CBOT"),
+                currency: Currency::from("USD"),
+                local_symbol: "OZCX6 C4630".to_string(),
+                last_trade_date_or_contract_month: "20261023".to_string(),
+                right: Some(OptionRight::Call),
+                strike: 463.0,
+                multiplier: "5000".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.00125,
+            price_magnifier: 100,
+            under_symbol: "ZCZ6".to_string(),
+            under_security_type: "FUT".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id =
+            InstrumentId::new(NautilusSymbol::from("OZCX6 C4630"), Venue::from("CBOT"));
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let InstrumentAny::OptionContract(option) = instrument else {
+            panic!("expected option contract");
+        };
+
+        assert_eq!(option.strike_price, Price::from("4.63000"));
+        assert_eq!(option.price_increment, Price::from("0.00125"));
+        assert_eq!(option.price_precision, 5);
+    }
+
+    #[rstest]
+    fn test_parse_future_contract_keeps_min_tick_with_price_magnifier() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ZC"),
+                security_type: SecurityType::Future,
+                exchange: Exchange::from("CBOT"),
+                currency: Currency::from("USD"),
+                local_symbol: "ZCZ6".to_string(),
+                last_trade_date_or_contract_month: "20261214".to_string(),
+                multiplier: "5000".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.0025,
+            price_magnifier: 100,
+            under_symbol: "ZC".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("ZCZ6"), Venue::from("CBOT"));
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let InstrumentAny::FuturesContract(future) = instrument else {
+            panic!("expected futures contract");
+        };
+
+        assert_eq!(future.price_increment, Price::from("0.0025"));
+        assert_eq!(future.price_precision, 4);
+        assert_eq!(future.multiplier, Quantity::from(5000));
+    }
 }
 
 /// Parse index contract (IND).
@@ -684,22 +1046,22 @@ fn parse_index_contract(
     instrument_id: InstrumentId,
 ) -> InstrumentAny {
     let price_precision = tick_size_to_precision(details.min_tick);
-    let size_precision = tick_size_to_precision(details.min_size);
+    let (size_precision, size_increment, _) = parse_contract_size_rules(details, 1.0);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = IndexInstrument::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = IndexInstrument::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(size_increment)
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -727,14 +1089,14 @@ pub fn parse_spread_instrument_id(
 
     // Extract properties from the first leg contract details
     let currency = Currency::from(first_contract.currency.to_string());
-    let underlying = if !first_details.under_symbol.is_empty() {
-        Ustr::from(first_details.under_symbol.as_str())
-    } else {
+    let underlying = if first_details.under_symbol.is_empty() {
         Ustr::from(first_contract.symbol.as_str())
+    } else {
+        Ustr::from(first_details.under_symbol.as_str())
     };
 
     // Parse multiplier
-    let multiplier_str = first_contract.multiplier.to_string();
+    let multiplier_str = first_contract.multiplier.clone();
     let multiplier =
         Quantity::from_str(&multiplier_str).unwrap_or_else(|_| Quantity::new(100.0, 0)); // Default to 100 for options
 
@@ -759,33 +1121,26 @@ pub fn parse_spread_instrument_id(
     let lot_size = multiplier;
 
     // Create the spread instrument
-    let spread = OptionSpread::new_checked(
-        instrument_id,
-        Symbol::from(instrument_id.symbol.as_str()), // raw_symbol
-        asset_class,
-        None, // exchange (optional)
-        underlying,
-        Ustr::from("SPREAD"), // strategy_type
-        UnixNanos::new(0),    // activation_ns (spreads don't have single activation dates)
-        UnixNanos::new(0),    // expiration_ns (spreads don't have single expiration dates)
-        currency,
-        price_precision,
-        price_increment,
-        multiplier,
-        lot_size,
-        None,                // max_quantity
-        None,                // min_quantity
-        None,                // max_price
-        None,                // min_price
-        Some(Decimal::ZERO), // margin_init
-        Some(Decimal::ZERO), // margin_maint
-        Some(Decimal::ZERO), // maker_fee
-        Some(Decimal::ZERO), // taker_fee
-        None,                // tick_scheme
-        None,                // info
-        timestamp,
-        timestamp,
-    )?;
+    let spread = OptionSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(instrument_id.symbol.as_str()))
+        .asset_class(asset_class)
+        .underlying(underlying)
+        .strategy_type(Ustr::from("SPREAD"))
+        // activation_ns (spreads don't have single activation dates)
+        .activation_ns(UnixNanos::new(0))
+        // expiration_ns (spreads don't have single expiration dates)
+        .expiration_ns(UnixNanos::new(0))
+        .currency(currency)
+        .price_precision(price_precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(lot_size)
+        .margin_init(Decimal::ZERO)
+        .margin_maint(Decimal::ZERO)
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()?;
 
     Ok(spread)
 }
@@ -814,13 +1169,14 @@ pub fn parse_futures_spread_instrument_id(
     let (first_details, _) = leg_contract_details[0];
     let first_contract = &first_details.contract;
     let currency = Currency::from(first_contract.currency.to_string());
-    let underlying = if !first_details.under_symbol.is_empty() {
-        Ustr::from(first_details.under_symbol.as_str())
-    } else {
+    let underlying = if first_details.under_symbol.is_empty() {
         Ustr::from(first_contract.symbol.as_str())
+    } else {
+        Ustr::from(first_details.under_symbol.as_str())
     };
-    let multiplier = Quantity::from_str(&first_contract.multiplier.to_string())
-        .unwrap_or_else(|_| Quantity::new(1.0, 0));
+
+    let multiplier =
+        Quantity::from_str(&first_contract.multiplier).unwrap_or_else(|_| Quantity::new(1.0, 0));
     let min_tick = leg_contract_details
         .iter()
         .map(|(details, _)| details.min_tick)
@@ -829,33 +1185,25 @@ pub fn parse_futures_spread_instrument_id(
     let price_increment = Price::new(min_tick, price_precision);
     let timestamp = timestamp_ns.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
 
-    Ok(FuturesSpread::new_checked(
-        instrument_id,
-        Symbol::from(instrument_id.symbol.as_str()),
-        AssetClass::Index,
-        None,
-        underlying,
-        Ustr::from("SPREAD"),
-        UnixNanos::new(0),
-        UnixNanos::new(0),
-        currency,
-        price_precision,
-        price_increment,
-        multiplier,
-        Quantity::new(1.0, 0),
-        None,
-        None,
-        None,
-        None,
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        None,
-        bag_contract.map(ib_contract_info_for_contract),
-        timestamp,
-        timestamp,
-    )?)
+    Ok(FuturesSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(instrument_id.symbol.as_str()))
+        .asset_class(AssetClass::Index)
+        .underlying(underlying)
+        .strategy_type(Ustr::from("SPREAD"))
+        .activation_ns(UnixNanos::new(0))
+        .expiration_ns(UnixNanos::new(0))
+        .currency(currency)
+        .price_precision(price_precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(Quantity::new(1.0, 0))
+        .margin_init(Decimal::ZERO)
+        .margin_maint(Decimal::ZERO)
+        .maybe_info(bag_contract.map(ib_contract_info_for_contract))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()?)
 }
 
 pub fn parse_spread_instrument_any(
@@ -894,7 +1242,7 @@ fn parse_cfd_contract(
     instrument_id: InstrumentId,
 ) -> InstrumentAny {
     let price_precision = tick_size_to_precision(details.min_tick);
-    let size_precision = tick_size_to_precision(details.min_size);
+    let (size_precision, size_increment, min_quantity) = parse_contract_size_rules(details, 1.0);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
     let base_currency = details
@@ -903,32 +1251,24 @@ fn parse_cfd_contract(
         .contains('.')
         .then(|| Currency::from(details.contract.symbol.to_string()));
 
-    let instrument = Cfd::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        sec_type_to_asset_class(details.under_security_type.as_str()),
-        base_currency,
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(ib_contract_info(details)),
-        timestamp,
-        timestamp,
-    );
+    let instrument = Cfd::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .asset_class(sec_type_to_asset_class(
+            details.under_security_type.as_str(),
+        ))
+        .maybe_base_currency(base_currency)
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(size_increment)
+        .maybe_min_quantity(min_quantity)
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -939,34 +1279,24 @@ fn parse_commodity_contract(
     instrument_id: InstrumentId,
 ) -> InstrumentAny {
     let price_precision = tick_size_to_precision(details.min_tick);
-    let size_precision = tick_size_to_precision(details.min_size);
+    let (size_precision, size_increment, min_quantity) = parse_contract_size_rules(details, 1.0);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = Commodity::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        AssetClass::Commodity,
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(ib_contract_info(details)),
-        timestamp,
-        timestamp,
-    );
+    let instrument = Commodity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .asset_class(AssetClass::Commodity)
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(size_increment)
+        .maybe_min_quantity(min_quantity)
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -981,27 +1311,20 @@ fn parse_bond_contract(
     let price_precision = tick_size_to_precision(details.min_tick);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = Equity::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        None, // isin - could extract from security_id if available
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        Some(Quantity::new(1.0, 0)),     // Standard lot size for bonds
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    // ISIN could be extracted from `security_id` if needed
+    let instrument = Equity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        // Standard lot size for bonds
+        .lot_size(Quantity::new(1.0, 0))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }

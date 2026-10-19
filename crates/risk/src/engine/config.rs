@@ -15,20 +15,20 @@
 
 //! Provides a configuration for `RiskEngine` instances.
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
     config::{ConfigError, ConfigErrorCollector, ConfigResult},
     throttler::RateLimit,
 };
-use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_core::DurationNanos;
+use nautilus_model::identifiers::{InstrumentId, Venue};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for `RiskEngineConfig` instances.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.risk", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.risk", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -45,14 +45,24 @@ use serde::{Deserialize, Serialize};
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(default, deny_unknown_fields)]
 pub struct RiskEngineConfig {
+    /// Whether to bypass risk checks and order rate limits.
     #[builder(default)]
     pub bypass: bool,
-    #[builder(default = RateLimit::new(100, NANOSECONDS_IN_SECOND))]
+    /// Rate limit for order submission commands.
+    #[builder(default = RateLimit::new(100, DurationNanos::from_secs(1)))]
     pub max_order_submit: RateLimit,
-    #[builder(default = RateLimit::new(100, NANOSECONDS_IN_SECOND))]
+    /// Rate limit for order modifications, counting each batch child separately.
+    #[builder(default = RateLimit::new(100, DurationNanos::from_secs(1)))]
     pub max_order_modify: RateLimit,
+    /// Maximum notional per order by instrument, in each instrument's quote currency.
     #[builder(default)]
     pub max_notional_per_order: AHashMap<InstrumentId, Decimal>,
+    /// Venues whose execution clients enforce whole-position conditional exits.
+    ///
+    /// Validated exits skip bounds that apply only to their placeholder quantity and notional.
+    #[builder(default)]
+    pub full_position_exit_venues: AHashSet<Venue>,
+    /// Whether to emit additional debug logs.
     #[builder(default)]
     pub debug: bool,
 }
@@ -62,8 +72,7 @@ impl<S: risk_engine_config_builder::IsComplete> RiskEngineConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`RiskEngineConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`RiskEngineConfig::validate`]).
     pub fn build(self) -> ConfigResult<RiskEngineConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -76,8 +85,8 @@ impl RiskEngineConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
@@ -111,7 +120,9 @@ mod tests {
 
     #[rstest]
     fn test_default_config_is_valid() {
-        assert!(RiskEngineConfig::builder().build().is_ok());
+        let config = RiskEngineConfig::builder().build().unwrap();
+
+        assert!(config.full_position_exit_venues.is_empty());
     }
 
     #[rstest]

@@ -22,6 +22,9 @@
 //!
 //! Both share the same EIP-712 domain name and version; only the
 //! `verifyingContract` differs.
+//!
+//! This module also owns the CLOB V2 contract identities and ordered on-chain
+//! approval plan ([`approval_plan`]) used by the set-allowances binary.
 
 use std::str::FromStr;
 
@@ -29,13 +32,15 @@ use alloy::{
     signers::{SignerSync, local::PrivateKeySigner},
     sol_types::{SolStruct, SolValue, eip712_domain},
 };
-use alloy_primitives::{Address, B256, FixedBytes, U256, address, keccak256};
+use alloy_primitives::{Address, B256, Bytes, FixedBytes, U256, address, keccak256};
+#[cfg(test)]
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 
 use crate::{
     common::{
         credential::EvmPrivateKey,
-        enums::{PolymarketOrderSide, SignatureType},
+        enums::{PolymarketOrderSide, PolymarketSignatureType, PolymarketSignerType},
     },
     http::{
         error::{Error, Result},
@@ -53,6 +58,74 @@ pub const CTF_EXCHANGE: Address = address!("0xE111180000d2663C0091e4f400237545B8
 
 /// Neg Risk CTF Exchange contract address on Polygon mainnet (CLOB V2).
 pub const NEG_RISK_CTF_EXCHANGE: Address = address!("0xe2222d279d744050d28e00520010520000310F59");
+
+/// Standard CTF collateral adapter address on Polygon mainnet.
+pub const CTF_COLLATERAL_ADAPTER: Address = address!("0xAdA100Db00Ca00073811820692005400218FcE1f");
+
+/// Neg Risk CTF collateral adapter address on Polygon mainnet.
+pub const NEG_RISK_CTF_COLLATERAL_ADAPTER: Address =
+    address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
+
+/// Deposit Wallet factory address on Polygon mainnet.
+pub const DEPOSIT_WALLET_FACTORY: Address = address!("0x00000000000Fb5C9ADea0298D729A0CB3823Cc07");
+
+/// Polymarket pUSD collateral token contract address on Polygon mainnet.
+pub const POLYMARKET_COLLATERAL_TOKEN: Address =
+    address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
+
+/// Conditional Tokens Framework contract address on Polygon mainnet.
+pub const CONDITIONAL_TOKENS: Address = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
+
+/// Complete spender set requiring collateral approval for Polymarket CLOB V2 orders.
+pub const COLLATERAL_APPROVAL_TARGETS: &[Address] = &[
+    CTF_EXCHANGE,
+    NEG_RISK_CTF_EXCHANGE,
+    NEG_RISK_CTF_COLLATERAL_ADAPTER,
+];
+
+/// One transaction in the Polymarket approval plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolymarketApproval {
+    /// Approves a contract to spend pUSD collateral.
+    Collateral {
+        /// Collateral token contract receiving the approval call.
+        contract: Address,
+        /// Contract receiving the collateral allowance.
+        spender: Address,
+        /// Collateral allowance amount.
+        amount: U256,
+    },
+    /// Enables a contract as an operator for conditional tokens.
+    ConditionalTokens {
+        /// Conditional Tokens contract receiving the operator call.
+        contract: Address,
+        /// Contract receiving conditional-token operator authority.
+        operator: Address,
+        /// Whether operator authority is enabled.
+        approved: bool,
+    },
+}
+
+/// Returns the ordered approval plan for Polymarket CLOB V2.
+pub fn approval_plan() -> impl Iterator<Item = PolymarketApproval> {
+    COLLATERAL_APPROVAL_TARGETS
+        .iter()
+        .copied()
+        .flat_map(|target| {
+            [
+                PolymarketApproval::Collateral {
+                    contract: POLYMARKET_COLLATERAL_TOKEN,
+                    spender: target,
+                    amount: U256::MAX,
+                },
+                PolymarketApproval::ConditionalTokens {
+                    contract: CONDITIONAL_TOKENS,
+                    operator: target,
+                    approved: true,
+                },
+            ]
+        })
+}
 
 const DOMAIN_NAME: &str = "Polymarket CTF Exchange";
 const DOMAIN_VERSION: &str = "2";
@@ -86,6 +159,24 @@ alloy::sol! {
     }
 }
 
+// EIP-712 Deposit Wallet batch authorization.
+//
+// Reference: <https://docs.polymarket.com/trading/wallets-auth#execute-gasless-transactions>
+alloy::sol! {
+    struct Call {
+        address target;
+        uint256 value;
+        bytes data;
+    }
+
+    struct Batch {
+        address wallet;
+        uint256 nonce;
+        uint256 deadline;
+        Call[] calls;
+    }
+}
+
 // EIP-712 Order struct for CLOB V2 CTFExchange.
 //
 // Fees are set by the protocol at match time (not signed) and per-address
@@ -110,6 +201,7 @@ alloy::sol! {
 #[derive(Debug)]
 pub struct OrderSigner {
     signer: PrivateKeySigner,
+    signer_type: PolymarketSignerType,
 }
 
 impl OrderSigner {
@@ -121,7 +213,17 @@ impl OrderSigner {
             .unwrap_or(private_key.as_hex());
         let signer = PrivateKeySigner::from_str(key_hex)
             .map_err(|e| Error::bad_request(format!("Failed to create signer: {e}")))?;
-        Ok(Self { signer })
+        Ok(Self {
+            signer,
+            signer_type: PolymarketSignerType::Owner,
+        })
+    }
+
+    /// Selects the signer role. Session signing requires `POLY_1271` orders.
+    #[must_use]
+    pub fn with_signer_type(mut self, signer_type: PolymarketSignerType) -> Self {
+        self.signer_type = signer_type;
+        self
     }
 
     /// Returns the signer's Ethereum address.
@@ -141,9 +243,17 @@ impl OrderSigner {
     /// signer's address, or if a `POLY_1271` order does not use the deposit
     /// wallet for both `maker` and `signer`.
     pub fn sign_order(&self, order: &PolymarketOrder, neg_risk: bool) -> Result<String> {
+        if self.signer_type == PolymarketSignerType::Session
+            && order.signature_type != PolymarketSignatureType::Poly1271
+        {
+            return Err(Error::bad_request(
+                "Session signers require POLY_1271 orders",
+            ));
+        }
+
         let order_signer = parse_address(&order.signer, "signer")?;
         let order_maker = parse_address(&order.maker, "maker")?;
-        if order.signature_type == SignatureType::Poly1271 {
+        if order.signature_type == PolymarketSignatureType::Poly1271 {
             if order_signer != order_maker {
                 return Err(Error::bad_request(format!(
                     "POLY_1271 orders require maker and signer to both be the deposit wallet, maker was {order_maker}, signer was {order_signer}",
@@ -159,7 +269,7 @@ impl OrderSigner {
         let eip712_order = build_eip712_order(order)?;
         let contract = exchange_contract(neg_risk);
 
-        if order.signature_type == SignatureType::Poly1271 {
+        if order.signature_type == PolymarketSignatureType::Poly1271 {
             return self.sign_poly_1271_order(&eip712_order, contract);
         }
 
@@ -189,10 +299,59 @@ impl OrderSigner {
         encoded.extend_from_slice(ORDER_TYPE_STRING.as_bytes());
         encoded.extend_from_slice(&(ORDER_TYPE_STRING.len() as u16).to_be_bytes());
 
+        if self.signer_type == PolymarketSignerType::Session {
+            // The session envelope wraps the complete Deposit Wallet signature.
+            let signer_id = B256::left_padding_from(self.address().as_slice());
+            encoded = (signer_id, B256::ZERO, Bytes::from(encoded)).abi_encode_params();
+            encoded.extend_from_slice(&[0x64, 0x92].repeat(16));
+        }
+
         Ok(format!(
             "0x{}",
             alloy_primitives::hex::encode(encoded.as_slice())
         ))
+    }
+
+    /// Signs a Deposit Wallet `Batch` and returns the hex-encoded ECDSA signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `calls` is empty or signing fails.
+    pub fn sign_deposit_wallet_batch(
+        &self,
+        deposit_wallet: Address,
+        nonce: U256,
+        deadline: U256,
+        calls: &[DepositWalletCall],
+    ) -> Result<String> {
+        if calls.is_empty() {
+            return Err(Error::bad_request(
+                "Deposit Wallet batch must contain at least one call",
+            ));
+        }
+
+        let batch = Batch {
+            wallet: deposit_wallet,
+            nonce,
+            deadline,
+            calls: calls
+                .iter()
+                .map(|call| Call {
+                    target: call.target,
+                    value: call.value,
+                    data: call.data.clone(),
+                })
+                .collect(),
+        };
+
+        let domain = eip712_domain! {
+            name: DEPOSIT_WALLET_DOMAIN_NAME,
+            version: DEPOSIT_WALLET_DOMAIN_VERSION,
+            chain_id: POLYGON_CHAIN_ID,
+            verifying_contract: deposit_wallet,
+        };
+        let signing_hash = batch.eip712_signing_hash(&domain);
+        self.sign_hash(&signing_hash.0)
     }
 
     fn sign_hash_b256(&self, hash: &B256) -> Result<[u8; 65]> {
@@ -211,6 +370,17 @@ impl OrderSigner {
             alloy_primitives::hex::encode(signature.as_slice())
         ))
     }
+}
+
+/// One contract call in a Deposit Wallet batch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DepositWalletCall {
+    /// Contract receiving the call.
+    pub target: Address,
+    /// Native POL value in wei.
+    pub value: U256,
+    /// ABI-encoded calldata.
+    pub data: Bytes,
 }
 
 /// Computes the EIP-712 signing hash used by Polymarket as the order ID.
@@ -385,11 +555,11 @@ fn build_eip712_order(order: &PolymarketOrder) -> Result<Order> {
     })
 }
 
-fn parse_address(addr: &str, field: &str) -> Result<Address> {
+pub(crate) fn parse_address(addr: &str, field: &str) -> Result<Address> {
     Address::from_str(addr).map_err(|e| Error::bad_request(format!("Invalid {field} address: {e}")))
 }
 
-fn parse_bytes32(value: &str, field: &str) -> Result<FixedBytes<32>> {
+pub(crate) fn parse_bytes32(value: &str, field: &str) -> Result<FixedBytes<32>> {
     FixedBytes::<32>::from_str(value)
         .map_err(|e| Error::bad_request(format!("Invalid {field} bytes32: {e}")))
 }
@@ -422,7 +592,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::enums::SignatureType;
+    use crate::common::enums::PolymarketSignatureType;
 
     const TEST_PRIVATE_KEY: &str =
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -445,12 +615,12 @@ mod tests {
             maker_amount: dec!(100000000),
             taker_amount: dec!(50000000),
             side: PolymarketOrderSide::Buy,
-            signature_type: SignatureType::Eoa,
+            signature_type: PolymarketSignatureType::Eoa,
             expiration: "0".to_string(),
             timestamp: "1713398400000".to_string(),
             metadata: ZERO_BYTES32.to_string(),
             builder: ZERO_BYTES32.to_string(),
-            signature: String::new(),
+            signature: SecretString::default(),
         }
     }
 
@@ -466,11 +636,34 @@ mod tests {
     }
 
     #[rstest]
+    fn test_signer_debug_redacts_private_key() {
+        let signer = test_signer();
+        let debug = format!("{signer:?}");
+
+        assert!(debug.contains(&format!("{:#x}", signer.address())));
+        assert!(!debug.contains(TEST_PRIVATE_KEY.trim_start_matches("0x")));
+    }
+
+    #[rstest]
     fn test_signer_address_derivation() {
         let signer = test_signer();
         // Hardhat account #0
         let expected = Address::from_str("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266").unwrap();
         assert_eq!(signer.address(), expected);
+    }
+
+    #[rstest]
+    fn test_sign_clob_auth_matches_polymarket_mainnet_vector() {
+        let private_key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
+
+        let (address, signature) = sign_clob_auth(&private_key, "10000000", 23).unwrap();
+
+        // https://github.com/Polymarket/clob-client/blob/7df8257dc95f99edb257b53a7873e273a9b4a9b3/src/signing/eip712.ts
+        assert_eq!(address, "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        assert_eq!(
+            signature,
+            "0x1a7118db6100dfd8efd102be36f472b59475dcac56eb4c9a2a94748d3655ba7c3c89deb8c19ee79eceb0a531122fbfbe88ed118034f9d8212e2b725e7b296b9d1c",
+        );
     }
 
     #[rstest]
@@ -490,7 +683,7 @@ mod tests {
         let mut order = test_order();
         order.maker = "0x1111111111111111111111111111111111111111".to_string();
         order.signer = order.maker.clone();
-        order.signature_type = SignatureType::Poly1271;
+        order.signature_type = PolymarketSignatureType::Poly1271;
 
         let sig = signer.sign_order(&order, false).unwrap();
 
@@ -503,7 +696,7 @@ mod tests {
         let signer = test_signer();
         let mut order = test_order();
         order.maker = "0x1111111111111111111111111111111111111111".to_string();
-        order.signature_type = SignatureType::Poly1271;
+        order.signature_type = PolymarketSignatureType::Poly1271;
 
         let err = signer.sign_order(&order, false).unwrap_err();
 
@@ -521,6 +714,71 @@ mod tests {
         let sig1 = signer.sign_order(&order, false).unwrap();
         let sig2 = signer.sign_order(&order, false).unwrap();
         assert_eq!(sig1, sig2);
+    }
+
+    #[rstest]
+    fn test_sign_deposit_wallet_batch_format_and_recovery() {
+        let signer = test_signer();
+        let deposit_wallet = address!("0x1111111111111111111111111111111111111111");
+
+        let calls = [DepositWalletCall {
+            target: CTF_COLLATERAL_ADAPTER,
+            value: U256::ZERO,
+            data: Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]),
+        }];
+
+        let sig = signer
+            .sign_deposit_wallet_batch(
+                deposit_wallet,
+                U256::from(7u64),
+                U256::from(1_714_000_000u64),
+                &calls,
+            )
+            .unwrap();
+
+        assert!(sig.starts_with("0x"));
+        assert_eq!(sig.len(), 132);
+
+        let batch = Batch {
+            wallet: deposit_wallet,
+            nonce: U256::from(7u64),
+            deadline: U256::from(1_714_000_000u64),
+            calls: vec![Call {
+                target: CTF_COLLATERAL_ADAPTER,
+                value: U256::ZERO,
+                data: Bytes::from_static(&[0xde, 0xad, 0xbe, 0xef]),
+            }],
+        };
+
+        let domain = eip712_domain! {
+            name: DEPOSIT_WALLET_DOMAIN_NAME,
+            version: DEPOSIT_WALLET_DOMAIN_VERSION,
+            chain_id: POLYGON_CHAIN_ID,
+            verifying_contract: deposit_wallet,
+        };
+        let signing_hash = batch.eip712_signing_hash(&domain);
+        let recovered = Signature::from_str(&sig)
+            .unwrap()
+            .recover_address_from_prehash(&signing_hash)
+            .unwrap();
+        assert_eq!(recovered, signer.address());
+    }
+
+    #[rstest]
+    fn test_sign_deposit_wallet_batch_rejects_empty_calls() {
+        let signer = test_signer();
+        let err = signer
+            .sign_deposit_wallet_batch(
+                address!("0x1111111111111111111111111111111111111111"),
+                U256::from(1u64),
+                U256::from(1_714_000_000u64),
+                &[],
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Deposit Wallet batch must contain at least one call")
+        );
     }
 
     #[rstest]
@@ -636,6 +894,77 @@ mod tests {
             format!("{NEG_RISK_CTF_EXCHANGE:#x}"),
             "0xe2222d279d744050d28e00520010520000310f59"
         );
+        assert_eq!(
+            format!("{CTF_COLLATERAL_ADAPTER:#x}"),
+            "0xada100db00ca00073811820692005400218fce1f"
+        );
+        assert_eq!(
+            format!("{NEG_RISK_CTF_COLLATERAL_ADAPTER:#x}"),
+            "0xada2005600dec949baf300f4c6120000bdb6eaab"
+        );
+        assert_eq!(
+            format!("{DEPOSIT_WALLET_FACTORY:#x}"),
+            "0x00000000000fb5c9adea0298d729a0cb3823cc07"
+        );
+        assert_eq!(
+            format!("{POLYMARKET_COLLATERAL_TOKEN:#x}"),
+            "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb"
+        );
+        assert_eq!(
+            format!("{CONDITIONAL_TOKENS:#x}"),
+            "0x4d97dcd97ec945f40cf65f87097ace5ea0476045"
+        );
+        assert_eq!(
+            COLLATERAL_APPROVAL_TARGETS,
+            &[
+                CTF_EXCHANGE,
+                NEG_RISK_CTF_EXCHANGE,
+                NEG_RISK_CTF_COLLATERAL_ADAPTER,
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_approval_plan() {
+        let collateral_token = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
+        let conditional_tokens = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
+        let ctf_exchange = address!("0xE111180000d2663C0091e4f400237545B87B996B");
+        let neg_risk_ctf_exchange = address!("0xe2222d279d744050d28e00520010520000310F59");
+        let neg_risk_collateral_adapter = address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
+        let expected = vec![
+            PolymarketApproval::Collateral {
+                contract: collateral_token,
+                spender: ctf_exchange,
+                amount: U256::MAX,
+            },
+            PolymarketApproval::ConditionalTokens {
+                contract: conditional_tokens,
+                operator: ctf_exchange,
+                approved: true,
+            },
+            PolymarketApproval::Collateral {
+                contract: collateral_token,
+                spender: neg_risk_ctf_exchange,
+                amount: U256::MAX,
+            },
+            PolymarketApproval::ConditionalTokens {
+                contract: conditional_tokens,
+                operator: neg_risk_ctf_exchange,
+                approved: true,
+            },
+            PolymarketApproval::Collateral {
+                contract: collateral_token,
+                spender: neg_risk_collateral_adapter,
+                amount: U256::MAX,
+            },
+            PolymarketApproval::ConditionalTokens {
+                contract: conditional_tokens,
+                operator: neg_risk_collateral_adapter,
+                approved: true,
+            },
+        ];
+
+        assert_eq!(approval_plan().collect::<Vec<_>>(), expected);
     }
 
     #[rstest]
@@ -688,7 +1017,7 @@ mod tests {
     fn parity_order(
         salt: u64,
         side: PolymarketOrderSide,
-        signature_type: SignatureType,
+        signature_type: PolymarketSignatureType,
         maker_amount: Decimal,
         taker_amount: Decimal,
         timestamp: &str,
@@ -707,7 +1036,7 @@ mod tests {
             timestamp: timestamp.to_string(),
             metadata: ZERO_BYTES32.to_string(),
             builder: builder.to_string(),
-            signature: String::new(),
+            signature: SecretString::default(),
         }
     }
 
@@ -716,7 +1045,7 @@ mod tests {
         parity_order(
             123456789,
             PolymarketOrderSide::Buy,
-            SignatureType::Eoa,
+            PolymarketSignatureType::Eoa,
             dec!(100000000),
             dec!(50000000),
             "1713398400000",
@@ -730,7 +1059,7 @@ mod tests {
         parity_order(
             987654321,
             PolymarketOrderSide::Sell,
-            SignatureType::Eoa,
+            PolymarketSignatureType::Eoa,
             dec!(50000000),
             dec!(100000000),
             "1713398400000",
@@ -744,7 +1073,7 @@ mod tests {
         parity_order(
             1,
             PolymarketOrderSide::Buy,
-            SignatureType::Eoa,
+            PolymarketSignatureType::Eoa,
             dec!(100000000),
             dec!(50000000),
             "1713398500000",
@@ -762,7 +1091,7 @@ mod tests {
         parity_order(
             111_111_111,
             PolymarketOrderSide::Buy,
-            SignatureType::PolyProxy,
+            PolymarketSignatureType::PolyProxy,
             dec!(100000000),
             dec!(50000000),
             "1713398400000",
@@ -776,7 +1105,7 @@ mod tests {
         parity_order(
             222_222_222,
             PolymarketOrderSide::Sell,
-            SignatureType::PolyGnosisSafe,
+            PolymarketSignatureType::PolyGnosisSafe,
             dec!(50000000),
             dec!(100000000),
             "1713398400000",
@@ -845,7 +1174,7 @@ mod tests {
         let mut order = parity_order(
             333_333_333,
             PolymarketOrderSide::Buy,
-            SignatureType::Poly1271,
+            PolymarketSignatureType::Poly1271,
             dec!(100000000),
             dec!(50000000),
             "1713398400000",
@@ -859,5 +1188,78 @@ mod tests {
 
         let signature = signer.sign_order(&order, neg_risk).unwrap();
         assert_eq!(signature, expected_signature, "signature");
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_session_signature_envelope(#[case] neg_risk: bool) {
+        let mut order = test_order();
+        order.signature_type = PolymarketSignatureType::Poly1271;
+        order.maker = "0x1111111111111111111111111111111111111111".to_string();
+        order.signer = order.maker.clone();
+        let owner = test_signer();
+        let inner = owner.sign_order(&order, neg_risk).unwrap();
+        let session = test_signer().with_signer_type(PolymarketSignerType::Session);
+        let signature = session.sign_order(&order, neg_risk).unwrap();
+        let bytes = alloy_primitives::hex::decode(&signature[2..]).unwrap();
+        let (payload, magic) = bytes.split_at(bytes.len() - 32);
+        let (signer_id, validator, wrapped) =
+            <(B256, B256, Bytes)>::abi_decode_params(payload).unwrap();
+        assert_eq!(
+            signer_id,
+            B256::left_padding_from(owner.address().as_slice())
+        );
+        assert_eq!(validator, B256::ZERO);
+        assert_eq!(
+            format!("0x{}", alloy_primitives::hex::encode(wrapped)),
+            inner
+        );
+        assert_eq!(magic, &[0x64, 0x92].repeat(16));
+    }
+
+    #[rstest]
+    #[case(PolymarketSignatureType::Eoa)]
+    #[case(PolymarketSignatureType::PolyProxy)]
+    #[case(PolymarketSignatureType::PolyGnosisSafe)]
+    fn test_session_rejects_other_wallets(#[case] signature_type: PolymarketSignatureType) {
+        let mut order = test_order();
+        order.signature_type = signature_type;
+        let signer = test_signer().with_signer_type(PolymarketSignerType::Session);
+        assert_eq!(
+            signer.sign_order(&order, false).unwrap_err().to_string(),
+            "bad request: Session signers require POLY_1271 orders"
+        );
+    }
+
+    #[rstest]
+    fn test_session_signatures_match_official_sdk() {
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            private_key: String,
+            order: PolymarketOrder,
+            vectors: Vec<Vector>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Vector {
+            neg_risk: bool,
+            signature_chunks: Vec<String>,
+        }
+
+        let fixture: Fixture =
+            serde_json::from_str(include_str!("../../test_data/session_signatures.json")).unwrap();
+        let key = EvmPrivateKey::new(&fixture.private_key).unwrap();
+        let signer = OrderSigner::new(&key)
+            .unwrap()
+            .with_signer_type(PolymarketSignerType::Session);
+        assert_eq!(fixture.vectors.len(), 2);
+
+        for vector in fixture.vectors {
+            assert_eq!(
+                signer.sign_order(&fixture.order, vector.neg_risk).unwrap(),
+                vector.signature_chunks.concat()
+            );
+        }
     }
 }

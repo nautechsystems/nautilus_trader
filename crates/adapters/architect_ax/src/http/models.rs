@@ -16,11 +16,13 @@
 //! Data transfer objects for deserializing Ax HTTP API payloads.
 
 use ahash::AHashMap;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display};
 use ustr::Ustr;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::common::{
     enums::{
@@ -44,14 +46,14 @@ fn default_instrument_state() -> AxInstrumentState {
 /// Fee rates and close-only state are per account rather than per user.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-whoami>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmIAccount {
     /// Account identifier.
-    pub id: String,
+    pub id: Ustr,
     /// Account display name.
-    pub name: String,
+    pub name: Option<String>,
     /// Whether the account is in close-only mode.
     pub is_close_only: bool,
     /// Maker fee rate; absent when the venue supplies no rate, which is distinct from zero.
@@ -75,16 +77,16 @@ pub struct AxWhoAmIAccount {
 /// Response payload returned by `GET /whoami`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-whoami>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmI {
     /// User identifier.
-    pub id: String,
+    pub id: Ustr,
     /// Username for the account.
-    pub username: String,
+    pub username: Ustr,
     /// Account creation timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Whether two-factor authentication is required.
     pub require_2fa: bool,
     /// Whether the user has completed onboarding.
@@ -94,6 +96,7 @@ pub struct AxWhoAmI {
     /// Whether the user has admin privileges.
     pub is_admin: bool,
     /// Accounts the credentials can act on.
+    #[serde(default)]
     pub accounts: Vec<AxWhoAmIAccount>,
     /// Human-readable alias for the user (optional).
     #[serde(default)]
@@ -150,7 +153,7 @@ pub struct AxInstrument {
     pub description: Option<String>,
     /// Contract expiration; absent for perpetual contracts.
     #[serde(default)]
-    pub expiration: Option<DateTime<Utc>>,
+    pub expiration: Option<Timestamp>,
     /// Funding calendar schedule (optional).
     #[serde(default)]
     pub funding_calendar_schedule: Option<String>,
@@ -178,6 +181,110 @@ pub struct AxInstrument {
     /// Underlying benchmark price description (optional).
     #[serde(default)]
     pub underlying_benchmark_price: Option<String>,
+    /// Price scale.
+    #[serde(default)]
+    pub price_scale: Option<i64>,
+    /// Additional product specs.
+    #[serde(default)]
+    pub additional_product_specs: Option<serde_json::Map<String, serde_json::Value>>,
+    /// Time the instrument was delisted.
+    #[serde(default)]
+    pub delisted_at: Option<Timestamp>,
+    /// Whether new orders and modifications are blocked ahead of delisting.
+    #[serde(default)]
+    pub is_closing: bool,
+    /// Whether the instrument publishes live funding estimates.
+    #[serde(default)]
+    pub estimated_funding_supported: bool,
+    /// Funding schedule calendar description.
+    #[serde(default)]
+    pub funding_schedule_calendar_description: Option<String>,
+    /// Funding schedule time description.
+    #[serde(default)]
+    pub funding_schedule_time_description: Option<String>,
+    /// Funding schedule.
+    #[serde(default)]
+    pub funding_schedule: Option<AxFundingSchedule>,
+    /// Trading schedule.
+    #[serde(default)]
+    pub trading_schedule: Option<AxTradingSchedule>,
+}
+
+/// Time of day in the containing schedule's timezone.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxTimeOfDay {
+    pub hours: u32,
+    pub minutes: u32,
+    #[serde(default)]
+    pub seconds: u32,
+}
+
+/// Recurring funding time with ISO weekday numbers in [1, 7].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxFundingTime {
+    pub days_of_week: Vec<u32>,
+    pub time_of_day: AxTimeOfDay,
+}
+
+/// Funding schedule override for a date in the schedule's timezone.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxFundingException {
+    pub date: Date,
+    pub times: Vec<AxTimeOfDay>,
+    pub reason: Option<String>,
+}
+
+/// Machine-readable funding schedule.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxFundingSchedule {
+    pub timezone: Ustr,
+    pub times: Vec<AxFundingTime>,
+    pub exceptions: Vec<AxFundingException>,
+}
+
+/// Trading session segment with ISO weekday numbers in [1, 7].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxTradingSegment {
+    pub days_of_week: Vec<u32>,
+    pub time_of_day: AxTimeOfDay,
+    pub duration_seconds: u64,
+    pub state: AxInstrumentState,
+    pub hide_market_data: bool,
+    pub expire_all_orders: bool,
+}
+
+/// Machine-readable trading schedule.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxTradingSchedule {
+    pub segments: Vec<AxTradingSegment>,
+}
+
+/// Availability of a live funding estimate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AxEstimatedFundingStatus {
+    Ready,
+    SettlementPending,
+    Unavailable,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Live funding estimate carried by a ticker.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AxEstimatedFundingRate {
+    pub symbol: Ustr,
+    pub status: AxEstimatedFundingStatus,
+    pub timestamp: Timestamp,
+    pub reason: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub funding_rate: Option<Decimal>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub funding_amount: Option<Decimal>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub benchmark_price: Option<Decimal>,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub settlement_price: Option<Decimal>,
 }
 
 /// Response payload returned by `GET /instruments`.
@@ -203,6 +310,9 @@ pub struct AxBalance {
     /// Available balance amount.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub amount: Decimal,
+    /// Account identifier.
+    #[serde(default)]
+    pub account_id: Option<Ustr>,
 }
 
 /// Response payload returned by `GET /balances`.
@@ -214,6 +324,9 @@ pub struct AxBalance {
 pub struct AxBalancesResponse {
     /// List of balances.
     pub balances: Vec<AxBalance>,
+    /// USD borrowed against the account.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub usd_borrow: Option<Decimal>,
 }
 
 /// Individual position entry.
@@ -233,10 +346,13 @@ pub struct AxPosition {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub signed_notional: Decimal,
     /// Position timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Realized profit and loss.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub realized_pnl: Decimal,
+    /// Signed cost basis.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub signed_cost_basis: Option<Decimal>,
 }
 
 /// Response payload returned by `GET /positions`.
@@ -348,6 +464,16 @@ pub struct AxTicker {
     /// Last settlement time as epoch seconds.
     #[serde(default, rename = "lst")]
     pub last_settlement_time: Option<i64>,
+    /// Opening price for the ticker window.
+    #[serde(
+        default,
+        rename = "o",
+        deserialize_with = "deserialize_optional_decimal_from_str"
+    )]
+    pub open: Option<Decimal>,
+    /// Estimated funding.
+    #[serde(default, rename = "ef")]
+    pub estimated_funding: Option<AxEstimatedFundingRate>,
 }
 
 /// Response payload returned by `GET /tickers`.
@@ -381,12 +507,20 @@ pub struct AxTickerResponse {
 /// Response payload returned by `POST /authenticate`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// - <https://docs.architect.exchange/api-reference/user-management/authenticate>
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "snake_case")]
 pub struct AxAuthenticateResponse {
     /// Session token for authenticated requests.
-    pub token: String,
+    pub token: SecretString,
+}
+
+impl AxAuthenticateResponse {
+    /// Consumes the response and returns the session token.
+    #[must_use]
+    pub fn into_token(mut self) -> SecretString {
+        std::mem::take(&mut self.token)
+    }
 }
 
 /// Response payload returned by `POST /place-order`.
@@ -412,7 +546,7 @@ pub struct AxCancelOrderResponse {
 /// Individual trade entry from the REST API.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-trades>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxRestTrade {
     /// Timestamp (Unix epoch seconds).
@@ -433,7 +567,7 @@ pub struct AxRestTrade {
 /// Response payload returned by `GET /trades`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-trades>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxTradesResponse {
     /// List of trades.
@@ -443,7 +577,7 @@ pub struct AxTradesResponse {
 /// Individual price level in the order book.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBookLevel {
     /// Price (decimal string).
@@ -459,7 +593,7 @@ pub struct AxBookLevel {
 /// Order book snapshot.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBook {
     /// Timestamp (Unix epoch seconds).
@@ -477,7 +611,7 @@ pub struct AxBook {
 /// Response payload returned by `GET /book`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBookResponse {
     /// The order book snapshot.
@@ -542,6 +676,36 @@ pub enum AxOrderRejectReason {
     PriceOutOfBounds,
     NoLiquidity,
     InsufficientCreditLimit,
+    OriginalOrderTerminated,
+    DuplicateClientOrderId,
+    #[serde(other)]
+    Unknown,
+}
+
+impl AxOrderRejectReason {
+    /// Formats a venue reject reason for events and reports: the known enum
+    /// spelling when available, otherwise the order text. Returns `None` when
+    /// neither carries a usable reason.
+    #[must_use]
+    pub fn reason_str(reason: Option<Self>, text: Option<&str>) -> Option<String> {
+        if let Some(known) = reason.filter(|r| !matches!(r, Self::Unknown)) {
+            return Some(known.to_string());
+        }
+
+        text.filter(|text| !text.trim().is_empty())
+            .map(str::to_string)
+    }
+}
+
+/// Post-only repricing behavior from the latest place or replace request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AxRepriceBehavior {
+    #[serde(rename = "rej")]
+    Reject,
+    #[serde(rename = "bo")]
+    BackOff,
+    #[serde(rename = "tbl")]
+    TopOfBook,
     #[serde(other)]
     Unknown,
 }
@@ -561,9 +725,9 @@ pub struct AxOrderDetail {
     pub oid: String,
     /// Account ID.
     #[serde(default)]
-    pub aid: Option<String>,
+    pub aid: Option<Ustr>,
     /// User ID.
-    pub u: String,
+    pub u: Ustr,
     /// Symbol.
     pub s: Ustr,
     /// Price.
@@ -596,6 +760,9 @@ pub struct AxOrderDetail {
     /// Whether the order is post-only.
     #[serde(default)]
     pub po: bool,
+    /// Repricing behavior from the latest place or replace, effective only when `po` is true.
+    #[serde(default)]
+    pub rb: Option<AxRepriceBehavior>,
 }
 
 /// Response payload returned by `GET /orders`.
@@ -623,12 +790,21 @@ pub struct AxOrdersResponse {
 /// Response payload returned by `POST /initial-margin-requirement`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/portfolio-management/post-initial-margin-requirement>
+/// - <https://docs.architect.exchange/api-reference/order-management/calculate-initial-margin-requirement>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxInitialMarginRequirementResponse {
     /// Initial margin requirement.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub im: Decimal,
+    /// Initial margin percentage.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub im_pct: Option<Decimal>,
+    /// Contract multiplier.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub mult: Option<Decimal>,
+    /// Signed position quantity.
+    #[serde(default)]
+    pub pos: Option<i64>,
 }
 
 /// Individual open order entry.
@@ -659,7 +835,7 @@ pub struct AxOpenOrder {
     /// Time in force.
     pub tif: AxTimeInForce,
     /// User ID.
-    pub u: String,
+    pub u: Ustr,
     /// Executed quantity.
     pub xq: u64,
     /// Optional client ID for order correlation.
@@ -671,6 +847,18 @@ pub struct AxOpenOrder {
     /// Whether the order is post-only.
     #[serde(default)]
     pub po: bool,
+    /// Repricing behavior from the latest place or replace, effective only when `po` is true.
+    #[serde(default)]
+    pub rb: Option<AxRepriceBehavior>,
+    /// Account identifier.
+    #[serde(default)]
+    pub aid: Option<Ustr>,
+    /// Order rejection reason.
+    #[serde(default)]
+    pub r: Option<AxOrderRejectReason>,
+    /// Additional venue explanation.
+    #[serde(default)]
+    pub txt: Option<String>,
 }
 
 /// Response payload returned by `GET /open-orders`.
@@ -719,7 +907,7 @@ pub struct AxFill {
     /// Instrument symbol.
     pub symbol: Ustr,
     /// Execution timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Account identifier.
     pub account_id: Ustr,
     /// Realized PnL for this fill.
@@ -818,11 +1006,11 @@ pub struct AxFundingRate {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub funding_rate: Decimal,
     /// Funding amount.
-    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
-    pub funding_amount: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub funding_amount: Option<Decimal>,
     /// Benchmark price.
-    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
-    pub benchmark_price: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub benchmark_price: Option<Decimal>,
     /// Settlement price.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub settlement_price: Decimal,
@@ -851,14 +1039,14 @@ pub struct AxFundingRatesResponse {
 /// One funding slot of a trading day, as returned by `GET /funding-slots`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingSlot {
     /// 1-based position within the day's schedule.
     pub index: i32,
     /// Scheduled settlement time of the slot.
-    pub funding_time: DateTime<Utc>,
+    pub funding_time: Timestamp,
     /// Slot settlement state.
     pub status: AxFundingSlotStatus,
     /// True when the rate was clamped by the symbol's funding rate cap.
@@ -886,16 +1074,16 @@ pub struct AxFundingSlot {
 /// symbols report a single slot.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingSlotsResponse {
     /// Instrument symbol.
     pub symbol: Ustr,
     /// Trading day the schedule covers.
-    pub date: NaiveDate,
+    pub date: Date,
     /// IANA name of the funding schedule's timezone.
-    pub timezone: String,
+    pub timezone: Ustr,
     /// How the symbol's funding accrues over the day.
     pub variant: AxFundingVariant,
     /// Number of funding slots scheduled on `date`; 0 on holidays and weekends.
@@ -911,6 +1099,9 @@ pub struct AxFundingSlotsResponse {
     /// Projected end-of-day total in basis points: realized plus remaining projections.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub projected_eod_bps: Decimal,
+    /// Minutes between intraday funding slots, when supplied by AX.
+    #[serde(default)]
+    pub slot_interval_minutes: Option<u32>,
 }
 
 /// Per-symbol risk metrics.
@@ -946,6 +1137,15 @@ pub struct AxPerSymbolRisk {
     /// Unrealized P&L.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub unrealized_pnl: Decimal,
+    /// Signed cost basis.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub signed_cost_basis: Option<Decimal>,
+    /// Signed USD notional.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub signed_usd_notional: Option<Decimal>,
+    /// Mark price.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub mark_price: Option<Decimal>,
 }
 
 /// Risk snapshot data.
@@ -983,12 +1183,12 @@ pub struct AxRiskSnapshot {
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub unrealized_pnl: Decimal,
     /// Snapshot timestamp.
-    pub timestamp_ns: DateTime<Utc>,
+    pub timestamp_ns: Timestamp,
     /// Account identifier.
     pub account_id: Ustr,
     /// Per-symbol risk data.
     #[serde(default)]
-    pub per_symbol: AHashMap<String, AxPerSymbolRisk>,
+    pub per_symbol: AHashMap<Ustr, AxPerSymbolRisk>,
 }
 
 /// Response payload returned by `GET /risk-snapshot`.
@@ -1019,12 +1219,12 @@ pub struct AxTransaction {
     /// Asset symbol.
     pub symbol: Ustr,
     /// Transaction timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Type of transaction.
     pub transaction_type: Ustr,
     /// User who initiated the transaction, when available.
     #[serde(default)]
-    pub initiated_by_user_id: Option<String>,
+    pub initiated_by_user_id: Option<Ustr>,
     /// Optional reference identifier.
     #[serde(default)]
     pub reference_id: Option<String>,
@@ -1053,14 +1253,14 @@ pub struct AxTransactionsResponse {
 /// Request body for `POST /authenticate` using API key and secret.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// - <https://docs.architect.exchange/api-reference/user-management/authenticate>
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
 #[serde(rename_all = "snake_case")]
 pub struct AuthenticateApiKeyRequest {
     /// API key.
-    pub api_key: String,
+    pub api_key: SecretString,
     /// API secret.
-    pub api_secret: String,
+    pub api_secret: SecretString,
     /// Token expiration in seconds.
     pub expiration_seconds: i32,
 }
@@ -1069,8 +1269,8 @@ impl AuthenticateApiKeyRequest {
     /// Creates a new [`AuthenticateApiKeyRequest`].
     #[must_use]
     pub fn new(
-        api_key: impl Into<String>,
-        api_secret: impl Into<String>,
+        api_key: impl Into<SecretString>,
+        api_secret: impl Into<SecretString>,
         expiration_seconds: i32,
     ) -> Self {
         Self {
@@ -1317,12 +1517,55 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::websocket::{
+        messages::{AxOrdersWsFrame, AxWsOrderEvent},
+        parse::parse_order_message,
+    };
+
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 
     #[rstest]
     fn test_deserialize_authenticate_response() {
         let json = include_str!("../../test_data/http_authenticate.json");
         let response: AxAuthenticateResponse = serde_json::from_str(json).unwrap();
-        assert!(response.token.starts_with("test-token"));
+        assert!(response.token.expose_secret().starts_with("test-token"));
+    }
+
+    #[rstest]
+    fn test_reason_str_prefers_known_reason_over_text() {
+        assert_eq!(
+            AxOrderRejectReason::reason_str(
+                Some(AxOrderRejectReason::PriceOutOfBounds),
+                Some("order price is above the exchange's maximum price limit"),
+            ),
+            Some("PRICE_OUT_OF_BOUNDS".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_reason_str_falls_back_to_text() {
+        assert_eq!(
+            AxOrderRejectReason::reason_str(
+                Some(AxOrderRejectReason::Unknown),
+                Some("risk blocked")
+            ),
+            Some("risk blocked".to_string()),
+        );
+        assert_eq!(
+            AxOrderRejectReason::reason_str(None, Some("risk blocked")),
+            Some("risk blocked".to_string()),
+        );
+    }
+
+    #[rstest]
+    fn test_reason_str_rejects_blank_text() {
+        assert_eq!(AxOrderRejectReason::reason_str(None, Some("")), None);
+        assert_eq!(AxOrderRejectReason::reason_str(None, Some("   ")), None);
+        assert_eq!(AxOrderRejectReason::reason_str(None, None), None);
+        assert_eq!(
+            AxOrderRejectReason::reason_str(Some(AxOrderRejectReason::Unknown), None),
+            None,
+        );
     }
 
     #[rstest]
@@ -1349,9 +1592,7 @@ mod tests {
         assert_eq!(response.pseudonym.as_deref(), Some("quiet-amber-heron"));
         assert_eq!(
             response.created_at,
-            "2025-12-18T02:20:42.675817Z"
-                .parse::<DateTime<Utc>>()
-                .unwrap()
+            "2025-12-18T02:20:42.675817Z".parse::<Timestamp>().unwrap()
         );
         assert!(!response.require_2fa);
         assert!(response.is_onboarded);
@@ -1366,7 +1607,7 @@ mod tests {
         let account = &response.accounts[0];
 
         assert_eq!(account.id, "01JBXR-7QK2-0000");
-        assert_eq!(account.name, "trader@example.com");
+        assert_eq!(account.name.as_deref(), Some("trader@example.com"));
         assert!(!account.is_close_only);
         assert_eq!(account.maker_fee, Some(dec!(0.0002)));
         assert_eq!(account.taker_fee, Some(dec!(0.0025)));
@@ -1504,7 +1745,7 @@ mod tests {
         let json = include_str!("../../test_data/http_get_funding_slots.json");
         let response: AxFundingSlotsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.symbol, "EURUSD-PERP");
-        assert_eq!(response.date, NaiveDate::from_ymd_opt(2026, 7, 6).unwrap());
+        assert_eq!(response.date, Date::new(2026, 7, 6).unwrap());
         assert_eq!(response.timezone, "America/New_York");
         assert_eq!(response.variant, AxFundingVariant::IntradayTwap);
         assert_eq!(response.interval_count, 4);
@@ -1568,6 +1809,39 @@ mod tests {
     }
 
     #[rstest]
+    #[case::reject(Some("rej"), Some(AxRepriceBehavior::Reject))]
+    #[case::back_off(Some("bo"), Some(AxRepriceBehavior::BackOff))]
+    #[case::top_of_book(Some("tbl"), Some(AxRepriceBehavior::TopOfBook))]
+    #[case::unknown(Some("future_behavior"), Some(AxRepriceBehavior::Unknown))]
+    #[case::null(None, None)]
+    fn test_deserialize_order_reprice_behavior(
+        #[case] raw: Option<&str>,
+        #[case] expected: Option<AxRepriceBehavior>,
+        #[values(true, false)] post_only: bool,
+    ) {
+        let mut history: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/http_get_orders.json")).unwrap();
+        let mut open: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/http_get_open_orders.json"))
+                .unwrap();
+
+        for response in [&mut history, &mut open] {
+            response["orders"][0]["po"] = serde_json::json!(post_only);
+            response["orders"][0]["rb"] = serde_json::json!(raw);
+        }
+
+        let history: AxOrdersResponse = serde_json::from_value(history).unwrap();
+        let open: AxOpenOrdersResponse = serde_json::from_value(open).unwrap();
+
+        assert_eq!(history.orders[0].po, post_only);
+        assert_eq!(history.orders[0].rb, expected);
+        assert_eq!(open.orders[0].po, post_only);
+        assert_eq!(open.orders[0].rb, expected);
+        assert_eq!(history.orders[1].rb, None);
+        assert_eq!(open.orders[1].rb, None);
+    }
+
+    #[rstest]
     fn test_deserialize_open_orders_response() {
         let json = include_str!("../../test_data/http_get_open_orders.json");
         let response: AxOpenOrdersResponse = serde_json::from_str(json).unwrap();
@@ -1579,6 +1853,10 @@ mod tests {
         assert_eq!(response.total_count, 2);
         assert_eq!(response.limit, 100);
         assert_eq!(response.offset, 0);
+        assert!(response.orders[0].po);
+        assert_eq!(response.orders[0].rb, Some(AxRepriceBehavior::Reject));
+        assert!(!response.orders[1].po);
+        assert_eq!(response.orders[1].rb, None);
     }
 
     #[rstest]
@@ -1626,10 +1904,10 @@ mod tests {
             response
                 .risk_snapshot
                 .per_symbol
-                .contains_key("EURUSD-PERP")
+                .contains_key(&Ustr::from("EURUSD-PERP"))
         );
         assert_eq!(
-            response.risk_snapshot.per_symbol["GBPUSD-PERP"].average_price,
+            response.risk_snapshot.per_symbol[&Ustr::from("GBPUSD-PERP")].average_price,
             None
         );
     }
@@ -1726,6 +2004,10 @@ mod tests {
         assert_eq!(response.orders[0].xq, 300);
         assert_eq!(response.orders[1].o, AxOrderStatus::Filled);
         assert_eq!(response.orders[1].d, AxOrderSide::Sell);
+        assert!(response.orders[0].po);
+        assert_eq!(response.orders[0].rb, Some(AxRepriceBehavior::Reject));
+        assert!(!response.orders[1].po);
+        assert_eq!(response.orders[1].rb, None);
     }
 
     #[rstest]
@@ -1764,5 +2046,234 @@ mod tests {
         assert_eq!(json["oid"], "O-TEST");
         assert!(json.get("p").is_none());
         assert!(json.get("q").is_none());
+    }
+
+    #[rstest]
+    fn test_authenticate_request_serializes_and_redacts_debug() {
+        let request = AuthenticateApiKeyRequest::new("api-key-token", "api-secret-value", 3600);
+
+        let json = serde_json::to_value(&request).unwrap();
+        let formatted = format!("{request:?}");
+
+        assert_eq!(json["api_key"], "api-key-token");
+        assert_eq!(json["api_secret"], "api-secret-value");
+        assert_eq!(json["expiration_seconds"], 3600);
+        assert_eq!(
+            formatted,
+            "AuthenticateApiKeyRequest { api_key: <redacted>, api_secret: <redacted>, expiration_seconds: 3600 }",
+        );
+        assert!(!formatted.contains("api-key-token"));
+        assert!(!formatted.contains("api-secret-value"));
+    }
+
+    #[rstest]
+    fn test_authenticate_response_redacts_debug() {
+        assert_zeroize_on_drop::<AxAuthenticateResponse>();
+
+        let response = AxAuthenticateResponse {
+            token: SecretString::from("session-token-value"),
+        };
+
+        let formatted = format!("{response:?}");
+
+        assert_eq!(formatted, "AxAuthenticateResponse { token: <redacted> }");
+        assert!(!formatted.contains("session-token-value"));
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_optional_account_names_and_funding_prices(#[case] explicit_null: bool) {
+        let mut who: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/http_get_whoami.json")).unwrap();
+        let mut funding: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/http_get_funding_rates.json"))
+                .unwrap();
+
+        for (value, field) in [
+            (&mut who["accounts"][0], "name"),
+            (&mut funding["funding_rates"][0], "funding_amount"),
+        ] {
+            if explicit_null {
+                value[field] = serde_json::Value::Null;
+            } else {
+                value.as_object_mut().unwrap().remove(field);
+            }
+        }
+
+        if explicit_null {
+            funding["funding_rates"][0]["benchmark_price"] = serde_json::Value::Null;
+        } else {
+            funding["funding_rates"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("benchmark_price");
+        }
+
+        let account: AxWhoAmI = serde_json::from_value(who.clone()).unwrap();
+        who.as_object_mut().unwrap().remove("accounts");
+        let without_accounts: AxWhoAmI = serde_json::from_value(who).unwrap();
+        let rates: AxFundingRatesResponse = serde_json::from_value(funding).unwrap();
+
+        assert_eq!(account.accounts[0].name, None);
+        assert!(without_accounts.accounts.is_empty());
+        assert_eq!(rates.funding_rates[0].funding_amount, None);
+        assert_eq!(rates.funding_rates[0].benchmark_price, None);
+    }
+
+    #[rstest]
+    #[case(
+        "ORIGINAL_ORDER_TERMINATED",
+        AxOrderRejectReason::OriginalOrderTerminated
+    )]
+    #[case(
+        "DUPLICATE_CLIENT_ORDER_ID",
+        AxOrderRejectReason::DuplicateClientOrderId
+    )]
+    fn test_additional_reject_reasons(#[case] wire: &str, #[case] expected: AxOrderRejectReason) {
+        let value = serde_json::Value::String(wire.to_owned());
+        let reason: AxOrderRejectReason = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(reason, expected);
+        assert_eq!(serde_json::to_value(reason).unwrap(), value);
+        assert_eq!(
+            AxOrderRejectReason::reason_str(Some(reason), None),
+            Some(wire.to_owned())
+        );
+    }
+
+    #[rstest]
+    #[case(include_str!("../../test_data/captured/whoami.json"), captured_response::<AxWhoAmI>)]
+    #[case(include_str!("../../test_data/captured/balances.json"), captured_response::<AxBalancesResponse>)]
+    #[case(include_str!("../../test_data/captured/positions.json"), captured_response::<AxPositionsResponse>)]
+    #[case(include_str!("../../test_data/captured/risk.json"), captured_response::<AxRiskSnapshotResponse>)]
+    #[case(include_str!("../../test_data/captured/instruments.json"), captured_response::<AxInstrumentsResponse>)]
+    #[case(include_str!("../../test_data/captured/ticker.json"), captured_response::<AxTickerResponse>)]
+    #[case(include_str!("../../test_data/captured/tickers.json"), captured_response::<AxTickersResponse>)]
+    #[case(include_str!("../../test_data/captured/book.json"), captured_response::<AxBookResponse>)]
+    #[case(include_str!("../../test_data/captured/trades.json"), captured_response::<AxTradesResponse>)]
+    #[case(include_str!("../../test_data/captured/candles.json"), captured_response::<AxCandlesResponse>)]
+    #[case(include_str!("../../test_data/captured/current-candle.json"), captured_response::<AxCandleResponse>)]
+    #[case(include_str!("../../test_data/captured/last-candle.json"), captured_response::<AxCandleResponse>)]
+    #[case(include_str!("../../test_data/captured/funding-rates.json"), captured_response::<AxFundingRatesResponse>)]
+    #[case(include_str!("../../test_data/captured/funding-slots.json"), captured_response::<AxFundingSlotsResponse>)]
+    #[case(include_str!("../../test_data/captured/transactions.json"), captured_response::<AxTransactionsResponse>)]
+    #[case(include_str!("../../test_data/captured/fills.json"), captured_response::<AxFillsResponse>)]
+    #[case(include_str!("../../test_data/captured/orders.json"), captured_response::<AxOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/open-orders.json"), captured_response::<AxOpenOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/open-reject.json"), captured_response::<AxOpenOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/open-backoff.json"), captured_response::<AxOpenOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/open-top.json"), captured_response::<AxOpenOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/open-default.json"), captured_response::<AxOpenOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/open-inactive.json"), captured_response::<AxOpenOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/fills-live.json"), captured_response::<AxFillsResponse>)]
+    #[case(include_str!("../../test_data/captured/orders-live.json"), captured_response::<AxOrdersResponse>)]
+    #[case(include_str!("../../test_data/captured/positions-long.json"), captured_response::<AxPositionsResponse>)]
+    #[case(include_str!("../../test_data/captured/positions-short.json"), captured_response::<AxPositionsResponse>)]
+    #[case(include_str!("../../test_data/captured/initial-margin.json"), captured_response::<AxInitialMarginRequirementResponse>)]
+    #[case(include_str!("../../test_data/captured/preview.json"), captured_response::<AxPreviewAggressiveLimitOrderResponse>)]
+    #[case(include_str!("../../test_data/captured/order-status-canceled.json"), captured_response::<AxOrderStatusQueryResponse>)]
+    #[case(include_str!("../../test_data/captured/order-status-filled.json"), captured_response::<AxOrderStatusQueryResponse>)]
+    #[case(include_str!("../../test_data/captured/order-status-replaced.json"), captured_response::<AxOrderStatusQueryResponse>)]
+    #[case(include_str!("../../test_data/captured/ws-orders-acknowledged.json"), captured_order_event)]
+    #[case(include_str!("../../test_data/captured/ws-orders-replaced.json"), captured_order_event)]
+    #[case(include_str!("../../test_data/captured/ws-orders-canceled.json"), captured_order_event)]
+    #[case(include_str!("../../test_data/captured/ws-orders-expired.json"), captured_order_event)]
+    #[case(include_str!("../../test_data/captured/ws-orders-rejected.json"), captured_order_event)]
+    #[case(include_str!("../../test_data/captured/ws-orders-filled-b.json"), captured_order_event)]
+    #[case(include_str!("../../test_data/captured/ws-orders-filled-s.json"), captured_order_event)]
+    fn test_captured_response_preserves_every_field(
+        #[case] raw: &str,
+        #[case] decode: fn(&serde_json::Value) -> serde_json::Value,
+    ) {
+        let mut expected: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let actual = decode(&expected);
+        if expected["t"] == "c" && expected["xr"] == "" {
+            expected["xr"] = "UNKNOWN".into();
+        }
+
+        assert_captured_fields(&expected, &actual, "$");
+    }
+
+    fn captured_response<T: serde::de::DeserializeOwned + Serialize>(
+        raw: &serde_json::Value,
+    ) -> serde_json::Value {
+        serde_json::to_value(serde_json::from_value::<T>(raw.clone()).unwrap()).unwrap()
+    }
+
+    fn captured_order_event(raw: &serde_json::Value) -> serde_json::Value {
+        let AxOrdersWsFrame::Event(event) = parse_order_message(&raw.to_string()).unwrap() else {
+            panic!("expected order event");
+        };
+
+        let (tag, actual) = match *event {
+            AxWsOrderEvent::Acknowledged(message) => ("n", serde_json::to_value(message)),
+            AxWsOrderEvent::Replaced(message) => ("r", serde_json::to_value(message)),
+            AxWsOrderEvent::Canceled(message) => ("c", serde_json::to_value(message)),
+            AxWsOrderEvent::Expired(message) => ("x", serde_json::to_value(message)),
+            AxWsOrderEvent::Rejected(message) => ("j", serde_json::to_value(message)),
+            AxWsOrderEvent::Filled(message) => ("f", serde_json::to_value(message)),
+            AxWsOrderEvent::PartiallyFilled(message) => ("p", serde_json::to_value(message)),
+            AxWsOrderEvent::DoneForDay(message) => ("d", serde_json::to_value(message)),
+            AxWsOrderEvent::CancelRejected(message) => ("e", serde_json::to_value(message)),
+            AxWsOrderEvent::Heartbeat => panic!("expected lifecycle event"),
+        };
+
+        let mut actual = actual.unwrap();
+        actual["t"] = tag.into();
+        actual
+    }
+
+    fn assert_captured_fields(
+        expected: &serde_json::Value,
+        actual: &serde_json::Value,
+        path: &str,
+    ) {
+        match expected {
+            serde_json::Value::Object(fields) => {
+                for (key, value) in fields {
+                    let child = actual
+                        .get(key)
+                        .unwrap_or_else(|| panic!("missing {path}.{key}"));
+                    assert_captured_fields(value, child, &format!("{path}.{key}"));
+                }
+            }
+            serde_json::Value::Array(values) => {
+                let children = actual.as_array().unwrap();
+                assert_eq!(children.len(), values.len(), "{path}");
+
+                for (i, (value, child)) in values.iter().zip(children).enumerate() {
+                    assert_captured_fields(value, child, &format!("{path}[{i}]"));
+                }
+            }
+            serde_json::Value::String(value) if expected != actual => {
+                let text = actual
+                    .as_str()
+                    .unwrap_or_else(|| panic!("expected string at {path}: {actual}"));
+
+                if let Ok(decimal) = value.parse::<rust_decimal::Decimal>() {
+                    assert_eq!(
+                        text.parse::<rust_decimal::Decimal>().unwrap(),
+                        decimal,
+                        "{path}"
+                    );
+                } else if let Ok(timestamp) = value.parse::<Timestamp>() {
+                    assert_eq!(text.parse::<Timestamp>().unwrap(), timestamp, "{path}");
+                } else {
+                    assert_eq!(expected, actual, "{path}");
+                }
+            }
+            serde_json::Value::Number(value) if actual.is_string() => {
+                assert_eq!(
+                    value.to_string().parse::<rust_decimal::Decimal>().unwrap(),
+                    actual
+                        .as_str()
+                        .unwrap()
+                        .parse::<rust_decimal::Decimal>()
+                        .unwrap(),
+                    "{path}"
+                );
+            }
+            _ => assert_eq!(expected, actual, "{path}"),
+        }
     }
 }

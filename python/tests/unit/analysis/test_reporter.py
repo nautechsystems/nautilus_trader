@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test reporter behavior.
+"""
 
 import math
+from decimal import Decimal
 
 import pytest
 
@@ -21,10 +25,10 @@ from nautilus_trader.analysis import ReportProvider
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.core import UUID4
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import MarketOrder
@@ -58,13 +62,13 @@ ACCOUNT_ID = AccountId("SIM-000")
 
 
 def _make_fill(
-    client_order_id="O-001",
-    position_id="P-001",
-    order_side=OrderSide.BUY,
-    last_px="1.00001",
-    last_qty=100_000,
-    ts_event=1_000_000_000,
-):
+    client_order_id: ClientOrderId = "O-001",
+    position_id: object = "P-001",
+    order_side: object = OrderSide.BUY,
+    last_px: object = "1.00001",
+    last_qty: object = 100_000,
+    ts_event: object = 1_000_000_000,
+) -> object:
     return OrderFilled(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -88,7 +92,10 @@ def _make_fill(
     )
 
 
-def _make_filled_order(client_order_id="O-001", position_id="P-001"):
+def _make_filled_order(
+    client_order_id: ClientOrderId = "O-001",
+    position_id: object = "P-001",
+) -> object:
     order = MarketOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -101,7 +108,7 @@ def _make_filled_order(client_order_id="O-001", position_id="P-001"):
         ts_init=0,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -119,12 +126,15 @@ def _make_filled_order(client_order_id="O-001", position_id="P-001"):
     return order
 
 
-def _make_position(client_order_id="O-001", position_id="P-001"):
+def _make_position(
+    client_order_id: ClientOrderId = "O-001",
+    position_id: object = "P-001",
+) -> object:
     fill = _make_fill(client_order_id=client_order_id, position_id=position_id)
     return Position(instrument=AUDUSD, fill=fill)
 
 
-def _engine_with_account():
+def _engine_with_account() -> object:
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
     engine.add_venue(
         venue=Venue("SIM"),
@@ -132,6 +142,10 @@ def _engine_with_account():
         account_type=AccountType.MARGIN,
         base_currency=Currency.from_str("USD"),
         starting_balances=[Money(1_000_000.0, Currency.from_str("USD"))],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     return engine
 
@@ -139,28 +153,40 @@ def _engine_with_account():
 # Empty-input cases
 
 
-def test_generate_orders_report_empty():
+def test_generate_orders_report_empty() -> None:
+    """
+    Test generate orders report empty.
+    """
     report = ReportProvider.generate_orders_report([])
 
     assert isinstance(report, pd.DataFrame)
     assert report.empty
 
 
-def test_generate_order_fills_report_empty():
+def test_generate_order_fills_report_empty() -> None:
+    """
+    Test generate order fills report empty.
+    """
     report = ReportProvider.generate_order_fills_report([])
 
     assert isinstance(report, pd.DataFrame)
     assert report.empty
 
 
-def test_generate_fills_report_empty():
+def test_generate_fills_report_empty() -> None:
+    """
+    Test generate fills report empty.
+    """
     report = ReportProvider.generate_fills_report([])
 
     assert isinstance(report, pd.DataFrame)
     assert report.empty
 
 
-def test_generate_positions_report_empty():
+def test_generate_positions_report_empty() -> None:
+    """
+    Test generate positions report empty.
+    """
     report = ReportProvider.generate_positions_report([])
 
     assert isinstance(report, pd.DataFrame)
@@ -170,7 +196,10 @@ def test_generate_positions_report_empty():
 # Non-empty structure cases
 
 
-def test_generate_orders_report_index():
+def test_generate_orders_report_index() -> None:
+    """
+    Test generate orders report index.
+    """
     order = _make_filled_order()
 
     report = ReportProvider.generate_orders_report([order])
@@ -179,7 +208,10 @@ def test_generate_orders_report_index():
     assert "O-001" in report.index
 
 
-def test_generate_order_fills_report_excludes_unfilled():
+def test_generate_order_fills_report_excludes_unfilled() -> None:
+    """
+    Test generate order fills report excludes unfilled.
+    """
     filled = _make_filled_order("O-001")
     unfilled = MarketOrder(
         trader_id=TRADER_ID,
@@ -193,7 +225,7 @@ def test_generate_order_fills_report_excludes_unfilled():
         ts_init=0,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     report = ReportProvider.generate_order_fills_report([filled, unfilled])
@@ -204,7 +236,10 @@ def test_generate_order_fills_report_excludes_unfilled():
     assert isinstance(report["ts_last"].iloc[0], pd.Timestamp)
 
 
-def test_generate_fills_report_structure():
+def test_generate_fills_report_structure() -> None:
+    """
+    Test generate fills report structure.
+    """
     order = _make_filled_order()
 
     report = ReportProvider.generate_fills_report([order])
@@ -214,7 +249,10 @@ def test_generate_fills_report_structure():
     assert "type" not in report.columns
 
 
-def test_generate_positions_report_structure():
+def test_generate_positions_report_structure() -> None:
+    """
+    Test generate positions report structure.
+    """
     position = _make_position()
 
     report = ReportProvider.generate_positions_report([position])
@@ -227,7 +265,10 @@ def test_generate_positions_report_structure():
     assert "settlement_currency" not in report.columns
 
 
-def test_generate_positions_report_snapshot_flag():
+def test_generate_positions_report_snapshot_flag() -> None:
+    """
+    Test generate positions report snapshot flag.
+    """
     position = _make_position("O-001", "P-001")
     snapshot = _make_position("O-002", "P-002")
 
@@ -237,7 +278,10 @@ def test_generate_positions_report_snapshot_flag():
     assert report.loc["P-002", "is_snapshot"]
 
 
-def test_generate_account_report_structure():
+def test_generate_account_report_structure() -> None:
+    """
+    Test generate account report structure.
+    """
     engine = _engine_with_account()
     engine.run()
     account = engine.cache.account_for_venue(Venue("SIM"))
@@ -260,7 +304,7 @@ _E2E_TS_START = 1_577_836_800_000_000_000
 _E2E_BID_PRICES = ("0.70000", "0.70000", "0.70010", "0.70020", "0.70020")
 
 
-def _e2e_quotes(instrument) -> list[QuoteTick]:
+def _e2e_quotes(instrument: object) -> list[QuoteTick]:
     quotes: list[QuoteTick] = []
 
     for idx, bid_price in enumerate(_E2E_BID_PRICES):
@@ -289,6 +333,10 @@ def _run_small_backtest_with_fills() -> BacktestEngine:
         account_type=AccountType.MARGIN,
         base_currency=usd,
         starting_balances=[Money(1_000_000.0, usd)],
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(audusd)
     engine.add_data(_e2e_quotes(audusd))
@@ -333,7 +381,10 @@ def _stats_equal(a: dict, b: dict) -> bool:
     return True
 
 
-def test_end_to_end_reporting_and_statistics():
+def test_end_to_end_reporting_and_statistics() -> None:
+    """
+    Test end to end reporting and statistics.
+    """
     engine = _run_small_backtest_with_fills()
 
     orders = ReportProvider.generate_orders_report(engine.cache.orders())
@@ -358,7 +409,10 @@ def test_end_to_end_reporting_and_statistics():
     engine.dispose()
 
 
-def test_engine_generate_reports_match_reportprovider():
+def test_engine_generate_reports_match_reportprovider() -> None:
+    """
+    Test engine generate reports match reportprovider.
+    """
     engine = _run_small_backtest_with_fills()
 
     orders = engine.generate_orders_report()
@@ -375,3 +429,72 @@ def test_engine_generate_reports_match_reportprovider():
     assert isinstance(account, pd.DataFrame)
 
     engine.dispose()
+
+
+@pytest.mark.parametrize("is_snapshot", [False, True])
+def test_generate_positions_report_ts_closed_precision(is_snapshot: bool) -> None:
+    """
+    Test that ts_closed nanosecond values survive exactly.
+
+    See #5287.
+
+    """
+    ts_closed_exact = 1_760_000_000_123_456_789
+
+    opener = _make_fill(
+        client_order_id="O-001",
+        position_id="P-001",
+        order_side=OrderSide.BUY,
+        ts_event=1_760_000_000_000_000_000,
+    )
+    closed = Position(instrument=AUDUSD, fill=opener)
+    closer = _make_fill(
+        client_order_id="O-002",
+        position_id="P-001",
+        order_side=OrderSide.SELL,
+        ts_event=ts_closed_exact,
+    )
+    closed.apply(closer)
+
+    open_position = _make_position("O-003", "P-002")
+
+    positions = [open_position] if is_snapshot else [closed, open_position]
+    snapshots = [closed] if is_snapshot else None
+    report = ReportProvider.generate_positions_report(positions, snapshots=snapshots)
+
+    assert report.loc["P-001", "ts_closed"] == pd.Timestamp(ts_closed_exact, tz="UTC")
+    assert pd.isna(report.loc["P-002", "ts_closed"])
+    assert report.loc["P-001", "is_snapshot"] == is_snapshot
+    assert not report.loc["P-002", "is_snapshot"]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_generate_positions_report_duplicate_ids(reverse: bool) -> None:
+    """
+    Test that duplicate position IDs retain each row's timestamps.
+    """
+    ts_opened = 1_760_000_000_000_000_000
+    ts_closed = 1_760_000_000_123_456_789
+    closed = Position(instrument=AUDUSD, fill=_make_fill(ts_event=ts_opened))
+    closed.apply(
+        _make_fill(
+            client_order_id="O-002",
+            order_side=OrderSide.SELL,
+            ts_event=ts_closed,
+        ),
+    )
+    open_position = _make_position("O-003", "P-001")
+    positions = [closed, open_position]
+    if reverse:
+        positions.reverse()
+
+    report = ReportProvider.generate_positions_report(positions)
+
+    assert report.index.tolist() == ["P-001", "P-001"]
+    assert report["ts_opened"].tolist() == [
+        pd.Timestamp(1_000_000_000, tz="UTC"),
+        pd.Timestamp(ts_opened, tz="UTC"),
+    ]
+    assert pd.isna(report["ts_closed"].iloc[0])
+    assert report["ts_closed"].iloc[1] == pd.Timestamp(ts_closed, tz="UTC")
+    assert report["is_snapshot"].tolist() == [False, False]

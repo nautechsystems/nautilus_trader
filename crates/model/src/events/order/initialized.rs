@@ -49,7 +49,7 @@ use crate::{
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -93,22 +93,26 @@ pub struct OrderInitialized {
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
     pub limit_offset: Option<Decimal>,
     /// The trailing offset for the orders trigger price (STOP).
     pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
+    #[serde(default, with = "crate::enums::serde_option_trailing_offset_type")]
     pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order expiration, `None` for no expiration.
     pub expire_time: Option<UnixNanos>,
     /// The quantity of the `LIMIT` order to display on the public book (iceberg).
     pub display_qty: Option<Quantity>,
     /// The emulation trigger type for the order.
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub emulation_trigger: Option<TriggerType>,
     /// The emulation trigger instrument ID for the order (if `None` then will be the `instrument_id`).
     pub trigger_instrument_id: Option<InstrumentId>,
     /// The order contingency type.
+    #[serde(default, with = "crate::enums::serde_option_contingency_type")]
     pub contingency_type: Option<ContingencyType>,
     /// The order list ID associated with the order.
     pub order_list_id: Option<OrderListId>,
@@ -179,8 +183,7 @@ impl OrderInitialized {
         tags: Option<Vec<Ustr>>,
     ) -> Result<Self, OrderError> {
         check_predicate_false(
-            contingency_type.is_some_and(|value| value != ContingencyType::NoContingency)
-                && linked_order_ids.as_ref().is_none_or(Vec::is_empty),
+            contingency_type.is_some() && linked_order_ids.as_ref().is_none_or(Vec::is_empty),
             "`linked_order_ids` is required for contingent orders",
         )?;
         check_predicate_false(
@@ -398,7 +401,7 @@ impl Debug for OrderInitialized {
                 )),
             self.tags.as_ref().map_or("None".to_string(), |tags| tags
                 .iter()
-                .map(|x| x.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<String>>()
                 .join(", ")),
             self.event_id,
@@ -484,7 +487,7 @@ impl Display for OrderInitialized {
                 )),
             self.tags.as_ref().map_or("None".to_string(), |tags| tags
                 .iter()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<String>>()
                 .join(", ")),
         )
@@ -561,7 +564,7 @@ impl OrderEvent for OrderInitialized {
     }
 
     fn reconciliation(&self) -> bool {
-        false
+        self.reconciliation
     }
 
     fn price(&self) -> Option<Price> {
@@ -636,8 +639,16 @@ impl OrderEvent for OrderInitialized {
         self.exec_algorithm_id
     }
 
+    fn exec_algorithm_params(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        self.exec_algorithm_params.clone()
+    }
+
     fn exec_spawn_id(&self) -> Option<ClientOrderId> {
         self.exec_spawn_id
+    }
+
+    fn tags(&self) -> Option<Vec<Ustr>> {
+        self.tags.clone()
     }
 
     fn venue_order_id(&self) -> Option<VenueOrderId> {
@@ -663,6 +674,9 @@ impl OrderEvent for OrderInitialized {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
 }
 
 impl TryFrom<OrderInitialized> for OrderAny {
@@ -685,9 +699,15 @@ impl TryFrom<OrderInitialized> for OrderAny {
 
 #[cfg(test)]
 mod test {
+    use indexmap::IndexMap;
     use rstest::rstest;
+    use ustr::Ustr;
 
-    use crate::events::order::{initialized::OrderInitialized, stubs::*};
+    use crate::events::{
+        OrderEvent,
+        order::{initialized::OrderInitialized, stubs::*},
+    };
+
     #[rstest]
     fn test_order_initialized(order_initialized_buy_limit: OrderInitialized) {
         let display = format!("{order_initialized_buy_limit}");
@@ -699,6 +719,21 @@ mod test {
             contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], parent_order_id=None, \
             exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None)"
         );
+    }
+
+    #[rstest]
+    fn test_order_initialized_event_exposes_tags_and_exec_algorithm_params() {
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("speed"), Ustr::from("fast"));
+        let tags = vec![Ustr::from("tag-1"), Ustr::from("tag-2")];
+        let event = OrderInitialized {
+            exec_algorithm_params: Some(params.clone()),
+            tags: Some(tags.clone()),
+            ..OrderInitialized::default()
+        };
+
+        assert_eq!(OrderEvent::exec_algorithm_params(&event), Some(params));
+        assert_eq!(OrderEvent::tags(&event), Some(tags));
     }
 
     #[rstest]

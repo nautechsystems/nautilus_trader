@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3};
+use nautilus_core::python::{
+    IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err, serialization::from_dict_pyo3,
+};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -46,7 +48,7 @@ impl Position {
     #[new]
     fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
-        Ok(Self::new(&instrument_any, fill))
+        Self::new_checked(&instrument_any, fill).map_err(correctness_error_to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -232,7 +234,7 @@ impl Position {
     #[getter]
     #[pyo3(name = "duration_ns")]
     fn py_duration_ns(&self) -> u64 {
-        self.duration_ns
+        self.duration_ns.as_u64()
     }
 
     #[getter]
@@ -357,9 +359,17 @@ impl Position {
     }
 
     /// Applies an `OrderFilled` event to this position.
+    ///
+    /// A fill with the same `trade_id`, the same `client_order_id`, and a new price restates
+    /// the open average when that trade is an opening fill in the current cycle. Quantity is
+    /// unchanged. The original fill stays in `events`, so a void still matches its `last_px`.
+    /// Applying the same `event_id` again does nothing. A different order that reuses the trade
+    /// ID is rejected. A closing fill does not change the open average, and restating an
+    /// opening fill does not change realized PnL for quantity already closed.
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, fill: &OrderFilled) {
-        self.apply(fill);
+    fn py_apply(&mut self, fill: &OrderFilled) -> PyResult<()> {
+        self.try_apply(fill)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Applies a position adjustment event.
@@ -415,18 +425,22 @@ impl Position {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if deserialization from the Python dict fails.
+    /// Returns an error if deserialization from the Python dict fails.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        from_dict_pyo3(py, values)
+        let position: Self = from_dict_pyo3(py, values)?;
+        position
+            .check_state_float_precision()
+            .map_err(correctness_error_to_pyvalue_err)?;
+        Ok(position)
     }
 
     /// Converts this [`Position`] into a Python dict.
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if serialization into a Python dict fails.
+    /// Returns an error if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
@@ -477,7 +491,7 @@ impl Position {
             Some(ts_closed) => dict.set_item("ts_closed", ts_closed.as_u64())?,
             None => dict.set_item("ts_closed", py.None())?,
         }
-        dict.set_item("duration_ns", self.duration_ns.to_u64())?;
+        dict.set_item("duration_ns", self.duration_ns.as_u64())?;
         dict.set_item("avg_px_open", self.avg_px_open)?;
         match self.avg_px_close {
             Some(avg_px_close) => dict.set_item("avg_px_close", avg_px_close)?,

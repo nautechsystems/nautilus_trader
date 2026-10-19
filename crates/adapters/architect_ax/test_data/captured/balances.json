@@ -1,0 +1,10 @@
+{
+  "balances": [
+    {
+      "account_id": "fixture-0001",
+      "symbol": "USD",
+      "amount": "1991805.125593499997"
+    }
+  ],
+  "usd_borrow": "0"
+}

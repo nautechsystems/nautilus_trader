@@ -19,7 +19,7 @@ use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    identifiers::{InstrumentId, Symbol},
+    identifiers::{InstrumentId, Symbol, Venue},
     instruments::SyntheticInstrument,
     types::Price,
 };
@@ -41,15 +41,15 @@ impl SyntheticInstrument {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
-        Self::new_checked(
-            symbol,
-            price_precision,
-            components,
-            formula,
-            ts_event.into(),
-            ts_init.into(),
-        )
-        .map_err(to_pyvalue_err)
+        Self::builder()
+            .symbol(symbol)
+            .price_precision(price_precision)
+            .components(components)
+            .formula(formula)
+            .ts_event(ts_event.into())
+            .ts_init(ts_init.into())
+            .build()
+            .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -64,6 +64,18 @@ impl SyntheticInstrument {
     #[pyo3(name = "id")]
     fn py_id(&self) -> InstrumentId {
         self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "symbol")]
+    fn py_symbol(&self) -> Symbol {
+        self.id.symbol
+    }
+
+    #[getter]
+    #[pyo3(name = "venue")]
+    fn py_venue(&self) -> Venue {
+        self.id.venue
     }
 
     #[getter]

@@ -28,8 +28,8 @@
 //! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `DERIBIT_API_KEY`.
-//! - `DERIBIT_API_SECRET`.
+//! - `DERIBIT_API_KEY`
+//! - `DERIBIT_API_SECRET`
 
 use std::fmt::Debug;
 
@@ -133,7 +133,7 @@ impl DataActor for OptionChainTester {
         // Find settlement currency for nearest expiry (use BTC-settled by default)
         let settlement_currency = options
             .iter()
-            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement.as_str() == "BTC")
+            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement == "BTC")
             .map_or_else(
                 || {
                     options
@@ -156,7 +156,7 @@ impl DataActor for OptionChainTester {
         );
 
         // Build OptionSeriesId for the nearest expiry
-        let series_id = OptionSeriesId::new(
+        let series_id = OptionSeriesId::new_derived(
             venue,
             underlying_filter,
             settlement_currency,

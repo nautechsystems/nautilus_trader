@@ -1,7 +1,7 @@
 # nautilus-core
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-core)](https://docs.rs/nautilus-core/latest/nautilus-core/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-core)](https://docs.rs/nautilus-core/latest/nautilus_core/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-core.svg)](https://crates.io/crates/nautilus-core)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -16,7 +16,7 @@ ecosystem, including:
 - UUID generation and management.
 - Mathematical functions and interpolation utilities.
 - Correctness validation functions.
-- Serialization traits and helpers.
+- Serialization traits and codecs.
 - Cross-platform environment utilities.
 - Abstractions over common collections.
 
@@ -32,9 +32,11 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module.
+- `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://crates.io/crates/cbindgen).
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `simulation`: Enables deterministic simulation testing with
+  [MadSim](https://crates.io/crates/madsim).
 
 ## Documentation
 

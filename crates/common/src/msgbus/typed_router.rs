@@ -248,7 +248,7 @@ impl<T: 'static> TopicRouter<T> {
     #[must_use]
     pub fn has_subscribers(&self, topic: MStr<Topic>) -> bool {
         self.get_matching_indices(topic).map_or_else(
-            || !self.find_matches(topic).is_empty(),
+            || !Self::find_matches(&self.subscriptions, topic).is_empty(),
             |indices| !indices.is_empty(),
         )
     }
@@ -256,8 +256,10 @@ impl<T: 'static> TopicRouter<T> {
     /// Returns the count of subscribers for a topic.
     #[must_use]
     pub fn subscriber_count(&self, topic: MStr<Topic>) -> usize {
-        self.get_matching_indices(topic)
-            .map_or_else(|| self.find_matches(topic).len(), <[usize]>::len)
+        self.get_matching_indices(topic).map_or_else(
+            || Self::find_matches(&self.subscriptions, topic).len(),
+            <[usize]>::len,
+        )
     }
 
     /// Returns the count of subscribers with an exact topic match,
@@ -279,19 +281,9 @@ impl<T: 'static> TopicRouter<T> {
             topic_cache,
         } = self;
 
-        let indices = topic_cache.entry(topic).or_insert_with(|| {
-            subscriptions
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, sub)| {
-                    if is_matching_backtracking(topic, sub.pattern) {
-                        Some(idx)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        });
+        let indices = topic_cache
+            .entry(topic)
+            .or_insert_with(|| Self::find_matches(subscriptions, topic));
 
         for &idx in indices.iter() {
             subscriptions[idx].handler.handle(message);
@@ -321,12 +313,16 @@ impl<T: 'static> TopicRouter<T> {
     }
 
     /// Gets or computes matching subscription indices for a topic.
-    pub(crate) fn get_or_compute_matching_indices(&mut self, topic: MStr<Topic>) -> &[usize] {
-        if !self.topic_cache.contains_key(&topic) {
-            let indices = self.find_matches(topic);
-            self.topic_cache.insert(topic, indices);
-        }
-        self.topic_cache.get(&topic).unwrap()
+    fn get_or_compute_matching_indices(&mut self, topic: MStr<Topic>) -> &[usize] {
+        let Self {
+            subscriptions,
+            topic_cache,
+        } = self;
+
+        topic_cache
+            .entry(topic)
+            .or_insert_with(|| Self::find_matches(subscriptions, topic))
+            .as_slice()
     }
 
     /// Fills a buffer with handlers matching a topic.
@@ -340,19 +336,9 @@ impl<T: 'static> TopicRouter<T> {
             topic_cache,
         } = self;
 
-        let indices = topic_cache.entry(topic).or_insert_with(|| {
-            subscriptions
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, sub)| {
-                    if is_matching_backtracking(topic, sub.pattern) {
-                        Some(idx)
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        });
+        let indices = topic_cache
+            .entry(topic)
+            .or_insert_with(|| Self::find_matches(subscriptions, topic));
 
         for &idx in indices.iter() {
             buf.push(subscriptions[idx].handler.clone());
@@ -360,17 +346,14 @@ impl<T: 'static> TopicRouter<T> {
     }
 
     /// Finds subscription indices matching a topic (without caching).
-    fn find_matches(&self, topic: MStr<Topic>) -> SmallVec<[usize; 64]> {
-        self.subscriptions
+    fn find_matches(
+        subscriptions: &[TypedSubscription<T>],
+        topic: MStr<Topic>,
+    ) -> SmallVec<[usize; 64]> {
+        subscriptions
             .iter()
             .enumerate()
-            .filter_map(|(idx, sub)| {
-                if is_matching_backtracking(topic, sub.pattern) {
-                    Some(idx)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(idx, sub)| is_matching_backtracking(topic, sub.pattern).then_some(idx))
             .collect()
     }
 

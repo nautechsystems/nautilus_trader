@@ -22,6 +22,7 @@
 
 use alloy::primitives::Address;
 use enum_dispatch::enum_dispatch;
+use nautilus_live::SocketControl;
 use nautilus_network::websocket::TransportBackend;
 
 use crate::rpc::{
@@ -36,11 +37,14 @@ use crate::rpc::{
 pub mod chains;
 pub mod core;
 pub mod error;
-pub mod helpers;
 pub mod http;
+pub mod log;
 pub mod providers;
 pub mod types;
 pub mod utils;
+
+#[cfg(feature = "hypersync")]
+pub(crate) mod verification;
 
 #[enum_dispatch(BlockchainRpcClient)]
 #[derive(Debug)]
@@ -66,4 +70,5 @@ pub trait BlockchainRpcClient {
     async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
     async fn next_rpc_message(&mut self) -> Result<BlockchainMessage, BlockchainRpcClientError>;
     fn set_transport_backend(&mut self, backend: TransportBackend);
+    fn set_socket_control(&mut self, control: SocketControl);
 }

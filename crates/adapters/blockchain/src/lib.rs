@@ -35,22 +35,29 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `extension-module`: Builds as a Python extension module.
-//! - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
+//! - `hypersync`: Enables the
+//!   [`hypersync-client`](https://crates.io/crates/hypersync-client) integration.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `turmoil`: Enables deterministic network simulation testing with
+//!   [turmoil](https://crates.io/crates/turmoil).
 
 #![warn(rustc::all)]
 #![allow(
     clippy::pedantic,
     reason = "shield the CLI --all-features pedantic gate until the blockchain slice migrates"
 )]
+#![warn(clippy::clone_on_ref_ptr)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
 
 pub mod config;
 pub mod constants;

@@ -24,6 +24,7 @@
 //! cargo run --bin binance-spot-http-public --package nautilus-binance
 //! ```
 
+use jiff::{Timestamp, tz::Offset};
 use nautilus_binance::{
     common::enums::BinanceEnvironment,
     spot::{
@@ -71,9 +72,14 @@ async fn main() -> anyhow::Result<()> {
     match client.server_time().await {
         Ok(timestamp_us) => {
             let timestamp_ms = timestamp_us / 1000;
-            let datetime = chrono::DateTime::from_timestamp_millis(timestamp_ms).map_or_else(
-                || "invalid timestamp".to_string(),
-                |dt| dt.format("%Y-%m-%d %H:%M:%S%.3f UTC").to_string(),
+            let datetime = Timestamp::from_millisecond(timestamp_ms).map_or_else(
+                |_| "invalid timestamp".to_string(),
+                |dt| {
+                    Offset::UTC
+                        .to_datetime(dt)
+                        .strftime("%Y-%m-%d %H:%M:%S%.3f UTC")
+                        .to_string()
+                },
             );
             log::info!("Server time: {timestamp_us} µs ({datetime})");
         }
@@ -122,9 +128,14 @@ async fn main() -> anyhow::Result<()> {
                 let price = mantissa_to_f64(trade.price_mantissa, trades.price_exponent);
                 let qty = mantissa_to_f64(trade.qty_mantissa, trades.qty_exponent);
                 let side = if trade.is_buyer_maker { "SELL" } else { "BUY" };
-                let datetime = chrono::DateTime::from_timestamp_micros(trade.time).map_or_else(
-                    || "?".to_string(),
-                    |dt| dt.format("%H:%M:%S%.3f").to_string(),
+                let datetime = Timestamp::from_microsecond(trade.time).map_or_else(
+                    |_| "?".to_string(),
+                    |dt| {
+                        Offset::UTC
+                            .to_datetime(dt)
+                            .strftime("%H:%M:%S%.3f")
+                            .to_string()
+                    },
                 );
                 log::info!(
                     "  ID: {}, {side} {qty:.8} @ {price:.2} at {datetime}",

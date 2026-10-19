@@ -13,151 +13,139 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_char,
-    ops::{Deref, DerefMut},
-};
+use std::ffi::c_char;
 
 use nautilus_core::ffi::{abort_on_panic, cvec::CVec, string::str_to_cstr};
 
-use super::level::BookLevel_API;
 use crate::{
-    data::{
-        BookOrder, OrderBookDelta, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+    data::{OrderBookDeltas, QuoteTick, TradeTick},
+    enums::{BookType, OrderSide},
+    ffi::{
+        data::{delta::OrderBookDeltaFfi, depth::OrderBookDepth10Ffi, order::BookOrderFfi},
+        enums::OrderSideOptional,
     },
-    enums::{BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{OrderBook, analysis::book_check_integrity, ladder::BookPrice},
+    orderbook::{BookLevel, OrderBook, analysis::book_check_integrity, ladder::BookPrice},
     types::{ERROR_PRICE, Price, Quantity, price::PriceRaw},
 };
 
-/// C compatible Foreign Function Interface (FFI) for an underlying `OrderBook`.
+/// Returns an owning pointer to the heap-allocated `OrderBook` which the caller must
+/// eventually pass to [`orderbook_drop`].
+#[unsafe(no_mangle)]
+pub extern "C" fn orderbook_new(
+    instrument_id: InstrumentId,
+    book_type: BookType,
+) -> *mut OrderBook {
+    Box::into_raw(Box::new(OrderBook::new(instrument_id, book_type)))
+}
+
+/// # Safety
 ///
-/// This struct wraps `OrderBook` in a way that makes it compatible with C function
-/// calls, enabling interaction with `OrderBook` in a C environment.
+/// `book` must be a live owning pointer returned by [`orderbook_new`], and must not
+/// be used after this call.
 ///
-/// It implements the `Deref` trait, allowing instances of `OrderBook_API` to be
-/// dereferenced to `OrderBook`, providing access to `OrderBook`'s methods without
-/// having to manually access the underlying `OrderBook` instance.
-#[repr(C)]
-#[derive(Debug)]
-#[allow(non_camel_case_types)]
-pub struct OrderBook_API(Box<OrderBook>);
-
-impl Deref for OrderBook_API {
-    type Target = OrderBook;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for OrderBook_API {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
+/// # Panics
+///
+/// Panics if `book` is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orderbook_drop(book: *mut OrderBook) {
+    abort_on_panic(|| {
+        assert!(!book.is_null(), "`book` was NULL");
+        // SAFETY: Caller guarantees `book` was allocated by `orderbook_new`
+        drop(unsafe { Box::from_raw(book) }); // Memory freed here
+    });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_new(instrument_id: InstrumentId, book_type: BookType) -> OrderBook_API {
-    OrderBook_API(Box::new(OrderBook::new(instrument_id, book_type)))
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn orderbook_drop(book: OrderBook_API) {
-    drop(book); // Memory freed here
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn orderbook_reset(book: &mut OrderBook_API) {
+pub extern "C" fn orderbook_reset(book: &mut OrderBook) {
     book.reset();
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_instrument_id(book: &OrderBook_API) -> InstrumentId {
+pub extern "C" fn orderbook_instrument_id(book: &OrderBook) -> InstrumentId {
     book.instrument_id
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_book_type(book: &OrderBook_API) -> BookType {
+pub extern "C" fn orderbook_book_type(book: &OrderBook) -> BookType {
     book.book_type
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_sequence(book: &OrderBook_API) -> u64 {
+pub extern "C" fn orderbook_sequence(book: &OrderBook) -> u64 {
     book.sequence
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_ts_last(book: &OrderBook_API) -> u64 {
+pub extern "C" fn orderbook_ts_last(book: &OrderBook) -> u64 {
     book.ts_last.into()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_update_count(book: &OrderBook_API) -> u64 {
+pub extern "C" fn orderbook_update_count(book: &OrderBook) -> u64 {
     book.update_count
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_add(
-    book: &mut OrderBook_API,
-    order: BookOrder,
+    book: &mut OrderBook,
+    order: BookOrderFfi,
     flags: u8,
     sequence: u64,
     ts_event: u64,
 ) {
-    book.add(order, flags, sequence, ts_event.into());
+    book.add(order.into(), flags, sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_update(
-    book: &mut OrderBook_API,
-    order: BookOrder,
+    book: &mut OrderBook,
+    order: BookOrderFfi,
     flags: u8,
     sequence: u64,
     ts_event: u64,
 ) {
-    book.update(order, flags, sequence, ts_event.into());
+    book.update(order.into(), flags, sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_delete(
-    book: &mut OrderBook_API,
-    order: BookOrder,
+    book: &mut OrderBook,
+    order: BookOrderFfi,
     flags: u8,
     sequence: u64,
     ts_event: u64,
 ) {
-    book.delete(order, flags, sequence, ts_event.into());
+    book.delete(order.into(), flags, sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_clear(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+pub extern "C" fn orderbook_clear(book: &mut OrderBook, sequence: u64, ts_event: u64) {
     book.clear(sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_clear_bids(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+pub extern "C" fn orderbook_clear_bids(book: &mut OrderBook, sequence: u64, ts_event: u64) {
     book.clear_bids(sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, sequence: u64, ts_event: u64) {
+pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook, sequence: u64, ts_event: u64) {
     book.clear_asks(sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: &OrderBookDelta) {
-    if let Err(e) = book.apply_delta_unchecked(delta) {
+pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook, delta: &OrderBookDeltaFfi) {
+    if let Err(e) = book.apply_delta_unchecked(&(*delta).into()) {
         log::error!("Failed to apply order book delta: {e}");
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &OrderBookDeltas_API) {
+pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook, deltas: &OrderBookDeltas) {
     // Clone will actually copy the contents of the `deltas` vec
     if let Err(e) = book.apply_deltas_unchecked(deltas) {
         log::error!("Failed to apply order book deltas: {e}");
@@ -172,91 +160,93 @@ pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &Orde
 /// # Parameters
 ///
 /// - `book` - The order book to convert.
-/// - `sequence` - The message sequence number for the snapshot.
 /// - `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
 /// - `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
 ///
 /// # Returns
 ///
-/// An `OrderBookDeltas_API` containing a snapshot of the current order book state.
+/// An owning pointer to an `OrderBookDeltas` containing a snapshot of the current order book
+/// state, which the caller must eventually pass to [`crate::ffi::data::deltas::orderbook_deltas_drop`].
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_to_snapshot_deltas(
-    book: &OrderBook_API,
+    book: &OrderBook,
     ts_event: u64,
     ts_init: u64,
-) -> OrderBookDeltas_API {
+) -> *mut OrderBookDeltas {
     use nautilus_core::UnixNanos;
-    OrderBookDeltas_API::new(book.to_deltas(UnixNanos::from(ts_event), UnixNanos::from(ts_init)))
+    Box::into_raw(Box::new(
+        book.to_deltas(UnixNanos::from(ts_event), UnixNanos::from(ts_init)),
+    ))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook_API, depth: &OrderBookDepth10) {
-    if let Err(e) = book.apply_depth_unchecked(depth) {
+pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook, depth: &OrderBookDepth10Ffi) {
+    if let Err(e) = book.apply_depth_unchecked(&(*depth).into()) {
         log::error!("Failed to apply order book depth: {e}");
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_bids(book: &mut OrderBook_API) -> CVec {
+pub extern "C" fn orderbook_bids(book: &mut OrderBook) -> CVec {
     book.bids
         .levels
         .values()
-        .map(|level| BookLevel_API::new(level.clone()))
-        .collect::<Vec<BookLevel_API>>()
+        .map(|level| Box::into_raw(Box::new(level.clone())))
+        .collect::<Vec<*mut BookLevel>>()
         .into()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
+pub extern "C" fn orderbook_asks(book: &mut OrderBook) -> CVec {
     book.asks
         .levels
         .values()
-        .map(|level| BookLevel_API::new(level.clone()))
-        .collect::<Vec<BookLevel_API>>()
+        .map(|level| Box::into_raw(Box::new(level.clone())))
+        .collect::<Vec<*mut BookLevel>>()
         .into()
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_bids_down_to(
-    book: &mut OrderBook_API,
+    book: &mut OrderBook,
     price_raw: PriceRaw,
     price_prec: u8,
 ) -> CVec {
     let price = Price::from_raw(price_raw, price_prec);
-    let bound = BookPrice::new(price, OrderSideSpecified::Buy);
+    let bound = BookPrice::new(price, OrderSide::Buy);
     book.bids
         .levels
         .range(..=bound)
-        .map(|(_, level)| BookLevel_API::new(level.clone()))
-        .collect::<Vec<BookLevel_API>>()
+        .map(|(_, level)| Box::into_raw(Box::new(level.clone())))
+        .collect::<Vec<*mut BookLevel>>()
         .into()
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_asks_up_to(
-    book: &mut OrderBook_API,
+    book: &mut OrderBook,
     price_raw: PriceRaw,
     price_prec: u8,
 ) -> CVec {
     let price = Price::from_raw(price_raw, price_prec);
-    let bound = BookPrice::new(price, OrderSideSpecified::Sell);
+    let bound = BookPrice::new(price, OrderSide::Sell);
     book.asks
         .levels
         .range(..=bound)
-        .map(|(_, level)| BookLevel_API::new(level.clone()))
-        .collect::<Vec<BookLevel_API>>()
+        .map(|(_, level)| Box::into_raw(Box::new(level.clone())))
+        .collect::<Vec<*mut BookLevel>>()
         .into()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_has_bid(book: &mut OrderBook_API) -> u8 {
+pub extern "C" fn orderbook_has_bid(book: &mut OrderBook) -> u8 {
     u8::from(book.has_bid())
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_has_ask(book: &mut OrderBook_API) -> u8 {
+pub extern "C" fn orderbook_has_ask(book: &mut OrderBook) -> u8 {
     u8::from(book.has_ask())
 }
 
@@ -265,7 +255,7 @@ pub extern "C" fn orderbook_has_ask(book: &mut OrderBook_API) -> u8 {
 /// Panics if there are no bid orders for best bid price.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
+pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook) -> Price {
     abort_on_panic(|| {
         book.best_bid_price()
             .expect("Error: No bid orders for best bid price")
@@ -277,7 +267,7 @@ pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
 /// Panics if there are no ask orders for best ask price.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
+pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook) -> Price {
     abort_on_panic(|| {
         book.best_ask_price()
             .expect("Error: No ask orders for best ask price")
@@ -289,7 +279,7 @@ pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
 /// Panics if there are no bid orders for best bid size.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity {
+pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook) -> Quantity {
     abort_on_panic(|| {
         book.best_bid_size()
             .expect("Error: No bid orders for best bid size")
@@ -301,7 +291,7 @@ pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity 
 /// Panics if there are no ask orders for best ask size.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity {
+pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook) -> Quantity {
     abort_on_panic(|| {
         book.best_ask_size()
             .expect("Error: No ask orders for best ask size")
@@ -312,7 +302,7 @@ pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity 
 ///
 /// Panics if unable to calculate spread (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
+pub extern "C" fn orderbook_spread(book: &mut OrderBook) -> f64 {
     abort_on_panic(|| {
         book.spread()
             .expect("Error: Unable to calculate `spread` (no bid or ask)")
@@ -323,53 +313,86 @@ pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
 ///
 /// Panics if unable to calculate midpoint (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
+pub extern "C" fn orderbook_midpoint(book: &mut OrderBook) -> f64 {
     abort_on_panic(|| {
         book.midpoint()
             .expect("Error: Unable to calculate `midpoint` (no bid or ask)")
     })
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_avg_px_for_quantity(
-    book: &mut OrderBook_API,
+    book: &mut OrderBook,
     qty: Quantity,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
 ) -> f64 {
-    book.get_avg_px_for_quantity(qty, order_side)
+    book.get_avg_px_for_quantity(
+        qty,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+    )
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_worst_px_for_quantity(
-    book: &mut OrderBook_API,
+    book: &mut OrderBook,
     qty: Quantity,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
 ) -> Price {
-    book.get_worst_px_for_quantity(qty, order_side)
-        .unwrap_or(ERROR_PRICE)
+    book.get_worst_px_for_quantity(
+        qty,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+    )
+    .unwrap_or(ERROR_PRICE)
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_quantity_for_price(
-    book: &mut OrderBook_API,
+    book: &mut OrderBook,
     price: Price,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
 ) -> f64 {
-    book.get_quantity_for_price(price, order_side)
+    book.get_quantity_for_price(
+        price,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+    )
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_quantity_at_level(
-    book: &OrderBook_API,
+    book: &OrderBook,
     price: Price,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
     size_precision: u8,
 ) -> Quantity {
-    book.get_quantity_at_level(price, order_side, size_precision)
+    book.get_quantity_at_level(
+        price,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+        size_precision,
+    )
 }
 
 /// Updates the order book with a quote tick.
@@ -378,7 +401,7 @@ pub extern "C" fn orderbook_get_quantity_at_level(
 ///
 /// Panics if book type is not `L1_MBP`.
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &QuoteTick) {
+pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook, quote: &QuoteTick) {
     book.update_quote_tick(quote).unwrap();
 }
 
@@ -388,30 +411,42 @@ pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &
 ///
 /// Panics if book type is not `L1_MBP`.
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, trade: &TradeTick) {
+pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook, trade: &TradeTick) {
     book.update_trade_tick(trade).unwrap();
 }
 
+/// # Panics
+///
+/// Panics if `order.side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrder) -> CVec {
-    book.simulate_fills(&order).into()
+pub extern "C" fn orderbook_simulate_fills(book: &OrderBook, order: BookOrderFfi) -> CVec {
+    book.simulate_fills(&order.into()).into()
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_all_crossed_levels(
-    book: &OrderBook_API,
-    order_side: OrderSide,
+    book: &OrderBook,
+    order_side: OrderSideOptional,
     price: Price,
     size_precision: u8,
 ) -> CVec {
-    book.get_all_crossed_levels(order_side, price, size_precision)
-        .into()
+    book.get_all_crossed_levels(
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+        price,
+        size_precision,
+    )
+    .into()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) -> u8 {
+pub extern "C" fn orderbook_check_integrity(book: &OrderBook) -> u8 {
     u8::from(book_check_integrity(book).is_ok())
 }
 
@@ -426,10 +461,7 @@ pub unsafe extern "C" fn vec_drop_fills(v: CVec) {
 
 /// Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_pprint_to_cstr(
-    book: &OrderBook_API,
-    num_levels: usize,
-) -> *const c_char {
+pub extern "C" fn orderbook_pprint_to_cstr(book: &OrderBook, num_levels: usize) -> *const c_char {
     str_to_cstr(&book.pprint(num_levels, None))
 }
 

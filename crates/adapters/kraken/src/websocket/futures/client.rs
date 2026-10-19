@@ -18,14 +18,22 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
-use nautilus_core::AtomicMap;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    AtomicMap,
+    string::secret::{SecretString, zeroize_json_value},
+};
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskShutdownError},
+};
 use nautilus_model::{
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
@@ -33,13 +41,17 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    ConnectionUrl,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
         AUTHENTICATION_TIMEOUT_SECS, AuthTracker, SubscriptionState, TransportBackend,
         WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
+use zeroize::Zeroizing;
 
 use super::{
     handler::{FuturesFeedHandler, FuturesHandlerCommand},
@@ -64,36 +76,30 @@ pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 
 /// WebSocket client for the Kraken Futures v1 streaming API.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
-)]
 pub struct KrakenFuturesWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     heartbeat_secs: u64,
     auth_timeout_secs: u64,
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<KrakenFuturesWsMessage>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
-    subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
+    subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, SecretString>>>,
     auth_tracker: AuthTracker,
     cancellation_token: CancellationToken,
     credential: Option<KrakenCredential>,
-    original_challenge: Arc<tokio::sync::RwLock<Option<String>>>,
-    signed_challenge: Arc<tokio::sync::RwLock<Option<String>>>,
+    original_challenge: Arc<tokio::sync::RwLock<Option<SecretString>>>,
+    signed_challenge: Arc<tokio::sync::RwLock<Option<SecretString>>>,
     account_id: Arc<RwLock<Option<AccountId>>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     order_instrument_map: Arc<AtomicMap<String, InstrumentId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Clone for KrakenFuturesWebSocketClient {
@@ -106,7 +112,8 @@ impl Clone for KrakenFuturesWebSocketClient {
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: self.out_rx.clone(),
-            task_handle: self.task_handle.clone(),
+            handler_tasks: Arc::clone(&self.handler_tasks),
+            connect_lock: Arc::clone(&self.connect_lock),
             subscriptions: self.subscriptions.clone(),
             subscription_payloads: Arc::clone(&self.subscription_payloads),
             auth_tracker: self.auth_tracker.clone(),
@@ -120,6 +127,7 @@ impl Clone for KrakenFuturesWebSocketClient {
             instruments: Arc::clone(&self.instruments),
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
+            socket_control: self.socket_control.clone(),
         }
     }
 }
@@ -153,14 +161,15 @@ impl KrakenFuturesWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
         Self {
-            url,
+            url: url.into(),
             heartbeat_secs,
             auth_timeout_secs: auth_timeout_secs.unwrap_or(AUTHENTICATION_TIMEOUT_SECS),
             signal: Arc::new(AtomicBool::new(false)),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(KRAKEN_FUTURES_WS_TOPIC_DELIMITER),
             subscription_payloads: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             auth_tracker: AuthTracker::new(),
@@ -173,8 +182,22 @@ impl KrakenFuturesWebSocketClient {
             order_instrument_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
+            socket_control: None,
         }
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.cancellation_token.cancel();
+        self.signal.store(true, Ordering::Relaxed);
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Returns true if the client has API credentials set.
@@ -186,7 +209,7 @@ impl KrakenFuturesWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns true if the connection is closed.
@@ -276,26 +299,55 @@ impl KrakenFuturesWebSocketClient {
 
     /// Connects to the WebSocket server.
     pub async fn connect(&mut self) -> Result<(), KrakenWsError> {
-        log::debug!("Connecting to Futures WebSocket: {}", self.url);
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        log::debug!("Connecting to Futures WebSocket: {}", self.url.origin());
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.disconnect_locked().await?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                KrakenWsError::ConnectionError(format!(
+                    "Failed to start WebSocket handler task generation: {e}"
+                ))
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            KrakenWsError::ConnectionError(format!(
+                "Failed to acquire WebSocket handler task spawner: {e}"
+            ))
+        })?;
+
+        if self.cancellation_token.is_cancelled() {
+            self.cancellation_token = CancellationToken::new();
+        }
 
         self.signal.store(false, Ordering::Relaxed);
 
         let (raw_handler, raw_rx) = channel_message_handler();
+        let headers = create_standard_nautilus_headers();
 
         let ws_config = WebSocketConfig {
-            url: self.url.clone(),
-            headers: vec![],
-            heartbeat: Some(self.heartbeat_secs),
-            heartbeat_msg: None, // Use WebSocket ping frames, not text messages
-            reconnect_timeout_ms: Some(5_000),
+            url: self.url.expose().to_owned(),
+            headers,
+            heartbeat_interval_secs: Some(self.heartbeat_secs),
+            heartbeat_payload: None, // Use WebSocket ping frames, not text messages
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
 
         let keyed_quotas = vec![(
@@ -303,24 +355,37 @@ impl KrakenFuturesWebSocketClient {
             *KRAKEN_FUTURES_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let ws_client =
-            WebSocketClient::connect(ws_config, Some(raw_handler), None, None, keyed_quotas, None)
-                .await
-                .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
+        let ws_client = WebSocketClient::builder()
+            .config(ws_config)
+            .message_handler(raw_handler)
+            .keyed_quotas(keyed_quotas)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
 
-        self.connection_mode
-            .store(ws_client.connection_mode_atomic());
+        let connection_mode = ws_client.connection_mode_atomic();
+        let reconnect_handle = ws_client.reconnect_handle();
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<KrakenFuturesWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
-        *self.cmd_tx.write().await = cmd_tx.clone();
 
         if let Err(e) = cmd_tx.send(FuturesHandlerCommand::SetClient(ws_client)) {
             return Err(KrakenWsError::ConnectionError(format!(
                 "Failed to send WebSocketClient to handler: {e}"
             )));
+        }
+
+        {
+            let mut command_sender = self.cmd_tx.write().await;
+            *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
         }
 
         let signal = self.signal.clone();
@@ -332,7 +397,7 @@ impl KrakenFuturesWebSocketClient {
         let signed_challenge_for_reconnect = self.signed_challenge.clone();
         let auth_tracker_for_reconnect = self.auth_tracker.clone();
 
-        let stream_handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             let mut handler =
                 FuturesFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
             let mut pending_resubscribe = false;
@@ -345,10 +410,7 @@ impl KrakenFuturesWebSocketClient {
                         }
                         log::info!("WebSocket reconnected");
 
-                        let confirmed_topics = subscriptions.all_topics();
-                        for topic in &confirmed_topics {
-                            subscriptions.mark_failure(topic);
-                        }
+                        subscriptions.reset_after_reconnect();
 
                         auth_tracker_for_reconnect.invalidate();
                         *original_challenge_for_reconnect.write().await = None;
@@ -402,7 +464,11 @@ impl KrakenFuturesWebSocketClient {
                             continue;
                         };
 
-                        match cred.sign_ws_challenge(&challenge) {
+                        let challenge = SecretString::from(challenge);
+                        match cred
+                            .sign_ws_challenge(challenge.expose_secret())
+                            .map(SecretString::from)
+                        {
                             Ok(signed) => {
                                 *original_challenge_for_reconnect.write().await =
                                     Some(challenge.clone());
@@ -418,8 +484,8 @@ impl KrakenFuturesWebSocketClient {
                                         &subscriptions,
                                         &payloads,
                                         cred,
-                                        challenge.as_str(),
-                                        signed.as_str(),
+                                        challenge.expose_secret(),
+                                        signed.expose_secret(),
                                     );
                                     pending_resubscribe = false;
                                 }
@@ -445,9 +511,17 @@ impl KrakenFuturesWebSocketClient {
             }
 
             log::debug!("Futures handler task exiting");
-        });
+        };
 
-        self.task_handle = Some(Arc::new(stream_handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx = None;
+            return Err(KrakenWsError::ConnectionError(format!(
+                "Failed to register WebSocket handler task: {e}"
+            )));
+        }
 
         log::debug!("Futures WebSocket connected successfully");
         Ok(())
@@ -455,8 +529,15 @@ impl KrakenFuturesWebSocketClient {
 
     /// Disconnects from the WebSocket server.
     pub async fn disconnect(&mut self) -> Result<(), KrakenWsError> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+        self.disconnect_locked().await
+    }
+
+    async fn disconnect_locked(&self) -> Result<(), KrakenWsError> {
         log::debug!("Disconnecting Futures WebSocket");
 
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self
@@ -470,28 +551,31 @@ impl KrakenFuturesWebSocketClient {
             );
         }
 
-        if let Some(task_handle) = self.task_handle.take() {
-            match Arc::try_unwrap(task_handle) {
-                Ok(handle) => {
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
-                        Err(_) => {
-                            log::warn!("Timeout waiting for task handle");
-                        }
-                    }
-                }
-                Err(arc_handle) => {
-                    log::debug!("Cannot take ownership of task handle, aborting");
-                    arc_handle.abort();
-                }
-            }
-        }
+        let task_result = self
+            .handler_tasks
+            .finish_shutdown(
+                tokio::time::Duration::from_secs(2),
+                tokio::time::Duration::from_secs(2),
+            )
+            .await;
 
         self.subscriptions.clear();
         self.subscription_payloads.write().await.clear();
         self.auth_tracker.fail("Disconnected");
-        Ok(())
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
+
+        match task_result {
+            Ok(()) => Ok(()),
+            Err(error @ TaskShutdownError::Timeout { .. }) => Err(KrakenWsError::Timeout(format!(
+                "Futures WebSocket handler shutdown timed out: {error}"
+            ))),
+            Err(e) => Err(KrakenWsError::Disconnected(format!(
+                "Futures WebSocket handler shutdown failed: {e}"
+            ))),
+        }
     }
 
     /// Closes the WebSocket connection.
@@ -793,6 +877,8 @@ impl KrakenFuturesWebSocketClient {
             KrakenWsError::AuthenticationError("API credentials required".to_string())
         })?;
 
+        let original_challenge = SecretString::from(original_challenge);
+        let signed_challenge = SecretString::from(signed_challenge);
         *self.original_challenge.write().await = Some(original_challenge);
         *self.signed_challenge.write().await = Some(signed_challenge);
         self.auth_tracker.succeed();
@@ -829,15 +915,13 @@ impl KrakenFuturesWebSocketClient {
 
     /// Sets the account ID for execution report parsing.
     pub fn set_account_id(&self, account_id: AccountId) {
-        if let Ok(mut guard) = self.account_id.write() {
-            *guard = Some(account_id);
-        }
+        *self.account_id.write() = Some(account_id);
     }
 
     /// Returns the account ID if set.
     #[must_use]
     pub fn account_id(&self) -> Option<AccountId> {
-        self.account_id.read().ok().and_then(|g| *g)
+        *self.account_id.read()
     }
 
     /// Returns a reference to the shared account ID.
@@ -884,11 +968,11 @@ impl KrakenFuturesWebSocketClient {
         });
     }
 
-    /// Caches a client order for truncated ID resolution and instrument lookup.
+    /// Caches a client order for shortened ID resolution and instrument lookup.
     ///
-    /// Kraken Futures limits client order IDs to 18 characters, so orders with
-    /// longer IDs are truncated. This method stores the mapping from truncated
-    /// to full ID, and from venue order ID to instrument ID for cancel messages.
+    /// An order sent with its client order ID shortened by `truncate_cl_ord_id` is echoed in
+    /// that form. This method stores the mapping from the shortened to the full ID, and from
+    /// venue order ID to instrument ID for cancel messages.
     pub fn cache_client_order(
         &self,
         client_order_id: ClientOrderId,
@@ -958,14 +1042,15 @@ impl KrakenFuturesWebSocketClient {
         &self,
         feed: KrakenFuturesFeed,
         product_ids: Vec<String>,
-    ) -> Result<String, KrakenWsError> {
+    ) -> Result<SecretString, KrakenWsError> {
         let request = KrakenFuturesRequest {
             event: KrakenFuturesEvent::Subscribe,
             feed,
             product_ids,
         };
-        let payload =
-            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+        let payload = SecretString::from(
+            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?,
+        );
         self.cmd_tx
             .read()
             .await
@@ -986,8 +1071,9 @@ impl KrakenFuturesWebSocketClient {
             feed,
             product_ids,
         };
-        let payload =
-            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+        let payload = SecretString::from(
+            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?,
+        );
         self.cmd_tx
             .read()
             .await
@@ -999,7 +1085,7 @@ impl KrakenFuturesWebSocketClient {
     async fn send_private_subscribe_feed(
         &self,
         feed: KrakenFuturesFeed,
-    ) -> Result<String, KrakenWsError> {
+    ) -> Result<SecretString, KrakenWsError> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             KrakenWsError::AuthenticationError("API credentials required".to_string())
         })?;
@@ -1019,15 +1105,18 @@ impl KrakenFuturesWebSocketClient {
             )
         })?;
 
-        let request = KrakenFuturesPrivateSubscribeRequest {
+        let request = Zeroizing::new(KrakenFuturesPrivateSubscribeRequest {
             event: KrakenFuturesEvent::Subscribe,
             feed,
-            api_key: credential.api_key().to_string(),
+            api_key: credential.api_key().into(),
             original_challenge,
             signed_challenge,
-        };
-        let payload =
-            serde_json::to_string(&request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+        });
+        let payload = SecretString::from(
+            serde_json::to_string(&*request)
+                .map_err(|e| KrakenWsError::JsonError(e.to_string()))?,
+        );
+        drop(request);
         self.cmd_tx
             .read()
             .await
@@ -1044,7 +1133,7 @@ fn update_private_payload_credentials(
     api_key: &str,
     original_challenge: &str,
     signed_challenge: &str,
-) -> Option<String> {
+) -> Option<SecretString> {
     let mut value: serde_json::Value = serde_json::from_str(payload).ok()?;
     let obj = value.as_object_mut()?;
     obj.insert(
@@ -1059,15 +1148,17 @@ fn update_private_payload_credentials(
         "signed_challenge".to_string(),
         serde_json::Value::String(signed_challenge.to_string()),
     );
-    serde_json::to_string(&value).ok()
+    let payload = serde_json::to_string(&value).ok().map(SecretString::from);
+    zeroize_json_value(&mut value);
+    payload
 }
 
-fn build_challenge_payload(credential: &KrakenCredential) -> serde_json::Result<String> {
-    let request = KrakenFuturesChallengeRequest {
+fn build_challenge_payload(credential: &KrakenCredential) -> serde_json::Result<SecretString> {
+    let request = Zeroizing::new(KrakenFuturesChallengeRequest {
         event: KrakenFuturesEvent::Challenge,
-        api_key: credential.api_key().to_string(),
-    };
-    serde_json::to_string(&request)
+        api_key: credential.api_key().into(),
+    });
+    serde_json::to_string(&*request).map(SecretString::from)
 }
 
 fn is_private_feed_key(key: &str) -> bool {
@@ -1077,7 +1168,7 @@ fn is_private_feed_key(key: &str) -> bool {
 fn resubscribe_public(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>,
     subscriptions: &SubscriptionState,
-    payloads: &HashMap<String, String>,
+    payloads: &HashMap<String, SecretString>,
 ) {
     for (key, payload) in payloads {
         if is_private_feed_key(key) {
@@ -1098,7 +1189,7 @@ fn resubscribe_public(
 fn resubscribe_private(
     cmd_tx: &tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>,
     subscriptions: &SubscriptionState,
-    payloads: &HashMap<String, String>,
+    payloads: &HashMap<String, SecretString>,
     credential: &KrakenCredential,
     original_challenge: &str,
     signed_challenge: &str,
@@ -1109,7 +1200,7 @@ fn resubscribe_private(
         }
 
         let Some(updated) = update_private_payload_credentials(
-            payload,
+            payload.expose_secret(),
             credential.api_key(),
             original_challenge,
             signed_challenge,
@@ -1129,23 +1220,156 @@ fn resubscribe_private(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use base64::{Engine, engine::general_purpose::STANDARD};
+    use futures_util::StreamExt;
     use nautilus_network::websocket::AuthTracker;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
 
     fn test_credential() -> KrakenCredential {
         let secret = STANDARD.encode(b"test_secret_key_24bytes!");
         KrakenCredential::new("test_key", secret)
     }
 
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+        let mut ws_client = KrakenFuturesWebSocketClient::new(url, 30, None);
+        let observer = ws_client.clone();
+        let expected = serde_json::json!({
+            "event": "subscribe",
+            "feed": "trade",
+            "product_ids": [
+                "PI_XBTUSD"
+            ]
+        });
+
+        let command = FuturesHandlerCommand::Subscribe {
+            payload: SecretString::from(expected.to_string()),
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.close().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(payload, expected);
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = KrakenFuturesWebSocketClient::new(url.to_string(), 30, None);
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_debug_redacts_auth_state_and_proxy_url() {
+        let client = KrakenFuturesWebSocketClient::with_credentials(
+            "wss://test".to_string(),
+            30,
+            Some(test_credential()),
+            None,
+            TransportBackend::default(),
+            Some("http://user:proxy-secret@localhost".to_string()),
+        );
+        client
+            .set_auth_credentials(
+                "original-challenge".to_string(),
+                "signed-challenge".to_string(),
+            )
+            .await
+            .unwrap();
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("proxy-secret"));
+        assert!(!debug.contains("original-challenge"));
+        assert!(!debug.contains("signed-challenge"));
+    }
+
+    #[tokio::test]
+    async fn test_last_client_owner_drop_aborts_handler_task() {
+        let client = KrakenFuturesWebSocketClient::new("wss://test".to_string(), 30, None);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let drop_signal = DropSignal(Arc::clone(&dropped));
+        client
+            .handler_tasks
+            .spawn(async move {
+                let _drop_signal = drop_signal;
+                started_tx.send(()).expect("started receiver");
+                std::future::pending::<()>().await;
+            })
+            .expect("handler task should register");
+        started_rx.await.expect("handler task started");
+        let clone = client.clone();
+
+        drop(client);
+        assert!(!dropped.load(Ordering::Acquire));
+        drop(clone);
+
+        tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
+            while !dropped.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("handler task aborted");
+    }
+
     #[rstest]
     fn test_build_challenge_payload_emits_expected_event() {
         let credential = test_credential();
         let payload = build_challenge_payload(&credential).expect("serializes");
-        assert!(payload.contains(r#""event":"challenge""#));
-        assert!(payload.contains(r#""api_key":"test_key""#));
+        assert!(payload.expose_secret().contains(r#""event":"challenge""#));
+        assert!(payload.expose_secret().contains(r#""api_key":"test_key""#));
     }
 
     #[rstest]
@@ -1157,11 +1381,13 @@ mod tests {
         let mut payloads = HashMap::new();
         payloads.insert(
             "trades:PI_XBTUSD".to_string(),
-            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            ),
         );
         payloads.insert(
             "open_orders".to_string(),
-            r#"{"event":"subscribe","feed":"open_orders"}"#.to_string(),
+            SecretString::from(r#"{"event":"subscribe","feed":"open_orders"}"#.to_string()),
         );
 
         resubscribe_public(&cmd_tx, &subscriptions, &payloads);
@@ -1176,7 +1402,7 @@ mod tests {
             1,
             "only the public feed should resubscribe"
         );
-        assert!(subscribed[0].contains("PI_XBTUSD"));
+        assert!(subscribed[0].expose_secret().contains("PI_XBTUSD"));
     }
 
     #[rstest]
@@ -1190,14 +1416,16 @@ mod tests {
         let mut payloads = HashMap::new();
         payloads.insert(
             "trades:PI_XBTUSD".to_string(),
-            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            ),
         );
 
         resubscribe_public(&cmd_tx, &subscriptions, &payloads);
 
         match cmd_rx.try_recv().expect("public subscribe expected") {
             FuturesHandlerCommand::Subscribe { payload } => {
-                assert!(payload.contains("PI_XBTUSD"));
+                assert!(payload.expose_secret().contains("PI_XBTUSD"));
             }
             other => panic!("expected Subscribe, was {other:?}"),
         }
@@ -1213,11 +1441,16 @@ mod tests {
         let mut payloads = HashMap::new();
         payloads.insert(
             "open_orders".to_string(),
-            r#"{"event":"subscribe","feed":"open_orders","api_key":"","original_challenge":"","signed_challenge":""}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"open_orders","api_key":"","original_challenge":"","signed_challenge":""}"#
+                    .to_string(),
+            ),
         );
         payloads.insert(
             "trades:PI_XBTUSD".to_string(),
-            r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            SecretString::from(
+                r#"{"event":"subscribe","feed":"trade","product_ids":["PI_XBTUSD"]}"#.to_string(),
+            ),
         );
 
         resubscribe_private(
@@ -1240,7 +1473,7 @@ mod tests {
             "only the private feed should resubscribe"
         );
         let value: serde_json::Value =
-            serde_json::from_str(&subscribed[0]).expect("payload is valid JSON");
+            serde_json::from_str(subscribed[0].expose_secret()).expect("payload is valid JSON");
         assert_eq!(value["event"], "subscribe");
         assert_eq!(value["feed"], "open_orders");
         assert_eq!(value["api_key"], "test_key");

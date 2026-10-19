@@ -43,11 +43,11 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trailing_offset", true),
     JsonFieldSpec::utf8("trailing_offset_type", true),
     JsonFieldSpec::utf8("time_in_force", false),
-    JsonFieldSpec::u64("expire_time", true),
+    JsonFieldSpec::timestamp("expire_time", true),
     JsonFieldSpec::utf8("filled_qty", false),
     JsonFieldSpec::utf8("liquidity_side", true),
-    JsonFieldSpec::decimal_str("avg_px", true),
-    JsonFieldSpec::decimal_str("slippage", true),
+    JsonFieldSpec::utf8("avg_px", true),
+    JsonFieldSpec::utf8("slippage", true),
     JsonFieldSpec::utf8_json("commissions", false),
     JsonFieldSpec::utf8("status", false),
     JsonFieldSpec::boolean("is_post_only", false),
@@ -65,8 +65,8 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("exec_spawn_id", true),
     JsonFieldSpec::utf8_json("tags", true),
     JsonFieldSpec::utf8("init_id", false),
-    JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("ts_last", false),
+    JsonFieldSpec::timestamp("ts_init", false),
+    JsonFieldSpec::timestamp("ts_last", false),
     // Appended (not inserted) so older batches without this column fail with a clean
     // `MissingColumn` error rather than silently reading a shifted column.
     JsonFieldSpec::utf8("activation_price", true),
@@ -95,10 +95,10 @@ const POSITION_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("unrealized_pnl", true),
     JsonFieldSpec::utf8_json("commissions", false),
     JsonFieldSpec::u64("duration_ns", true),
-    JsonFieldSpec::u64("ts_opened", false),
-    JsonFieldSpec::u64("ts_closed", true),
-    JsonFieldSpec::u64("ts_init", false),
-    JsonFieldSpec::u64("ts_last", false),
+    JsonFieldSpec::timestamp("ts_opened", false),
+    JsonFieldSpec::timestamp("ts_closed", true),
+    JsonFieldSpec::timestamp("ts_init", false),
+    JsonFieldSpec::timestamp("ts_last", false),
     JsonFieldSpec::utf8_json("replay_state", true),
 ];
 
@@ -117,11 +117,19 @@ macro_rules! impl_snapshot_arrow {
         }
 
         impl EncodeToRecordBatch for $type {
-            fn encode_batch(
+            fn encode_batch<T>(
                 metadata: &HashMap<String, String>,
-                data: &[Self],
-            ) -> Result<RecordBatch, ArrowError> {
-                encode_batch($type_name, metadata, data, $fields)
+                data: &[T],
+            ) -> Result<RecordBatch, ArrowError>
+            where
+                T: std::borrow::Borrow<Self>,
+            {
+                encode_batch(
+                    $type_name,
+                    metadata,
+                    data.iter().map(std::borrow::Borrow::borrow),
+                    $fields,
+                )
             }
 
             fn metadata(&self) -> HashMap<String, String> {
@@ -152,9 +160,9 @@ mod tests {
     use std::str::FromStr;
 
     use arrow::datatypes::DataType;
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{DurationNanos, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderType, PositionSide},
+        enums::{OrderSide, OrderType, PositionSide, TrailingOffsetType},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
         orders::OrderTestBuilder,
         types::{Currency, Money, Price, Quantity},
@@ -174,6 +182,7 @@ mod tests {
             .trigger_price(Price::from("50500"))
             .limit_offset(Decimal::from_str("0.123456789123456789").unwrap())
             .trailing_offset(Decimal::from_str("0.987654321987654321").unwrap())
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from("0.5"))
             .build();
         let snapshot = OrderSnapshot::from(order);
@@ -199,7 +208,7 @@ mod tests {
     }
 
     // The catalog spec before `avg_px` and `slippage` became exact
-    fn legacy_float64_fields() -> Vec<JsonFieldSpec> {
+    fn float64_fields() -> Vec<JsonFieldSpec> {
         ORDER_SNAPSHOT_FIELDS
             .iter()
             .map(|spec| match spec.name {
@@ -242,51 +251,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_snapshot_decodes_legacy_float64_columns() {
-        // A catalog file written while the fields were `f64`: the columns are `Float64`, not
-        // `Utf8`, and must still decode to the same economic state without a version marker.
+    fn test_order_snapshot_rejects_float64_avg_px_column() {
+        // Converting a float into an exact price would lose precision silently
         let snapshot = make_order_snapshot(Some(dec!(1.07)), Some(dec!(0.07)));
         let metadata = snapshot.metadata();
-        let legacy_batch = encode_batch(
+        let batch = encode_batch(
             "OrderSnapshot",
             &metadata,
             std::slice::from_ref(&snapshot),
-            &legacy_float64_fields(),
+            &float64_fields(),
         )
         .unwrap();
 
-        assert_eq!(
-            legacy_batch
-                .schema()
-                .field_with_name("avg_px")
-                .unwrap()
-                .data_type(),
-            &DataType::Float64
-        );
+        let error =
+            OrderSnapshot::decode_typed_batch(batch.schema().metadata(), batch).unwrap_err();
 
-        let decoded =
-            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
-                .unwrap();
-
-        assert_eq!(decoded, vec![snapshot]);
-    }
-
-    #[rstest]
-    fn test_order_snapshot_decodes_legacy_float64_null_columns() {
-        let snapshot = make_order_snapshot(None, None);
-        let metadata = snapshot.metadata();
-        let legacy_batch = encode_batch(
-            "OrderSnapshot",
-            &metadata,
-            std::slice::from_ref(&snapshot),
-            &legacy_float64_fields(),
-        )
-        .unwrap();
-        let decoded =
-            OrderSnapshot::decode_typed_batch(legacy_batch.schema().metadata(), legacy_batch)
-                .unwrap();
-
-        assert_eq!(decoded, vec![snapshot]);
+        assert!(matches!(
+            error,
+            EncodingError::InvalidColumnType("avg_px", _, DataType::Utf8, DataType::Float64)
+        ));
     }
 
     fn make_position_snapshot() -> PositionSnapshot {
@@ -312,7 +295,7 @@ mod tests {
             realized_pnl: Some(Money::new(100.0, Currency::USD())),
             unrealized_pnl: Some(Money::new(50.0, Currency::USD())),
             commissions: vec![Money::new(2.0, Currency::USD())],
-            duration_ns: Some(3_600_000_000_000),
+            duration_ns: Some(DurationNanos::new(3_600_000_000_000)),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_init: UnixNanos::from(2_000_000_000),

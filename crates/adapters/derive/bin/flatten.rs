@@ -107,10 +107,12 @@ async fn main() -> anyhow::Result<()> {
 
     let credentials = DeriveCredentials::new(wallet_address.clone(), &session_private_key)
         .map_err(|e| anyhow::anyhow!("failed to build credentials: {e}"))?;
+
     let base_url = match environment {
         DeriveEnvironment::Mainnet => REST_URL_MAINNET,
         DeriveEnvironment::Testnet => REST_URL_TESTNET,
     };
+
     let client = DeriveHttpClient::with_credentials(base_url, credentials, None, None, None)
         .map_err(|e| anyhow::anyhow!("failed to build http client: {e}"))?;
 
@@ -135,6 +137,7 @@ async fn main() -> anyhow::Result<()> {
         log::info!("Flatten complete: no non-zero positions on subaccount {subaccount_id}");
         return Ok(());
     }
+
     log::info!("Closing {} position(s)", positions.len());
 
     for position in &positions {
@@ -241,6 +244,7 @@ async fn close_position(
     } else {
         DeriveOrderSide::Buy
     };
+
     let limit_price =
         close_limit_price(&ticker, close_side, instrument.tick_size).ok_or_else(|| {
             anyhow::anyhow!(
@@ -251,12 +255,14 @@ async fn close_position(
 
     let asset_address =
         parse_address(instrument.base_asset_address.as_str(), "base_asset_address")?;
+
     let sub_id = U256::from_str_radix(instrument.base_asset_sub_id.as_str(), 10).map_err(|e| {
         anyhow::anyhow!(
             "base_asset_sub_id `{}` is not a U256: {e}",
             instrument.base_asset_sub_id,
         )
     })?;
+
     let max_fee = Decimal::from_str(MAX_FEE_PER_CONTRACT).expect("constant decimal");
 
     let trade = TradeModuleData {
@@ -349,6 +355,7 @@ fn close_limit_price(
             if bid <= Decimal::ZERO {
                 return None;
             }
+
             let raw = bid * (one - bps / scale);
             let rounded = round_down_to_tick(raw, tick_size);
             // Cheap options can be bid at one tick: `bid * 0.995` then floored
@@ -366,6 +373,7 @@ fn close_limit_price(
             if ask <= Decimal::ZERO {
                 return None;
             }
+
             let raw = ask * (one + bps / scale);
             Some(round_up_to_tick(raw, tick_size))
         }
@@ -376,6 +384,7 @@ fn round_down_to_tick(value: Decimal, tick: Decimal) -> Decimal {
     if tick <= Decimal::ZERO {
         return value;
     }
+
     (value / tick).floor() * tick
 }
 
@@ -383,6 +392,7 @@ fn round_up_to_tick(value: Decimal, tick: Decimal) -> Decimal {
     if tick <= Decimal::ZERO {
         return value;
     }
+
     (value / tick).ceil() * tick
 }
 
@@ -410,6 +420,7 @@ async fn verify_flat(client: &DeriveHttpClient, subaccount_id: u64) -> anyhow::R
             p.amount,
         );
     }
+
     anyhow::bail!("{} residual position(s) after flatten", residual.len())
 }
 

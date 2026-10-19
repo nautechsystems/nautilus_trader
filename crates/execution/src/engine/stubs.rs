@@ -22,18 +22,22 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,
-    identifiers::{AccountId, ClientId, ClientOrderId, Venue},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
+    },
     instruments::InstrumentAny,
+    orders::OrderAny,
+    reports::FillReport,
     types::{AccountBalance, MarginBalance},
 };
 
@@ -58,8 +62,12 @@ pub struct StubExecutionClient {
     dispose_count: Rc<Cell<usize>>,
     submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     modified_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
+    cancel_all_commands: Rc<RefCell<Vec<CancelAllOrders>>>,
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
+    registered_external_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     handles_all_order_venues: bool,
+    settles_contract_expirations: bool,
+    allows_reconciliation_overfill: bool,
     submit_order_error: Option<String>,
     submit_order_list_error: Option<String>,
 }
@@ -80,7 +88,7 @@ impl StubExecutionClient {
             venue,
             oms_type,
             is_connected: false,
-            clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(TestClock::new()))),
+            clock: clock.unwrap_or_else(|| Rc::new(RefCell::new(VirtualClock::new()))),
             cache: Rc::new(RefCell::new(Cache::new(None, None))),
             received_instruments: Rc::new(RefCell::new(Vec::new())),
             start_count: Rc::new(Cell::new(0)),
@@ -89,8 +97,12 @@ impl StubExecutionClient {
             dispose_count: Rc::new(Cell::new(0)),
             submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
             modified_order_ids: Rc::new(RefCell::new(Vec::new())),
+            cancel_all_commands: Rc::new(RefCell::new(Vec::new())),
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
+            registered_external_order_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
+            settles_contract_expirations: false,
+            allows_reconciliation_overfill: false,
             submit_order_error: None,
             submit_order_list_error: None,
         }
@@ -100,6 +112,20 @@ impl StubExecutionClient {
     #[must_use]
     pub fn with_handles_all_order_venues(mut self) -> Self {
         self.handles_all_order_venues = true;
+        self
+    }
+
+    /// Configures this stub as a venue that settles expiring contracts itself.
+    #[must_use]
+    pub fn with_settles_contract_expirations(mut self) -> Self {
+        self.settles_contract_expirations = true;
+        self
+    }
+
+    /// Configures this stub to allow a reconciliation quantity raise before an overfill.
+    #[must_use]
+    pub fn with_allows_reconciliation_overfill(mut self) -> Self {
+        self.allows_reconciliation_overfill = true;
         self
     }
 
@@ -115,6 +141,13 @@ impl StubExecutionClient {
     pub fn with_submit_order_list_error(mut self, error: impl Into<String>) -> Self {
         self.submit_order_list_error = Some(error.into());
         self
+    }
+
+    /// Returns a shared handle to the order IDs registered via
+    /// [`ExecutionClient::register_external_order`].
+    #[must_use]
+    pub fn registered_external_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
+        self.registered_external_order_ids.clone()
     }
 
     /// Returns a shared handle to the instruments delivered via [`ExecutionClient::on_instrument`].
@@ -133,6 +166,12 @@ impl StubExecutionClient {
     #[must_use]
     pub fn modified_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
         self.modified_order_ids.clone()
+    }
+
+    /// Returns a shared handle to the received cancel-all commands.
+    #[must_use]
+    pub fn cancel_all_commands(&self) -> Rc<RefCell<Vec<CancelAllOrders>>> {
+        self.cancel_all_commands.clone()
     }
 
     /// Returns a shared handle to the queried account IDs.
@@ -188,6 +227,14 @@ impl ExecutionClient for StubExecutionClient {
         self.handles_all_order_venues || self.venue == venue
     }
 
+    fn settles_contract_expirations(&self) -> bool {
+        self.settles_contract_expirations
+    }
+
+    fn allows_reconciliation_overfill(&self, _order: &OrderAny, _report: &FillReport) -> bool {
+        self.allows_reconciliation_overfill
+    }
+
     fn oms_type(&self) -> OmsType {
         self.oms_type
     }
@@ -202,6 +249,7 @@ impl ExecutionClient for StubExecutionClient {
         _margins: Vec<MarginBalance>,
         _reported: bool,
         _ts_event: UnixNanos,
+        _info: Option<Params>,
     ) -> anyhow::Result<()> {
         Ok(()) // Stub implementation always succeeds
     }
@@ -274,7 +322,8 @@ impl ExecutionClient for StubExecutionClient {
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        self.cancel_all_commands.borrow_mut().push(cmd);
         Ok(()) // Stub implementation always succeeds
     }
 
@@ -290,6 +339,19 @@ impl ExecutionClient for StubExecutionClient {
 
     fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
         Ok(()) // Stub implementation always succeeds
+    }
+
+    fn register_external_order(
+        &self,
+        client_order_id: ClientOrderId,
+        _venue_order_id: VenueOrderId,
+        _instrument_id: InstrumentId,
+        _strategy_id: StrategyId,
+        _ts_init: UnixNanos,
+    ) {
+        self.registered_external_order_ids
+            .borrow_mut()
+            .push(client_order_id);
     }
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {

@@ -31,11 +31,9 @@ use nautilus_core::{
 };
 use pyo3::{IntoPyObjectExt, prelude::*, pyclass::CompareOp, types::PyDict};
 
-use super::data_to_pycapsule;
 use crate::{
     data::{
-        Data,
-        depth::{DEPTH10_LEN, OrderBookDepth10},
+        depth::{DEPTH10_LEN, OrderBookDepth},
         order::BookOrder,
     },
     enums::OrderSide,
@@ -46,33 +44,44 @@ use crate::{
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl OrderBookDepth10 {
-    /// Represents an aggregated order book update with a fixed depth of 10 levels per side.
+impl OrderBookDepth {
+    /// Represents one aggregated order book snapshot with any number of levels per side.
     ///
-    /// This structure is specifically designed for scenarios where a snapshot of the top 10 bid and
-    /// ask levels in an order book is needed. It differs from `OrderBookDelta` or `OrderBookDeltas`
-    /// in its fixed-depth nature and is optimized for cases where a full depth representation is not
-    /// required or practical.
+    /// The plural name denotes the many levels in one snapshot. In contrast, `super.OrderBookDeltas`
+    /// is a container of multiple update events. Up to ten levels per side remain inline; deeper venue
+    /// snapshots spill transparently without changing the data type.
     ///
-    /// Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
-    /// its specialized structure and limited depth use case.
-    ///
-    /// Per-level `BookOrder.order_id` values are non-semantic for this aggregated MBP data.
-    /// Parquet catalog decoding canonicalizes them to zero.
+    /// Per-level `BookOrder.order_id` values are retained when supplied by the venue.
     #[expect(clippy::too_many_arguments)]
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
-        bids: [BookOrder; DEPTH10_LEN],
-        asks: [BookOrder; DEPTH10_LEN],
-        bid_counts: [u32; DEPTH10_LEN],
-        ask_counts: [u32; DEPTH10_LEN],
+        bids: Vec<BookOrder>,
+        asks: Vec<BookOrder>,
+        bid_counts: Vec<u32>,
+        ask_counts: Vec<u32>,
         flags: u8,
         sequence: u64,
         ts_event: u64,
         ts_init: u64,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        if bids.len() != bid_counts.len() {
+            return Err(to_pyvalue_err(format!(
+                "bid order and count lengths must match: {} orders and {} counts",
+                bids.len(),
+                bid_counts.len(),
+            )));
+        }
+
+        if asks.len() != ask_counts.len() {
+            return Err(to_pyvalue_err(format!(
+                "ask order and count lengths must match: {} orders and {} counts",
+                asks.len(),
+                ask_counts.len(),
+            )));
+        }
+
+        Self::new_checked(
             instrument_id,
             bids,
             asks,
@@ -83,6 +92,7 @@ impl OrderBookDepth10 {
             ts_event.into(),
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -115,26 +125,26 @@ impl OrderBookDepth10 {
 
     #[getter]
     #[pyo3(name = "bids")]
-    fn py_bids(&self) -> [BookOrder; DEPTH10_LEN] {
-        self.bids
+    fn py_bids(&self) -> Vec<BookOrder> {
+        self.bids.to_vec()
     }
 
     #[getter]
     #[pyo3(name = "asks")]
-    fn py_asks(&self) -> [BookOrder; DEPTH10_LEN] {
-        self.asks
+    fn py_asks(&self) -> Vec<BookOrder> {
+        self.asks.to_vec()
     }
 
     #[getter]
     #[pyo3(name = "bid_counts")]
-    fn py_bid_counts(&self) -> [u32; DEPTH10_LEN] {
-        self.bid_counts
+    fn py_bid_counts(&self) -> Vec<u32> {
+        self.bid_counts.to_vec()
     }
 
     #[getter]
     #[pyo3(name = "ask_counts")]
-    fn py_ask_counts(&self) -> [u32; DEPTH10_LEN] {
-        self.ask_counts
+    fn py_ask_counts(&self) -> Vec<u32> {
+        self.ask_counts.to_vec()
     }
 
     #[getter]
@@ -164,7 +174,7 @@ impl OrderBookDepth10 {
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
-        format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDepth10))
+        format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDepth))
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
@@ -258,26 +268,6 @@ impl OrderBookDepth10 {
         from_dict_pyo3(py, values)
     }
 
-    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Depth10` object.
-    ///
-    /// This function takes the current object (assumed to be of a type that can be represented as
-    /// `Data::Depth10`), and encapsulates a raw pointer to it within a `PyCapsule`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe as long as the following conditions are met:
-    /// - The `Data::Depth10` object pointed to by the capsule must remain valid for the lifetime of the capsule.
-    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
-    ///
-    /// # Panics
-    ///
-    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
-    /// `Data::Depth10` object cannot be converted into a raw pointer.
-    #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> Py<PyAny> {
-        data_to_pycapsule(py, Data::from(*self))
-    }
-
     /// Return a dictionary representation of the object.
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
@@ -302,7 +292,7 @@ impl OrderBookDepth10 {
 }
 
 #[pymethods]
-impl OrderBookDepth10 {
+impl OrderBookDepth {
     #[staticmethod]
     #[pyo3(name = "from_json")]
     fn py_from_json(data: &[u8]) -> PyResult<Self> {

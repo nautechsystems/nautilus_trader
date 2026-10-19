@@ -21,15 +21,16 @@
 //! cargo run --bin lighter-flatten -p nautilus-lighter
 //! ```
 //!
-//! Environment variables: `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
-//! `LIGHTER_ACCOUNT_INDEX` (or the testnet variants). Mainnet only for now;
-//! flip to testnet by setting `LIGHTER_ENVIRONMENT=testnet`.
+//! Set `LIGHTER_DEPLOYMENT` to `lighter` or `robinhood` and `LIGHTER_ENVIRONMENT`
+//! to `mainnet` or `testnet`. Omitted selectors default to Lighter Mainnet. The
+//! matching deployment and environment credential namespace supplies the account
+//! index, API key index, and API secret.
 //!
-//! Best-effort: per-market fan-out across every registered market is bounded
-//! by Lighter's 60 req/min REST quota, so the run takes around three minutes
-//! when many markets are scanned.
+//! The tool submits one account-wide cancellation, then closes positions from
+//! one account snapshot. It does not confirm or retry the requests. Stop other
+//! writers for the account before use.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, fmt::Display, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use nautilus_common::logging::{init_logging, logger::LoggerConfig};
@@ -37,28 +38,32 @@ use nautilus_core::UUID4;
 use nautilus_lighter::{
     common::{
         credential::Credential,
-        enums::{LighterEnvironment, LighterOrderType, LighterTimeInForce, LighterTxType},
+        enums::{
+            LighterCancelAllTimeInForce, LighterDeployment, LighterEnvironment, LighterOrderType,
+            LighterTimeInForce, LighterTxType,
+        },
         symbol::MarketRegistry,
-        urls::lighter_chain_id,
     },
+    config::LighterExecutionClientConfig,
     http::{
         client::{LighterHttpClient, LighterRawHttpClient},
-        query::{LighterAccountActiveOrdersQuery, LighterOrderBookDetailsQuery},
+        query::LighterOrderBookDetailsQuery,
     },
     signing::{
         auth_token::{build_auth_token_for, fresh_k},
         nonce::NonceManager,
         tx::{
-            CancelOrderTxInfo, CreateOrderTxInfo, L2TxAttributes, OrderInfo, TxContext, TxInfoJson,
-            sign_tx,
+            CancelAllOrdersTxInfo, CreateOrderTxInfo, L2TxAttributes, OrderInfo, TxContext,
+            TxInfoJson, sign_tx,
         },
     },
     websocket::{LighterWebSocketClient, LighterWsChannel, NautilusWsMessage},
 };
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
-    enums::PositionSideSpecified,
-    identifiers::{AccountId, TraderId},
-    instruments::Instrument,
+    enums::PositionSide,
+    identifiers::{AccountId, InstrumentId, TraderId},
+    instruments::{Instrument, InstrumentAny},
     reports::PositionStatusReport,
 };
 use nautilus_network::websocket::TransportBackend;
@@ -66,9 +71,11 @@ use rust_decimal::Decimal;
 
 const DEFAULT_TX_EXPIRY_MS: i64 = 5 * 60 * 1_000;
 const POSITION_WAIT: Duration = Duration::from_secs(8);
+const SETTLE_WAIT: Duration = Duration::from_secs(2);
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> anyhow::Result<()> {
     let _log_guard = init_logging(
         TraderId::from("FLATTEN-001"),
         UUID4::new(),
@@ -79,29 +86,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Default::default(),
     )?;
 
-    let environment = match std::env::var("LIGHTER_ENVIRONMENT").as_deref() {
-        Ok("testnet" | "Testnet") => LighterEnvironment::Testnet,
-        _ => LighterEnvironment::Mainnet,
-    };
-    log::info!("Environment: {environment:?}");
+    let deployment: LighterDeployment = read_selection("LIGHTER_DEPLOYMENT")?;
+    let environment: LighterEnvironment = read_selection("LIGHTER_ENVIRONMENT")?;
 
-    let credential = Credential::resolve(None, None, None, environment)?
-        .ok_or_else(|| anyhow::anyhow!("no Lighter credentials in env"))?;
+    let target = LighterExecutionClientConfig {
+        deployment,
+        environment,
+        ..Default::default()
+    };
+
+    let venue = target.resolved_venue();
+    let chain_id = target.chain_id();
+
+    log::info!("Deployment: {deployment:?}, environment: {environment:?}, venue: {venue}");
+
+    let credential = Credential::resolve_for_deployment(None, None, None, deployment, environment)?
+        .ok_or_else(|| anyhow::anyhow!("no {deployment:?} credentials in env"))?;
+
     log::info!(
         "Account: account_index={}, api_key_index={}",
         credential.account_index(),
         credential.api_key_index(),
     );
 
-    let registry = Arc::new(MarketRegistry::new());
-    let raw_http = LighterRawHttpClient::new(environment, None, 30, None)?;
+    let registry = Arc::new(MarketRegistry::new_with_venue_and_settlement_currency(
+        venue,
+        target.settlement_currency(),
+    ));
+
+    let raw_http = LighterRawHttpClient::new(environment, Some(target.http_url()), 30, None)?;
     let http = LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
+
     let mut ws = LighterWebSocketClient::new(
-        None,
+        Some(target.ws_url()),
         environment,
         Arc::clone(&registry),
         TransportBackend::Tungstenite,
         30,
+        Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         None,
     );
 
@@ -132,152 +154,270 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Nonce baseline: {}", next_nonce.nonce);
 
     ws.connect().await?;
-    ws.set_execution_context(
-        AccountId::new("LIGHTER-FLATTEN-001"),
-        credential.account_index(),
-    )
-    .await?;
+    let account_id = AccountId::new(format!("{venue}-FLATTEN-001"));
+    ws.set_execution_context(account_id, credential.account_index())
+        .await?;
     let auth = build_auth_token_for(&credential)?;
     ws.subscribe_account(
         LighterWsChannel::AccountAllPositions(credential.account_index()),
-        auth.clone(),
+        auth,
     )
     .await?;
 
-    let mut cancelled = 0_usize;
-
-    for market_id in registry.all_market_indices() {
-        match http
-            .get_account_active_orders(&LighterAccountActiveOrdersQuery {
-                authorization: None,
-                auth: Some(auth.clone()),
-                account_index: credential.account_index(),
-                market_id,
-            })
-            .await
-        {
-            Ok(resp) if !resp.orders.is_empty() => {
-                let id = registry
-                    .instrument_id(market_id)
-                    .map_or_else(|| format!("market_index={market_id}"), |i| i.to_string());
-                log::info!("Cancelling {} order(s) on {id}", resp.orders.len());
-                for order in &resp.orders {
-                    cancel_one_order(
-                        &ws,
-                        &credential,
-                        &nonce_mgr,
-                        environment,
-                        market_id,
-                        order.order_index,
-                    )
-                    .await?;
-                    cancelled += 1;
-                }
-            }
-            Ok(_) => {}
-            Err(e) => {
-                // Use top-level Display (not `{e:#}` chain) so the
-                // reqwest::Error inside doesn't leak the auth-bearing URL.
-                log::warn!("active orders fetch failed (market_id={market_id}): {e}");
-            }
-        }
+    let mut summary = FlattenSummary::default();
+    match cancel_all_orders(&ws, &credential, &nonce_mgr, chain_id).await {
+        Ok(()) => summary.cancellation_submitted = true,
+        Err(e) => record_failure(
+            &mut summary,
+            format!("account-wide cancellation failed: {e}"),
+        ),
     }
-    log::info!("Cancel pass complete; submitted {cancelled} cancel(s)");
 
     log::info!("Waiting up to {POSITION_WAIT:?} for account_all_positions snapshot...");
-    let positions = collect_positions(&mut ws, POSITION_WAIT).await;
+    let snapshot = wait_for_authoritative_positions(&mut ws, &registry, POSITION_WAIT).await;
+    if !matches!(&snapshot, PositionSnapshotOutcome::Complete(_)) {
+        record_failure(&mut summary, snapshot.description());
+    }
+    let positions = snapshot.reports();
     if positions.is_empty() {
-        log::info!("No open positions");
-        return Ok(());
+        log::info!("No open positions in the account snapshot");
+    } else {
+        log::info!("Closing {} position(s)", positions.len());
+        let command = FlattenCommand {
+            http: &http,
+            ws: &mut ws,
+            credential: &credential,
+            nonce_mgr: &nonce_mgr,
+            registry: &registry,
+            instruments: &instruments,
+            chain_id,
+        };
+
+        if tokio::time::timeout(
+            CLOSE_TIMEOUT,
+            close_positions(&command, &positions, &mut summary),
+        )
+        .await
+        .is_err()
+        {
+            record_failure(&mut summary, "position close pass timed out".to_string());
+        }
     }
 
-    log::info!("Closing {} position(s)", positions.len());
-    for pos in &positions {
-        log::info!(
-            "position seen: instrument={} side={:?} qty={}",
-            pos.instrument_id,
-            pos.position_side,
-            pos.quantity,
-        );
-        let Some(market_id) = registry.market_index(&pos.instrument_id) else {
-            log::warn!("skip position {}: no market_index", pos.instrument_id);
-            continue;
-        };
-        let Some(instrument) = instruments.iter().find(|i| i.id() == pos.instrument_id) else {
-            log::warn!("skip position {}: no instrument", pos.instrument_id);
-            continue;
-        };
+    tokio::time::sleep(SETTLE_WAIT).await;
+    let result = finish_flatten(&summary);
 
-        let qty = pos.quantity.as_decimal();
-        if qty.is_zero() {
-            log::info!("skip position {}: qty already zero", pos.instrument_id);
-            continue;
+    let disconnect_error = ws.disconnect().await.err();
+    log::info!(
+        "Flatten summary: cancellation_submitted={}, closes_submitted={}",
+        summary.cancellation_submitted,
+        summary.closes_submitted,
+    );
+
+    if let Err(e) = result {
+        return Err(match disconnect_error {
+            Some(shutdown) => e.context(format!("WebSocket shutdown also failed: {shutdown}")),
+            None => e,
+        });
+    }
+
+    if let Some(e) = disconnect_error {
+        anyhow::bail!("flatten succeeded but WebSocket shutdown failed: {e}");
+    }
+
+    log::info!("Cancellation and position close requests submitted");
+    Ok(())
+}
+
+#[derive(Debug, Default)]
+struct FlattenSummary {
+    cancellation_submitted: bool,
+    closes_submitted: usize,
+    failures: Vec<String>,
+}
+
+#[derive(Debug)]
+enum PositionSnapshotOutcome {
+    Complete(Vec<PositionStatusReport>),
+    TimedOut {
+        partial: Vec<PositionStatusReport>,
+        skipped_market_ids: Vec<i64>,
+    },
+    StreamEnded {
+        partial: Vec<PositionStatusReport>,
+        skipped_market_ids: Vec<i64>,
+    },
+}
+
+impl PositionSnapshotOutcome {
+    fn description(&self) -> String {
+        match self {
+            Self::Complete(reports) if reports.is_empty() => {
+                "authoritative flat position snapshot".to_string()
+            }
+            Self::Complete(reports) => {
+                format!(
+                    "authoritative position snapshot with {} open row(s)",
+                    reports.len()
+                )
+            }
+            Self::TimedOut {
+                partial,
+                skipped_market_ids,
+            } => format!(
+                "position snapshot timed out with {} partial row(s) and skipped markets {skipped_market_ids:?}",
+                partial.len()
+            ),
+            Self::StreamEnded {
+                partial,
+                skipped_market_ids,
+            } => format!(
+                "position stream ended with {} partial row(s) and skipped markets {skipped_market_ids:?}",
+                partial.len()
+            ),
+        }
+    }
+
+    fn reports(self) -> Vec<PositionStatusReport> {
+        match self {
+            Self::Complete(reports)
+            | Self::TimedOut {
+                partial: reports, ..
+            }
+            | Self::StreamEnded {
+                partial: reports, ..
+            } => reports,
+        }
+    }
+}
+
+struct FlattenCommand<'a> {
+    http: &'a LighterHttpClient,
+    ws: &'a mut LighterWebSocketClient,
+    credential: &'a Credential,
+    nonce_mgr: &'a NonceManager,
+    registry: &'a MarketRegistry,
+    instruments: &'a [InstrumentAny],
+    chain_id: u32,
+}
+
+impl FlattenCommand<'_> {
+    async fn close_position(&self, position: &PositionStatusReport) -> anyhow::Result<()> {
+        let market_id = self
+            .registry
+            .market_index(&position.instrument_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("no market_index for position {}", position.instrument_id)
+            })?;
+        let instrument = self
+            .instruments
+            .iter()
+            .find(|instrument| instrument.id() == position.instrument_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("no instrument for position {}", position.instrument_id)
+            })?;
+        let quantity = position.quantity.as_decimal();
+        if quantity.is_zero() {
+            return Ok(());
         }
 
-        let size_precision = instrument.size_precision();
-        let base_amount = match base_ticks(qty, size_precision) {
-            Some(v) => v,
-            None => {
-                log::warn!(
-                    "skip position {}: qty {} not in size ticks",
-                    pos.instrument_id,
-                    qty
-                );
-                continue;
-            }
-        };
-        let is_ask = matches!(pos.position_side, PositionSideSpecified::Long);
-
-        let price_decimals = instrument.price_precision();
+        let base_amount = base_ticks(quantity, instrument.size_precision()).ok_or_else(|| {
+            anyhow::anyhow!(
+                "position {} quantity {} is not in size ticks",
+                position.instrument_id,
+                quantity
+            )
+        })?;
+        let is_ask = matches!(position.position_side, PositionSide::Long);
         let crossing_price =
-            match fetch_crossing_price(&http, market_id, price_decimals, is_ask).await {
-                Some(p) => p,
-                None => {
-                    log::warn!(
-                        "skip position {}: could not derive crossing price",
-                        pos.instrument_id,
-                    );
-                    continue;
-                }
-            };
+            fetch_crossing_price(self.http, market_id, instrument.price_precision(), is_ask)
+                .await?;
 
         log::info!(
             "{}: {} {} (base_ticks={base_amount}, crossing_price={crossing_price})",
-            pos.instrument_id,
+            position.instrument_id,
             if is_ask { "SELL" } else { "BUY " },
-            pos.quantity,
+            position.quantity,
         );
         close_one_position(
-            &ws,
-            &credential,
-            &nonce_mgr,
-            environment,
+            self.ws,
+            self.credential,
+            self.nonce_mgr,
+            self.chain_id,
             market_id,
             base_amount,
             is_ask,
             crossing_price,
         )
-        .await?;
+        .await
     }
+}
 
-    log::info!("Flatten submitted; waiting briefly for venue confirmations...");
-    tokio::time::sleep(Duration::from_secs(4)).await;
-    ws.disconnect().await?;
-    Ok(())
+async fn close_positions(
+    command: &FlattenCommand<'_>,
+    positions: &[PositionStatusReport],
+    summary: &mut FlattenSummary,
+) {
+    let mut closed_markets = HashSet::new();
+
+    for position in positions {
+        let Some(market_id) = command.registry.market_index(&position.instrument_id) else {
+            record_failure(
+                summary,
+                format!("cannot close {}: no market_index", position.instrument_id),
+            );
+            continue;
+        };
+
+        if !closed_markets.insert(market_id) {
+            record_failure(
+                summary,
+                format!("duplicate position rows resolved to market_id={market_id}"),
+            );
+            continue;
+        }
+
+        match command.close_position(position).await {
+            Ok(()) => summary.closes_submitted += 1,
+            Err(e) => record_failure(
+                summary,
+                format!("close failed for {}: {e}", position.instrument_id),
+            ),
+        }
+    }
+}
+
+fn finish_flatten(summary: &FlattenSummary) -> anyhow::Result<()> {
+    if summary.failures.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("flatten incomplete: {}", summary.failures.join("; "))
+    }
+}
+
+fn record_failure(summary: &mut FlattenSummary, failure: String) {
+    log::warn!("{failure}");
+    summary.failures.push(failure);
 }
 
 async fn fetch_crossing_price(
     http: &LighterHttpClient,
-    market_id: i16,
+    market_id: i64,
     price_decimals: u8,
     is_ask: bool,
-) -> Option<u32> {
+) -> anyhow::Result<u32> {
     let query = LighterOrderBookDetailsQuery {
         market_id: Some(market_id),
         filter: None,
     };
-    let details = http.get_order_book_details(&query).await.ok()?;
-    let ob = details.order_book_details.first()?;
+    let details = http
+        .get_order_book_details(&query)
+        .await
+        .map_err(|e| anyhow::anyhow!("order book fetch failed for market_id={market_id}: {e}"))?;
+    let ob = details
+        .order_book_details
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("order book was empty for market_id={market_id}"))?;
     let last = ob.last_trade_price;
     let slip = if is_ask {
         Decimal::new(99, 2) // 0.99 (SELL 1% below)
@@ -287,7 +427,38 @@ async fn fetch_crossing_price(
     let crossing = last * slip;
     let scaled = crossing * Decimal::from(10_i64.pow(u32::from(price_decimals)));
     let int_str = scaled.trunc().to_string();
-    int_str.parse::<u32>().ok()
+    int_str.parse::<u32>().map_err(|e| {
+        anyhow::anyhow!("crossing price {int_str} is invalid for market_id={market_id}: {e}")
+    })
+}
+
+fn read_selection<T>(name: &str) -> anyhow::Result<T>
+where
+    T: Default + FromStr,
+    T::Err: Display,
+{
+    match std::env::var(name) {
+        Ok(value) => parse_selection(name, Some(&value)),
+        Err(std::env::VarError::NotPresent) => parse_selection(name, None),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(anyhow::anyhow!("{name} must contain valid Unicode"))
+        }
+    }
+}
+
+fn parse_selection<T>(name: &str, value: Option<&str>) -> anyhow::Result<T>
+where
+    T: Default + FromStr,
+    T::Err: Display,
+{
+    value.map_or_else(
+        || Ok(T::default()),
+        |value| {
+            value
+                .parse()
+                .map_err(|e| anyhow::anyhow!("invalid {name}={value:?}: {e}"))
+        },
+    )
 }
 
 fn base_ticks(qty: Decimal, decimals: u8) -> Option<i64> {
@@ -299,29 +470,25 @@ fn base_ticks(qty: Decimal, decimals: u8) -> Option<i64> {
     scaled.trunc().to_string().parse::<i64>().ok()
 }
 
-async fn cancel_one_order(
+async fn cancel_all_orders(
     ws: &LighterWebSocketClient,
     credential: &Credential,
     nonce_mgr: &NonceManager,
-    environment: LighterEnvironment,
-    market_index: i16,
-    order_index: i64,
+    chain_id: u32,
 ) -> anyhow::Result<()> {
     let context = build_context(credential, nonce_mgr)?;
-    let tx = CancelOrderTxInfo {
+
+    let tx = CancelAllOrdersTxInfo {
         context,
-        market_index,
-        index: order_index,
+        time_in_force: LighterCancelAllTimeInForce::Immediate as u8,
+        scheduled_time_ms: 0,
         skip_nonce: 0,
     };
-    let signed = sign_tx(
-        &tx,
-        lighter_chain_id(environment),
-        &credential.private_key()?,
-        fresh_k(),
-    );
-    let tx_info = serde_json::value::RawValue::from_string(TxInfoJson::cancel_order(&tx, &signed))?;
-    ws.send_tx(LighterTxType::CancelOrder as u8, tx_info)
+
+    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k());
+    let tx_info =
+        serde_json::value::RawValue::from_string(TxInfoJson::cancel_all_orders(&tx, &signed))?;
+    ws.send_tx(LighterTxType::CancelAllOrders as u8, tx_info)
         .await?;
     Ok(())
 }
@@ -331,13 +498,14 @@ async fn close_one_position(
     ws: &LighterWebSocketClient,
     credential: &Credential,
     nonce_mgr: &NonceManager,
-    environment: LighterEnvironment,
-    market_index: i16,
+    chain_id: u32,
+    market_index: i64,
     base_amount: i64,
     is_ask: bool,
     crossing_price: u32,
 ) -> anyhow::Result<()> {
     let context = build_context(credential, nonce_mgr)?;
+
     let order = OrderInfo {
         market_index,
         client_order_index: fresh_client_order_index(),
@@ -350,17 +518,14 @@ async fn close_one_position(
         trigger_price: 0,
         order_expiry: 0,
     };
+
     let tx = CreateOrderTxInfo {
         context,
         order,
         attributes: L2TxAttributes::default(),
     };
-    let signed = sign_tx(
-        &tx,
-        lighter_chain_id(environment),
-        &credential.private_key()?,
-        fresh_k(),
-    );
+
+    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k());
     let tx_info = serde_json::value::RawValue::from_string(TxInfoJson::create_order(&tx, &signed))?;
     ws.send_tx(LighterTxType::CreateOrder as u8, tx_info)
         .await?;
@@ -395,32 +560,83 @@ fn fresh_client_order_index() -> i64 {
     i64::from((seed.wrapping_add(bump)) as u32 & 0x7FFF_FFFF)
 }
 
-async fn collect_positions(
-    ws: &mut LighterWebSocketClient,
+async fn wait_for_authoritative_positions(
+    source: &mut LighterWebSocketClient,
+    registry: &MarketRegistry,
     timeout: Duration,
-) -> Vec<PositionStatusReport> {
+) -> PositionSnapshotOutcome {
     let deadline = tokio::time::Instant::now() + timeout;
-    let mut latest: Vec<PositionStatusReport> = Vec::new();
+    let mut partial = Vec::new();
+    let mut skipped = HashSet::new();
 
-    while tokio::time::Instant::now() < deadline {
+    loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return incomplete_position_snapshot(partial, skipped, true);
+        }
 
-        if let Ok(Some(NautilusWsMessage::PositionSnapshot {
-            reports,
-            skipped_market_ids,
-        })) =
-            tokio::time::timeout(remaining.min(Duration::from_millis(500)), ws.next_event()).await
-        {
-            apply_position_snapshot(&mut latest, reports, &skipped_market_ids);
+        let message = match tokio::time::timeout(remaining, source.next_event()).await {
+            Ok(Some(message)) => message,
+            Ok(None) => return incomplete_position_snapshot(partial, skipped, false),
+            Err(_) => return incomplete_position_snapshot(partial, skipped, true),
+        };
+
+        match message {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } if skipped_market_ids.is_empty() => {
+                return PositionSnapshotOutcome::Complete(reports);
+            }
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                apply_position_snapshot(&mut partial, reports, &skipped_market_ids);
+                skipped.extend(skipped_market_ids);
+            }
+            NautilusWsMessage::PositionUpdate {
+                reports,
+                closed_market_ids,
+                skipped_market_ids,
+            } => {
+                let closed: Vec<_> = closed_market_ids
+                    .iter()
+                    .filter_map(|market_id| registry.instrument_id(*market_id))
+                    .collect();
+                apply_position_update(&mut partial, reports, &closed);
+                skipped.extend(skipped_market_ids);
+            }
+            _ => {}
         }
     }
-    latest
+}
+
+fn incomplete_position_snapshot(
+    partial: Vec<PositionStatusReport>,
+    skipped: HashSet<i64>,
+    timed_out: bool,
+) -> PositionSnapshotOutcome {
+    let mut skipped_market_ids: Vec<_> = skipped.into_iter().collect();
+    skipped_market_ids.sort_unstable();
+
+    if timed_out {
+        PositionSnapshotOutcome::TimedOut {
+            partial,
+            skipped_market_ids,
+        }
+    } else {
+        PositionSnapshotOutcome::StreamEnded {
+            partial,
+            skipped_market_ids,
+        }
+    }
 }
 
 fn apply_position_snapshot(
     latest: &mut Vec<PositionStatusReport>,
     reports: Vec<PositionStatusReport>,
-    skipped_market_ids: &[i16],
+    skipped_market_ids: &[i64],
 ) {
     if skipped_market_ids.is_empty() {
         *latest = reports;
@@ -429,6 +645,18 @@ fn apply_position_snapshot(
 
     for report in reports {
         latest.retain(|r| r.instrument_id != report.instrument_id);
+        latest.push(report);
+    }
+}
+
+fn apply_position_update(
+    latest: &mut Vec<PositionStatusReport>,
+    reports: Vec<PositionStatusReport>,
+    closed: &[InstrumentId],
+) {
+    latest.retain(|report| !closed.contains(&report.instrument_id));
+    for report in reports {
+        latest.retain(|prior| prior.instrument_id != report.instrument_id);
         latest.push(report);
     }
 }
@@ -442,19 +670,50 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[case::default(None, LighterDeployment::Lighter)]
+    #[case::lighter(Some("lighter"), LighterDeployment::Lighter)]
+    #[case::robinhood(Some("Robinhood"), LighterDeployment::Robinhood)]
+    fn parse_deployment_selection(
+        #[case] value: Option<&str>,
+        #[case] expected: LighterDeployment,
+    ) {
+        let result: LighterDeployment = parse_selection("LIGHTER_DEPLOYMENT", value).unwrap();
+
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::default(None, LighterEnvironment::Mainnet)]
+    #[case::mainnet(Some("mainnet"), LighterEnvironment::Mainnet)]
+    #[case::testnet(Some("Testnet"), LighterEnvironment::Testnet)]
+    fn parse_environment_selection(
+        #[case] value: Option<&str>,
+        #[case] expected: LighterEnvironment,
+    ) {
+        let result: LighterEnvironment = parse_selection("LIGHTER_ENVIRONMENT", value).unwrap();
+
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn parse_selection_rejects_unknown_value() {
+        let e = parse_selection::<LighterDeployment>("LIGHTER_DEPLOYMENT", Some("unknown"))
+            .unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "invalid LIGHTER_DEPLOYMENT=\"unknown\": Matching variant not found",
+        );
+    }
+
+    #[rstest]
     #[case::complete_snapshot_replaces_latest(
         vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
         vec![("DOGE-PERP.LIGHTER", "3.0")],
         vec![],
         vec![("DOGE-PERP.LIGHTER", "3.0")],
     )]
-    #[case::incomplete_empty_snapshot_retains_latest(
-        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
-        vec![],
-        vec![0],
-        vec![("BTC-PERP.LIGHTER", "2.0"), ("ETH-PERP.LIGHTER", "1.0")],
-    )]
-    #[case::incomplete_snapshot_updates_reported_instrument(
+    #[case::incomplete_snapshot_retains_skipped_markets(
         vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
         vec![("ETH-PERP.LIGHTER", "3.0")],
         vec![1],
@@ -463,18 +722,75 @@ mod tests {
     fn apply_position_snapshot_matrix(
         #[case] prior: Vec<(&str, &str)>,
         #[case] reports: Vec<(&str, &str)>,
-        #[case] skipped_market_ids: Vec<i16>,
+        #[case] skipped_market_ids: Vec<i64>,
         #[case] expected: Vec<(&str, &str)>,
     ) {
         let mut latest = position_reports(prior);
 
         apply_position_snapshot(&mut latest, position_reports(reports), &skipped_market_ids);
 
-        let expected: Vec<(String, String)> = expected
+        let expected: Vec<_> = expected
             .into_iter()
             .map(|(instrument_id, quantity)| (instrument_id.to_string(), quantity.to_string()))
             .collect();
         assert_eq!(summarize_positions(latest), expected);
+    }
+
+    #[rstest]
+    #[case::empty_update_retains_latest(
+        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
+        vec![],
+        vec![],
+        vec![("BTC-PERP.LIGHTER", "2.0"), ("ETH-PERP.LIGHTER", "1.0")],
+    )]
+    #[case::partial_update_merges_and_closes(
+        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
+        vec![("ETH-PERP.LIGHTER", "3.0")],
+        vec!["BTC-PERP.LIGHTER"],
+        vec![("ETH-PERP.LIGHTER", "3.0")],
+    )]
+    fn apply_position_update_matrix(
+        #[case] prior: Vec<(&str, &str)>,
+        #[case] reports: Vec<(&str, &str)>,
+        #[case] closed: Vec<&str>,
+        #[case] expected: Vec<(&str, &str)>,
+    ) {
+        let mut latest = position_reports(prior);
+        let closed: Vec<_> = closed.into_iter().map(InstrumentId::from).collect();
+
+        apply_position_update(&mut latest, position_reports(reports), &closed);
+
+        let expected: Vec<_> = expected
+            .into_iter()
+            .map(|(instrument_id, quantity)| (instrument_id.to_string(), quantity.to_string()))
+            .collect();
+        assert_eq!(summarize_positions(latest), expected);
+    }
+
+    #[rstest]
+    #[case::timed_out(
+        true,
+        "position snapshot timed out with 1 partial row(s) and skipped markets [3, 7]"
+    )]
+    #[case::stream_ended(
+        false,
+        "position stream ended with 1 partial row(s) and skipped markets [3, 7]"
+    )]
+    fn incomplete_position_snapshot_retains_partial_state(
+        #[case] timed_out: bool,
+        #[case] expected_description: &str,
+    ) {
+        let outcome = incomplete_position_snapshot(
+            position_reports(vec![("ETH-PERP.LIGHTER", "1.0")]),
+            HashSet::from([7, 3]),
+            timed_out,
+        );
+
+        assert_eq!(outcome.description(), expected_description);
+        assert_eq!(
+            summarize_positions(outcome.reports()),
+            vec![("ETH-PERP.LIGHTER".to_string(), "1.0".to_string())]
+        );
     }
 
     fn position_reports(rows: Vec<(&str, &str)>) -> Vec<PositionStatusReport> {
@@ -487,7 +803,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::new("LIGHTER-TEST-001"),
             InstrumentId::from(instrument_id),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(quantity),
             UnixNanos::default(),
             UnixNanos::default(),

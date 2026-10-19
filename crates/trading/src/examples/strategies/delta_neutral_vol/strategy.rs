@@ -19,7 +19,7 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use nautilus_common::{actor::DataActor, timer::TimeEvent};
-use nautilus_core::params::Params;
+use nautilus_core::{DurationNanos, params::Params};
 use nautilus_model::{
     data::{QuoteTick, black_scholes::compute_greeks, option_chain::OptionGreeks},
     enums::{OptionKind, OrderSide, TimeInForce},
@@ -337,8 +337,7 @@ impl DeltaNeutralVol {
                 .as_f64();
             let expiration_ns = instrument
                 .expiration_ns()
-                .with_context(|| format!("missing expiry for {instrument_id}"))?
-                .as_u64();
+                .with_context(|| format!("missing expiry for {instrument_id}"))?;
             let option_kind = instrument
                 .option_kind()
                 .with_context(|| format!("missing option kind for {instrument_id}"))?;
@@ -346,7 +345,7 @@ impl DeltaNeutralVol {
 
             (strike, expiration_ns, is_call)
         };
-        let now_ns = self.clock().timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns();
 
         if expiration_ns <= now_ns {
             anyhow::bail!("Cannot price premium entry for expired instrument {instrument_id}");
@@ -362,7 +361,7 @@ impl DeltaNeutralVol {
             .or_else(|| greeks.mark_iv.filter(|v| *v > 0.0).map(|v| ("mark_iv", v)))
             .with_context(|| format!("missing positive IV for {instrument_id}"))?;
         let years_to_expiry =
-            (expiration_ns - now_ns) as f64 / 1_000_000_000.0 / (365.25 * 24.0 * 60.0 * 60.0);
+            (expiration_ns - now_ns).as_secs_f64() / (365.25 * 24.0 * 60.0 * 60.0);
         let price = compute_greeks(
             underlying_price as f32,
             strike as f32,
@@ -439,11 +438,6 @@ impl DeltaNeutralVol {
             OrderSide::Buy
         };
 
-        log::info!(
-            "Rehedging: portfolio_delta={delta:.4}, submitting {side:?} {hedge_qty:.4} on {}",
-            self.config.hedge_instrument_id,
-        );
-
         let hedge_id = self.config.hedge_instrument_id;
         let size_precision = {
             let cache = self.cache();
@@ -452,10 +446,24 @@ impl DeltaNeutralVol {
                 .map_or(2, |i| i.size_precision())
         };
 
+        // A delta above the float threshold can still round to zero at the size precision.
+        let hedge_quantity = Quantity::new(hedge_qty, size_precision);
+
+        if hedge_quantity.is_zero() {
+            log::debug!(
+                "Rehedge delta {hedge_qty} rounds to zero at size precision {size_precision}, skipping"
+            );
+            return Ok(());
+        }
+
+        log::info!(
+            "Rehedging: portfolio_delta={delta:.4}, submitting {side:?} {hedge_quantity} on {hedge_id}",
+        );
+
         let order = self.order().market(
             hedge_id,
             side,
-            Quantity::new(hedge_qty, size_precision),
+            hedge_quantity,
             None,
             None,
             None,
@@ -482,7 +490,6 @@ nautilus_strategy!(DeltaNeutralVol, {
         let signed_qty = match event.order_side {
             OrderSide::Buy => qty,
             OrderSide::Sell => -qty,
-            _ => 0.0,
         };
 
         if event.instrument_id == self.config.hedge_instrument_id {
@@ -720,7 +727,7 @@ impl DataActor for DeltaNeutralVol {
 
         self.subscribe_quotes(self.config.hedge_instrument_id, None, None);
 
-        let interval_ns = self.config.rehedge_interval_secs * 1_000_000_000;
+        let interval_ns = DurationNanos::try_from_secs(self.config.rehedge_interval_secs)?;
         self.clock()
             .set_timer_ns(REHEDGE_TIMER, interval_ns, None, None, None, None, None)?;
 
@@ -774,19 +781,19 @@ impl DataActor for DeltaNeutralVol {
             if premium_entry_active {
                 self.unsubscribe_quotes(call_id, Some(client_id), None);
             }
-            self.cancel_all_orders(call_id, None, None, None)?;
+            self.cancel_all_orders(call_id, None, None, true, None)?;
         }
 
         if let Some(put_id) = self.put_instrument_id {
             if premium_entry_active {
                 self.unsubscribe_quotes(put_id, Some(client_id), None);
             }
-            self.cancel_all_orders(put_id, None, None, None)?;
+            self.cancel_all_orders(put_id, None, None, true, None)?;
         }
 
         let hedge_id = self.config.hedge_instrument_id;
         self.unsubscribe_quotes(hedge_id, None, None);
-        self.cancel_all_orders(hedge_id, None, None, None)?;
+        self.cancel_all_orders(hedge_id, None, None, true, None)?;
         self.hedge_pending = false;
 
         log::info!("Delta-neutral vol strategy stopped, positions left unchanged");
@@ -865,7 +872,7 @@ impl DataActor for DeltaNeutralVol {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        if event.name.as_str() == REHEDGE_TIMER {
+        if event.name == REHEDGE_TIMER {
             self.check_rehedge()?;
         }
 

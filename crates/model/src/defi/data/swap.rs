@@ -57,7 +57,7 @@ impl RawSwapData {
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -74,6 +74,8 @@ pub struct PoolSwap {
     pub pool_identifier: PoolIdentifier,
     /// The blockchain block number at which the swap was executed.
     pub block: u64,
+    /// The hash of the block observed when this swap was ingested.
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the blockchain transaction containing the swap.
     pub transaction_hash: String,
     /// The index position of the transaction within the block.
@@ -132,6 +134,7 @@ impl PoolSwap {
             instrument_id,
             pool_identifier,
             block,
+            block_hash: None,
             transaction_hash,
             transaction_index,
             log_index,
@@ -163,7 +166,6 @@ impl PoolSwap {
     /// # Errors
     ///
     /// Returns an error if the trade info computation or price calculations fail.
-    ///
     pub fn calculate_trade_info(
         &mut self,
         token0: &Token,

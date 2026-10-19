@@ -25,6 +25,11 @@ pub mod post;
 pub(crate) mod book;
 pub(crate) mod trades;
 
+mod rate_limits;
+
+pub(crate) const DATA_STREAMS_ENDPOINT: &str = "hyperliquid-data-streams";
+pub(crate) const USER_STREAMS_ENDPOINT: &str = "hyperliquid-user-streams";
+
 pub use client::HyperliquidWebSocketClient;
 pub use enums::HyperliquidWsChannel;
 pub use error::HyperliquidWsError;

@@ -15,11 +15,13 @@
 
 //! Python bindings for Betfair configuration.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
+use nautilus_model::identifiers::AccountId;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
-use crate::config::{BetfairDataConfig, BetfairExecConfig};
+use crate::config::{BetfairDataClientConfig, BetfairExecutionClientConfig};
 
 fn stringify_ids(values: Option<Vec<u64>>) -> Option<Vec<String>> {
     values.map(|values| values.into_iter().map(|value| value.to_string()).collect())
@@ -27,7 +29,7 @@ fn stringify_ids(values: Option<Vec<u64>>) -> Option<Vec<String>> {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BetfairDataConfig {
+impl BetfairDataClientConfig {
     /// Configuration for the Betfair live data client.
     #[new]
     #[pyo3(signature = (
@@ -48,8 +50,8 @@ impl BetfairDataConfig {
         max_market_start_time = None,
         stream_host = None,
         stream_port = None,
-        stream_heartbeat_ms = 5_000,
-        stream_idle_timeout_ms = 60_000,
+        stream_heartbeat_secs = None,
+        stream_heartbeat_timeout_secs = None,
         stream_reconnect_delay_initial_ms = 2_000,
         stream_reconnect_delay_max_ms = 30_000,
         stream_use_tls = true,
@@ -57,6 +59,7 @@ impl BetfairDataConfig {
         subscription_delay_secs = None,
         subscribe_race_data = false,
         subscribe_cricket_data = false,
+        book_snapshot_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -77,8 +80,8 @@ impl BetfairDataConfig {
         max_market_start_time: Option<String>,
         stream_host: Option<String>,
         stream_port: Option<u16>,
-        stream_heartbeat_ms: u64,
-        stream_idle_timeout_ms: u64,
+        stream_heartbeat_secs: Option<u64>,
+        stream_heartbeat_timeout_secs: Option<u64>,
         stream_reconnect_delay_initial_ms: u64,
         stream_reconnect_delay_max_ms: u64,
         stream_use_tls: bool,
@@ -86,13 +89,14 @@ impl BetfairDataConfig {
         subscription_delay_secs: Option<u64>,
         subscribe_race_data: bool,
         subscribe_cricket_data: bool,
+        book_snapshot_timeout_secs: Option<u64>,
     ) -> Self {
         Self {
             account_currency: account_currency.unwrap_or_else(|| "GBP".to_string()),
-            username,
-            password,
-            app_key,
-            proxy_url,
+            username: username.map(SecretString::from),
+            password: password.map(SecretString::from),
+            app_key: app_key.map(SecretString::from),
+            proxy_url: proxy_url.map(SecretString::from),
             request_rate_per_second,
             default_min_notional,
             event_type_ids: stringify_ids(event_type_ids),
@@ -105,8 +109,8 @@ impl BetfairDataConfig {
             max_market_start_time,
             stream_host,
             stream_port,
-            stream_heartbeat_ms,
-            stream_idle_timeout_ms,
+            stream_heartbeat_secs,
+            stream_heartbeat_timeout_secs,
             stream_reconnect_delay_initial_ms,
             stream_reconnect_delay_max_ms,
             stream_use_tls,
@@ -114,7 +118,15 @@ impl BetfairDataConfig {
             subscription_delay_secs: subscription_delay_secs.unwrap_or(3),
             subscribe_race_data,
             subscribe_cricket_data,
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
         }
+    }
+
+    /// Returns the username.
+    #[getter]
+    fn username(&self) -> Option<&str> {
+        self.username.as_ref().map(SecretString::expose_secret)
     }
 
     #[getter]
@@ -123,17 +135,16 @@ impl BetfairDataConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(BetfairDataConfig).to_string()
+        stringify!(BetfairDataClientConfig).to_string()
     }
 }
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BetfairExecConfig {
+impl BetfairExecutionClientConfig {
     /// Configuration for the Betfair live execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id = None,
         account_id = None,
         account_currency = None,
         username = None,
@@ -144,8 +155,8 @@ impl BetfairExecConfig {
         order_request_rate_per_second = 20,
         stream_host = None,
         stream_port = None,
-        stream_heartbeat_ms = 5_000,
-        stream_idle_timeout_ms = 60_000,
+        stream_heartbeat_secs = None,
+        stream_heartbeat_timeout_secs = None,
         stream_reconnect_delay_initial_ms = 2_000,
         stream_reconnect_delay_max_ms = 30_000,
         stream_use_tls = true,
@@ -160,7 +171,6 @@ impl BetfairExecConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        trader_id: Option<TraderId>,
         account_id: Option<AccountId>,
         account_currency: Option<String>,
         username: Option<String>,
@@ -171,8 +181,8 @@ impl BetfairExecConfig {
         order_request_rate_per_second: u32,
         stream_host: Option<String>,
         stream_port: Option<u16>,
-        stream_heartbeat_ms: u64,
-        stream_idle_timeout_ms: u64,
+        stream_heartbeat_secs: Option<u64>,
+        stream_heartbeat_timeout_secs: Option<u64>,
         stream_reconnect_delay_initial_ms: u64,
         stream_reconnect_delay_max_ms: u64,
         stream_use_tls: bool,
@@ -186,19 +196,18 @@ impl BetfairExecConfig {
         stream_gap_recovery_lookback_mins: u64,
     ) -> Self {
         Self {
-            trader_id: trader_id.unwrap_or_else(|| TraderId::from("TRADER-001")),
             account_id: account_id.unwrap_or_else(|| AccountId::from("BETFAIR-001")),
             account_currency: account_currency.unwrap_or_else(|| "GBP".to_string()),
-            username,
-            password,
-            app_key,
-            proxy_url,
+            username: username.map(SecretString::from),
+            password: password.map(SecretString::from),
+            app_key: app_key.map(SecretString::from),
+            proxy_url: proxy_url.map(SecretString::from),
             request_rate_per_second,
             order_request_rate_per_second,
             stream_host,
             stream_port,
-            stream_heartbeat_ms,
-            stream_idle_timeout_ms,
+            stream_heartbeat_secs,
+            stream_heartbeat_timeout_secs,
             stream_reconnect_delay_initial_ms,
             stream_reconnect_delay_max_ms,
             stream_use_tls,
@@ -213,12 +222,18 @@ impl BetfairExecConfig {
         }
     }
 
+    /// Returns the username.
+    #[getter]
+    fn username(&self) -> Option<&str> {
+        self.username.as_ref().map(SecretString::expose_secret)
+    }
+
     #[getter]
     const fn has_proxy_url(&self) -> bool {
         self.proxy_url.is_some()
     }
 
     fn __repr__(&self) -> String {
-        stringify!(BetfairExecConfig).to_string()
+        stringify!(BetfairExecutionClientConfig).to_string()
     }
 }

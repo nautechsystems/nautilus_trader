@@ -23,10 +23,10 @@ mod ticks;
 
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
 };
 
-use self::common::{HEADER_LENGTH, decode_header, encode_header, validate_header};
+use self::common::{HEADER_LENGTH, MessageHeader, decode_header, encode_header, validate_header};
 use super::{SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter};
 
 pub const MARKET_SCHEMA_ID: u16 = 1;
@@ -35,7 +35,7 @@ pub const MARKET_SCHEMA_VERSION: u16 = 0;
 pub(super) mod data_any_variant {
     pub(crate) const ORDER_BOOK_DELTA: u16 = 0;
     pub(crate) const ORDER_BOOK_DELTAS: u16 = 1;
-    pub(crate) const ORDER_BOOK_DEPTH10: u16 = 2;
+    pub(crate) const ORDER_BOOK_DEPTH: u16 = 2;
     pub(crate) const QUOTE: u16 = 3;
     pub(crate) const TRADE: u16 = 4;
     pub(crate) const BAR: u16 = 5;
@@ -45,13 +45,14 @@ pub(super) mod data_any_variant {
     pub(crate) const OPTION_GREEKS: u16 = 9;
     pub(crate) const INSTRUMENT_STATUS: u16 = 10;
     pub(crate) const INSTRUMENT_CLOSE: u16 = 11;
+    pub(crate) const ORDER_BOOK_DEPTH_FULL: u16 = 12;
 }
 
 pub(super) mod template_id {
     pub(crate) const BOOK_ORDER: u16 = 30_001;
     pub(crate) const ORDER_BOOK_DELTA: u16 = 30_002;
     pub(crate) const ORDER_BOOK_DELTAS: u16 = 30_003;
-    pub(crate) const ORDER_BOOK_DEPTH10: u16 = 30_004;
+    pub(crate) const ORDER_BOOK_DEPTH: u16 = 30_004;
     pub(crate) const QUOTE_TICK: u16 = 30_005;
     pub(crate) const TRADE_TICK: u16 = 30_006;
     pub(crate) const BAR_TYPE: u16 = 30_007;
@@ -63,14 +64,15 @@ pub(super) mod template_id {
     pub(crate) const INSTRUMENT_STATUS: u16 = 30_013;
     pub(crate) const INSTRUMENT_CLOSE: u16 = 30_014;
     pub(crate) const DATA_ANY: u16 = 30_015;
+    pub(crate) const ORDER_BOOK_DEPTH_FULL: u16 = 30_016;
 }
 
 #[expect(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataAny {
-    OrderBookDelta(OrderBookDelta),
-    OrderBookDeltas(OrderBookDeltas),
-    OrderBookDepth10(OrderBookDepth10),
+    BookDelta(OrderBookDelta),
+    BookDeltas(OrderBookDeltas),
+    BookDepth(OrderBookDepth),
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
@@ -140,6 +142,22 @@ pub(super) trait MarketSbeMessage: Sized {
     const TEMPLATE_ID: u16;
     const BLOCK_LENGTH: u16;
 
+    fn template_id(&self) -> u16 {
+        Self::TEMPLATE_ID
+    }
+
+    fn block_length(&self) -> u16 {
+        Self::BLOCK_LENGTH
+    }
+
+    fn decode_with_header(
+        header: MessageHeader,
+        cursor: &mut SbeCursor<'_>,
+    ) -> Result<Self, SbeDecodeError> {
+        validate_header(header, Self::TEMPLATE_ID, Self::BLOCK_LENGTH)?;
+        Self::decode_body(cursor)
+    }
+
     fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError>;
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError>;
@@ -178,8 +196,7 @@ where
     fn from_sbe(bytes: &[u8]) -> Result<Self, SbeDecodeError> {
         let mut cursor = SbeCursor::new(bytes);
         let header = decode_header(&mut cursor)?;
-        validate_header(header, T::TEMPLATE_ID, T::BLOCK_LENGTH)?;
-        T::decode_body(&mut cursor)
+        T::decode_with_header(header, &mut cursor)
     }
 }
 
@@ -210,8 +227,8 @@ where
     let mut writer = SbeWriter::new_uninit(spare);
     encode_header(
         &mut writer,
-        T::BLOCK_LENGTH,
-        T::TEMPLATE_ID,
+        value.block_length(),
+        value.template_id(),
         MARKET_SCHEMA_ID,
         MARKET_SCHEMA_VERSION,
     );

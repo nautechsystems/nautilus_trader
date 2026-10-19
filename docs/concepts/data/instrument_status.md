@@ -1,7 +1,7 @@
 # InstrumentStatus
 
 `InstrumentStatus` represents a change in an instrument's trading state. It captures venue status
-events such as pre‑open, trading, halt, pause, close, and short‑selling restriction changes.
+events such as pre-open, trading, halt, pause, close, and short-selling restriction changes.
 
 ## Fields
 
@@ -15,12 +15,12 @@ events such as pre‑open, trading, halt, pause, close, and short‑selling rest
 | `trading_event`            | `Option<Ustr>`       | `str \| None`        | `None`           | Venue event label when provided.          |
 | `is_trading`               | `Option<bool>`       | `bool \| None`       | `None`           | Whether trading is enabled when known.    |
 | `is_quoting`               | `Option<bool>`       | `bool \| None`       | `None`           | Whether quoting is enabled when known.    |
-| `is_short_sell_restricted` | `Option<bool>`       | `bool \| None`       | `None`           | Short‑sell restriction state when known.  |
+| `is_short_sell_restricted` | `Option<bool>`       | `bool \| None`       | `None`           | Short-sell restriction state when known.  |
 
 ## Behavior
 
-- Optional booleans allow adapters to preserve venue‑provided state without guessing.
-- `action` gives the normalized high‑level status even when venue‑specific details are
+- Optional booleans allow adapters to preserve venue-provided state without guessing.
+- `action` gives the normalized high-level status even when venue-specific details are
   also stored in `reason` or `trading_event`.
 - Strategies can handle status updates through `on_instrument_status(...)`.
 
@@ -51,7 +51,7 @@ let status = InstrumentStatus::new(
 ```python tab="Python"
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import InstrumentStatus
-from nautilus_trader.model.enums import MarketStatusAction
+from nautilus_trader.model import MarketStatusAction
 
 status = InstrumentStatus(
     instrument_id=InstrumentId.from_str("AAPL.XNAS"),

@@ -130,6 +130,9 @@ pub struct OKXInstrument {
     /// `category` field is intentionally ignored).
     #[serde(default)]
     pub inst_category: Option<OKXInstrumentCategory>,
+    /// Fee group ID, interpreted together with `inst_type` for fee queries.
+    #[serde(default, deserialize_with = "deserialize_empty_ustr_as_none")]
+    pub group_id: Option<Ustr>,
     /// Initial price-limit band for newly listed contracts.
     #[serde(default)]
     pub init_px_lmt_pct: String,
@@ -173,7 +176,7 @@ pub struct OKXInstrument {
     pub ct_type: OKXContractType,
     /// Instrument status.
     pub state: OKXInstrumentStatus,
-    /// Rule type, e.g. "DynamicPL", "CT", etc.
+    /// Rule type, e.g. "`DynamicPL`", "CT", etc.
     pub rule_type: String,
     /// Maximum limit order size.
     #[serde(default)]
@@ -212,4 +215,7 @@ pub struct OKXInstrument {
         deserialize_with = "deserialize_optional_decimal_from_str"
     )]
     pub rpi_min_px_band: Option<Decimal>,
+    /// Quote currencies available for trading, e.g. `["USD", "USDC"]`.
+    #[serde(default)]
+    pub trade_quote_ccy_list: Vec<Ustr>,
 }

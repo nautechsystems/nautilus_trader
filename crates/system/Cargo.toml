@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-system"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,7 +21,12 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-defi = ["nautilus-common/defi", "nautilus-data/defi", "nautilus-model/defi"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-model/defi",
+  "nautilus-persistence?/defi",
+]
 extension-module = ["python", "pyo3/extension-module", "streaming"]
 live = ["nautilus-common/live"]
 python = [
@@ -34,7 +38,7 @@ python = [
   "pyo3-stub-gen",
   "streaming",
 ]
-streaming = ["nautilus-persistence"]
+streaming = ["nautilus-data/streaming", "nautilus-persistence"]
 tracing-bridge = ["nautilus-common/tracing-bridge"]
 
 [package.metadata.cargo-machete]
@@ -52,7 +56,7 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-trading = { workspace = true }
@@ -65,6 +69,7 @@ bon = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sysinfo = { workspace = true }
@@ -74,11 +79,15 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-serialization = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
 
 async-trait = { workspace = true }
 bytes = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
 toml = { workspace = true }

@@ -18,18 +18,19 @@
 use std::{collections::BTreeMap, ops::Deref, sync::Arc};
 
 use nautilus_core::{
-    AtomicTime, UnixNanos, correctness::check_predicate_true, time::get_atomic_clock_realtime,
+    AtomicTime, DurationNanos, UnixNanos, correctness::check_predicate_true,
+    time::get_atomic_clock_realtime,
 };
 use ustr::Ustr;
 
 use super::timer::LiveTimer;
 use crate::{
     clock::{
-        CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_time_alert,
-        validate_and_prepare_timer,
+        CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_schedule,
+        validate_and_prepare_time_alert, validate_and_prepare_timer,
     },
     runner::{TimeEventSender, purge_closed_time_event_callbacks, try_get_time_event_sender},
-    timer::{TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval},
+    timer::{TimeEventCallback, TimerInterval, TimerSchedule, create_valid_interval},
 };
 
 /// A real-time clock which uses system time.
@@ -45,6 +46,7 @@ pub struct LiveClock {
     timers: BTreeMap<Ustr, LiveTimer>,
     callbacks: CallbackRegistry,
     sender: Option<Arc<dyn TimeEventSender>>,
+    sender_deferred: bool,
 }
 
 impl LiveClock {
@@ -56,12 +58,8 @@ impl LiveClock {
             timers: BTreeMap::new(),
             callbacks: CallbackRegistry::new(),
             sender,
+            sender_deferred: false,
         }
-    }
-
-    #[must_use]
-    pub const fn get_timers(&self) -> &BTreeMap<Ustr, LiveTimer> {
-        &self.timers
     }
 
     fn clear_expired_timers(&mut self) {
@@ -72,6 +70,48 @@ impl LiveClock {
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
         replace_existing_timer(&mut self.timers, name);
     }
+    fn register_timer(
+        &mut self,
+        name: Ustr,
+        interval: TimerInterval,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        fire_immediately: bool,
+    ) -> anyhow::Result<()> {
+        check_predicate_true(
+            callback.is_some() | self.callbacks.has_any_callback(&name),
+            "No callbacks provided",
+        )?;
+
+        self.replace_existing_timer_if_needed(&name);
+        let callback = if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback.clone());
+            callback
+        } else {
+            self.callbacks
+                .get_callback(&name)
+                .expect("Callback should exist")
+        };
+
+        let sender = self.resolve_time_event_sender();
+
+        let mut timer = LiveTimer::new(
+            name,
+            interval,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            fire_immediately,
+            sender,
+        );
+        timer.start();
+
+        self.clear_expired_timers();
+        self.timers.insert(name, timer);
+
+        Ok(())
+    }
 }
 
 impl Default for LiveClock {
@@ -79,7 +119,9 @@ impl Default for LiveClock {
     ///
     /// Uses `try_get_time_event_sender()` to allow creation before channels are initialized.
     fn default() -> Self {
-        Self::new(try_get_time_event_sender())
+        let mut clock = Self::new(try_get_time_event_sender());
+        clock.sender_deferred = clock.sender.is_none();
+        clock
     }
 }
 
@@ -141,15 +183,6 @@ impl Clock for LiveClock {
         self.callbacks.clear();
     }
 
-    /// # Panics
-    ///
-    /// This function panics if:
-    /// - The event does not have an associated handler (see trait documentation).
-    #[allow(unused_variables)]
-    fn get_handler(&self, event: TimeEvent) -> TimeEventHandler {
-        self.callbacks.get_handler(event)
-    }
-
     fn set_time_alert_ns(
         &mut self,
         name: &str,
@@ -178,8 +211,9 @@ impl Clock for LiveClock {
         };
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
-        let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
+        let interval_ns = create_valid_interval(alert_time_ns - ts_now);
         let fire_immediately = alert_time_ns == ts_now;
+        let sender = self.resolve_time_event_sender();
 
         let mut timer = LiveTimer::new(
             name,
@@ -188,7 +222,7 @@ impl Clock for LiveClock {
             Some(alert_time_ns),
             callback,
             fire_immediately,
-            self.sender.clone(),
+            sender,
         );
 
         timer.start();
@@ -202,58 +236,61 @@ impl Clock for LiveClock {
     fn set_timer_ns(
         &mut self,
         name: &str,
-        interval_ns: u64,
+        interval_ns: DurationNanos,
         start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        let ts_now = self.get_time_ns();
-        let (name, start_time_ns, stop_time_ns, _allow_past, fire_immediately) =
-            validate_and_prepare_timer(
-                name,
-                interval_ns,
-                start_time_ns,
-                stop_time_ns,
-                allow_past,
-                fire_immediately,
-                ts_now,
-            )?;
-
-        check_predicate_true(
-            callback.is_some() | self.callbacks.has_any_callback(&name),
-            "No callbacks provided",
-        )?;
-
-        self.replace_existing_timer_if_needed(&name);
-
-        let callback = if let Some(callback) = callback {
-            self.callbacks.register_callback(name, callback.clone());
-            callback
-        } else {
-            self.callbacks
-                .get_callback(&name)
-                .expect("Callback should exist")
-        };
-
-        let interval_ns = create_valid_interval(interval_ns);
-
-        let mut timer = LiveTimer::new(
+        let (name, start_time_ns, stop_time_ns, _, fire_immediately) = validate_and_prepare_timer(
             name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
+            allow_past,
+            fire_immediately,
+            self.get_time_ns(),
+        )?;
+        self.register_timer(
+            name,
+            TimerInterval::Fixed(create_valid_interval(interval_ns)),
+            start_time_ns,
+            stop_time_ns,
             callback,
             fire_immediately,
-            self.sender.clone(),
-        );
-        timer.start();
+        )
+    }
 
-        self.clear_expired_timers();
-        self.timers.insert(name, timer);
-
-        Ok(())
+    fn set_timer_schedule(
+        &mut self,
+        name: &str,
+        schedule: Arc<dyn TimerSchedule>,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let start_time_ns = schedule.start_time_ns();
+        let interval = TimerInterval::Schedule(schedule);
+        let (name, start_time_ns, stop_time_ns, _, fire_immediately) =
+            validate_and_prepare_schedule(
+                name,
+                &interval,
+                Some(start_time_ns),
+                stop_time_ns,
+                allow_past,
+                fire_immediately,
+                self.get_time_ns(),
+            )?;
+        self.register_timer(
+            name,
+            interval,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            fire_immediately,
+        )
     }
 
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
@@ -284,26 +321,38 @@ impl Clock for LiveClock {
     }
 }
 
+impl LiveClock {
+    fn resolve_time_event_sender(&mut self) -> Option<Arc<dyn TimeEventSender>> {
+        if self.sender.is_none() && self.sender_deferred {
+            self.sender = try_get_time_event_sender();
+        }
+
+        self.sender.clone()
+    }
+}
+
 #[cfg(test)]
 #[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
     use std::{
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicBool, Ordering},
             mpsc,
         },
         time::Duration,
     };
 
-    use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{DurationNanos, UnixNanos, time::get_atomic_clock_realtime};
+    use parking_lot::Mutex;
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
     use crate::{
+        calendar::CalendarSchedule,
         clock::Clock,
-        runner::{TimeEventMessage, TimeEventSender},
+        runner::{TimeEventMessage, TimeEventSender, replace_time_event_sender},
         testing::wait_until,
         timer::{TimeEvent, TimeEventCallback},
     };
@@ -324,10 +373,7 @@ mod tests {
             let now_ns = get_atomic_clock_realtime().get_time_ns();
             let event = message.event().clone();
             message.dispatch();
-            self.events
-                .lock()
-                .expect(MUTEX_POISONED)
-                .push((event, now_ns));
+            self.events.lock().push((event, now_ns));
         }
     }
 
@@ -339,6 +385,22 @@ mod tests {
         pause_once: AtomicBool,
     }
 
+    impl PausingCollectingSender {
+        fn new(
+            events: Arc<Mutex<Vec<(TimeEvent, UnixNanos)>>>,
+        ) -> (Arc<Self>, mpsc::Receiver<()>, mpsc::Sender<()>) {
+            let (paused_tx, paused_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let sender = Arc::new(Self {
+                collector: CollectingSender::new(events),
+                paused_tx,
+                release_rx: Mutex::new(release_rx),
+                pause_once: AtomicBool::new(true),
+            });
+            (sender, paused_rx, release_tx)
+        }
+    }
+
     impl TimeEventSender for PausingCollectingSender {
         fn send(&self, message: TimeEventMessage) {
             self.collector.send(message);
@@ -347,7 +409,6 @@ mod tests {
                 self.paused_tx.send(()).expect("timer send should pause");
                 self.release_rx
                     .lock()
-                    .expect("release mutex should lock")
                     .recv()
                     .expect("timer send should release");
             }
@@ -359,28 +420,18 @@ mod tests {
         target: usize,
         timeout: Duration,
     ) {
-        wait_until(
-            || events.lock().expect(MUTEX_POISONED).len() >= target,
-            timeout,
-        );
+        wait_until(|| events.lock().len() >= target, timeout);
     }
 
     #[rstest]
     fn test_live_clock_timer_replacement_cancels_previous_task() {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let (paused_tx, paused_rx) = mpsc::channel();
-        let (release_tx, release_rx) = mpsc::channel();
-        let sender = Arc::new(PausingCollectingSender {
-            collector: CollectingSender::new(Arc::clone(&events)),
-            paused_tx,
-            release_rx: Mutex::new(release_rx),
-            pause_once: AtomicBool::new(true),
-        });
+        let (sender, paused_rx, release_tx) = PausingCollectingSender::new(Arc::clone(&events));
 
         let mut clock = LiveClock::new(Some(sender));
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
-        let fast_interval = Duration::from_millis(10).as_nanos() as u64;
+        let fast_interval = DurationNanos::from_millis(10);
         clock
             .set_timer_ns("replace", fast_interval, None, None, None, None, None)
             .unwrap();
@@ -388,9 +439,9 @@ mod tests {
         paused_rx
             .recv_timeout(Duration::from_secs(2))
             .expect("fast timer send should pause");
-        events.lock().expect(MUTEX_POISONED).clear();
+        events.lock().clear();
 
-        let slow_interval = Duration::from_millis(30).as_nanos() as u64;
+        let slow_interval = DurationNanos::from_millis(30);
         clock
             .set_timer_ns("replace", slow_interval, None, None, None, None, None)
             .unwrap();
@@ -398,10 +449,10 @@ mod tests {
 
         wait_for_events(&events, 3, Duration::from_secs(2));
 
-        let snapshot = events.lock().expect(MUTEX_POISONED).clone();
-        let diffs: Vec<u64> = snapshot
+        let snapshot = events.lock().clone();
+        let diffs: Vec<DurationNanos> = snapshot
             .array_windows()
-            .map(|[a, b]| b.0.ts_event.as_u64() - a.0.ts_event.as_u64())
+            .map(|[a, b]| b.0.ts_event - a.0.ts_event)
             .collect();
 
         assert!(!diffs.is_empty());
@@ -421,7 +472,7 @@ mod tests {
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let now = clock.timestamp_ns();
-        let alert_time = now + Duration::from_mins(1).as_nanos() as u64;
+        let alert_time = now + DurationNanos::from_mins(1);
 
         clock
             .set_time_alert_ns("alert-callback", alert_time, None, None)
@@ -437,66 +488,93 @@ mod tests {
     }
 
     #[rstest]
+    fn test_default_live_clock_resolves_sender_after_initialization() {
+        std::thread::spawn(|| {
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+            let mut clock = LiveClock::default();
+            assert!(clock.sender.is_none());
+
+            replace_time_event_sender(sender);
+            let mut explicit_senderless = LiveClock::new(None);
+            assert!(explicit_senderless.resolve_time_event_sender().is_none());
+
+            let alert_time = clock.timestamp_ns();
+            clock
+                .set_time_alert_ns(
+                    "late-sender",
+                    alert_time,
+                    Some(TimeEventCallback::from(|_| {})),
+                    None,
+                )
+                .unwrap();
+            wait_for_events(&events, 1, Duration::from_secs(2));
+
+            assert!(clock.sender.is_some());
+            let events = events.lock();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].0.name, Ustr::from("late-sender"));
+        })
+        .join()
+        .expect("live clock sender test thread should join");
+    }
+
+    #[rstest]
     fn test_live_clock_reset_stops_active_timers() {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+        let (sender, paused_rx, release_tx) = PausingCollectingSender::new(Arc::clone(&events));
 
-        let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::from(|_| {}));
+        let mut clock = LiveClock::new(Some(sender.clone()));
 
         clock
             .set_timer_ns(
                 "reset-test",
-                Duration::from_millis(15).as_nanos() as u64,
+                DurationNanos::from_millis(15),
                 None,
                 None,
-                None,
+                Some(TimeEventCallback::from(|_| {})),
                 None,
                 None,
             )
             .unwrap();
 
-        wait_for_events(&events, 2, Duration::from_millis(250));
+        paused_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("timer send should pause");
+
+        assert_eq!(events.lock().len(), 1);
+        assert_eq!(clock.timer_count(), 1);
 
         clock.reset();
+        release_tx.send(()).expect("timer send should release");
 
-        // Wait for any in-flight events to arrive
-        let start = std::time::Instant::now();
-        wait_until(
-            || start.elapsed() >= Duration::from_millis(50),
-            Duration::from_secs(2),
-        );
+        // Only the test and clock retain the sender after the canceled task exits
+        wait_until(|| Arc::strong_count(&sender) == 2, Duration::from_secs(2));
 
-        // Clear any events that arrived before reset took effect
-        events.lock().expect(MUTEX_POISONED).clear();
-
-        // Verify no new events arrive (timer should be stopped)
-        let start = std::time::Instant::now();
-        wait_until(
-            || start.elapsed() >= Duration::from_millis(50),
-            Duration::from_secs(2),
-        );
-        assert!(events.lock().expect(MUTEX_POISONED).is_empty());
+        assert_eq!(events.lock().len(), 1);
+        assert_eq!(clock.timer_count(), 0);
+        assert!(clock.timer_names().is_empty());
+        assert!(!clock.callbacks.has_any_callback(&Ustr::from("reset-test")));
     }
 
     #[rstest]
     fn test_live_clock_timer_exists_consistent_after_expiry() {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+        let (sender, paused_rx, release_tx) = PausingCollectingSender::new(Arc::clone(&events));
 
         let mut clock = LiveClock::new(Some(sender));
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let name = Ustr::from("expiring");
-        let now = clock.timestamp_ns();
-        let interval_ns = Duration::from_millis(5).as_nanos() as u64;
-        let stop_time = UnixNanos::from(*now + Duration::from_millis(12).as_nanos() as u64);
+        let interval_ns = DurationNanos::from_millis(10);
+        let start_time = clock.timestamp_ns();
+        let stop_time = start_time + DurationNanos::from_millis(30);
 
         clock
             .set_timer_ns(
                 name.as_str(),
                 interval_ns,
-                None,
+                Some(start_time),
                 Some(stop_time),
                 None,
                 None,
@@ -504,7 +582,12 @@ mod tests {
             )
             .unwrap();
 
+        paused_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("timer send should pause");
+
         assert!(clock.timer_exists(&name));
+        release_tx.send(()).expect("timer send should release");
 
         // Wait for the timer task to run past its stop time and finish
         wait_until(|| clock.timer_count() == 0, Duration::from_secs(2));
@@ -528,7 +611,7 @@ mod tests {
         let mut clock = LiveClock::new(Some(sender));
 
         let now = clock.timestamp_ns();
-        let alert_time = now + Duration::from_mins(1).as_nanos() as u64;
+        let alert_time = now + DurationNanos::from_mins(1);
 
         clock
             .set_time_alert_ns(
@@ -546,7 +629,7 @@ mod tests {
         // Rescheduling without a callback fails the predicate check; the error
         // return must not have destroyed the previously scheduled alert
         let err = clock
-            .set_time_alert_ns("alert", alert_time + 1000u64, None, None)
+            .set_time_alert_ns("alert", alert_time + DurationNanos::new(1000), None, None)
             .unwrap_err();
         assert!(
             err.to_string().contains("No callbacks provided"),
@@ -556,5 +639,33 @@ mod tests {
         assert_eq!(clock.next_time_ns("alert"), Some(alert_time));
 
         clock.cancel_timers();
+    }
+    #[rstest]
+    fn test_live_clock_registers_deadline_schedule_with_default_callback_and_inclusive_stop() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sender = Arc::new(CollectingSender::new(events.clone()));
+        let mut clock = LiveClock::new(Some(sender));
+        clock.register_default_handler(TimeEventCallback::from(|_| {}));
+        let origin = clock.timestamp_ns();
+        let first = origin + DurationNanos::from_millis(200);
+
+        let schedule = Arc::new(
+            CalendarSchedule::new(
+                &origin.to_datetime_utc().to_zoned(jiff::tz::TimeZone::UTC),
+                jiff::Span::new().milliseconds(200),
+            )
+            .unwrap(),
+        );
+        clock
+            .set_timer_schedule("deadline", schedule, Some(first), None, None, None)
+            .unwrap();
+        assert_eq!(clock.next_time_ns("deadline"), Some(first));
+        wait_until(|| clock.timer_count() == 0, Duration::from_secs(2));
+        let recorded = events.lock();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].0.name, Ustr::from("deadline"));
+        assert_eq!(recorded[0].0.ts_event, first);
+        assert!(recorded[0].0.ts_init >= first);
+        assert_eq!(clock.next_time_ns("deadline"), None);
     }
 }

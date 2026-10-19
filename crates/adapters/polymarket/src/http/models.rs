@@ -15,6 +15,13 @@
 
 //! HTTP REST model types for the Polymarket CLOB API.
 
+use std::sync::Arc;
+
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    serialization::deserialize_empty_string_as_none, string::secret::SecretString,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -22,14 +29,46 @@ use ustr::Ustr;
 use crate::common::{
     enums::{
         PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOrderStatus, PolymarketOrderType,
-        PolymarketOutcome, PolymarketTradeStatus, SignatureType,
+        PolymarketOutcome, PolymarketSignatureType, PolymarketTradeStatus,
     },
     models::PolymarketMakerOrder,
     parse::{
-        deserialize_decimal_from_str, deserialize_optional_polymarket_game_id,
-        serialize_decimal_as_str,
+        deserialize_decimal_from_json, deserialize_decimal_from_json_number,
+        deserialize_decimal_from_str, deserialize_optional_decimal_from_json,
+        deserialize_optional_decimal_from_json_number, deserialize_optional_polymarket_game_id,
+        serialize_decimal_as_json_number, serialize_decimal_as_str,
+        serialize_optional_decimal_as_json_number,
     },
 };
+
+macro_rules! impl_gamma_response_serde {
+    ($record:ty) => {
+        impl<'de> Deserialize<'de> for $record {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+
+                // The remote derive parses typed fields; this impl also retains their source
+                let mut value =
+                    Self::deserialize(&mut serde_json::Deserializer::from_str(raw.get()))
+                        .map_err(serde::de::Error::custom)?;
+                value.raw = raw.get().to_owned();
+                Ok(value)
+            }
+        }
+
+        impl Serialize for $record {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Self::serialize(self, serializer)
+            }
+        }
+    };
+}
 
 /// A signed limit order for submission to the CLOB V2 exchange.
 ///
@@ -39,7 +78,7 @@ use crate::common::{
 /// `expiration` is part of the wire body but NOT part of the EIP-712 signed
 /// struct in V2 (the protocol enforces it server-side). `"0"` means no
 /// expiration. All other fields appear inside the signed struct.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolymarketOrder {
     pub salt: u64,
@@ -57,7 +96,7 @@ pub struct PolymarketOrder {
     )]
     pub taker_amount: Decimal,
     pub side: PolymarketOrderSide,
-    pub signature_type: SignatureType,
+    pub signature_type: PolymarketSignatureType,
     /// Unix seconds timestamp when a GTD order auto-expires. `"0"` for non-GTD.
     /// Not included in the EIP-712 signed hash; protocol enforces this value.
     pub expiration: String,
@@ -68,7 +107,7 @@ pub struct PolymarketOrder {
     pub metadata: String,
     /// Builder code (`bytes32`). Zero bytes when unset.
     pub builder: String,
-    pub signature: String,
+    pub signature: SecretString,
 }
 
 /// An active order returned by REST GET /orders.
@@ -107,6 +146,9 @@ pub struct PolymarketOpenOrder {
 
 /// A trade report returned by REST GET /trades.
 ///
+/// Missing, null, and empty `transaction_hash` values deserialize as `None` and are
+/// omitted on serialization.
+///
 /// References: <https://docs.polymarket.com/#get-trades>
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolymarketTradeReport {
@@ -137,7 +179,12 @@ pub struct PolymarketTradeReport {
     pub bucket_index: u64,
     pub owner: String,
     pub maker_address: String,
-    pub transaction_hash: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_empty_string_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub transaction_hash: Option<String>,
     pub maker_orders: Vec<PolymarketMakerOrder>,
     pub trader_side: PolymarketLiquiditySide,
 }
@@ -146,8 +193,11 @@ pub struct PolymarketTradeReport {
 ///
 /// References: <https://docs.polymarket.com/developers/gamma-markets-api/get-markets>
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(remote = "Self", rename_all = "camelCase")]
 pub struct GammaMarket {
+    /// Original Gamma response as a JSON string, before normalization or enrichment.
+    #[serde(skip)]
+    pub raw: String,
     /// Internal Gamma market ID.
     pub id: String,
     /// On-chain condition ID for the CTF contracts.
@@ -167,6 +217,8 @@ pub struct GammaMarket {
     pub description: Option<String>,
     /// Market start date (ISO 8601).
     pub start_date: Option<String>,
+    /// Event window start time (ISO 8601).
+    pub event_start_time: Option<String>,
     /// Market end date (ISO 8601).
     pub end_date: Option<String>,
     /// Whether market is active.
@@ -177,16 +229,30 @@ pub struct GammaMarket {
     pub closed_time: Option<String>,
     /// UMA resolution state reported by Gamma.
     pub uma_resolution_status: Option<String>,
+    /// JSON-encoded UMA resolution states reported by Gamma.
+    pub uma_resolution_statuses: Option<String>,
     /// Source used to resolve the market.
     pub resolution_source: Option<String>,
+    /// Crypto market resolution configuration.
+    pub crypto_market_config: Option<CryptoMarketConfig>,
     /// Whether CLOB is accepting orders.
     pub accepting_orders: Option<bool>,
     /// Whether order book trading is enabled.
     pub enable_order_book: Option<bool>,
     /// Minimum price increment.
-    pub order_price_min_tick_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub order_price_min_tick_size: Option<Decimal>,
     /// Minimum order size.
-    pub order_min_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub order_min_size: Option<Decimal>,
     /// Maker fee in basis points.
     pub maker_base_fee: Option<i64>,
     /// Taker fee in basis points.
@@ -198,39 +264,109 @@ pub struct GammaMarket {
     #[serde(rename = "negRisk")]
     pub neg_risk: Option<bool>,
     /// Numeric liquidity value for sorting.
-    pub liquidity_num: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub liquidity_num: Option<Decimal>,
     /// Numeric volume value for sorting.
-    pub volume_num: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_num: Option<Decimal>,
     /// 24-hour trading volume.
     #[serde(rename = "volume24hr")]
-    pub volume_24hr: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_24hr: Option<Decimal>,
     /// JSON-encoded outcome prices (e.g. `["0.60", "0.40"]`).
     pub outcome_prices: Option<String>,
     /// Best bid price.
-    pub best_bid: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub best_bid: Option<Decimal>,
     /// Best ask price.
-    pub best_ask: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub best_ask: Option<Decimal>,
     /// Bid-ask spread.
-    pub spread: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub spread: Option<Decimal>,
     /// Last trade price.
-    pub last_trade_price: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub last_trade_price: Option<Decimal>,
     /// 1-day price change.
-    pub one_day_price_change: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub one_day_price_change: Option<Decimal>,
     /// 1-week price change.
-    pub one_week_price_change: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub one_week_price_change: Option<Decimal>,
     /// 1-week volume.
     #[serde(rename = "volume1wk")]
-    pub volume_1wk: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_1wk: Option<Decimal>,
     /// 1-month volume.
     #[serde(rename = "volume1mo")]
-    pub volume_1mo: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_1mo: Option<Decimal>,
     /// 1-year volume.
     #[serde(rename = "volume1yr")]
-    pub volume_1yr: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_1yr: Option<Decimal>,
     /// Minimum size for rewards eligibility.
-    pub rewards_min_size: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub rewards_min_size: Option<Decimal>,
     /// Maximum spread for rewards eligibility.
-    pub rewards_max_spread: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub rewards_max_spread: Option<Decimal>,
     /// Competitiveness score.
     pub competitive: Option<f64>,
     /// Market category.
@@ -240,22 +376,83 @@ pub struct GammaMarket {
     pub neg_risk_market_id: Option<String>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
-    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
-    /// surface as `None`. Reference shape:
+    /// Whether fees are enabled for this market.
+    pub fees_enabled: Option<bool>,
+    /// Fee type identifier (e.g. `crypto_fees`, `sports_fees_v2`).
+    pub fee_type: Option<String>,
+    /// Tags associated with this market.
+    pub tags: Option<Vec<GammaTag>>,
+    /// Sports market type (e.g. `moneyline`), present for sports markets.
+    pub sports_market_type: Option<String>,
+    /// Game ID for sport markets, kept verbatim because Gamma emits both
+    /// numeric and composite `<uuid>:<away>:<home>` forms. `null` and `-1`
+    /// both mean "no game" and surface as `None`. Reference shape:
     /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
-    pub game_id: Option<u64>,
+    pub game_id: Option<String>,
+    /// Enclosing event supplied by event-based discovery, with its markets moved out.
+    /// The original event JSON, including those markets, remains in `raw`.
+    #[serde(skip)]
+    pub parent_event: Option<Arc<GammaEvent>>,
     /// Events linked to this gamma market.
     pub events: Option<Vec<GammaEvent>>,
 }
 
+impl_gamma_response_serde!(GammaMarket);
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeeSchedule {
-    pub exponent: f64,
-    pub rate: f64,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json"
+    )]
+    pub exponent: Decimal,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json"
+    )]
+    pub rate: Decimal,
     pub taker_only: bool,
-    pub rebate_rate: f64,
+    #[serde(
+        serialize_with = "serialize_decimal_as_json_number",
+        deserialize_with = "deserialize_decimal_from_json"
+    )]
+    pub rebate_rate: Decimal,
+}
+
+impl FeeSchedule {
+    pub(crate) fn to_info(&self) -> serde_json::Value {
+        serde_json::json!({
+            "exponent": self.exponent.to_string(),
+            "rate": self.rate.to_string(),
+            "takerOnly": self.taker_only,
+            "rebateRate": self.rebate_rate.to_string(),
+        })
+    }
+}
+
+/// Crypto market resolution configuration returned by Gamma.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CryptoMarketConfig {
+    pub id: String,
+    pub asset: String,
+    pub duration: String,
+    pub twap_enabled: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null_i64"
+    )]
+    pub twap_lookback_seconds: Option<i64>,
+}
+
+fn deserialize_optional_non_null_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    i64::deserialize(deserializer).map(Some)
 }
 
 /// An event response from the Gamma API `GET /events`.
@@ -264,8 +461,11 @@ pub struct FeeSchedule {
 /// event contains multiple outcome markets). Each event's `markets` array
 /// contains full [`GammaMarket`] objects.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(remote = "Self", rename_all = "camelCase")]
 pub struct GammaEvent {
+    /// Original Gamma response as a JSON string, before normalization or enrichment.
+    #[serde(skip)]
+    pub raw: String,
     pub id: String,
     pub slug: Option<String>,
     pub title: Option<String>,
@@ -278,16 +478,38 @@ pub struct GammaEvent {
     #[serde(default)]
     pub markets: Vec<GammaMarket>,
     /// Event-level liquidity.
-    pub liquidity: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub liquidity: Option<Decimal>,
     /// Event-level volume.
-    pub volume: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume: Option<Decimal>,
     /// Event-level open interest.
-    pub open_interest: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub open_interest: Option<Decimal>,
     /// 24-hour event volume.
     #[serde(rename = "volume24hr")]
-    pub volume_24hr: Option<f64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub volume_24hr: Option<Decimal>,
     /// Event category.
     pub category: Option<String>,
+    /// Tags associated with this event.
+    pub tags: Option<Vec<GammaTag>>,
     /// Whether event uses neg-risk.
     pub neg_risk: Option<bool>,
     /// Neg-risk market ID.
@@ -295,12 +517,15 @@ pub struct GammaEvent {
     pub neg_risk_market_id: Option<String>,
     /// Whether event is featured.
     pub featured: Option<bool>,
-    /// Game ID for sport markets. `null` and `-1` both mean "no game" and
-    /// surface as `None`. Reference shape:
+    /// Game ID for sport markets, kept verbatim because Gamma emits both
+    /// numeric and composite `<uuid>:<away>:<home>` forms. `null` and `-1`
+    /// both mean "no game" and surface as `None`. Reference shape:
     /// <https://github.com/Polymarket/rs-clob-client/blob/main/src/gamma/types/response.rs>.
     #[serde(default, deserialize_with = "deserialize_optional_polymarket_game_id")]
-    pub game_id: Option<u64>,
+    pub game_id: Option<String>,
 }
+
+impl_gamma_response_serde!(GammaEvent);
 
 /// A tag from the Gamma API `GET /tags`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -330,15 +555,17 @@ pub struct SearchResponse {
 #[derive(Clone, Debug, Deserialize)]
 pub struct TickSizeResponse {
     /// Minimum tick size (price increment) for a token.
-    pub minimum_tick_size: f64,
+    #[serde(deserialize_with = "deserialize_decimal_from_json_number")]
+    pub minimum_tick_size: Decimal,
 }
 
 /// Fee rate response from CLOB `GET /fee-rate`.
 ///
-/// Returns the taker fee rate in basis points for a given token.
+/// This legacy base fee is distinct from the effective `FeeSchedule::rate`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct FeeRateResponse {
-    /// Fee rate in basis points.
+    /// Base fee in basis points.
+    #[serde(deserialize_with = "deserialize_decimal_from_json")]
     pub base_fee: Decimal,
 }
 
@@ -363,39 +590,165 @@ pub struct ClobBookResponse {
 pub struct ClobMarketToken {
     pub token_id: String,
     pub outcome: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub price: Option<Decimal>,
     pub winner: bool,
+}
+
+/// A daily reward rate in a CLOB market response.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClobMarketRewardRate {
+    pub asset_address: String,
+    #[serde(
+        deserialize_with = "deserialize_decimal_from_json_number",
+        serialize_with = "serialize_decimal_as_json_number"
+    )]
+    pub rewards_daily_rate: Decimal,
+}
+
+/// Reward configuration in a CLOB market response.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClobMarketRewards {
+    pub rates: Option<Vec<ClobMarketRewardRate>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub min_size: Option<Decimal>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub max_spread: Option<Decimal>,
 }
 
 /// Response from CLOB `GET /markets/{condition_id}`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClobMarketResponse {
+    pub enable_order_book: Option<bool>,
+    pub active: Option<bool>,
     pub condition_id: String,
     pub closed: bool,
+    pub archived: Option<bool>,
+    pub accepting_orders: Option<bool>,
+    pub accepting_order_timestamp: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub minimum_order_size: Option<Decimal>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_decimal_from_json_number",
+        serialize_with = "serialize_optional_decimal_as_json_number"
+    )]
+    pub minimum_tick_size: Option<Decimal>,
+    pub question_id: Option<String>,
+    pub question: Option<String>,
+    pub description: Option<String>,
+    pub market_slug: Option<String>,
+    pub end_date_iso: Option<String>,
+    pub game_start_time: Option<String>,
+    pub seconds_delay: Option<i64>,
+    pub fpmm: Option<String>,
+    pub maker_base_fee: Option<i64>,
+    pub taker_base_fee: Option<i64>,
+    pub notifications_enabled: Option<bool>,
+    pub neg_risk: Option<bool>,
+    pub neg_risk_market_id: Option<String>,
+    pub neg_risk_request_id: Option<String>,
+    pub icon: Option<String>,
+    pub image: Option<String>,
+    pub rewards: Option<ClobMarketRewards>,
+    pub is_50_50_outcome: Option<bool>,
     pub tokens: Vec<ClobMarketToken>,
+    pub tags: Option<Vec<String>>,
 }
 
-/// A position from the Polymarket Data API `GET /positions` endpoint.
+/// A position row from the Polymarket Data API v2 `GET /v2/positions` endpoint.
+///
+/// References: <https://docs.polymarket.com/api-reference/data-api/migrating-from-v1>
 #[derive(Clone, Debug, Deserialize)]
 pub struct DataApiPosition {
+    #[serde(rename = "token_id")]
     pub asset: String,
-    #[serde(alias = "conditionId", alias = "condition_id")]
     pub condition_id: String,
+    #[serde(
+        rename = "current_size",
+        deserialize_with = "deserialize_decimal_from_json"
+    )]
     pub size: Decimal,
-    #[serde(alias = "avgPrice", alias = "avg_price")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_json")]
     pub avg_price: Option<Decimal>,
+    #[serde(default)]
+    pub redeemable: bool,
 }
 
-/// A trade from the Polymarket Data API `GET /trades` endpoint.
+/// A trade row from the Polymarket Data API v2 `GET /v2/trades` endpoint.
+///
+/// References: <https://docs.polymarket.com/api-reference/data-api/migrating-from-v1>
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct DataApiTrade {
+    pub proxy_wallet: Option<String>,
+    #[serde(rename = "token_id")]
     pub asset: String,
     pub condition_id: String,
     pub side: PolymarketOrderSide,
-    pub price: f64,
-    pub size: f64,
+    #[serde(deserialize_with = "deserialize_decimal_from_json_number")]
+    pub price: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_json_number")]
+    pub size: Decimal,
     pub timestamp: i64,
+    pub title: Option<String>,
+    pub slug: Option<String>,
+    pub icon: Option<String>,
+    pub event_slug: Option<String>,
+    pub outcome: Option<String>,
+    pub outcome_index: Option<i64>,
+    pub name: Option<String>,
+    pub pseudonym: Option<String>,
+    pub bio: Option<String>,
+    pub profile_image: Option<String>,
+    pub profile_image_optimized: Option<String>,
     pub transaction_hash: String,
+}
+
+/// The `pagination` object shared by every paginated Data API v2 response.
+#[derive(Clone, Debug, Deserialize)]
+pub struct DataApiPagination {
+    /// Exact: `true` iff another page exists, never inferred from page fullness.
+    pub has_more: bool,
+    /// Opaque cursor for the next page; `null` on the last page.
+    pub next_cursor: Option<String>,
+}
+
+/// The `{ data, pagination }` envelope shared by every Data API v2 response.
+///
+/// A documented miss is `data: null` or an empty list, never an error.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(bound = "T: Deserialize<'de>")]
+pub struct DataApiPage<T> {
+    #[serde(
+        default = "Vec::new",
+        deserialize_with = "deserialize_nullable_vec_as_empty"
+    )]
+    pub data: Vec<T>,
+    pub pagination: DataApiPagination,
+}
+
+fn deserialize_nullable_vec_as_empty<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -404,12 +757,80 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::enums::{PolymarketOrderStatus, PolymarketTradeStatus, SignatureType};
+    use crate::common::enums::{
+        PolymarketOrderStatus, PolymarketSignatureType, PolymarketTradeStatus,
+    };
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");
         let content = std::fs::read_to_string(path).expect("Failed to read test data");
         serde_json::from_str(&content).expect("Failed to parse test data")
+    }
+
+    #[rstest]
+    #[case::market(include_str!("../../test_data/decimal_precision_market.json"), false)]
+    #[case::event(include_str!("../../test_data/decimal_precision_event.json"), true)]
+    fn test_gamma_financial_fields_round_trip_exactly(#[case] raw: &str, #[case] event: bool) {
+        let encoded = if event {
+            serde_json::to_string(&serde_json::from_str::<GammaEvent>(raw).unwrap()).unwrap()
+        } else {
+            serde_json::to_string(&serde_json::from_str::<GammaMarket>(raw).unwrap()).unwrap()
+        };
+        let expected: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+            serde_json::from_str(raw).unwrap();
+        let actual: std::collections::BTreeMap<String, Box<serde_json::value::RawValue>> =
+            serde_json::from_str(&encoded).unwrap();
+
+        for (field, value) in expected {
+            if value.get().starts_with(|c: char| c.is_ascii_digit()) {
+                assert_eq!(actual[&field].get(), value.get(), "{field}");
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_data_api_position_preserves_decimal_precision() {
+        let raw = include_str!("../../test_data/decimal_precision_position.json");
+        let position: DataApiPosition = serde_json::from_str(raw).unwrap();
+        assert_eq!(position.asset, "precision-asset");
+        assert_eq!(position.condition_id, "0xprecision");
+        assert_eq!(position.size, dec!(12345678901.123456));
+        assert_eq!(
+            position.avg_price,
+            Some(dec!(0.1234567890123456789012345678))
+        );
+        let strings = raw
+            .replace("12345678901.123456", "\"12345678901.123456\"")
+            .replace(
+                "0.1234567890123456789012345678",
+                "\"0.1234567890123456789012345678\"",
+            );
+        let string_position: DataApiPosition = serde_json::from_str(&strings).unwrap();
+        assert_eq!(string_position.size, position.size);
+        assert_eq!(string_position.avg_price, position.avg_price);
+    }
+
+    #[rstest]
+    fn test_gamma_financial_fields_and_fee_info_preserve_decimal_precision() {
+        let market: GammaMarket = serde_json::from_str(include_str!(
+            "../../test_data/decimal_precision_market.json"
+        ))
+        .unwrap();
+        assert_eq!(market.best_bid, Some(dec!(0.1234567890123456789012345678)));
+        assert_eq!(market.best_ask, Some(dec!(0.2345678901234567890123456789)));
+        assert_eq!(market.liquidity_num, Some(dec!(12345678901.123456)));
+        assert_eq!(market.volume_num, Some(dec!(12345678901.123457)));
+        let fee = market.fee_schedule.unwrap();
+        let info = fee.to_info();
+        assert_eq!(info["exponent"], "1.234567890123456789012345678");
+        assert_eq!(info["rate"], "0.1234567890123456789012345678");
+        assert_eq!(info["rebateRate"], "0.0234567890123456789012345678");
+        assert_eq!(info["takerOnly"], true);
+        let restored: FeeSchedule = serde_json::from_value(info).unwrap();
+        assert_eq!(restored.exponent, fee.exponent);
+        assert_eq!(restored.rate, fee.rate);
+        assert_eq!(restored.rebate_rate, fee.rebate_rate);
+        assert_eq!(restored.taker_only, fee.taker_only);
     }
 
     #[rstest]
@@ -471,6 +892,10 @@ mod tests {
         assert_eq!(trade.bucket_index, 0);
         assert_eq!(trade.trader_side, PolymarketLiquiditySide::Taker);
         assert_eq!(trade.maker_orders.len(), 2);
+        assert_eq!(
+            trade.transaction_hash.as_deref(),
+            Some("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")
+        );
     }
 
     #[rstest]
@@ -495,8 +920,57 @@ mod tests {
     }
 
     #[rstest]
+    #[case::failed_missing("FAILED", None)]
+    #[case::failed_null("FAILED", Some(serde_json::Value::Null))]
+    #[case::failed_empty("FAILED", Some(serde_json::json!("")))]
+    #[case::not_broadcast_missing("TRADE_STATUS_MATCHED_NOT_BROADCASTED", None)]
+    #[case::not_broadcast_null(
+        "TRADE_STATUS_MATCHED_NOT_BROADCASTED",
+        Some(serde_json::Value::Null)
+    )]
+    #[case::not_broadcast_empty("TRADE_STATUS_MATCHED_NOT_BROADCASTED", Some(serde_json::json!("")))]
+    fn test_trade_report_unavailable_transaction_hash(
+        #[case] status: &str,
+        #[case] hash: Option<serde_json::Value>,
+    ) {
+        let baseline: PolymarketTradeReport = load("http_trade_report.json");
+        let mut expected = serde_json::to_value(baseline).unwrap();
+        expected["status"] = serde_json::to_value(
+            serde_json::from_value::<PolymarketTradeStatus>(serde_json::json!(status)).unwrap(),
+        )
+        .unwrap();
+        expected.as_object_mut().unwrap().remove("transaction_hash");
+        let mut payload = expected.clone();
+        payload["status"] = serde_json::json!(status);
+        if let Some(hash) = hash {
+            payload["transaction_hash"] = hash;
+        }
+
+        let trade: PolymarketTradeReport = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(serde_json::to_value(trade).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::number(serde_json::json!(123))]
+    #[case::boolean(serde_json::json!(false))]
+    #[case::array(serde_json::json!([]))]
+    #[case::object(serde_json::json!({}))]
+    fn test_trade_report_rejects_invalid_transaction_hash(#[case] hash: serde_json::Value) {
+        let baseline: PolymarketTradeReport = load("http_trade_report.json");
+        let mut payload = serde_json::to_value(baseline).unwrap();
+        payload["transaction_hash"] = hash;
+
+        let error = serde_json::from_value::<PolymarketTradeReport>(payload).unwrap_err();
+
+        assert_eq!(error.classify(), serde_json::error::Category::Data);
+        assert!(error.to_string().contains("expected a string"));
+    }
+
+    #[rstest]
     fn test_signed_order_camel_case_fields() {
         let order: PolymarketOrder = load("http_signed_order.json");
+        let debug = format!("{order:?}");
 
         assert_eq!(order.salt, 123456789);
         assert_eq!(order.maker, "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
@@ -513,7 +987,9 @@ mod tests {
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(order.side, PolymarketOrderSide::Buy);
-        assert_eq!(order.signature_type, SignatureType::Eoa);
+        assert_eq!(order.signature_type, PolymarketSignatureType::Eoa);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(order.signature.expose_secret()));
     }
 
     #[rstest]
@@ -588,7 +1064,7 @@ mod tests {
         assert_eq!(order.maker_amount, dec!(1000000));
         assert_eq!(order.taker_amount, dec!(2000000));
         assert_eq!(order.side, PolymarketOrderSide::Buy);
-        assert_eq!(order.signature_type, SignatureType::PolyProxy);
+        assert_eq!(order.signature_type, PolymarketSignatureType::PolyProxy);
         assert_eq!(order.expiration, "0");
         assert_eq!(order.timestamp, "1713398400000");
 
@@ -651,31 +1127,174 @@ mod tests {
 
         // one market has no game_id
         assert!(map_handicap.game_id.is_none());
-        assert_eq!(money_line.game_id, Some(1_427_074));
+        assert_eq!(money_line.game_id.as_deref(), Some("1427074"));
+    }
+
+    #[rstest]
+    fn test_gamma_event_composite_sports_game_id() {
+        // Live Gamma record from issue #4771: the event carries a numeric
+        // `gameId` while its first market carries a composite one.
+        let events: Vec<GammaEvent> = load("gamma_event_sports_composite_game_id.json");
+
+        assert_eq!(events.len(), 1);
+
+        let event = &events[0];
+
+        assert_eq!(event.id, "835109");
+        assert_eq!(event.game_id.as_deref(), Some("287011684"));
+        assert_eq!(event.markets.len(), 2);
+        assert_eq!(event.markets[0].id, "3524358");
+        assert_eq!(
+            event.markets[0].game_id.as_deref(),
+            Some("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX")
+        );
+        assert_eq!(event.markets[1].id, "3554041");
+        assert_eq!(event.markets[1].game_id, None);
+
+        // Re-serialization feeds the Python loader, so the key stays a string
+        // even where Gamma sent a number.
+        let encoded = serde_json::to_value(event).unwrap();
+
+        assert_eq!(encoded["gameId"], serde_json::json!("287011684"));
+        assert_eq!(
+            encoded["markets"][0]["gameId"],
+            serde_json::json!("dd80aae9-52f9-4c7b-a1cf-7b4ab63cd281:STL:TEX")
+        );
+    }
+
+    #[rstest]
+    fn test_fee_schedule_decimal_fields() {
+        let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+        let schedule = market.fee_schedule.unwrap();
+
+        assert_eq!(schedule.exponent, Decimal::ONE);
+        assert_eq!(schedule.rate, dec!(0.03));
+        assert!(schedule.taker_only);
+        assert_eq!(schedule.rebate_rate, dec!(0.25));
+    }
+
+    #[rstest]
+    fn test_gamma_market_crypto_market_config_fields() {
+        let market: GammaMarket = load("gamma_market_crypto_twap.json");
+        let config = market.crypto_market_config.as_ref().unwrap();
+
+        assert_eq!(config.id, "btc-5m-twap-60");
+        assert_eq!(config.asset, "btc");
+        assert_eq!(config.duration, "5m");
+        assert!(config.twap_enabled);
+        assert_eq!(config.twap_lookback_seconds, Some(60));
+        assert_eq!(
+            market.resolution_source.as_deref(),
+            Some("https://data.chain.link/streams/btc-usd-twap-60s-streams")
+        );
+        assert_eq!(
+            market.event_start_time.as_deref(),
+            Some("2026-08-22T16:00:00Z")
+        );
+    }
+
+    #[rstest]
+    fn test_crypto_market_config_absent_twap_lookback_serializes_omitted() {
+        let crypto_market_config = serde_json::json!({
+            "id": "btc-5m",
+            "asset": "btc",
+            "duration": "5m",
+            "twapEnabled": false,
+        });
+
+        let config: CryptoMarketConfig = serde_json::from_value(crypto_market_config).unwrap();
+        let encoded = serde_json::to_value(config).unwrap();
+
+        assert!(encoded.get("twapLookbackSeconds").is_none());
+    }
+
+    #[rstest]
+    fn test_crypto_market_config_rejects_null_twap_lookback() {
+        let crypto_market_config = serde_json::json!({
+            "id": "btc-5m",
+            "asset": "btc",
+            "duration": "5m",
+            "twapEnabled": false,
+            "twapLookbackSeconds": null,
+        });
+
+        let result = serde_json::from_value::<CryptoMarketConfig>(crypto_market_config);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case(serde_json::json!(-37))]
+    #[case(serde_json::json!(i64::MIN))]
+    #[case(serde_json::json!(i64::MAX))]
+    fn test_crypto_market_config_signed_twap_lookback_roundtrip(
+        #[case] twap_lookback_seconds: serde_json::Value,
+    ) {
+        let crypto_market_config = serde_json::json!({
+            "id": "eth-15m",
+            "asset": "eth",
+            "duration": "15m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": twap_lookback_seconds,
+        });
+
+        let config: CryptoMarketConfig = serde_json::from_value(crypto_market_config).unwrap();
+        let encoded = serde_json::to_value(config).unwrap();
+
+        assert_eq!(encoded["twapLookbackSeconds"], twap_lookback_seconds);
+    }
+
+    #[rstest]
+    fn test_crypto_market_config_rejects_twap_lookback_above_i64_max() {
+        let crypto_market_config = serde_json::json!({
+            "id": "eth-15m",
+            "asset": "eth",
+            "duration": "15m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": 9_223_372_036_854_775_808u64,
+        });
+
+        let result = serde_json::from_value::<CryptoMarketConfig>(crypto_market_config);
+
+        assert!(result.is_err());
     }
 
     #[rstest]
     fn test_gamma_market_enriched_fields() {
         let market: GammaMarket = load("gamma_market.json");
 
-        assert_eq!(market.best_bid, Some(0.5));
-        assert_eq!(market.best_ask, Some(0.51));
-        assert_eq!(market.spread, Some(0.009));
-        assert_eq!(market.last_trade_price, Some(0.51));
+        assert_eq!(
+            market.event_start_time.as_deref(),
+            Some("2026-03-12T09:20:00Z")
+        );
+        assert_eq!(market.best_bid, Some(dec!(0.5)));
+        assert_eq!(market.best_ask, Some(dec!(0.51)));
+        assert_eq!(market.spread, Some(dec!(0.009)));
+        assert_eq!(market.last_trade_price, Some(dec!(0.51)));
         assert!(market.one_day_price_change.is_none());
         assert!(market.one_week_price_change.is_none());
-        assert_eq!(market.volume_1wk, Some(9.999997));
-        assert_eq!(market.volume_1mo, Some(9.999997));
-        assert_eq!(market.volume_1yr, Some(9.999997));
-        assert_eq!(market.rewards_min_size, Some(50.0));
-        assert_eq!(market.rewards_max_spread, Some(4.5));
+        assert_eq!(market.volume_1wk, Some(dec!(9.999997)));
+        assert_eq!(market.volume_1mo, Some(dec!(9.999997)));
+        assert_eq!(market.volume_1yr, Some(dec!(9.999997)));
+        assert_eq!(market.rewards_min_size, Some(dec!(50.0)));
+        assert_eq!(market.rewards_max_spread, Some(dec!(4.5)));
         assert_eq!(market.competitive, Some(0.9999750006249843));
         assert!(market.category.is_none());
         assert!(market.neg_risk_market_id.is_none());
+        assert!(market.uma_resolution_status.is_none());
+        assert_eq!(market.uma_resolution_statuses.as_deref(), Some("[]"));
         assert_eq!(
             market.outcome_prices.as_deref(),
             Some("[\"0.505\", \"0.495\"]")
         );
+    }
+
+    #[rstest]
+    fn test_gamma_market_uma_resolution_statuses() {
+        let market: GammaMarket = load("gamma_market.json");
+
+        assert!(market.uma_resolution_status.is_none());
+        assert_eq!(market.uma_resolution_statuses.as_deref(), Some("[]"));
     }
 
     #[rstest]
@@ -691,6 +1310,8 @@ mod tests {
         assert!(market.competitive.is_none());
         assert!(market.category.is_none());
         assert!(market.neg_risk_market_id.is_none());
+        assert!(market.crypto_market_config.is_none());
+        assert!(market.event_start_time.is_none());
     }
 
     #[rstest]
@@ -698,10 +1319,10 @@ mod tests {
         let events: Vec<GammaEvent> = load("gamma_event.json");
         let event = &events[0];
 
-        assert_eq!(event.liquidity, Some(43042905.16152));
-        assert_eq!(event.volume, Some(799823812.487094));
-        assert_eq!(event.open_interest, Some(0.0));
-        assert_eq!(event.volume_24hr, Some(5669354.219446001));
+        assert_eq!(event.liquidity, Some(dec!(43042905.16152)));
+        assert_eq!(event.volume, Some(dec!(799823812.487094)));
+        assert_eq!(event.open_interest, Some(dec!(0.0)));
+        assert_eq!(event.volume_24hr, Some(dec!(5669354.219446001)));
         assert!(event.category.is_none());
         assert_eq!(event.neg_risk, Some(true));
         assert_eq!(
@@ -786,6 +1407,162 @@ mod tests {
     }
 
     #[rstest]
+    fn test_clob_market_response_captured_fields() {
+        let response: ClobMarketResponse = load("clob_market_response.json");
+        let raw: serde_json::Value = load("clob_market_response.json");
+
+        assert_eq!(response.enable_order_book, Some(true));
+        assert_eq!(response.active, Some(true));
+        assert!(!response.closed);
+        assert_eq!(response.archived, Some(false));
+        assert_eq!(response.accepting_orders, Some(true));
+        assert_eq!(
+            response.accepting_order_timestamp.as_deref(),
+            Some("2026-08-01T22:56:49Z")
+        );
+        assert_eq!(response.minimum_order_size, Some(dec!(5)));
+        assert_eq!(response.minimum_tick_size, Some(dec!(0.01)));
+        assert_eq!(
+            response.condition_id,
+            "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        );
+        assert_eq!(
+            response.question_id.as_deref(),
+            Some("0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+        );
+        assert_eq!(
+            response.question.as_deref(),
+            Some("LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group")
+        );
+        assert_eq!(response.description.as_deref(), raw["description"].as_str());
+        assert_eq!(
+            response.market_slug.as_deref(),
+            Some("sanitized-clob-market")
+        );
+        assert_eq!(
+            response.end_date_iso.as_deref(),
+            Some("2026-08-08T00:00:00Z")
+        );
+        assert_eq!(
+            response.game_start_time.as_deref(),
+            Some("2026-08-08T08:00:00Z")
+        );
+        assert_eq!(response.seconds_delay, Some(1));
+        assert_eq!(response.fpmm.as_deref(), Some(""));
+        assert_eq!(response.maker_base_fee, Some(1000));
+        assert_eq!(response.taker_base_fee, Some(1000));
+        assert_eq!(response.notifications_enabled, Some(true));
+        assert_eq!(response.neg_risk, Some(false));
+        assert_eq!(response.neg_risk_market_id.as_deref(), Some(""));
+        assert_eq!(response.neg_risk_request_id.as_deref(), Some(""));
+        assert_eq!(
+            response.icon.as_deref(),
+            Some("https://example.com/sanitized-market.png")
+        );
+        assert_eq!(
+            response.image.as_deref(),
+            Some("https://example.com/sanitized-market.png")
+        );
+        let rewards = response.rewards.as_ref().expect("captured rewards");
+        assert!(rewards.rates.is_none());
+        assert_eq!(rewards.min_size, Some(dec!(50)));
+        assert_eq!(rewards.max_spread, Some(dec!(4.5)));
+        assert_eq!(response.is_50_50_outcome, Some(false));
+        assert_eq!(response.tokens.len(), 2);
+        assert_eq!(
+            response.tokens[0].token_id,
+            "10000000000000000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(response.tokens[0].outcome, "T1");
+        assert_eq!(response.tokens[0].price, Some(dec!(0.715)));
+        assert!(!response.tokens[0].winner);
+        assert_eq!(
+            response.tokens[1].token_id,
+            "10000000000000000000000000000000000000000000000000000000000000000000000000002"
+        );
+        assert_eq!(response.tokens[1].outcome, "Hanwha Life Esports");
+        assert_eq!(response.tokens[1].price, Some(dec!(0.285)));
+        assert!(!response.tokens[1].winner);
+        assert_eq!(
+            response.tags.as_deref(),
+            Some(
+                &[
+                    "Sports".to_string(),
+                    "Esports".to_string(),
+                    "league of legends".to_string(),
+                    "Games".to_string(),
+                ][..]
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_clob_market_rewards_documented_rate_fields() {
+        // Constructed from the documented Rewards schema because the capture has `rates: null`
+        let json = r#"{
+            "rates":[{"asset_address":"0x1111111111111111111111111111111111111111","rewards_daily_rate":12.5}],
+            "min_size":25,
+            "max_spread":3.5
+        }"#;
+        let rewards: ClobMarketRewards = serde_json::from_str(json).unwrap();
+
+        let rates = rewards.rates.as_deref().expect("documented reward rate");
+        assert_eq!(rates.len(), 1);
+        assert_eq!(
+            rates[0].asset_address,
+            "0x1111111111111111111111111111111111111111"
+        );
+        assert_eq!(rates[0].rewards_daily_rate, dec!(12.5));
+        assert_eq!(rewards.min_size, Some(dec!(25)));
+        assert_eq!(rewards.max_spread, Some(dec!(3.5)));
+    }
+
+    #[rstest]
+    fn test_clob_market_decimal_fields_preserve_precision() {
+        let json = r#"{
+            "condition_id":"0xcondition",
+            "closed":false,
+            "minimum_order_size":123456789.1234567890123456789,
+            "minimum_tick_size":0.1234567890123456789012345678,
+            "rewards":{
+                "rates":[{
+                    "asset_address":"0x1111111111111111111111111111111111111111",
+                    "rewards_daily_rate":0.1234567890123456789012345678
+                }],
+                "min_size":123456789.1234567890123456789,
+                "max_spread":0.1234567890123456789012345678
+            },
+            "tokens":[{
+                "token_id":"token-1",
+                "outcome":"Yes",
+                "price":0.1234567890123456789012345678,
+                "winner":false
+            }]
+        }"#;
+        let market: ClobMarketResponse = serde_json::from_str(json).unwrap();
+        let precise = Decimal::from_str_exact("0.1234567890123456789012345678").unwrap();
+        let large = Decimal::from_str_exact("123456789.1234567890123456789").unwrap();
+
+        assert_eq!(market.minimum_order_size, Some(large));
+        assert_eq!(market.minimum_tick_size, Some(precise));
+        let rewards = market.rewards.as_ref().unwrap();
+        assert_eq!(
+            rewards.rates.as_ref().unwrap()[0].rewards_daily_rate,
+            precise
+        );
+        assert_eq!(rewards.min_size, Some(large));
+        assert_eq!(rewards.max_spread, Some(precise));
+        assert_eq!(market.tokens[0].price, Some(precise));
+        let serialized = serde_json::to_string(&market).unwrap();
+        assert!(serialized.contains("\"minimum_order_size\":123456789.1234567890123456789"));
+        assert!(serialized.contains("\"minimum_tick_size\":0.1234567890123456789012345678"));
+        assert!(serialized.contains("\"rewards_daily_rate\":0.1234567890123456789012345678"));
+        assert!(serialized.contains("\"min_size\":123456789.1234567890123456789"));
+        assert!(serialized.contains("\"max_spread\":0.1234567890123456789012345678"));
+        assert!(serialized.contains("\"price\":0.1234567890123456789012345678"));
+    }
+
+    #[rstest]
     fn test_clob_market_response_deserialization_accepting_false() {
         let response: ClobMarketResponse = load("clob_market_closed_binary_accepting_false.json");
         assert_eq!(
@@ -816,6 +1593,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_tick_size_response_preserves_json_number() {
+        let response: TickSizeResponse =
+            serde_json::from_str(r#"{"minimum_tick_size":0.1234567890123456789012345678}"#)
+                .unwrap();
+        let precise =
+            rust_decimal::Decimal::from_str_exact("0.1234567890123456789012345678").unwrap();
+
+        assert_eq!(response.minimum_tick_size, precise);
+    }
+
+    #[rstest]
     fn test_fee_rate_response_zero() {
         let response: FeeRateResponse = load("clob_fee_rate_response_zero.json");
         assert_eq!(response.base_fee, dec!(0));
@@ -828,8 +1616,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_fee_rate_response_numeric() {
+        let response: FeeRateResponse =
+            serde_json::from_value(serde_json::json!({"base_fee": 1000})).unwrap();
+
+        assert_eq!(response.base_fee, dec!(1000));
+    }
+
+    #[rstest]
     fn test_data_api_position_deserialization() {
-        let positions: Vec<DataApiPosition> = load("data_api_positions_response.json");
+        let positions: Vec<DataApiPosition> =
+            load::<DataApiPage<DataApiPosition>>("data_api_positions_response.json").data;
 
         assert_eq!(positions.len(), 4);
         assert_eq!(
@@ -842,10 +1639,12 @@ mod tests {
         );
         assert_eq!(positions[0].size, dec!(150.5));
         assert_eq!(positions[0].avg_price, Some(dec!(0.55)));
+        assert!(!positions[0].redeemable);
 
         // Zero-size position
         assert_eq!(positions[1].size, dec!(0));
         assert_eq!(positions[1].avg_price, Some(dec!(0.45)));
+        assert!(!positions[1].redeemable);
 
         // Third position
         assert_eq!(
@@ -854,41 +1653,161 @@ mod tests {
         );
         assert_eq!(positions[2].size, dec!(42));
         assert_eq!(positions[2].avg_price, Some(dec!(0.3)));
+        assert!(positions[2].redeemable);
 
         // Dust position (below DUST_POSITION_THRESHOLD)
         assert_eq!(positions[3].size, dec!(0.005));
         assert_eq!(positions[3].avg_price, Some(dec!(0.7)));
+        assert!(!positions[3].redeemable);
+    }
+
+    #[rstest]
+    fn test_data_api_page_deserializes_null_and_missing_data_as_empty() {
+        // A documented miss is `data: null` or an empty list, never an error.
+        let null_data = r#"{
+            "data": null,
+            "pagination": {"limit": 500, "offset": 0, "has_more": false, "next_cursor": null}
+        }"#;
+        let page: DataApiPage<DataApiTrade> = serde_json::from_str(null_data).unwrap();
+        assert!(page.data.is_empty());
+        assert!(!page.pagination.has_more);
+        assert!(page.pagination.next_cursor.is_none());
+
+        let missing_data = r#"{
+            "pagination": {"limit": 500, "offset": 0, "has_more": false, "next_cursor": null}
+        }"#;
+        let page: DataApiPage<DataApiTrade> = serde_json::from_str(missing_data).unwrap();
+        assert!(page.data.is_empty());
     }
 
     #[rstest]
     fn test_data_api_trade_deserialization() {
-        let trades: Vec<DataApiTrade> = load("data_api_trades_response.json");
+        let trades: Vec<DataApiTrade> =
+            load::<DataApiPage<DataApiTrade>>("data_api_trades_captured_response.json").data;
 
         assert_eq!(trades.len(), 3);
         assert_eq!(
             trades[0].asset,
-            "71321045863084981365469005770620412523470745398083994982746259498689308907982"
+            "10000000000000000000000000000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(
             trades[0].condition_id,
-            "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
+            "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
         );
-        assert_eq!(trades[0].side, PolymarketOrderSide::Buy);
-        assert_eq!(trades[0].price, 0.55);
-        assert_eq!(trades[0].size, 100.0);
-        assert_eq!(trades[0].timestamp, 1710000000);
+        assert_eq!(trades[0].side, PolymarketOrderSide::Sell);
+        assert_eq!(trades[0].price, dec!(0.7));
+        assert_eq!(trades[0].size, dec!(92.59));
+        assert_eq!(trades[0].timestamp, 1786179735);
         assert_eq!(
             trades[0].transaction_hash,
-            "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         );
 
-        assert_eq!(trades[1].side, PolymarketOrderSide::Sell);
-        assert_eq!(trades[1].price, 0.53);
-
-        // Third trade has different asset (other outcome token)
+        assert_eq!(trades[1].asset, trades[0].asset);
+        assert_eq!(trades[1].condition_id, trades[0].condition_id);
+        assert_eq!(trades[1].side, PolymarketOrderSide::Buy);
+        assert_eq!(trades[1].price, dec!(0.709999959));
+        assert_eq!(trades[1].size, dec!(1.464786));
+        assert_eq!(trades[1].timestamp, 1786179730);
+        assert_eq!(
+            trades[1].transaction_hash,
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
         assert_eq!(
             trades[2].asset,
-            "99999999999999999999999999999999999999999999999999999999999999999999999999999"
+            "10000000000000000000000000000000000000000000000000000000000000000000000000002"
         );
+        assert_eq!(trades[2].condition_id, trades[0].condition_id);
+        assert_eq!(trades[2].side, PolymarketOrderSide::Buy);
+        assert_eq!(trades[2].price, dec!(0.2972581967));
+        assert_eq!(trades[2].size, dec!(244));
+        assert_eq!(trades[2].timestamp, 1786179726);
+        assert_eq!(
+            trades[2].transaction_hash,
+            "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        );
+
+        for (trade, outcome, outcome_index) in [
+            (&trades[0], "T1", 0),
+            (&trades[1], "T1", 0),
+            (&trades[2], "Hanwha Life Esports", 1),
+        ] {
+            assert_eq!(
+                trade.proxy_wallet.as_deref(),
+                Some("0x1111111111111111111111111111111111111111")
+            );
+            assert_eq!(
+                trade.title.as_deref(),
+                Some("LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group")
+            );
+            assert_eq!(trade.slug.as_deref(), Some("sanitized-market"));
+            assert_eq!(
+                trade.icon.as_deref(),
+                Some("https://example.com/sanitized-market.png")
+            );
+            assert_eq!(trade.event_slug.as_deref(), Some("sanitized-event"));
+            assert_eq!(trade.outcome.as_deref(), Some(outcome));
+            assert_eq!(trade.outcome_index, Some(outcome_index));
+            assert_eq!(trade.name.as_deref(), Some("Sanitized trader"));
+            assert_eq!(trade.pseudonym.as_deref(), Some("sanitized-trader"));
+            assert_eq!(trade.bio.as_deref(), Some("Sanitized profile"));
+            assert_eq!(
+                trade.profile_image.as_deref(),
+                Some("https://example.com/sanitized-profile.png")
+            );
+            assert_eq!(
+                trade.profile_image_optimized.as_deref(),
+                Some("https://example.com/sanitized-profile-optimized.png")
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_data_api_trade_decimal_fields_preserve_precision() {
+        let json = r#"{
+            "token_id":"token-1",
+            "condition_id":"0xcondition",
+            "side":"BUY",
+            "price":0.1234567890123456789012345678,
+            "size":123456789.1234567890123456789,
+            "timestamp":1786179735,
+            "transaction_hash":"0xtransaction"
+        }"#;
+        let trade: DataApiTrade = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            trade.price,
+            Decimal::from_str_exact("0.1234567890123456789012345678").unwrap()
+        );
+        assert_eq!(
+            trade.size,
+            Decimal::from_str_exact("123456789.1234567890123456789").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_gamma_market_fee_fields() {
+        let market: GammaMarket = load("gamma_market.json");
+
+        assert_eq!(market.fees_enabled, Some(true));
+        assert_eq!(market.fee_type.as_deref(), Some("crypto_fees"));
+        assert!(market.tags.is_none());
+        assert!(market.sports_market_type.is_none());
+    }
+
+    #[rstest]
+    fn test_gamma_market_sports_fee_fields() {
+        let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+
+        assert_eq!(market.fees_enabled, Some(true));
+        assert_eq!(market.fee_type.as_deref(), Some("sports_fees_v2"));
+    }
+
+    #[rstest]
+    fn test_gamma_event_tags() {
+        let events: Vec<GammaEvent> = load("gamma_event_sports_composite_game_id.json");
+        let tags = events[0].tags.as_ref().unwrap();
+
+        assert!(tags.iter().any(|tag| tag.slug.as_deref() == Some("sports")));
     }
 }

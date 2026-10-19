@@ -20,6 +20,7 @@ use nautilus_core::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    data::InstrumentClose,
     enums::{OrderSide, PositionSide},
     events::OrderFilled,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
@@ -32,7 +33,7 @@ use crate::{
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -130,6 +131,44 @@ impl PositionClosed {
             ts_init,
         }
     }
+
+    #[must_use]
+    pub fn create_from_instrument_close(
+        position: &Position,
+        close: &InstrumentClose,
+        last_qty: Quantity,
+        event_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            closing_order_id: None,
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            peak_quantity: position.peak_qty,
+            last_qty,
+            last_px: close.close_price,
+            currency: position.quote_currency,
+            avg_px_open: position.avg_px_open,
+            avg_px_close: position.avg_px_close,
+            realized_return: position.realized_return,
+            realized_pnl: position.realized_pnl,
+            unrealized_pnl: Money::zero(position.quote_currency),
+            duration: position.duration_ns,
+            event_id,
+            ts_opened: position.ts_opened,
+            ts_closed: position.ts_closed,
+            ts_event: close.ts_event,
+            ts_init,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -172,7 +211,7 @@ mod tests {
             realized_return: 0.0071,
             realized_pnl: Some(Money::new(112.50, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: 3_600_000_000_000, // 1 hour in nanoseconds
+            duration: DurationNanos::from_hours(1),
             event_id: UUID4::default(),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),

@@ -20,8 +20,8 @@
 //! Run with: `cargo run --example ax-data-tester --package nautilus-architect-ax --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `AX_API_KEY`.
-//! - `AX_API_SECRET`.
+//! - `AX_API_KEY`
+//! - `AX_API_SECRET`
 
 use nautilus_architect_ax::{
     common::{consts::AX_CLIENT_ID, enums::AxEnvironment},
@@ -51,13 +51,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let instrument_ids = vec![
         InstrumentId::from(format!("{SYMBOL}-PERP.AX")),
-        // InstrumentId::from("EURUSD-PERP.AX"),
-        // InstrumentId::from("BTCUSD-PERP.AX"),
+        InstrumentId::from("EURUSD-PERP.AX"),
+        InstrumentId::from("XAG-PERP.AX"),
     ];
 
     let ax_config = AxDataClientConfig {
-        api_key: std::env::var("AX_API_KEY").ok(),
-        api_secret: std::env::var("AX_API_SECRET").ok(),
+        api_key: std::env::var("AX_API_KEY").ok().map(Into::into),
+        api_secret: std::env::var("AX_API_SECRET").ok().map(Into::into),
         environment: AX_ENVIRONMENT,
         ..Default::default()
     };
@@ -84,12 +84,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subscribe_mark_prices(true)
         .subscribe_index_prices(true)
         .subscribe_funding_rates(true)
-        // .subscribe_book_deltas(true)
+        .subscribe_book_deltas(true)
+        .subscribe_book_at_interval(true)
         .subscribe_bars(true)
-        // .request_instruments(true)
-        // .request_bars(true)
+        .subscribe_instrument(true)
+        .subscribe_instrument_status(true)
+        .request_instruments(true)
+        .request_bars(true)
+        .request_book_snapshot(true)
         .request_funding_rates(true)
         .manage_book(true)
+        .log_data(true)
         .build()?;
     let tester = DataTester::new(tester_config);
 

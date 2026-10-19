@@ -165,7 +165,30 @@ impl ExecutionClientAdapter {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        self.client.generate_mass_status(lookback_mins).await
+        let mass_status = self.client.generate_mass_status(lookback_mins).await?;
+
+        if let Some(mass_status) = &mass_status {
+            anyhow::ensure!(
+                mass_status.client_id == self.client_id,
+                "Execution mass status client ID {} did not match source client {}",
+                mass_status.client_id,
+                self.client_id,
+            );
+            anyhow::ensure!(
+                mass_status.account_id == self.account_id,
+                "Execution mass status account ID {} did not match source account {}",
+                mass_status.account_id,
+                self.account_id,
+            );
+            anyhow::ensure!(
+                mass_status.venue == self.venue,
+                "Execution mass status venue {} did not match source venue {}",
+                mass_status.venue,
+                self.venue,
+            );
+        }
+
+        Ok(mass_status)
     }
 
     /// Forwards an instrument update to the underlying execution client.

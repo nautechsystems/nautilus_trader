@@ -28,8 +28,6 @@ use nautilus_model::{
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
-#[cfg(feature = "capnp")]
-use nautilus_serialization::capnp::{FromCapnp, ToCapnp, market_capnp};
 
 fn create_quote_tick() -> QuoteTick {
     QuoteTick {
@@ -48,7 +46,7 @@ fn create_trade_tick() -> TradeTick {
         instrument_id: InstrumentId::from("ETHUSDT.BINANCE"),
         price: Price::from("2500.75"),
         size: Quantity::from("1.5"),
-        aggressor_side: AggressorSide::Buyer,
+        aggressor_side: AggressorSide::Buy,
         trade_id: TradeId::from("12345"),
         ts_event: 1_609_459_200_000_000_000.into(),
         ts_init: 1_609_459_200_000_000_000.into(),
@@ -105,45 +103,6 @@ fn bench_quote_tick_msgpack_deserialize(c: &mut Criterion) {
     });
 }
 
-#[cfg(feature = "capnp")]
-fn bench_quote_tick_capnp_serialize(c: &mut Criterion) {
-    let quote = create_quote_tick();
-    c.bench_function("QuoteTick::capnp_serialize", |b| {
-        b.iter(|| {
-            let mut message = capnp::message::Builder::new_default();
-            let builder = message.init_root::<market_capnp::quote_tick::Builder>();
-            black_box(&quote).to_capnp(builder);
-            let mut bytes = Vec::new();
-            capnp::serialize::write_message(&mut bytes, &message).unwrap();
-            black_box(bytes)
-        });
-    });
-}
-
-#[cfg(feature = "capnp")]
-fn bench_quote_tick_capnp_deserialize(c: &mut Criterion) {
-    let quote = create_quote_tick();
-    let mut message = capnp::message::Builder::new_default();
-    let builder = message.init_root::<market_capnp::quote_tick::Builder>();
-    quote.to_capnp(builder);
-    let mut bytes = Vec::new();
-    capnp::serialize::write_message(&mut bytes, &message).unwrap();
-
-    c.bench_function("QuoteTick::capnp_deserialize", |b| {
-        b.iter(|| {
-            let reader = capnp::serialize::read_message(
-                &mut black_box(&bytes[..]),
-                capnp::message::ReaderOptions::new(),
-            )
-            .unwrap();
-            let root = reader
-                .get_root::<market_capnp::quote_tick::Reader>()
-                .unwrap();
-            black_box(QuoteTick::from_capnp(root).unwrap())
-        });
-    });
-}
-
 // TradeTick benchmarks
 
 fn bench_trade_tick_json_serialize(c: &mut Criterion) {
@@ -173,45 +132,6 @@ fn bench_trade_tick_msgpack_deserialize(c: &mut Criterion) {
     let bytes = trade.to_msgpack_bytes().unwrap();
     c.bench_function("TradeTick::msgpack_deserialize", |b| {
         b.iter(|| black_box(TradeTick::from_msgpack_bytes(black_box(&bytes)).unwrap()));
-    });
-}
-
-#[cfg(feature = "capnp")]
-fn bench_trade_tick_capnp_serialize(c: &mut Criterion) {
-    let trade = create_trade_tick();
-    c.bench_function("TradeTick::capnp_serialize", |b| {
-        b.iter(|| {
-            let mut message = capnp::message::Builder::new_default();
-            let builder = message.init_root::<market_capnp::trade_tick::Builder>();
-            black_box(&trade).to_capnp(builder);
-            let mut bytes = Vec::new();
-            capnp::serialize::write_message(&mut bytes, &message).unwrap();
-            black_box(bytes)
-        });
-    });
-}
-
-#[cfg(feature = "capnp")]
-fn bench_trade_tick_capnp_deserialize(c: &mut Criterion) {
-    let trade = create_trade_tick();
-    let mut message = capnp::message::Builder::new_default();
-    let builder = message.init_root::<market_capnp::trade_tick::Builder>();
-    trade.to_capnp(builder);
-    let mut bytes = Vec::new();
-    capnp::serialize::write_message(&mut bytes, &message).unwrap();
-
-    c.bench_function("TradeTick::capnp_deserialize", |b| {
-        b.iter(|| {
-            let reader = capnp::serialize::read_message(
-                &mut black_box(&bytes[..]),
-                capnp::message::ReaderOptions::new(),
-            )
-            .unwrap();
-            let root = reader
-                .get_root::<market_capnp::trade_tick::Reader>()
-                .unwrap();
-            black_box(TradeTick::from_capnp(root).unwrap())
-        });
     });
 }
 
@@ -247,55 +167,6 @@ fn bench_bar_msgpack_deserialize(c: &mut Criterion) {
     });
 }
 
-#[cfg(feature = "capnp")]
-fn bench_bar_capnp_serialize(c: &mut Criterion) {
-    let bar = create_bar();
-    c.bench_function("Bar::capnp_serialize", |b| {
-        b.iter(|| {
-            let mut message = capnp::message::Builder::new_default();
-            let builder = message.init_root::<market_capnp::bar::Builder>();
-            black_box(&bar).to_capnp(builder);
-            let mut bytes = Vec::new();
-            capnp::serialize::write_message(&mut bytes, &message).unwrap();
-            black_box(bytes)
-        });
-    });
-}
-
-#[cfg(feature = "capnp")]
-fn bench_bar_capnp_deserialize(c: &mut Criterion) {
-    let bar = create_bar();
-    let mut message = capnp::message::Builder::new_default();
-    let builder = message.init_root::<market_capnp::bar::Builder>();
-    bar.to_capnp(builder);
-    let mut bytes = Vec::new();
-    capnp::serialize::write_message(&mut bytes, &message).unwrap();
-
-    c.bench_function("Bar::capnp_deserialize", |b| {
-        b.iter(|| {
-            let reader = capnp::serialize::read_message(
-                &mut black_box(&bytes[..]),
-                capnp::message::ReaderOptions::new(),
-            )
-            .unwrap();
-            let root = reader.get_root::<market_capnp::bar::Reader>().unwrap();
-            black_box(Bar::from_capnp(root).unwrap())
-        });
-    });
-}
-
-#[cfg(feature = "capnp")]
-criterion_group!(
-    quote_tick_benches,
-    bench_quote_tick_json_serialize,
-    bench_quote_tick_json_deserialize,
-    bench_quote_tick_msgpack_serialize,
-    bench_quote_tick_msgpack_deserialize,
-    bench_quote_tick_capnp_serialize,
-    bench_quote_tick_capnp_deserialize,
-);
-
-#[cfg(not(feature = "capnp"))]
 criterion_group!(
     quote_tick_benches,
     bench_quote_tick_json_serialize,
@@ -304,18 +175,6 @@ criterion_group!(
     bench_quote_tick_msgpack_deserialize,
 );
 
-#[cfg(feature = "capnp")]
-criterion_group!(
-    trade_tick_benches,
-    bench_trade_tick_json_serialize,
-    bench_trade_tick_json_deserialize,
-    bench_trade_tick_msgpack_serialize,
-    bench_trade_tick_msgpack_deserialize,
-    bench_trade_tick_capnp_serialize,
-    bench_trade_tick_capnp_deserialize,
-);
-
-#[cfg(not(feature = "capnp"))]
 criterion_group!(
     trade_tick_benches,
     bench_trade_tick_json_serialize,
@@ -324,18 +183,6 @@ criterion_group!(
     bench_trade_tick_msgpack_deserialize,
 );
 
-#[cfg(feature = "capnp")]
-criterion_group!(
-    bar_benches,
-    bench_bar_json_serialize,
-    bench_bar_json_deserialize,
-    bench_bar_msgpack_serialize,
-    bench_bar_msgpack_deserialize,
-    bench_bar_capnp_serialize,
-    bench_bar_capnp_deserialize,
-);
-
-#[cfg(not(feature = "capnp"))]
 criterion_group!(
     bar_benches,
     bench_bar_json_serialize,
@@ -344,4 +191,125 @@ criterion_group!(
     bench_bar_msgpack_deserialize,
 );
 
+#[cfg(feature = "sbe")]
+mod trade_batches {
+    use criterion::{BatchSize, BenchmarkId, Throughput};
+    use nautilus_serialization::sbe::{FromSbe, SbeCursor, ToSbe};
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TradeBatch(Vec<TradeTick>);
+
+    impl Serializable for TradeBatch {}
+
+    type Decode = fn(&[u8]) -> Vec<TradeTick>;
+
+    pub(super) fn bench(c: &mut Criterion) {
+        let mut group = c.benchmark_group("TradeBatch::decode");
+        let rotation = std::env::var("NAUTILUS_TRADE_BATCH_ROTATION")
+            .map_or(0, |value| value.parse::<usize>().unwrap());
+
+        for count in [100, 1_000] {
+            let trades = TradeBatch(
+                (0..count)
+                    .map(|i| {
+                        let mut trade = create_trade_tick();
+                        trade.price = Price::from(format!("2500.{i:03}").as_str());
+                        trade.size = Quantity::from(format!("1.{i:03}").as_str());
+
+                        trade.aggressor_side = if i % 2 == 0 {
+                            AggressorSide::Buy
+                        } else {
+                            AggressorSide::Sell
+                        };
+
+                        trade.trade_id = TradeId::from(format!("{i:08}").as_str());
+                        trade.ts_event = (1_609_459_200_000_000_000_u64 + i as u64 * 2).into();
+                        trade.ts_init = (1_609_459_200_000_000_001_u64 + i as u64 * 2).into();
+                        trade
+                    })
+                    .collect(),
+            );
+
+            let json = trades.to_json_bytes().unwrap();
+            let msgpack = trades.to_msgpack_bytes().unwrap();
+            let sbe = encode_sbe(&trades.0);
+
+            let mut formats: [(&str, &[u8], Decode); 3] = [
+                ("json", &json, |bytes| {
+                    TradeBatch::from_json_bytes(bytes).unwrap().0
+                }),
+                ("msgpack", &msgpack, |bytes| {
+                    TradeBatch::from_msgpack_bytes(bytes).unwrap().0
+                }),
+                ("sbe", &sbe, decode_sbe),
+            ];
+
+            let rotation = rotation % formats.len();
+            formats.rotate_left(rotation);
+            group.throughput(Throughput::Elements(count as u64));
+
+            for (format, bytes, decode) in formats {
+                assert_eq!(decode(bytes), trades.0);
+                println!(
+                    "{}",
+                    serde_json::json!({"trade_batch": count, "format": format, "bytes": bytes.len()})
+                );
+                group.bench_with_input(BenchmarkId::new(format, count), bytes, |b, bytes| {
+                    b.iter_batched(
+                        || (),
+                        |()| black_box(decode(black_box(bytes))),
+                        BatchSize::NumIterations(16),
+                    );
+                });
+            }
+        }
+
+        group.finish();
+    }
+
+    fn encode_sbe(trades: &[TradeTick]) -> Vec<u8> {
+        // Benchmark-only batch framing retains each existing SBE message behind a byte length
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&u32::try_from(trades.len()).unwrap().to_le_bytes());
+
+        for trade in trades {
+            let payload = trade.to_sbe().unwrap();
+            bytes.extend_from_slice(&u32::try_from(payload.len()).unwrap().to_le_bytes());
+            bytes.extend_from_slice(&payload);
+        }
+
+        bytes
+    }
+
+    fn decode_sbe(bytes: &[u8]) -> Vec<TradeTick> {
+        let mut cursor = SbeCursor::new(bytes);
+        let count = cursor.read_u32_le().unwrap();
+        let mut trades = Vec::with_capacity(count as usize);
+
+        for _ in 0..count {
+            let len = cursor.read_u32_le().unwrap() as usize;
+            let payload = cursor.read_bytes(len).unwrap();
+            trades.push(TradeTick::from_sbe(payload).unwrap());
+        }
+
+        assert_eq!(cursor.remaining(), 0);
+        trades
+    }
+}
+
+#[cfg(feature = "sbe")]
+criterion_group!(trade_batch_benches, trade_batches::bench);
+
+#[cfg(feature = "sbe")]
+criterion_main!(
+    quote_tick_benches,
+    trade_tick_benches,
+    bar_benches,
+    trade_batch_benches
+);
+
+#[cfg(not(feature = "sbe"))]
 criterion_main!(quote_tick_benches, trade_tick_benches, bar_benches);

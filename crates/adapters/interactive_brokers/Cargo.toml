@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-interactive-brokers"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -76,12 +75,12 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
 ibapi = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -105,6 +104,7 @@ nautilus-trading = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 # Run live smoke with `cargo run --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
 # Run embedded config unit tests with `cargo test --example ib-data-tester --package nautilus-interactive-brokers --features examples`.
@@ -114,15 +114,11 @@ path = "examples/node_data_tester.rs"
 required-features = ["examples"]
 doc = false
 
-# Run live smoke with `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
+# Build offline with `cargo run --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
+# Set `NAUTILUS_IB_RUN=1` to connect and `NAUTILUS_IB_LIVE_ORDERS=1` to submit orders.
 # Run embedded config unit tests with `cargo test --example ib-exec-tester --package nautilus-interactive-brokers --features examples`.
 [[example]]
 name = "ib-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

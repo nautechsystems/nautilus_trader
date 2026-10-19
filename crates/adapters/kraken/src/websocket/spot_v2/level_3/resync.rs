@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Retry helper for Kraken Spot `level3` checksum-driven resync.
+//! Retry policy for Kraken Spot `level3` checksum-driven resync.
 
 use ustr::Ustr;
 
@@ -46,7 +46,7 @@ pub(crate) async fn retry_l3_resync(client: &KrakenSpotWebSocketClient, symbol: 
             }
             Err(e) => {
                 if attempt < L3_RESYNC_MAX_ATTEMPTS {
-                    log::warn!(
+                    log::debug!(
                         "L3 resync attempt {attempt}/{L3_RESYNC_MAX_ATTEMPTS} failed: \
                          symbol={symbol}, err={e}; retrying in {delay_ms}ms"
                     );

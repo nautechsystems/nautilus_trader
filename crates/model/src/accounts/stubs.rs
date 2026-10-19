@@ -17,17 +17,20 @@
 //! unnecessary.
 
 use rstest::fixture;
+use rust_decimal::Decimal;
 
 use crate::{
-    accounts::{Account, AccountAny, BettingAccount, CashAccount, MarginAccount},
+    accounts::{Account, AccountAny, BettingAccount, CashAccount, MarginAccount, WalletAccount},
     enums::{AccountType, LiquiditySide},
     events::account::{
         state::AccountState,
         stubs::{
             betting_account_state, cash_account_state, cash_account_state_million_usd,
             cash_account_state_million_usdt, cash_account_state_multi, margin_account_state,
+            wallet_account_state,
         },
     },
+    fees::MakerTakerFeeRates,
     identifiers::stubs::{account_id, uuid4},
     instruments::InstrumentAny,
     types::{AccountBalance, Currency, Money, Price, Quantity},
@@ -79,6 +82,11 @@ pub fn betting_account(betting_account_state: AccountState) -> BettingAccount {
 }
 
 #[fixture]
+pub fn wallet_account(wallet_account_state: AccountState) -> WalletAccount {
+    WalletAccount::new(wallet_account_state, true)
+}
+
+#[fixture]
 pub fn cash_account_million_usd(cash_account_state_million_usd: AccountState) -> CashAccount {
     CashAccount::new(cash_account_state_million_usd, true, false)
 }
@@ -100,7 +108,7 @@ pub fn cash_account_borrowing_million_usd(
     CashAccount::new(cash_account_state_million_usd, true, true)
 }
 
-/// Helper to calculate commission in test fixtures.
+/// Calculates commission in test fixtures.
 ///
 /// # Panics
 ///
@@ -118,7 +126,15 @@ pub fn calculate_commission(
         cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD")
     };
     let account = cash_account_million_usd(account_state);
+    let fee_rates = MakerTakerFeeRates::new(Decimal::ZERO, Decimal::ZERO);
     account
-        .calculate_commission(instrument, quantity, price, LiquiditySide::Taker, None)
+        .calculate_commission(
+            instrument,
+            quantity,
+            price,
+            LiquiditySide::Taker,
+            fee_rates,
+            None,
+        )
         .unwrap()
 }

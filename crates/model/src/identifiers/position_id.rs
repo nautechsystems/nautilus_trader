@@ -30,7 +30,7 @@ use ustr::Ustr;
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -112,6 +112,15 @@ mod tests {
     fn test_string_reprs(position_id_test: PositionId) {
         assert_eq!(position_id_test.as_str(), "P-123456789");
         assert_eq!(format!("{position_id_test}"), "P-123456789");
+    }
+
+    #[rstest]
+    #[case("P-123456789", true)]
+    #[case("P-", true)]
+    #[case("VENUE-P-123456789", false)]
+    #[case("P123456789", false)]
+    fn test_is_virtual(#[case] value: &str, #[case] expected: bool) {
+        assert_eq!(PositionId::new(value).is_virtual(), expected);
     }
 
     #[rstest]

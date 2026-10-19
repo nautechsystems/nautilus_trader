@@ -20,7 +20,7 @@ use std::{
     collections::BinaryHeap,
 };
 
-use nautilus_common::{clock::TestClock, timer::TimeEventHandler};
+use nautilus_common::{clock::VirtualClock, timer::TimeEventHandler};
 use nautilus_core::UnixNanos;
 
 /// Provides a means of accumulating and draining time event handlers using a priority queue.
@@ -93,7 +93,12 @@ impl TimeEventAccumulator {
     }
 
     /// Advance the given clock to the `to_time_ns` and push events to the heap.
-    pub fn advance_clock(&mut self, clock: &mut TestClock, to_time_ns: UnixNanos, set_time: bool) {
+    pub fn advance_clock(
+        &mut self,
+        clock: &mut VirtualClock,
+        to_time_ns: UnixNanos,
+        set_time: bool,
+    ) {
         let events = clock.advance_time(to_time_ns, set_time);
         let handlers = clock.match_handlers(events);
         for handler in handlers {
@@ -109,14 +114,14 @@ impl TimeEventAccumulator {
         self.heap.peek().map(|h| h.0.handler.event.ts_event)
     }
 
-    /// Pop the next event if its timestamp is at or before `ts`.
+    /// Pop the next event if its timestamp is at or before `ts_now`.
     ///
-    /// Returns `None` if the heap is empty or the next event is after `ts`.
-    pub fn pop_next_at_or_before(&mut self, ts: UnixNanos) -> Option<TimeEventHandler> {
+    /// Returns `None` if the heap is empty or the next event is after `ts_now`.
+    pub fn pop_next_at_or_before(&mut self, ts_now: UnixNanos) -> Option<TimeEventHandler> {
         if self
             .heap
             .peek()
-            .is_some_and(|h| h.0.handler.event.ts_event <= ts)
+            .is_some_and(|h| h.0.handler.event.ts_event <= ts_now)
         {
             self.heap.pop().map(|h| h.0.handler)
         } else {

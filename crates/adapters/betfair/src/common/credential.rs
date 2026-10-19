@@ -61,9 +61,9 @@ pub struct BetfairCredential {
 impl Debug for BetfairCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BetfairCredential))
-            .field("username", &self.username)
+            .field("username", &REDACTED)
             .field("password", &REDACTED)
-            .field("app_key", &self.app_key)
+            .field("app_key", &REDACTED)
             .finish()
     }
 }
@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_debug_redacts_password() {
+    fn test_debug_redacts_credentials() {
         let cred = BetfairCredential::new(
             "myuser".to_string(),
             "supersecret".to_string(),
@@ -163,10 +163,10 @@ mod tests {
 
         let debug_output = format!("{cred:?}");
 
-        assert!(debug_output.contains(REDACTED));
+        assert_eq!(debug_output.matches(REDACTED).count(), 3);
+        assert!(!debug_output.contains("myuser"));
         assert!(!debug_output.contains("supersecret"));
-        assert!(debug_output.contains("myuser"));
-        assert!(debug_output.contains("myappkey"));
+        assert!(!debug_output.contains("myappkey"));
     }
 
     #[rstest]

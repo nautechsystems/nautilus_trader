@@ -86,7 +86,7 @@ else
   nextest_output_args=(--status-level fail --final-status-level flaky)
 fi
 
-POSTGRES_USERNAME=nautilus cargo nextest run \
+POSTGRES_USERNAME=nautilus cargo nextest run --locked \
   --workspace \
   --lib \
   --tests \

@@ -1,0 +1,25 @@
+{
+  "channel": "market_stats:40000",
+  "market_stats": {
+    "symbol": "FUTURE",
+    "market_id": 40000,
+    "index_price": "12.48",
+    "mark_price": "12.47",
+    "mid_price": "12.39",
+    "open_interest": "50.0000",
+    "open_interest_limit": "50000.0000",
+    "funding_clamp_small": "0.0001",
+    "funding_clamp_big": "0.0002",
+    "last_trade_price": "12.50",
+    "current_funding_rate": "0.000001",
+    "funding_rate": "0.000002",
+    "funding_timestamp": 1774879200000,
+    "daily_base_token_volume": 100.0,
+    "daily_quote_token_volume": 1250.0,
+    "daily_price_low": 12.0,
+    "daily_price_high": 13.0,
+    "daily_price_change": 0.01
+  },
+  "timestamp": 1774883844933,
+  "type": "update/market_stats"
+}

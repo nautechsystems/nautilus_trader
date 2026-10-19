@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     enums::{OrderSide, PositionSide},
     events::PositionSnapshot,
@@ -24,12 +24,12 @@ use nautilus_model::{
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
 
-use crate::sql::models::i64_to_u64;
+use crate::sql::models::decode_error;
 
 #[derive(Debug)]
-pub struct PositionSnapshotModel(pub PositionSnapshot);
+pub struct PositionSnapshotRow(pub PositionSnapshot);
 
-impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
+impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<&str, _>("id").map(PositionId::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
@@ -71,7 +71,9 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
         let avg_px_open = row.try_get::<f64, _>("avg_px_open")?;
         let avg_px_close = row.try_get::<Option<f64>, _>("avg_px_close")?;
         let realized_return = row.try_get::<Option<f64>, _>("realized_return")?;
-        let realized_pnl = row.try_get::<&str, _>("realized_pnl").map(Money::from)?;
+        let realized_pnl = row
+            .try_get::<Option<&str>, _>("realized_pnl")?
+            .map(Money::from);
         let unrealized_pnl = row
             .try_get::<Option<&str>, _>("unrealized_pnl")
             .ok()
@@ -81,9 +83,14 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             .map_or_else(Vec::new, |c| {
                 c.into_iter().map(|s| Money::from(&s)).collect()
             });
-        let duration_ns: Option<u64> = row
-            .try_get::<Option<i64>, _>("duration_ns")?
-            .map(|value| i64_to_u64(value, "duration_ns"))
+        let duration_ns = row
+            .try_get::<Option<&str>, _>("duration_ns")?
+            .map(|value| {
+                value
+                    .parse::<u64>()
+                    .map(DurationNanos::new)
+                    .map_err(|e| decode_error("duration_ns", value, e))
+            })
             .transpose()?;
         let ts_opened = row.try_get::<String, _>("ts_opened").map(UnixNanos::from)?;
         let ts_closed: Option<UnixNanos> = row
@@ -112,7 +119,7 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             avg_px_open,
             avg_px_close,
             realized_return,
-            realized_pnl: Some(realized_pnl), // TODO: Standardize
+            realized_pnl,
             unrealized_pnl,
             commissions,
             duration_ns,

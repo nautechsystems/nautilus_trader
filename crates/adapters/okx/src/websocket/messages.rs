@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data structures modelling OKX WebSocket request and response payloads.
+//! Data structures modeling OKX WebSocket request and response payloads.
 
 use derive_builder::Builder;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
     events::{
@@ -26,17 +27,22 @@ use nautilus_model::{
     instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    de::{DeserializeOwned, Error, IgnoredAny, MapAccess, Visitor},
+};
+use serde_json::value::RawValue;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use super::enums::{OKXWsChannel, OKXWsOperation};
 use crate::{
     common::{
         enums::{
             OKXAlgoOrderStatus, OKXAlgoOrderType, OKXBookAction, OKXCandleConfirm, OKXExecType,
-            OKXInstrumentType, OKXOrderCategory, OKXOrderStatus, OKXOrderType, OKXPositionSide,
-            OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode, OKXSettlementState,
-            OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            OKXInstrumentType, OKXMarginMode, OKXOrderCategory, OKXOrderStatus, OKXOrderType,
+            OKXPositionSide, OKXPriceType, OKXQuickMarginType, OKXSelfTradePreventionMode,
+            OKXSettlementState, OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
         },
         models::{OKXInstrument, OKXRpiBookLevel},
         parse::{
@@ -74,11 +80,6 @@ pub enum NautilusWsMessage {
 
 /// Represents an OKX WebSocket error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
-)]
 pub struct OKXWebSocketError {
     /// Error code from OKX (e.g., "50101").
     pub code: String,
@@ -143,14 +144,23 @@ pub enum OKXWsMessage {
     Account(serde_json::Value),
     /// Positions channel update (raw JSON).
     Positions(serde_json::Value),
+    /// Liquidation risk warnings for account positions.
+    LiquidationWarnings(Vec<OKXLiquidationWarningMsg>),
     /// Instrument definition updates.
     Instruments(Vec<OKXInstrument>),
     /// A WebSocket send failed without a structured venue response.
     SendFailed {
         request_id: String,
-        client_order_id: Option<ClientOrderId>,
+        client_order_ids: Vec<ClientOrderId>,
         op: Option<OKXWsOperation>,
-        error: String,
+        error: super::error::OKXWsError,
+    },
+    /// The venue rejected a subscribe request, so no data will flow for it.
+    SubscriptionFailed {
+        channel: OKXWsChannel,
+        inst_id: Option<Ustr>,
+        code: String,
+        msg: String,
     },
     /// Error received from OKX.
     Error(OKXWebSocketError),
@@ -178,20 +188,21 @@ pub struct OKXWsRequest<T> {
 }
 
 /// OKX WebSocket authentication message.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 pub struct OKXAuthentication {
+    #[zeroize(skip)]
     pub op: &'static str,
     pub args: Vec<OKXAuthenticationArg>,
 }
 
 /// OKX WebSocket authentication arguments.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXAuthenticationArg {
-    pub api_key: String,
-    pub passphrase: String,
+    pub api_key: SecretString,
+    pub passphrase: SecretString,
     pub timestamp: String,
-    pub sign: String,
+    pub sign: SecretString,
 }
 
 #[derive(Debug, Serialize)]
@@ -283,6 +294,7 @@ pub enum OKXWsFrame {
         data: serde_json::Value,
     },
     Error {
+        arg: Option<OKXWebSocketArg>,
         code: String,
         msg: String,
     },
@@ -295,203 +307,319 @@ impl<'de> Deserialize<'de> for OKXWsFrame {
     where
         D: serde::Deserializer<'de>,
     {
-        use serde::de::Error;
+        deserializer.deserialize_map(OKXWsFrameVisitor)
+    }
+}
 
-        // Buffer once via serde_json::Value, then take ownership of the
-        // typed subtrees with `.remove(...)` instead of `.cloned()`: the
-        // latter deep-cloned every level for L2 books and dominated the
-        // inbound decode cost.
-        let mut value = serde_json::Value::deserialize(deserializer)?;
-        let obj = value
-            .as_object_mut()
-            .ok_or_else(|| D::Error::custom("expected JSON object for OKXWsFrame"))?;
+#[derive(Deserialize)]
+#[serde(field_identifier, rename_all = "camelCase")]
+enum OKXWsFrameKey {
+    Event,
+    Op,
+    Action,
+    Arg,
+    Data,
+    Code,
+    Msg,
+    ConnId,
+    Id,
+    Channel,
+    ConnCount,
+    #[serde(other)]
+    Other,
+}
 
-        // Check discriminant fields in priority order. Discriminants stay
-        // borrowed via `.get(...).as_str()`; only the structured payloads
-        // (`arg`, `data`, `channel`, `op`, `action`) are moved out.
+// Decodes a frame in one pass. Small fields are held as raw JSON text so the
+// variant is still chosen from field presence once every key is seen, while
+// `data` decodes straight into typed book levels when the keys before it fix
+// the type (OKX sends `arg` and `action` ahead of `data`). Buffering the whole
+// frame as a `serde_json::Value` tree dominated the inbound decode cost for L2
+// books, and holding `data` as raw text meant scanning it twice.
+#[derive(Default)]
+struct OKXWsFrameFields {
+    event: Option<Box<RawValue>>,
+    op: Option<Box<RawValue>>,
+    action: Option<Box<RawValue>>,
+    arg: Option<Box<RawValue>>,
+    arg_decoded: Option<OKXWebSocketArg>,
+    data: Option<OKXWsFrameData>,
+    code: Option<Box<RawValue>>,
+    msg: Option<Box<RawValue>>,
+    conn_id: Option<Box<RawValue>>,
+    id: Option<Box<RawValue>>,
+    channel: Option<Box<RawValue>>,
+    conn_count: Option<Box<RawValue>>,
+}
+
+enum OKXWsFrameData {
+    Value(serde_json::Value),
+    Book(Vec<OKXBookMsg>),
+    RpiBook(Vec<OKXRpiBookMsg>),
+}
+
+impl OKXWsFrameData {
+    fn into_value<E: serde::de::Error>(self) -> Result<serde_json::Value, E> {
+        match self {
+            Self::Value(value) => Ok(value),
+            Self::Book(_) | Self::RpiBook(_) => {
+                Err(E::custom("invalid data: book levels in a non-book frame"))
+            }
+        }
+    }
+}
+
+struct OKXWsFrameVisitor;
+
+impl<'de> Visitor<'de> for OKXWsFrameVisitor {
+    type Value = OKXWsFrame;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("JSON object for OKXWsFrame")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut fields = OKXWsFrameFields::default();
+
+        while let Some(key) = map.next_key::<OKXWsFrameKey>()? {
+            let slot = match key {
+                OKXWsFrameKey::Event => &mut fields.event,
+                OKXWsFrameKey::Op => &mut fields.op,
+                OKXWsFrameKey::Action => &mut fields.action,
+                OKXWsFrameKey::Arg => {
+                    fields.arg_decoded = None;
+                    &mut fields.arg
+                }
+                OKXWsFrameKey::Data => {
+                    fields.data = Some(fields.next_data(&mut map)?);
+                    continue;
+                }
+                OKXWsFrameKey::Code => &mut fields.code,
+                OKXWsFrameKey::Msg => &mut fields.msg,
+                OKXWsFrameKey::ConnId => &mut fields.conn_id,
+                OKXWsFrameKey::Id => &mut fields.id,
+                OKXWsFrameKey::Channel => &mut fields.channel,
+                OKXWsFrameKey::ConnCount => &mut fields.conn_count,
+                OKXWsFrameKey::Other => {
+                    map.next_value::<IgnoredAny>()?;
+                    continue;
+                }
+            };
+
+            *slot = Some(map.next_value()?);
+        }
+
+        fields.into_frame()
+    }
+}
+
+impl OKXWsFrameFields {
+    fn next_data<'de, A: MapAccess<'de>>(
+        &mut self,
+        map: &mut A,
+    ) -> Result<OKXWsFrameData, A::Error> {
+        let invalid_data = |e: A::Error| A::Error::custom(format!("invalid data: {e}"));
+
+        if self.event.is_none()
+            && self.op.is_none()
+            && self.action.is_some()
+            && let Some(raw) = self.arg.as_deref()
+        {
+            let arg: OKXWebSocketArg = parse_raw(raw, "arg")?;
+
+            let data = if arg.channel == OKXWsChannel::BooksRpi {
+                OKXWsFrameData::RpiBook(map.next_value().map_err(invalid_data)?)
+            } else {
+                OKXWsFrameData::Book(map.next_value().map_err(invalid_data)?)
+            };
+
+            self.arg_decoded = Some(arg);
+            return Ok(data);
+        }
+
+        Ok(OKXWsFrameData::Value(map.next_value()?))
+    }
+
+    fn take_arg<E: serde::de::Error>(&mut self) -> Result<OKXWebSocketArg, E> {
+        match self.arg_decoded.take() {
+            Some(arg) => Ok(arg),
+            None => take_typed(self.arg.take(), "arg"),
+        }
+    }
+
+    fn into_frame<E: serde::de::Error>(self) -> Result<OKXWsFrame, E> {
+        // Check discriminant fields in priority order
 
         // 1. "event" field - Login, Subscription, ChannelConnCount, or Error
-        if let Some(event) = obj.get("event").and_then(|v| v.as_str()) {
-            match event {
-                "login" => return parse_login(obj),
-                "subscribe" | "unsubscribe" => return parse_subscription(obj),
-                "error" => return parse_error(obj),
-                _ if obj.contains_key("channel") && obj.contains_key("connCount") => {
-                    return parse_channel_conn_count(obj);
+        if let Some(event) = self.event.as_deref().and_then(raw_as_string) {
+            match event.as_str() {
+                "login" => return parse_login(self),
+                "subscribe" | "unsubscribe" => return parse_subscription(self),
+                "error" => return parse_error(self),
+                _ if self.channel.is_some() && self.conn_count.is_some() => {
+                    return parse_channel_conn_count(self);
                 }
                 _ => {}
             }
         }
 
         // 2. "op" field - OrderResponse
-        if obj.contains_key("op") {
-            return parse_order_response(obj);
+        if self.op.is_some() {
+            return parse_order_response(self);
         }
 
         // 3. "action" + "arg" - BookData
-        if obj.contains_key("action") && obj.contains_key("arg") {
-            return parse_book_data(obj);
+        if self.action.is_some() && self.arg.is_some() {
+            return parse_book_data(self);
         }
 
         // 4. "arg" + "data" without "action" - Data
-        if obj.contains_key("arg") && obj.contains_key("data") {
-            return parse_data(obj);
+        if self.arg.is_some() && self.data.is_some() {
+            return parse_data(self);
         }
 
         // 5. Fallback to Error if it has "code" and "msg"
-        if obj.contains_key("code") && obj.contains_key("msg") {
-            return parse_error(obj);
+        if self.code.is_some() && self.msg.is_some() {
+            return parse_error(self);
         }
 
-        // No variant matched; no `remove` happened above, so `value` is still
-        // intact. Serialize it back into the error message to preserve the
-        // original diagnostic shape.
-        Err(D::Error::custom(format!(
-            "cannot determine OKXWsFrame variant from: {}",
-            serde_json::to_string(&value).unwrap_or_default()
-        )))
+        Err(E::custom("cannot determine OKXWsFrame variant"))
     }
 }
 
-#[inline]
+fn raw_as_string(raw: &RawValue) -> Option<String> {
+    serde_json::from_str(raw.get()).ok()
+}
+
+fn parse_raw<T: DeserializeOwned, E: serde::de::Error>(
+    raw: &RawValue,
+    key: &'static str,
+) -> Result<T, E> {
+    serde_json::from_str(raw.get()).map_err(|e| E::custom(format!("invalid {key}: {e}")))
+}
+
+fn take_typed<T: DeserializeOwned, E: serde::de::Error>(
+    raw: Option<Box<RawValue>>,
+    key: &'static str,
+) -> Result<T, E> {
+    let raw = raw.ok_or_else(|| E::missing_field(key))?;
+    parse_raw(&raw, key)
+}
+
+fn take_data_typed<T: DeserializeOwned, E: serde::de::Error>(data: OKXWsFrameData) -> Result<T, E> {
+    serde_json::from_value(data.into_value()?).map_err(|e| E::custom(format!("invalid data: {e}")))
+}
+
 fn take_str<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
+    raw: Option<Box<RawValue>>,
     key: &'static str,
 ) -> Result<String, E> {
-    match obj.remove(key) {
-        Some(serde_json::Value::String(s)) => Ok(s),
-        Some(_) => Err(E::custom(format!("field `{key}` is not a string"))),
-        None => Err(E::missing_field(key)),
-    }
+    let raw = raw.ok_or_else(|| E::missing_field(key))?;
+    raw_as_string(&raw).ok_or_else(|| E::custom(format!("field `{key}` is not a string")))
 }
 
-#[inline]
-fn take_optional_str(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-    key: &'static str,
-) -> Option<String> {
-    match obj.remove(key) {
-        Some(serde_json::Value::String(s)) => Some(s),
-        _ => None,
-    }
+fn take_optional_str(raw: Option<Box<RawValue>>) -> Option<String> {
+    raw.and_then(|raw| raw_as_string(&raw))
 }
 
-fn parse_login<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-) -> Result<OKXWsFrame, E> {
+fn parse_login<E: serde::de::Error>(fields: OKXWsFrameFields) -> Result<OKXWsFrame, E> {
     Ok(OKXWsFrame::Login {
-        event: take_str(obj, "event")?,
-        code: take_str(obj, "code")?,
-        msg: take_str(obj, "msg")?,
-        conn_id: take_str(obj, "connId")?,
+        event: take_str(fields.event, "event")?,
+        code: take_str(fields.code, "code")?,
+        msg: take_str(fields.msg, "msg")?,
+        conn_id: take_str(fields.conn_id, "connId")?,
     })
 }
 
-fn parse_subscription<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-) -> Result<OKXWsFrame, E> {
-    let event_val = obj
-        .remove("event")
-        .ok_or_else(|| E::missing_field("event"))?;
-    let event: OKXSubscriptionEvent =
-        serde_json::from_value(event_val).map_err(|e| E::custom(format!("invalid event: {e}")))?;
-
-    let arg_val = obj.remove("arg").ok_or_else(|| E::missing_field("arg"))?;
-    let arg: OKXWebSocketArg =
-        serde_json::from_value(arg_val).map_err(|e| E::custom(format!("invalid arg: {e}")))?;
+fn parse_subscription<E: serde::de::Error>(mut fields: OKXWsFrameFields) -> Result<OKXWsFrame, E> {
+    let event: OKXSubscriptionEvent = take_typed(fields.event.take(), "event")?;
+    let arg = fields.take_arg()?;
 
     Ok(OKXWsFrame::Subscription {
         event,
         arg,
-        conn_id: take_str(obj, "connId")?,
-        code: take_optional_str(obj, "code"),
-        msg: take_optional_str(obj, "msg"),
+        conn_id: take_str(fields.conn_id, "connId")?,
+        code: take_optional_str(fields.code),
+        msg: take_optional_str(fields.msg),
     })
 }
 
 fn parse_channel_conn_count<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
+    fields: OKXWsFrameFields,
 ) -> Result<OKXWsFrame, E> {
-    let channel_val = obj
-        .remove("channel")
-        .ok_or_else(|| E::missing_field("channel"))?;
-    let channel: OKXWsChannel = serde_json::from_value(channel_val)
-        .map_err(|e| E::custom(format!("invalid channel: {e}")))?;
+    let channel: OKXWsChannel = take_typed(fields.channel, "channel")?;
 
     Ok(OKXWsFrame::ChannelConnCount {
-        event: take_str(obj, "event")?,
+        event: take_str(fields.event, "event")?,
         channel,
-        conn_count: take_str(obj, "connCount")?,
-        conn_id: take_str(obj, "connId")?,
+        conn_count: take_str(fields.conn_count, "connCount")?,
+        conn_id: take_str(fields.conn_id, "connId")?,
     })
 }
 
-fn parse_order_response<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-) -> Result<OKXWsFrame, E> {
-    let op_val = obj.remove("op").ok_or_else(|| E::missing_field("op"))?;
-    let op: OKXWsOperation =
-        serde_json::from_value(op_val).map_err(|e| E::custom(format!("invalid op: {e}")))?;
+fn parse_order_response<E: serde::de::Error>(fields: OKXWsFrameFields) -> Result<OKXWsFrame, E> {
+    let op: OKXWsOperation = take_typed(fields.op, "op")?;
 
-    let data: Vec<serde_json::Value> = match obj.remove("data") {
-        Some(v) => {
-            serde_json::from_value(v).map_err(|e| E::custom(format!("invalid data: {e}")))?
-        }
+    let data: Vec<serde_json::Value> = match fields.data {
+        Some(OKXWsFrameData::Value(serde_json::Value::Array(values))) => values,
+        Some(data) => take_data_typed(data)?,
         None => Vec::new(),
     };
 
     Ok(OKXWsFrame::OrderResponse {
-        id: take_optional_str(obj, "id"),
+        id: take_optional_str(fields.id),
         op,
-        code: take_str(obj, "code")?,
-        msg: take_str(obj, "msg")?,
+        code: take_str(fields.code, "code")?,
+        msg: take_str(fields.msg, "msg")?,
         data,
     })
 }
 
-fn parse_book_data<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-) -> Result<OKXWsFrame, E> {
-    let arg_val = obj.remove("arg").ok_or_else(|| E::missing_field("arg"))?;
-    let arg: OKXWebSocketArg =
-        serde_json::from_value(arg_val).map_err(|e| E::custom(format!("invalid arg: {e}")))?;
+fn parse_book_data<E: serde::de::Error>(mut fields: OKXWsFrameFields) -> Result<OKXWsFrame, E> {
+    let arg = fields.take_arg()?;
+    let action: OKXBookAction = take_typed(fields.action, "action")?;
+    let data = fields.data.ok_or_else(|| E::missing_field("data"))?;
 
-    let action_val = obj
-        .remove("action")
-        .ok_or_else(|| E::missing_field("action"))?;
-    let action: OKXBookAction = serde_json::from_value(action_val)
-        .map_err(|e| E::custom(format!("invalid action: {e}")))?;
-
-    let data_val = obj.remove("data").ok_or_else(|| E::missing_field("data"))?;
     if arg.channel == OKXWsChannel::BooksRpi {
-        let data: Vec<OKXRpiBookMsg> = serde_json::from_value(data_val)
-            .map_err(|e| E::custom(format!("invalid data: {e}")))?;
+        let data: Vec<OKXRpiBookMsg> = match data {
+            OKXWsFrameData::RpiBook(data) => data,
+            data => take_data_typed(data)?,
+        };
+
         return Ok(OKXWsFrame::RpiBookData { arg, action, data });
     }
 
-    let data: Vec<OKXBookMsg> =
-        serde_json::from_value(data_val).map_err(|e| E::custom(format!("invalid data: {e}")))?;
+    let data: Vec<OKXBookMsg> = match data {
+        OKXWsFrameData::Book(data) => data,
+        data => take_data_typed(data)?,
+    };
+
     Ok(OKXWsFrame::BookData { arg, action, data })
 }
 
-fn parse_data<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-) -> Result<OKXWsFrame, E> {
-    let arg_val = obj.remove("arg").ok_or_else(|| E::missing_field("arg"))?;
-    let arg: OKXWebSocketArg =
-        serde_json::from_value(arg_val).map_err(|e| E::custom(format!("invalid arg: {e}")))?;
-
-    let data = obj.remove("data").ok_or_else(|| E::missing_field("data"))?;
+fn parse_data<E: serde::de::Error>(mut fields: OKXWsFrameFields) -> Result<OKXWsFrame, E> {
+    let arg = fields.take_arg()?;
+    let data = fields
+        .data
+        .ok_or_else(|| E::missing_field("data"))?
+        .into_value()?;
 
     Ok(OKXWsFrame::Data { arg, data })
 }
 
-fn parse_error<E: serde::de::Error>(
-    obj: &mut serde_json::Map<String, serde_json::Value>,
-) -> Result<OKXWsFrame, E> {
+fn parse_error<E: serde::de::Error>(mut fields: OKXWsFrameFields) -> Result<OKXWsFrame, E> {
+    let arg = if fields.arg.is_some() {
+        Some(fields.take_arg()?)
+    } else {
+        None
+    };
+
     Ok(OKXWsFrame::Error {
-        code: take_str(obj, "code")?,
-        msg: take_str(obj, "msg")?,
+        arg,
+        code: take_str(fields.code, "code")?,
+        msg: take_str(fields.msg, "msg")?,
     })
 }
 
@@ -565,7 +693,8 @@ pub struct OrderBookEntry {
     pub size: String,
     // Spread book levels (`sprd-books5`) are 3-element `[price, size, count]`,
     // omitting the liquidated-orders field standard books carry; default the
-    // trailing counts so both array shapes deserialize. Only price/size are used.
+    // trailing counts so both array shapes deserialize, spread order counts
+    // occupy `liquidated_orders_count`.
     /// Number of liquidated orders.
     #[serde(default)]
     pub liquidated_orders_count: String,
@@ -868,6 +997,52 @@ pub struct OKXStatusMsg {
 
 pub use crate::common::models::OKXAttachedAlgoOrd;
 
+/// Liquidation risk warning pushed by the `liquidation-warning` channel.
+///
+/// OKX sends this when an isolated position, or all positions under cross
+/// margin, approach liquidation. It is a risk warning only: the position may
+/// already be liquidated by the time the message arrives.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXLiquidationWarningMsg {
+    /// Instrument type.
+    pub inst_type: OKXInstrumentType,
+    /// Instrument family.
+    #[serde(default)]
+    pub inst_family: Option<Ustr>,
+    /// Instrument ID.
+    pub inst_id: Ustr,
+    /// Margin mode.
+    pub mgn_mode: OKXMarginMode,
+    /// Position ID.
+    #[serde(default)]
+    pub pos_id: Option<Ustr>,
+    /// Position side.
+    pub pos_side: OKXPositionSide,
+    /// Position quantity.
+    pub pos: String,
+    /// Position currency (margin positions only).
+    #[serde(default)]
+    pub pos_ccy: Option<Ustr>,
+    /// Leverage.
+    pub lever: String,
+    /// Mark price.
+    pub mark_px: String,
+    /// Maintenance margin ratio.
+    pub mgn_ratio: String,
+    /// Margin currency.
+    pub ccy: Ustr,
+    /// Creation time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub c_time: u64,
+    /// Last update time, Unix timestamp in milliseconds.
+    #[serde(deserialize_with = "deserialize_string_to_u64")]
+    pub u_time: u64,
+    /// Push time, Unix timestamp in milliseconds.
+    #[serde(default)]
+    pub p_time: Option<String>,
+}
+
 /// Linked algo order metadata from order push updates.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1032,7 +1207,7 @@ pub struct OKXOrderMsg {
     pub tag: Option<String>,
     /// Trade mode.
     pub td_mode: OKXTradeMode,
-    /// Target currency (base_ccy or quote_ccy). Empty for margin modes.
+    /// Target currency (`base_ccy` or `quote_ccy`). Empty for margin modes.
     #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Take-profit order price.
@@ -1076,11 +1251,14 @@ pub struct OKXAlgoOrderMsg {
     pub cl_ord_id: String,
     /// Order ID (empty until algo order is triggered).
     pub ord_id: String,
+    /// Triggered child order IDs.
+    #[serde(default)]
+    pub ord_id_list: Vec<String>,
     /// Instrument ID.
     pub inst_id: Ustr,
     /// Instrument type.
     pub inst_type: OKXInstrumentType,
-    /// Algo order type (trigger, move_order_stop, oco, iceberg, twap).
+    /// Algo order type (trigger, `move_order_stop`, oco, iceberg, twap).
     pub ord_type: OKXAlgoOrderType,
     /// Order state.
     pub state: OKXAlgoOrderStatus,
@@ -1146,6 +1324,9 @@ pub struct OKXAlgoOrderMsg {
     /// Trigger time (empty until triggered).
     #[serde(default)]
     pub trigger_time: String,
+    /// Failure code for rejected algo orders.
+    #[serde(default)]
+    pub fail_code: String,
     /// Tag.
     #[serde(default)]
     pub tag: String,
@@ -1161,7 +1342,7 @@ pub struct OKXAlgoOrderMsg {
     /// Currency.
     #[serde(default, deserialize_with = "deserialize_empty_ustr_as_none")]
     pub ccy: Option<Ustr>,
-    /// Target currency (base_ccy or quote_ccy).
+    /// Target currency (`base_ccy` or `quote_ccy`).
     #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Fee amount.
@@ -1249,7 +1430,7 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pos_side: Option<OKXPositionSide>,
-    /// Order type: limit, market, post_only, fok, ioc, etc.
+    /// Order type: limit, market, `post_only`, fok, ioc, etc.
     pub ord_type: OKXOrderType,
     /// Order size.
     pub sz: String,
@@ -1278,6 +1459,10 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
+    /// Quote currency used for trading. Only applicable to SPOT.
+    #[builder(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trade_quote_ccy: Option<Ustr>,
     /// Order tag for categorization.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1286,10 +1471,6 @@ pub struct WsPostOrderParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attach_algo_ords: Option<Vec<WsAttachAlgoOrdParams>>,
-    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
-    #[builder(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed_bump: Option<String>,
     /// Event contract market outcome: yes or no.
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1375,9 +1556,6 @@ pub struct WsAmendOrderParams {
     /// Whether OKX may round the amended price to an eligible RPI price.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rpi_px_round: Option<bool>,
-    /// Event contract speed bump flag. Use "1" for non-post-only EVENTS orders.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub speed_bump: Option<String>,
 }
 
 /// Parameters for WebSocket algo order placement.
@@ -1444,20 +1622,47 @@ pub struct WsCancelAlgoOrderParams {
     /// Instrument ID code (numeric). Replaced `instId` for WebSocket order operations.
     pub inst_id_code: u64,
     /// Algo order ID.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_id: Option<String>,
     /// Client algo order ID.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub algo_cl_ord_id: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_core::{string::secret::REDACTED, time::get_atomic_clock_realtime};
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
+
+    #[rstest]
+    fn authentication_preserves_wire_values_and_redacts_debug() {
+        let authentication = OKXAuthentication {
+            op: "login",
+            args: vec![OKXAuthenticationArg {
+                api_key: SecretString::from("api-key-value"),
+                passphrase: SecretString::from("passphrase-value"),
+                timestamp: "1700000000".to_string(),
+                sign: SecretString::from("signature-value"),
+            }],
+        };
+
+        let json = serde_json::to_value(&authentication).unwrap();
+        let formatted = format!("{authentication:?}");
+
+        assert_eq!(json["op"], "login");
+        assert_eq!(json["args"][0]["apiKey"], "api-key-value");
+        assert_eq!(json["args"][0]["passphrase"], "passphrase-value");
+        assert_eq!(json["args"][0]["sign"], "signature-value");
+        assert!(formatted.contains(REDACTED));
+        assert!(!formatted.contains("api-key-value"));
+        assert!(!formatted.contains("passphrase-value"));
+        assert!(!formatted.contains("signature-value"));
+    }
     use crate::common::testing::load_test_json;
 
     #[rstest]
@@ -1782,7 +1987,8 @@ mod tests {
         let parsed: OKXWsFrame = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWsFrame::Error { code, msg } => {
+            OKXWsFrame::Error { arg, code, msg } => {
+                assert!(arg.is_none());
                 assert_eq!(code, "60012");
                 assert_eq!(msg, "Invalid request");
             }
@@ -1802,7 +2008,8 @@ mod tests {
         let parsed: OKXWsFrame = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWsFrame::Error { code, msg } => {
+            OKXWsFrame::Error { arg, code, msg } => {
+                assert!(arg.is_none());
                 assert_eq!(code, "60018");
                 assert_eq!(msg, "Invalid sign");
             }
@@ -1824,7 +2031,10 @@ mod tests {
         let parsed: OKXWsFrame = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWsFrame::Error { code, msg } => {
+            OKXWsFrame::Error { arg, code, msg } => {
+                let arg = arg.expect("subscription error arg");
+                assert_eq!(arg.channel, OKXWsChannel::Tickers);
+                assert_eq!(arg.inst_id, Some(Ustr::from("INVALID-INST")));
                 assert_eq!(code, "60012");
                 assert_eq!(msg, "Invalid request: channel not found");
             }
@@ -1962,6 +2172,87 @@ mod tests {
             }
             _ => panic!("Expected BookData variant"),
         }
+    }
+
+    #[rstest]
+    #[case::arg_first(
+        r#"{"arg":{"channel":"books","instId":"ETH-USDT"},"action":"update","data":[{"asks":[["3000.5","2","0","3"]],"bids":[["2999.5","4","1","5"]],"ts":"1640995200001","checksum":-42,"prevSeqId":1001,"seqId":1002}]}"#
+    )]
+    #[case::data_first(
+        r#"{"data":[{"asks":[["3000.5","2","0","3"]],"bids":[["2999.5","4","1","5"]],"ts":"1640995200001","checksum":-42,"prevSeqId":1001,"seqId":1002}],"action":"update","arg":{"channel":"books","instId":"ETH-USDT"}}"#
+    )]
+    fn test_book_data_parsing_is_independent_of_key_order(#[case] json: &str) {
+        let parsed: OKXWsFrame = serde_json::from_str(json).unwrap();
+
+        let OKXWsFrame::BookData { arg, action, data } = parsed else {
+            panic!("Expected BookData variant");
+        };
+
+        assert_eq!(arg.channel, OKXWsChannel::Books);
+        assert_eq!(arg.inst_id, Some(Ustr::from("ETH-USDT")));
+        assert_eq!(action, OKXBookAction::Update);
+        assert_eq!(data.len(), 1);
+        let msg = &data[0];
+        assert_eq!(msg.asks.len(), 1);
+        assert_eq!(msg.asks[0].price, "3000.5");
+        assert_eq!(msg.asks[0].size, "2");
+        assert_eq!(msg.asks[0].liquidated_orders_count, "0");
+        assert_eq!(msg.asks[0].orders_count, "3");
+        assert_eq!(msg.bids.len(), 1);
+        assert_eq!(msg.bids[0].price, "2999.5");
+        assert_eq!(msg.bids[0].size, "4");
+        assert_eq!(msg.bids[0].liquidated_orders_count, "1");
+        assert_eq!(msg.bids[0].orders_count, "5");
+        assert_eq!(msg.checksum, Some(-42));
+        assert_eq!(msg.prev_seq_id, Some(1001));
+        assert_eq!(msg.seq_id, 1002);
+        assert_eq!(msg.ts, 1_640_995_200_001);
+    }
+
+    #[rstest]
+    #[case::op_first(
+        r#"{"id":"req-7","op":"cancel-order","data":[{"sCode":"51400","sMsg":"Cancellation failed"}],"code":"1","msg":"Operation failed"}"#
+    )]
+    #[case::data_first(
+        r#"{"data":[{"sCode":"51400","sMsg":"Cancellation failed"}],"code":"1","msg":"Operation failed","op":"cancel-order","id":"req-7"}"#
+    )]
+    fn test_order_response_parsing_is_independent_of_key_order(#[case] json: &str) {
+        let parsed: OKXWsFrame = serde_json::from_str(json).unwrap();
+
+        let OKXWsFrame::OrderResponse {
+            id,
+            op,
+            code,
+            msg,
+            data,
+        } = parsed
+        else {
+            panic!("Expected OrderResponse variant");
+        };
+
+        assert_eq!(id, Some("req-7".to_string()));
+        assert_eq!(op, OKXWsOperation::CancelOrder);
+        assert_eq!(code, "1");
+        assert_eq!(msg, "Operation failed");
+        assert_eq!(
+            data,
+            vec![serde_json::json!({"sCode": "51400", "sMsg": "Cancellation failed"})]
+        );
+    }
+
+    #[rstest]
+    #[case::op_first(r#"{"op":"order","data":null,"event":"error","code":"60012","msg":"Bad"}"#)]
+    #[case::event_first(r#"{"event":"error","code":"60012","msg":"Bad","op":"order","data":null}"#)]
+    fn test_error_event_takes_priority_over_op_in_any_key_order(#[case] json: &str) {
+        let parsed: OKXWsFrame = serde_json::from_str(json).unwrap();
+
+        let OKXWsFrame::Error { arg, code, msg } = parsed else {
+            panic!("Expected Error variant");
+        };
+
+        assert!(arg.is_none());
+        assert_eq!(code, "60012");
+        assert_eq!(msg, "Bad");
     }
 
     #[rstest]
@@ -2237,6 +2528,49 @@ mod tests {
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(!json.contains("slippagePct"));
+        assert!(!json.contains("tradeQuoteCcy"));
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_trade_quote_ccy_usd() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id_code(20459u64)
+            .td_mode(OKXTradeMode::Cash)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("0.01".to_string())
+            .px("100000".to_string())
+            .trade_quote_ccy("USD")
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["instIdCode"], 20459);
+        assert_eq!(json["tradeQuoteCcy"], "USD");
+        assert!(json.get("instId").is_none());
+    }
+
+    #[rstest]
+    fn test_ws_post_order_params_serializes_trade_quote_ccy_usdc() {
+        use super::WsPostOrderParamsBuilder;
+        use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
+
+        let params = WsPostOrderParamsBuilder::default()
+            .inst_id_code(20459u64)
+            .td_mode(OKXTradeMode::Cash)
+            .side(OKXSide::Buy)
+            .ord_type(OKXOrderType::Limit)
+            .sz("0.01".to_string())
+            .px("100000".to_string())
+            .trade_quote_ccy("USDC")
+            .build()
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["tradeQuoteCcy"], "USDC");
     }
 
     #[rstest]
@@ -2355,6 +2689,29 @@ mod tests {
     }
 
     #[rstest]
+    fn test_ws_cancel_algo_order_params_builder_allows_either_identifier() {
+        use super::WsCancelAlgoOrderParamsBuilder;
+
+        let by_cl_ord_id = WsCancelAlgoOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .algo_cl_ord_id("Odstalgocancel0000001".to_string())
+            .build()
+            .unwrap();
+        let json = serde_json::to_value(&by_cl_ord_id).unwrap();
+        assert_eq!(json["algoClOrdId"], "Odstalgocancel0000001");
+        assert!(json.get("algoId").is_none());
+
+        let by_algo_id = WsCancelAlgoOrderParamsBuilder::default()
+            .inst_id_code(10459u64)
+            .algo_id("987654321".to_string())
+            .build()
+            .unwrap();
+        let json = serde_json::to_value(&by_algo_id).unwrap();
+        assert_eq!(json["algoId"], "987654321");
+        assert!(json.get("algoClOrdId").is_none());
+    }
+
+    #[rstest]
     fn test_ws_post_order_params_serializes_px_usd() {
         use super::WsPostOrderParamsBuilder;
         use crate::common::enums::{OKXOrderType, OKXSide, OKXTradeMode};
@@ -2451,32 +2808,37 @@ mod tests {
             .ord_type(OKXOrderType::Limit)
             .sz("10".to_string())
             .px("0.42".to_string())
-            .speed_bump("1")
             .outcome("yes")
             .build()
             .unwrap();
 
         let json: serde_json::Value = serde_json::to_value(&params).unwrap();
 
-        assert_eq!(json["speedBump"], "1");
+        assert!(json.get("speedBump").is_none());
         assert_eq!(json["outcome"], "yes");
     }
 
     #[rstest]
-    fn test_ws_amend_order_params_serializes_speed_bump() {
+    fn test_ws_amend_order_params_omits_speed_bump() {
         use super::WsAmendOrderParamsBuilder;
 
         let params = WsAmendOrderParamsBuilder::default()
             .inst_id_code(10459u64)
             .cl_ord_id("event-1".to_string())
             .new_px("0.43".to_string())
-            .speed_bump("1")
             .build()
             .unwrap();
 
         let json: serde_json::Value = serde_json::to_value(&params).unwrap();
 
-        assert_eq!(json["speedBump"], "1");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "instIdCode": 10459,
+                "clOrdId": "event-1",
+                "newPx": "0.43",
+            })
+        );
     }
 
     #[rstest]
@@ -2552,7 +2914,7 @@ mod tests {
             "asks": [["16.7", "100", "1"]],
             "bids": [["16.65", "100", "1"]],
             "ts": "1780044924909",
-            "seqId": 1779935772619784_u64,
+            "seqId": 1_779_935_772_619_784_u64,
         }))
         .unwrap();
         assert_eq!(msg.asks[0].price, "16.7");

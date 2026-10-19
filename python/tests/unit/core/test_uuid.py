@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test uuid behavior.
+"""
 
 import pickle
 
@@ -20,7 +23,10 @@ import pytest
 from nautilus_trader.core import UUID4
 
 
-def test_new_uuid4_produces_valid_format():
+def test_new_uuid4_produces_valid_format() -> None:
+    """
+    Test new uuid4 produces valid format.
+    """
     uuid = UUID4()
     value = str(uuid)
 
@@ -28,25 +34,37 @@ def test_new_uuid4_produces_valid_format():
     assert len(value.replace("-", "")) == 32
 
 
-def test_new_uuid4_is_unique():
+def test_new_uuid4_is_unique() -> None:
+    """
+    Test new uuid4 is unique.
+    """
     uuid1 = UUID4()
     uuid2 = UUID4()
 
     assert uuid1 != uuid2
 
 
-def test_from_str():
+def test_from_str() -> None:
+    """
+    Test from str.
+    """
     uuid = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
 
     assert uuid.value == "2d89666b-1a1e-4a75-b193-4eb3b454c757"
 
 
-def test_from_str_invalid_raises():
+def test_from_str_invalid_raises() -> None:
+    """
+    Test from str invalid raises.
+    """
     with pytest.raises(ValueError, match="failed to parse"):
         UUID4.from_str("not-a-uuid")
 
 
-def test_equality():
+def test_equality() -> None:
+    """
+    Test equality.
+    """
     uuid1 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
     uuid2 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
     uuid3 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
@@ -55,7 +73,10 @@ def test_equality():
     assert uuid1 != uuid3
 
 
-def test_hash():
+def test_hash() -> None:
+    """
+    Test hash.
+    """
     uuid1 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
     uuid2 = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
 
@@ -63,37 +84,52 @@ def test_hash():
     assert hash(uuid1) == hash(uuid2)
 
 
-def test_str_and_repr():
+def test_str_and_repr() -> None:
+    """
+    Test str and repr.
+    """
     uuid = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
 
     assert str(uuid) == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
     assert repr(uuid) == "UUID4(2d89666b-1a1e-4a75-b193-4eb3b454c758)"
 
 
-def test_value_property():
+def test_value_property() -> None:
+    """
+    Test value property.
+    """
     uuid = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
 
     assert uuid.value == "2d89666b-1a1e-4a75-b193-4eb3b454c758"
 
 
-def test_pickle_roundtrip():
+def test_pickle_roundtrip() -> None:
+    """
+    Test pickle roundtrip.
+    """
     uuid = UUID4()
     pickled = pickle.dumps(uuid)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
 
     assert unpickled == uuid
     assert unpickled.value == uuid.value
 
 
-def test_pickle_roundtrip_preserves_value():
+def test_pickle_roundtrip_preserves_value() -> None:
+    """
+    Test pickle roundtrip preserves value.
+    """
     uuid = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757")
     pickled = pickle.dumps(uuid)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
 
     assert str(unpickled) == "2d89666b-1a1e-4a75-b193-4eb3b454c757"
 
 
-def test_getstate_setstate():
+def test_getstate_setstate() -> None:
+    """
+    Test getstate setstate.
+    """
     uuid = UUID4.from_str("2d89666b-1a1e-4a75-b193-4eb3b454c758")
     state = uuid.__getstate__()
     new_uuid = UUID4()

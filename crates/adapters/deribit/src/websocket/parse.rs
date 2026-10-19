@@ -17,8 +17,11 @@
 
 use ahash::AHashMap;
 use anyhow::Context;
-use chrono::{Duration, TimeZone, Timelike, Utc};
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
+use jiff::{Span, Timestamp, tz::Offset};
+use nautilus_core::{
+    UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND,
+    serialization::deserialize_decimal_token_borrowed,
+};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
@@ -27,8 +30,8 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, GreeksConvention,
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, PriceType,
-        RecordFlag, TimeInForce,
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, RecordFlag,
+        TimeInForce,
     },
     events::{OrderAccepted, OrderCanceled, OrderExpired, OrderUpdated},
     identifiers::{
@@ -38,7 +41,8 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
+use serde_json::value::RawValue;
 use ustr::Ustr;
 
 use super::{
@@ -52,25 +56,17 @@ use crate::{common::parse::build_public_trade_id, http::models::DeribitPosition}
 
 fn next_8_utc(from_ns: UnixNanos) -> anyhow::Result<UnixNanos> {
     let from_secs = from_ns.as_u64() / 1_000_000_000;
-    let dt = Utc
-        .timestamp_opt(from_secs as i64, 0)
-        .single()
-        .context("failed to convert timestamp to UTC datetime")?;
-    let next_8 = if dt.hour() < 8 {
-        dt.date_naive()
-            .and_hms_opt(8, 0, 0)
-            .context("failed to construct 08:00 UTC time")?
-            .and_utc()
+    let timestamp = Timestamp::from_second(i64::try_from(from_secs)?)?;
+    let dt = Offset::UTC.to_datetime(timestamp);
+    let date = if dt.hour() < 8 {
+        dt.date()
     } else {
-        (dt.date_naive() + Duration::days(1))
-            .and_hms_opt(8, 0, 0)
-            .context("failed to construct next-day 08:00 UTC time")?
-            .and_utc()
+        dt.date().checked_add(Span::new().days(1))?
     };
-    let nanos = next_8
-        .timestamp_nanos_opt()
-        .context("GTD expiry timestamp out of nanosecond range")?;
-    Ok(UnixNanos::from(nanos as u64))
+    let next_8 = Offset::UTC.to_timestamp(date.at(8, 0, 0, 0))?;
+    let nanos = u64::try_from(next_8.as_nanosecond())
+        .context("GTD expiry timestamp out of UnixNanos range")?;
+    Ok(UnixNanos::from(nanos))
 }
 
 /// Parses a Deribit trade message into a Nautilus `TradeTick`.
@@ -91,8 +87,8 @@ pub fn parse_trade_msg(
     let size = Quantity::from_decimal_dp(msg.amount.abs(), size_precision)?;
 
     let aggressor_side = match msg.direction.as_str() {
-        "buy" => AggressorSide::Buyer,
-        "sell" => AggressorSide::Seller,
+        "buy" => AggressorSide::Buy,
+        "sell" => AggressorSide::Sell,
         _ => AggressorSide::NoAggressor,
     };
 
@@ -133,19 +129,22 @@ pub fn parse_trades_data(
 }
 
 fn parse_snapshot_level(
-    level: &[serde_json::Value],
+    level: &[&RawValue],
     index: usize,
     side: &str,
     instrument_name: &str,
-) -> Option<(f64, f64)> {
+) -> Option<(Decimal, Decimal)> {
     let (price_val, amount_val) = if level.len() >= 3 {
-        let price = level[1].as_f64().or_else(|| {
-            log::warn!(
-                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
-            );
-            None
-        })?;
-        let amount = level[2].as_f64().or_else(|| {
+        let price = deserialize_decimal_token_borrowed(level[1])
+            .ok()
+            .or_else(|| {
+                log::warn!(
+                    "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+                );
+                None
+            })?;
+
+        let amount = deserialize_decimal_token_borrowed(level[2]).ok().or_else(|| {
             log::warn!(
                 "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
             );
@@ -153,13 +152,16 @@ fn parse_snapshot_level(
         })?;
         (price, amount)
     } else if level.len() >= 2 {
-        let price = level[0].as_f64().or_else(|| {
-            log::warn!(
-                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
-            );
-            None
-        })?;
-        let amount = level[1].as_f64().or_else(|| {
+        let price = deserialize_decimal_token_borrowed(level[0])
+            .ok()
+            .or_else(|| {
+                log::warn!(
+                    "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+                );
+                None
+            })?;
+
+        let amount = deserialize_decimal_token_borrowed(level[1]).ok().or_else(|| {
             log::warn!(
                 "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
             );
@@ -174,7 +176,7 @@ fn parse_snapshot_level(
         return None;
     };
 
-    if price_val <= 0.0 {
+    if price_val <= Decimal::ZERO {
         log::warn!(
             "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
         );
@@ -185,11 +187,11 @@ fn parse_snapshot_level(
 }
 
 fn parse_delta_level(
-    level: &[serde_json::Value],
+    level: &[&RawValue],
     index: usize,
     side: &str,
     instrument_name: &str,
-) -> Option<(BookAction, f64, f64)> {
+) -> Option<(BookAction, Decimal, Decimal)> {
     if level.len() < 3 {
         log::warn!(
             "Invalid {side} delta format at index {index} for {instrument_name}: expected 3 elements, was {}",
@@ -198,12 +200,14 @@ fn parse_delta_level(
         return None;
     }
 
-    let action_str = level[0].as_str().or_else(|| {
-        log::warn!(
-            "Failed to parse {side} action at index {index} for {instrument_name}: {level:?}"
-        );
-        None
-    })?;
+    let action_str = serde_json::from_str::<&str>(level[0].get())
+        .ok()
+        .or_else(|| {
+            log::warn!(
+                "Failed to parse {side} action at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
 
     let deribit_action: DeribitBookAction = action_str.parse().ok().or_else(|| {
         log::warn!(
@@ -212,21 +216,25 @@ fn parse_delta_level(
         None
     })?;
 
-    let price_val = level[1].as_f64().or_else(|| {
-        log::warn!(
-            "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
-        );
-        None
-    })?;
+    let price_val = deserialize_decimal_token_borrowed(level[1])
+        .ok()
+        .or_else(|| {
+            log::warn!(
+                "Failed to parse {side} price at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
 
-    let amount_val = level[2].as_f64().or_else(|| {
-        log::warn!(
-            "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
-        );
-        None
-    })?;
+    let amount_val = deserialize_decimal_token_borrowed(level[2])
+        .ok()
+        .or_else(|| {
+            log::warn!(
+                "Failed to parse {side} amount at index {index} for {instrument_name}: {level:?}"
+            );
+            None
+        })?;
 
-    if price_val <= 0.0 {
+    if price_val <= Decimal::ZERO {
         log::warn!(
             "Invalid {side} price {price_val} at index {index} for {instrument_name}: {level:?}"
         );
@@ -238,11 +246,15 @@ fn parse_delta_level(
 
 /// Parses a Deribit order book snapshot into Nautilus `OrderBookDeltas`.
 ///
+/// Skips a malformed level, and a level whose amount is not positive or rounds to zero at the
+/// instrument's size precision.
+///
 /// # Errors
 ///
-/// Returns an error if the book data cannot be parsed.
+/// Returns an error if a level's price or amount cannot convert to `Price` or `Quantity`, such as a
+/// value outside their range.
 pub fn parse_book_snapshot(
-    msg: &DeribitBookMsg,
+    msg: &DeribitBookMsg<'_>,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
@@ -272,50 +284,39 @@ pub fn parse_book_snapshot(
         ts_init,
     ));
 
-    for (i, bid) in msg.bids.iter().enumerate() {
-        let Some((price_val, amount_val)) =
-            parse_snapshot_level(bid, i, "bid", msg.instrument_name.as_str())
-        else {
-            continue;
-        };
+    let sides = [
+        (OrderSide::Buy, "bid", &msg.bids, 0),
+        (OrderSide::Sell, "ask", &msg.asks, msg.bids.len()),
+    ];
 
-        if amount_val > 0.0 {
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val, size_precision);
+    for (order_side, side, levels, order_id_offset) in sides {
+        for (i, level) in levels.iter().enumerate() {
+            let Some((price_val, amount_val)) =
+                parse_snapshot_level(level, i, side, msg.instrument_name.as_str())
+            else {
+                continue;
+            };
 
-            deltas.push(OrderBookDelta::new(
+            if amount_val <= Decimal::ZERO {
+                continue;
+            }
+
+            let price = Price::from_decimal_dp(price_val, price_precision)?;
+            let size = Quantity::from_decimal_dp(amount_val, size_precision)?;
+
+            if is_zero_at_size_precision(size, amount_val, side, i, msg.instrument_name.as_str()) {
+                continue;
+            }
+
+            deltas.push(OrderBookDelta::new_checked(
                 instrument_id,
                 BookAction::Add,
-                BookOrder::new(OrderSide::Buy, price, size, i as u64),
+                BookOrder::new(order_side, price, size, (order_id_offset + i) as u64),
                 RecordFlag::F_SNAPSHOT as u8,
                 msg.change_id,
                 ts_event,
                 ts_init,
-            ));
-        }
-    }
-
-    let num_bids = msg.bids.len();
-    for (i, ask) in msg.asks.iter().enumerate() {
-        let Some((price_val, amount_val)) =
-            parse_snapshot_level(ask, i, "ask", msg.instrument_name.as_str())
-        else {
-            continue;
-        };
-
-        if amount_val > 0.0 {
-            let price = Price::new(price_val, price_precision);
-            let size = Quantity::new(amount_val, size_precision);
-
-            deltas.push(OrderBookDelta::new(
-                instrument_id,
-                BookAction::Add,
-                BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
-                RecordFlag::F_SNAPSHOT as u8,
-                msg.change_id,
-                ts_event,
-                ts_init,
-            ));
+            )?);
         }
     }
 
@@ -336,11 +337,15 @@ pub fn parse_book_snapshot(
 
 /// Parses a Deribit order book change (delta) into Nautilus `OrderBookDeltas`.
 ///
+/// Skips a malformed level. A `new` or `change` level whose amount rounds to zero at the
+/// instrument's size precision becomes a delete.
+///
 /// # Errors
 ///
-/// Returns an error if the book data cannot be parsed.
+/// Returns an error if a level's price or amount cannot convert to `Price` or `Quantity`, such as a
+/// value outside their range.
 pub fn parse_book_delta(
-    msg: &DeribitBookMsg,
+    msg: &DeribitBookMsg<'_>,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
@@ -351,47 +356,45 @@ pub fn parse_book_delta(
 
     let mut deltas = Vec::new();
 
-    for (i, bid) in msg.bids.iter().enumerate() {
-        let Some((action, price_val, amount_val)) =
-            parse_delta_level(bid, i, "bid", msg.instrument_name.as_str())
-        else {
-            continue;
-        };
+    let sides = [
+        (OrderSide::Buy, "bid", &msg.bids, 0),
+        (OrderSide::Sell, "ask", &msg.asks, msg.bids.len()),
+    ];
 
-        let price = Price::new(price_val, price_precision);
-        let size = Quantity::new(amount_val.abs(), size_precision);
+    for (order_side, side, levels, order_id_offset) in sides {
+        for (i, level) in levels.iter().enumerate() {
+            let Some((action, price_val, amount_val)) =
+                parse_delta_level(level, i, side, msg.instrument_name.as_str())
+            else {
+                continue;
+            };
 
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            action,
-            BookOrder::new(OrderSide::Buy, price, size, i as u64),
-            0,
-            msg.change_id,
-            ts_event,
-            ts_init,
-        ));
-    }
+            let price = Price::from_decimal_dp(price_val, price_precision)?;
+            let size = Quantity::from_decimal_dp(amount_val.abs(), size_precision)?;
 
-    let num_bids = msg.bids.len();
-    for (i, ask) in msg.asks.iter().enumerate() {
-        let Some((action, price_val, amount_val)) =
-            parse_delta_level(ask, i, "ask", msg.instrument_name.as_str())
-        else {
-            continue;
-        };
+            let action = if action != BookAction::Delete
+                && is_zero_at_size_precision(
+                    size,
+                    amount_val,
+                    side,
+                    i,
+                    msg.instrument_name.as_str(),
+                ) {
+                BookAction::Delete
+            } else {
+                action
+            };
 
-        let price = Price::new(price_val, price_precision);
-        let size = Quantity::new(amount_val.abs(), size_precision);
-
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            action,
-            BookOrder::new(OrderSide::Sell, price, size, (num_bids + i) as u64),
-            0,
-            msg.change_id,
-            ts_event,
-            ts_init,
-        ));
+            deltas.push(OrderBookDelta::new_checked(
+                instrument_id,
+                action,
+                BookOrder::new(order_side, price, size, (order_id_offset + i) as u64),
+                0,
+                msg.change_id,
+                ts_event,
+                ts_init,
+            )?);
+        }
     }
 
     // Set F_LAST flag on the last delta
@@ -414,9 +417,10 @@ pub fn parse_book_delta(
 ///
 /// # Errors
 ///
-/// Returns an error if the book data cannot be parsed.
+/// Returns an error if a level's price or amount cannot convert to `Price` or `Quantity`, such as a
+/// value outside their range.
 pub fn parse_book_msg(
-    msg: &DeribitBookMsg,
+    msg: &DeribitBookMsg<'_>,
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
@@ -424,6 +428,26 @@ pub fn parse_book_msg(
         DeribitBookMsgType::Snapshot => parse_book_snapshot(msg, instrument, ts_init),
         DeribitBookMsgType::Change => parse_book_delta(msg, instrument, ts_init),
     }
+}
+
+// An amount below half the size increment rounds to zero, which a book level cannot hold, so
+// callers treat the level as absent.
+fn is_zero_at_size_precision(
+    size: Quantity,
+    amount: Decimal,
+    side: &str,
+    index: usize,
+    instrument_name: &str,
+) -> bool {
+    if size.is_positive() {
+        return false;
+    }
+
+    log::warn!(
+        "Book {side} amount {amount} at index {index} for {instrument_name} is zero at size precision {}, treating level as absent",
+        size.precision
+    );
+    true
 }
 
 /// Parses a Deribit ticker message into a Nautilus `QuoteTick`.
@@ -667,8 +691,8 @@ pub fn resolution_to_bar_type(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Price or volume values are invalid
-/// - Bar construction fails validation
+/// - Price or volume values are invalid.
+/// - Bar construction fails validation.
 pub fn parse_chart_msg(
     chart_msg: &DeribitChartMsg,
     bar_type: BarType,
@@ -678,28 +702,29 @@ pub fn parse_chart_msg(
     timestamp_on_close: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
-    let open = Price::new_checked(chart_msg.open, price_precision).context("Invalid open price")?;
-    let high = Price::new_checked(chart_msg.high, price_precision).context("Invalid high price")?;
-    let low = Price::new_checked(chart_msg.low, price_precision).context("Invalid low price")?;
+    let open =
+        Price::from_decimal_dp(chart_msg.open, price_precision).context("Invalid open price")?;
+    let high =
+        Price::from_decimal_dp(chart_msg.high, price_precision).context("Invalid high price")?;
+    let low =
+        Price::from_decimal_dp(chart_msg.low, price_precision).context("Invalid low price")?;
     let close =
-        Price::new_checked(chart_msg.close, price_precision).context("Invalid close price")?;
+        Price::from_decimal_dp(chart_msg.close, price_precision).context("Invalid close price")?;
+
     let raw_volume = if use_cost_for_volume {
         chart_msg.cost
     } else {
         chart_msg.volume
     };
-    let volume = Quantity::new_checked(raw_volume, size_precision).context("Invalid volume")?;
+
+    let volume = Quantity::from_decimal_dp(raw_volume, size_precision).context("Invalid volume")?;
 
     // Convert timestamp from milliseconds to nanoseconds
     let mut ts_event = UnixNanos::from(chart_msg.tick * NANOSECONDS_IN_MILLISECOND);
 
     // Adjust timestamp to close time if configured
     if timestamp_on_close {
-        let interval_ns = bar_type
-            .spec()
-            .timedelta()
-            .num_nanoseconds()
-            .context("bar specification produced non-integer interval")?;
+        let interval_ns = bar_type.spec().timedelta().as_nanos();
         let interval_ns = u64::try_from(interval_ns)
             .context("bar interval overflowed the u64 range for nanoseconds")?;
         let updated = ts_event
@@ -781,7 +806,7 @@ pub fn parse_user_order_msg(
         instrument_id,
         None, // order_list_id
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -970,9 +995,9 @@ pub fn parse_position_status_report(
         .unwrap_or_else(|_| Quantity::zero(size_precision));
 
     let position_side = match position.direction.as_str() {
-        "buy" => PositionSideSpecified::Long,
-        "sell" => PositionSideSpecified::Short,
-        _ => PositionSideSpecified::Flat,
+        "buy" => PositionSide::Long,
+        "sell" => PositionSide::Short,
+        _ => PositionSide::Flat,
     };
 
     // Use average_price directly as it's already a Decimal
@@ -994,7 +1019,7 @@ pub fn parse_position_status_report(
 /// Parsed order event result from a Deribit order message.
 ///
 /// This enum represents the discrete order events that can be derived from
-/// Deribit order state transitions, following the same pattern as OKX.
+/// Deribit order state transitions.
 #[derive(Debug, Clone)]
 pub enum ParsedOrderEvent {
     /// Order was accepted by the venue.
@@ -1121,6 +1146,7 @@ pub(crate) fn parse_order_canceled_with_client_order_id(
         false, // reconciliation
         Some(venue_order_id),
         Some(account_id),
+        msg.cancel_reason.as_deref().map(Ustr::from),
     )
 }
 
@@ -1312,14 +1338,19 @@ pub enum OrderEventType {
 mod tests {
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde::de::DeserializeOwned;
 
     use super::*;
     use crate::{
-        common::{parse::parse_deribit_instrument_any, testing::load_test_json},
+        common::{
+            parse::{parse_deribit_instrument_any, parse_portfolio_to_account_state},
+            testing::load_test_json,
+        },
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
+        websocket::messages::{DeribitPortfolioMsg, DeribitWsMessage, parse_raw_message},
     };
 
-    /// Helper function to create a test instrument (BTC-PERPETUAL).
+    /// Creates a BTC-PERPETUAL test instrument.
     fn test_perpetual_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments.json");
         let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
@@ -1336,7 +1367,7 @@ mod tests {
         let json = load_test_json("ws_trades.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let trades: Vec<DeribitTradeMsg> =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
         let msg = &trades[0];
 
         let tick = parse_trade_msg(msg, &instrument, UnixNanos::default()).unwrap();
@@ -1344,7 +1375,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(92294.5));
         assert_eq!(tick.size, instrument.make_qty(10.0, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "403691824");
         assert_eq!(tick.ts_event, UnixNanos::new(1_765_531_356_452_000_000));
     }
@@ -1355,7 +1386,7 @@ mod tests {
         let json = load_test_json("ws_trades.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let trades: Vec<DeribitTradeMsg> =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
         let msg = &trades[1];
 
         let tick = parse_trade_msg(msg, &instrument, UnixNanos::default()).unwrap();
@@ -1363,7 +1394,7 @@ mod tests {
         assert_eq!(tick.instrument_id, instrument.id());
         assert_eq!(tick.price, instrument.make_price(92288.5));
         assert_eq!(tick.size, instrument.make_qty(750.0, None));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "403691825");
     }
 
@@ -1389,7 +1420,7 @@ mod tests {
             "block_rfq_id": block_rfq_id,
             "combo_id": combo_id,
         });
-        serde_json::from_value(raw).unwrap()
+        serde_json::from_str(&raw.to_string()).unwrap()
     }
 
     #[rstest]
@@ -1433,7 +1464,7 @@ mod tests {
             .result
             .unwrap()
             .into_iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-CS-19MAY26-70000_75000")
+            .find(|i| i.instrument_name == "BTC-CS-19MAY26-70000_75000")
             .expect("fixture must contain BTC-CS-19MAY26-70000_75000");
         parse_deribit_instrument_any(&combo_raw, UnixNanos::default(), UnixNanos::default())
             .unwrap()
@@ -1443,7 +1474,7 @@ mod tests {
     fn load_combo_trade_msgs() -> Vec<DeribitTradeMsg> {
         let json = load_test_json("ws_trades_option_combo.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
-        serde_json::from_value(response["params"]["data"].clone()).unwrap()
+        serde_json::from_str(&response["params"]["data"].to_string()).unwrap()
     }
 
     #[rstest]
@@ -1471,7 +1502,7 @@ mod tests {
         // so a regression in price/size precision is caught here too.
         assert_eq!(tick.price, Price::from("0.0639"));
         assert_eq!(tick.size, Quantity::from("0.1"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Seller);
+        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
         assert_eq!(tick.trade_id.to_string(), "244365193");
     }
 
@@ -1479,7 +1510,7 @@ mod tests {
     fn test_parse_trades_data_combo_not_cached_emits_no_tick() {
         // When the combo InstrumentAny is not in the WS handler cache,
         // parse_trades_data must drop the message rather than panic or
-        // synthesise a tick against an unknown instrument.
+        // synthesize a tick against an unknown instrument.
         let cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
         let trades = load_combo_trade_msgs();
         let data = parse_trades_data(&trades, &cache, UnixNanos::default());
@@ -1501,7 +1532,7 @@ mod tests {
         let perp_msgs: Vec<DeribitTradeMsg> = {
             let json = load_test_json("ws_trades.json");
             let response: serde_json::Value = serde_json::from_str(&json).unwrap();
-            serde_json::from_value(response["params"]["data"].clone()).unwrap()
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap()
         };
         trades.extend(perp_msgs);
 
@@ -1535,8 +1566,8 @@ mod tests {
         let instrument = test_perpetual_instrument();
         let json = load_test_json("ws_book_snapshot.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let msg: DeribitBookMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+        let data = response["params"]["data"].to_string();
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
 
         let deltas = parse_book_snapshot(&msg, &instrument, UnixNanos::default()).unwrap();
 
@@ -1550,14 +1581,14 @@ mod tests {
         // Check first bid
         let first_bid = &deltas.deltas[1];
         assert_eq!(first_bid.action, BookAction::Add);
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price, instrument.make_price(42500.0));
         assert_eq!(first_bid.order.size, instrument.make_qty(1000.0, None));
 
         // Check first ask
         let first_ask = &deltas.deltas[6];
         assert_eq!(first_ask.action, BookAction::Add);
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price, instrument.make_price(42501.0));
         assert_eq!(first_ask.order.size, instrument.make_qty(800.0, None));
 
@@ -1574,8 +1605,8 @@ mod tests {
         let instrument = test_perpetual_instrument();
         let json = load_test_json("ws_book_delta.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let msg: DeribitBookMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+        let data = response["params"]["data"].to_string();
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
 
         let deltas = parse_book_delta(&msg, &instrument, UnixNanos::default()).unwrap();
 
@@ -1586,28 +1617,28 @@ mod tests {
         // Check first bid - "change" action
         let bid_change = &deltas.deltas[0];
         assert_eq!(bid_change.action, BookAction::Update);
-        assert_eq!(bid_change.order.side, OrderSide::Buy);
+        assert_eq!(bid_change.order.side, OrderSide::Buy.into());
         assert_eq!(bid_change.order.price, instrument.make_price(42500.0));
         assert_eq!(bid_change.order.size, instrument.make_qty(950.0, None));
 
         // Check second bid - "new" action
         let bid_new = &deltas.deltas[1];
         assert_eq!(bid_new.action, BookAction::Add);
-        assert_eq!(bid_new.order.side, OrderSide::Buy);
+        assert_eq!(bid_new.order.side, OrderSide::Buy.into());
         assert_eq!(bid_new.order.price, instrument.make_price(42498.5));
         assert_eq!(bid_new.order.size, instrument.make_qty(300.0, None));
 
         // Check first ask - "delete" action
         let ask_delete = &deltas.deltas[2];
         assert_eq!(ask_delete.action, BookAction::Delete);
-        assert_eq!(ask_delete.order.side, OrderSide::Sell);
+        assert_eq!(ask_delete.order.side, OrderSide::Sell.into());
         assert_eq!(ask_delete.order.price, instrument.make_price(42501.0));
         assert_eq!(ask_delete.order.size, instrument.make_qty(0.0, None));
 
         // Check second ask - "change" action
         let ask_change = &deltas.deltas[3];
         assert_eq!(ask_change.action, BookAction::Update);
-        assert_eq!(ask_change.order.side, OrderSide::Sell);
+        assert_eq!(ask_change.order.side, OrderSide::Sell.into());
         assert_eq!(ask_change.order.price, instrument.make_price(42501.5));
         assert_eq!(ask_change.order.size, instrument.make_qty(700.0, None));
 
@@ -1625,10 +1656,10 @@ mod tests {
         let json = load_test_json("ws_ticker.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let msg: DeribitTickerMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
 
         // Verify the message was deserialized correctly
-        assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
+        assert_eq!(msg.instrument_name, "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_474_086);
         assert_eq!(msg.best_bid_price, Some(dec!(92283.5)));
         assert_eq!(msg.best_ask_price, Some(dec!(92284.0)));
@@ -1654,10 +1685,10 @@ mod tests {
         let json = load_test_json("ws_quote.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let msg: DeribitQuoteMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
 
         // Verify the message was deserialized correctly
-        assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
+        assert_eq!(msg.instrument_name, "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_767_174);
         assert_eq!(msg.best_bid_price, dec!(92288.0));
         assert_eq!(msg.best_ask_price, dec!(92288.5));
@@ -1679,8 +1710,8 @@ mod tests {
         let instrument = test_perpetual_instrument();
         let json = load_test_json("ws_book_snapshot.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let msg: DeribitBookMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+        let data = response["params"]["data"].to_string();
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
 
         // Validate raw message format - snapshots use 3-element arrays: ["new", price, amount]
         assert_eq!(
@@ -1689,8 +1720,8 @@ mod tests {
             "Snapshot bids should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.bids[0][0].as_str(),
-            Some("new"),
+            msg.bids[0][0].get(),
+            r#""new""#,
             "First element should be 'new' action for snapshot"
         );
         assert_eq!(
@@ -1699,8 +1730,8 @@ mod tests {
             "Snapshot asks should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.asks[0][0].as_str(),
-            Some("new"),
+            msg.asks[0][0].get(),
+            r#""new""#,
             "First element should be 'new' action for snapshot"
         );
 
@@ -1716,14 +1747,14 @@ mod tests {
         // Verify first bid was parsed correctly from ["new", 42500.0, 1000.0]
         let first_bid = &deltas.deltas[1];
         assert_eq!(first_bid.action, BookAction::Add);
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price, instrument.make_price(42500.0));
         assert_eq!(first_bid.order.size, instrument.make_qty(1000.0, None));
 
         // Verify first ask was parsed correctly from ["new", 42501.0, 800.0]
         let first_ask = &deltas.deltas[6];
         assert_eq!(first_ask.action, BookAction::Add);
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price, instrument.make_price(42501.0));
         assert_eq!(first_ask.order.size, instrument.make_qty(800.0, None));
     }
@@ -1733,8 +1764,8 @@ mod tests {
         let instrument = test_perpetual_instrument();
         let json = load_test_json("ws_book_delta.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let msg: DeribitBookMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+        let data = response["params"]["data"].to_string();
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
 
         // Validate raw message format - deltas use 3-element arrays: [action, price, amount]
         assert_eq!(
@@ -1743,13 +1774,13 @@ mod tests {
             "Delta bids should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.bids[0][0].as_str(),
-            Some("change"),
+            msg.bids[0][0].get(),
+            r#""change""#,
             "First bid should be 'change' action"
         );
         assert_eq!(
-            msg.bids[1][0].as_str(),
-            Some("new"),
+            msg.bids[1][0].get(),
+            r#""new""#,
             "Second bid should be 'new' action"
         );
         assert_eq!(
@@ -1758,8 +1789,8 @@ mod tests {
             "Delta asks should have 3 elements: [action, price, amount]"
         );
         assert_eq!(
-            msg.asks[0][0].as_str(),
-            Some("delete"),
+            msg.asks[0][0].get(),
+            r#""delete""#,
             "First ask should be 'delete' action"
         );
 
@@ -1775,27 +1806,27 @@ mod tests {
         // Verify first bid "change" action was parsed correctly from ["change", 42500.0, 950.0]
         let bid_change = &deltas.deltas[0];
         assert_eq!(bid_change.action, BookAction::Update);
-        assert_eq!(bid_change.order.side, OrderSide::Buy);
+        assert_eq!(bid_change.order.side, OrderSide::Buy.into());
         assert_eq!(bid_change.order.price, instrument.make_price(42500.0));
         assert_eq!(bid_change.order.size, instrument.make_qty(950.0, None));
 
         // Verify second bid "new" action was parsed correctly from ["new", 42498.5, 300.0]
         let bid_new = &deltas.deltas[1];
         assert_eq!(bid_new.action, BookAction::Add);
-        assert_eq!(bid_new.order.side, OrderSide::Buy);
+        assert_eq!(bid_new.order.side, OrderSide::Buy.into());
         assert_eq!(bid_new.order.price, instrument.make_price(42498.5));
         assert_eq!(bid_new.order.size, instrument.make_qty(300.0, None));
 
         // Verify first ask "delete" action was parsed correctly from ["delete", 42501.0, 0.0]
         let ask_delete = &deltas.deltas[2];
         assert_eq!(ask_delete.action, BookAction::Delete);
-        assert_eq!(ask_delete.order.side, OrderSide::Sell);
+        assert_eq!(ask_delete.order.side, OrderSide::Sell.into());
         assert_eq!(ask_delete.order.price, instrument.make_price(42501.0));
 
         // Verify second ask "change" action was parsed correctly from ["change", 42501.5, 700.0]
         let ask_change = &deltas.deltas[3];
         assert_eq!(ask_change.action, BookAction::Update);
-        assert_eq!(ask_change.order.side, OrderSide::Sell);
+        assert_eq!(ask_change.order.side, OrderSide::Sell.into());
         assert_eq!(ask_change.order.price, instrument.make_price(42501.5));
         assert_eq!(ask_change.order.size, instrument.make_qty(700.0, None));
     }
@@ -1807,8 +1838,8 @@ mod tests {
         let instrument = test_perpetual_instrument();
         let json = load_test_json("ws_book_grouped_snapshot.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let msg: DeribitBookMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+        let data = response["params"]["data"].to_string();
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
 
         // Validate raw message format - grouped channel uses 2-element arrays: [price, amount]
         assert_eq!(
@@ -1841,14 +1872,14 @@ mod tests {
         // Verify first bid was parsed correctly from [89532.5, 254900.0]
         let first_bid = &deltas.deltas[1];
         assert_eq!(first_bid.action, BookAction::Add);
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price, instrument.make_price(89532.5));
         assert_eq!(first_bid.order.size, instrument.make_qty(254900.0, None));
 
         // Verify first ask was parsed correctly from [89533.0, 91570.0]
         let first_ask = &deltas.deltas[11];
         assert_eq!(first_ask.action, BookAction::Add);
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price, instrument.make_price(89533.0));
         assert_eq!(first_ask.order.size, instrument.make_qty(91570.0, None));
 
@@ -1866,7 +1897,7 @@ mod tests {
         let json = load_test_json("ws_ticker.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let msg: DeribitTickerMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
 
         let mark_price =
             parse_ticker_to_mark_price(&msg, &instrument, UnixNanos::default()).unwrap();
@@ -1885,7 +1916,7 @@ mod tests {
         let json = load_test_json("ws_ticker.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let msg: DeribitTickerMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
 
         let index_price =
             parse_ticker_to_index_price(&msg, &instrument, UnixNanos::default()).unwrap();
@@ -1904,7 +1935,7 @@ mod tests {
         let json = load_test_json("ws_ticker.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let msg: DeribitTickerMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
 
         // Verify current_funding exists in the message
         assert!(msg.current_funding.is_some());
@@ -1979,16 +2010,16 @@ mod tests {
         let json = load_test_json("ws_chart.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let chart_msg: DeribitChartMsg =
-            serde_json::from_value(response["params"]["data"].clone()).unwrap();
+            serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
 
         // Verify chart message was deserialized correctly
         assert_eq!(chart_msg.tick, 1_767_200_040_000);
-        assert_eq!(chart_msg.open, 87490.0);
-        assert_eq!(chart_msg.high, 87500.0);
-        assert_eq!(chart_msg.low, 87465.0);
-        assert_eq!(chart_msg.close, 87474.0);
-        assert_eq!(chart_msg.volume, 0.95978896);
-        assert_eq!(chart_msg.cost, 83970.0);
+        assert_eq!(chart_msg.open, dec!(87490.0));
+        assert_eq!(chart_msg.high, dec!(87500.0));
+        assert_eq!(chart_msg.low, dec!(87465.0));
+        assert_eq!(chart_msg.close, dec!(87474.0));
+        assert_eq!(chart_msg.volume, dec!(0.95978896));
+        assert_eq!(chart_msg.cost, dec!(83970.0));
 
         let bar_type = resolution_to_bar_type(instrument.id(), "1").unwrap();
 
@@ -2023,7 +2054,7 @@ mod tests {
 
         // Parse the order from the response (buy/sell responses wrap order in {"order": ...})
         let order_msg: DeribitOrderMsg =
-            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+            serde_json::from_str(&response["result"]["order"].to_string()).unwrap();
 
         // Verify deserialization
         assert_eq!(order_msg.order_id, "USDC-104819327443");
@@ -2071,7 +2102,7 @@ mod tests {
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         let order_msg: DeribitOrderMsg =
-            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+            serde_json::from_str(&response["result"]["order"].to_string()).unwrap();
 
         // Verify deserialization
         assert_eq!(order_msg.order_id, "USDC-104819327458");
@@ -2115,7 +2146,7 @@ mod tests {
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         let order_msg: DeribitOrderMsg =
-            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+            serde_json::from_str(&response["result"]["order"].to_string()).unwrap();
 
         // Verify deserialization - edit response has replaced=true in raw JSON
         assert_eq!(order_msg.order_id, "USDC-104819327443");
@@ -2162,7 +2193,7 @@ mod tests {
 
         // Cancel response has order fields directly in result (not wrapped)
         let order_msg: DeribitOrderMsg =
-            serde_json::from_value(response["result"].clone()).unwrap();
+            serde_json::from_str(&response["result"].to_string()).unwrap();
 
         // Verify deserialization
         assert_eq!(order_msg.order_id, "USDC-104819327443");
@@ -2210,7 +2241,7 @@ mod tests {
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         let order_msg: DeribitOrderMsg =
-            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+            serde_json::from_str(&response["result"]["order"].to_string()).unwrap();
 
         assert_eq!(order_msg.order_id, "USDC-104819327499");
         assert_eq!(order_msg.order_type, "stop_market");
@@ -2243,7 +2274,7 @@ mod tests {
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         let order_msg: DeribitOrderMsg =
-            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+            serde_json::from_str(&response["result"]["order"].to_string()).unwrap();
 
         assert_eq!(order_msg.order_id, "USDC-SLMB-19641");
         assert_eq!(order_msg.order_type, "stop_market");
@@ -2268,7 +2299,7 @@ mod tests {
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         let order_msg: DeribitOrderMsg =
-            serde_json::from_value(response["result"]["order"].clone()).unwrap();
+            serde_json::from_str(&response["result"]["order"].to_string()).unwrap();
 
         let account_id = AccountId::new("DERIBIT-001");
         let report =
@@ -2280,7 +2311,7 @@ mod tests {
             report.client_order_id.unwrap().to_string(),
             "O-19700101-000000-001-001-1"
         );
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Accepted);
@@ -2322,5 +2353,313 @@ mod tests {
             determine_order_event_type("filled", false, false),
             OrderEventType::None
         );
+    }
+
+    fn perpetual_instrument_with_increments(
+        tick_size: &str,
+        min_trade_amount: &str,
+    ) -> InstrumentAny {
+        let json = load_test_json("http_get_instruments.json");
+        let mut response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        response["result"][0]["tick_size"] = serde_json::json!(tick_size);
+        response["result"][0]["min_trade_amount"] = serde_json::json!(min_trade_amount);
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&response.to_string()).unwrap();
+        let instrument = &response.result.unwrap()[0];
+        parse_deribit_instrument_any(instrument, UnixNanos::default(), UnixNanos::default())
+            .unwrap()
+            .unwrap()
+    }
+
+    fn parse_notification_data<T: DeserializeOwned>(fixture: &str) -> T {
+        serde_json::from_str(&notification_data(fixture)).unwrap()
+    }
+
+    fn notification_data(fixture: &str) -> String {
+        let json = load_test_json(fixture);
+
+        let DeribitWsMessage::Notification(notification) = parse_raw_message(&json).unwrap() else {
+            panic!("Expected notification from {fixture}");
+        };
+
+        notification.params.data.get().to_string()
+    }
+
+    #[rstest]
+    fn test_parse_user_trade_msg_keeps_decimals_that_collapse_in_f64() {
+        let instrument = perpetual_instrument_with_increments("0.000000001", "0.000000001");
+        let trades: Vec<DeribitUserTradeMsg> = parse_notification_data("ws_user_trades_exact.json");
+        let account_id = AccountId::new("DERIBIT-001");
+        let btc = Currency::BTC();
+
+        let first = parse_user_trade_msg(&trades[0], &instrument, account_id, UnixNanos::default())
+            .unwrap();
+        let second =
+            parse_user_trade_msg(&trades[1], &instrument, account_id, UnixNanos::default())
+                .unwrap();
+
+        let fee_f64 = "1000000000.12345678".parse::<f64>().unwrap();
+        let next_fee_f64 = "1000000000.12345679".parse::<f64>().unwrap();
+        assert_eq!(fee_f64.to_bits(), next_fee_f64.to_bits());
+        assert_eq!(instrument.price_precision(), 9);
+        assert_eq!(instrument.size_precision(), 9);
+        assert_eq!(first.last_px, Price::from("100000000.123456789"));
+        assert_eq!(first.last_qty, Quantity::from("100000000.123456789"));
+        assert_eq!(
+            first.commission,
+            Money::from_decimal(dec!(1000000000.12345678), btc).unwrap()
+        );
+        assert_eq!(second.last_px, Price::from("100000000.123456788"));
+        assert_eq!(second.last_qty, Quantity::from("100000000.123456788"));
+        assert_eq!(
+            second.commission,
+            Money::from_decimal(dec!(1000000000.12345679), btc).unwrap()
+        );
+        assert_eq!(trades[0].mark_price, dec!(100000000.123456788));
+        assert_eq!(trades[0].profit_loss, Some(dec!(0.30000000000000004)));
+    }
+
+    #[rstest]
+    fn test_parse_user_trade_msg_rounds_exact_token_half_even() {
+        let instrument = perpetual_instrument_with_increments("0.01", "0.01");
+        let trades: Vec<DeribitUserTradeMsg> = parse_notification_data("ws_user_trades_exact.json");
+        let account_id = AccountId::new("DERIBIT-001");
+
+        let fill = parse_user_trade_msg(&trades[2], &instrument, account_id, UnixNanos::default())
+            .unwrap();
+
+        let token_f64 = "100000000.005000001".parse::<f64>().unwrap();
+        let via_f64 = Price::from_decimal_dp(Decimal::try_from(token_f64).unwrap(), 2).unwrap();
+        assert_eq!(via_f64, Price::from("100000000.00"));
+        assert_eq!(fill.last_px, Price::from("100000000.01"));
+        assert_eq!(fill.last_qty, Quantity::from("100000000.01"));
+        assert_eq!(
+            fill.commission,
+            Money::from_decimal(dec!(0.00011403), Currency::BTC()).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_portfolio_keeps_decimals_that_collapse_in_f64() {
+        let portfolio: DeribitPortfolioMsg = parse_notification_data("ws_portfolio_exact.json");
+        let account_id = AccountId::new("DERIBIT-001");
+        let btc = Currency::BTC();
+
+        let state =
+            parse_portfolio_to_account_state(&portfolio, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(
+            state.balances[0].total,
+            Money::from_decimal(dec!(1000000000.12345679), btc).unwrap()
+        );
+        assert_eq!(
+            state.balances[0].free,
+            Money::from_decimal(dec!(1000000000.12345678), btc).unwrap()
+        );
+        assert_eq!(
+            state.balances[0].locked,
+            Money::from_decimal(dec!(0.00000001), btc).unwrap()
+        );
+        assert_eq!(state.margins.len(), 1);
+        assert_eq!(
+            state.margins[0].initial,
+            Money::from_decimal(dec!(1000000000.12345678), btc).unwrap()
+        );
+        assert_eq!(state.margins[0].maintenance, Money::zero(btc));
+        assert_eq!(
+            portfolio.maintenance_margin,
+            dec!(0.0000000000000000555111512313)
+        );
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_keeps_decimals_that_collapse_in_f64() {
+        let instrument = perpetual_instrument_with_increments("0.000000001", "0.000000001");
+        let data = notification_data("ws_book_snapshot_exact.json");
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
+
+        let deltas = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 3);
+        assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            deltas.deltas[1].order.price,
+            Price::from("100000000.123456789")
+        );
+        assert_eq!(
+            deltas.deltas[1].order.size,
+            Quantity::from("100000000.123456789")
+        );
+        assert_eq!(
+            deltas.deltas[2].order.price,
+            Price::from("100000000.123456788")
+        );
+        assert_eq!(
+            deltas.deltas[2].order.size,
+            Quantity::from("100000000.123456788")
+        );
+    }
+
+    #[rstest]
+    fn test_parse_book_delta_rounds_levels_beyond_decimal_scale() {
+        let instrument = perpetual_instrument_with_increments("0.000000001", "0.000000001");
+        let data = notification_data("ws_book_delta_exact.json");
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
+
+        let deltas = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(deltas.deltas.len(), 2);
+        assert_eq!(deltas.deltas[0].action, BookAction::Update);
+        assert_eq!(
+            deltas.deltas[0].order.price,
+            Price::from("100000000.123456789")
+        );
+        assert_eq!(deltas.deltas[0].order.size, Quantity::from("0.123456789"));
+        assert_eq!(deltas.deltas[1].action, BookAction::Add);
+        assert_eq!(
+            deltas.deltas[1].order.price,
+            Price::from("100000000.123456788")
+        );
+        assert_eq!(deltas.deltas[1].order.size, Quantity::from("0.000012346"));
+    }
+
+    #[rstest]
+    fn test_parse_book_delta_maps_zero_rounding_amounts_to_delete() {
+        let instrument = perpetual_instrument_with_increments("0.5", "1");
+        let data = r#"{"type":"change","instrument_name":"BTC-PERPETUAL","timestamp":1700000000000,
+            "change_id":101,"prev_change_id":100,
+            "bids":[["change",42500.0,1.1102230246251565e-16],["new",42499.5,0.4]],
+            "asks":[["change",42500.5,20.0],["delete",42501.0,0.0]]}"#;
+        let msg: DeribitBookMsg = serde_json::from_str(data).unwrap();
+
+        let deltas = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        let actual: Vec<_> = deltas
+            .deltas
+            .iter()
+            .map(|delta| {
+                (
+                    delta.action,
+                    delta.order.side,
+                    delta.order.price,
+                    delta.order.size,
+                    delta.order.order_id,
+                    delta.flags,
+                    delta.sequence,
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            actual,
+            vec![
+                (
+                    BookAction::Delete,
+                    Some(OrderSide::Buy),
+                    Price::from("42500.0"),
+                    Quantity::from("0"),
+                    0,
+                    0,
+                    101,
+                ),
+                (
+                    BookAction::Delete,
+                    Some(OrderSide::Buy),
+                    Price::from("42499.5"),
+                    Quantity::from("0"),
+                    1,
+                    0,
+                    101,
+                ),
+                (
+                    BookAction::Update,
+                    Some(OrderSide::Sell),
+                    Price::from("42500.5"),
+                    Quantity::from("20"),
+                    2,
+                    0,
+                    101,
+                ),
+                (
+                    BookAction::Delete,
+                    Some(OrderSide::Sell),
+                    Price::from("42501.0"),
+                    Quantity::from("0"),
+                    3,
+                    RecordFlag::F_LAST as u8,
+                    101,
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_skips_zero_rounding_amounts() {
+        let instrument = perpetual_instrument_with_increments("0.5", "1");
+        let data = r#"{"type":"snapshot","instrument_name":"BTC-PERPETUAL","timestamp":1700000000000,
+            "change_id":100,
+            "bids":[["new",42500.0,1.1102230246251565e-16],["new",42499.5,10.0]],
+            "asks":[["new",42500.5,0.4]]}"#;
+        let msg: DeribitBookMsg = serde_json::from_str(data).unwrap();
+
+        let deltas = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap();
+
+        let actual: Vec<_> = deltas
+            .deltas
+            .iter()
+            .map(|delta| {
+                (
+                    delta.action,
+                    delta.order.side,
+                    delta.order.price,
+                    delta.order.size,
+                    delta.order.order_id,
+                    delta.flags,
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            actual,
+            vec![
+                (
+                    BookAction::Clear,
+                    None,
+                    Price::from("0"),
+                    Quantity::from("0"),
+                    0,
+                    RecordFlag::F_SNAPSHOT as u8,
+                ),
+                (
+                    BookAction::Add,
+                    Some(OrderSide::Buy),
+                    Price::from("42499.5"),
+                    Quantity::from("10"),
+                    1,
+                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case::snapshot(
+        r#"{"type":"snapshot","instrument_name":"BTC-PERPETUAL","timestamp":1700000000000,
+            "change_id":100,"bids":[["new",100000000000000000000.0,10.0]],"asks":[]}"#
+    )]
+    #[case::delta(
+        r#"{"type":"change","instrument_name":"BTC-PERPETUAL","timestamp":1700000000000,
+            "change_id":101,"prev_change_id":100,
+            "bids":[["new",100000000000000000000.0,10.0]],"asks":[]}"#
+    )]
+    fn test_parse_book_msg_rejects_unconvertible_price(#[case] data: &str) {
+        let instrument = perpetual_instrument_with_increments("0.5", "1");
+        let msg: DeribitBookMsg = serde_json::from_str(data).unwrap();
+
+        let error = parse_book_msg(&msg, &instrument, UnixNanos::default()).unwrap_err();
+
+        let expected = Price::from_decimal_dp(dec!(100000000000000000000.0), 1).unwrap_err();
+        assert_eq!(error.to_string(), expected.to_string());
     }
 }

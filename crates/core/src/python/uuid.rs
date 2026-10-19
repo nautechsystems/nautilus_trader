@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! UUID helpers for PyO3.
+//! UUID bindings for PyO3.
 
 use std::{
     collections::hash_map::DefaultHasher,

@@ -12,20 +12,34 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test trading behavior.
+"""
+
+from __future__ import annotations
 
 import datetime as dt
 import inspect
 from decimal import Decimal
+from typing import ClassVar
 
 import pytest
 
+import nautilus_trader.model
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
+from nautilus_trader.common import QueueCondition
+from nautilus_trader.common import QueueState
+from nautilus_trader.common import QueueStateChanged
 from nautilus_trader.common import Signal
+from nautilus_trader.common import SocketState
+from nautilus_trader.common import SocketStateChanged
+from nautilus_trader.common import SystemChannel
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
+from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
@@ -84,6 +98,9 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import StrikeRange
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import SyntheticInstrument
 from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
@@ -100,10 +117,13 @@ from nautilus_trader.trading import fx_next_start
 from nautilus_trader.trading import fx_prev_end
 from nautilus_trader.trading import fx_prev_start
 from tests.providers import TestInstrumentProvider
+from tests.unit.common.actor import ConfiguredIdProbeStrategy
 from tests.unit.common.actor import OrderFactoryConfigProbeStrategy
 from tests.unit.common.actor import OrderFactoryProbeStrategy
 from tests.unit.common.actor import OrderListCacheProbeStrategy
 from tests.unit.common.actor import PortfolioHedgedProbeStrategy
+from tests.unit.common.actor import PortfolioMultiVenueProbeStrategy
+from tests.unit.common.actor import PortfolioPositionProbeStrategy
 from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
 
@@ -113,13 +133,23 @@ HISTORICAL_REQUEST_DATETIME_CASES = [
     pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
     pytest.param("pandas-timestamp-utc-nanos", id="pandas-timestamp-utc-nanos"),
 ]
+DATA_OPERATION_REGISTRATION_ERROR = (
+    "Strategy must be registered before publishing, managing synthetics, or requesting data"
+)
 
 
 class HistoricalRequestProbeStrategy(Strategy):
-    observed_request_ids = {}
+    """
+    Collect historical request probe strategy tests.
+    """
+
+    observed_request_ids: ClassVar[dict[str, object]] = {}
     request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         instrument_id = InstrumentId.from_str("AUD/USD.SIM")
         client_id = ClientId("SIM")
         venue = Venue("SIM")
@@ -143,6 +173,11 @@ class HistoricalRequestProbeStrategy(Strategy):
                 venue,
                 end=request_time,
                 params={"kind": "instruments"},
+            ),
+            "book_snapshot": self.request_book_snapshot(
+                instrument_id,
+                depth=5,
+                params={"kind": "snapshot"},
             ),
             "book_deltas": self.request_book_deltas(
                 instrument_id,
@@ -184,7 +219,267 @@ class HistoricalRequestProbeStrategy(Strategy):
         }
 
 
-def test_strategy_default_construction():
+class FirstDefaultStrategy(Strategy):
+    """
+    Collect first default strategy tests.
+    """
+
+
+class SecondDefaultStrategy(Strategy):
+    """
+    Collect second default strategy tests.
+    """
+
+
+class TaggedDefaultStrategy(Strategy):
+    """
+    Collect tagged default strategy tests.
+    """
+
+
+class ConfiguredDefaultStrategy(Strategy):
+    """
+    Collect configured default strategy tests.
+    """
+
+
+class PlainStrategyConfig:
+    """
+    Hold values that only reach the strategy at registration.
+    """
+
+    def __init__(self, strategy_id: StrategyId = None, order_id_tag: object = None) -> None:
+        """
+        Initialize the instance.
+        """
+        self.strategy_id = strategy_id
+        self.order_id_tag = order_id_tag
+        self.log_events = True
+        self.log_commands = True
+
+
+class PlainConfigStrategy(Strategy):
+    """
+    Collect plain config strategy tests.
+    """
+
+
+class RepeatedDefaultStrategy(Strategy):
+    """
+    Collect repeated default strategy tests.
+    """
+
+
+class NonForwardingStrategy(Strategy):
+    """
+    Collect non forwarding strategy tests.
+    """
+
+    def __init__(self, config: object = None) -> None:
+        """
+        Initialize the instance.
+        """
+        # Deliberately does not forward to `super().__init__()`
+
+
+def test_strategy_derives_default_id_from_runtime_class() -> None:
+    """
+    Test strategy derives default id from runtime class.
+    """
+    base = Strategy()
+    first = FirstDefaultStrategy()
+    tagged = TaggedDefaultStrategy(StrategyConfig(order_id_tag="007"))
+    configured = ConfiguredDefaultStrategy(StrategyConfig(strategy_id=StrategyId("MINE-042")))
+
+    assert base.strategy_id == StrategyId("Strategy-None")
+    assert first.strategy_id == StrategyId("FirstDefaultStrategy-None")
+    assert first.log.name == "FirstDefaultStrategy-None"
+    assert tagged.strategy_id == StrategyId("TaggedDefaultStrategy-007")
+    assert configured.strategy_id == StrategyId("MINE-042")
+
+
+def test_registered_strategies_receive_class_derived_ids_and_positional_tags() -> None:
+    """
+    Test registered strategies receive class derived ids and positional tags.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = FirstDefaultStrategy()
+    second = SecondDefaultStrategy()
+    tagged = TaggedDefaultStrategy(StrategyConfig(order_id_tag="007"))
+    configured = ConfiguredDefaultStrategy(StrategyConfig(strategy_id=StrategyId("MINE-042")))
+
+    try:
+        for strategy in (first, second, tagged, configured):
+            engine.add_strategy(strategy)
+
+        assert first.strategy_id == StrategyId("FirstDefaultStrategy-000")
+        assert second.strategy_id == StrategyId("SecondDefaultStrategy-001")
+        assert tagged.strategy_id == StrategyId("TaggedDefaultStrategy-007")
+        assert configured.strategy_id == StrategyId("MINE-042")
+        assert first.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-000-1",
+        )
+        assert tagged.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-007-1",
+        )
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_strategy_id", "expected_client_order_id"),
+    [
+        (
+            PlainStrategyConfig(order_id_tag="042"),
+            StrategyId("PlainConfigStrategy-042"),
+            ClientOrderId("O-19700101-000000-001-042-1"),
+        ),
+        (
+            PlainStrategyConfig(strategy_id=StrategyId("PLAIN-009")),
+            StrategyId("PLAIN-009"),
+            ClientOrderId("O-19700101-000000-001-009-1"),
+        ),
+    ],
+)
+def test_registered_strategy_applies_identity_from_unextractable_config(
+    config: object,
+    expected_strategy_id: object,
+    expected_client_order_id: object,
+) -> None:
+    """
+    Test registered strategy applies identity from unextractable config.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = PlainConfigStrategy(config)
+
+    try:
+        engine.add_strategy(strategy)
+
+        assert strategy.strategy_id == expected_strategy_id
+        assert strategy.order_factory.generate_client_order_id() == expected_client_order_id
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("order_id_tag", ["", "None"])
+def test_registered_strategy_retains_configured_id_with_an_unset_order_id_tag(
+    order_id_tag: object,
+) -> None:
+    """
+    Test registered strategy retains configured id with an unset order id tag.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = ConfiguredDefaultStrategy(
+        StrategyConfig(strategy_id=StrategyId("MyStrategy-001"), order_id_tag=order_id_tag),
+    )
+
+    try:
+        engine.add_strategy(strategy)
+
+        assert strategy.strategy_id == StrategyId("MyStrategy-001")
+        assert strategy.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-001-1",
+        )
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("order_id_tag", ["A-B", "XNAS-T01"])
+def test_strategy_config_rejects_an_order_id_tag_with_a_separator(order_id_tag: object) -> None:
+    """
+    Test strategy config rejects an order id tag with a separator.
+    """
+    with pytest.raises(
+        ValueError,
+        match=f"`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'",
+    ):
+        StrategyConfig(order_id_tag=order_id_tag)
+
+
+@pytest.mark.parametrize("order_id_tag", ["A-B", "XNAS-T01"])
+def test_registering_a_strategy_with_a_separator_in_its_order_id_tag_is_rejected(
+    order_id_tag: object,
+) -> None:
+    """
+    Test registering a strategy with a separator in its order id tag is rejected.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = PlainConfigStrategy(PlainStrategyConfig(order_id_tag=order_id_tag))
+
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                f"`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'"
+            ),
+        ):
+            engine.add_strategy(strategy)
+    finally:
+        engine.dispose()
+
+
+def test_registered_instances_of_one_strategy_class_receive_sequential_tags() -> None:
+    """
+    Test registered instances of one strategy class receive sequential tags.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = RepeatedDefaultStrategy()
+    second = RepeatedDefaultStrategy()
+
+    try:
+        engine.add_strategy(first)
+        engine.add_strategy(second)
+
+        assert first.strategy_id == StrategyId("RepeatedDefaultStrategy-000")
+        assert second.strategy_id == StrategyId("RepeatedDefaultStrategy-001")
+        assert first.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-000-1",
+        )
+        assert second.order_factory.generate_client_order_id() == ClientOrderId(
+            "O-19700101-000000-001-001-1",
+        )
+    finally:
+        engine.dispose()
+
+
+def test_registered_strategy_derives_its_id_from_the_runtime_class() -> None:
+    """
+    Test registered strategy derives its id from the runtime class.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = NonForwardingStrategy()
+
+    try:
+        engine.add_strategy(strategy)
+
+        assert strategy.strategy_id == StrategyId("NonForwardingStrategy-000")
+    finally:
+        engine.dispose()
+
+
+def test_registering_the_same_strategy_twice_is_rejected() -> None:
+    """
+    Test registering the same strategy twice is rejected.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = FirstDefaultStrategy()
+
+    try:
+        engine.add_strategy(strategy)
+
+        with pytest.raises(
+            RuntimeError,
+            match="Strategy FirstDefaultStrategy-000 is already registered",
+        ):
+            engine.add_strategy(strategy)
+    finally:
+        engine.dispose()
+
+
+def test_strategy_default_construction() -> None:
+    """
+    Test strategy default construction.
+    """
     strategy = Strategy()
 
     assert strategy.trader_id is None
@@ -198,7 +493,10 @@ def test_strategy_default_construction():
     assert strategy.is_faulted() is False
 
 
-def test_strategy_construction_with_config():
+def test_strategy_construction_with_config() -> None:
+    """
+    Test strategy construction with config.
+    """
     config = StrategyConfig(
         StrategyId("S-001"),
         "001",
@@ -222,35 +520,50 @@ def test_strategy_construction_with_config():
     assert strategy.strategy_id == StrategyId("S-001")
 
 
-def test_strategy_clock_requires_registration():
+def test_strategy_clock_requires_registration() -> None:
+    """
+    Test strategy clock requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.clock
 
 
-def test_strategy_cache_requires_registration():
+def test_strategy_cache_requires_registration() -> None:
+    """
+    Test strategy cache requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.cache
 
 
-def test_strategy_portfolio_requires_registration():
+def test_strategy_portfolio_requires_registration() -> None:
+    """
+    Test strategy portfolio requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.portfolio
 
 
-def test_strategy_order_factory_requires_registration():
+def test_strategy_order_factory_requires_registration() -> None:
+    """
+    Test strategy order factory requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.order_factory
 
 
-def test_strategy_order_factory_returns_registered_factory():
+def test_strategy_order_factory_returns_registered_factory() -> None:
+    """
+    Test strategy order factory returns registered factory.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     OrderFactoryProbeStrategy.observed_order = None
@@ -266,6 +579,10 @@ def test_strategy_order_factory_returns_registered_factory():
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -293,6 +610,67 @@ def test_strategy_order_factory_returns_registered_factory():
         engine.dispose()
 
 
+def test_importable_strategy_config_accepts_string_strategy_id() -> None:
+    """
+    Test importable strategy config accepts a string strategy ID.
+    """
+    ConfiguredIdProbeStrategy.reset()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+                config_path="tests.unit.common.actor:CustomFieldStrategyConfig",
+                config={"strategy_id": "STRAT-001", "custom_field": "x"},
+            ),
+        )
+        engine.run()
+
+        assert ConfiguredIdProbeStrategy.config_strategy_id == StrategyId("STRAT-001")
+        assert ConfiguredIdProbeStrategy.started_strategy_id == StrategyId("STRAT-001")
+    finally:
+        engine.dispose()
+
+
+def test_importable_strategy_config_with_unsettable_field_raises() -> None:
+    """
+    Test importable strategy config raises when a field cannot be set.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    try:
+        with pytest.raises(RuntimeError, match="Failed to set attribute log_events"):
+            engine.add_strategy_from_config(
+                ImportableStrategyConfig(
+                    strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+                    config_path="nautilus_trader.trading:StrategyConfig",
+                    config={"log_events": "not_a_bool"},
+                ),
+            )
+    finally:
+        engine.dispose()
+
+
+def test_importable_strategy_config_with_invalid_strategy_id_raises() -> None:
+    """
+    Test importable strategy config raises for an invalid string strategy ID.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    try:
+        with pytest.raises(RuntimeError, match="did not contain '-'"):
+            engine.add_strategy_from_config(
+                ImportableStrategyConfig(
+                    strategy_path="tests.unit.common.actor:ConfiguredIdProbeStrategy",
+                    config_path="nautilus_trader.trading:StrategyConfig",
+                    config={"strategy_id": "NOHYPHEN"},
+                ),
+            )
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize(
     ("use_uuid_client_order_ids", "expected_client_order_id"),
     [
@@ -301,9 +679,12 @@ def test_strategy_order_factory_returns_registered_factory():
     ],
 )
 def test_registered_strategy_order_factory_uses_configured_identity_and_id_format(
-    use_uuid_client_order_ids,
-    expected_client_order_id,
-):
+    use_uuid_client_order_ids: object,
+    expected_client_order_id: object,
+) -> None:
+    """
+    Test registered strategy order factory uses configured identity and id format.
+    """
     OrderFactoryConfigProbeStrategy.reset()
     usd = Currency.from_str("USD")
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -313,6 +694,10 @@ def test_registered_strategy_order_factory_uses_configured_identity_and_id_forma
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -343,7 +728,10 @@ def test_registered_strategy_order_factory_uses_configured_identity_and_id_forma
         engine.dispose()
 
 
-def test_strategy_can_recover_order_list_id_from_cache():
+def test_strategy_can_recover_order_list_id_from_cache() -> None:
+    """
+    Test strategy can recover order list id from cache.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     instrument = TestInstrumentProvider.audusd_sim()
@@ -356,6 +744,10 @@ def test_strategy_can_recover_order_list_id_from_cache():
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
 
@@ -398,7 +790,10 @@ def test_strategy_can_recover_order_list_id_from_cache():
         engine.dispose()
 
 
-def test_strategy_portfolio_returns_registered_kernel_portfolio():
+def test_strategy_portfolio_returns_registered_kernel_portfolio() -> None:
+    """
+    Test strategy portfolio returns registered kernel portfolio.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     PortfolioProbeStrategy.observed_portfolio = None
@@ -414,6 +809,10 @@ def test_strategy_portfolio_returns_registered_kernel_portfolio():
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -437,14 +836,104 @@ def test_strategy_portfolio_returns_registered_kernel_portfolio():
 
         assert portfolio.account(account_id=account.id).id == account.id
         assert portfolio.mark_values(account_id=account.id) == {}
+        assert portfolio.net_exposures() == {}
         assert portfolio.net_exposures(account_id=account.id) == {}
+        assert portfolio.equity(account_id=AccountId("OTHER-001")) == {}
+
+        recorded_snapshots = portfolio.snapshots(account.id)
+        assert portfolio.build_snapshot(account.id) is not None
+        assert portfolio.snapshots(account.id) == recorded_snapshots
+
+        detached = portfolio.account(account_id=account.id)
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        detached.set_leverage(instrument_id, Decimal(7))
+        assert detached.leverage(instrument_id) == Decimal(7)
+        assert portfolio.account(account_id=account.id).leverage(instrument_id) != Decimal(
+            7,
+        )
+
+        for command in (
+            "initialize_orders",
+            "initialize_positions",
+            "reset",
+            "update_account",
+            "update_order",
+            "update_position",
+        ):
+            assert not hasattr(portfolio, command)
+
+        for old_name in (
+            "account_snapshot",
+            "is_completely_flat",
+            "is_flat",
+            "margins_init",
+            "margins_maint",
+            "recorded_realized_pnls",
+        ):
+            assert not hasattr(portfolio, old_name)
+
+        mismatched_venue = Venue("OTHER")
+        mismatched_queries = (
+            lambda: portfolio.account(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.balances_locked(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.instrument_initial_margins(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.instrument_maintenance_margins(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.realized_pnls(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.unrealized_pnls(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.total_pnls(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.net_exposures(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.mark_values(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.equity(
+                venue=mismatched_venue,
+                account_id=account.id,
+            ),
+            lambda: portfolio.missing_price_instruments(
+                mismatched_venue,
+                account_id=account.id,
+            ),
+        )
+
+        for query in mismatched_queries:
+            with pytest.raises(ValueError, match="do not resolve to the same account"):
+                query()
+
         with pytest.raises(ValueError, match="venue or account_id must be provided"):
             portfolio.account()
     finally:
         engine.dispose()
 
 
-def test_strategy_portfolio_rejects_unsupported_query_arguments():
+def test_strategy_portfolio_accepts_price_and_target_currency_queries() -> None:
+    """
+    Test strategy portfolio accepts price and target currency queries.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     PortfolioProbeStrategy.observed_portfolio = None
@@ -460,6 +949,10 @@ def test_strategy_portfolio_rejects_unsupported_query_arguments():
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
 
     try:
@@ -476,19 +969,43 @@ def test_strategy_portfolio_rejects_unsupported_query_arguments():
         instrument_id = InstrumentId.from_str("AUD/USD.SIM")
         assert portfolio is not None
 
-        with pytest.raises(NotImplementedError, match="target_currency conversion"):
-            portfolio.realized_pnls(venue=venue, target_currency=usd)
-        with pytest.raises(NotImplementedError, match="target_currency conversion"):
-            portfolio.realized_pnl(instrument_id, target_currency=usd)
-        with pytest.raises(NotImplementedError, match="price override"):
-            portfolio.unrealized_pnl(instrument_id, price=Price.from_str("1.00000"))
-        with pytest.raises(NotImplementedError, match="price override"):
-            portfolio.total_pnl(instrument_id, price=Price.from_str("1.00000"))
+        assert portfolio.realized_pnls(venue=venue, target_currency=usd) == {}
+        assert portfolio.unrealized_pnls(venue=venue, target_currency=usd) == {}
+        assert portfolio.total_pnls(venue=venue, target_currency=usd) == {}
+        assert portfolio.net_exposures(venue=venue, target_currency=usd) == {}
+        assert portfolio.realized_pnl(instrument_id, target_currency=usd) is None
+        assert (
+            portfolio.unrealized_pnl(
+                instrument_id,
+                price=Price.from_str("1.00000"),
+                target_currency=usd,
+            )
+            is None
+        )
+        assert (
+            portfolio.total_pnl(
+                instrument_id,
+                price=Price.from_str("1.00000"),
+                target_currency=usd,
+            )
+            is None
+        )
+        assert (
+            portfolio.net_exposure(
+                instrument_id,
+                price=Price.from_str("1.00000"),
+                target_currency=usd,
+            )
+            is None
+        )
     finally:
         engine.dispose()
 
 
-def test_strategy_portfolio_flat_methods_net_hedged_positions():
+def test_strategy_portfolio_flat_methods_net_hedged_positions() -> None:
+    """
+    Test strategy portfolio flat methods net hedged positions.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     instrument = TestInstrumentProvider.audusd_sim()
@@ -502,6 +1019,10 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions():
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, usd)],
         base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
     )
     engine.add_instrument(instrument)
     engine.add_data(
@@ -547,12 +1068,406 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions():
         assert result.total_positions == 2
         assert portfolio.net_position(instrument.id) == Decimal(0)
         assert portfolio.net_position(instrument.id, account_id=account.id) == Decimal(0)
-        assert portfolio.is_flat(instrument.id) is True
-        assert portfolio.is_flat(instrument.id, account_id=account.id) is True
-        assert portfolio.is_completely_flat() is True
-        assert portfolio.is_completely_flat(account_id=account.id) is True
+        assert portfolio.is_net_flat(instrument.id) is True
+        assert portfolio.is_net_flat(instrument.id, account_id=account.id) is True
+        assert portfolio.is_completely_net_flat() is True
+        assert portfolio.is_completely_net_flat(account_id=account.id) is True
         assert portfolio.is_net_long(instrument.id) is False
         assert portfolio.is_net_short(instrument.id) is False
+    finally:
+        engine.dispose()
+
+
+def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh() -> None:
+    """
+    Test strategy portfolio price overrides and currency conversion are fresh.
+    """
+    usd = Currency.from_str("USD")
+    eur = Currency.from_str("EUR")
+    jpy = Currency.from_str("JPY")
+    venue = Venue("SIM")
+    other_venue = Venue("OTHER")
+    instrument = TestInstrumentProvider.audusd_sim()
+    conversion_instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    PortfolioPositionProbeStrategy.observed_portfolio = None
+    PortfolioPositionProbeStrategy.observed_account = None
+    PortfolioPositionProbeStrategy.observed_initial_account = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
+    )
+    engine.add_venue(
+        venue=other_venue,
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(500_000.0, eur)],
+        base_currency=eur,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    engine.add_instrument(instrument)
+    engine.add_instrument(conversion_instrument)
+    engine.add_data(
+        [
+            QuoteTick(
+                instrument_id=conversion_instrument.id,
+                bid_price=Price.from_str("1.25000"),
+                ask_price=Price.from_str("1.25000"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=1,
+                ts_init=1,
+            ),
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("0.90000"),
+                ask_price=Price.from_str("0.90002"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=2,
+                ts_init=2,
+            ),
+            QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("1.00000"),
+                ask_price=Price.from_str("1.00002"),
+                bid_size=Quantity.from_str("1000000"),
+                ask_size=Quantity.from_str("1000000"),
+                ts_event=3,
+                ts_init=3,
+            ),
+        ],
+    )
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:PortfolioPositionProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        portfolio = PortfolioPositionProbeStrategy.observed_portfolio
+        account = PortfolioPositionProbeStrategy.observed_account
+        initial_account = PortfolioPositionProbeStrategy.observed_initial_account
+        assert portfolio is not None
+        assert account is not None
+        assert initial_account is not None
+        assert engine.get_result().total_positions == 1
+
+        instrument_id = instrument.id
+        account_id = account.id
+        expected_initial_margin = {instrument_id: Money.from_str("0.00 USD")}
+        expected_maintenance_margin = {instrument_id: Money.from_str("270.01 USD")}
+        assert initial_account.initial_margins() == {}
+        assert initial_account.maintenance_margins() == {}
+        assert account.initial_margins() == expected_initial_margin
+        assert account.maintenance_margins() == expected_maintenance_margin
+        assert (
+            portfolio.instrument_initial_margins(
+                venue=venue,
+                account_id=account_id,
+            )
+            == expected_initial_margin
+        )
+        assert (
+            portfolio.instrument_maintenance_margins(
+                venue=venue,
+                account_id=account_id,
+            )
+            == expected_maintenance_margin
+        )
+        assert portfolio.missing_price_instruments(venue, account_id=account_id) == []
+        assert portfolio.net_position(instrument_id, account_id=account_id) == Decimal(100000)
+        assert portfolio.is_net_long(instrument_id, account_id=account_id) is True
+        assert portfolio.is_net_short(instrument_id, account_id=account_id) is False
+        assert portfolio.is_net_flat(instrument_id, account_id=account_id) is False
+        assert portfolio.is_completely_net_flat(account_id=account_id) is False
+
+        realized = portfolio.realized_pnl(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+        unrealized = portfolio.unrealized_pnl(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+        total = portfolio.total_pnl(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+        exposure = portfolio.net_exposure(
+            instrument_id,
+            account_id=account_id,
+            target_currency=eur,
+        )
+
+        assert realized == Money.from_str("-1.44 EUR")
+        assert unrealized == Money.from_str("7998.40 EUR")
+        assert total == Money.from_str("7996.96 EUR")
+        assert exposure == Money.from_str("80000.00 EUR")
+        assert portfolio.realized_pnls(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: realized}
+        assert portfolio.unrealized_pnls(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: unrealized}
+        assert portfolio.total_pnls(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: total}
+        assert portfolio.net_exposures(
+            venue=venue,
+            account_id=account_id,
+            target_currency=eur,
+        ) == {eur: exposure}
+
+        cached_unrealized = portfolio.unrealized_pnl(instrument_id, account_id=account_id)
+        cached_total = portfolio.total_pnl(instrument_id, account_id=account_id)
+        override_price = Price.from_str("1.20000")
+        assert portfolio.unrealized_pnl(
+            instrument_id,
+            price=override_price,
+            account_id=account_id,
+            target_currency=eur,
+        ) == Money.from_str("23998.40 EUR")
+        assert portfolio.total_pnl(
+            instrument_id,
+            price=override_price,
+            account_id=account_id,
+            target_currency=eur,
+        ) == Money.from_str("23996.96 EUR")
+        assert portfolio.net_exposure(
+            instrument_id,
+            price=override_price,
+            account_id=account_id,
+            target_currency=eur,
+        ) == Money.from_str("96000.00 EUR")
+        assert portfolio.unrealized_pnl(instrument_id, account_id=account_id) == cached_unrealized
+        assert portfolio.total_pnl(instrument_id, account_id=account_id) == cached_total
+        assert portfolio.net_exposure(
+            instrument_id,
+            account_id=account_id,
+        ) == Money.from_str("100000.00 USD")
+        assert initial_account.initial_margins() == {}
+        assert initial_account.maintenance_margins() == {}
+
+        current_account = portfolio.account(account_id=account_id)
+        assert current_account.initial_margins() == expected_initial_margin
+        assert current_account.maintenance_margins() == expected_maintenance_margin
+
+        assert (
+            portfolio.realized_pnl(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        assert (
+            portfolio.unrealized_pnl(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        assert (
+            portfolio.total_pnl(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        assert (
+            portfolio.net_exposure(
+                instrument_id,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+        with pytest.raises(RuntimeError, match="failed to calculate realized PnLs"):
+            portfolio.realized_pnls(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+        with pytest.raises(RuntimeError, match="failed to calculate unrealized PnLs"):
+            portfolio.unrealized_pnls(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+        with pytest.raises(RuntimeError, match="failed to calculate total PnLs"):
+            portfolio.total_pnls(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+        assert (
+            portfolio.net_exposures(
+                venue=venue,
+                account_id=account_id,
+                target_currency=jpy,
+            )
+            is None
+        )
+
+        other_account_id = AccountId("OTHER-001")
+        assert portfolio.realized_pnls(account_id=other_account_id) == {}
+        assert portfolio.unrealized_pnls(account_id=other_account_id) == {}
+        assert portfolio.total_pnls(account_id=other_account_id) == {}
+        assert portfolio.net_exposures(account_id=other_account_id) == {}
+    finally:
+        engine.dispose()
+
+
+def test_strategy_portfolio_aggregates_multiple_venues_atomically() -> None:
+    """
+    Test strategy portfolio aggregates multiple venues atomically.
+    """
+    usd = Currency.from_str("USD")
+    eur = Currency.from_str("EUR")
+    jpy = Currency.from_str("JPY")
+    venues = (Venue("SIM"), Venue("OTHER"), Venue("CLOSED"))
+    instruments = (
+        TestInstrumentProvider.default_fx_ccy("AUD/USD", venues[0]),
+        TestInstrumentProvider.default_fx_ccy("GBP/USD", venues[1]),
+        TestInstrumentProvider.default_fx_ccy("NZD/USD", venues[2]),
+    )
+
+    eurusd = tuple(TestInstrumentProvider.default_fx_ccy("EUR/USD", venue) for venue in venues)
+    usdjpy_sim = TestInstrumentProvider.default_fx_ccy("USD/JPY", venues[0])
+    PortfolioMultiVenueProbeStrategy.observed_portfolio = None
+    PortfolioMultiVenueProbeStrategy.observed_accounts = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    for venue, oms_type in zip(
+        venues,
+        (OmsType.HEDGING, OmsType.HEDGING, OmsType.NETTING),
+        strict=True,
+    ):
+        engine.add_venue(
+            venue=venue,
+            oms_type=oms_type,
+            account_type=AccountType.MARGIN,
+            starting_balances=[Money(1_000_000.0, usd)],
+            base_currency=usd,
+            fee_model=MakerTakerFeeModel(
+                maker_rate=Decimal("0.00002"),
+                taker_rate=Decimal("0.00002"),
+            ),
+        )
+
+    for instrument in (*instruments, *eurusd, usdjpy_sim):
+        engine.add_instrument(instrument)
+
+    quote_data = (
+        (eurusd[0], "1.25000", "1.25000", 1),
+        (eurusd[1], "1.25000", "1.25000", 2),
+        (eurusd[2], "1.25000", "1.25000", 3),
+        (usdjpy_sim, "150.000", "150.000", 4),
+        (instruments[0], "0.90000", "0.90002", 10),
+        (instruments[1], "1.20000", "1.20002", 11),
+        (instruments[2], "0.70000", "0.70002", 12),
+        (instruments[0], "1.00000", "1.00002", 20),
+        (instruments[1], "1.10000", "1.10002", 21),
+        (instruments[2], "0.80000", "0.80002", 22),
+    )
+    quotes = [
+        QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str(bid),
+            ask_price=Price.from_str(ask),
+            bid_size=Quantity.from_str("1000000"),
+            ask_size=Quantity.from_str("1000000"),
+            ts_event=ts_event,
+            ts_init=ts_event,
+        )
+        for instrument, bid, ask, ts_event in quote_data
+    ]
+    engine.add_data(quotes)
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:PortfolioMultiVenueProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        portfolio = PortfolioMultiVenueProbeStrategy.observed_portfolio
+        accounts = PortfolioMultiVenueProbeStrategy.observed_accounts
+        assert portfolio is not None
+        assert accounts is not None
+        assert engine.get_result().total_positions == 3
+
+        expected_realized = Money.from_str("7992.64 EUR")
+        expected_unrealized = Money.from_str("15996.80 EUR")
+        expected_total = Money.from_str("23989.44 EUR")
+        expected_exposure = Money.from_str("168001.60 EUR")
+        assert portfolio.realized_pnls(target_currency=eur) == {eur: expected_realized}
+        assert portfolio.unrealized_pnls(target_currency=eur) == {eur: expected_unrealized}
+        assert portfolio.total_pnls(target_currency=eur) == {eur: expected_total}
+        assert portfolio.net_exposures(target_currency=eur) == {eur: expected_exposure}
+        assert portfolio.realized_pnls(venue=venues[2], target_currency=eur) == {
+            eur: Money.from_str("7996.00 EUR"),
+        }
+        assert portfolio.unrealized_pnls(venue=venues[2], target_currency=eur) == {}
+        assert portfolio.total_pnls(venue=venues[2], target_currency=eur) == {
+            eur: Money.from_str("7996.00 EUR"),
+        }
+
+        other_account_id = accounts[venues[1]].id
+        assert portfolio.net_position(
+            instruments[1].id,
+            account_id=other_account_id,
+        ) == Decimal(-100000)
+        assert portfolio.is_net_long(instruments[1].id, account_id=other_account_id) is False
+        assert portfolio.is_net_short(instruments[1].id, account_id=other_account_id) is True
+        assert portfolio.is_net_flat(instruments[1].id, account_id=other_account_id) is False
+        assert portfolio.is_completely_net_flat(account_id=other_account_id) is False
+        assert (
+            portfolio.missing_price_instruments(
+                venues[1],
+                account_id=other_account_id,
+            )
+            == []
+        )
+
+        with pytest.raises(RuntimeError, match="failed to calculate portfolio query"):
+            portfolio.realized_pnls(target_currency=jpy)
+        with pytest.raises(RuntimeError, match="failed to calculate portfolio query"):
+            portfolio.unrealized_pnls(target_currency=jpy)
+        with pytest.raises(RuntimeError, match="failed to calculate portfolio query"):
+            portfolio.total_pnls(target_currency=jpy)
+        assert portfolio.net_exposures(target_currency=jpy) is None
     finally:
         engine.dispose()
 
@@ -564,6 +1479,14 @@ VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
 VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
 INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
 BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
+    "depth",
+    "client_id",
+    "managed",
+    "params",
+)
+BOOK_DEPTH_SUBSCRIPTION_PARAMETERS = (
     "instrument_id",
     "book_type",
     "depth",
@@ -623,7 +1546,13 @@ MODIFY_ORDER_PARAMETERS = (
 CANCEL_ORDER_PARAMETERS = ("client_order_id", "client_id", "params")
 CANCEL_GTD_EXPIRY_PARAMETERS = ("order",)
 CANCEL_ORDERS_PARAMETERS = ("client_order_ids", "client_id", "params")
-CANCEL_ALL_ORDERS_PARAMETERS = ("instrument_id", "order_side", "client_id", "params")
+CANCEL_ALL_ORDERS_PARAMETERS = (
+    "instrument_id",
+    "order_side",
+    "client_id",
+    "strategy_only",
+    "params",
+)
 CLOSE_POSITION_PARAMETERS = (
     "position",
     "client_id",
@@ -650,6 +1579,10 @@ PUBLISH_DATA_PARAMETERS = ("data_type", "data")
 PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
 SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
 SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
+QUEUE_STATE_SUBSCRIPTION_PARAMETERS = ("channel", "priority")
+SOCKET_STATE_SUBSCRIPTION_PARAMETERS = ("client_id", "endpoint", "priority")
+QUEUE_STATE_UNSUBSCRIBE_PARAMETERS = ("channel",)
+SOCKET_STATE_UNSUBSCRIBE_PARAMETERS = ("client_id", "endpoint")
 SYNTHETIC_PARAMETERS = ("synthetic",)
 DATA_SURFACE_SIGNATURES = [
     ("publish_data", PUBLISH_DATA_PARAMETERS),
@@ -658,9 +1591,12 @@ DATA_SURFACE_SIGNATURES = [
     ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_queue_state", QUEUE_STATE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_socket_state", SOCKET_STATE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_depth", BOOK_DEPTH_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_at_interval", BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -674,9 +1610,12 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_queue_state", QUEUE_STATE_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_socket_state", SOCKET_STATE_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_depth", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_at_interval", BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -744,6 +1683,8 @@ DATA_CALLBACK_SIGNATURES = [
     ("on_time_event", EVENT_PARAMETERS),
     ("on_data", ("data",)),
     ("on_signal", ("signal",)),
+    ("on_queue_state", EVENT_PARAMETERS),
+    ("on_socket_state", EVENT_PARAMETERS),
     ("on_instrument", ("instrument",)),
     ("on_quote", ("quote",)),
     ("on_trade", ("trade",)),
@@ -804,7 +1745,10 @@ CALLBACK_SIGNATURES = (
 
 
 @pytest.mark.parametrize("method_name", LIFECYCLE_METHODS)
-def test_strategy_lifecycle_methods_reject_pre_initialized(method_name):
+def test_strategy_lifecycle_methods_reject_pre_initialized(method_name: str) -> None:
+    """
+    Test strategy lifecycle methods reject pre initialized.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="Invalid state trigger PRE_INITIALIZED"):
@@ -812,22 +1756,56 @@ def test_strategy_lifecycle_methods_reject_pre_initialized(method_name):
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), EXECUTION_SIGNATURES)
-def test_strategy_execution_methods_expose_expected_signatures(method_name, parameter_names):
+def test_strategy_execution_methods_expose_expected_signatures(
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test strategy execution methods expose expected signatures.
+    """
     strategy = Strategy()
     signature = inspect.signature(getattr(strategy, method_name))
 
     assert tuple(signature.parameters) == parameter_names
+
+
+def test_strategy_cancel_all_orders_defaults_to_strategy_only() -> None:
+    """
+    Test strategy cancel all orders defaults to strategy only.
+    """
+    signature = inspect.signature(Strategy().cancel_all_orders)
+
+    assert signature.parameters["strategy_only"].default is True
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), DATA_SURFACE_SIGNATURES)
-def test_strategy_data_surface_methods_expose_expected_signatures(method_name, parameter_names):
+def test_strategy_data_surface_methods_expose_expected_signatures(
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test strategy data surface methods expose expected signatures.
+    """
     strategy = Strategy()
     signature = inspect.signature(getattr(strategy, method_name))
 
     assert tuple(signature.parameters) == parameter_names
 
 
-def test_strategy_shutdown_system_exposes_actor_signature():
+@pytest.mark.parametrize("method_name", ["subscribe_queue_state", "subscribe_socket_state"])
+def test_strategy_state_subscription_priority_defaults_to_none(method_name: str) -> None:
+    """
+    Test strategy state subscription priority defaults to none.
+    """
+    signature = inspect.signature(getattr(Strategy(), method_name))
+
+    assert signature.parameters["priority"].default is None
+
+
+def test_strategy_shutdown_system_exposes_actor_signature() -> None:
+    """
+    Test strategy shutdown system exposes actor signature.
+    """
     strategy = Strategy()
     signature = inspect.signature(strategy.shutdown_system)
 
@@ -835,22 +1813,280 @@ def test_strategy_shutdown_system_exposes_actor_signature():
     assert signature.parameters["reason"].default is None
 
 
-def test_strategy_shutdown_system_requires_registration():
+def test_strategy_shutdown_system_requires_registration() -> None:
+    """
+    Test strategy shutdown system requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered"):
         strategy.shutdown_system("unit test shutdown")
 
 
+def _subscription_registration_cases() -> object:
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
+    strike_range = StrikeRange.atm_relative(1, 1)
+
+    return [
+        ("subscribe_data", (DataType("TestData"),)),
+        ("subscribe_signal", ("risk",)),
+        ("subscribe_queue_state", ()),
+        ("subscribe_socket_state", ()),
+        ("subscribe_instruments", (Venue("SIM"),)),
+        ("subscribe_instrument", (instrument_id,)),
+        ("subscribe_book_deltas", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_depth", (instrument_id, BookType.L2_MBP)),
+        ("subscribe_book_at_interval", (instrument_id, BookType.L2_MBP, 100)),
+        ("subscribe_quotes", (instrument_id,)),
+        ("subscribe_trades", (instrument_id,)),
+        ("subscribe_bars", (bar_type,)),
+        ("subscribe_mark_prices", (instrument_id,)),
+        ("subscribe_index_prices", (instrument_id,)),
+        ("subscribe_funding_rates", (instrument_id,)),
+        ("subscribe_option_greeks", (instrument_id,)),
+        ("subscribe_instrument_status", (instrument_id,)),
+        ("subscribe_instrument_close", (instrument_id,)),
+        ("subscribe_option_chain", (series_id, strike_range)),
+        ("unsubscribe_data", (DataType("TestData"),)),
+        ("unsubscribe_signal", ("risk",)),
+        ("unsubscribe_queue_state", ()),
+        ("unsubscribe_socket_state", ()),
+        ("unsubscribe_instruments", (Venue("SIM"),)),
+        ("unsubscribe_instrument", (instrument_id,)),
+        ("unsubscribe_book_deltas", (instrument_id,)),
+        ("unsubscribe_book_depth", (instrument_id,)),
+        ("unsubscribe_book_at_interval", (instrument_id, 100)),
+        ("unsubscribe_quotes", (instrument_id,)),
+        ("unsubscribe_trades", (instrument_id,)),
+        ("unsubscribe_bars", (bar_type,)),
+        ("unsubscribe_mark_prices", (instrument_id,)),
+        ("unsubscribe_index_prices", (instrument_id,)),
+        ("unsubscribe_funding_rates", (instrument_id,)),
+        ("unsubscribe_option_greeks", (instrument_id,)),
+        ("unsubscribe_instrument_status", (instrument_id,)),
+        ("unsubscribe_instrument_close", (instrument_id,)),
+        ("unsubscribe_option_chain", (series_id,)),
+    ]
+
+
+def _data_operation_registration_cases() -> object:
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+
+    return [
+        ("publish_data", (custom_data.data_type, custom_data)),
+        ("publish_signal", ("risk", "value")),
+        ("add_synthetic", (synthetic,)),
+        ("update_synthetic", (synthetic,)),
+        ("request_data", (DataType("TestData"), ClientId("SIM"))),
+        ("request_instrument", (instrument_id,)),
+        ("request_instruments", (Venue("SIM"),)),
+        ("request_book_snapshot", (instrument_id,)),
+        ("request_book_deltas", (instrument_id,)),
+        ("request_book_depth", (instrument_id,)),
+        ("request_quotes", (instrument_id,)),
+        ("request_trades", (instrument_id,)),
+        ("request_funding_rates", (instrument_id,)),
+        ("request_bars", (bar_type,)),
+    ]
+
+
+def _model_custom_data() -> object:
+    class Payload:
+        """
+        Collect payload tests.
+        """
+
+        ts_event = 3
+        ts_init = 4
+
+    return nautilus_trader.model.CustomData(DataType("Payload"), Payload())
+
+
+def _synthetic(formula: object) -> object:
+    return SyntheticInstrument(
+        symbol=Symbol("BTC-ETH"),
+        price_precision=8,
+        components=[
+            TestInstrumentProvider.btcusdt_binance().id,
+            TestInstrumentProvider.ethusdt_binance().id,
+        ],
+        formula=formula,
+        ts_event=0,
+        ts_init=1,
+    )
+
+
+@pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
+def test_strategy_subscriptions_require_registration(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test strategy subscriptions require registration.
+    """
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(strategy, method_name)(*args)
+
+    assert str(exc_info.value) == "Strategy must be registered before managing subscriptions"
+
+
+@pytest.mark.parametrize(("method_name", "args"), _data_operation_registration_cases())
+def test_strategy_data_operations_require_registration(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test strategy data operations require registration.
+    """
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        getattr(strategy, method_name)(*args)
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_strategy_registration_precedes_publish_signal_conversion() -> None:
+    """
+    Test strategy registration precedes publish signal conversion.
+    """
+
+    class InvalidSignalValue:
+        """
+        Collect invalid signal value tests.
+        """
+
+        def __str__(self) -> str:
+            """
+            Str.
+            """
+            raise ValueError("invalid signal value")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        Strategy().publish_signal("risk", InvalidSignalValue())
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_strategy_registration_precedes_request_params_conversion() -> None:
+    """
+    Test strategy registration precedes request params conversion.
+    """
+    with pytest.raises(RuntimeError) as exc_info:
+        Strategy().request_instruments(params={"invalid": object()})
+
+    assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
+
+
+def test_strategy_data_operations_succeed_when_registered() -> None:
+    """
+    Test strategy data operations succeed when registered.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    strategy = Strategy()
+    custom_data = _model_custom_data()
+    synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
+    updated = _synthetic("BTCUSDT.BINANCE + ETHUSDT.BINANCE")
+    engine.add_strategy(strategy)
+
+    try:
+        assert strategy.publish_data(custom_data.data_type, custom_data) is None
+        assert strategy.publish_signal("risk", "value") is None
+        assert strategy.add_synthetic(synthetic) is None
+        assert strategy.update_synthetic(updated) is None
+        assert strategy.cache.synthetic(updated.id) == updated
+    finally:
+        engine.dispose()
+
+
+def test_strategy_set_external_order_instrument_ids_updates_active_claims() -> None:
+    """
+    Test a strategy can replace its active external order claims.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = Strategy(StrategyConfig(strategy_id=StrategyId("FIRST-001")))
+    second = Strategy(StrategyConfig(strategy_id=StrategyId("SECOND-002")))
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+    try:
+        engine.add_strategy(first)
+        engine.add_strategy(second)
+
+        assert first.set_external_order_instrument_ids([instrument_id]) is None
+
+        with pytest.raises(RuntimeError) as exc_info:
+            second.set_external_order_instrument_ids([instrument_id])
+
+        assert str(exc_info.value) == (
+            "External order claim for AUD/USD.SIM already exists for FIRST-001"
+        )
+
+        assert first.set_external_order_instrument_ids([]) is None
+        assert second.set_external_order_instrument_ids([instrument_id]) is None
+
+        with pytest.raises(RuntimeError) as exc_info:
+            first.set_external_order_instrument_ids([instrument_id])
+
+        assert str(exc_info.value) == (
+            "External order claim for AUD/USD.SIM already exists for SECOND-002"
+        )
+    finally:
+        engine.dispose()
+
+
+def test_strategy_subscription_validation_precedes_registration() -> None:
+    """
+    Test strategy subscription validation precedes registration.
+    """
+    strategy = Strategy()
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+    with pytest.raises(ValueError, match="interval_ms must be > 0"):
+        strategy.subscribe_book_at_interval(
+            instrument_id,
+            BookType.L2_MBP,
+            0,
+            params={"invalid": object()},
+        )
+
+
+def test_strategy_registration_precedes_params_conversion() -> None:
+    """
+    Test strategy registration precedes params conversion.
+    """
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError) as exc_info:
+        strategy.subscribe_data(DataType("TestData"), params={"invalid": object()})
+
+    assert str(exc_info.value) == "Strategy must be registered before managing subscriptions"
+
+
 @pytest.mark.parametrize("method_name", REMOVED_ORDER_EVENT_SUBSCRIPTION_METHODS)
-def test_strategy_order_event_subscription_methods_are_not_exposed(method_name):
+def test_strategy_order_event_subscription_methods_are_not_exposed(method_name: str) -> None:
+    """
+    Test strategy order event subscription methods are not exposed.
+    """
     strategy = Strategy()
 
     assert not hasattr(strategy, method_name)
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
-def test_strategy_callback_methods_expose_expected_signatures(method_name, parameter_names):
+def test_strategy_callback_methods_expose_expected_signatures(
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test strategy callback methods expose expected signatures.
+    """
     strategy = Strategy()
     signature = inspect.signature(getattr(strategy, method_name))
 
@@ -858,7 +2094,12 @@ def test_strategy_callback_methods_expose_expected_signatures(method_name, param
 
 
 @pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)
-def test_strategy_historical_requests_accept_datetimes_when_registered(request_time):
+def test_strategy_historical_requests_accept_datetimes_when_registered(
+    request_time: object,
+) -> None:
+    """
+    Test strategy historical requests accept datetimes when registered.
+    """
     HistoricalRequestProbeStrategy.observed_request_ids = {}
     HistoricalRequestProbeStrategy.request_time = _historical_request_time(request_time)
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -877,6 +2118,7 @@ def test_strategy_historical_requests_accept_datetimes_when_registered(request_t
             "data",
             "instrument",
             "instruments",
+            "book_snapshot",
             "book_deltas",
             "book_depth",
             "quotes",
@@ -891,7 +2133,7 @@ def test_strategy_historical_requests_accept_datetimes_when_registered(request_t
         engine.dispose()
 
 
-def _historical_request_time(request_time):
+def _historical_request_time(request_time: object) -> object:
     if request_time == "datetime-utc":
         return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
@@ -906,13 +2148,16 @@ def _historical_request_time(request_time):
     raise ValueError(f"Unknown historical request datetime case: {request_time}")
 
 
-def test_strategy_config_defaults():
+def test_strategy_config_defaults() -> None:
+    """
+    Test strategy config defaults.
+    """
     config = StrategyConfig()
 
     assert config.strategy_id is None
     assert config.order_id_tag is None
     assert config.oms_type is None
-    assert config.external_order_claims is None
+    assert config.external_order_instrument_ids is None
     assert config.manage_contingent_orders is False
     assert config.manage_gtd_expiry is False
     assert config.manage_stop is False
@@ -927,13 +2172,16 @@ def test_strategy_config_defaults():
     assert config.log_rejected_due_post_only_as_warning is True
 
 
-def test_strategy_config_with_explicit_values():
-    external_order_claims = [InstrumentId.from_str("ETH/USDT.BINANCE")]
+def test_strategy_config_with_explicit_values() -> None:
+    """
+    Test strategy config with explicit values.
+    """
+    external_order_instrument_ids = [InstrumentId.from_str("ETH/USDT.BINANCE")]
     config = StrategyConfig(
         StrategyId("S-002"),
         "002",
         OmsType.HEDGING,
-        external_order_claims,
+        external_order_instrument_ids,
         True,
         True,
         True,
@@ -951,7 +2199,7 @@ def test_strategy_config_with_explicit_values():
     assert config.strategy_id == StrategyId("S-002")
     assert config.order_id_tag == "002"
     assert config.oms_type == OmsType.HEDGING
-    assert config.external_order_claims == external_order_claims
+    assert config.external_order_instrument_ids == external_order_instrument_ids
     assert config.manage_contingent_orders is True
     assert config.manage_gtd_expiry is True
     assert config.manage_stop is True
@@ -966,7 +2214,10 @@ def test_strategy_config_with_explicit_values():
     assert config.log_rejected_due_post_only_as_warning is True
 
 
-def test_forex_session_variants():
+def test_forex_session_variants() -> None:
+    """
+    Test forex session variants.
+    """
     variants = list(ForexSession.variants())
 
     assert len(variants) == 4
@@ -980,7 +2231,10 @@ NOW_UTC = dt.datetime(2024, 6, 15, 12, 0, 0, tzinfo=dt.UTC)
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_next_start_returns_future_datetime(session):
+def test_fx_next_start_returns_future_datetime(session: object) -> None:
+    """
+    Test fx next start returns future datetime.
+    """
     result = fx_next_start(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -988,7 +2242,10 @@ def test_fx_next_start_returns_future_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_next_end_returns_future_datetime(session):
+def test_fx_next_end_returns_future_datetime(session: object) -> None:
+    """
+    Test fx next end returns future datetime.
+    """
     result = fx_next_end(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -996,7 +2253,10 @@ def test_fx_next_end_returns_future_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_prev_start_returns_past_datetime(session):
+def test_fx_prev_start_returns_past_datetime(session: object) -> None:
+    """
+    Test fx prev start returns past datetime.
+    """
     result = fx_prev_start(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -1004,7 +2264,10 @@ def test_fx_prev_start_returns_past_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_prev_end_returns_past_datetime(session):
+def test_fx_prev_end_returns_past_datetime(session: object) -> None:
+    """
+    Test fx prev end returns past datetime.
+    """
     result = fx_prev_end(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -1012,7 +2275,10 @@ def test_fx_prev_end_returns_past_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_local_from_utc_returns_string(session):
+def test_fx_local_from_utc_returns_string(session: object) -> None:
+    """
+    Test fx local from utc returns string.
+    """
     result = fx_local_from_utc(session, NOW_UTC)
 
     assert isinstance(result, str)
@@ -1033,6 +2299,8 @@ DATA_CALLBACKS = [
     ("on_time_event", "time_event"),
     ("on_data", "custom_data"),
     ("on_signal", "signal"),
+    ("on_queue_state", "queue_state_changed"),
+    ("on_socket_state", "socket_state_changed"),
     ("on_instrument", "instrument"),
     ("on_quote", "quote"),
     ("on_trade", "trade"),
@@ -1081,14 +2349,17 @@ POSITION_CALLBACKS = [
 ]
 
 
-def _make_recording_method(method_name):
-    def method(self, *args):
+def _make_recording_method(method_name: str) -> object:
+    def method(self: object, *args: object) -> None:
+        """
+        Run the method.
+        """
         self.calls.append((method_name, args))
 
     return method
 
 
-def _create_recording_strategy_type():
+def _create_recording_strategy_type() -> object:
     attrs = {}
 
     for method_name in HOOK_METHODS:
@@ -1104,19 +2375,28 @@ RecordingStrategy = _create_recording_strategy_type()
 
 
 @pytest.fixture
-def strategy():
+def strategy() -> object:
+    """
+    Strategy.
+    """
     return Strategy()
 
 
 @pytest.fixture
-def recording_strategy():
+def recording_strategy() -> object:
+    """
+    Record strategy events.
+    """
     strategy = RecordingStrategy()
     strategy.calls = []
     return strategy
 
 
 @pytest.fixture
-def strategy_sample_objects():
+def strategy_sample_objects() -> object:
+    """
+    Strategy sample objects.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     quote = _make_quote(instrument.id)
     trade = _make_trade(instrument.id)
@@ -1127,6 +2407,27 @@ def strategy_sample_objects():
     time_event = TimeEvent("timer", UUID4(), 1, 2)
     custom_data = CustomData(DataType("X"), [1, 2], 3, 4)
     signal = Signal("sig", "value", 1, 2)
+    queue_state_changed = QueueStateChanged(
+        TraderId("TRADER-001"),
+        SystemChannel.EXEC_COMMANDS,
+        QueueCondition.BACKLOGGED,
+        QueueState.TRIGGERED,
+        17,
+        23,
+        UUID4(),
+        7,
+        8,
+    )
+    socket_state_changed = SocketStateChanged(
+        TraderId("TRADER-001"),
+        ClientId("BINANCE"),
+        Venue("BINANCE"),
+        "binance-futures-market-streams",
+        SocketState.CONNECTED,
+        UUID4(),
+        7,
+        8,
+    )
     mark_price = MarkPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     index_price = IndexPriceUpdate(instrument.id, Price.from_str("1.00000"), 1, 2)
     funding_rate = FundingRateUpdate(instrument.id, Decimal("0.0001"), 1, 2, interval=480)
@@ -1145,6 +2446,8 @@ def strategy_sample_objects():
         "time_event": time_event,
         "custom_data": custom_data,
         "signal": signal,
+        "queue_state_changed": queue_state_changed,
+        "socket_state_changed": socket_state_changed,
         "instrument": instrument,
         "quote": quote,
         "trade": trade,
@@ -1171,7 +2474,13 @@ def strategy_sample_objects():
 
 
 @pytest.mark.parametrize("method_name", HOOK_METHODS)
-def test_strategy_lifecycle_hooks_can_be_overridden(recording_strategy, method_name):
+def test_strategy_lifecycle_hooks_can_be_overridden(
+    recording_strategy: object,
+    method_name: str,
+) -> None:
+    """
+    Test strategy lifecycle hooks can be overridden.
+    """
     assert getattr(recording_strategy, method_name)() is None
 
     assert recording_strategy.calls[-1] == (method_name, ())
@@ -1182,11 +2491,14 @@ def test_strategy_lifecycle_hooks_can_be_overridden(recording_strategy, method_n
     DATA_CALLBACKS + ORDER_CALLBACKS + POSITION_CALLBACKS,
 )
 def test_strategy_callbacks_accept_runtime_objects(
-    strategy,
-    strategy_sample_objects,
-    method_name,
-    sample_name,
-):
+    strategy: object,
+    strategy_sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test strategy callbacks accept runtime objects.
+    """
     assert getattr(strategy, method_name)(strategy_sample_objects[sample_name]) is None
 
 
@@ -1195,11 +2507,14 @@ def test_strategy_callbacks_accept_runtime_objects(
     DATA_CALLBACKS + ORDER_CALLBACKS + POSITION_CALLBACKS,
 )
 def test_strategy_overridden_callbacks_receive_runtime_objects(
-    recording_strategy,
-    strategy_sample_objects,
-    method_name,
-    sample_name,
-):
+    recording_strategy: object,
+    strategy_sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test strategy overridden callbacks receive runtime objects.
+    """
     payload = strategy_sample_objects[sample_name]
 
     assert getattr(recording_strategy, method_name)(payload) is None
@@ -1210,7 +2525,7 @@ def test_strategy_overridden_callbacks_receive_runtime_objects(
     assert call_args[0] is payload
 
 
-def _make_quote(instrument_id):
+def _make_quote(instrument_id: InstrumentId) -> object:
     return QuoteTick(
         instrument_id,
         Price.from_str("1.00000"),
@@ -1222,19 +2537,19 @@ def _make_quote(instrument_id):
     )
 
 
-def _make_trade(instrument_id):
+def _make_trade(instrument_id: InstrumentId) -> object:
     return TradeTick(
         instrument_id,
         Price.from_str("1.00000"),
         Quantity.from_int(10),
-        AggressorSide.BUYER,
+        AggressorSide.BUY,
         TradeId("T-001"),
         1,
         2,
     )
 
 
-def _make_bar(instrument_id):
+def _make_bar(instrument_id: InstrumentId) -> object:
     bar_type = BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
     return Bar(
         bar_type,
@@ -1248,7 +2563,7 @@ def _make_bar(instrument_id):
     )
 
 
-def _make_book_deltas(instrument_id):
+def _make_book_deltas(instrument_id: InstrumentId) -> object:
     bid = BookOrder(OrderSide.BUY, Price.from_str("1.00000"), Quantity.from_int(1), 1)
     ask = BookOrder(OrderSide.SELL, Price.from_str("1.10000"), Quantity.from_int(2), 2)
     delta1 = OrderBookDelta(instrument_id, BookAction.ADD, bid, 0, 1, 1, 2)
@@ -1256,7 +2571,7 @@ def _make_book_deltas(instrument_id):
     return OrderBookDeltas(instrument_id, [delta1, delta2])
 
 
-def _make_option_greeks():
+def _make_option_greeks() -> object:
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
     return OptionGreeks(
         instrument_id,
@@ -1275,12 +2590,12 @@ def _make_option_greeks():
     )
 
 
-def _make_option_chain():
+def _make_option_chain() -> object:
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     return OptionChainSlice(series_id, Price.from_str("50000.0"), 5, 6)
 
 
-def _make_order_events(instrument):
+def _make_order_events(instrument: object) -> object:
     trader_id = TraderId("TRADER-001")
     strategy_id = StrategyId("S-001")
     account_id = AccountId("SIM-001")
@@ -1481,7 +2796,7 @@ def _make_order_events(instrument):
     }
 
 
-def _make_position_events(instrument):
+def _make_position_events(instrument: object) -> object:
     position_id = "P-101"
     opening_fill = _make_order_filled_event(
         instrument,
@@ -1532,24 +2847,36 @@ def _make_position_events(instrument):
     }
 
 
-def test_position_change_and_close_events_expose_peak_qty():
+def test_position_change_and_close_events_expose_peak_qty() -> None:
+    """
+    Test position change and close events expose peak qty.
+    """
     events = _make_position_events(TestInstrumentProvider.audusd_sim())
 
     assert events["position_changed"].peak_qty == Quantity.from_int(150_000)
     assert events["position_closed"].peak_qty == Quantity.from_int(150_000)
 
 
+def test_position_opened_exposes_realized_pnl() -> None:
+    """
+    Test position opened exposes realized pnl.
+    """
+    events = _make_position_events(TestInstrumentProvider.audusd_sim())
+
+    assert events["position_opened"].realized_pnl == Money.from_str("-2.00 USD")
+
+
 def _make_order_filled_event(
-    instrument,
-    client_order_id,
-    venue_order_id,
-    trade_id,
-    order_side,
-    last_qty,
-    last_px,
-    ts_event,
-    position_id=None,
-):
+    instrument: object,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    trade_id: object,
+    order_side: object,
+    last_qty: object,
+    last_px: object,
+    ts_event: object,
+    position_id: object = None,
+) -> object:
     return OrderFilled(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),

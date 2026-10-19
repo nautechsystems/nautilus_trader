@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Polymarket EIP-712 (L1) signing.
+//! Polymarket EIP-712 (L1) signing and on-chain approval planning.
+//!
+//! CLOB V2 contract identities, the approval plan, and Deposit Wallet batch
+//! signing live in [`eip712`].
 //!
 //! L2 HMAC-SHA256 signing lives on [`Credential`](crate::common::credential::Credential).
 

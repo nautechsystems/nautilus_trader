@@ -28,7 +28,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.analysis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -92,9 +92,9 @@ impl PortfolioStatistic for LongRatio {
 mod tests {
     use ahash::AHashSet;
     use indexmap::IndexMap;
-    use nautilus_core::{UnixNanos, approx_eq};
+    use nautilus_core::{DurationNanos, UnixNanos, approx_eq};
     use nautilus_model::{
-        enums::{InstrumentClass, PositionSide},
+        enums::{InstrumentClass, OrderSide, PositionSide},
         identifiers::{
             AccountId, ClientOrderId, PositionId,
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},
@@ -136,7 +136,7 @@ mod tests {
             ts_opened: UnixNanos::default(),
             ts_last: UnixNanos::default(),
             ts_closed: Some(UnixNanos::from(1)), // Mark as closed
-            duration_ns: 2,
+            duration_ns: DurationNanos::new(2),
             avg_px_open: 0.0,
             avg_px_close: Some(0.0),
             realized_return: 0.0,

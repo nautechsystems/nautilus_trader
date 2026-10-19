@@ -146,7 +146,7 @@ impl TrailingStopMarketOrder {
 
     #[staticmethod]
     #[pyo3(name = "closing_side")]
-    fn py_closing_side(side: PositionSide) -> OrderSide {
+    fn py_closing_side(side: PositionSide) -> Option<OrderSide> {
         OrderCore::closing_side(side)
     }
 
@@ -382,7 +382,7 @@ impl TrailingStopMarketOrder {
     fn py_tags(&self) -> Option<Vec<&str>> {
         self.tags
             .as_ref()
-            .map(|vec| vec.iter().map(|s| s.as_str()).collect())
+            .map(|vec| vec.iter().map(Ustr::as_str).collect())
     }
 
     #[pyo3(name = "commission")]
@@ -638,7 +638,7 @@ impl TrailingStopMarketOrder {
             "tags",
             self.tags
                 .as_ref()
-                .map(|vec| vec.iter().map(|s| s.to_string()).collect::<Vec<String>>()),
+                .map(|vec| vec.iter().map(ToString::to_string).collect::<Vec<String>>()),
         )?;
         Ok(dict.into())
     }

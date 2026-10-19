@@ -18,7 +18,7 @@ main() {
   run_and_capture "$WORK_DIR/cargo.status" "$cargo_output" \
     env CARGO_TERM_COLOR=never cargo upgrade --dry-run --incompatible
   run_and_capture "$WORK_DIR/uv.status" "$uv_output" \
-    env NO_COLOR=1 uv tree --outdated --depth 1 --all-groups
+    env NO_COLOR=1 uv --directory python tree --outdated --depth 1 --all-groups
 
   parse_cargo "$cargo_output" > "$candidates"
   parse_pypi "$uv_output" >> "$candidates"

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Helpers for working with Bybit-specific symbol strings.
+//! Bybit-specific symbol parsing.
 
 use std::{borrow::Cow, fmt::Display};
 
@@ -24,7 +24,7 @@ use super::{consts::BYBIT_VENUE, enums::BybitProductType};
 
 const VALID_SUFFIXES: &[&str] = &["-SPOT", "-LINEAR", "-INVERSE", "-OPTION"];
 
-/// Returns true if the supplied value contains a recognised Bybit product suffix.
+/// Returns true if the supplied value contains a recognized Bybit product suffix.
 fn has_valid_suffix(value: &str) -> bool {
     VALID_SUFFIXES.iter().any(|suffix| value.contains(suffix))
 }
@@ -36,25 +36,25 @@ pub struct BybitSymbol {
 }
 
 impl BybitSymbol {
-    /// Creates a new [`BybitSymbol`] after validating the suffix and normalising to upper case.
+    /// Creates a new [`BybitSymbol`] after validating the suffix and normalizing to upper case.
     ///
     /// # Errors
     ///
-    /// Returns an error if the value does not contain one of the recognised Bybit suffixes.
+    /// Returns an error if the value does not contain one of the recognized Bybit suffixes.
     pub fn new<S: AsRef<str>>(value: S) -> anyhow::Result<Self> {
         let value_ref = value.as_ref();
         let needs_upper = value_ref.bytes().any(|b| b.is_ascii_lowercase());
-        let normalised: Cow<'_, str> = if needs_upper {
+        let normalized: Cow<'_, str> = if needs_upper {
             Cow::Owned(value_ref.to_ascii_uppercase())
         } else {
             Cow::Borrowed(value_ref)
         };
         anyhow::ensure!(
-            has_valid_suffix(normalised.as_ref()),
+            has_valid_suffix(normalized.as_ref()),
             "invalid Bybit symbol '{value_ref}': expected suffix in {VALID_SUFFIXES:?}"
         );
         Ok(Self {
-            value: Ustr::from(normalised.as_ref()),
+            value: Ustr::from(normalized.as_ref()),
         })
     }
 

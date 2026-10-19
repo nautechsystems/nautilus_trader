@@ -14,23 +14,27 @@
 
 //! WebSocket message types for Bybit public and private channels.
 
+use std::fmt::Debug;
+
+use nautilus_core::string::secret::{REDACTED, zeroize_json_value};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::{
     common::{
         enums::{
             BybitBboSideType, BybitCancelType, BybitCreateType, BybitExecType, BybitMarketUnit,
-            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
-            BybitPositionStatus, BybitProductType, BybitSmpType, BybitStopOrderType,
-            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
-            BybitWsOrderRequestOp,
+            BybitOrderSide, BybitOrderSmpType, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+            BybitPositionSide, BybitPositionStatus, BybitProductType, BybitSmpType,
+            BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+            BybitTriggerType, BybitWsOrderRequestOp,
         },
         parse::{
-            deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
-            deserialize_optional_decimal_str,
+            deserialize_decimal_or_zero, deserialize_i32_or_string, deserialize_i64_or_string,
+            deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str,
         },
     },
     websocket::enums::BybitWsOperation,
@@ -46,10 +50,27 @@ pub struct BybitSubscription {
 }
 
 /// Bybit WebSocket authentication message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BybitAuthRequest {
     pub op: BybitWsOperation,
     pub args: Vec<serde_json::Value>,
+}
+
+impl Debug for BybitAuthRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BybitAuthRequest))
+            .field("op", &self.op)
+            .field("args", &REDACTED)
+            .finish()
+    }
+}
+
+impl Zeroize for BybitAuthRequest {
+    fn zeroize(&mut self) {
+        for arg in &mut self.args {
+            zeroize_json_value(arg);
+        }
+    }
 }
 
 /// Wire-level frame deserialized from a Bybit WebSocket message.
@@ -70,6 +91,8 @@ pub enum BybitWsFrame {
     Orderbook(BybitWsOrderbookDepthMsg),
     /// Trade updates.
     Trade(BybitWsTradeMsg),
+    /// Public liquidation updates.
+    Liquidation(BybitWsLiquidationMsg),
     /// Kline updates.
     Kline(BybitWsKlineMsg),
     /// Linear/inverse ticker update.
@@ -103,6 +126,8 @@ pub enum BybitWsMessage {
     Orderbook(BybitWsOrderbookDepthMsg),
     /// Trade updates.
     Trade(BybitWsTradeMsg),
+    /// Public liquidation updates.
+    Liquidation(BybitWsLiquidationMsg),
     /// Kline updates.
     Kline(BybitWsKlineMsg),
     /// Linear/inverse ticker update.
@@ -128,11 +153,6 @@ pub enum BybitWsMessage {
 /// Represents an error event surfaced by the WebSocket client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
-)]
 pub struct BybitWebSocketError {
     /// Error/return code reported by Bybit.
     pub code: i64,
@@ -302,6 +322,8 @@ pub struct BybitWsPlaceOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub smp_type: Option<BybitOrderSmpType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<BybitPositionIdx>,
@@ -337,6 +359,40 @@ pub struct BybitWsAmendOrderParams {
     pub sl_trigger_by: Option<BybitTriggerType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
+}
+
+/// Item in a batch amend request (without category field).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsBatchAmendItem {
+    pub symbol: Ustr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_link_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qty: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_price: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub take_profit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stop_loss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tp_trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sl_trigger_by: Option<BybitTriggerType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_iv: Option<String>,
+}
+
+/// Arguments for batch amend order operation via WebSocket.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BybitWsBatchAmendOrderArgs {
+    pub category: BybitProductType,
+    pub request: Vec<BybitWsBatchAmendItem>,
 }
 
 /// Parameters for canceling an order via WebSocket.
@@ -421,6 +477,8 @@ pub struct BybitWsBatchPlaceItem {
     pub tp_limit_price: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smp_type: Option<BybitOrderSmpType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -753,6 +811,34 @@ pub struct BybitWsTradeMsg {
     pub data: Vec<BybitWsTrade>,
 }
 
+/// Liquidation entry from the public `allLiquidation` stream.
+///
+/// `S` is the side of the liquidated position, where `Buy` means a long position was liquidated.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BybitWsLiquidation {
+    #[serde(rename = "T")]
+    pub t: i64,
+    #[serde(rename = "s")]
+    pub s: Ustr,
+    #[serde(rename = "S")]
+    pub side: BybitOrderSide,
+    #[serde(rename = "v")]
+    pub v: String,
+    #[serde(rename = "p")]
+    pub p: String,
+}
+
+/// Envelope for public liquidation updates.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsLiquidationMsg {
+    pub topic: Ustr,
+    #[serde(rename = "type")]
+    pub msg_type: Ustr,
+    pub ts: i64,
+    pub data: Vec<BybitWsLiquidation>,
+}
+
 /// Private order stream payload.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -777,6 +863,7 @@ pub struct BybitWsAccountOrder {
     pub cum_exec_value: String,
     pub avg_price: String,
     pub block_trade_id: Ustr,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub position_idx: i32,
     pub cum_exec_fee: String,
     pub created_time: String,
@@ -792,6 +879,7 @@ pub struct BybitWsAccountOrder {
     pub close_on_trigger: bool,
     pub place_type: Ustr,
     pub smp_type: BybitSmpType,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub fee_currency: Ustr,
@@ -971,9 +1059,12 @@ pub struct BybitWsAccountPosition {
     pub symbol: Ustr,
     pub side: BybitPositionSide,
     pub size: String,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub position_idx: i32,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub trade_mode: i32,
     pub position_value: String,
+    #[serde(deserialize_with = "deserialize_i64_or_string")]
     pub risk_id: i64,
     pub risk_limit_value: String,
     #[serde(deserialize_with = "deserialize_optional_decimal_str")]
@@ -981,6 +1072,7 @@ pub struct BybitWsAccountPosition {
     pub mark_price: String,
     pub leverage: String,
     pub position_balance: String,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub auto_add_margin: i32,
     #[serde(rename = "positionIM")]
     pub position_im: String,
@@ -1001,6 +1093,7 @@ pub struct BybitWsAccountPosition {
     pub cur_realised_pnl: String,
     pub cum_realised_pnl: String,
     pub position_status: BybitPositionStatus,
+    #[serde(deserialize_with = "deserialize_i32_or_string")]
     pub adl_rank_indicator: i32,
     pub created_time: String,
     pub updated_time: String,
@@ -1035,6 +1128,28 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn auth_request_serializes_and_redacts_debug() {
+        let request = BybitAuthRequest {
+            op: BybitWsOperation::Auth,
+            args: vec![
+                serde_json::json!("api-key-value"),
+                serde_json::json!(1_700_000_000_000_u64),
+                serde_json::json!("signature-value"),
+            ],
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        let formatted = format!("{request:?}");
+
+        assert_eq!(json["args"][0], "api-key-value");
+        assert_eq!(json["args"][1], 1_700_000_000_000_u64);
+        assert_eq!(json["args"][2], "signature-value");
+        assert!(formatted.contains(REDACTED));
+        assert!(!formatted.contains("api-key-value"));
+        assert!(!formatted.contains("signature-value"));
+    }
     use crate::common::testing::load_test_json;
 
     #[rstest]
@@ -1110,6 +1225,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: Some("0.80".to_string()),
+            smp_type: None,
             mmp: Some(true),
             position_idx: None,
             bbo_side_type: None,
@@ -1151,6 +1267,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: None,
             bbo_side_type: None,
@@ -1159,8 +1276,58 @@ mod tests {
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(!json.contains("orderIv"));
+        assert!(!json.contains("smpType"));
         assert!(!json.contains("mmp"));
         assert!(!json.contains("positionIdx"));
+    }
+
+    #[rstest]
+    #[case(BybitOrderSmpType::None, "None")]
+    #[case(BybitOrderSmpType::CancelMaker, "CancelMaker")]
+    #[case(BybitOrderSmpType::CancelTaker, "CancelTaker")]
+    #[case(BybitOrderSmpType::CancelBoth, "CancelBoth")]
+    fn serialize_place_params_includes_smp_type_when_set(
+        #[case] smp_type: BybitOrderSmpType,
+        #[case] expected: &str,
+    ) {
+        let params = BybitWsPlaceOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.01".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: Some("50000".to_string()),
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: Some("smp-1".to_string()),
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: None,
+            smp_type: Some(smp_type),
+            mmp: None,
+            position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+
+        assert_eq!(json.get("smpType").and_then(Value::as_str), Some(expected));
     }
 
     #[rstest]
@@ -1193,6 +1360,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: None,
             bbo_side_type: Some(BybitBboSideType::Queue),
@@ -1240,6 +1408,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: Some(idx),
             bbo_side_type: None,
@@ -1284,6 +1453,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: idx,
             bbo_side_type: None,
@@ -1328,6 +1498,50 @@ mod tests {
         assert_eq!(order.tpsl_mode, Some(BybitTpSlMode::Full));
         assert_eq!(order.create_type, Some(BybitCreateType::CreateByUser));
         assert_eq!(order.side, BybitOrderSide::Buy);
+        assert_eq!(order.smp_group, 0);
+    }
+
+    #[rstest]
+    fn deserialize_account_order_frame_accepts_string_smp_group() {
+        let mut json: Value =
+            serde_json::from_str(&load_test_json("ws_account_order.json")).unwrap();
+        json["data"][0]["smpGroup"] = Value::String("123456789".to_string());
+
+        let frame: BybitWsAccountOrderMsg = serde_json::from_value(json).unwrap();
+
+        assert_eq!(frame.data[0].smp_group, 123_456_789);
+    }
+
+    #[rstest]
+    fn deserialize_account_order_frame_accepts_string_position_idx() {
+        let mut json: Value =
+            serde_json::from_str(&load_test_json("ws_account_order.json")).unwrap();
+        json["data"][0]["positionIdx"] = Value::String("1".to_string());
+
+        let frame: BybitWsAccountOrderMsg = serde_json::from_value(json).unwrap();
+
+        assert_eq!(frame.data[0].position_idx, 1);
+    }
+
+    #[rstest]
+    fn deserialize_account_position_frame_accepts_string_integer_fields() {
+        let mut json: Value =
+            serde_json::from_str(&load_test_json("ws_account_position.json")).unwrap();
+        let position = &mut json["data"][0];
+        position["positionIdx"] = Value::String("2".to_string());
+        position["tradeMode"] = Value::String("1".to_string());
+        position["autoAddMargin"] = Value::String("3".to_string());
+        position["riskId"] = Value::String("1234".to_string());
+        position["adlRankIndicator"] = Value::String("35".to_string());
+
+        let frame: BybitWsAccountPositionMsg = serde_json::from_value(json).unwrap();
+
+        let position = &frame.data[0];
+        assert_eq!(position.position_idx, 2);
+        assert_eq!(position.trade_mode, 1);
+        assert_eq!(position.auto_add_margin, 3);
+        assert_eq!(position.risk_id, 1234);
+        assert_eq!(position.adl_rank_indicator, 35);
     }
 
     #[rstest]

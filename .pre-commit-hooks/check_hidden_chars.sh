@@ -28,9 +28,10 @@ done
 
 if [ ${#files_to_check[@]} -eq 0 ]; then
   # Fallback: find all relevant files if no arguments passed
-  mapfile -t files_to_check < <(find . -type f \( -name "*.py" -o -name "*.pyx" -o -name "*.rs" -o -name "*.toml" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.sh" -o -name "Dockerfile*" \) \
+  mapfile -t files_to_check < <(find . -type f \( -name "*.py" -o -name "*.rs" -o -name "*.toml" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.sh" -o -name "Dockerfile*" \) \
     ! -path "*/target/*" ! -path "*/build/*" ! -path "*/__pycache__/*" ! -path "*/.pytest_cache/*" \
     ! -path "*/.venv/*" ! -path "*/venv/*" ! -path "*/node_modules/*" \
+    ! -path "./patches/pyo3-stub-gen/*" \
     ! -name "*.lock" ! -name "*.whl" ! -name "*.egg-info" ! -name "check_hidden_chars.sh")
 fi
 

@@ -57,6 +57,9 @@ pub const DYDX_DERIVATION_PATH_PREFIX: &str = "m/44'/118'/0'/0";
 /// Coin type for Cosmos ecosystem (SLIP-0044).
 pub const COSMOS_COIN_TYPE: u32 = 118;
 
+/// Default WebSocket heartbeat interval in seconds.
+pub const DYDX_WS_HEARTBEAT_SECS: u64 = 20;
+
 // Mainnet URLs
 /// dYdX v4 mainnet HTTP API base URL.
 pub const DYDX_HTTP_URL: &str = "https://indexer.dydx.trade";

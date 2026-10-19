@@ -56,7 +56,7 @@ impl Quantity {
             self.precision
         );
 
-        U256::from(self.raw)
+        U256::from(self.raw())
     }
 }
 

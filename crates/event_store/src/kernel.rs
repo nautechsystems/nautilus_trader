@@ -30,7 +30,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
@@ -55,6 +55,7 @@ use nautilus_system::{
     KernelEventStore as KernelEventStoreTrait, RegisteredComponents,
     event_store::{DataMarkerClass, DataMarkerConfig, EventStoreConfig, RetentionMode},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use crate::{
@@ -258,14 +259,11 @@ impl HaltSignal {
         let halted = Arc::clone(&self.halted);
         let reason = Arc::clone(&self.reason);
         Arc::new(move |r| {
-            // The mutex gates first-reason-wins; the flag flips after the reason is
-            // stored. On the (panic-only) poisoned path the reason is lost but the
-            // halt itself must still be observable.
-            if let Ok(mut slot) = reason.lock()
-                && slot.is_none()
-            {
+            let mut slot = reason.lock();
+            if slot.is_none() {
                 *slot = Some(r);
             }
+            drop(slot);
             halted.store(true, Ordering::Release);
         })
     }
@@ -282,7 +280,7 @@ impl HaltSignal {
     /// subsequent submits surface as fail-stopped.
     #[must_use]
     pub fn reason(&self) -> Option<HaltReason> {
-        self.reason.lock().ok().and_then(|guard| guard.clone())
+        self.reason.lock().clone()
     }
 }
 
@@ -377,9 +375,9 @@ impl EventStoreSession {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError`] if the writer fails to commit the final batch, the
-    /// seal step fails, or the writer Arc has outstanding clones (the bus tap must be
-    /// cleared before close to release the adapter's writer reference).
+    /// Returns an error if the writer fails to commit the final batch, the seal step fails, or the
+    /// writer Arc has outstanding clones (the bus tap must be cleared before close to release the
+    /// adapter's writer reference).
     pub fn close(&mut self, ts_init: UnixNanos) -> Result<(), EventStoreError> {
         // Drop the adapter first so the writer Arc has no other strong owners on
         // try_unwrap. The kernel clears the bus tap before this site, so dropping the
@@ -473,8 +471,8 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns the underlying [`EventStoreError`] when the recovery sweep fails for a
-    /// reason other than the expected `CrashedPredecessor` handshake.
+    /// Returns an error if the recovery sweep fails for a reason other than the expected handshake
+    /// with a crashed predecessor.
     pub fn boot(
         config: Option<EventStoreConfig>,
         instance_id: UUID4,
@@ -495,8 +493,8 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns the underlying [`EventStoreError`] when the recovery sweep fails for a
-    /// reason other than the expected `CrashedPredecessor` handshake.
+    /// Returns an error if the recovery sweep fails for a reason other than the expected handshake
+    /// with a crashed predecessor.
     pub fn boot_with_options(
         config: Option<EventStoreConfig>,
         instance_id: UUID4,
@@ -539,8 +537,8 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns [`KernelError::EventStoreBoot`] when opening the new run, spawning the
-    /// writer, or blocking on the `RunStarted` ack fails.
+    /// Returns an error if opening the new run, spawning the writer, or blocking on the
+    /// `RunStarted` ack fails.
     pub fn open(
         &mut self,
         instance_id: UUID4,
@@ -608,8 +606,7 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns [`KernelError::CacheReplay`] when the source reader, snapshot restore, decode,
-    /// or cache apply step fails.
+    /// Returns an error if the source reader, snapshot restore, decode, or cache apply step fails.
     pub fn restore_parent_cache(
         &self,
         instance_id: UUID4,
@@ -782,10 +779,8 @@ impl Drop for EventStoreLifecycle {
 ///
 /// # Errors
 ///
-/// Returns [`EventStoreError`] when the directory enumeration fails, or when a
-/// predecessor unexpectedly reopens without the
-/// [`EventStoreError::CrashedPredecessor`] handshake the backend uses to surface
-/// unsealed runs.
+/// Returns an error if directory enumeration fails or a predecessor unexpectedly reopens without
+/// the handshake the backend uses to report an unsealed run.
 pub fn recover_predecessors(
     base_dir: &Path,
     instance_id: &str,
@@ -894,10 +889,9 @@ pub fn build_run_id(start_ts_init: UnixNanos) -> RunId {
 ///
 /// # Errors
 ///
-/// Returns [`BootError::EventStore`] when the backend rejects open, [`BootError::RunStartedSubmit`]
-/// when the writer rejects the submit, [`BootError::RunStartedTimeout`] when the
-/// commit does not happen inside the configured ceiling, and [`BootError::HaltedDuringBoot`]
-/// when the writer fail-stops while waiting for the commit.
+/// Returns an error if the backend rejects open, if the writer rejects the submit, if the commit
+/// does not happen inside the configured ceiling, or if the writer fail-stops while waiting for the
+/// commit.
 #[expect(
     clippy::too_many_arguments,
     reason = "run opening requires the boot context and event-store handles"
@@ -932,10 +926,9 @@ pub fn open_run(
 ///
 /// # Errors
 ///
-/// Returns [`BootError::EventStore`] when the backend rejects open, [`BootError::RunStartedSubmit`]
-/// when the writer rejects the submit, [`BootError::RunStartedTimeout`] when the
-/// commit does not happen inside the configured ceiling, and [`BootError::HaltedDuringBoot`]
-/// when the writer fail-stops while waiting for the commit.
+/// Returns an error if the backend rejects open, if the writer rejects the submit, if the commit
+/// does not happen inside the configured ceiling, or if the writer fail-stops while waiting for the
+/// commit.
 #[expect(
     clippy::too_many_arguments,
     reason = "run opening with options requires the boot context and lifecycle handles"
@@ -1093,7 +1086,7 @@ fn marker_manifest_for(
 const fn data_marker_class_to_data_class(class: DataMarkerClass) -> DataClass {
     match class {
         DataMarkerClass::BookDeltas => DataClass::BookDeltas,
-        DataMarkerClass::BookDepth10 => DataClass::BookDepth10,
+        DataMarkerClass::BookDepth => DataClass::BookDepth,
         DataMarkerClass::Quote => DataClass::Quote,
         DataMarkerClass::Trade => DataClass::Trade,
         DataMarkerClass::Bar => DataClass::Bar,
@@ -1155,9 +1148,8 @@ fn writer_config_from(config: &EventStoreConfig) -> WriterConfig {
 ///
 /// # Errors
 ///
-/// Returns [`BootError::RunStartedSubmit`] when the writer rejects the submit,
-/// [`BootError::HaltedDuringBoot`] when the writer fail-stops during the wait, and
-/// [`BootError::RunStartedTimeout`] when the writer does not commit within `timeout`.
+/// Returns an error if the writer rejects the submit, if the writer fail-stops during the wait, or
+/// if the writer does not commit within `timeout`.
 pub(crate) fn submit_run_started_blocking(
     writer: &EventStoreWriter,
     components: &RegisteredComponents,
@@ -1389,7 +1381,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        clock::TestClock,
+        clock::VirtualClock,
         messages::{
             data::{
                 DataCommand, DataResponse, QuotesResponse, RequestCommand, RequestQuotes,
@@ -1529,11 +1521,11 @@ mod tests {
 
     impl EventStore for SharedMemoryBackend {
         fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError> {
-            self.0.lock().expect("memory backend").open_run(manifest)
+            self.0.lock().open_run(manifest)
         }
 
         fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
-            self.0.lock().expect("memory backend").append_batch(entries)
+            self.0.lock().append_batch(entries)
         }
 
         fn scan_range(
@@ -1542,51 +1534,42 @@ mod tests {
             to: u64,
             direction: ScanDirection,
         ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("memory backend")
-                .scan_range(from, to, direction)
+            self.0.lock().scan_range(from, to, direction)
         }
 
         fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
-            self.0.lock().expect("memory backend").scan_seq(seq)
+            self.0.lock().scan_seq(seq)
         }
 
         fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
-            self.0.lock().expect("memory backend").lookup(kind, key)
+            self.0.lock().lookup(kind, key)
         }
 
         fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
-            self.0.lock().expect("memory backend").iter_index_keys(kind)
+            self.0.lock().iter_index_keys(kind)
         }
 
         fn record_snapshot_anchor(
             &mut self,
             anchor: SnapshotAnchor,
         ) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("memory backend")
-                .record_snapshot_anchor(anchor)
+            self.0.lock().record_snapshot_anchor(anchor)
         }
 
         fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("memory backend")
-                .latest_snapshot_anchor()
+            self.0.lock().latest_snapshot_anchor()
         }
 
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.0.lock().expect("memory backend").seal(status)
+            self.0.lock().seal(status)
         }
 
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
-            self.0.lock().expect("memory backend").manifest()
+            self.0.lock().manifest()
         }
 
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
-            self.0.lock().expect("memory backend").high_watermark()
+            self.0.lock().high_watermark()
         }
     }
 
@@ -1727,7 +1710,7 @@ mod tests {
     #[rstest]
     fn lifecycle_options_custom_registry_captures_registered_message() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let options = EventStoreLifecycleOptions::new().with_encoder_registry(test_registry());
 
@@ -1768,15 +1751,12 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let memory = Arc::new(Mutex::new(MemoryBackend::new()));
         let opener_memory = Arc::clone(&memory);
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let options = EventStoreLifecycleOptions::new()
             .with_encoder_registry(test_registry())
             .with_backend_opener(move |_, manifest| {
-                opener_memory
-                    .lock()
-                    .expect("memory backend")
-                    .open_run(manifest.clone())?;
+                opener_memory.lock().open_run(manifest.clone())?;
                 Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
             });
 
@@ -1799,7 +1779,7 @@ mod tests {
         msgbus::publish_any(topic, &TestAuditMessage { value: 7 });
         store.seal(UnixNanos::from(1_000));
 
-        let backend = memory.lock().expect("memory backend");
+        let backend = memory.lock();
         let manifest = backend.manifest().expect("manifest");
         let captured = backend
             .scan_seq(2)
@@ -1937,17 +1917,14 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let memory = Arc::new(Mutex::new(MemoryBackend::new()));
         let opener_memory = Arc::clone(&memory);
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let mut config = make_config(tmp.path().to_path_buf());
         config.identity.seed = Some(seed);
         let options = EventStoreLifecycleOptions::new()
             .with_encoder_registry(test_registry())
             .with_backend_opener(move |_, manifest| {
-                opener_memory
-                    .lock()
-                    .expect("memory backend")
-                    .open_run(manifest.clone())?;
+                opener_memory.lock().open_run(manifest.clone())?;
                 Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
             });
 
@@ -1979,7 +1956,7 @@ mod tests {
         get_atomic_clock_static().set_time(UnixNanos::from(40_000));
         store.seal(UnixNanos::from(40_000));
 
-        let backend = memory.lock().expect("memory backend");
+        let backend = memory.lock();
         let manifest = backend.manifest().expect("manifest");
         assert_eq!(manifest.seed, Some(seed));
         assert_eq!(manifest.status, RunStatus::Ended);
@@ -2445,9 +2422,9 @@ mod tests {
         // BacktestEngine::run -> reset -> run reuses the kernel. EventStoreLifecycle::open
         // must seal any leftover session before opening a fresh one so RunStarted is
         // the first entry of every run. The UUID suffix in build_run_id keeps the
-        // two ids distinct even though TestClock holds start_ts_init at zero.
+        // two ids distinct even though VirtualClock holds start_ts_init at zero.
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -2500,7 +2477,7 @@ mod tests {
         // rerun (reset -> run) opens with a fresh signal, reports no stale halt, and
         // its graceful stop still seals Ended.
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -2592,6 +2569,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(madsim))]
     #[rstest]
     fn submit_run_started_returns_timeout_when_writer_stalls() {
         // A backend whose append_batch never returns simulates a stuck writer. The
@@ -2632,6 +2610,7 @@ mod tests {
         stub.release();
     }
 
+    #[cfg(not(madsim))]
     #[rstest]
     fn submit_run_started_returns_halted_when_writer_halts_during_wait() {
         // A halt signal fired before the writer can commit must surface
@@ -2701,37 +2680,41 @@ mod tests {
     /// Stub backend whose `append_batch` blocks until `release()` is called. Used to
     /// hold the writer's high-watermark at zero so the boot path's wait loop can
     /// exercise its timeout and halt branches deterministically.
+    #[cfg(not(madsim))]
     #[derive(Debug, Default, Clone)]
     struct StallBackend {
         inner: Arc<Mutex<StallInner>>,
-        gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
+        gate: Arc<(Mutex<bool>, parking_lot::Condvar)>,
     }
 
+    #[cfg(not(madsim))]
     #[derive(Debug, Default)]
     struct StallInner {
         manifest: Option<RunManifest>,
     }
 
+    #[cfg(not(madsim))]
     impl StallBackend {
         fn release(&self) {
             let (lock, cvar) = &*self.gate;
-            *lock.lock().expect("gate") = true;
+            *lock.lock() = true;
             cvar.notify_all();
         }
     }
 
+    #[cfg(not(madsim))]
     impl crate::EventStore for StallBackend {
         fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError> {
-            self.inner.lock().expect("inner").manifest = Some(manifest);
+            self.inner.lock().manifest = Some(manifest);
             Ok(())
         }
 
         fn append_batch(&mut self, _: &[crate::AppendEntry]) -> Result<u64, EventStoreError> {
             let (lock, cvar) = &*self.gate;
-            let mut released = lock.lock().expect("gate");
+            let mut released = lock.lock();
 
             while !*released {
-                released = cvar.wait(released).expect("gate wait");
+                cvar.wait(&mut released);
             }
             Ok(0)
         }
@@ -2767,7 +2750,6 @@ mod tests {
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
             self.inner
                 .lock()
-                .expect("inner")
                 .manifest
                 .clone()
                 .ok_or_else(|| EventStoreError::Backend("no manifest".to_string()))
@@ -2785,7 +2767,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_submit_order_sent_through_msgbus() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -2854,7 +2836,7 @@ mod tests {
     #[rstest]
     fn kernel_with_markers_captures_snapshots_over_synthetic_bus() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let mut config = make_config(tmp.path().to_path_buf());
         config.data_markers = Some(DataMarkerConfig {
@@ -2920,7 +2902,7 @@ mod tests {
     #[rstest]
     fn boot_recovery_ignores_marker_sidecar_files() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let mut config = make_config(tmp.path().to_path_buf());
         config.data_markers = Some(DataMarkerConfig {
@@ -2972,10 +2954,7 @@ mod tests {
         let options = EventStoreLifecycleOptions::new()
             .with_encoder_registry(test_registry())
             .with_backend_opener(move |_, manifest| {
-                opener_memory
-                    .lock()
-                    .expect("memory backend")
-                    .open_run(manifest.clone())?;
+                opener_memory.lock().open_run(manifest.clone())?;
                 Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
             });
 
@@ -3009,7 +2988,7 @@ mod tests {
             .close(UnixNanos::from(6_000))
             .expect("close session");
 
-        let backend = memory.lock().expect("memory backend");
+        let backend = memory.lock();
         let captured = backend
             .scan_seq(2)
             .expect("scan")
@@ -3023,7 +3002,7 @@ mod tests {
     #[rstest]
     fn marker_registry_factory_receives_enabled_classes() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
         let seen_classes: Arc<Mutex<Vec<Vec<DataClass>>>> = Arc::new(Mutex::new(Vec::new()));
         let seen_for_factory = Arc::clone(&seen_classes);
@@ -3036,10 +3015,7 @@ mod tests {
         });
         let options =
             EventStoreLifecycleOptions::new().with_marker_registry_factory(move |classes| {
-                seen_for_factory
-                    .lock()
-                    .expect("seen classes")
-                    .push(classes.to_vec());
+                seen_for_factory.lock().push(classes.to_vec());
                 DataMarkerExtractorRegistry::default_registry(classes)
             });
 
@@ -3055,14 +3031,14 @@ mod tests {
             .expect("open run");
         store.seal(UnixNanos::from(1_000));
 
-        let seen = seen_classes.lock().expect("seen classes");
+        let seen = seen_classes.lock();
         assert_eq!(seen.as_slice(), &[vec![DataClass::Trade, DataClass::Quote]]);
     }
 
     #[rstest]
     fn markers_disabled_installs_no_file_and_no_cost() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3106,7 +3082,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_time_event_handler_run() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3153,7 +3129,7 @@ mod tests {
     #[rstest]
     fn seal_clears_bus_tap_so_post_seal_dispatches_do_not_capture() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3198,7 +3174,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_trading_command_envelope_with_inner_payload_type() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3280,7 +3256,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_order_event_any_envelope_with_inner_payload_type() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3360,7 +3336,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_data_command_envelopes_with_category_payload_types() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3461,7 +3437,7 @@ mod tests {
     #[rstest]
     fn bus_tap_captures_data_response_sent_through_correlation_handler() {
         let tmp = TempDir::new().expect("tempdir");
-        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock_rc: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let instance_id = UUID4::new();
 
         let mut store = EventStoreLifecycle::boot(
@@ -3481,7 +3457,7 @@ mod tests {
 
         let correlation_id = UUID4::new();
         let handler_called = Rc::new(RefCell::new(false));
-        let handler_called_clone = handler_called.clone();
+        let handler_called_clone = Rc::clone(&handler_called);
         msgbus::register_response_handler(
             &correlation_id,
             msgbus::ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {

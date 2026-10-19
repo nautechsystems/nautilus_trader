@@ -19,8 +19,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_hyperliquid::{
     common::credential::{EvmPrivateKey, VaultAddress},
     http::models::{
-        HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
-        HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+        HyperliquidExchangeAction, HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
+        HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
     },
     signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, TimeNonce},
 };
@@ -33,27 +33,27 @@ fn make_signer() -> HyperliquidEip712Signer {
     HyperliquidEip712Signer::new(&key).unwrap()
 }
 
-fn make_order_action() -> HyperliquidExecAction {
-    HyperliquidExecAction::Order {
-        orders: vec![HyperliquidExecPlaceOrderRequest {
+fn make_order_action() -> HyperliquidExchangeAction {
+    HyperliquidExchangeAction::Order {
+        orders: vec![HyperliquidExchangePlaceOrderRequest {
             asset: 3,
             is_buy: true,
             price: dec!(92572.0),
             size: dec!(0.001),
             reduce_only: false,
-            kind: HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Gtc,
+            kind: HyperliquidExchangeOrderKind::Limit {
+                limit: HyperliquidExchangeLimitParams {
+                    tif: HyperliquidExchangeTif::Gtc,
                 },
             },
             cloid: None,
         }],
-        grouping: HyperliquidExecGrouping::Na,
+        grouping: HyperliquidExchangeGrouping::Na,
         builder: None,
     }
 }
 
-fn make_sign_request(action: &HyperliquidExecAction) -> SignRequest {
+fn make_sign_request(action: &HyperliquidExchangeAction) -> SignRequest {
     let action_bytes = rmp_serde::to_vec_named(action).unwrap();
     SignRequest {
         action: None,

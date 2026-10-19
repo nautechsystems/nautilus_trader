@@ -15,16 +15,19 @@
 
 //! Live market data client for the Betfair adapter.
 
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc, OnceLock, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
     clients::DataClient,
-    live::{get_runtime, runner::get_data_event_sender},
+    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
@@ -37,40 +40,55 @@ use nautilus_common::{
     providers::InstrumentProvider,
 };
 use nautilus_core::{
-    AtomicMap, Params,
+    AtomicMap, Params, UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
+};
+use nautilus_live::{
+    SocketControl,
+    book::snapshot::SnapshotGate,
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
     data::{
-        CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, OrderBookDeltas_API,
-        TradeTick,
+        CustomData, CustomDataTrait, Data, DataType, OrderBookDelta, OrderBookDeltas, TradeTick,
     },
+    enums::RecordFlag,
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
 };
-use nautilus_network::socket::TcpMessageHandler;
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 
 use crate::{
+    book::{
+        BookSequenceOutcome,
+        recovery::{spawn_subscription_task, start_recovery},
+        sync::BookSyncTracker,
+    },
     common::{
         consts::{BETFAIR_RACE_STREAM_HOST, BETFAIR_VENUE},
         credential::BetfairCredential,
-        enums::{MarketDataFilterField, MarketStatus},
+        enums::{ChangeType, MarketDataFilterField, MarketStatus, SegmentType},
         parse::{
             extract_market_id, make_instrument_id, parse_betfair_price, parse_betfair_quantity,
             parse_market_definition, parse_millis_timestamp,
         },
     },
-    config::BetfairDataConfig,
+    config::BetfairDataClientConfig,
     data_types::{BetfairSequenceCompleted, register_betfair_custom_data},
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
     stream::{
-        client::{BetfairRaceStreamClient, BetfairStreamClient},
+        CRICKET_STREAMS_ENDPOINT, DATA_STREAMS_ENDPOINT, RACE_STREAMS_ENDPOINT,
+        client::{
+            BetfairRaceStreamClient, BetfairStreamClient, HeartbeatTimeoutSource,
+            StreamMessageHandler,
+        },
         config::BetfairStreamConfig,
-        messages::{MarketDataFilter, StreamMarketFilter, StreamMessage, stream_decode},
+        error::BetfairStreamError,
+        messages::{MarketChange, MarketDataFilter, StreamMarketFilter, StreamMessage},
         parse::{
             make_trade_tick, parse_betfair_starting_prices, parse_betfair_ticker,
             parse_bsp_book_deltas, parse_cricket_match, parse_instrument_closes,
@@ -82,6 +100,34 @@ use crate::{
 
 /// Keep-alive interval in seconds (10 hours, matching Python default).
 const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
+
+/// Betfair live data client.
+#[derive(Debug)]
+pub struct BetfairDataClient {
+    clock: &'static AtomicTime,
+    client_id: ClientId,
+    http_client: Arc<BetfairHttpClient>,
+    provider: BetfairInstrumentProvider,
+    stream_client: Option<Arc<BetfairStreamClient>>,
+    socket_control: Option<SocketControl>,
+    race_socket_control: Option<Arc<SocketControl>>,
+    race_stream_client: Option<Arc<BetfairRaceStreamClient>>,
+    cricket_socket_control: Option<Arc<SocketControl>>,
+    cricket_stream_client: Option<Arc<BetfairRaceStreamClient>>,
+    credential: BetfairCredential,
+    stream_config: BetfairStreamConfig,
+    config: BetfairDataClientConfig,
+    currency: Currency,
+    is_connected: AtomicBool,
+    data_sender: EventSender<DataEvent>,
+    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    subscribed_market_ids: AHashSet<String>,
+    book_sync: BookSyncTracker,
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
+    stream_shutdowns: Arc<Mutex<Vec<BetfairStreamShutdown>>>,
+    shutdown_errors: Vec<String>,
+}
 
 /// Wraps a custom data value with its instrument_id in both metadata (for
 /// topic routing) and identifier (for catalog partitioning).
@@ -102,30 +148,6 @@ pub(crate) fn custom_data_with_instrument(
     CustomData::new(value, data_type)
 }
 
-/// Betfair live data client.
-#[derive(Debug)]
-pub struct BetfairDataClient {
-    client_id: ClientId,
-    http_client: Arc<BetfairHttpClient>,
-    provider: BetfairInstrumentProvider,
-    stream_client: Option<Arc<BetfairStreamClient>>,
-    race_stream_client: Option<Arc<BetfairRaceStreamClient>>,
-    cricket_stream_client: Option<Arc<BetfairRaceStreamClient>>,
-    credential: BetfairCredential,
-    stream_config: BetfairStreamConfig,
-    config: BetfairDataConfig,
-    currency: Currency,
-    is_connected: AtomicBool,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    clock: &'static AtomicTime,
-    subscribed_market_ids: AHashSet<String>,
-    keep_alive_handle: Option<JoinHandle<()>>,
-    reconnect_handle: Option<JoinHandle<()>>,
-    race_fatal_handle: Option<JoinHandle<()>>,
-    cricket_fatal_handle: Option<JoinHandle<()>>,
-}
-
 impl BetfairDataClient {
     /// Creates a new [`BetfairDataClient`] instance.
     #[must_use]
@@ -135,13 +157,32 @@ impl BetfairDataClient {
         http_client: BetfairHttpClient,
         credential: BetfairCredential,
         stream_config: BetfairStreamConfig,
-        config: BetfairDataConfig,
+        config: BetfairDataClientConfig,
         nav_filter: NavigationFilter,
         currency: Currency,
         min_notional: Option<Money>,
     ) -> Self {
         let data_sender = get_data_event_sender();
         let http_client = Arc::new(http_client);
+        let socket_control = Some(SocketControl::new(
+            client_id,
+            Some(*BETFAIR_VENUE),
+            DATA_STREAMS_ENDPOINT,
+        ));
+        let race_socket_control = config.subscribe_race_data.then(|| {
+            Arc::new(SocketControl::new(
+                client_id,
+                Some(*BETFAIR_VENUE),
+                RACE_STREAMS_ENDPOINT,
+            ))
+        });
+        let cricket_socket_control = config.subscribe_cricket_data.then(|| {
+            Arc::new(SocketControl::new(
+                client_id,
+                Some(*BETFAIR_VENUE),
+                CRICKET_STREAMS_ENDPOINT,
+            ))
+        });
         let provider = BetfairInstrumentProvider::new(
             Arc::clone(&http_client),
             nav_filter,
@@ -149,12 +190,19 @@ impl BetfairDataClient {
             min_notional,
         );
 
+        let session_tasks = TaskGroup::new();
+        let command_tasks = TaskGroup::new();
+
         Self {
+            clock: get_atomic_clock_realtime(),
             client_id,
             http_client,
             provider,
             stream_client: None,
+            socket_control,
+            race_socket_control,
             race_stream_client: None,
+            cricket_socket_control,
             cricket_stream_client: None,
             credential,
             stream_config,
@@ -163,45 +211,135 @@ impl BetfairDataClient {
             is_connected: AtomicBool::new(false),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
-            clock: get_atomic_clock_realtime(),
             subscribed_market_ids: AHashSet::new(),
-            keep_alive_handle: None,
-            reconnect_handle: None,
-            race_fatal_handle: None,
-            cricket_fatal_handle: None,
+            book_sync: BookSyncTracker::default(),
+            session_tasks,
+            command_tasks,
+            stream_shutdowns: Arc::new(Mutex::new(Vec::new())),
+            shutdown_errors: Vec::new(),
         }
     }
 
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        session_result
+            .map_err(|e| anyhow::anyhow!("Failed to finish Betfair data session tasks: {e}"))?;
+        command_result
+            .map_err(|e| anyhow::anyhow!("Failed to finish Betfair data command tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Betfair data session tasks: {e}"))?;
+            self.command_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Betfair data command tasks: {e}"))?;
+        }
+        Ok(())
+    }
+
+    fn begin_stream_shutdown(&self) {
+        for stream in self.stream_shutdowns.lock().iter() {
+            stream.begin_shutdown();
+        }
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.begin_stream_shutdown();
+        self.is_connected.store(false, Ordering::Relaxed);
+
+        if let Some(client) = self.cricket_stream_client.as_ref() {
+            client.close().await;
+            self.cricket_stream_client = None;
+        }
+
+        if let Some(client) = self.race_stream_client.as_ref() {
+            client.close().await;
+            self.race_stream_client = None;
+        }
+
+        if let Some(client) = self.stream_client.as_ref() {
+            match client.close().await {
+                Ok(()) => self.stream_client = None,
+                Err(e) => self
+                    .shutdown_errors
+                    .push(format!("stream shutdown failed: {e}")),
+            }
+        }
+
+        self.http_client.disconnect().await;
+
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.is_connected.store(false, Ordering::Release);
+        self.deregister_socket_controls();
+
+        if self.stream_client.is_none()
+            && self.race_stream_client.is_none()
+            && self.cricket_stream_client.is_none()
+        {
+            self.stream_shutdowns.lock().clear();
+        }
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Betfair data shutdown failed: {}", errors.join("; "))
+        }
+    }
+
+    #[expect(clippy::too_many_arguments)]
     fn create_stream_handler(
-        data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+        data_sender: EventSender<DataEvent>,
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         currency: Currency,
         min_notional: Option<Money>,
         reconnect_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        book_sync: BookSyncTracker,
+        stream_client: Arc<OnceLock<Weak<BetfairStreamClient>>>,
+        snapshot_timeout: Duration,
+        tasks: TaskSpawner,
         clock: &'static AtomicTime,
-    ) -> TcpMessageHandler {
+    ) -> StreamMessageHandler {
         // Track cumulative traded volumes per (instrument_id, price) to compute
         // incremental trade sizes. Betfair `trd` fields report totals, not deltas.
         let traded_volumes: Arc<Mutex<AHashMap<(InstrumentId, Decimal), Decimal>>> =
             Arc::new(Mutex::new(AHashMap::new()));
         let has_initial_connection = Arc::new(AtomicBool::new(false));
 
-        Arc::new(move |data: &[u8]| {
+        Arc::new(move |msg: StreamMessage| {
             let ts_init = clock.get_time_ns();
-
-            let msg = match stream_decode(data) {
-                Ok(msg) => msg,
-                Err(e) => {
-                    log::warn!("Failed to decode stream message: {e}");
-                    return;
-                }
-            };
 
             match msg {
                 StreamMessage::MarketChange(mcm) => {
                     if mcm.is_heartbeat() {
                         return;
                     }
+
+                    // A new image replaces every subscribed market, so each book awaits its own
+                    // image and no recovery waits on an earlier image request
+                    if mcm.ct == Some(ChangeType::SubImage)
+                        && matches!(mcm.segment_type, None | Some(SegmentType::SegStart))
+                    {
+                        book_sync.begin_image();
+                    }
+
+                    let sequence_complete = mcm
+                        .segment_type
+                        .is_none_or(|segment| segment == SegmentType::SegEnd);
 
                     let Some(market_changes) = &mcm.mc else {
                         return;
@@ -284,6 +422,20 @@ impl BetfairDataClient {
                             }
                         }
 
+                        let accepted_books = accept_market_change(
+                            mc,
+                            is_snapshot,
+                            mcm.pt,
+                            ts_event,
+                            ts_init,
+                            &book_sync,
+                            &stream_client,
+                            snapshot_timeout,
+                            &tasks,
+                        );
+                        let accepted = accepted_books.is_some();
+                        let mut runner_books = accepted_books.unwrap_or_default().into_iter();
+
                         // Non-snapshot deltas and BSP deltas are buffered and flushed after
                         // trades/tickers to mirror the Python `market_change_to_updates`
                         // ordering (book deltas first, then BSP). Snapshots go inline.
@@ -295,35 +447,17 @@ impl BetfairDataClient {
                                 let handicap = rc.hc.unwrap_or(Decimal::ZERO);
                                 let instrument_id = make_instrument_id(&mc.id, rc.id, handicap);
 
-                                match parse_runner_book_deltas(
-                                    instrument_id,
-                                    rc,
-                                    is_snapshot,
-                                    mcm.pt,
-                                    ts_event,
-                                    ts_init,
-                                ) {
-                                    Ok(Some(deltas)) => {
-                                        if is_snapshot {
-                                            if let Err(e) = data_sender.send(DataEvent::Data(
-                                                Data::Deltas(OrderBookDeltas_API::new(deltas)),
-                                            )) {
-                                                log::warn!("Failed to send book deltas: {e}");
-                                            }
-                                        } else {
-                                            buffered_deltas.push(deltas);
-                                        }
-                                    }
-                                    Ok(None) => {}
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Failed to parse book deltas for {instrument_id}: {e}"
-                                        );
-                                    }
+                                if let Some(deltas) = runner_books.next().flatten() {
+                                    route_runner_book(
+                                        deltas,
+                                        is_snapshot,
+                                        &data_sender,
+                                        &mut buffered_deltas,
+                                    );
                                 }
 
                                 if let Some(trades) = &rc.trd {
-                                    let mut volumes = traded_volumes.lock().unwrap();
+                                    let mut volumes = traded_volumes.lock();
 
                                     for pv in trades {
                                         if pv.volume == Decimal::ZERO {
@@ -403,12 +537,18 @@ impl BetfairDataClient {
                             }
                         }
 
+                        if accepted && is_snapshot {
+                            send_omitted_runner_snapshots(
+                                mc,
+                                mcm.pt,
+                                ts_event,
+                                ts_init,
+                                &data_sender,
+                            );
+                        }
+
                         for deltas in buffered_deltas {
-                            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(
-                                OrderBookDeltas_API::new(deltas),
-                            ))) {
-                                log::warn!("Failed to send book deltas: {e}");
-                            }
+                            send_book_deltas(&data_sender, deltas);
                         }
 
                         for custom in buffered_bsp_customs {
@@ -421,21 +561,27 @@ impl BetfairDataClient {
                         if market_closed {
                             let prefix = format!("{}-", mc.id);
 
-                            if let Ok(mut volumes) = traded_volumes.lock() {
-                                volumes.retain(|k, _| !k.0.symbol.as_str().starts_with(&prefix));
-                            }
+                            traded_volumes
+                                .lock()
+                                .retain(|k, _| !k.0.symbol.as_str().starts_with(&prefix));
+
+                            // A closed market streams no further book changes or images
+                            book_sync.remove(&mc.id);
                         }
                     }
 
-                    let completed = BetfairSequenceCompleted::new(ts_event, ts_init);
-                    let custom = CustomData::from_arc(Arc::new(completed));
-                    if let Err(e) = data_sender.send(DataEvent::Data(Data::Custom(custom))) {
-                        log::warn!("Failed to send sequence completed: {e}");
+                    if sequence_complete {
+                        let completed = BetfairSequenceCompleted::new(ts_event, ts_init);
+                        let custom = CustomData::from_arc(Arc::new(completed));
+                        if let Err(e) = data_sender.send(DataEvent::Data(Data::Custom(custom))) {
+                            log::warn!("Failed to send sequence completed: {e}");
+                        }
                     }
                 }
                 StreamMessage::Connection(_) => {
                     if has_initial_connection.swap(true, Ordering::SeqCst) {
                         log::info!("Betfair data stream reconnected");
+                        book_sync.reset_on_reconnect();
                         let _ = reconnect_tx.send(());
                     } else {
                         log::debug!("Betfair data stream connected");
@@ -562,49 +708,24 @@ impl DataClient for BetfairDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Betfair data client: {}", self.client_id);
 
-        if let Some(handle) = self.keep_alive_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.reconnect_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.race_fatal_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.cricket_fatal_handle.take() {
-            handle.abort();
-        }
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.begin_stream_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
+
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting Betfair data client: {}", self.client_id);
 
-        if let Some(handle) = self.keep_alive_handle.take() {
-            handle.abort();
-        }
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.begin_stream_shutdown();
 
-        if let Some(handle) = self.reconnect_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.race_fatal_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.cricket_fatal_handle.take() {
-            handle.abort();
-        }
-        self.is_connected.store(false, Ordering::Relaxed);
-        self.stream_client = None;
-        self.race_stream_client = None;
-        self.cricket_stream_client = None;
         self.provider.store_mut().clear();
         self.subscribed_market_ids.clear();
+        self.book_sync.clear();
 
         self.instruments.store(AHashMap::new());
         Ok(())
@@ -617,6 +738,10 @@ impl DataClient for BetfairDataClient {
 
     fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
+            && self.stream_client.as_ref().is_some_and(|client| {
+                client.is_authenticated()
+                    && (self.subscribed_market_ids.is_empty() || client.is_market_ready())
+            })
     }
 
     fn is_disconnected(&self) -> bool {
@@ -624,9 +749,21 @@ impl DataClient for BetfairDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected.load(Ordering::Acquire)
+            && self.session_tasks.is_open()
+            && self.command_tasks.is_open()
+        {
             return Ok(());
         }
+
+        self.prepare_task_groups().await?;
+        let stream_shutdowns = Arc::clone(&self.stream_shutdowns);
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
+                for stream in stream_shutdowns.lock().iter() {
+                    stream.begin_shutdown();
+                }
+            });
 
         register_betfair_custom_data();
 
@@ -666,6 +803,11 @@ impl DataClient for BetfairDataClient {
             .ok_or_else(|| anyhow::anyhow!("No session token after login"))?;
 
         let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let book_tasks = self
+            .command_tasks
+            .spawner()
+            .map_err(|e| anyhow::anyhow!("Betfair data command task admission is closed: {e}"))?;
+        let book_stream_client = Arc::new(OnceLock::new());
 
         let handler = Self::create_stream_handler(
             self.data_sender.clone(),
@@ -673,267 +815,337 @@ impl DataClient for BetfairDataClient {
             self.currency,
             self.provider.min_notional(),
             reconnect_tx.clone(),
+            self.book_sync.clone(),
+            Arc::clone(&book_stream_client),
+            Duration::from_secs(self.config.book_snapshot_timeout_secs),
+            book_tasks.clone(),
             self.clock,
         );
 
-        let stream_client = BetfairStreamClient::connect(
+        let state_sink = self.socket_control.as_ref().map(SocketControl::sink);
+        let stream_client = BetfairStreamClient::connect_with_state_sink(
             &self.credential,
             session_token,
             handler,
             self.stream_config.clone(),
+            HeartbeatTimeoutSource::Server,
+            state_sink,
         )
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        self.stream_client = Some(Arc::new(stream_client));
+        let stream_client = Arc::new(stream_client);
+        let _ = book_stream_client.set(Arc::downgrade(&stream_client));
 
-        if self.config.subscribe_race_data {
-            let race_config = BetfairStreamConfig {
-                host: BETFAIR_RACE_STREAM_HOST.to_string(),
-                ..self.stream_config.clone()
-            };
+        if let Some(control) = &self.socket_control {
+            let reconnect_stream = Arc::clone(&stream_client);
+            control.register(move || reconnect_stream.request_reconnect_outcome());
+        }
+        self.stream_client = Some(stream_client);
+        self.stream_shutdowns
+            .lock()
+            .push(BetfairStreamShutdown::Exchange(Arc::clone(
+                self.stream_client.as_ref().expect("stream client assigned"),
+            )));
 
-            let race_session = self
-                .http_client
-                .session_token()
+        let session_result = async {
+            if self.config.subscribe_race_data {
+                let race_config = BetfairStreamConfig {
+                    host: BETFAIR_RACE_STREAM_HOST.to_string(),
+                    ..self.stream_config.clone()
+                };
+
+                let race_session = self
+                    .http_client
+                    .session_token()
+                    .await
+                    .ok_or_else(|| anyhow::anyhow!("No session token for race stream"))?;
+
+                // Only the exchange stream carries market changes, so its books stay separate
+                let race_handler = Self::create_stream_handler(
+                    self.data_sender.clone(),
+                    Arc::clone(&self.instruments),
+                    self.currency,
+                    self.provider.min_notional(),
+                    reconnect_tx.clone(),
+                    BookSyncTracker::default(),
+                    Arc::new(OnceLock::new()),
+                    Duration::ZERO,
+                    book_tasks.clone(),
+                    self.clock,
+                );
+
+                let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
+
+                let state_sink = self
+                    .race_socket_control
+                    .as_ref()
+                    .map(|control| control.sink());
+
+                match BetfairRaceStreamClient::connect_decoded(
+                    &self.credential,
+                    race_session,
+                    race_handler,
+                    race_config,
+                    race_fatal_tx,
+                    state_sink,
+                )
                 .await
-                .ok_or_else(|| anyhow::anyhow!("No session token for race stream"))?;
-
-            let race_handler = Self::create_stream_handler(
-                self.data_sender.clone(),
-                Arc::clone(&self.instruments),
-                self.currency,
-                self.provider.min_notional(),
-                reconnect_tx.clone(),
-                self.clock,
-            );
-
-            let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
-
-            match BetfairRaceStreamClient::connect(
-                &self.credential,
-                race_session,
-                race_handler,
-                race_config,
-                race_fatal_tx,
-            )
-            .await
-            {
-                Ok(client) => {
-                    let race_client = Arc::new(client);
-                    self.race_stream_client = Some(Arc::clone(&race_client));
-
-                    if let Some(handle) = self.race_fatal_handle.take() {
-                        handle.abort();
-                    }
-
-                    self.race_fatal_handle = Some(get_runtime().spawn(async move {
-                        if race_fatal_rx.recv().await.is_some() {
-                            log::error!(
-                                "Betfair race stream permanently disabled due to fatal error"
-                            );
-                            race_client.close().await;
+                {
+                    Ok(client) => {
+                        let race_client = Arc::new(client);
+                        if let Some(control) = &self.race_socket_control {
+                            let reconnect_client = Arc::clone(&race_client);
+                            control.register(move || reconnect_client.request_reconnect_outcome());
                         }
-                    }));
+                        self.race_stream_client = Some(Arc::clone(&race_client));
+                        self.stream_shutdowns
+                            .lock()
+                            .push(BetfairStreamShutdown::Auxiliary(Arc::clone(&race_client)));
 
-                    log::debug!("Betfair race stream connected");
-                }
-                Err(e) => {
-                    log::warn!("Betfair race stream connect failed: {e}");
-                    self.race_stream_client = None;
-                }
-            }
-        }
+                        let race_socket_control = self.race_socket_control.as_ref().map(Arc::clone);
 
-        if self.config.subscribe_cricket_data {
-            let cricket_config = BetfairStreamConfig {
-                host: BETFAIR_RACE_STREAM_HOST.to_string(),
-                ..self.stream_config.clone()
-            };
+                        self.session_tasks
+                        .spawn(async move {
+                            if race_fatal_rx.recv().await.is_some() {
+                                log::error!(
+                                    "Betfair race stream permanently disabled due to fatal error"
+                                );
+                                race_client.close().await;
 
-            let cricket_session = self
-                .http_client
-                .session_token()
-                .await
-                .ok_or_else(|| anyhow::anyhow!("No session token for cricket stream"))?;
+                                if let Some(control) = race_socket_control {
+                                    control.deregister();
+                                }
+                            }
+                        })
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to register Betfair race fatal task: {e}")
+                        })?;
 
-            let cricket_handler = Self::create_stream_handler(
-                self.data_sender.clone(),
-                Arc::clone(&self.instruments),
-                self.currency,
-                self.provider.min_notional(),
-                reconnect_tx.clone(),
-                self.clock,
-            );
-
-            let (cricket_fatal_tx, mut cricket_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
-
-            match BetfairRaceStreamClient::connect_cricket(
-                &self.credential,
-                cricket_session,
-                cricket_handler,
-                cricket_config,
-                cricket_fatal_tx,
-            )
-            .await
-            {
-                Ok(client) => {
-                    let cricket_client = Arc::new(client);
-                    self.cricket_stream_client = Some(Arc::clone(&cricket_client));
-
-                    if let Some(handle) = self.cricket_fatal_handle.take() {
-                        handle.abort();
-                    }
-
-                    self.cricket_fatal_handle = Some(get_runtime().spawn(async move {
-                        if cricket_fatal_rx.recv().await.is_some() {
-                            log::error!(
-                                "Betfair cricket stream permanently disabled due to fatal error"
-                            );
-                            cricket_client.close().await;
-                        }
-                    }));
-
-                    log::debug!("Betfair cricket stream connected");
-                }
-                Err(e) => {
-                    log::warn!("Betfair cricket stream connect failed: {e}");
-                    self.cricket_stream_client = None;
-                }
-            }
-        }
-
-        // Abort any existing keep-alive task before spawning a new one
-        if let Some(handle) = self.keep_alive_handle.take() {
-            handle.abort();
-        }
-
-        // Spawn periodic keep-alive to prevent session expiry
-        let keep_alive_client = Arc::clone(&self.http_client);
-        let keep_alive_stream = Arc::clone(self.stream_client.as_ref().unwrap());
-        let keep_alive_race_stream = self.race_stream_client.as_ref().map(Arc::clone);
-        let keep_alive_cricket_stream = self.cricket_stream_client.as_ref().map(Arc::clone);
-        let keep_alive_app_key = self.credential.app_key().to_string();
-
-        self.keep_alive_handle = Some(get_runtime().spawn(async move {
-            let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
-            loop {
-                tokio::time::sleep(interval).await;
-
-                match keep_alive_client.keep_alive().await {
-                    Ok(()) => {}
-                    Err(ref e) if e.is_login_failed() => {
-                        log::warn!("Betfair session expired, attempting re-login: {e}");
-                        if let Err(e) = keep_alive_client.reconnect().await {
-                            log::warn!("Betfair re-login failed: {e}");
-                            continue;
-                        }
+                        log::debug!("Betfair race stream connected");
                     }
                     Err(e) => {
-                        log::warn!("Betfair keep-alive failed (transient): {e}");
-                        continue;
-                    }
-                }
+                        log::warn!("Betfair race stream connect failed: {e}");
 
-                if let Some(token) = keep_alive_client.session_token().await {
-                    keep_alive_stream.update_auth(&keep_alive_app_key, token.clone());
-
-                    if let Some(ref race_stream) = keep_alive_race_stream {
-                        race_stream.update_auth(&keep_alive_app_key, token.clone());
-                    }
-
-                    if let Some(ref cricket_stream) = keep_alive_cricket_stream {
-                        cricket_stream.update_auth(&keep_alive_app_key, token);
-                    }
-                }
-                log::debug!("Betfair session keep-alive sent");
-            }
-        }));
-
-        // Spawn reconnect handler to refresh session on stream reconnection
-        let reconnect_http = Arc::clone(&self.http_client);
-        let reconnect_stream = Arc::clone(self.stream_client.as_ref().unwrap());
-        let reconnect_race_stream = self.race_stream_client.as_ref().map(Arc::clone);
-        let reconnect_cricket_stream = self.cricket_stream_client.as_ref().map(Arc::clone);
-        let reconnect_app_key = self.credential.app_key().to_string();
-
-        self.reconnect_handle = Some(get_runtime().spawn(async move {
-            while reconnect_rx.recv().await.is_some() {
-                log::info!("Handling data stream reconnection");
-
-                match reconnect_http.keep_alive().await {
-                    Ok(()) => {}
-                    Err(ref e) if e.is_login_failed() => {
-                        log::warn!("Session expired on reconnect, attempting re-login: {e}");
-                        if let Err(e) = reconnect_http.reconnect().await {
-                            log::warn!("Re-login failed on reconnect: {e}");
-                            continue;
+                        if let Some(control) = &self.race_socket_control {
+                            control.deregister();
                         }
+                        self.race_stream_client = None;
+                    }
+                }
+            }
+
+            if self.config.subscribe_cricket_data {
+                let cricket_config = BetfairStreamConfig {
+                    host: BETFAIR_RACE_STREAM_HOST.to_string(),
+                    ..self.stream_config.clone()
+                };
+
+                let cricket_session = self
+                    .http_client
+                    .session_token()
+                    .await
+                    .ok_or_else(|| anyhow::anyhow!("No session token for cricket stream"))?;
+
+                // Only the exchange stream carries market changes, so its books stay separate
+                let cricket_handler = Self::create_stream_handler(
+                    self.data_sender.clone(),
+                    Arc::clone(&self.instruments),
+                    self.currency,
+                    self.provider.min_notional(),
+                    reconnect_tx.clone(),
+                    BookSyncTracker::default(),
+                    Arc::new(OnceLock::new()),
+                    Duration::ZERO,
+                    book_tasks.clone(),
+                    self.clock,
+                );
+
+                let (cricket_fatal_tx, mut cricket_fatal_rx) =
+                    tokio::sync::mpsc::unbounded_channel();
+
+                let state_sink = self
+                    .cricket_socket_control
+                    .as_ref()
+                    .map(|control| control.sink());
+
+                match BetfairRaceStreamClient::connect_cricket_decoded(
+                    &self.credential,
+                    cricket_session,
+                    cricket_handler,
+                    cricket_config,
+                    cricket_fatal_tx,
+                    state_sink,
+                )
+                .await
+                {
+                    Ok(client) => {
+                        let cricket_client = Arc::new(client);
+                        if let Some(control) = &self.cricket_socket_control {
+                            let reconnect_client = Arc::clone(&cricket_client);
+                            control.register(move || reconnect_client.request_reconnect_outcome());
+                        }
+                        self.cricket_stream_client = Some(Arc::clone(&cricket_client));
+                        self.stream_shutdowns
+                            .lock()
+                            .push(BetfairStreamShutdown::Auxiliary(Arc::clone(
+                                &cricket_client,
+                            )));
+
+                        let cricket_socket_control =
+                            self.cricket_socket_control.as_ref().map(Arc::clone);
+
+                        self.session_tasks
+                        .spawn(async move {
+                            if cricket_fatal_rx.recv().await.is_some() {
+                                log::error!(
+                                    "Betfair cricket stream permanently disabled due to fatal error"
+                                );
+                                cricket_client.close().await;
+
+                                if let Some(control) = cricket_socket_control {
+                                    control.deregister();
+                                }
+                            }
+                        })
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to register Betfair cricket fatal task: {e}")
+                        })?;
+
+                        log::debug!("Betfair cricket stream connected");
                     }
                     Err(e) => {
-                        log::warn!("Keep-alive failed on reconnect (transient): {e}");
-                        continue;
-                    }
-                }
+                        log::warn!("Betfair cricket stream connect failed: {e}");
 
-                if let Some(token) = reconnect_http.session_token().await {
-                    reconnect_stream.update_auth(&reconnect_app_key, token.clone());
-
-                    if let Some(ref race_stream) = reconnect_race_stream {
-                        race_stream.update_auth(&reconnect_app_key, token.clone());
-                    }
-
-                    if let Some(ref cricket_stream) = reconnect_cricket_stream {
-                        cricket_stream.update_auth(&reconnect_app_key, token);
+                        if let Some(control) = &self.cricket_socket_control {
+                            control.deregister();
+                        }
+                        self.cricket_stream_client = None;
                     }
                 }
             }
-        }));
+
+            let keep_alive_client = Arc::clone(&self.http_client);
+            let keep_alive_stream = Arc::clone(self.stream_client.as_ref().unwrap());
+            let keep_alive_race_stream = self.race_stream_client.as_ref().map(Arc::clone);
+            let keep_alive_cricket_stream = self.cricket_stream_client.as_ref().map(Arc::clone);
+            let keep_alive_app_key = self.credential.app_key().to_string();
+
+            self.session_tasks
+                .spawn(async move {
+                    let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
+                    loop {
+                        tokio::time::sleep(interval).await;
+
+                        let session_replaced = match keep_alive_client.keep_alive_with_token().await
+                        {
+                            Ok(_) => false,
+                            Err(ref e) if e.is_login_failed() => {
+                                log::warn!("Betfair session expired, attempting re-login: {e}");
+
+                                match keep_alive_client.reconnect_with_token().await {
+                                    Ok(_) => true,
+                                    Err(e) => {
+                                        log::warn!("Betfair re-login failed: {e}");
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Betfair keep-alive failed (transient): {e}");
+                                continue;
+                            }
+                        };
+
+                        let _ = keep_alive_client
+                            .with_session_token(|token| {
+                                refresh_stream_sessions(
+                                    keep_alive_stream.as_ref(),
+                                    keep_alive_race_stream.as_deref(),
+                                    keep_alive_cricket_stream.as_deref(),
+                                    &keep_alive_app_key,
+                                    token,
+                                    session_replaced,
+                                );
+                            })
+                            .await;
+                        log::debug!("Betfair session keep-alive sent");
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("Failed to register Betfair keep-alive task: {e}"))?;
+
+            let reconnect_http = Arc::clone(&self.http_client);
+            let reconnect_stream = Arc::clone(self.stream_client.as_ref().unwrap());
+            let reconnect_race_stream = self.race_stream_client.as_ref().map(Arc::clone);
+            let reconnect_cricket_stream = self.cricket_stream_client.as_ref().map(Arc::clone);
+            let reconnect_app_key = self.credential.app_key().to_string();
+
+            self.session_tasks
+                .spawn(async move {
+                    while reconnect_rx.recv().await.is_some() {
+                        log::info!("Handling data stream reconnection");
+
+                        let session_replaced = match reconnect_http.keep_alive_with_token().await {
+                            Ok(_) => false,
+                            Err(ref e) if e.is_login_failed() => {
+                                log::warn!(
+                                    "Session expired on reconnect, attempting re-login: {e}"
+                                );
+
+                                match reconnect_http.reconnect_with_token().await {
+                                    Ok(_) => true,
+                                    Err(e) => {
+                                        log::warn!("Re-login failed on reconnect: {e}");
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Keep-alive failed on reconnect (transient): {e}");
+                                continue;
+                            }
+                        };
+
+                        let _ = reconnect_http
+                            .with_session_token(|token| {
+                                refresh_stream_sessions(
+                                    reconnect_stream.as_ref(),
+                                    reconnect_race_stream.as_deref(),
+                                    reconnect_cricket_stream.as_deref(),
+                                    &reconnect_app_key,
+                                    token,
+                                    session_replaced,
+                                );
+                            })
+                            .await;
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("Failed to register Betfair reconnect task: {e}"))?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Betfair data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         self.is_connected.store(true, Ordering::Release);
+        setup_guard.disarm();
 
         log::info!("Betfair data client connected: {}", self.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
-            return Ok(());
-        }
-
-        if let Some(handle) = self.keep_alive_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.reconnect_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.race_fatal_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.cricket_fatal_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(client) = &self.cricket_stream_client {
-            client.close().await;
-        }
-        self.cricket_stream_client = None;
-
-        if let Some(client) = &self.race_stream_client {
-            client.close().await;
-        }
-        self.race_stream_client = None;
-
-        if let Some(client) = &self.stream_client {
-            client.close().await;
-        }
-
-        self.http_client.disconnect().await;
-        self.is_connected.store(false, Ordering::Relaxed);
+        self.teardown_partial_connect().await?;
         self.subscribed_market_ids.clear();
+        self.book_sync.clear();
 
         log::info!("Betfair data client disconnected: {}", self.client_id);
         Ok(())
@@ -943,7 +1155,7 @@ impl DataClient for BetfairDataClient {
         let instrument_id = cmd.instrument_id;
         let market_id = extract_market_id(&instrument_id)?;
 
-        if !self.subscribed_market_ids.insert(market_id.clone()) {
+        if self.subscribed_market_ids.contains(&market_id) {
             log::debug!("Book deltas already subscribed for market {market_id}");
             return Ok(());
         }
@@ -954,36 +1166,39 @@ impl DataClient for BetfairDataClient {
                 .ok_or_else(|| anyhow::anyhow!("Stream client not connected"))?,
         );
 
-        let all_ids: Vec<String> = self.subscribed_market_ids.iter().cloned().collect();
-
-        let market_filter = StreamMarketFilter {
-            market_ids: Some(all_ids),
-            ..Default::default()
+        let tasks = match self.command_tasks.spawner() {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                log::warn!("Skipping Betfair data command after shutdown began: {e}");
+                return Ok(());
+            }
         };
 
-        let data_filter = MarketDataFilter {
-            fields: Some(vec![
-                MarketDataFilterField::ExAllOffers,
-                MarketDataFilterField::ExTraded,
-                MarketDataFilterField::ExTradedVol,
-                MarketDataFilterField::ExLtp,
-                MarketDataFilterField::ExMarketDef,
-                MarketDataFilterField::SpTraded,
-                MarketDataFilterField::SpProjected,
-            ]),
-            ladder_levels: None,
-        };
+        self.subscribed_market_ids.insert(market_id.clone());
 
+        // Betfair keeps one market subscription per connection, so each write carries every
+        // subscribed market, and writing at once keeps the latest write last
+        let market_filter = market_subscription_filter(&self.subscribed_market_ids);
         let conflate_ms = self.config.stream_conflate_ms;
 
-        nautilus_common::live::get_runtime().spawn(async move {
-            if let Err(e) = stream_client
-                .subscribe_markets(market_filter, data_filter, None, conflate_ms)
-                .await
-            {
-                log::warn!("Failed to subscribe to market data: {e}");
-            }
-        });
+        let subscribe = |gate: &SnapshotGate| {
+            stream_client.write_market_subscription(
+                market_filter,
+                market_data_filter(),
+                None,
+                conflate_ms,
+                gate,
+            )
+        };
+
+        spawn_subscription_task(
+            market_id,
+            subscribe,
+            self.book_sync.clone(),
+            Arc::clone(&stream_client),
+            Duration::from_secs(self.config.book_snapshot_timeout_secs),
+            &tasks,
+        );
 
         Ok(())
     }
@@ -1089,36 +1304,277 @@ impl DataClient for BetfairDataClient {
     }
 }
 
+impl BetfairDataClient {
+    fn deregister_socket_controls(&self) {
+        let controls = [
+            self.socket_control.as_ref(),
+            self.race_socket_control.as_deref(),
+            self.cricket_socket_control.as_deref(),
+        ];
+
+        for control in controls.into_iter().flatten() {
+            control.deregister();
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum BetfairStreamShutdown {
+    Exchange(Arc<BetfairStreamClient>),
+    Auxiliary(Arc<BetfairRaceStreamClient>),
+}
+
+impl BetfairStreamShutdown {
+    fn begin_shutdown(&self) {
+        match self {
+            Self::Exchange(client) => client.begin_shutdown(),
+            Self::Auxiliary(client) => client.begin_shutdown(),
+        }
+    }
+}
+
+fn market_subscription_filter(market_ids: &AHashSet<String>) -> StreamMarketFilter {
+    let market_ids = market_ids.iter().cloned().collect();
+
+    StreamMarketFilter {
+        market_ids: Some(market_ids),
+        ..Default::default()
+    }
+}
+
+fn market_data_filter() -> MarketDataFilter {
+    MarketDataFilter {
+        fields: Some(vec![
+            MarketDataFilterField::ExAllOffers,
+            MarketDataFilterField::ExTraded,
+            MarketDataFilterField::ExTradedVol,
+            MarketDataFilterField::ExLtp,
+            MarketDataFilterField::ExMarketDef,
+            MarketDataFilterField::SpTraded,
+            MarketDataFilterField::SpProjected,
+        ]),
+        ladder_levels: None,
+    }
+}
+
+// Returns each runner's book deltas in runner order when the market accepts the change, starting
+// recovery when the market needs a fresh image. Parsing comes first, so an unparsable image fails
+// the recovery waiting on it rather than completing it
+#[expect(clippy::too_many_arguments)]
+fn accept_market_change(
+    mc: &MarketChange,
+    is_image: bool,
+    publish_time: u64,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    book_sync: &BookSyncTracker,
+    stream_client: &OnceLock<Weak<BetfairStreamClient>>,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) -> Option<Vec<Option<OrderBookDeltas>>> {
+    let parsed = mc
+        .rc
+        .iter()
+        .flatten()
+        .map(|rc| {
+            let instrument_id = make_instrument_id(&mc.id, rc.id, rc.hc.unwrap_or(Decimal::ZERO));
+            parse_runner_book_deltas(instrument_id, rc, is_image, publish_time, ts_event, ts_init)
+        })
+        .collect::<anyhow::Result<Vec<_>>>();
+
+    let outcome = match &parsed {
+        Ok(_) => book_sync.validate(&mc.id, is_image, Instant::now()),
+        Err(e) => {
+            log::warn!(
+                "Failed to parse book deltas for market {}: {e}; requesting a fresh image",
+                mc.id
+            );
+            let error = BetfairStreamError::ProtocolError(e.to_string());
+            book_sync.reject_change(&mc.id, is_image, error)
+        }
+    };
+
+    match outcome {
+        BookSequenceOutcome::Accept => parsed.ok(),
+        BookSequenceOutcome::Suppress => None,
+        BookSequenceOutcome::Recover => {
+            recover_market_book(&mc.id, book_sync, stream_client, snapshot_timeout, tasks);
+            None
+        }
+    }
+}
+
+// Recovery needs the stream client, which connects after its handler is built
+fn recover_market_book(
+    market_id: &str,
+    book_sync: &BookSyncTracker,
+    stream_client: &OnceLock<Weak<BetfairStreamClient>>,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+) {
+    let Some(stream_client) = stream_client.get().and_then(Weak::upgrade) else {
+        return;
+    };
+
+    start_recovery(market_id, book_sync, stream_client, snapshot_timeout, tasks);
+}
+
+// Sends an image's runner deltas at once and buffers update deltas behind the runner's trades
+fn route_runner_book(
+    deltas: OrderBookDeltas,
+    is_image: bool,
+    data_sender: &EventSender<DataEvent>,
+    buffered_deltas: &mut Vec<OrderBookDeltas>,
+) {
+    if is_image {
+        send_book_deltas(data_sender, deltas);
+    } else {
+        buffered_deltas.push(deltas);
+    }
+}
+
+// An image replaces its whole market, so a runner its definition lists but its changes omit has
+// no prices
+fn send_omitted_runner_snapshots(
+    mc: &MarketChange,
+    publish_time: u64,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    data_sender: &EventSender<DataEvent>,
+) {
+    let Some(runners) = mc
+        .market_definition
+        .as_ref()
+        .and_then(|def| def.runners.as_ref())
+    else {
+        return;
+    };
+
+    for runner in runners {
+        let handicap = runner.hc.unwrap_or(Decimal::ZERO);
+        let imaged = mc
+            .rc
+            .iter()
+            .flatten()
+            .any(|rc| rc.id == runner.id && rc.hc.unwrap_or(Decimal::ZERO) == handicap);
+
+        if imaged {
+            continue;
+        }
+
+        let instrument_id = make_instrument_id(&mc.id, runner.id, handicap);
+        let mut clear = OrderBookDelta::clear(instrument_id, publish_time, ts_event, ts_init);
+        clear.flags |= RecordFlag::F_LAST as u8;
+        send_book_deltas(
+            data_sender,
+            OrderBookDeltas::new(instrument_id, vec![clear]),
+        );
+    }
+}
+
+fn send_book_deltas(data_sender: &EventSender<DataEvent>, deltas: OrderBookDeltas) {
+    if let Err(e) = data_sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas)))) {
+        log::warn!("Failed to send book deltas: {e}");
+    }
+}
+
+fn refresh_stream_sessions(
+    stream: &BetfairStreamClient,
+    race_stream: Option<&BetfairRaceStreamClient>,
+    cricket_stream: Option<&BetfairRaceStreamClient>,
+    app_key: &str,
+    token: &SecretString,
+    session_replaced: bool,
+) {
+    stream.update_auth(app_key, token.clone());
+
+    if let Some(race_stream) = race_stream {
+        race_stream.update_auth(app_key, token.clone());
+    }
+
+    if let Some(cricket_stream) = cricket_stream {
+        cricket_stream.update_auth(app_key, token.clone());
+    }
+
+    if !session_replaced {
+        return;
+    }
+
+    let _ = stream.request_reconnect();
+
+    if let Some(race_stream) = race_stream {
+        let _ = race_stream.request_reconnect();
+    }
+
+    if let Some(cricket_stream) = cricket_stream {
+        let _ = cricket_stream.request_reconnect();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_model::enums::BookAction;
     use rstest::rstest;
 
     use super::*;
     use crate::{
         common::testing::load_test_json,
         data_types::{BetfairCricketMatch, BetfairRaceRunnerData, BetfairSequenceCompleted},
+        stream::messages::stream_decode,
     };
 
     fn stream_handler_at(
         ts_init: UnixNanos,
     ) -> (
-        TcpMessageHandler,
+        StreamMessageHandler,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
+        stream_handler_with_books(ts_init, BookSyncTracker::default())
+    }
+
+    fn stream_handler_with_books(
+        ts_init: UnixNanos,
+        book_sync: BookSyncTracker,
+    ) -> (
+        StreamMessageHandler,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel();
         let (reconnect_tx, _reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
+        let tasks = TaskGroup::new().spawner().unwrap();
         let handler = BetfairDataClient::create_stream_handler(
-            data_tx,
+            data_tx.into(),
             Arc::new(AtomicMap::new()),
             Currency::GBP(),
             None,
             reconnect_tx,
+            book_sync,
+            Arc::new(OnceLock::new()),
+            Duration::ZERO,
+            tasks,
             clock,
         );
 
         (handler, data_rx)
+    }
+
+    fn count_books_and_trades(
+        data_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) -> (usize, usize) {
+        let mut books = 0;
+        let mut trades = 0;
+
+        while let Ok(event) = data_rx.try_recv() {
+            match event {
+                DataEvent::Data(Data::BookDeltas(_)) => books += 1,
+                DataEvent::Data(Data::Trade(_)) => trades += 1,
+                _ => {}
+            }
+        }
+
+        (books, trades)
     }
 
     fn receive_custom<T: 'static>(
@@ -1142,7 +1598,7 @@ mod tests {
         let (handler, mut data_rx) = stream_handler_at(ts_init);
         let data = load_test_json("stream/mcm_UPDATE.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let custom = receive_custom::<BetfairSequenceCompleted>(&mut data_rx);
         let completed = custom
@@ -1158,13 +1614,75 @@ mod tests {
     }
 
     #[rstest]
+    fn test_stream_handler_completes_segmented_mcm_on_final_segment() {
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_005);
+        let (handler, mut data_rx) = stream_handler_at(ts_init);
+        let data = load_test_json("stream/mcm_SEGMENTS.jsonl");
+        let mut segments = data.lines();
+
+        handler(stream_decode(segments.next().unwrap().as_bytes()).unwrap());
+        handler(stream_decode(segments.next().unwrap().as_bytes()).unwrap());
+
+        assert!(data_rx.try_recv().is_err());
+
+        handler(stream_decode(segments.next().unwrap().as_bytes()).unwrap());
+
+        let custom = receive_custom::<BetfairSequenceCompleted>(&mut data_rx);
+        let completed = custom
+            .as_any()
+            .downcast_ref::<BetfairSequenceCompleted>()
+            .unwrap();
+        assert_eq!(
+            completed.ts_event,
+            UnixNanos::from(1_700_000_000_000_000_000)
+        );
+        assert_eq!(completed.ts_init, ts_init);
+        assert!(segments.next().is_none());
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_stream_handler_stress_completes_each_segmented_mcm_once() {
+        const SEQUENCE_COUNT: usize = 1_024;
+        const MAX_MIDDLE_SEGMENTS: usize = 15;
+
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_006);
+        let (handler, mut data_rx) = stream_handler_at(ts_init);
+        let data = load_test_json("stream/mcm_SEGMENTS.jsonl");
+        let segments = data.lines().collect::<Vec<_>>();
+
+        for sequence in 0..SEQUENCE_COUNT {
+            handler(stream_decode(segments[0].as_bytes()).unwrap());
+            for _ in 0..sequence % (MAX_MIDDLE_SEGMENTS + 1) {
+                handler(stream_decode(segments[1].as_bytes()).unwrap());
+            }
+
+            assert!(data_rx.try_recv().is_err());
+
+            handler(stream_decode(segments[2].as_bytes()).unwrap());
+
+            let custom = receive_custom::<BetfairSequenceCompleted>(&mut data_rx);
+            let completed = custom
+                .as_any()
+                .downcast_ref::<BetfairSequenceCompleted>()
+                .unwrap();
+            assert_eq!(
+                completed.ts_event,
+                UnixNanos::from(1_700_000_000_000_000_000)
+            );
+            assert_eq!(completed.ts_init, ts_init);
+            assert!(data_rx.try_recv().is_err());
+        }
+    }
+
+    #[rstest]
     fn test_stream_handler_sets_rcm_init_from_clock() {
         let ts_init = UnixNanos::from(1_800_000_000_000_000_002);
 
         let (handler, mut data_rx) = stream_handler_at(ts_init);
         let data = load_test_json("stream/rcm_single.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let custom = receive_custom::<BetfairRaceRunnerData>(&mut data_rx);
         let runner = custom
@@ -1191,7 +1709,7 @@ mod tests {
             .remove("ft");
         let data = message.to_string();
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let custom = receive_custom::<BetfairRaceRunnerData>(&mut data_rx);
         let runner = custom
@@ -1210,7 +1728,7 @@ mod tests {
         let (handler, mut data_rx) = stream_handler_at(ts_init);
         let data = load_test_json("stream/ccm_single.json");
 
-        handler(data.as_bytes());
+        handler(stream_decode(data.as_bytes()).unwrap());
 
         let event = data_rx.try_recv().expect("expected cricket custom data");
         let DataEvent::Data(Data::Custom(custom)) = event else {
@@ -1235,5 +1753,165 @@ mod tests {
             data_rx.try_recv().is_err(),
             "CCM fixture must emit exactly one event"
         );
+    }
+
+    #[rstest]
+    fn test_stream_handler_suppresses_books_of_untracked_market() {
+        let (handler, mut data_rx) =
+            stream_handler_with_books(UnixNanos::default(), BookSyncTracker::default());
+        let data = load_test_json("stream/mcm_live_IMAGE.json");
+
+        handler(stream_decode(data.as_bytes()).unwrap());
+
+        assert_eq!(count_books_and_trades(&mut data_rx), (0, 10));
+    }
+
+    #[rstest]
+    fn test_stream_handler_closed_market_stops_tracking_book() {
+        let market_id = "1.185781465";
+        let book_sync = BookSyncTracker::default();
+        book_sync.record_subscription(market_id, Instant::now(), SnapshotGate::default());
+        let (handler, _data_rx) =
+            stream_handler_with_books(UnixNanos::default(), book_sync.clone());
+        let frames: serde_json::Value =
+            serde_json::from_str(&load_test_json("stream/mcm_BSP.json")).unwrap();
+        let image = frames[0].to_string();
+        let settled = load_test_json("stream/mcm_BSP_settled.json");
+
+        handler(stream_decode(image.as_bytes()).unwrap());
+        let synced = book_sync.validate(market_id, false, Instant::now());
+        handler(stream_decode(settled.as_bytes()).unwrap());
+        let closed = book_sync.validate(market_id, false, Instant::now());
+
+        assert_eq!(synced, BookSequenceOutcome::Accept);
+        assert_eq!(closed, BookSequenceOutcome::Suppress);
+    }
+
+    #[rstest]
+    fn test_stream_handler_image_start_clears_image_request() {
+        let book_sync = BookSyncTracker::default();
+        let now = Instant::now();
+        book_sync
+            .request_image(Duration::ZERO, now, &SnapshotGate::default(), || Ok(()))
+            .unwrap();
+        let (handler, _data_rx) =
+            stream_handler_with_books(UnixNanos::default(), book_sync.clone());
+        let update = load_test_json("stream/mcm_live_UPDATE.json");
+        let image = load_test_json("stream/mcm_live_IMAGE.json");
+        let mut writes = Vec::new();
+
+        handler(stream_decode(update.as_bytes()).unwrap());
+        book_sync
+            .request_image(
+                Duration::from_secs(10),
+                now,
+                &SnapshotGate::default(),
+                || {
+                    writes.push("after update");
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        handler(stream_decode(image.as_bytes()).unwrap());
+        book_sync
+            .request_image(
+                Duration::from_secs(10),
+                now,
+                &SnapshotGate::default(),
+                || {
+                    writes.push("after image");
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        assert_eq!(writes, ["after image"]);
+    }
+
+    // An Asian handicap market lists one selection at several handicaps, so a handicap the image
+    // omits has no prices even when the selection appears at another
+    #[rstest]
+    #[case::selection(false, Decimal::ZERO, 7)]
+    #[case::handicap(true, Decimal::new(5, 1), 8)]
+    fn test_stream_handler_image_clears_runner_it_omits(
+        #[case] omit_by_handicap: bool,
+        #[case] omitted_handicap: Decimal,
+        #[case] expected_books: usize,
+    ) {
+        let market_id = "1.180737206";
+        let omitted = make_instrument_id(market_id, 10_147_870, omitted_handicap);
+        let book_sync = BookSyncTracker::default();
+        book_sync.record_subscription(market_id, Instant::now(), SnapshotGate::default());
+        let (handler, mut data_rx) = stream_handler_with_books(UnixNanos::default(), book_sync);
+        let mut image: serde_json::Value =
+            serde_json::from_str(&load_test_json("stream/mcm_SUB_IMAGE.json")).unwrap();
+
+        if omit_by_handicap {
+            let runners = image["mc"][0]["marketDefinition"]["runners"]
+                .as_array_mut()
+                .unwrap();
+            let mut handicapped = runners
+                .iter()
+                .find(|runner| runner["id"] == "10147870")
+                .unwrap()
+                .clone();
+            handicapped["hc"] = serde_json::json!(0.5);
+            runners.push(handicapped);
+        } else {
+            image["mc"][0]["rc"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|rc| rc["id"] != "10147870");
+        }
+
+        handler(stream_decode(image.to_string().as_bytes()).unwrap());
+
+        let mut books = Vec::new();
+
+        while let Ok(event) = data_rx.try_recv() {
+            if let DataEvent::Data(Data::BookDeltas(deltas)) = event {
+                books.push(*deltas);
+            }
+        }
+
+        let cleared = books
+            .iter()
+            .find(|deltas| deltas.instrument_id == omitted)
+            .unwrap();
+        assert_eq!(books.len(), expected_books);
+        assert_eq!(cleared.deltas.len(), 1);
+        assert_eq!(cleared.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            cleared.deltas[0].flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+    }
+
+    #[rstest]
+    fn test_stream_handler_image_without_market_suspends_its_book() {
+        let imaged_market = "1.176621195";
+        let omitted_market = "1.180727728";
+        let book_sync = BookSyncTracker::default();
+
+        for market_id in [imaged_market, omitted_market] {
+            book_sync.record_subscription(market_id, Instant::now(), SnapshotGate::default());
+            assert_eq!(
+                book_sync.validate(market_id, true, Instant::now()),
+                BookSequenceOutcome::Accept
+            );
+        }
+
+        let (handler, mut data_rx) = stream_handler_with_books(UnixNanos::default(), book_sync);
+        let image = load_test_json("stream/mcm_live_IMAGE.json");
+        let update = load_test_json("stream/mcm_UPDATE.json");
+
+        handler(stream_decode(image.as_bytes()).unwrap());
+        let (imaged_books, _) = count_books_and_trades(&mut data_rx);
+        handler(stream_decode(update.as_bytes()).unwrap());
+        let (omitted_books, _) = count_books_and_trades(&mut data_rx);
+
+        assert_eq!(imaged_books, 2);
+        assert_eq!(omitted_books, 0);
     }
 }

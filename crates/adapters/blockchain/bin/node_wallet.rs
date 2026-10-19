@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_blockchain::{
@@ -32,14 +34,13 @@ use nautilus_model::{
     defi::chain::chains,
     enums::{AccountType, OmsType},
     identifiers::{AccountId, TraderId},
-    stubs::TestDefault,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let trader_id = TraderId::test_default();
-    let account = AccountId::test_default();
+    let trader_id = TraderId::from("TRADER-001");
+    let account = AccountId::from("BLOCKCHAIN-001");
     let arbitrum = chains::ARBITRUM.clone();
     let ethereum = chains::ETHEREUM.clone();
 
@@ -57,7 +58,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("ETHEREUM_RPC_HTTP_URL").expect("ETHEREUM_RPC_HTTP_URL must be set");
 
     let arbitrum_config = BlockchainExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .client_id(account)
         .chain(arbitrum)
         .wallet_address(String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"))
@@ -65,10 +65,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "0x912CE59144191C1204E64559FE8253a0e49E6548".to_string(),
             "0x40BD670A58238e6E230c430BBb5cE6ec0d40df48".to_string(),
         ])
-        .http_rpc_url(arbitrum_rpc_url)
+        .http_rpc_url(arbitrum_rpc_url.into())
+        .signer_private_key_env(String::from("BLOCKCHAIN_PRIVATE_KEY"))
+        .router_addresses(vec![String::from(
+            "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+        )])
+        .weth_address(String::from("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"))
+        .max_fee_per_gas_wei(100_000_000_000)
+        .base_fee_buffer_bps(2_000)
+        .gas_limit(1_000_000)
+        .gas_buffer_bps(2_000)
+        .allowed_token_pairs(vec![(
+            String::from("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            String::from("0xaf88d065e77c8cC2239327C5EDb3A432268e5831"),
+        )])
+        .slippage_bps(50)
+        .max_slippage_bps(200)
+        .max_order_amount(1_000_000_000_000_000_000)
+        .deadline_seconds(300)
+        .max_quote_age_blocks(100)
+        .receipt_timeout_secs(60)
         .build();
     let ethereum_config = BlockchainExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .client_id(account)
         .chain(ethereum)
         .wallet_address(String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"))
@@ -78,7 +96,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "0xB1D1eae60EEA9525032a6DCb4c1CE336a1dE71BE".to_string(),
             "0x4fE83213D56308330EC302a8BD641f1d0113A4Cc".to_string(),
         ])
-        .http_rpc_url(ethereum_rpc_url)
+        .http_rpc_url(ethereum_rpc_url.into())
+        .signer_private_key_env(String::from("BLOCKCHAIN_PRIVATE_KEY"))
+        .router_addresses(vec![String::from(
+            "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+        )])
+        .weth_address(String::from("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"))
+        .max_fee_per_gas_wei(100_000_000_000)
+        .base_fee_buffer_bps(2_000)
+        .gas_limit(1_000_000)
+        .gas_buffer_bps(2_000)
+        .allowed_token_pairs(vec![(
+            String::from("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+            String::from("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
+        )])
+        .slippage_bps(50)
+        .max_slippage_bps(200)
+        .max_order_amount(1_000_000_000_000_000_000)
+        .deadline_seconds(300)
+        .max_quote_age_blocks(100)
+        .receipt_timeout_secs(60)
         .build();
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core_execution_client = ExecutionClientCore::new(

@@ -21,16 +21,6 @@ use nautilus_core::correctness::{FAILED, check_valid_string_utf8};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-/// Check that a string contains no wildcard characters.
-#[inline(always)]
-fn check_no_wildcards(value: &Ustr, key: &str) -> anyhow::Result<()> {
-    // Check bytes directly - faster than chars() for ASCII wildcards
-    if value.as_bytes().iter().any(|&b| b == b'*' || b == b'?') {
-        anyhow::bail!("{key} `value` contained invalid characters, was {value}");
-    }
-    Ok(())
-}
-
 /// Marker for subscription patterns. Allows wildcards (`*`, `?`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pattern;
@@ -54,6 +44,22 @@ pub struct MStr<T> {
     value: Ustr,
     #[serde(skip)]
     _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> MStr<T> {
+    #[inline(always)]
+    fn checked(value: Ustr, key: &str) -> anyhow::Result<Self> {
+        check_valid_string_utf8(value, stringify!(value))?;
+
+        if value.as_bytes().iter().any(|&b| b == b'*' || b == b'?') {
+            anyhow::bail!("{key} `value` contained invalid characters, was {value}");
+        }
+
+        Ok(Self {
+            value,
+            _marker: std::marker::PhantomData,
+        })
+    }
 }
 
 impl<T> Display for MStr<T> {
@@ -85,6 +91,19 @@ impl MStr<Pattern> {
             value,
             _marker: std::marker::PhantomData,
         }
+    }
+
+    /// Create a new pattern from a string, validating it can match a topic.
+    ///
+    /// Wildcards are valid in a pattern, so only empty and whitespace-only values are rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pattern is empty or all whitespace.
+    pub fn pattern_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        check_valid_string_utf8(value.as_ref(), stringify!(value))?;
+
+        Ok(Self::pattern(value))
     }
 }
 
@@ -122,14 +141,7 @@ impl MStr<Topic> {
     ///
     /// Returns an error if the topic has white space or invalid characters.
     pub fn topic<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
-        let topic = Ustr::from(value.as_ref());
-        check_valid_string_utf8(value, stringify!(value))?;
-        check_no_wildcards(&topic, stringify!(Topic))?;
-
-        Ok(Self {
-            value: topic,
-            _marker: std::marker::PhantomData,
-        })
+        Self::checked(Ustr::from(value.as_ref()), stringify!(Topic))
     }
 
     /// Create a topic from an already-interned Ustr.
@@ -138,13 +150,7 @@ impl MStr<Topic> {
     ///
     /// Returns an error if the topic is empty, all whitespace, or contains wildcard characters.
     pub fn topic_from_ustr(value: Ustr) -> anyhow::Result<Self> {
-        check_valid_string_utf8(value.as_str(), stringify!(value))?;
-        check_no_wildcards(&value, stringify!(Topic))?;
-
-        Ok(Self {
-            value,
-            _marker: std::marker::PhantomData,
-        })
+        Self::checked(value, stringify!(Topic))
     }
 }
 
@@ -185,14 +191,7 @@ impl MStr<Endpoint> {
     ///
     /// Returns an error if the endpoint has white space or invalid characters.
     pub fn endpoint<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
-        let endpoint = Ustr::from(value.as_ref());
-        check_valid_string_utf8(value, stringify!(value))?;
-        check_no_wildcards(&endpoint, stringify!(Endpoint))?;
-
-        Ok(Self {
-            value: endpoint,
-            _marker: std::marker::PhantomData,
-        })
+        Self::checked(Ustr::from(value.as_ref()), stringify!(Endpoint))
     }
 
     /// Create an endpoint from an already-interned Ustr.
@@ -201,13 +200,7 @@ impl MStr<Endpoint> {
     ///
     /// Returns an error if the endpoint is empty, all whitespace, or contains wildcard characters.
     pub fn endpoint_from_ustr(value: Ustr) -> anyhow::Result<Self> {
-        check_valid_string_utf8(value.as_str(), stringify!(value))?;
-        check_no_wildcards(&value, stringify!(Endpoint))?;
-
-        Ok(Self {
-            value,
-            _marker: std::marker::PhantomData,
-        })
+        Self::checked(value, stringify!(Endpoint))
     }
 }
 
@@ -263,6 +256,18 @@ mod tests {
     }
 
     #[rstest]
+    #[case("", "invalid string for 'value', was empty")]
+    #[case("   ", "invalid string for 'value', was all whitespace")]
+    #[case("data.*", "Topic `value` contained invalid characters, was data.*")]
+    fn test_topic_constructors_return_exact_error(#[case] input: &str, #[case] expected: &str) {
+        let string_error = MStr::<Topic>::topic(input).unwrap_err();
+        let ustr_error = MStr::<Topic>::topic_from_ustr(Ustr::from(input)).unwrap_err();
+
+        assert_eq!(string_error.to_string(), expected);
+        assert_eq!(ustr_error.to_string(), expected);
+    }
+
+    #[rstest]
     #[case("DataEngine.execute")]
     #[case("RiskEngine.process")]
     fn test_endpoint_valid(#[case] input: &str) {
@@ -279,6 +284,21 @@ mod tests {
     }
 
     #[rstest]
+    #[case("", "invalid string for 'value', was empty")]
+    #[case("   ", "invalid string for 'value', was all whitespace")]
+    #[case(
+        "Risk?Engine",
+        "Endpoint `value` contained invalid characters, was Risk?Engine"
+    )]
+    fn test_endpoint_constructors_return_exact_error(#[case] input: &str, #[case] expected: &str) {
+        let string_error = MStr::<Endpoint>::endpoint(input).unwrap_err();
+        let ustr_error = MStr::<Endpoint>::endpoint_from_ustr(Ustr::from(input)).unwrap_err();
+
+        assert_eq!(string_error.to_string(), expected);
+        assert_eq!(ustr_error.to_string(), expected);
+    }
+
+    #[rstest]
     #[case("data.*")]
     #[case("*.quotes.*")]
     #[case("data.?.BINANCE")]
@@ -287,6 +307,25 @@ mod tests {
     fn test_pattern_accepts_all(#[case] input: &str) {
         let pattern = MStr::<Pattern>::pattern(input);
         assert_eq!(pattern.as_ref(), input);
+    }
+
+    #[rstest]
+    #[case("data.*")]
+    #[case("*.quotes.*")]
+    #[case("data.?.BINANCE")]
+    #[case("*")]
+    #[case("exact.match.no.wildcards")]
+    fn test_pattern_checked_accepts_matchable_patterns(#[case] input: &str) {
+        let pattern = MStr::<Pattern>::pattern_checked(input).unwrap();
+        assert_eq!(pattern.as_ref(), input);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("   ")]
+    #[case("\t\n")]
+    fn test_pattern_checked_rejects_empty_whitespace(#[case] input: &str) {
+        assert!(MStr::<Pattern>::pattern_checked(input).is_err());
     }
 
     #[rstest]
@@ -360,7 +399,7 @@ mod tests {
     fn test_deref_to_ustr() {
         let topic: MStr<Topic> = "test.topic".into();
         let ustr: &Ustr = &topic;
-        assert_eq!(ustr.as_str(), "test.topic");
+        assert_eq!(ustr, "test.topic");
     }
 
     fn valid_segment() -> impl Strategy<Value = String> {

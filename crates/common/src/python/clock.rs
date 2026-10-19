@@ -17,17 +17,19 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use chrono::{DateTime, Duration, Utc};
-use nautilus_core::{UnixNanos, datetime::try_datetime_to_unix_nanos, python::to_pyvalue_err};
+use jiff::{SignedDuration, Span, Timestamp, Zoned};
+use nautilus_core::{
+    DurationNanos, UnixNanos, datetime::try_datetime_to_unix_nanos, python::to_pyvalue_err,
+};
 use pyo3::prelude::*;
 
 use crate::{
-    clock::{Clock, TestClock},
+    clock::{Clock, ClockApi, VirtualClock},
     live::clock::LiveClock,
     timer::TimeEventCallback,
 };
 
-/// Unified PyO3 interface over both [`TestClock`] and [`LiveClock`].
+/// Unified PyO3 interface over both [`VirtualClock`] and [`LiveClock`].
 ///
 /// A `PyClock` instance owns a boxed trait object implementing [`Clock`].  It
 /// delegates method calls to this inner clock, allowing a single Python class
@@ -38,7 +40,7 @@ use crate::{
 /// clocks should be created from Rust and handed over to Python as needed.
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
+    module = "nautilus_trader.common",
     name = "Clock",
     unsendable,
     from_py_object
@@ -53,7 +55,7 @@ impl PyClock {
     #[staticmethod]
     #[pyo3(name = "new_test")]
     fn py_new_test() -> Self {
-        Self(Rc::new(RefCell::new(TestClock::default())))
+        Self(Rc::new(RefCell::new(VirtualClock::default())))
     }
 
     /// Returns the current UNIX timestamp in nanoseconds (ns).
@@ -80,17 +82,19 @@ impl PyClock {
         self.0.borrow().timestamp()
     }
 
-    /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
+    /// Returns the current UTC timestamp.
     #[pyo3(name = "utc_now")]
-    fn py_utc_now(&self) -> DateTime<Utc> {
+    fn py_utc_now(&self) -> Timestamp {
         self.0.borrow().utc_now()
     }
 
     #[pyo3(name = "set_time")]
     fn py_set_time(&mut self, to_time_ns: u64) -> PyResult<()> {
         let mut clock = self.0.borrow_mut();
-        let Some(test_clock) = clock.as_any_mut().downcast_mut::<TestClock>() else {
-            return Err(to_pyvalue_err("set_time is only supported by test clocks"));
+        let Some(test_clock) = clock.as_any_mut().downcast_mut::<VirtualClock>() else {
+            return Err(to_pyvalue_err(
+                "set_time is only supported by virtual clocks",
+            ));
         };
 
         test_clock.set_time(to_time_ns.into());
@@ -138,7 +142,7 @@ impl PyClock {
     fn py_set_time_alert(
         &mut self,
         name: &str,
-        alert_time: DateTime<Utc>,
+        alert_time: Timestamp,
         callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
     ) -> PyResult<()> {
@@ -183,21 +187,18 @@ impl PyClock {
     fn py_set_timer(
         &mut self,
         name: &str,
-        interval: Duration,
-        start_time: Option<DateTime<Utc>>,
-        stop_time: Option<DateTime<Utc>>,
+        interval: SignedDuration,
+        start_time: Option<Timestamp>,
+        stop_time: Option<Timestamp>,
         callback: Option<Py<PyAny>>,
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> PyResult<()> {
-        let interval_ns_i64 = interval
-            .num_nanoseconds()
-            .ok_or_else(|| to_pyvalue_err("Interval too large"))?;
-
-        if interval_ns_i64 <= 0 {
+        if interval <= SignedDuration::ZERO {
             return Err(to_pyvalue_err("Interval must be positive"));
         }
-        let interval_ns = interval_ns_i64 as u64;
+        let interval_ns =
+            DurationNanos::try_from(interval).map_err(|_| to_pyvalue_err("Interval too large"))?;
 
         let start_time_ns = start_time
             .map(try_datetime_to_unix_nanos)
@@ -241,9 +242,88 @@ impl PyClock {
             .borrow_mut()
             .set_timer_ns(
                 name,
-                interval_ns,
+                DurationNanos::new(interval_ns),
                 start_time_ns.map(UnixNanos::from),
                 stop_time_ns.map(UnixNanos::from),
+                callback.map(TimeEventCallback::from),
+                allow_past,
+                fire_immediately,
+            )
+            .map_err(to_pyvalue_err)
+    }
+
+    /// Sets a recurring timer anchored to a timezone-aware start datetime.
+    ///
+    /// Days, weeks, months, and years follow the local calendar; hour and shorter units measure
+    /// elapsed time. At 09:30 in New York, ``"1d"`` events are 23 hours apart when DST starts
+    /// and 25 when it ends; ``"24h"`` always spans 24 hours. ``zoneinfo.ZoneInfo`` follows DST,
+    /// while fixed offsets stay constant.
+    ///
+    /// Recurrence uses the original start, so month-end clamping and DST adjustments do not
+    /// shift later deadlines. Later gaps shift forward by the gap; folds use the first occurrence.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     The timer name. Replaces any existing timer with the same name on this clock.
+    /// interval : str
+    ///     A positive span string, such as ``"1d"``, ``"24h"``, or ``"P1M"``.
+    /// start_time : datetime.datetime
+    ///     Timezone-aware start at an existing local time. DST gaps at the start are not validated;
+    ///     ``fold`` selects an ambiguous start's occurrence.
+    /// stop_time : datetime.datetime, optional
+    ///     Inclusive, timezone-aware stop after the start, and after now if ``allow_past=False``.
+    ///     If omitted, runs until cancellation or no further deadline is representable.
+    /// callback : Callable[[TimeEvent], None], optional
+    ///     The event handler. If omitted, uses the clock's named or default handler.
+    /// allow_past : bool, optional
+    ///     Whether the first event may be in the past. Defaults to ``True``.
+    /// fire_immediately : bool, optional
+    ///     Include the start as the first event. Defaults to ``False``: one interval after it.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the name, span, or timestamps are invalid, no callback is available, or a first
+    ///     event or stop time violates ``allow_past=False``.
+    ///
+    /// Notes
+    /// -----
+    /// Live clocks fire the next pending occurrence immediately if overdue, using its scheduled
+    /// timestamp, then resume at the first deadline after now, skipping intervening missed
+    /// occurrences. Virtual clocks emit every due occurrence during advancement.
+    /// Event timestamps remain UTC UNIX nanoseconds.
+    #[expect(
+        clippy::doc_markdown,
+        reason = "Python API docstrings use NumPy parameter and exception sections"
+    )]
+    #[expect(
+        clippy::too_many_arguments,
+        clippy::needless_pass_by_value,
+        reason = "PyO3 extracts the aware datetime as an owned Zoned"
+    )]
+    #[pyo3(
+        name = "set_timer_zoned",
+        signature = (name, interval, start_time, stop_time=None, callback=None, allow_past=None, fire_immediately=None)
+    )]
+    fn py_set_timer_zoned(
+        &mut self,
+        name: &str,
+        interval: &str,
+        start_time: Zoned,
+        stop_time: Option<Timestamp>,
+        callback: Option<Py<PyAny>>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> PyResult<()> {
+        let interval = interval.parse::<Span>().map_err(to_pyvalue_err)?;
+
+        ClockApi::new(self.0.as_ref())
+            .set_timer_zoned(
+                name,
+                interval,
+                &start_time,
+                stop_time,
                 callback.map(TimeEventCallback::from),
                 allow_past,
                 fire_immediately,
@@ -280,10 +360,10 @@ impl PyClock {
         Rc::clone(&self.0)
     }
 
-    /// Creates a clock backed by [`TestClock`].
+    /// Creates a clock backed by [`VirtualClock`].
     #[must_use]
     pub fn new_test() -> Self {
-        Self(Rc::new(RefCell::new(TestClock::default())))
+        Self(Rc::new(RefCell::new(VirtualClock::default())))
     }
 
     /// Creates a clock backed by [`LiveClock`].
@@ -309,13 +389,13 @@ impl PyClock {
 mod tests {
     use std::sync::Arc;
 
-    use chrono::{DateTime, Duration, Utc};
-    use nautilus_core::{UnixNanos, python::IntoPyObjectNautilusExt};
+    use jiff::{SignedDuration, Timestamp};
+    use nautilus_core::{DurationNanos, UnixNanos, python::IntoPyObjectNautilusExt};
     use pyo3::{prelude::*, types::PyList};
     use rstest::*;
 
     use crate::{
-        clock::{Clock, TestClock},
+        clock::{Clock, VirtualClock},
         python::clock::PyClock,
         runner::{TimeEventMessage, TimeEventSender, set_time_event_sender},
         timer::TimeEventCallback,
@@ -336,8 +416,8 @@ mod tests {
     }
 
     #[fixture]
-    pub fn test_clock() -> TestClock {
-        TestClock::new()
+    pub fn test_clock() -> VirtualClock {
+        VirtualClock::new()
     }
 
     pub(super) fn test_callback() -> TimeEventCallback {
@@ -360,7 +440,7 @@ mod tests {
     }
 
     ////////////////////////////////////////////////////////////////////////////////
-    // TestClock_Py
+    // VirtualClock_Py
     ////////////////////////////////////////////////////////////////////////////////
 
     #[rstest]
@@ -370,7 +450,7 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let dt = Utc::now() + Duration::seconds(1);
+            let dt = Timestamp::now() + SignedDuration::from_secs(1);
             py_clock
                 .py_set_time_alert("ALERT1", dt, None, None)
                 .expect("set_time_alert failed");
@@ -396,7 +476,7 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let interval = Duration::seconds(2);
+            let interval = SignedDuration::from_secs(2);
             py_clock
                 .py_set_timer("TIMER1", interval, None, None, None, None, None)
                 .expect("set_timer failed");
@@ -410,8 +490,8 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let interval = Duration::seconds(2);
-            let pre_epoch = DateTime::from_timestamp_nanos(-1);
+            let interval = SignedDuration::from_secs(2);
+            let pre_epoch = Timestamp::from_nanosecond(-1).unwrap();
 
             let err = py_clock
                 .py_set_timer(
@@ -456,9 +536,8 @@ mod tests {
             let mut py_clock = PyClock::new_test();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let ts_ns = (Utc::now() + Duration::seconds(1))
-                .timestamp_nanos_opt()
-                .unwrap() as u64;
+            let ts_ns = (Timestamp::now() + SignedDuration::from_secs(1)).as_nanosecond();
+            let ts_ns = u64::try_from(ts_ns).unwrap();
             py_clock
                 .py_set_time_alert_ns("ALERT_NS", ts_ns, None, None)
                 .expect("set_time_alert_ns failed");
@@ -479,60 +558,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_clock_raw_set_timer_ns(mut test_clock: TestClock) {
-        Python::initialize();
-        Python::attach(|_py| {
-            let callback = test_callback();
-            test_clock.register_default_handler(callback);
-
-            let timer_name = "TEST_TIME1";
-            test_clock
-                .set_timer_ns(timer_name, 10, None, None, None, None, None)
-                .unwrap();
-
-            assert_eq!(test_clock.timer_names(), [timer_name]);
-            assert_eq!(test_clock.timer_count(), 1);
-        });
-    }
-
-    #[rstest]
-    fn test_test_clock_cancel_timer(mut test_clock: TestClock) {
-        Python::initialize();
-        Python::attach(|_py| {
-            let callback = test_callback();
-            test_clock.register_default_handler(callback);
-
-            let timer_name = "TEST_TIME1";
-            test_clock
-                .set_timer_ns(timer_name, 10, None, None, None, None, None)
-                .unwrap();
-            test_clock.cancel_timer(timer_name);
-
-            assert!(test_clock.timer_names().is_empty());
-            assert_eq!(test_clock.timer_count(), 0);
-        });
-    }
-
-    #[rstest]
-    fn test_test_clock_cancel_timers(mut test_clock: TestClock) {
-        Python::initialize();
-        Python::attach(|_py| {
-            let callback = test_callback();
-            test_clock.register_default_handler(callback);
-
-            let timer_name = "TEST_TIME1";
-            test_clock
-                .set_timer_ns(timer_name, 10, None, None, None, None, None)
-                .unwrap();
-            test_clock.cancel_timers();
-
-            assert!(test_clock.timer_names().is_empty());
-            assert_eq!(test_clock.timer_count(), 0);
-        });
-    }
-
-    #[rstest]
-    fn test_test_clock_advance_within_stop_time_py(mut test_clock: TestClock) {
+    fn test_test_clock_raw_set_timer_ns(mut test_clock: VirtualClock) {
         Python::initialize();
         Python::attach(|_py| {
             let callback = test_callback();
@@ -542,7 +568,84 @@ mod tests {
             test_clock
                 .set_timer_ns(
                     timer_name,
-                    1,
+                    DurationNanos::new(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(test_clock.timer_names(), [timer_name]);
+            assert_eq!(test_clock.timer_count(), 1);
+        });
+    }
+
+    #[rstest]
+    fn test_test_clock_cancel_timer(mut test_clock: VirtualClock) {
+        Python::initialize();
+        Python::attach(|_py| {
+            let callback = test_callback();
+            test_clock.register_default_handler(callback);
+
+            let timer_name = "TEST_TIME1";
+            test_clock
+                .set_timer_ns(
+                    timer_name,
+                    DurationNanos::new(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            test_clock.cancel_timer(timer_name);
+
+            assert!(test_clock.timer_names().is_empty());
+            assert_eq!(test_clock.timer_count(), 0);
+        });
+    }
+
+    #[rstest]
+    fn test_test_clock_cancel_timers(mut test_clock: VirtualClock) {
+        Python::initialize();
+        Python::attach(|_py| {
+            let callback = test_callback();
+            test_clock.register_default_handler(callback);
+
+            let timer_name = "TEST_TIME1";
+            test_clock
+                .set_timer_ns(
+                    timer_name,
+                    DurationNanos::new(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            test_clock.cancel_timers();
+
+            assert!(test_clock.timer_names().is_empty());
+            assert_eq!(test_clock.timer_count(), 0);
+        });
+    }
+
+    #[rstest]
+    fn test_test_clock_advance_within_stop_time_py(mut test_clock: VirtualClock) {
+        Python::initialize();
+        Python::attach(|_py| {
+            let callback = test_callback();
+            test_clock.register_default_handler(callback);
+
+            let timer_name = "TEST_TIME1";
+            test_clock
+                .set_timer_ns(
+                    timer_name,
+                    DurationNanos::new(1),
                     Some(UnixNanos::from(1)),
                     Some(UnixNanos::from(3)),
                     None,
@@ -558,7 +661,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_clock_advance_time_to_stop_time_with_set_time_true(mut test_clock: TestClock) {
+    fn test_test_clock_advance_time_to_stop_time_with_set_time_true(mut test_clock: VirtualClock) {
         Python::initialize();
         Python::attach(|_py| {
             let callback = test_callback();
@@ -567,7 +670,7 @@ mod tests {
             test_clock
                 .set_timer_ns(
                     "TEST_TIME1",
-                    2,
+                    DurationNanos::new(2),
                     None,
                     Some(UnixNanos::from(3)),
                     None,
@@ -584,7 +687,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_test_clock_advance_time_to_stop_time_with_set_time_false(mut test_clock: TestClock) {
+    fn test_test_clock_advance_time_to_stop_time_with_set_time_false(mut test_clock: VirtualClock) {
         Python::initialize();
         Python::attach(|_py| {
             let callback = test_callback();
@@ -593,7 +696,7 @@ mod tests {
             test_clock
                 .set_timer_ns(
                     "TEST_TIME1",
-                    2,
+                    DurationNanos::new(2),
                     None,
                     Some(UnixNanos::from(3)),
                     None,
@@ -622,7 +725,7 @@ mod tests {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let dt = Utc::now() + Duration::seconds(1);
+            let dt = Timestamp::now() + SignedDuration::from_secs(1);
 
             py_clock
                 .py_set_time_alert("ALERT1", dt, None, None)
@@ -640,7 +743,7 @@ mod tests {
 
             assert_eq!(
                 result.unwrap_err().to_string(),
-                "ValueError: set_time is only supported by test clocks",
+                "ValueError: set_time is only supported by virtual clocks",
             );
         });
     }
@@ -654,7 +757,7 @@ mod tests {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let interval = Duration::seconds(3);
+            let interval = SignedDuration::from_secs(3);
 
             py_clock
                 .py_set_timer("TIMER1", interval, None, None, None, None, None)
@@ -671,9 +774,8 @@ mod tests {
             let mut py_clock = PyClock::new_live();
             let callback = test_py_callback();
             py_clock.py_register_default_handler(callback);
-            let dt_ns = (Utc::now() + Duration::seconds(1))
-                .timestamp_nanos_opt()
-                .unwrap() as u64;
+            let dt_ns = (Timestamp::now() + SignedDuration::from_secs(1)).as_nanosecond();
+            let dt_ns = u64::try_from(dt_ns).unwrap();
 
             py_clock
                 .py_set_time_alert_ns("ALERT_NS", dt_ns, None, None)

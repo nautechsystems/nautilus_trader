@@ -1,0 +1,60 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "alias": "",
+      "auctionEndTime": "",
+      "baseCcy": "BTC",
+      "category": "1",
+      "ctMult": "",
+      "ctType": "",
+      "ctVal": "",
+      "ctValCcy": "",
+      "contTdSwTime": "1704876947000",
+      "expTime": "",
+      "futureSettlement": false,
+      "groupId": "1",
+      "instFamily": "",
+      "instId": "BTC-USDT",
+      "instType": "SPOT",
+      "lever": "10",
+      "listTime": "1606468572000",
+      "lotSz": "0.00000001",
+      "maxIcebergSz": "9999999999.0000000000000000",
+      "maxLmtAmt": "1000000",
+      "maxLmtSz": "9999999999",
+      "maxMktAmt": "1000000",
+      "maxMktSz": "",
+      "maxStopSz": "",
+      "maxTriggerSz": "9999999999.0000000000000000",
+      "maxTwapSz": "9999999999.0000000000000000",
+      "minSz": "0.00001",
+      "optType": "",
+      "openType": "call_auction",
+      "preMktSwTime": "",
+      "quoteCcy": "USDT",
+      "tradeQuoteCcyList": [
+        "USDT"
+      ],
+      "settleCcy": "",
+      "state": "live",
+      "ruleType": "normal",
+      "stk": "",
+      "tickSz": "0.1",
+      "uly": "",
+      "instIdCode": 1000000000,
+      "instCategory": "1",
+      "initPxLmtPct": "0.05",
+      "floatPxLmtPct": "0.03",
+      "maxPxLmtPct": "0.15",
+      "upcChg": [
+        {
+          "param": "tickSz",
+          "newValue": "0.0001",
+          "effTime": "1704876947000"
+        }
+      ]
+    }
+  ]
+}

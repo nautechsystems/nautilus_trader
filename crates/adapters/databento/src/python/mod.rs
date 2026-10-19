@@ -40,9 +40,9 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 #[cfg(feature = "live")]
+use crate::types::register_databento_custom_data;
 use crate::{
-    common::DATABENTO,
-    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+    common::DATABENTO, data::DatabentoDataClientConfig, factories::DatabentoDataClientFactory,
 };
 
 #[cfg(feature = "live")]
@@ -65,25 +65,25 @@ fn extract_databento_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<DatabentoLiveClientConfig>(py) {
+    match config.extract::<DatabentoDataClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract DatabentoLiveClientConfig: {e}"
+            "Failed to extract DatabentoDataClientConfig: {e}"
         ))),
     }
 }
 
 /// Databento Python module.
 ///
-/// The module is exposed under different paths depending on the build configuration:
-/// - With `cython-compat` feature: `nautilus_trader.core.nautilus_pyo3.databento`
-/// - Without `cython-compat`: `nautilus_trader._libnautilus.databento`
+/// The module is exposed as `nautilus_trader._libnautilus.databento`.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    register_databento_custom_data();
+
     m.add_class::<super::enums::DatabentoStatisticType>()?;
     m.add_class::<super::enums::DatabentoStatisticUpdateAction>()?;
     m.add_class::<super::types::DatabentoPublisher>()?;
@@ -112,13 +112,13 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "live")]
     m.add_class::<crate::data::DatabentoDataClient>()?;
     #[cfg(feature = "live")]
+    m.add_class::<DatabentoDataClientConfig>()?;
+    #[cfg(feature = "live")]
+    m.add_class::<DatabentoDataClientFactory>()?;
+    #[cfg(feature = "live")]
     m.add_class::<live::DatabentoLiveClient>()?;
     #[cfg(feature = "live")]
     m.add_class::<types::DatabentoSubscriptionAck>()?;
-    #[cfg(feature = "live")]
-    m.add_class::<DatabentoLiveClientConfig>()?;
-    #[cfg(feature = "live")]
-    m.add_class::<DatabentoDataClientFactory>()?;
 
     #[cfg(feature = "live")]
     {
@@ -133,21 +133,11 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
 
         if let Err(e) = registry.register_config_extractor(
-            "DatabentoLiveClientConfig".to_string(),
-            extract_databento_data_config,
-        ) {
-            return Err(to_pyruntime_err(format!(
-                "Failed to register Databento data config extractor: {e}"
-            )));
-        }
-
-        // Register alias so callers using the generic name also resolve
-        if let Err(e) = registry.register_config_extractor(
             "DatabentoDataClientConfig".to_string(),
             extract_databento_data_config,
         ) {
             return Err(to_pyruntime_err(format!(
-                "Failed to register Databento data config alias extractor: {e}"
+                "Failed to register Databento data config extractor: {e}"
             )));
         }
     }

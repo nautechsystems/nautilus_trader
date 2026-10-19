@@ -12,11 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test instruments behavior.
+"""
 
+import datetime as dt
 import inspect
 from decimal import Decimal
 
 import pytest
+from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.model import AssetClass
 from nautilus_trader.model import BettingInstrument
@@ -46,7 +51,6 @@ from nautilus_trader.model import Symbol
 from nautilus_trader.model import SyntheticInstrument
 from nautilus_trader.model import TokenizedAsset
 from nautilus_trader.model import Venue
-from tests.providers import TestInstrumentProvider
 
 
 GENERIC_INSTRUMENT_TYPES = (
@@ -70,6 +74,18 @@ GENERIC_INSTRUMENT_TYPES = (
     TokenizedAsset,
 )
 
+EXPIRING_INSTRUMENT_TYPES = (
+    BinaryOption,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    FuturesContract,
+    FuturesSpread,
+    OptionContract,
+    OptionSpread,
+)
+
 GENERIC_INSTRUMENT_PROPERTIES = (
     "asset_class",
     "instrument_class",
@@ -77,7 +93,6 @@ GENERIC_INSTRUMENT_PROPERTIES = (
     "is_quanto",
     "isin",
     "lot_size",
-    "maker_fee",
     "margin_init",
     "margin_maint",
     "max_notional",
@@ -88,30 +103,53 @@ GENERIC_INSTRUMENT_PROPERTIES = (
     "min_quantity",
     "multiplier",
     "quote_currency",
-    "taker_fee",
+    "symbol",
     "tick_scheme",
+    "venue",
 )
 
 
 @pytest.mark.parametrize("instrument_type", GENERIC_INSTRUMENT_TYPES)
-def test_generic_instrument_inspection_contract(instrument_type):
+def test_generic_instrument_inspection_contract(instrument_type: object) -> None:
+    """
+    Test generic instrument inspection contract.
+    """
     for property_name in GENERIC_INSTRUMENT_PROPERTIES:
         descriptor = inspect.getattr_static(instrument_type, property_name)
 
         assert not callable(descriptor)
 
 
-def test_audusd_sim_construction():
+@pytest.mark.parametrize("instrument_type", EXPIRING_INSTRUMENT_TYPES)
+def test_expiring_instrument_utc_inspection_contract(instrument_type: object) -> None:
+    """
+    Test expiring instrument UTC inspection contract.
+    """
+    for property_name in ("activation_utc", "expiration_utc"):
+        descriptor = inspect.getattr_static(instrument_type, property_name)
+
+        assert not callable(descriptor)
+
+
+def test_audusd_sim_construction() -> None:
+    """
+    Test audusd sim construction.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
 
     assert audusd.id == InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+    assert audusd.symbol == audusd.id.symbol == Symbol("AUD/USD")
+    assert audusd.venue == audusd.id.venue == Venue("SIM")
     assert audusd.base_currency == Currency.from_str("AUD")
     assert audusd.quote_currency == Currency.from_str("USD")
     assert audusd.price_precision == 5
     assert audusd.size_precision == 0
 
 
-def test_usdjpy_sim_construction():
+def test_usdjpy_sim_construction() -> None:
+    """
+    Test usdjpy sim construction.
+    """
     usdjpy = TestInstrumentProvider.usdjpy_sim()
 
     assert usdjpy.id == InstrumentId(Symbol("USD/JPY"), Venue("SIM"))
@@ -121,7 +159,10 @@ def test_usdjpy_sim_construction():
     assert usdjpy.size_precision == 0
 
 
-def test_ethusdt_binance_construction():
+def test_ethusdt_binance_construction() -> None:
+    """
+    Test ethusdt binance construction.
+    """
     ethusdt = TestInstrumentProvider.ethusdt_binance()
 
     assert ethusdt.id == InstrumentId(Symbol("ETHUSDT"), Venue("BINANCE"))
@@ -131,7 +172,10 @@ def test_ethusdt_binance_construction():
     assert ethusdt.size_precision == 5
 
 
-def test_btcusdt_binance_construction():
+def test_btcusdt_binance_construction() -> None:
+    """
+    Test btcusdt binance construction.
+    """
     btcusdt = TestInstrumentProvider.btcusdt_binance()
 
     assert btcusdt.id == InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE"))
@@ -141,17 +185,26 @@ def test_btcusdt_binance_construction():
     assert btcusdt.size_precision == 6
 
 
-def test_currency_pair_hash():
+def test_currency_pair_hash() -> None:
+    """
+    Test currency pair hash.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
     assert isinstance(hash(audusd), int)
 
 
-def test_currency_pair_type_name():
+def test_currency_pair_type_name() -> None:
+    """
+    Test currency pair type name.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
     assert audusd.type_name == "CurrencyPair"
 
 
-def test_currency_pair_properties():
+def test_currency_pair_properties() -> None:
+    """
+    Test currency pair properties.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
 
     assert audusd.price_increment == Price(1e-05, precision=5)
@@ -161,11 +214,12 @@ def test_currency_pair_properties():
     assert audusd.min_quantity == Quantity.from_str("1000")
     assert audusd.margin_init == Decimal("0.03")
     assert audusd.margin_maint == Decimal("0.03")
-    assert audusd.maker_fee == Decimal("0.00002")
-    assert audusd.taker_fee == Decimal("0.00002")
 
 
-def test_currency_pair_to_dict_and_from_dict_roundtrip():
+def test_currency_pair_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test currency pair to dict and from dict roundtrip.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
     d = audusd.to_dict()
     restored = CurrencyPair.from_dict(d)
@@ -177,7 +231,10 @@ def test_currency_pair_to_dict_and_from_dict_roundtrip():
     assert restored.size_precision == audusd.size_precision
 
 
-def test_currency_pair_direct_construction():
+def test_currency_pair_direct_construction() -> None:
+    """
+    Test currency pair direct construction.
+    """
     pair = CurrencyPair(
         instrument_id=InstrumentId(Symbol("TEST/USD"), Venue("SIM")),
         raw_symbol=Symbol("TEST/USD"),
@@ -196,7 +253,10 @@ def test_currency_pair_direct_construction():
     assert pair.size_precision == 6
 
 
-def test_btcusdt_perp_construction():
+def test_btcusdt_perp_construction() -> None:
+    """
+    Test btcusdt perp construction.
+    """
     perp = TestInstrumentProvider.btcusdt_perp_binance()
 
     assert perp.id == InstrumentId(Symbol("BTCUSDT-PERP"), Venue("BINANCE"))
@@ -208,17 +268,26 @@ def test_btcusdt_perp_construction():
     assert perp.size_precision == 3
 
 
-def test_crypto_perpetual_type_name():
+def test_crypto_perpetual_type_name() -> None:
+    """
+    Test crypto perpetual type name.
+    """
     perp = TestInstrumentProvider.btcusdt_perp_binance()
     assert perp.type_name == "CryptoPerpetual"
 
 
-def test_crypto_perpetual_hash():
+def test_crypto_perpetual_hash() -> None:
+    """
+    Test crypto perpetual hash.
+    """
     perp = TestInstrumentProvider.btcusdt_perp_binance()
     assert isinstance(hash(perp), int)
 
 
-def test_crypto_perpetual_to_dict_and_from_dict_roundtrip():
+def test_crypto_perpetual_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test crypto perpetual to dict and from dict roundtrip.
+    """
     perp = TestInstrumentProvider.btcusdt_perp_binance()
     d = perp.to_dict()
     restored = CryptoPerpetual.from_dict(d)
@@ -231,7 +300,10 @@ def test_crypto_perpetual_to_dict_and_from_dict_roundtrip():
     assert restored.size_precision == perp.size_precision
 
 
-def test_crypto_perpetual_direct_construction():
+def test_crypto_perpetual_direct_construction() -> None:
+    """
+    Test crypto perpetual direct construction.
+    """
     perp = CryptoPerpetual(
         instrument_id=InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE")),
         raw_symbol=Symbol("ETHUSDT"),
@@ -251,7 +323,10 @@ def test_crypto_perpetual_direct_construction():
     assert perp.is_inverse is False
 
 
-def test_equity_direct_construction():
+def test_equity_direct_construction() -> None:
+    """
+    Test equity direct construction.
+    """
     equity = Equity(
         instrument_id=InstrumentId(Symbol("AAPL"), Venue("NASDAQ")),
         raw_symbol=Symbol("AAPL"),
@@ -269,7 +344,10 @@ def test_equity_direct_construction():
     assert equity.price_precision == 2
 
 
-def test_equity_to_dict_and_from_dict_roundtrip():
+def test_equity_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test equity to dict and from dict roundtrip.
+    """
     equity = Equity(
         instrument_id=InstrumentId(Symbol("AAPL"), Venue("NASDAQ")),
         raw_symbol=Symbol("AAPL"),
@@ -288,7 +366,10 @@ def test_equity_to_dict_and_from_dict_roundtrip():
     assert restored.price_precision == equity.price_precision
 
 
-def test_futures_contract_construction():
+def test_futures_contract_construction() -> None:
+    """
+    Test futures contract construction.
+    """
     fc = FuturesContract(
         instrument_id=InstrumentId(Symbol("ESZ23"), Venue("XCME")),
         raw_symbol=Symbol("ESZ23"),
@@ -299,8 +380,8 @@ def test_futures_contract_construction():
         price_increment=Price.from_str("0.25"),
         multiplier=Quantity.from_int(50),
         lot_size=Quantity.from_int(1),
-        activation_ns=1640390400000000000,
-        expiration_ns=1703116800000000000,
+        activation_ns=1_640_390_400_123_456_789,
+        expiration_ns=1_703_116_800_987_654_321,
         ts_event=0,
         ts_init=0,
     )
@@ -308,9 +389,24 @@ def test_futures_contract_construction():
     assert fc.id == InstrumentId(Symbol("ESZ23"), Venue("XCME"))
     assert fc.type_name == "FuturesContract"
     assert fc.price_precision == 2
+    assert fc.activation_ns == 1_640_390_400_123_456_789
+    assert fc.expiration_ns == 1_703_116_800_987_654_321
+    assert type(fc.activation_utc) is dt.datetime
+    assert type(fc.expiration_utc) is dt.datetime
+    assert fc.activation_utc == dt.datetime(2021, 12, 25, 0, 0, 0, 123456, tzinfo=dt.UTC)
+    assert fc.expiration_utc == dt.datetime(2023, 12, 21, 0, 0, 0, 987654, tzinfo=dt.UTC)
+
+    with pytest.raises(AttributeError, match=r"attribute 'activation_utc'.*not writable"):
+        fc.activation_utc = dt.datetime(2000, 1, 1, tzinfo=dt.UTC)
+
+    with pytest.raises(AttributeError, match=r"attribute 'expiration_utc'.*not writable"):
+        fc.expiration_utc = dt.datetime(2000, 1, 1, tzinfo=dt.UTC)
 
 
-def test_futures_contract_to_dict_and_from_dict_roundtrip():
+def test_futures_contract_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test futures contract to dict and from dict roundtrip.
+    """
     fc = FuturesContract(
         instrument_id=InstrumentId(Symbol("ESZ23"), Venue("XCME")),
         raw_symbol=Symbol("ESZ23"),
@@ -334,7 +430,10 @@ def test_futures_contract_to_dict_and_from_dict_roundtrip():
     assert restored.price_precision == fc.price_precision
 
 
-def test_crypto_future_construction():
+def test_crypto_future_construction() -> None:
+    """
+    Test crypto future construction.
+    """
     cf = CryptoFuture(
         instrument_id=InstrumentId(Symbol("BTCUSDT_220325"), Venue("BINANCE")),
         raw_symbol=Symbol("BTCUSDT"),
@@ -357,7 +456,10 @@ def test_crypto_future_construction():
     assert cf.is_inverse is False
 
 
-def test_crypto_future_to_dict_and_from_dict_roundtrip():
+def test_crypto_future_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test crypto future to dict and from dict roundtrip.
+    """
     cf = CryptoFuture(
         instrument_id=InstrumentId(Symbol("BTCUSDT_220325"), Venue("BINANCE")),
         raw_symbol=Symbol("BTCUSDT"),
@@ -382,7 +484,10 @@ def test_crypto_future_to_dict_and_from_dict_roundtrip():
     assert restored.is_inverse == cf.is_inverse
 
 
-def test_option_contract_construction():
+def test_option_contract_construction() -> None:
+    """
+    Test option contract construction.
+    """
     oc = OptionContract(
         instrument_id=InstrumentId(Symbol("AAPL231215C00150000"), Venue("OPRA")),
         raw_symbol=Symbol("AAPL231215C00150000"),
@@ -410,7 +515,10 @@ def test_option_contract_construction():
     assert oc.price_precision == 2
 
 
-def test_option_contract_to_dict_and_from_dict_roundtrip():
+def test_option_contract_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test option contract to dict and from dict roundtrip.
+    """
     oc = OptionContract(
         instrument_id=InstrumentId(Symbol("AAPL231215P00145000"), Venue("OPRA")),
         raw_symbol=Symbol("AAPL231215P00145000"),
@@ -438,7 +546,10 @@ def test_option_contract_to_dict_and_from_dict_roundtrip():
     assert restored.strike_price == oc.strike_price
 
 
-def test_binary_option_construction():
+def test_binary_option_construction() -> None:
+    """
+    Test binary option construction.
+    """
     bo = BinaryOption(
         instrument_id=InstrumentId(Symbol("TRUMP-WIN-2024"), Venue("POLYMARKET")),
         raw_symbol=Symbol("TRUMP-WIN-2024"),
@@ -463,7 +574,10 @@ def test_binary_option_construction():
     assert bo.price_precision == 2
 
 
-def test_binary_option_to_dict_and_from_dict_roundtrip():
+def test_binary_option_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test binary option to dict and from dict roundtrip.
+    """
     bo = BinaryOption(
         instrument_id=InstrumentId(Symbol("TRUMP-WIN-2024"), Venue("POLYMARKET")),
         raw_symbol=Symbol("TRUMP-WIN-2024"),
@@ -489,7 +603,10 @@ def test_binary_option_to_dict_and_from_dict_roundtrip():
     assert restored.description == bo.description
 
 
-def test_perpetual_contract_construction():
+def test_perpetual_contract_construction() -> None:
+    """
+    Test perpetual contract construction.
+    """
     pc = PerpetualContract(
         instrument_id=InstrumentId(Symbol("ETHUSD-PERP"), Venue("DYDX")),
         raw_symbol=Symbol("ETH-USD"),
@@ -515,7 +632,10 @@ def test_perpetual_contract_construction():
     assert pc.price_precision == 1
 
 
-def test_perpetual_contract_to_dict_and_from_dict_roundtrip():
+def test_perpetual_contract_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test perpetual contract to dict and from dict roundtrip.
+    """
     pc = PerpetualContract(
         instrument_id=InstrumentId(Symbol("ETHUSD-PERP"), Venue("DYDX")),
         raw_symbol=Symbol("ETH-USD"),
@@ -541,7 +661,10 @@ def test_perpetual_contract_to_dict_and_from_dict_roundtrip():
     assert restored.is_inverse == pc.is_inverse
 
 
-def test_cfd_construction_and_roundtrip():
+def test_cfd_construction_and_roundtrip() -> None:
+    """
+    Test cfd construction and roundtrip.
+    """
     cfd = Cfd(
         instrument_id=InstrumentId(Symbol("SPX500"), Venue("SIM")),
         raw_symbol=Symbol("SPX500"),
@@ -565,7 +688,10 @@ def test_cfd_construction_and_roundtrip():
     assert restored.price_precision == cfd.price_precision
 
 
-def test_commodity_construction_and_roundtrip():
+def test_commodity_construction_and_roundtrip() -> None:
+    """
+    Test commodity construction and roundtrip.
+    """
     com = Commodity(
         instrument_id=InstrumentId(Symbol("GOLD"), Venue("SIM")),
         raw_symbol=Symbol("GOLD"),
@@ -589,7 +715,10 @@ def test_commodity_construction_and_roundtrip():
     assert restored.price_precision == com.price_precision
 
 
-def test_index_instrument_construction_and_roundtrip():
+def test_index_instrument_construction_and_roundtrip() -> None:
+    """
+    Test index instrument construction and roundtrip.
+    """
     idx = IndexInstrument(
         instrument_id=InstrumentId(Symbol("SPX"), Venue("CBOE")),
         raw_symbol=Symbol("SPX"),
@@ -610,7 +739,6 @@ def test_index_instrument_construction_and_roundtrip():
     assert idx.is_quanto is False
     assert idx.isin is None
     assert idx.lot_size is None
-    assert idx.maker_fee == Decimal(0)
     assert idx.margin_init == Decimal(0)
     assert idx.margin_maint == Decimal(0)
     assert idx.max_notional is None
@@ -621,7 +749,6 @@ def test_index_instrument_construction_and_roundtrip():
     assert idx.min_quantity is None
     assert idx.multiplier == Quantity.from_int(1)
     assert idx.quote_currency == Currency.from_str("USD")
-    assert idx.taker_fee == Decimal(0)
     assert idx.tick_scheme is None
 
     restored = IndexInstrument.from_dict(idx.to_dict())
@@ -630,7 +757,10 @@ def test_index_instrument_construction_and_roundtrip():
     assert restored.price_precision == idx.price_precision
 
 
-def test_tokenized_asset_construction_and_roundtrip():
+def test_tokenized_asset_construction_and_roundtrip() -> None:
+    """
+    Test tokenized asset construction and roundtrip.
+    """
     ta = TokenizedAsset(
         instrument_id=InstrumentId(Symbol("TSLA-TOKEN"), Venue("FTX")),
         raw_symbol=Symbol("TSLA"),
@@ -656,7 +786,10 @@ def test_tokenized_asset_construction_and_roundtrip():
     assert restored.price_precision == ta.price_precision
 
 
-def test_futures_spread_construction_and_roundtrip():
+def test_futures_spread_construction_and_roundtrip() -> None:
+    """
+    Test futures spread construction and roundtrip.
+    """
     fs = FuturesSpread(
         instrument_id=InstrumentId(Symbol("ES-SPREAD"), Venue("XCME")),
         raw_symbol=Symbol("ES-SPREAD"),
@@ -685,7 +818,10 @@ def test_futures_spread_construction_and_roundtrip():
     assert restored.strategy_type == fs.strategy_type
 
 
-def test_option_spread_construction_and_roundtrip():
+def test_option_spread_construction_and_roundtrip() -> None:
+    """
+    Test option spread construction and roundtrip.
+    """
     os_ = OptionSpread(
         instrument_id=InstrumentId(Symbol("AAPL-SPREAD"), Venue("OPRA")),
         raw_symbol=Symbol("AAPL-SPREAD"),
@@ -714,7 +850,10 @@ def test_option_spread_construction_and_roundtrip():
     assert restored.strategy_type == os_.strategy_type
 
 
-def test_crypto_futures_spread_construction_and_roundtrip():
+def test_crypto_futures_spread_construction_and_roundtrip() -> None:
+    """
+    Test crypto futures spread construction and roundtrip.
+    """
     cfs = CryptoFuturesSpread(
         instrument_id=InstrumentId(Symbol("BTC-FS-19MAY26_PERP"), Venue("DERIBIT")),
         raw_symbol=Symbol("BTC-FS-19MAY26_PERP"),
@@ -747,7 +886,10 @@ def test_crypto_futures_spread_construction_and_roundtrip():
     assert restored.settlement_currency == cfs.settlement_currency
 
 
-def test_crypto_option_spread_construction_and_roundtrip_preserves_fractional():
+def test_crypto_option_spread_construction_and_roundtrip_preserves_fractional() -> None:
+    """
+    Test crypto option spread construction and roundtrip preserves fractional.
+    """
     # Deribit BTC option combos carry min_trade_amount=0.1; this type
     # preserves that through serialization without collapsing back to a
     # whole-contract default
@@ -787,7 +929,10 @@ def test_crypto_option_spread_construction_and_roundtrip_preserves_fractional():
     assert restored.size_increment == Quantity.from_str("0.1")
 
 
-def test_betting_instrument_construction_and_roundtrip():
+def test_betting_instrument_construction_and_roundtrip() -> None:
+    """
+    Test betting instrument construction and roundtrip.
+    """
     bi = BettingInstrument(
         instrument_id=InstrumentId(Symbol("1-123456-50214-None"), Venue("BETFAIR")),
         raw_symbol=Symbol("1-123456-50214-None"),
@@ -840,7 +985,10 @@ def test_betting_instrument_construction_and_roundtrip():
     assert restored.selection_name == bi.selection_name
 
 
-def test_crypto_option_construction():
+def test_crypto_option_construction() -> None:
+    """
+    Test crypto option construction.
+    """
     co = CryptoOption(
         instrument_id=InstrumentId(Symbol("BTC-20240329-50000-C"), Venue("DERIBIT")),
         raw_symbol=Symbol("BTC-20240329-50000-C"),
@@ -869,7 +1017,10 @@ def test_crypto_option_construction():
     assert co.size_precision == 1
 
 
-def test_crypto_option_to_dict_and_from_dict_roundtrip():
+def test_crypto_option_to_dict_and_from_dict_roundtrip() -> None:
+    """
+    Test crypto option to dict and from dict roundtrip.
+    """
     co = CryptoOption(
         instrument_id=InstrumentId(Symbol("BTC-20240329-50000-C"), Venue("DERIBIT")),
         raw_symbol=Symbol("BTC-20240329-50000-C"),
@@ -898,7 +1049,10 @@ def test_crypto_option_to_dict_and_from_dict_roundtrip():
     assert restored.is_inverse == co.is_inverse
 
 
-def test_instruments_equal_by_id():
+def test_instruments_equal_by_id() -> None:
+    """
+    Test instruments equal by id.
+    """
     audusd1 = TestInstrumentProvider.audusd_sim()
     audusd2 = TestInstrumentProvider.audusd_sim()
     btcusdt = TestInstrumentProvider.btcusdt_binance()
@@ -907,19 +1061,28 @@ def test_instruments_equal_by_id():
     assert audusd1 != btcusdt
 
 
-def test_instrument_not_equal_to_none():
+def test_instrument_not_equal_to_none() -> None:
+    """
+    Test instrument not equal to none.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
-    assert (audusd == None) is False  # noqa: E711
+    assert (audusd == None) is False
 
 
-def test_equal_instruments_have_equal_hashes():
+def test_equal_instruments_have_equal_hashes() -> None:
+    """
+    Test equal instruments have equal hashes.
+    """
     audusd1 = TestInstrumentProvider.audusd_sim()
     audusd2 = TestInstrumentProvider.audusd_sim()
 
     assert hash(audusd1) == hash(audusd2)
 
 
-def test_different_instruments_have_different_hashes():
+def test_different_instruments_have_different_hashes() -> None:
+    """
+    Test different instruments have different hashes.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
     btcusdt = TestInstrumentProvider.btcusdt_binance()
 
@@ -934,7 +1097,14 @@ def test_different_instruments_have_different_hashes():
         ("ethusdt_binance", "CurrencyPair", "ETHUSDT.BINANCE"),
     ],
 )
-def test_instrument_repr(factory, expected_type_name, expected_id_substr):
+def test_instrument_repr(
+    factory: object,
+    expected_type_name: object,
+    expected_id_substr: object,
+) -> None:
+    """
+    Test instrument repr.
+    """
     instrument = getattr(TestInstrumentProvider, factory)()
     r = repr(instrument)
 
@@ -942,7 +1112,10 @@ def test_instrument_repr(factory, expected_type_name, expected_id_substr):
     assert expected_id_substr in r
 
 
-def test_currency_pair_roundtrip_all_fields():
+def test_currency_pair_roundtrip_all_fields() -> None:
+    """
+    Test currency pair roundtrip all fields.
+    """
     original = TestInstrumentProvider.audusd_sim()
     restored = CurrencyPair.from_dict(original.to_dict())
 
@@ -956,11 +1129,12 @@ def test_currency_pair_roundtrip_all_fields():
     assert restored.lot_size == original.lot_size
     assert restored.margin_init == original.margin_init
     assert restored.margin_maint == original.margin_maint
-    assert restored.maker_fee == original.maker_fee
-    assert restored.taker_fee == original.taker_fee
 
 
-def test_crypto_perpetual_roundtrip_all_fields():
+def test_crypto_perpetual_roundtrip_all_fields() -> None:
+    """
+    Test crypto perpetual roundtrip all fields.
+    """
     original = TestInstrumentProvider.btcusdt_perp_binance()
     restored = CryptoPerpetual.from_dict(original.to_dict())
 
@@ -974,7 +1148,10 @@ def test_crypto_perpetual_roundtrip_all_fields():
     assert restored.size_increment == original.size_increment
 
 
-def test_make_price_uses_instrument_precision():
+def test_make_price_uses_instrument_precision() -> None:
+    """
+    Test make price uses instrument precision.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
     price = audusd.make_price(1.234567890)
 
@@ -982,7 +1159,10 @@ def test_make_price_uses_instrument_precision():
     assert price == Price.from_str("1.23457")
 
 
-def test_make_qty_uses_instrument_precision():
+def test_make_qty_uses_instrument_precision() -> None:
+    """
+    Test make qty uses instrument precision.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
     qty = audusd.make_qty(1000)
 
@@ -990,7 +1170,10 @@ def test_make_qty_uses_instrument_precision():
     assert qty == Quantity.from_int(1000)
 
 
-def test_make_qty_round_down():
+def test_make_qty_round_down() -> None:
+    """
+    Test make qty round down.
+    """
     ethusdt = TestInstrumentProvider.ethusdt_binance()
     qty = ethusdt.make_qty(1.999999, round_down=True)
 
@@ -998,7 +1181,10 @@ def test_make_qty_round_down():
     assert qty == Quantity.from_str("1.99999")
 
 
-def test_notional_value_currency_pair():
+def test_notional_value_currency_pair() -> None:
+    """
+    Test notional value currency pair.
+    """
     audusd = TestInstrumentProvider.audusd_sim()
     notional = audusd.notional_value(
         quantity=Quantity.from_str("100000"),
@@ -1009,7 +1195,121 @@ def test_notional_value_currency_pair():
     assert notional.as_double() == pytest.approx(75_000.0)
 
 
-def test_synthetic_instrument_construction():
+@pytest.mark.parametrize(
+    "instrument_type",
+    [CryptoFuture, CryptoOption, CryptoPerpetual, PerpetualContract],
+)
+@pytest.mark.parametrize(
+    ("settlement_code", "is_inverse", "is_quanto", "expected_amount", "expected_currency"),
+    [
+        ("USD", False, False, Decimal(2000), "USD"),
+        ("USDT", False, False, Decimal(2000), "USD"),
+        ("BTC", False, True, Decimal(2000), "BTC"),
+        ("ETH", True, False, Decimal("0.2"), "ETH"),
+    ],
+)
+def test_derivative_notional_value_contract(
+    instrument_type: object,
+    settlement_code: object,
+    is_inverse: object,
+    is_quanto: object,
+    expected_amount: object,
+    expected_currency: object,
+) -> None:
+    """
+    Test derivative notional value contract.
+    """
+    instrument = _make_derivative(instrument_type, settlement_code, is_inverse)
+    quantity = Quantity.from_int(2)
+    price = Price.from_str("100.00")
+
+    # Inverse option premiums are already in the base currency, so they value linearly
+    if is_inverse and instrument_type is CryptoOption:
+        expected_amount = Decimal(2000)
+
+    notional = instrument.notional_value(quantity, price)
+
+    assert instrument.is_quanto is is_quanto
+    assert notional.as_decimal() == expected_amount
+    assert notional.currency == Currency.from_str(expected_currency)
+
+    if is_inverse:
+        quote_notional = instrument.notional_value(quantity, price, use_quote_for_inverse=True)
+        assert quote_notional.as_decimal() == Decimal(2)
+        assert quote_notional.currency == Currency.from_str("USD")
+
+
+@pytest.mark.parametrize(
+    "instrument_type",
+    [CryptoFuture, CryptoOption, CryptoPerpetual, PerpetualContract],
+)
+def test_derivative_dict_roundtrip_preserves_fractional_lot_size(instrument_type: object) -> None:
+    """
+    Test derivative dict roundtrip preserves fractional lot size.
+    """
+    original = _make_derivative(instrument_type, "USD", False)
+    values = original.to_dict()
+    values["lot_size"] = "0.25"
+
+    restored = instrument_type.from_dict(values)
+
+    assert restored.lot_size == Quantity.from_str("0.25")
+    assert restored.to_dict()["lot_size"] == "0.25"
+
+
+def _make_derivative(
+    instrument_type: object,
+    settlement_code: object,
+    is_inverse: object,
+) -> object:
+    common = {
+        "instrument_id": InstrumentId.from_str(f"{instrument_type.__name__.upper()}.SIM"),
+        "raw_symbol": Symbol(instrument_type.__name__.upper()),
+        "quote_currency": Currency.from_str("USD"),
+        "settlement_currency": Currency.from_str(settlement_code),
+        "is_inverse": is_inverse,
+        "price_precision": 2,
+        "size_precision": 0,
+        "price_increment": Price.from_str("0.01"),
+        "size_increment": Quantity.from_int(1),
+        "multiplier": Quantity.from_int(10),
+        "ts_event": 1,
+        "ts_init": 2,
+    }
+
+    if instrument_type is CryptoFuture:
+        return CryptoFuture(
+            **common,
+            underlying=Currency.from_str("ETH"),
+            activation_ns=3,
+            expiration_ns=4,
+        )
+    if instrument_type is CryptoOption:
+        return CryptoOption(
+            **common,
+            underlying=Currency.from_str("ETH"),
+            option_kind=OptionKind.CALL,
+            strike_price=Price.from_str("100.00"),
+            activation_ns=3,
+            expiration_ns=4,
+        )
+    if instrument_type is CryptoPerpetual:
+        return CryptoPerpetual(
+            **common,
+            base_currency=Currency.from_str("ETH"),
+        )
+    return PerpetualContract(
+        **common,
+        underlying="ETH",
+        asset_class=AssetClass.CRYPTOCURRENCY,
+        base_currency=Currency.from_str("ETH"),
+    )
+
+
+def test_synthetic_instrument_construction() -> None:
+    """
+    Test synthetic instrument construction.
+    """
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")
 
@@ -1023,12 +1323,17 @@ def test_synthetic_instrument_construction():
     )
 
     assert synth.id == InstrumentId(Symbol("BTC-ETH"), Venue("SYNTH"))
+    assert synth.symbol == synth.id.symbol == Symbol("BTC-ETH")
+    assert synth.venue == synth.id.venue == Venue("SYNTH")
     assert synth.price_precision == 8
     assert len(synth.components) == 2
     assert synth.formula == "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
 
 
-def test_synthetic_instrument_calculate():
+def test_synthetic_instrument_calculate() -> None:
+    """
+    Test synthetic instrument calculate.
+    """
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")
 
@@ -1047,7 +1352,10 @@ def test_synthetic_instrument_calculate():
     assert result.as_double() == pytest.approx(26_500.0)
 
 
-def test_synthetic_instrument_change_formula():
+def test_synthetic_instrument_change_formula() -> None:
+    """
+    Test synthetic instrument change formula.
+    """
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")
 
@@ -1065,7 +1373,10 @@ def test_synthetic_instrument_change_formula():
     assert synth.formula == "BTCUSDT.BINANCE - ETHUSDT.BINANCE"
 
 
-def test_synthetic_instrument_is_valid_formula():
+def test_synthetic_instrument_is_valid_formula() -> None:
+    """
+    Test synthetic instrument is valid formula.
+    """
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")
 
@@ -1082,7 +1393,10 @@ def test_synthetic_instrument_is_valid_formula():
     assert not synth.is_valid_formula("BTCUSDT.BINANCE + XRPUSDT.BINANCE")
 
 
-def test_synthetic_instrument_calculate_from_map():
+def test_synthetic_instrument_calculate_from_map() -> None:
+    """
+    Test synthetic instrument calculate from map.
+    """
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")
 
@@ -1105,7 +1419,10 @@ def test_synthetic_instrument_calculate_from_map():
     assert result == Price.from_str("26500.0000")
 
 
-def test_synthetic_instrument_basic_properties():
+def test_synthetic_instrument_basic_properties() -> None:
+    """
+    Test synthetic instrument basic properties.
+    """
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")
 
@@ -1124,7 +1441,10 @@ def test_synthetic_instrument_basic_properties():
     assert synth.ts_init == 2
 
 
-def test_synthetic_instrument_calculate_from_map_missing_component_raises():
+def test_synthetic_instrument_calculate_from_map_missing_component_raises() -> None:
+    """
+    Test synthetic instrument calculate from map missing component raises.
+    """
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     ethusdt_id = InstrumentId.from_str("ETHUSDT.BINANCE")
 

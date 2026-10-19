@@ -19,6 +19,8 @@ use nautilus_model::identifiers::{
 use thiserror::Error;
 use ustr::Ustr;
 
+use crate::component::ComponentAccessError;
+
 /// Message used for a missing account lookup.
 pub const ACCOUNT_NOT_FOUND: &str = "account not found in cache";
 
@@ -64,6 +66,9 @@ pub struct VenueOrderIdOwnershipError {
 /// Error returned when an account cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum AccountLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested account is not present.
     #[error("{message}: {account_id}", message = ACCOUNT_NOT_FOUND)]
     NotFound {
@@ -83,6 +88,9 @@ impl AccountLookupError {
 /// Error returned when a currency cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum CurrencyLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested currency is not present.
     #[error("{message}: {code}", message = CURRENCY_NOT_FOUND)]
     NotFound {
@@ -102,6 +110,9 @@ impl CurrencyLookupError {
 /// Error returned when an instrument cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum InstrumentLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested instrument is not present.
     #[error("{message}: {instrument_id}", message = INSTRUMENT_NOT_FOUND)]
     NotFound {
@@ -121,6 +132,9 @@ impl InstrumentLookupError {
 /// Error returned when a synthetic instrument cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum SyntheticInstrumentLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested synthetic instrument is not present.
     #[error("{message}: {instrument_id}", message = SYNTHETIC_INSTRUMENT_NOT_FOUND)]
     NotFound {
@@ -140,6 +154,9 @@ impl SyntheticInstrumentLookupError {
 /// Error returned when an order book cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum OrderBookLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested order book is not present.
     #[error("{message}: {instrument_id}", message = ORDER_BOOK_NOT_FOUND)]
     NotFound {
@@ -159,6 +176,9 @@ impl OrderBookLookupError {
 /// Error returned when an own order book cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum OwnOrderBookLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested own order book is not present.
     #[error("{message}: {instrument_id}", message = OWN_ORDER_BOOK_NOT_FOUND)]
     NotFound {
@@ -178,6 +198,9 @@ impl OwnOrderBookLookupError {
 /// Error returned when an order cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum OrderLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested order is not present.
     #[error("{message}: {client_order_id}", message = ORDER_NOT_FOUND)]
     NotFound {
@@ -197,6 +220,9 @@ impl OrderLookupError {
 /// Error returned when an order list cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum OrderListLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested order list is not present.
     #[error("{message}: {order_list_id}", message = ORDER_LIST_NOT_FOUND)]
     NotFound {
@@ -216,6 +242,9 @@ impl OrderListLookupError {
 /// Error returned when a position cannot be resolved from a cache or store.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum PositionLookupError {
+    /// The cache cannot be borrowed for this lookup.
+    #[error(transparent)]
+    Access(#[from] ComponentAccessError),
     /// The requested position is not present.
     #[error("{message}: {position_id}", message = POSITION_NOT_FOUND)]
     NotFound {

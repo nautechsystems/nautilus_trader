@@ -35,7 +35,7 @@ if ! command -v cargo-fuzz > /dev/null 2>&1; then
   exit 1
 fi
 
-all_targets="$(cargo +nightly fuzz list --fuzz-dir "$fuzz_dir" | sed -n '/^fuzz_/p')"
+all_targets="$(cargo +nightly fuzz list --fuzz-dir "$fuzz_dir" | sed -n '/^fuzz/p')"
 if [ -n "$filter" ]; then
   targets="$(printf '%s\n' "$all_targets" | grep -F "$filter" || true)"
 else

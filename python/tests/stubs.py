@@ -12,13 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test stubs behavior.
+"""
 
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarAggregation
 from nautilus_trader.model import BarSpecification
 from nautilus_trader.model import BarType
+from nautilus_trader.model import BookAction
+from nautilus_trader.model import BookOrder
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import OrderBookDepth
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import Quantity
@@ -28,16 +36,90 @@ from nautilus_trader.model import TradeTick
 
 
 class TestDataProviderPyo3:
+    """
+    Collect data provider pyo3 tests.
+    """
+
     @staticmethod
-    def quote_tick(
+    def order_book_delta(
         instrument_id=None,
-        bid_price=1987.0,
-        ask_price=1988.0,
-        ask_size=100_000.0,
-        bid_size=100_000.0,
+        price=10000.0,
+        size=0.1,
         ts_event=0,
         ts_init=0,
-    ):
+    ) -> OrderBookDelta:
+        """
+        Return an order-book delta with the requested values.
+        """
+        return OrderBookDelta(
+            instrument_id=instrument_id or InstrumentId.from_str("ETHUSDT.BINANCE"),
+            action=BookAction.ADD,
+            order=BookOrder(
+                side=OrderSide.BUY,
+                price=Price.from_str(str(price)),
+                size=Quantity.from_str(str(size)),
+                order_id=0,
+            ),
+            flags=0,
+            sequence=0,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+
+    @staticmethod
+    def order_book_depth(
+        instrument_id=None,
+        flags=0,
+        sequence=0,
+        ts_event=0,
+        ts_init=0,
+    ) -> OrderBookDepth:
+        """
+        Return a snapshot with ten distinct levels per side.
+        """
+        bids = [
+            BookOrder(
+                OrderSide.BUY,
+                Price(99.0 - level, 2),
+                Quantity(100.0 * (level + 1), 0),
+                level + 1,
+            )
+            for level in range(10)
+        ]
+        asks = [
+            BookOrder(
+                OrderSide.SELL,
+                Price(100.0 + level, 2),
+                Quantity(100.0 * (level + 1), 0),
+                level + 11,
+            )
+            for level in range(10)
+        ]
+        return OrderBookDepth(
+            instrument_id=instrument_id or InstrumentId.from_str("AAPL.XNAS"),
+            bids=bids,
+            asks=asks,
+            bid_counts=[1] * 10,
+            ask_counts=[1] * 10,
+            flags=flags,
+            sequence=sequence,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+
+    @staticmethod
+    def quote_tick(
+        instrument_id: InstrumentId = None,
+        bid_price: object = 1987.0,
+        ask_price: object = 1988.0,
+        ask_size: object = 100_000.0,
+        bid_size: object = 100_000.0,
+        ts_event: object = 0,
+        ts_init: object = 0,
+    ) -> object:
+        """
+        Quote tick.
+        """
         return QuoteTick(
             instrument_id=instrument_id or InstrumentId.from_str("ETHUSDT.BINANCE"),
             bid_price=Price.from_str(str(bid_price)),
@@ -50,24 +132,30 @@ class TestDataProviderPyo3:
 
     @staticmethod
     def trade_tick(
-        instrument_id=None,
-        price=1987.0,
-        size=0.1,
-        ts_event=0,
-        ts_init=0,
-    ):
+        instrument_id: InstrumentId = None,
+        price: object = 1987.0,
+        size: object = 0.1,
+        ts_event: object = 0,
+        ts_init: object = 0,
+    ) -> object:
+        """
+        Trade tick.
+        """
         return TradeTick(
             instrument_id=instrument_id or InstrumentId.from_str("ETHUSDT.BINANCE"),
             price=Price.from_str(str(price)),
             size=Quantity.from_str(str(size)),
-            aggressor_side=AggressorSide.BUYER,
+            aggressor_side=AggressorSide.BUY,
             trade_id=TradeId("1"),
             ts_init=ts_init,
             ts_event=ts_event,
         )
 
     @staticmethod
-    def bar_5decimal():
+    def bar_5decimal() -> object:
+        """
+        Bar 5decimal.
+        """
         bar_type = BarType(
             InstrumentId.from_str("ETHUSDT.BINANCE"),
             BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! SQL database model definitions and schemas.
+//! SQL database row and value mappings.
 
 use std::fmt::Display;
 

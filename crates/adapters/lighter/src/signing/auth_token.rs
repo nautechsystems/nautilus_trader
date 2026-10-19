@@ -42,6 +42,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use nautilus_core::string::secret::SecretString;
 use rand::RngExt;
 use thiserror::Error;
 
@@ -108,13 +109,12 @@ pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 7 * 60 * 60;
 ///
 /// # Errors
 ///
-/// Returns the underlying [`crate::common::credential::Credential::private_key`]
-/// failure if the secret cannot be decoded, or any [`build_auth_token`]
-/// failure (clock-before-epoch or, hypothetically, a deadline-validation
-/// breach the helper itself sets).
+/// Returns an error if the secret cannot be decoded by
+/// [`crate::common::credential::Credential::private_key`], or if [`build_auth_token`] fails
+/// (clock-before-epoch or, hypothetically, a breach caused by its own deadline validation).
 pub fn build_auth_token_for(
     credential: &crate::common::credential::Credential,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<SecretString> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| anyhow::anyhow!("system clock is before UNIX epoch"))?
@@ -156,17 +156,15 @@ pub fn fresh_k() -> Scalar {
 ///
 /// # Errors
 ///
-/// Returns [`AuthTokenError::DeadlineNotInFuture`] if `deadline_unix_secs <=
-/// now`, [`AuthTokenError::TtlTooLarge`] if it exceeds the venue cap, or
-/// [`AuthTokenError::ClockBeforeEpoch`] if the system clock predates the
-/// UNIX epoch.
+/// Returns an error if `deadline_unix_secs <= now`, if it exceeds the venue cap, or if the system
+/// clock predates the UNIX epoch.
 pub fn build_auth_token(
     deadline_unix_secs: i64,
     account_index: i64,
     api_key_index: u8,
     sk: &PrivateKey,
     k: Scalar,
-) -> Result<String, AuthTokenError> {
+) -> Result<SecretString, AuthTokenError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| AuthTokenError::ClockBeforeEpoch)?
@@ -190,7 +188,7 @@ pub fn build_auth_token(
 ///
 /// # Errors
 ///
-/// See [`build_auth_token`].
+/// Returns an error if [`build_auth_token`] fails.
 pub fn build_auth_token_at(
     now_unix_secs: i64,
     deadline_unix_secs: i64,
@@ -198,7 +196,7 @@ pub fn build_auth_token_at(
     api_key_index: u8,
     sk: &PrivateKey,
     k: Scalar,
-) -> Result<String, AuthTokenError> {
+) -> Result<SecretString, AuthTokenError> {
     if deadline_unix_secs <= now_unix_secs {
         return Err(AuthTokenError::DeadlineNotInFuture {
             deadline: deadline_unix_secs,
@@ -228,17 +226,16 @@ pub fn build_auth_token_at(
 ///
 /// # Errors
 ///
-/// Returns [`AuthTokenError::MessageEncoding`] if the rendered message contains
-/// an 8-byte chunk that does not decode as a canonical Goldilocks element. The
-/// auth-token format keeps every byte ASCII, so this case is unreachable for
-/// the production callers.
+/// Returns an error if the rendered message contains an 8-byte chunk that does not decode as a
+/// canonical Goldilocks element. The auth-token format keeps every byte ASCII, so this case is
+/// unreachable for the production callers.
 pub fn build_auth_token_unchecked(
     deadline_unix_secs: i64,
     account_index: i64,
     api_key_index: u8,
     sk: &PrivateKey,
     k: Scalar,
-) -> Result<String, AuthTokenError> {
+) -> Result<SecretString, AuthTokenError> {
     let message = auth_token_message(deadline_unix_secs, account_index, api_key_index);
     let sig = sign_message(&message, sk, k)?;
     Ok(format_token(&message, &sig))
@@ -267,11 +264,10 @@ pub fn auth_token_message(
 ///
 /// # Errors
 ///
-/// Returns [`AuthTokenError::MessageEncoding`] if any 8-byte chunk decodes to
-/// a non-canonical Goldilocks element. The auth-token format is ASCII
-/// (`'0'..='9'` and `':'`), so every byte sits in `0..=0x3A` and the case is
-/// unreachable for tokens emitted by [`auth_token_message`]; the error path
-/// exists for callers that pass arbitrary preimages.
+/// Returns an error if any 8-byte chunk decodes to a non-canonical Goldilocks element. The
+/// auth-token format is ASCII (`'0'..='9'` and `':'`), so every byte sits in `0..=0x3A` and the
+/// case is unreachable for tokens emitted by [`auth_token_message`]; the error path exists for
+/// callers that pass arbitrary preimages.
 pub fn hash_auth_message(message: &str) -> Result<[u8; 40], AuthTokenError> {
     let elems = ascii_to_fp_limbs(message.as_bytes())?;
     Ok(hash_to_quintic_extension(&elems).to_le_bytes())
@@ -304,7 +300,7 @@ fn ascii_to_fp_limbs(bytes: &[u8]) -> Result<Vec<Fp>, AuthTokenError> {
     Ok(out)
 }
 
-fn format_token(message: &str, sig: &[u8; SIG_BYTES]) -> String {
+fn format_token(message: &str, sig: &[u8; SIG_BYTES]) -> SecretString {
     // Lowercase, no `0x` prefix: matches `ethCommon.Bytes2Hex` in the Go
     // reference, which is what the venue's REST/WS handshake expects.
     let mut out = String::with_capacity(message.len() + 1 + SIG_BYTES * 2);
@@ -313,7 +309,7 @@ fn format_token(message: &str, sig: &[u8; SIG_BYTES]) -> String {
     for b in sig {
         write!(&mut out, "{b:02x}").expect("writing into String never fails");
     }
-    out
+    out.into()
 }
 
 #[cfg(test)]
@@ -372,6 +368,7 @@ mod tests {
             nonzero_k(),
         )
         .expect("future deadline must sign");
+        let token = token.expose_secret();
 
         let prefix = format!("{deadline}:{account_index}:{api_key_index}:");
         assert!(
@@ -391,6 +388,7 @@ mod tests {
     fn token_is_message_colon_hex_sig() {
         let token =
             build_auth_token_at(1_000_000, 1_000_300, 12345, 5, &fixed_sk(), nonzero_k()).unwrap();
+        let token = token.expose_secret();
         let mut parts = token.rsplitn(2, ':');
         let sig_hex = parts.next().expect("token must have sig component");
         let prefix = parts.next().expect("token must have message prefix");
@@ -417,7 +415,7 @@ mod tests {
         let deadline = 1_000_300;
         let token = build_auth_token_at(1_000_000, deadline, 12345, 5, &sk, nonzero_k()).unwrap();
 
-        let (message, sig_hex) = split_token(&token);
+        let (message, sig_hex) = split_token(token.expose_secret());
         let digest_bytes = hash_auth_message(&message).expect("ASCII input must hash");
         let digest = Fp5::try_from_le_bytes(digest_bytes).expect("digest must be canonical");
         let sig = decode_sig(&sig_hex);
@@ -478,6 +476,7 @@ mod tests {
         let deadline = now + max_ttl;
         let token = build_auth_token_at(now, deadline, 1, 0, &fixed_sk(), nonzero_k())
             .expect("max-TTL deadline must sign");
+        let token = token.expose_secret();
         assert!(
             token.starts_with(&format!("{deadline}:1:0:")),
             "was {token}"
@@ -578,7 +577,7 @@ mod tests {
                 now, deadline, account_index, api_key_index, &sk, k,
             )
             .unwrap();
-            let (message, sig_hex) = split_token(&token);
+            let (message, sig_hex) = split_token(token.expose_secret());
             let expected = format!("{deadline}:{account_index}:{api_key_index}");
             prop_assert_eq!(&message, &expected);
 
@@ -670,7 +669,7 @@ mod tests {
     fn build_auth_token_for_round_trips_against_credential() {
         // Mint a token for the credential and verify the embedded signature
         // against the credential's public key. End-to-end check that the
-        // helper threads private_key, account_index, and api_key_index
+        // `build_auth_token_for` threads private_key, account_index, and api_key_index
         // through the message and signature correctly.
         const PRIVATE_KEY_HEX: &str =
             "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
@@ -681,6 +680,7 @@ mod tests {
 
         let pk = credential.private_key().unwrap().public_key();
         let (message, sig_hex) = token
+            .expose_secret()
             .rsplit_once(':')
             .expect("token must end with `:hex(sig)`");
         let digest_bytes = hash_auth_message(message).expect("hash must succeed");

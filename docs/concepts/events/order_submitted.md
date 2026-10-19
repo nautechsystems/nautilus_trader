@@ -1,16 +1,19 @@
 # OrderSubmitted
 
-`OrderSubmitted` represents an order having been submitted by the system to the trading
-venue. The `ExecutionEngine` applies it to the order, updates the `Cache`, and publishes
-it on the `MessageBus`. It fires when the system sends the order to the venue and awaits
-acknowledgement.
+`OrderSubmitted` records that the system has sent an order to the trading venue and awaits
+acknowledgement. The `ExecutionEngine` applies it to the order, updates the `Cache`, and publishes
+it on the `MessageBus`.
 
-Transition: `INITIALIZED` / `RELEASED` -> `SUBMITTED`. Handler: `on_order_submitted`.
+Typical transition: `INITIALIZED` / `RELEASED` -> `SUBMITTED`. Handler: `on_order_submitted`.
 
 ## Fields
 
-`OrderSubmitted` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `account_id` is populated,
-`venue_order_id` is not yet assigned (`None`), and `reconciliation` is always `False`.
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderSubmitted` carries:
+
+| Field        | Python type | Required/default | Description                            |
+| ------------ | ----------- | ---------------- | -------------------------------------- |
+| `account_id` | `AccountId` | Required         | The account associated with the order. |
 
 ## Example
 

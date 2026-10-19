@@ -12,15 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test risk configs behavior.
+"""
 
 from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model import Venue
 from nautilus_trader.risk import RiskEngineConfig
 
 
-def test_risk_engine_config_defaults():
+def test_risk_engine_config_defaults() -> None:
+    """
+    Test risk engine config defaults.
+    """
     config = RiskEngineConfig()
 
     assert config.bypass is False
@@ -28,14 +35,19 @@ def test_risk_engine_config_defaults():
     assert config.max_order_submit_rate == "100/00:00:01"
     assert config.max_order_modify_rate == "100/00:00:01"
     assert config.max_notional_per_order == {}
+    assert config.full_position_exit_venues == []
 
 
-def test_risk_engine_config_explicit():
+def test_risk_engine_config_explicit() -> None:
+    """
+    Test risk engine config explicit.
+    """
     config = RiskEngineConfig(
         bypass=True,
         max_order_submit_rate="250/00:00:05",
         max_order_modify_rate="50/00:01:00",
         max_notional_per_order={"ETHUSDT.BINANCE": "100000.50"},
+        full_position_exit_venues=[Venue("BINANCE")],
         debug=True,
     )
 
@@ -44,9 +56,13 @@ def test_risk_engine_config_explicit():
     assert config.max_order_submit_rate == "250/00:00:05"
     assert config.max_order_modify_rate == "50/00:01:00"
     assert config.max_notional_per_order == {"ETHUSDT.BINANCE": "100000.50"}
+    assert config.full_position_exit_venues == [Venue("BINANCE")]
 
 
-def test_risk_engine_config_round_trips_hours_component():
+def test_risk_engine_config_round_trips_hours_component() -> None:
+    """
+    Test risk engine config round trips hours component.
+    """
     config = RiskEngineConfig(
         max_order_submit_rate="5/01:30:45",
         max_order_modify_rate="10/02:00:00",
@@ -56,13 +72,19 @@ def test_risk_engine_config_round_trips_hours_component():
     assert config.max_order_modify_rate == "10/02:00:00"
 
 
-def test_risk_engine_config_accepts_int_notional_values():
+def test_risk_engine_config_accepts_int_notional_values() -> None:
+    """
+    Test risk engine config accepts int notional values.
+    """
     config = RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": 100_000})
 
     assert config.max_notional_per_order == {"ETHUSDT.BINANCE": "100000"}
 
 
-def test_risk_engine_config_accepts_decimal_notional_values():
+def test_risk_engine_config_accepts_decimal_notional_values() -> None:
+    """
+    Test risk engine config accepts decimal notional values.
+    """
     config = RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": Decimal("2500.75")})
 
     assert config.max_notional_per_order == {"ETHUSDT.BINANCE": "2500.75"}
@@ -78,17 +100,26 @@ def test_risk_engine_config_accepts_decimal_notional_values():
         "100/00:00:01:00",  # trailing segment
     ],
 )
-def test_risk_engine_config_rejects_malformed_rate_limit(value):
+def test_risk_engine_config_rejects_malformed_rate_limit(value: object) -> None:
+    """
+    Test risk engine config rejects malformed rate limit.
+    """
     with pytest.raises(ValueError, match="max_order_submit_rate"):
         RiskEngineConfig(max_order_submit_rate=value)
 
 
-def test_risk_engine_config_rejects_malformed_modify_rate():
+def test_risk_engine_config_rejects_malformed_modify_rate() -> None:
+    """
+    Test risk engine config rejects malformed modify rate.
+    """
     with pytest.raises(ValueError, match="max_order_modify_rate"):
         RiskEngineConfig(max_order_modify_rate="bad-rate")
 
 
-def test_risk_engine_config_rejects_zero_rate_limit_values():
+def test_risk_engine_config_rejects_zero_rate_limit_values() -> None:
+    """
+    Test risk engine config rejects zero rate limit values.
+    """
     with pytest.raises(ValueError, match="Invalid limit"):
         RiskEngineConfig(max_order_submit_rate="0/00:00:01")
 
@@ -96,28 +127,43 @@ def test_risk_engine_config_rejects_zero_rate_limit_values():
         RiskEngineConfig(max_order_modify_rate="100/00:00:00")
 
 
-def test_risk_engine_config_rejects_invalid_instrument_id():
+def test_risk_engine_config_rejects_invalid_instrument_id() -> None:
+    """
+    Test risk engine config rejects invalid instrument id.
+    """
     with pytest.raises(ValueError, match="max_notional_per_order"):
         RiskEngineConfig(max_notional_per_order={"INVALID": "1000"})
 
 
-def test_risk_engine_config_rejects_invalid_notional():
+def test_risk_engine_config_rejects_invalid_notional() -> None:
+    """
+    Test risk engine config rejects invalid notional.
+    """
     with pytest.raises(ValueError, match="max_notional_per_order"):
         RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": "not-a-number"})
 
 
 @pytest.mark.parametrize("value", ["0", "-1"])
-def test_risk_engine_config_rejects_non_positive_notional(value):
+def test_risk_engine_config_rejects_non_positive_notional(value: object) -> None:
+    """
+    Test risk engine config rejects non positive notional.
+    """
     with pytest.raises(ValueError, match="max_notional_per_order"):
         RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": value})
 
 
-def test_risk_engine_config_rejects_unsupported_args():
+def test_risk_engine_config_rejects_unsupported_args() -> None:
+    """
+    Test risk engine config rejects unsupported args.
+    """
     with pytest.raises(TypeError, match="qsize"):
         RiskEngineConfig(qsize=25_000)
 
 
-def test_risk_engine_config_repr():
+def test_risk_engine_config_repr() -> None:
+    """
+    Test risk engine config repr.
+    """
     config = RiskEngineConfig(bypass=True, debug=True)
 
     repr_str = repr(config)

@@ -1,0 +1,19 @@
+[
+  {
+    "exchange_id": "COINBASE",
+    "website": "https://pro.coinbase.com/",
+    "name": "Coinbase Pro (GDAX)",
+    "data_quote_start": "2015-05-17T00:00:00.0000000Z",
+    "data_quote_end": "2026-09-23T23:00:00.0000000Z",
+    "data_orderbook_start": "2015-05-17T00:00:00.0000000Z",
+    "data_orderbook_end": "2026-09-23T23:00:00.0000000Z",
+    "data_trade_start": "2015-01-14T00:00:00.0000000Z",
+    "data_trade_end": "2026-09-23T23:00:00.0000000Z",
+    "data_symbols_count": 914,
+    "volume_1hrs_usd": 69441223.44,
+    "volume_1day_usd": 544657133.34,
+    "volume_1mth_usd": 67196658542.20,
+    "rank": 2,
+    "integration_status": "INTEGRATED"
+  }
+]

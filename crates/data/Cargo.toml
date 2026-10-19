@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-data"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -23,13 +22,6 @@ crate-type = ["rlib"]
 [features]
 default = []
 streaming = ["nautilus-persistence"]
-ffi = [
-  "nautilus-common/ffi",
-  "nautilus-core/ffi",
-  "nautilus-model/ffi",
-  "nautilus-persistence/ffi",
-  "streaming",
-]
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
@@ -55,22 +47,22 @@ defi = [
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["defi", "ffi", "high-precision", "streaming"]
+features = ["defi", "high-precision", "streaming"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true }
 nautilus-persistence = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
@@ -82,9 +74,11 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 
 criterion = { workspace = true }
+parking_lot = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

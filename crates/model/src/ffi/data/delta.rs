@@ -21,41 +21,82 @@ use std::{
 use nautilus_core::UnixNanos;
 
 use crate::{
-    data::{BookOrder, OrderBookDelta},
-    enums::BookAction,
+    data::OrderBookDelta, enums::BookAction, ffi::data::order::BookOrderFfi,
     identifiers::InstrumentId,
 };
+
+/// The stable C representation of an [`OrderBookDelta`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OrderBookDeltaFfi {
+    pub instrument_id: InstrumentId,
+    pub action: BookAction,
+    pub order: BookOrderFfi,
+    pub flags: u8,
+    pub sequence: u64,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
+impl From<OrderBookDeltaFfi> for OrderBookDelta {
+    fn from(value: OrderBookDeltaFfi) -> Self {
+        Self {
+            instrument_id: value.instrument_id,
+            action: value.action,
+            order: value.order.into(),
+            flags: value.flags,
+            sequence: value.sequence,
+            ts_event: value.ts_event,
+            ts_init: value.ts_init,
+        }
+    }
+}
+
+impl From<OrderBookDelta> for OrderBookDeltaFfi {
+    fn from(value: OrderBookDelta) -> Self {
+        Self {
+            instrument_id: value.instrument_id,
+            action: value.action,
+            order: value.order.into(),
+            flags: value.flags,
+            sequence: value.sequence,
+            ts_event: value.ts_event,
+            ts_init: value.ts_init,
+        }
+    }
+}
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_delta_new(
     instrument_id: InstrumentId,
     action: BookAction,
-    order: BookOrder,
+    order: BookOrderFfi,
     flags: u8,
     sequence: u64,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderBookDelta {
+) -> OrderBookDeltaFfi {
     OrderBookDelta::new(
         instrument_id,
         action,
-        order,
+        order.into(),
         flags,
         sequence,
         ts_event,
         ts_init,
     )
+    .into()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_delta_eq(lhs: &OrderBookDelta, rhs: &OrderBookDelta) -> u8 {
-    u8::from(lhs == rhs)
+pub extern "C" fn orderbook_delta_eq(lhs: &OrderBookDeltaFfi, rhs: &OrderBookDeltaFfi) -> u8 {
+    u8::from(OrderBookDelta::from(*lhs) == OrderBookDelta::from(*rhs))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_delta_hash(delta: &OrderBookDelta) -> u64 {
+pub extern "C" fn orderbook_delta_hash(delta: &OrderBookDeltaFfi) -> u64 {
     let mut hasher = DefaultHasher::new();
-    delta.hash(&mut hasher);
+    OrderBookDelta::from(*delta).hash(&mut hasher);
     hasher.finish()
 }

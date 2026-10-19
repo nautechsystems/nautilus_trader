@@ -133,7 +133,6 @@ impl From<OrderSide> for HyperliquidSide {
         match value {
             OrderSide::Buy => Self::Buy,
             OrderSide::Sell => Self::Sell,
-            _ => panic!("Invalid `OrderSide`"),
         }
     }
 }
@@ -150,8 +149,8 @@ impl From<HyperliquidSide> for OrderSide {
 impl From<HyperliquidSide> for AggressorSide {
     fn from(value: HyperliquidSide) -> Self {
         match value {
-            HyperliquidSide::Buy => Self::Buyer,
-            HyperliquidSide::Sell => Self::Seller,
+            HyperliquidSide::Buy => Self::Buy,
+            HyperliquidSide::Sell => Self::Sell,
         }
     }
 }
@@ -180,6 +179,10 @@ pub enum HyperliquidTimeInForce {
     Ioc,
     /// Good Till Cancel - remain on book until filled or cancelled.
     Gtc,
+    /// UI market order reported on `orderStatus` and `historicalOrders`.
+    FrontendMarket,
+    /// Liquidation market order reported on historical order queries.
+    LiquidationMarket,
 }
 
 /// Represents the order type configuration.
@@ -219,7 +222,7 @@ pub enum HyperliquidOrderType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -258,7 +261,7 @@ pub enum HyperliquidTpSl {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -334,7 +337,7 @@ impl From<OrderType> for HyperliquidConditionalOrderType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -638,6 +641,9 @@ pub enum HyperliquidOrderStatus {
     /// Order canceled due to liquidation.
     #[serde(rename = "liquidatedCanceled")]
     LiquidatedCanceled,
+    /// Order canceled because its HIP-4 outcome settled.
+    #[serde(rename = "outcomeSettledCanceled")]
+    OutcomeSettledCanceled,
     /// Order was scheduled for cancel.
     #[serde(rename = "scheduledCancel")]
     ScheduledCancel,
@@ -708,6 +714,7 @@ impl From<HyperliquidOrderStatus> for OrderStatus {
             | HyperliquidOrderStatus::SiblingFilledCanceled
             | HyperliquidOrderStatus::DelistedCanceled
             | HyperliquidOrderStatus::LiquidatedCanceled
+            | HyperliquidOrderStatus::OutcomeSettledCanceled
             | HyperliquidOrderStatus::ScheduledCancel => Self::Canceled,
             // All reject variants map to REJECTED
             HyperliquidOrderStatus::Rejected
@@ -929,6 +936,8 @@ pub enum HyperliquidInfoRequestType {
     PerpDexs,
     /// Get metadata for all perp dexes (standard + HIP-3).
     AllPerpMetas,
+    /// Get the account abstraction mode for a user.
+    UserAbstraction,
 }
 
 impl HyperliquidInfoRequestType {
@@ -967,7 +976,34 @@ impl HyperliquidInfoRequestType {
             Self::UserFees => "userFees",
             Self::PerpDexs => "perpDexs",
             Self::AllPerpMetas => "allPerpMetas",
+            Self::UserAbstraction => "userAbstraction",
         }
+    }
+}
+
+/// Hyperliquid account abstraction mode, as returned by the `userAbstraction` info request.
+///
+/// Under a unified or portfolio margin account, every balance and hold is reported in the spot
+/// clearinghouse state and the per-dex perp states do not describe account collateral. Under
+/// the other modes USDC collateral stays in the perp clearinghouse.
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, Hash, Serialize, Deserialize, AsRefStr)]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
+pub enum HyperliquidAccountAbstraction {
+    UnifiedAccount,
+    PortfolioMargin,
+    Disabled,
+    Default,
+    DexAbstraction,
+    #[serde(other)]
+    Unknown,
+}
+
+impl HyperliquidAccountAbstraction {
+    /// Returns true if account balances and holds are reported in the spot clearinghouse state.
+    #[must_use]
+    pub fn uses_spot_collateral(self) -> bool {
+        matches!(self, Self::UnifiedAccount | Self::PortfolioMargin)
     }
 }
 
@@ -1001,7 +1037,7 @@ pub enum HyperliquidLeverageType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1031,7 +1067,7 @@ impl HyperliquidProductType {
     ///
     /// # Errors
     ///
-    /// Returns error if symbol doesn't match any expected format.
+    /// Returns an error if symbol doesn't match any expected format.
     pub fn from_symbol(symbol: &str) -> anyhow::Result<Self> {
         if symbol.ends_with("-PERP") {
             Ok(Self::Perp)
@@ -1080,7 +1116,7 @@ fn is_outcome_wire_symbol(symbol: &str) -> bool {
     pyo3::pyclass(
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
+        module = "nautilus_trader.adapters.hyperliquid",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1136,8 +1172,8 @@ mod tests {
     #[rstest]
     fn test_order_side_from_hyperliquid_side() {
         // Test conversion from HyperliquidSide to OrderSide
-        assert_eq!(OrderSide::from(HyperliquidSide::Buy), OrderSide::Buy);
-        assert_eq!(OrderSide::from(HyperliquidSide::Sell), OrderSide::Sell);
+        assert_eq!(OrderSide::from(HyperliquidSide::Buy), OrderSide::Buy,);
+        assert_eq!(OrderSide::from(HyperliquidSide::Sell), OrderSide::Sell,);
     }
 
     #[rstest]
@@ -1145,11 +1181,11 @@ mod tests {
         // Test conversion from HyperliquidSide to AggressorSide
         assert_eq!(
             AggressorSide::from(HyperliquidSide::Buy),
-            AggressorSide::Buyer
+            AggressorSide::Buy
         );
         assert_eq!(
             AggressorSide::from(HyperliquidSide::Sell),
-            AggressorSide::Seller
+            AggressorSide::Sell
         );
     }
 
@@ -1159,6 +1195,11 @@ mod tests {
             (HyperliquidTimeInForce::Alo, "\"Alo\""),
             (HyperliquidTimeInForce::Ioc, "\"Ioc\""),
             (HyperliquidTimeInForce::Gtc, "\"Gtc\""),
+            (HyperliquidTimeInForce::FrontendMarket, "\"FrontendMarket\""),
+            (
+                HyperliquidTimeInForce::LiquidationMarket,
+                "\"LiquidationMarket\"",
+            ),
         ];
 
         for (tif, expected_json) in test_cases {
@@ -1247,6 +1288,10 @@ mod tests {
     fn test_twap_status_unknown_is_lenient() {
         assert_eq!(
             serde_json::from_str::<HyperliquidTwapStatus>("\"paused\"").unwrap(),
+            HyperliquidTwapStatus::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<HyperliquidTwapStatus>("\"waitingForTrigger\"").unwrap(),
             HyperliquidTwapStatus::Unknown,
         );
     }
@@ -1384,6 +1429,10 @@ mod tests {
             OrderStatus::from(HyperliquidOrderStatus::ReduceOnlyCanceled),
             OrderStatus::Canceled
         );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::OutcomeSettledCanceled),
+            OrderStatus::Canceled
+        );
 
         // Test specific reject reasons map to Rejected
         assert_eq!(
@@ -1421,6 +1470,13 @@ mod tests {
         assert_eq!(
             reduce_only_canceled,
             HyperliquidOrderStatus::ReduceOnlyCanceled
+        );
+
+        let outcome_settled_canceled: HyperliquidOrderStatus =
+            serde_json::from_str(r#""outcomeSettledCanceled""#).unwrap();
+        assert_eq!(
+            outcome_settled_canceled,
+            HyperliquidOrderStatus::OutcomeSettledCanceled
         );
 
         let tick_rejected: HyperliquidOrderStatus =
@@ -1788,5 +1844,34 @@ mod tests {
     #[case("25-YES-outcome")]
     fn test_product_type_from_symbol_rejects_invalid(#[case] symbol: &str) {
         assert!(HyperliquidProductType::from_symbol(symbol).is_err());
+    }
+
+    #[rstest]
+    #[case("\"unifiedAccount\"", HyperliquidAccountAbstraction::UnifiedAccount)]
+    #[case("\"portfolioMargin\"", HyperliquidAccountAbstraction::PortfolioMargin)]
+    #[case("\"disabled\"", HyperliquidAccountAbstraction::Disabled)]
+    #[case("\"default\"", HyperliquidAccountAbstraction::Default)]
+    #[case("\"dexAbstraction\"", HyperliquidAccountAbstraction::DexAbstraction)]
+    #[case("\"someFutureMode\"", HyperliquidAccountAbstraction::Unknown)]
+    fn test_account_abstraction_deserialize(
+        #[case] json: &str,
+        #[case] expected: HyperliquidAccountAbstraction,
+    ) {
+        let parsed: HyperliquidAccountAbstraction = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, expected);
+    }
+
+    #[rstest]
+    #[case(HyperliquidAccountAbstraction::UnifiedAccount, true)]
+    #[case(HyperliquidAccountAbstraction::PortfolioMargin, true)]
+    #[case(HyperliquidAccountAbstraction::Disabled, false)]
+    #[case(HyperliquidAccountAbstraction::Default, false)]
+    #[case(HyperliquidAccountAbstraction::DexAbstraction, false)]
+    #[case(HyperliquidAccountAbstraction::Unknown, false)]
+    fn test_account_abstraction_uses_spot_collateral(
+        #[case] abstraction: HyperliquidAccountAbstraction,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(abstraction.uses_spot_collateral(), expected);
     }
 }

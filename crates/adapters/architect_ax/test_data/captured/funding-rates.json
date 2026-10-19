@@ -1,0 +1,46 @@
+{
+  "funding_rates": [
+    {
+      "symbol": "EURUSD-PERP",
+      "timestamp_ns": 1790175600000000000,
+      "funding_rate": "0.000219269394",
+      "funding_amount": "0.000250000000",
+      "benchmark_price": "1.140150000000",
+      "settlement_price": "1.140400000000"
+    },
+    {
+      "symbol": "EURUSD-PERP",
+      "timestamp_ns": 1790089200000000000,
+      "funding_rate": "0.000917631636",
+      "funding_amount": "0.001050000000",
+      "benchmark_price": "1.144250000000",
+      "settlement_price": "1.145300000000"
+    },
+    {
+      "symbol": "EURUSD-PERP",
+      "timestamp_ns": 1790002800000000000,
+      "funding_rate": "0.000174322322",
+      "funding_amount": "0.000200000000",
+      "benchmark_price": "1.147300000000",
+      "settlement_price": "1.147500000000"
+    },
+    {
+      "symbol": "EURUSD-PERP",
+      "timestamp_ns": 1789743600000000000,
+      "funding_rate": "0.000436224045",
+      "funding_amount": "0.000500000000",
+      "benchmark_price": "1.146200000000",
+      "settlement_price": "1.146700000000"
+    },
+    {
+      "symbol": "EURUSD-PERP",
+      "timestamp_ns": 1789657200000000000,
+      "funding_rate": "0.000696500087",
+      "funding_amount": "0.000800000000",
+      "benchmark_price": "1.148600000000",
+      "settlement_price": "1.149400000000"
+    }
+  ],
+  "next_cursor": "1789657200000000000:settlement://EURUSD-PERP/1789657200000000000",
+  "limit": 5
+}

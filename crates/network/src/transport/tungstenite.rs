@@ -29,7 +29,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{Sink, Stream};
+use futures_util::{Sink, Stream};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{
     WebSocketStream,
@@ -63,7 +63,7 @@ impl From<tungstenite::Message> for Message {
 impl TryFrom<Message> for tungstenite::Message {
     type Error = TransportError;
 
-    /// Convert a neutral [`Message`] into a tungstenite [`tungstenite::Message`].
+    /// Converts a neutral [`Message`] into a tungstenite [`tungstenite::Message`].
     ///
     /// Validates the `Text` payload as UTF-8 because tungstenite refuses to
     /// transmit a Text frame whose body is not valid UTF-8. Other variants
@@ -71,8 +71,7 @@ impl TryFrom<Message> for tungstenite::Message {
     ///
     /// # Errors
     ///
-    /// Returns [`TransportError::InvalidUtf8`] if a `Text` payload is not
-    /// valid UTF-8.
+    /// Returns an error if a `Text` payload is not valid UTF-8.
     fn try_from(value: Message) -> Result<Self, Self::Error> {
         Ok(match value {
             Message::Text(bytes) => match Utf8Bytes::try_from(bytes) {
@@ -123,9 +122,7 @@ impl From<tungstenite::Error> for TransportError {
             tungstenite::Error::Protocol(e) => Self::Protocol(e.to_string()),
             tungstenite::Error::Utf8(_) => Self::InvalidUtf8,
             tungstenite::Error::Url(e) => Self::InvalidUrl(e.to_string()),
-            tungstenite::Error::Http(resp) => {
-                Self::Handshake(format!("HTTP status {}", resp.status()))
-            }
+            tungstenite::Error::Http(resp) => Self::UpgradeRejected(resp.status().as_u16()),
             tungstenite::Error::HttpFormat(e) => Self::Handshake(e.to_string()),
             other => Self::Other(other.to_string()),
         }
@@ -144,20 +141,20 @@ pub struct TungsteniteTransport<S> {
 }
 
 impl<S> TungsteniteTransport<S> {
-    /// Wrap an established tungstenite WebSocket stream.
+    /// Wraps an established Tungstenite WebSocket stream.
     #[inline]
     #[must_use]
     pub const fn new(inner: WebSocketStream<S>) -> Self {
         Self { inner }
     }
 
-    /// Consume the adapter and return the underlying stream.
+    /// Consumes the adapter and returns the underlying stream.
     #[inline]
     pub fn into_inner(self) -> WebSocketStream<S> {
         self.inner
     }
 
-    /// Borrow the underlying stream.
+    /// Borrows the underlying stream.
     #[inline]
     pub const fn get_ref(&self) -> &WebSocketStream<S> {
         &self.inner
@@ -263,11 +260,19 @@ mod tests {
     fn round_trip_ping_pong() {
         let ping = tungstenite::Message::Ping(Bytes::from_static(b"p"));
         let neutral: Message = ping.into();
-        assert!(neutral.is_ping());
+        assert_eq!(neutral, Message::Ping(Bytes::from_static(b"p")));
+        assert_eq!(
+            tungstenite::Message::try_from(neutral).unwrap(),
+            tungstenite::Message::Ping(Bytes::from_static(b"p")),
+        );
 
         let pong = tungstenite::Message::Pong(Bytes::from_static(b"q"));
         let neutral: Message = pong.into();
-        assert!(neutral.is_pong());
+        assert_eq!(neutral, Message::Pong(Bytes::from_static(b"q")));
+        assert_eq!(
+            tungstenite::Message::try_from(neutral).unwrap(),
+            tungstenite::Message::Pong(Bytes::from_static(b"q")),
+        );
     }
 
     #[rstest]
@@ -276,17 +281,22 @@ mod tests {
             code: CloseCode::Normal,
             reason: "bye".into(),
         }));
+
         let neutral: Message = original.into();
+
         let Message::Close(Some(frame)) = &neutral else {
             panic!("expected close frame");
         };
+
         assert_eq!(frame.code, 1000);
         assert_eq!(frame.reason, "bye");
 
         let back = tungstenite::Message::try_from(neutral).unwrap();
+
         let tungstenite::Message::Close(Some(frame)) = back else {
             panic!("expected close frame");
         };
+
         assert_eq!(u16::from(frame.code), 1000);
         assert_eq!(frame.reason.as_str(), "bye");
     }
@@ -310,5 +320,53 @@ mod tests {
     fn error_translation_utf8() {
         let err: TransportError = tungstenite::Error::Utf8(String::from("bad")).into();
         assert!(matches!(err, TransportError::InvalidUtf8));
+    }
+
+    #[rstest]
+    fn error_translation_message_too_long() {
+        let err: TransportError =
+            tungstenite::Error::Capacity(tungstenite::error::CapacityError::MessageTooLong {
+                size: 65,
+                max_size: 64,
+            })
+            .into();
+
+        assert!(matches!(err, TransportError::MessageTooLarge));
+    }
+
+    #[rstest]
+    fn error_translation_too_many_headers() {
+        let err: TransportError =
+            tungstenite::Error::Capacity(tungstenite::error::CapacityError::TooManyHeaders).into();
+
+        let TransportError::Other(message) = err else {
+            panic!("expected other error, was {err:?}");
+        };
+
+        assert_eq!(message, "Too many headers");
+    }
+
+    #[rstest]
+    fn error_translation_tls() {
+        let err: TransportError =
+            tungstenite::Error::Tls(tungstenite::error::TlsError::InvalidDnsName).into();
+
+        let TransportError::Tls(message) = err else {
+            panic!("expected TLS error, was {err:?}");
+        };
+
+        assert_eq!(message, "Invalid DNS name");
+    }
+
+    #[rstest]
+    fn error_translation_url() {
+        let err: TransportError =
+            tungstenite::Error::Url(tungstenite::error::UrlError::UnsupportedUrlScheme).into();
+
+        let TransportError::InvalidUrl(message) = err else {
+            panic!("expected invalid URL error, was {err:?}");
+        };
+
+        assert_eq!(message, "URL scheme not supported");
     }
 }

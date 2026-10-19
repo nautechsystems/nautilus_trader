@@ -26,11 +26,22 @@
 pub mod config;
 pub mod factories;
 pub mod loader;
+pub mod positions;
+pub mod session;
 pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::{data::ensure_rust_extractor_registered, identifiers::InstrumentId};
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
+    string::secret::SecretString,
+};
+use nautilus_execution::{models::fee::FeeModel, python::fee::PyFeeModel};
+use nautilus_model::{
+    data::ensure_rust_extractor_registered,
+    identifiers::InstrumentId,
+    python::{instruments::pyobject_to_instrument_any, orders::pyobject_to_order_any},
+    types::{Money, Price, Quantity},
+};
 use nautilus_network::websocket::TransportBackend;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
@@ -38,15 +49,66 @@ use pyo3::{prelude::*, types::PyDict};
 use crate::{
     common::consts::{POLYMARKET, POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
     config::{
-        PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
-        PolymarketUpDownEventSlugConfig,
+        PolymarketDataClientConfig, PolymarketExecutionClientConfig,
+        PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig,
     },
     data_types::{
-        PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
+        PolymarketCryptoPrice, PolymarketCryptoTwap, PolymarketEquityPrice,
+        register_polymarket_custom_data,
     },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+    models::PolymarketFeeModel,
     providers::build_gamma_params_from_hashmap,
 };
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PolymarketFeeModel {
+    /// Polymarket fee model for binary-option backtests.
+    ///
+    /// Taker fills pay the market's fee-equivalent amount. Maker fills receive a
+    /// per-fill approximation of the daily maker rebate by applying the market's
+    /// configured rebate rate to that fee-equivalent amount.
+    #[new]
+    #[gen_stub(override_return_type(type_repr = "typing.Self", imports = ("typing",)))]
+    fn py_new() -> PyClassInitializer<Self> {
+        PyClassInitializer::from(PyFeeModel).add_subclass(Self)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn get_commission(
+        &self,
+        order: &Bound<'_, PyAny>,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &Bound<'_, PyAny>,
+    ) -> PyResult<Money> {
+        let py = order.py();
+        let instrument =
+            pyobject_to_instrument_any(py, instrument.clone().unbind()).map_err(|_| {
+                let type_name = instrument
+                    .get_type()
+                    .name()
+                    .map_or_else(|_| "unknown".to_string(), |name| name.to_string());
+                to_pytype_err(format!(
+                    "`instrument` must be an `Instrument`, was `{type_name}`"
+                ))
+            })?;
+        let order = pyobject_to_order_any(py, order.clone().unbind()).map_err(|_| {
+            let type_name = order
+                .get_type()
+                .name()
+                .map_or_else(|_| "unknown".to_string(), |name| name.to_string());
+            to_pytype_err(format!("`order` must be an `Order`, was `{type_name}`"))
+        })?;
+
+        FeeModel::get_commission(self, &order, fill_quantity, fill_px, &instrument)
+            .map_err(to_pyruntime_err)
+    }
+}
 
 fn getattr_optional<'py>(
     obj: &Bound<'py, PyAny>,
@@ -218,6 +280,9 @@ fn extract_provider_config_from_pyobject(
     let event_slug_builder = getattr_optional(obj, "event_slug_builder")?
         .map(|value| extract_event_slug_builder(&value))
         .transpose()?;
+    let series_ids = getattr_optional(obj, "series_ids")?
+        .map(|value| value.extract::<Vec<u64>>())
+        .transpose()?;
     let log_warnings = getattr_optional(obj, "log_warnings")?
         .map(|value| value.extract::<bool>())
         .transpose()?
@@ -234,6 +299,7 @@ fn extract_provider_config_from_pyobject(
         event_slugs,
         market_slugs,
         event_slug_builder,
+        series_ids,
         log_warnings,
         use_gamma_markets,
     };
@@ -261,9 +327,21 @@ fn extract_data_config_from_pyobject(
     let base_url_ws = getattr_optional(obj, "base_url_ws")?
         .map(|value| value.extract::<String>())
         .transpose()?;
-    let base_url_rtds = getattr_optional(obj, "base_url_rtds")?
+    let base_url_reference_prices = getattr_optional(obj, "base_url_reference_prices")?
         .map(|value| value.extract::<String>())
         .transpose()?;
+    let api_key = getattr_optional(obj, "api_key")?
+        .map(|value| value.extract::<String>())
+        .transpose()?
+        .map(SecretString::from);
+    let api_secret = getattr_optional(obj, "api_secret")?
+        .map(|value| value.extract::<String>())
+        .transpose()?
+        .map(SecretString::from);
+    let passphrase = getattr_optional(obj, "passphrase")?
+        .map(|value| value.extract::<String>())
+        .transpose()?
+        .map(SecretString::from);
     let base_url_gamma = getattr_optional(obj, "base_url_gamma")?
         .map(|value| value.extract::<String>())
         .transpose()?;
@@ -272,7 +350,8 @@ fn extract_data_config_from_pyobject(
         .transpose()?;
     let proxy_url = getattr_optional(obj, "proxy_url")?
         .map(|value| value.extract::<String>())
-        .transpose()?;
+        .transpose()?
+        .map(SecretString::from);
     let http_timeout_secs = getattr_optional(obj, "http_timeout_secs")?
         .map(|value| value.extract::<u64>())
         .transpose()?
@@ -294,15 +373,19 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<bool>())
         .transpose()?
         .unwrap_or(default.subscribe_new_markets);
-    let drop_quotes_missing_side = getattr_optional(obj, "drop_quotes_missing_side")?
-        .map(|value| value.extract::<bool>())
-        .transpose()?
-        .unwrap_or(default.drop_quotes_missing_side);
     let new_market_fetch_max_concurrency =
         getattr_optional(obj, "new_market_fetch_max_concurrency")?
             .map(|value| value.extract::<usize>())
             .transpose()?
             .unwrap_or(default.new_market_fetch_max_concurrency);
+    let drop_quotes_missing_side = getattr_optional(obj, "drop_quotes_missing_side")?
+        .map(|value| value.extract::<bool>())
+        .transpose()?
+        .unwrap_or(default.drop_quotes_missing_side);
+    let compute_effective_deltas = getattr_optional(obj, "compute_effective_deltas")?
+        .map(|value| value.extract::<bool>())
+        .transpose()?
+        .unwrap_or(default.compute_effective_deltas);
     let auto_load_missing_instruments = getattr_optional(obj, "auto_load_missing_instruments")?
         .map(|value| value.extract::<bool>())
         .transpose()?
@@ -344,21 +427,41 @@ fn extract_data_config_from_pyobject(
         Some(value) => value.extract::<TransportBackend>()?,
         None => default.transport_backend,
     };
+
+    let book_snapshot_timeout_secs = getattr_optional(obj, "book_snapshot_timeout_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.book_snapshot_timeout_secs);
+    let book_stale_check_interval_secs = getattr_optional(obj, "book_stale_check_interval_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.book_stale_check_interval_secs);
+    let book_stale_threshold_secs = getattr_optional(obj, "book_stale_threshold_secs")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.book_stale_threshold_secs);
+
     let config = PolymarketDataClientConfig {
         instrument_config,
+        filters: Vec::new(),
         base_url_http,
         base_url_ws,
-        base_url_rtds,
+        base_url_reference_prices,
         base_url_gamma,
         base_url_data_api,
+        api_key,
+        api_secret,
+        passphrase,
         proxy_url,
         http_timeout_secs,
         ws_timeout_secs,
         ws_max_subscriptions,
         update_instruments_interval_mins,
         subscribe_new_markets,
-        drop_quotes_missing_side,
+        new_market_filter: None,
         new_market_fetch_max_concurrency,
+        drop_quotes_missing_side,
+        compute_effective_deltas,
         auto_load_missing_instruments,
         auto_load_debounce_ms,
         auto_load_max_retries,
@@ -368,9 +471,10 @@ fn extract_data_config_from_pyobject(
         resolve_poll_interval_secs,
         resolve_poll_grace_secs,
         resolve_poll_max_wait_secs,
-        filters: Vec::new(),
-        new_market_filter: None,
         transport_backend,
+        book_snapshot_timeout_secs,
+        book_stale_check_interval_secs,
+        book_stale_threshold_secs,
     };
     validate_data_config(&config)?;
     Ok(config)
@@ -420,34 +524,43 @@ fn extract_polymarket_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<PolymarketExecClientConfig>(py) {
+    match config.extract::<PolymarketExecutionClientConfig>(py) {
         Ok(c) => {
             c.validated_proxy_url()
                 .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket proxy URL: {e}")))?;
             Ok(Box::new(c))
         }
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract PolymarketExecClientConfig: {e}"
+            "Failed to extract PolymarketExecutionClientConfig: {e}"
         ))),
     }
 }
 
-/// Loaded as `nautilus_pyo3.polymarket`.
+/// Exposed through `nautilus_trader.adapters.polymarket`.
 #[pymodule]
 pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(POLYMARKET), POLYMARKET)?;
     m.add(stringify!(POLYMARKET_CLIENT_ID), *POLYMARKET_CLIENT_ID)?;
     m.add(stringify!(POLYMARKET_VENUE), *POLYMARKET_VENUE)?;
-    m.add_class::<crate::common::enums::SignatureType>()?;
+    m.add_class::<crate::common::enums::PolymarketSignatureType>()?;
+    m.add_class::<crate::common::enums::PolymarketSignerType>()?;
     m.add_class::<PolymarketUpDownEventSlugConfig>()?;
     m.add_class::<PolymarketInstrumentProviderConfig>()?;
     m.add_class::<PolymarketDataClientConfig>()?;
-    m.add_class::<PolymarketExecClientConfig>()?;
     m.add_class::<PolymarketDataClientFactory>()?;
+    m.add_class::<PolymarketExecutionClientConfig>()?;
     m.add_class::<PolymarketExecutionClientFactory>()?;
+    m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
-    m.add_class::<PolymarketRtdsCryptoPrice>()?;
-    m.add_class::<PolymarketRtdsEquityPrice>()?;
+    m.add_class::<session::PyPolymarketSessionKeyClient>()?;
+    m.add_class::<session::PyPolymarketSessionKeyClientConfig>()?;
+    m.add_class::<session::PyPolymarketSessionKey>()?;
+    m.add_class::<positions::PyPolymarketPositionClient>()?;
+    m.add_class::<positions::PyPolymarketPositionOutcome>()?;
+    m.add_class::<positions::PyPolymarketPositionTransaction>()?;
+    m.add_class::<PolymarketCryptoPrice>()?;
+    m.add_class::<PolymarketCryptoTwap>()?;
+    m.add_class::<PolymarketEquityPrice>()?;
     m.add_function(pyo3::wrap_pyfunction!(
         sort::py_polymarket_trade_sort_key,
         m
@@ -455,8 +568,9 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(pyo3::wrap_pyfunction!(sort::py_polymarket_trade_id, m)?)?;
 
     register_polymarket_custom_data();
-    let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoPrice>();
-    let _result = ensure_rust_extractor_registered::<PolymarketRtdsEquityPrice>();
+    let _result = ensure_rust_extractor_registered::<PolymarketCryptoPrice>();
+    let _result = ensure_rust_extractor_registered::<PolymarketCryptoTwap>();
+    let _result = ensure_rust_extractor_registered::<PolymarketEquityPrice>();
 
     let registry = get_global_pyo3_registry();
 
@@ -486,7 +600,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "PolymarketExecClientConfig".to_string(),
+        "PolymarketExecutionClientConfig".to_string(),
         extract_polymarket_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(
@@ -501,19 +615,23 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use std::sync::Arc;
 
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
     use nautilus_core::Params;
-    use nautilus_model::{
-        data::{CustomData, DataType, custom::CustomDataTrait, ensure_rust_extractor_registered},
-        types::Price,
+    use nautilus_model::data::{
+        CustomData, DataType, custom::CustomDataTrait, ensure_rust_extractor_registered,
     };
     use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::json;
 
     use super::extract_data_config_from_pyobject;
     use crate::{
-        config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
-        data_types::{PolymarketRtdsCryptoPrice, register_polymarket_custom_data},
+        config::{
+            PolymarketDataClientConfig, PolymarketInstrumentProviderConfig,
+            PolymarketUpDownEventSlugConfig,
+        },
+        data_types::{PolymarketCryptoPrice, register_polymarket_custom_data},
     };
 
     #[rstest]
@@ -560,16 +678,25 @@ mod tests {
                 .set_item("subscribe_new_markets", false)
                 .unwrap();
             config_kwargs
+                .set_item("new_market_fetch_max_concurrency", 13)
+                .unwrap();
+            config_kwargs
                 .set_item("drop_quotes_missing_side", false)
                 .unwrap();
             config_kwargs
-                .set_item("new_market_fetch_max_concurrency", 13)
+                .set_item("compute_effective_deltas", true)
                 .unwrap();
             config_kwargs
                 .set_item("base_url_gamma", "https://gamma.example")
                 .unwrap();
             config_kwargs
-                .set_item("base_url_rtds", "wss://ws-live-data.example")
+                .set_item("base_url_reference_prices", "wss://ws-live-data.example")
+                .unwrap();
+            let api_secret = BASE64_STANDARD.encode(b"namespace-secret");
+            config_kwargs.set_item("api_key", "namespace-key").unwrap();
+            config_kwargs.set_item("api_secret", api_secret).unwrap();
+            config_kwargs
+                .set_item("passphrase", "namespace-passphrase")
                 .unwrap();
             config_kwargs
                 .set_item("base_url_data_api", "https://data.example")
@@ -603,6 +730,15 @@ mod tests {
                 .unwrap();
             config_kwargs
                 .set_item("resolve_poll_max_wait_secs", 2400)
+                .unwrap();
+            config_kwargs
+                .set_item("book_snapshot_timeout_secs", 42)
+                .unwrap();
+            config_kwargs
+                .set_item("book_stale_check_interval_secs", 7)
+                .unwrap();
+            config_kwargs
+                .set_item("book_stale_threshold_secs", 9)
                 .unwrap();
             let config_obj = namespace
                 .call((), Some(&config_kwargs))
@@ -639,14 +775,15 @@ mod tests {
             assert!(!instrument_config.log_warnings);
             assert_eq!(rust_config.update_instruments_interval_mins, Some(1));
             assert!(!rust_config.subscribe_new_markets);
-            assert!(!rust_config.drop_quotes_missing_side);
             assert_eq!(rust_config.new_market_fetch_max_concurrency, 13);
+            assert!(!rust_config.drop_quotes_missing_side);
+            assert!(rust_config.compute_effective_deltas);
             assert_eq!(
                 rust_config.base_url_gamma.as_deref(),
                 Some("https://gamma.example")
             );
             assert_eq!(
-                rust_config.base_url_rtds.as_deref(),
+                rust_config.base_url_reference_prices.as_deref(),
                 Some("wss://ws-live-data.example")
             );
             assert_eq!(
@@ -656,13 +793,83 @@ mod tests {
             assert_eq!(rust_config.ws_timeout_secs, 41);
             assert_eq!(rust_config.ws_max_subscriptions, 512);
             assert_eq!(
-                rust_config.proxy_url.as_deref(),
+                rust_config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
                 Some("http://proxy.example:18085")
             );
             assert!(!rust_config.resolve_poll_enabled);
             assert_eq!(rust_config.resolve_poll_interval_secs, 45);
             assert_eq!(rust_config.resolve_poll_grace_secs, 12);
             assert_eq!(rust_config.resolve_poll_max_wait_secs, 2400);
+            assert_eq!(rust_config.book_snapshot_timeout_secs, 42);
+            assert_eq!(rust_config.book_stale_check_interval_secs, 7);
+            assert_eq!(rust_config.book_stale_threshold_secs, 9);
+            assert_eq!(
+                rust_config
+                    .api_key
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+                Some("namespace-key")
+            );
+            assert_eq!(
+                rust_config
+                    .api_secret
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+                Some("bmFtZXNwYWNlLXNlY3JldA==")
+            );
+            assert_eq!(
+                rust_config
+                    .passphrase
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+                Some("namespace-passphrase")
+            );
+        });
+    }
+
+    #[rstest]
+    fn data_config_py_constructor_accepts_book_sync_kwargs() {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("book_snapshot_timeout_secs", 42).unwrap();
+            kwargs
+                .set_item("book_stale_check_interval_secs", 7)
+                .unwrap();
+            kwargs.set_item("book_stale_threshold_secs", 9).unwrap();
+
+            let config = py
+                .get_type::<PolymarketDataClientConfig>()
+                .call((), Some(&kwargs))
+                .expect("data config should accept book sync kwargs");
+
+            assert_eq!(
+                config
+                    .getattr("book_snapshot_timeout_secs")
+                    .expect("timeout getter")
+                    .extract::<u64>()
+                    .expect("u64 timeout"),
+                42
+            );
+            assert_eq!(
+                config
+                    .getattr("book_stale_check_interval_secs")
+                    .expect("interval getter")
+                    .extract::<u64>()
+                    .expect("u64 interval"),
+                7
+            );
+            assert_eq!(
+                config
+                    .getattr("book_stale_threshold_secs")
+                    .expect("threshold getter")
+                    .extract::<u64>()
+                    .expect("u64 threshold"),
+                9
+            );
         });
     }
 
@@ -837,17 +1044,19 @@ mod tests {
     }
 
     #[rstest]
-    fn custom_data_getter_unwraps_rtds_payload_to_python_class() {
+    fn custom_data_getter_unwraps_polybolt_payload_to_python_class() {
         Python::initialize();
         Python::attach(|py| {
             register_polymarket_custom_data();
-            let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoPrice>();
+            let _result = ensure_rust_extractor_registered::<PolymarketCryptoPrice>();
 
             let mut metadata = Params::new();
-            metadata.insert("symbol".to_string(), json!("btcusdt"));
-            let payload = Arc::new(PolymarketRtdsCryptoPrice::new(
-                "btcusdt".to_string(),
-                Price::from("67234.50"),
+            metadata.insert("symbol".to_string(), json!("btcusd"));
+
+            let payload = Arc::new(PolymarketCryptoPrice::new(
+                "btcusd".to_string(),
+                "chainlink".to_string(),
+                dec!(67234.50),
                 1_753_314_088_395,
                 1_753_314_088_421,
                 nautilus_core::UnixNanos::from_millis(1_753_314_088_395),
@@ -856,7 +1065,7 @@ mod tests {
             let custom = CustomData::new(
                 payload,
                 DataType::new(
-                    PolymarketRtdsCryptoPrice::type_name_static(),
+                    PolymarketCryptoPrice::type_name_static(),
                     Some(metadata),
                     None,
                 ),
@@ -867,7 +1076,7 @@ mod tests {
 
             assert_eq!(
                 py_payload.get_type().name().expect("type name"),
-                "PolymarketRtdsCryptoPrice"
+                "PolymarketCryptoPrice"
             );
             assert_eq!(
                 py_payload
@@ -875,7 +1084,7 @@ mod tests {
                     .expect("symbol")
                     .extract::<String>()
                     .expect("extract symbol"),
-                "btcusdt"
+                "btcusd"
             );
             assert_eq!(
                 py_payload

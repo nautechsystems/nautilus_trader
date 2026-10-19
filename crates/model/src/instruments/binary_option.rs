@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -71,10 +71,9 @@ pub struct BinaryOption {
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
-    /// The fee rate for liquidity makers as a percentage of order value.
-    pub maker_fee: Decimal,
-    /// The fee rate for liquidity takers as a percentage of order value.
-    pub taker_fee: Decimal,
+    /// The venue-assigned identifier of the event containing the instrument's market.
+    #[serde(default)]
+    pub event_id: Option<Ustr>,
     /// The binary outcome of the market.
     pub outcome: Option<Ustr>,
     /// The market description.
@@ -103,17 +102,8 @@ pub struct BinaryOption {
 
 #[bon::bon]
 impl BinaryOption {
-    /// Creates a new [`BinaryOption`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails (e.g., invalid precision or increments).
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
@@ -124,6 +114,7 @@ impl BinaryOption {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        event_id: Option<Ustr>,
         outcome: Option<Ustr>,
         description: Option<Ustr>,
         max_quantity: Option<Quantity>,
@@ -134,8 +125,6 @@ impl BinaryOption {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -170,8 +159,7 @@ impl BinaryOption {
             size_increment,
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
-            maker_fee: maker_fee.unwrap_or_default(),
-            taker_fee: taker_fee.unwrap_or_default(),
+            event_id,
             outcome,
             description,
             max_quantity,
@@ -187,81 +175,14 @@ impl BinaryOption {
         })
     }
 
-    /// Creates a new [`BinaryOption`] instance by validating parameters.
-    ///
-    /// # Panics
-    ///
-    /// Panics if parameter validation fails during `new_checked`.
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        asset_class: AssetClass,
-        currency: Currency,
-        activation_ns: UnixNanos,
-        expiration_ns: UnixNanos,
-        price_precision: u8,
-        size_precision: u8,
-        price_increment: Price,
-        size_increment: Quantity,
-        outcome: Option<Ustr>,
-        description: Option<Ustr>,
-        max_quantity: Option<Quantity>,
-        min_quantity: Option<Quantity>,
-        max_notional: Option<Money>,
-        min_notional: Option<Money>,
-        max_price: Option<Price>,
-        min_price: Option<Price>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            asset_class,
-            currency,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            outcome,
-            description,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`BinaryOption`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`BinaryOption::new_checked`], which the builder calls so the
-    /// same correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`BinaryOption::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,
@@ -274,6 +195,7 @@ impl BinaryOption {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        event_id: Option<Ustr>,
         outcome: Option<Ustr>,
         description: Option<Ustr>,
         max_quantity: Option<Quantity>,
@@ -284,8 +206,6 @@ impl BinaryOption {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -302,6 +222,7 @@ impl BinaryOption {
             size_precision,
             price_increment,
             size_increment,
+            event_id,
             outcome,
             description,
             max_quantity,
@@ -312,8 +233,6 @@ impl BinaryOption {
             min_price,
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
             tick_scheme,
             info,
             ts_event,
@@ -337,9 +256,6 @@ impl Hash for BinaryOption {
 }
 
 impl Instrument for BinaryOption {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::BinaryOption(self)
     }
@@ -432,6 +348,14 @@ impl Instrument for BinaryOption {
         self.min_price
     }
 
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
+    }
+
     fn ts_event(&self) -> UnixNanos {
         self.ts_event
     }
@@ -446,14 +370,6 @@ impl Instrument for BinaryOption {
 
     fn margin_maint(&self) -> Decimal {
         self.margin_maint
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
     }
 
     fn strike_price(&self) -> Option<Price> {
@@ -530,7 +446,6 @@ mod tests {
             None,
             None,
             None,
-            None,
             0.into(),
             0.into(),
         );
@@ -538,10 +453,21 @@ mod tests {
     }
 
     #[rstest]
+    fn test_event_id_serialization_and_legacy_default(mut binary_option: BinaryOption) {
+        binary_option.event_id = Some("event-123".into());
+        let mut value = serde_json::to_value(&binary_option).unwrap();
+        let restored: BinaryOption = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(restored.event_id, binary_option.event_id);
+        value.as_object_mut().unwrap().remove("event_id");
+        let restored: BinaryOption = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.event_id, None);
+    }
+
+    #[rstest]
     fn test_serialization_roundtrip(binary_option: BinaryOption) {
         let json = serde_json::to_string(&binary_option).unwrap();
         let deserialized: BinaryOption = serde_json::from_str(&json).unwrap();
-        assert_eq!(binary_option, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]
@@ -557,6 +483,7 @@ mod tests {
             2,
             Price::from("0.001"),
             Quantity::from("0.01"),
+            Some("event-123".into()),
             Some("Yes".into()),
             Some("Will it happen?".into()),
             Some(Quantity::from("10000.00")),
@@ -567,8 +494,6 @@ mod tests {
             Some(Price::from("0.001")),
             Some(dec!(0.01)),
             Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
             None,
             None,
             3.into(),
@@ -587,6 +512,7 @@ mod tests {
             .size_precision(2)
             .price_increment(Price::from("0.001"))
             .size_increment(Quantity::from("0.01"))
+            .event_id("event-123".into())
             .outcome("Yes".into())
             .description("Will it happen?".into())
             .max_quantity(Quantity::from("10000.00"))
@@ -597,8 +523,6 @@ mod tests {
             .min_price(Price::from("0.001"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(3.into())
             .ts_init(4.into())
             .build()

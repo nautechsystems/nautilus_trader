@@ -1,7 +1,7 @@
 # nautilus-plugin
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-plugin)](https://docs.rs/nautilus-plugin/latest/nautilus-plugin/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-plugin)](https://docs.rs/nautilus-plugin/latest/nautilus_plugin/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-plugin.svg)](https://crates.io/crates/nautilus-plugin)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -28,6 +28,7 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
+- `component-binding`: Enables the experimental executable component contract.
 - `host`: Optional plug-in manifest compatibility flag.
 
 ## Documentation

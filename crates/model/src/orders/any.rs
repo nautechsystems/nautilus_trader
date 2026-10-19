@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
-    Order, OrderError, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
+    Order, OrderCore, OrderError, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
     market::MarketOrder, market_if_touched::MarketIfTouchedOrder,
     market_to_limit::MarketToLimitOrder, stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
     trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
@@ -77,7 +77,6 @@ impl OrderAny {
     /// - The initialization event violates an order invariant
     ///   (e.g. missing required price/trigger fields, invalid quantity, invalid TIF/expire combo).
     /// - Any subsequent event has an invalid state transition when applied to the order.
-    ///
     pub fn from_events(events: Vec<OrderEventAny>) -> Result<Self, OrderReplayError> {
         let Some(init_event) = events.first() else {
             return Err(OrderReplayError::EmptyInput);
@@ -118,21 +117,34 @@ impl OrderAny {
         }
     }
 
-    // TODO: Does not update the OrderInitialized event in the order's
-    // event history. The init event will still carry the original
-    // order_list_id (typically None). Address with fluent builder API.
+    /// Assigns the order to the list identified by `id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the order has no events or its first event is not `OrderInitialized`.
     pub fn set_order_list_id(&mut self, id: OrderListId) {
-        match self {
-            Self::Limit(o) => o.order_list_id = Some(id),
-            Self::LimitIfTouched(o) => o.order_list_id = Some(id),
-            Self::Market(o) => o.order_list_id = Some(id),
-            Self::MarketIfTouched(o) => o.order_list_id = Some(id),
-            Self::MarketToLimit(o) => o.order_list_id = Some(id),
-            Self::StopLimit(o) => o.order_list_id = Some(id),
-            Self::StopMarket(o) => o.order_list_id = Some(id),
-            Self::TrailingStopLimit(o) => o.order_list_id = Some(id),
-            Self::TrailingStopMarket(o) => o.order_list_id = Some(id),
-        }
+        let order: &mut OrderCore = match self {
+            Self::Limit(order) => order,
+            Self::LimitIfTouched(order) => order,
+            Self::Market(order) => order,
+            Self::MarketIfTouched(order) => order,
+            Self::MarketToLimit(order) => order,
+            Self::StopLimit(order) => order,
+            Self::StopMarket(order) => order,
+            Self::TrailingStopLimit(order) => order,
+            Self::TrailingStopMarket(order) => order,
+        };
+        let init = match order
+            .events
+            .first_mut()
+            .expect("Order invariant violated: no events")
+        {
+            OrderEventAny::Initialized(init) => init,
+            _ => panic!("Order invariant violated: first event must be OrderInitialized"),
+        };
+
+        order.order_list_id = Some(id);
+        init.order_list_id = Some(id);
     }
 }
 
@@ -368,6 +380,7 @@ impl PartialEq for StopOrderAny {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -382,6 +395,24 @@ mod tests {
         orders::{OrderError, builder::OrderTestBuilder},
         types::{Price, Quantity},
     };
+
+    #[rstest]
+    #[should_panic(expected = "Order invariant violated: first event must be OrderInitialized")]
+    fn test_init_event_panics_when_first_event_is_not_initialized() {
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .build();
+
+        let OrderAny::Market(inner) = &mut order else {
+            panic!("expected a market order");
+        };
+
+        inner.events[0] =
+            OrderEventAny::Denied(crate::events::order::spec::OrderDeniedSpec::builder().build());
+
+        let _ = order.init_event();
+    }
 
     #[rstest]
     fn test_order_any_equality() {
@@ -424,6 +455,57 @@ mod tests {
         assert_eq!(order.order_type(), OrderType::Market);
         assert_eq!(order.instrument_id(), init_event.instrument_id);
         assert_eq!(order.quantity(), init_event.quantity);
+    }
+
+    #[rstest]
+    #[case::limit(OrderType::Limit)]
+    #[case::limit_if_touched(OrderType::LimitIfTouched)]
+    #[case::market(OrderType::Market)]
+    #[case::market_if_touched(OrderType::MarketIfTouched)]
+    #[case::market_to_limit(OrderType::MarketToLimit)]
+    #[case::stop_limit(OrderType::StopLimit)]
+    #[case::stop_market(OrderType::StopMarket)]
+    #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
+    #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
+    fn test_set_order_list_id_updates_init_event_and_replay(#[case] order_type: OrderType) {
+        let mut order = order_for_list_id_test(order_type);
+        let init_before = order.init_event().clone();
+        let event_count = order.event_count();
+        let order_list_id = OrderListId::from("OL-SET-LIST-001");
+
+        order.set_order_list_id(order_list_id);
+
+        let mut expected_init = init_before;
+        expected_init.order_list_id = Some(order_list_id);
+        assert_eq!(order.order_list_id(), Some(order_list_id));
+        assert_eq!(order.init_event(), &expected_init);
+        assert_eq!(order.event_count(), event_count);
+
+        let persisted_events: Vec<_> = order.events().into_iter().cloned().collect();
+        assert_eq!(
+            persisted_events,
+            vec![OrderEventAny::Initialized(expected_init.clone())]
+        );
+
+        let replayed = OrderAny::from_events(persisted_events).unwrap();
+        assert_eq!(replayed.order_list_id(), Some(order_list_id));
+        assert_eq!(replayed.init_event(), &expected_init);
+    }
+
+    fn order_for_list_id_test(order_type: OrderType) -> OrderAny {
+        OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("ORDER-LIST-001"))
+            .quantity(Quantity::from(10))
+            .price(Price::from("101.00"))
+            .trigger_price(Price::from("100.00"))
+            .trigger_type(TriggerType::LastPrice)
+            .limit_offset(dec!(1))
+            .trailing_offset(dec!(1))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .init_id(UUID4::from("16578139-a945-4b65-b46c-bc131a15d8e7"))
+            .ts_init(UnixNanos::from(123_456_789))
+            .build()
     }
 
     #[rstest]
@@ -881,7 +963,7 @@ mod tests {
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         // Convert to StopOrderAny
@@ -897,7 +979,7 @@ mod tests {
         assert_eq!(order_any.trailing_offset(), Some(dec!(0.5)));
         assert_eq!(
             order_any.trailing_offset_type(),
-            Some(TrailingOffsetType::NoTrailingOffset)
+            Some(TrailingOffsetType::Price)
         );
     }
 
@@ -911,7 +993,7 @@ mod tests {
             .trigger_price(Price::new(100.0, 2))
             .limit_offset(Decimal::new(10, 1)) // 1.0
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         // Convert to LimitOrderAny

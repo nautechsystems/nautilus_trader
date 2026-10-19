@@ -1,7 +1,7 @@
 # nautilus-sandbox
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-sandbox)](https://docs.rs/nautilus-sandbox/latest/nautilus-sandbox/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-sandbox)](https://docs.rs/nautilus-sandbox/latest/nautilus_sandbox/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-sandbox.svg)](https://crates.io/crates/nautilus-sandbox)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -17,7 +17,7 @@ paper trading and strategy testing in real-time without actual order execution o
 - Paper trading against live market data from any data source.
 - Full order matching simulation using the production-grade `OrderMatchingEngine`.
 - Support for all order types (market, limit, stop, etc.).
-- Configurable fill models and fee models.
+- Configurable fill models, fee models, queue-position tracking, and liquidity consumption.
 - Account balance and position tracking.
 - Support for both cash and margin account types.
 
@@ -33,10 +33,12 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `example-databento`: Enables the Databento example binary.
 - `extension-module`: Builds as a Python extension module.
-
-[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+- `high-precision` (default): Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation
 

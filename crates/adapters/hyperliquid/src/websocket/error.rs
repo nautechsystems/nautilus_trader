@@ -15,6 +15,8 @@
 
 //! WebSocket errors for Hyperliquid.
 
+use nautilus_network::error::SendError;
+
 /// Errors that can occur during Hyperliquid WebSocket operations.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum HyperliquidWsError {
@@ -38,4 +40,13 @@ pub enum HyperliquidWsError {
 
     #[error("Tungstenite error: {0}")]
     TungsteniteError(String),
+
+    #[error("WebSocket send error: {0}")]
+    TransportSend(#[from] SendError),
+
+    #[error("Operation timed out after {timeout_ms}ms")]
+    OperationTimeout { timeout_ms: u64 },
+
+    #[error("Invalid book snapshot: {0}")]
+    InvalidSnapshot(String),
 }

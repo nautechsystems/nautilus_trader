@@ -20,7 +20,7 @@
 //! Run with: `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet).
+//! - `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet)
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subscribe_mark_prices(true)
         .subscribe_index_prices(true)
         .subscribe_funding_rates(true)
-        // .subscribe_book_at_interval(true)
+        .subscribe_book_at_interval(true)
         .book_interval_ms(10)
         .manage_book(true)
         .build()?;

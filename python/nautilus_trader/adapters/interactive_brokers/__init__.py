@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for Interactive Brokers.
+"""
 
 from __future__ import annotations
 
@@ -24,12 +27,52 @@ __all__ = [
     "DockerizedIBGateway",
     "DockerizedIBGatewayConfig",
     "HistoricalInteractiveBrokersClient",
+    "IbAction",
+    "IbArticleType",
+    "IbAuctionStrategy",
+    "IbAuctionType",
+    "IbBondIdentifierKind",
+    "IbBuilderTimeInForce",
+    "IbComboLegOpenClose",
+    "IbConditionConjunction",
+    "IbConditionKind",
+    "IbExerciseAction",
+    "IbFundAssetType",
+    "IbFundDistributionPolicyIndicator",
+    "IbHistoricalBarSize",
+    "IbHistoricalTickType",
+    "IbHistoricalWhatToShow",
+    "IbLegAction",
+    "IbLiquidity",
+    "IbOcaType",
+    "IbOptionRight",
+    "IbOrderOpenClose",
+    "IbOrderOrigin",
+    "IbOrderStatus",
+    "IbOrderType",
+    "IbRealtimeBarSize",
+    "IbRealtimeWhatToShow",
+    "IbReferencePriceType",
+    "IbRiskAversion",
+    "IbRule80A",
+    "IbSecurityType",
+    "IbShortSaleSlot",
+    "IbTickType",
+    "IbTimeInForce",
+    "IbTradingHours",
+    "IbTriggerMethod",
+    "IbTwapStrategyType",
+    "IbVolatilityType",
     "InteractiveBrokersDataClientConfig",
     "InteractiveBrokersDataClientFactory",
-    "InteractiveBrokersExecClientConfig",
+    "InteractiveBrokersExecutionClientConfig",
     "InteractiveBrokersExecutionClientFactory",
     "InteractiveBrokersInstrumentProvider",
     "InteractiveBrokersInstrumentProviderConfig",
+    "InteractiveBrokersSubscriptionIdle",
+    "MarketDataType",
+    "SymbologyMethod",
+    "TradingMode",
 ]
 
 fixup_module_names(globals(), __name__)

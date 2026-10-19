@@ -1,7 +1,7 @@
 # nautilus-testkit
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-testkit)](https://docs.rs/nautilus-testkit/latest/nautilus-testkit/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-testkit)](https://docs.rs/nautilus-testkit/latest/nautilus_testkit/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-testkit.svg)](https://crates.io/crates/nautilus-testkit)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -17,7 +17,7 @@ across the entire NautilusTrader ecosystem with automated data downloads and val
 - **Path resolution**: Platform-agnostic test data path management.
 - **Precision handling**: Support for both 64-bit and 128-bit precision test data.
 - **Event collection**: Draining and correlating the data events a client emits.
-- **Common patterns**: Reusable test utilities and helper functions.
+- **Common patterns**: Reusable fixtures and test support.
 
 ## NautilusTrader
 
@@ -31,11 +31,13 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `datasets` (enabled by default): Enables test dataset discovery, download, validation, parsing, and loading.
-- `testers` (enabled by default): Enables test actors, strategies, and in-memory cache backing.
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+- `datasets` (default): Enables test dataset discovery, download, validation, parsing, and loading.
 - `extension-module`: Builds as a Python extension module.
+- `high-precision`: Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `testers` (default): Enables test actors, strategies, and in-memory cache backing.
 
 Event collection utilities remain available without enabling a feature.
 

@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-okx"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -44,6 +43,13 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+simulation = [
+  "dep:madsim",
+  "nautilus-common/simulation",
+  "nautilus-core/simulation",
+  "nautilus-live/simulation",
+  "nautilus-network/simulation",
+]
 examples = [
   "nautilus-live/node",
   "nautilus-network/transport-sockudo",
@@ -60,7 +66,7 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -71,12 +77,13 @@ async-trait = { workspace = true }
 aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -89,11 +96,13 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -103,6 +112,7 @@ axum = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 
 # Canonical benches; see crates/adapters/okx/benches/BENCHMARKS.md for context
@@ -181,7 +191,11 @@ path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
 
+# Public market-data validation; explicitly connects to OKX mainnet.
+# Run with `cargo test --package nautilus-okx --features examples --test okx-book-stress -- --timeout 10 --rounds 18`
 [[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]
+name = "okx-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

@@ -17,12 +17,11 @@
 
 use std::fmt::Debug;
 
+#[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
-use nautilus_model::{
-    enums::AccountType,
-    identifiers::{AccountId, TraderId},
-};
-use nautilus_network::websocket::TransportBackend;
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
+use nautilus_network::{url_origin, websocket::TransportBackend};
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
@@ -35,15 +34,15 @@ use crate::common::{
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.kraken", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenDataClientConfig {
-    pub api_key: Option<String>,
-    pub api_secret: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub api_secret: Option<SecretString>,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
     #[builder(default = KrakenEnvironment::Live)]
@@ -53,11 +52,14 @@ pub struct KrakenDataClientConfig {
     pub ws_private_url: Option<String>,
     /// Override for the L3 WebSocket URL. Defaults to `wss://ws-l3.kraken.com/v2`.
     pub ws_l3_url: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// Validate Kraken's CRC32 checksum on each L3 update.
     #[builder(default = true)]
     pub validate_l3_checksum: bool,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    /// Validate Kraken's CRC32 checksum on each Spot L2 `book` snapshot and update.
+    #[builder(default = true)]
+    pub validate_l2_checksum: bool,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]
@@ -88,12 +90,42 @@ pub struct KrakenDataClientConfig {
     pub transport_backend: TransportBackend,
 }
 
+impl Debug for KrakenDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(KrakenDataClientConfig))
+            .field("api_key", &self.api_key)
+            .field("api_secret", &self.api_secret)
+            .field("product_type", &self.product_type)
+            .field("environment", &self.environment)
+            .field("base_url", &self.base_url.as_deref().map(url_origin))
+            .field(
+                "ws_public_url",
+                &self.ws_public_url.as_deref().map(url_origin),
+            )
+            .field(
+                "ws_private_url",
+                &self.ws_private_url.as_deref().map(url_origin),
+            )
+            .field("ws_l3_url", &self.ws_l3_url.as_deref().map(url_origin))
+            .field("proxy_url", &self.proxy_url)
+            .field("validate_l3_checksum", &self.validate_l3_checksum)
+            .field("validate_l2_checksum", &self.validate_l2_checksum)
+            .field("timeout_secs", &self.timeout_secs)
+            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
+            .field("ws_idle_timeout_ms", &self.ws_idle_timeout_ms)
+            .field("max_requests_per_second", &self.max_requests_per_second)
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
+}
+
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(KrakenDataClientConfig {
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
     base_url: Option<String>,
     validate_l3_checksum: bool,
+    validate_l2_checksum: bool,
     timeout_secs: u64,
     heartbeat_interval_secs: u64,
     ws_idle_timeout_ms: u64,
@@ -104,28 +136,6 @@ nautilus_core::impl_pyo3_config_getters!(KrakenDataClientConfig {
 impl Default for KrakenDataClientConfig {
     fn default() -> Self {
         Self::builder().build()
-    }
-}
-
-impl Debug for KrakenDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(KrakenDataClientConfig))
-            .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
-            .field("api_secret", &self.api_secret.as_ref().map(|_| REDACTED))
-            .field("product_type", &self.product_type)
-            .field("environment", &self.environment)
-            .field("base_url", &self.base_url)
-            .field("ws_public_url", &self.ws_public_url)
-            .field("ws_private_url", &self.ws_private_url)
-            .field("ws_l3_url", &self.ws_l3_url)
-            .field("validate_l3_checksum", &self.validate_l3_checksum)
-            .field("proxy_url", &self.proxy_url)
-            .field("timeout_secs", &self.timeout_secs)
-            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
-            .field("ws_idle_timeout_ms", &self.ws_idle_timeout_ms)
-            .field("max_requests_per_second", &self.max_requests_per_second)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
     }
 }
 
@@ -178,21 +188,19 @@ impl KrakenDataClientConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.kraken", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.kraken", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
-pub struct KrakenExecClientConfig {
-    #[builder(default)]
-    pub trader_id: TraderId,
+pub struct KrakenExecutionClientConfig {
     #[builder(default = AccountId::from("KRAKEN-001"))]
     pub account_id: AccountId,
     #[builder(default)]
-    pub api_key: String,
+    pub api_key: SecretString,
     #[builder(default)]
-    pub api_secret: String,
+    pub api_secret: SecretString,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
     #[builder(default = KrakenEnvironment::Live)]
@@ -200,7 +208,7 @@ pub struct KrakenExecClientConfig {
     pub base_url: Option<String>,
     pub ws_url: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]
@@ -209,6 +217,9 @@ pub struct KrakenExecClientConfig {
     /// `AUTHENTICATION_TIMEOUT_SECS` when unset (Kraken Futures login).
     pub auth_timeout_secs: Option<u64>,
     pub max_requests_per_second: Option<u32>,
+    /// Maximum retry attempts for retryable REST requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
     #[builder(default)]
     pub transport_backend: TransportBackend,
 
@@ -237,7 +248,10 @@ pub struct KrakenExecClientConfig {
 
     /// Quote currency used for synthetic spot position reports.
     ///
-    /// Only relevant when `use_spot_position_reports` is `true`.
+    /// Only relevant when `use_spot_position_reports` is `true`. The bulk read reports only
+    /// instruments quoted in this currency, and the client declares bulk position coverage for
+    /// exactly those, so an instrument quoted in anything else is never reconciled to flat from
+    /// a missing report.
     #[builder(default = "USDT".to_string())]
     pub spot_positions_quote_currency: String,
 
@@ -261,55 +275,29 @@ pub struct KrakenExecClientConfig {
 
     /// Timeout in seconds for WebSocket order responses.
     ///
-    /// Submit, amend, and batch-add timeouts emit rejection events. Cancel
-    /// timeouts log and await reconciliation.
+    /// Timeouts preserve request correlation until a matching response or shutdown,
+    /// without emitting a terminal event. `submit_order` and `submit_order_list`
+    /// also send a best-effort compensating cancel.
     #[builder(default = 5)]
     pub ws_request_timeout_secs: u64,
 }
 
-#[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(KrakenExecClientConfig {
-    trader_id: TraderId,
-    account_id: AccountId,
-    product_type: KrakenProductType,
-    environment: KrakenEnvironment,
-    base_url: Option<String>,
-    timeout_secs: u64,
-    heartbeat_interval_secs: u64,
-    auth_timeout_secs: Option<u64>,
-    max_requests_per_second: Option<u32>,
-    spot_account_type: AccountType,
-    default_leverage: Option<u16>,
-    use_spot_position_reports: bool,
-    spot_positions_quote_currency: String,
-    margin_balance_asset: Option<String>,
-    use_ws_trade: bool,
-    ws_request_timeout_secs: u64,
-    transport_backend: TransportBackend,
-});
-
-impl Default for KrakenExecClientConfig {
-    fn default() -> Self {
-        Self::builder().build()
-    }
-}
-
-impl Debug for KrakenExecClientConfig {
+impl Debug for KrakenExecutionClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(KrakenExecClientConfig))
-            .field("trader_id", &self.trader_id)
+        f.debug_struct(stringify!(KrakenExecutionClientConfig))
             .field("account_id", &self.account_id)
-            .field("api_key", &REDACTED)
-            .field("api_secret", &REDACTED)
+            .field("api_key", &self.api_key)
+            .field("api_secret", &self.api_secret)
             .field("product_type", &self.product_type)
             .field("environment", &self.environment)
-            .field("base_url", &self.base_url)
-            .field("ws_url", &self.ws_url)
+            .field("base_url", &self.base_url.as_deref().map(url_origin))
+            .field("ws_url", &self.ws_url.as_deref().map(url_origin))
             .field("proxy_url", &self.proxy_url)
             .field("timeout_secs", &self.timeout_secs)
             .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
             .field("auth_timeout_secs", &self.auth_timeout_secs)
             .field("max_requests_per_second", &self.max_requests_per_second)
+            .field("max_retries", &self.max_retries)
             .field("transport_backend", &self.transport_backend)
             .field("spot_account_type", &self.spot_account_type)
             .field("default_leverage", &self.default_leverage)
@@ -325,7 +313,34 @@ impl Debug for KrakenExecClientConfig {
     }
 }
 
-impl KrakenExecClientConfig {
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(KrakenExecutionClientConfig {
+    account_id: AccountId,
+    product_type: KrakenProductType,
+    environment: KrakenEnvironment,
+    base_url: Option<String>,
+    timeout_secs: u64,
+    heartbeat_interval_secs: u64,
+    auth_timeout_secs: Option<u64>,
+    max_requests_per_second: Option<u32>,
+    max_retries: u32,
+    spot_account_type: AccountType,
+    default_leverage: Option<u16>,
+    use_spot_position_reports: bool,
+    spot_positions_quote_currency: String,
+    margin_balance_asset: Option<String>,
+    use_ws_trade: bool,
+    ws_request_timeout_secs: u64,
+    transport_backend: TransportBackend,
+});
+
+impl Default for KrakenExecutionClientConfig {
+    fn default() -> Self {
+        Self::builder().build()
+    }
+}
+
+impl KrakenExecutionClientConfig {
     /// Returns the HTTP base URL for the configured product type and environment.
     pub fn http_base_url(&self) -> String {
         self.base_url.clone().unwrap_or_else(|| {
@@ -380,16 +395,16 @@ mod tests {
     #[rstest]
     fn test_data_config_debug_redacts_credentials() {
         let config = KrakenDataClientConfig {
-            api_key: Some(DATA_API_KEY.to_string()),
-            api_secret: Some(DATA_API_SECRET.to_string()),
+            api_key: Some(DATA_API_KEY.into()),
+            api_secret: Some(DATA_API_SECRET.into()),
             product_type: KrakenProductType::Futures,
             timeout_secs: 41,
             ..Default::default()
         };
 
         let debug_output = format!("{config:?}");
-        let api_key_marker = format!("api_key: Some({REDACTED:?})");
-        let api_secret_marker = format!("api_secret: Some({REDACTED:?})");
+        let api_key_marker = format!("api_key: Some({REDACTED})");
+        let api_secret_marker = format!("api_secret: Some({REDACTED})");
 
         assert!(!debug_output.contains(DATA_API_KEY));
         assert!(!debug_output.contains(DATA_API_SECRET));
@@ -401,17 +416,25 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_debug_redacts_credentials() {
-        let config = KrakenExecClientConfig {
-            api_key: EXEC_API_KEY.to_string(),
-            api_secret: EXEC_API_SECRET.to_string(),
+        let config = KrakenExecutionClientConfig {
+            api_key: EXEC_API_KEY.into(),
+            api_secret: EXEC_API_SECRET.into(),
             product_type: KrakenProductType::Futures,
             timeout_secs: 43,
+            base_url: Some(
+                "https://SYN-user:SYN-password@api.example.com:8443/SYN-path?token=SYN-query"
+                    .to_string(),
+            ),
+            ws_url: Some(
+                "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query"
+                    .to_string(),
+            ),
             ..Default::default()
         };
 
         let debug_output = format!("{config:?}");
-        let api_key_marker = format!("api_key: {REDACTED:?}");
-        let api_secret_marker = format!("api_secret: {REDACTED:?}");
+        let api_key_marker = format!("api_key: {REDACTED}");
+        let api_secret_marker = format!("api_secret: {REDACTED}");
 
         assert!(!debug_output.contains(EXEC_API_KEY));
         assert!(!debug_output.contains(EXEC_API_SECRET));
@@ -419,13 +442,30 @@ mod tests {
         assert!(debug_output.contains(&api_secret_marker));
         assert!(debug_output.contains("product_type: Futures"));
         assert!(debug_output.contains("timeout_secs: 43"));
+        assert!(debug_output.contains("base_url: Some(\"https://api.example.com:8443\")"));
+        assert!(debug_output.contains("ws_url: Some(\"wss://stream.example.com:9443\")"));
+        assert!(!debug_output.contains("SYN-"));
     }
 
     #[rstest]
     fn test_exec_config_ws_trade_defaults() {
-        let cfg = KrakenExecClientConfig::default();
+        let cfg = KrakenExecutionClientConfig::default();
         assert!(cfg.use_ws_trade);
         assert_eq!(cfg.ws_request_timeout_secs, 5);
+        assert_eq!(cfg.max_retries, 3);
+    }
+
+    #[rstest]
+    fn test_exec_config_max_retries_serde_round_trip() {
+        let config = KrakenExecutionClientConfig {
+            max_retries: 0,
+            ..Default::default()
+        };
+
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: KrakenExecutionClientConfig = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.max_retries, 0);
     }
 
     #[rstest]
@@ -461,14 +501,13 @@ validate_l3_checksum = false
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: KrakenExecClientConfig = toml::from_str("").unwrap();
-        let expected = KrakenExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: KrakenExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = KrakenExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.product_type, expected.product_type);
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.timeout_secs, expected.timeout_secs);
+        assert_eq!(config.max_retries, 3);
         assert_eq!(config.spot_account_type, expected.spot_account_type);
         assert_eq!(
             config.use_spot_position_reports,

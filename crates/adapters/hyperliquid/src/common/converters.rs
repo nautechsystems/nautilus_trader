@@ -268,8 +268,10 @@ pub fn nautilus_time_in_force_to_hyperliquid(
 pub fn hyperliquid_time_in_force_to_nautilus(hl_tif: HyperliquidTimeInForce) -> TimeInForce {
     match hl_tif {
         HyperliquidTimeInForce::Gtc => TimeInForce::Gtc,
-        HyperliquidTimeInForce::Ioc => TimeInForce::Ioc,
-        HyperliquidTimeInForce::Alo => TimeInForce::Gtc, // ALO (post-only) maps to GTC
+        HyperliquidTimeInForce::Ioc
+        | HyperliquidTimeInForce::FrontendMarket
+        | HyperliquidTimeInForce::LiquidationMarket => TimeInForce::Ioc,
+        HyperliquidTimeInForce::Alo => TimeInForce::Gtc,
     }
 }
 
@@ -561,6 +563,14 @@ mod tests {
         assert_eq!(
             hyperliquid_time_in_force_to_nautilus(HyperliquidTimeInForce::Alo),
             TimeInForce::Gtc
+        );
+        assert_eq!(
+            hyperliquid_time_in_force_to_nautilus(HyperliquidTimeInForce::FrontendMarket),
+            TimeInForce::Ioc
+        );
+        assert_eq!(
+            hyperliquid_time_in_force_to_nautilus(HyperliquidTimeInForce::LiquidationMarket),
+            TimeInForce::Ioc
         );
     }
 

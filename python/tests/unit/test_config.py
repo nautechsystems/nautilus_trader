@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test config behavior.
+"""
 
 import ast
 import importlib
@@ -27,6 +30,8 @@ CONFIG_MODULE_NAMES = (
     "data",
     "execution",
     "live",
+    "live.config",
+    "persistence",
     "portfolio",
     "risk",
     "trading",
@@ -44,6 +49,9 @@ CONFIG_NAMES_EXCLUDED = frozenset(
 
 
 def test_config_reexports_curated_core_surface() -> None:
+    """
+    Test config reexports curated core surface.
+    """
     expected = {}
 
     for module_name in CONFIG_MODULE_NAMES:
@@ -63,8 +71,11 @@ def test_config_reexports_curated_core_surface() -> None:
 
 
 def test_config_stub_matches_runtime_exports() -> None:
+    """
+    Test config stub matches runtime exports.
+    """
     stub_path = Path(config.__file__).with_suffix(".pyi")
-    tree = ast.parse(stub_path.read_text())
+    tree = ast.parse(stub_path.read_text(encoding="utf-8"))
     stub_imports = {
         alias.name for node in tree.body if isinstance(node, ast.ImportFrom) for alias in node.names
     }

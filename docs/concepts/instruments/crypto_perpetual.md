@@ -4,7 +4,7 @@
 perpetual swap. It has no expiry, tracks a crypto base asset, and settles in a crypto,
 stablecoin, or other venue-defined settlement currency.
 
-Examples include `ETHUSDT-PERP.BINANCE`, `XBTUSD.BITMEX`, and `BTC-USD-SWAP.OKX`.
+Examples include `ETHUSDT-PERP.BINANCE`, `BTCUSD.BYBIT`, and `BTC-USD-SWAP.OKX`.
 
 ## Fields
 
@@ -32,22 +32,23 @@ Examples include `ETHUSDT-PERP.BINANCE`, `XBTUSD.BITMEX`, and `BTC-USD-SWAP.OKX`
 | `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `CryptoPerpetual` has asset class `Cryptocurrency` and instrument class `Swap`.
 - It has no activation or expiration timestamp.
-- Linear contracts typically set `is_inverse=False` and settle in the quote currency.
-- Inverse contracts set `is_inverse=True` and typically settle in the base currency.
-- Quanto contracts settle in a third currency that differs from both base and quote.
-- The cost currency is base for inverse contracts, settlement for quanto contracts, and
-  quote otherwise.
+
+**Settlement style**: the currency set determines the settlement style.
+
+- **Linear**: typically sets `is_inverse=False` and settles in the quote currency.
+- **Inverse**: sets `is_inverse=True` and typically settles in the base currency.
+- **Quanto**: settles in a third currency that differs from both base and quote.
+
+**Cost currency**: base for inverse contracts, settlement for quanto contracts, and quote otherwise.
 
 :::note
 Funding payments are not fields on the instrument. They arrive as data, such as
@@ -83,8 +84,6 @@ let ethusdt_perp = CryptoPerpetual::builder()
     .min_price(Price::from("1.00"))
     .margin_init(dec!(1.0))
     .margin_maint(dec!(0.35))
-    .maker_fee(dec!(0.0002))
-    .taker_fee(dec!(0.0004))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -127,17 +126,14 @@ ethusdt_perp = CryptoPerpetual(
     min_price=Price.from_str("1.00"),
     margin_init=Decimal("1.0"),
     margin_maint=Decimal("0.35"),
-    maker_fee=Decimal("0.0002"),
-    taker_fee=Decimal("0.0004"),
 )
 ```
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoPerpetual` instruments include:
+**Adapters that create or consume `CryptoPerpetual` instruments include**:
 
 - [Binance](../../integrations/binance.md) for USD-M and COIN-M perpetual futures.
-- [BitMEX](../../integrations/bitmex.md) for inverse and linear perpetual contracts.
 - [Bybit](../../integrations/bybit.md) for linear and inverse perpetual products.
 - [dYdX](../../integrations/dydx.md) for perpetual markets.
 - [Hyperliquid](../../integrations/hyperliquid.md) for perpetual markets.
@@ -149,4 +145,4 @@ Representative adapters that create or consume `CryptoPerpetual` instruments inc
 
 - [Data](../data/) covers mark prices, index prices, and funding rate updates.
 - [Options](../options.md) covers option-specific instrument types.
-- [Execution](../execution.md) explains precision and notional checks before orders reach a venue.
+- [Execution](../execution/) explains precision and notional checks before orders reach a venue.

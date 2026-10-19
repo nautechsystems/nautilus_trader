@@ -38,7 +38,7 @@ impl Equity {
     /// Represents a generic equity instrument.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (instrument_id, raw_symbol, currency, price_precision, price_increment, ts_event, ts_init, isin=None, lot_size=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, tick_scheme=None, info=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, currency, price_precision, price_increment, ts_event, ts_init, isin=None, lot_size=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, tick_scheme=None, info=None))]
     fn py_new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
@@ -55,8 +55,6 @@ impl Equity {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<String>,
         info: Option<Py<PyDict>>,
     ) -> PyResult<Self> {
@@ -67,28 +65,26 @@ impl Equity {
             None
         };
 
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            isin.map(|x| Ustr::from(&x)),
-            currency,
-            price_precision,
-            price_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme.map(|name| ustr::Ustr::from(name.as_str())),
-            info_map,
-            ts_event.into(),
-            ts_init.into(),
-        )
-        .map_err(to_pyvalue_err)
+        Self::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .maybe_isin(isin.map(|x| Ustr::from(&x)))
+            .currency(currency)
+            .price_precision(price_precision)
+            .price_increment(price_increment)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_tick_scheme(tick_scheme.map(|name| ustr::Ustr::from(name.as_str())))
+            .maybe_info(info_map)
+            .ts_event(ts_event.into())
+            .ts_init(ts_init.into())
+            .build()
+            .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -204,18 +200,6 @@ impl Equity {
     }
 
     #[getter]
-    #[pyo3(name = "maker_fee")]
-    fn py_maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    #[getter]
-    #[pyo3(name = "taker_fee")]
-    fn py_taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
-
-    #[getter]
     #[pyo3(name = "ts_event")]
     fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
@@ -278,8 +262,6 @@ impl Equity {
         } else {
             dict.set_item("info", PyDict::new(py))?;
         }
-        dict.set_item("maker_fee", self.maker_fee.to_string())?;
-        dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
         match &self.isin {

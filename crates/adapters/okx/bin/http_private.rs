@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{AccountId, InstrumentId};
+use nautilus_model::{
+    enums::AccountType,
+    identifiers::{AccountId, InstrumentId},
+};
 use nautilus_okx::{
     common::enums::{OKXInstrumentType, OKXPositionMode},
     http::client::OKXHttpClient,
@@ -38,7 +41,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Request account state
-    let resp = client.request_account_state(account_id).await;
+    let resp = client
+        .request_account_state(account_id, AccountType::Margin)
+        .await;
+
     match resp {
         Ok(account_state) => log::debug!("{account_state:?}"),
         Err(e) => log::error!("{e:?}"),

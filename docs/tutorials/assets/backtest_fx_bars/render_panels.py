@@ -1,10 +1,11 @@
 """
 Render the FX bars tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
-    python3 docs/tutorials/assets/backtest_fx_bars/render_panels.py
+    make sync
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/backtest_fx_bars/render_panels.py
 
 Runs the same EMACross backtest as ``docs/tutorials/backtest_fx_bars.py``
 on bundled FXCM USD/JPY 2013-02 1-minute bars, then writes four PNG panels
@@ -14,6 +15,7 @@ to the same directory using the ``nautilus_dark`` tearsheet theme.
 
 from __future__ import annotations
 
+import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -23,28 +25,33 @@ from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.backtest.modules import FXRolloverInterestConfig
-from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.config import LoggingConfig
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import FXRolloverInterestModule
+from nautilus_trader.backtest import InterestRateRecord
+from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.execution import ProbabilisticFillModel
+from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
-from nautilus_trader.model.currencies import JPY
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.test_kit.providers import TestDataProvider
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.testkit.providers import TestDataProvider
+from nautilus_trader.testkit.providers import TestInstrumentProvider
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ema_cross import EMACross
+from ema_cross import EMACrossConfig
 
 
 OUT = Path(__file__).resolve().parent
+JPY = Currency.from_str("JPY")
+USD = Currency.from_str("USD")
 
 THEME = get_theme("nautilus_dark")
 TEMPLATE = THEME["template"]
@@ -78,19 +85,23 @@ def apply_layout(fig: go.Figure, title: str, height: int = 500) -> None:
     fig.update_yaxes(gridcolor=GRID, zeroline=False)
 
 
-def run_backtest():
+def run_backtest() -> object:
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
-        logging=LoggingConfig(log_level="ERROR"),
+        trader_id=TraderId.from_str("BACKTESTER-001"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
         risk_engine=RiskEngineConfig(bypass=True),
     )
     engine = BacktestEngine(config=config)
 
     provider = TestDataProvider()
-    rollover_config = FXRolloverInterestConfig(provider.read_csv("short-term-interest.csv"))
-    rollover = FXRolloverInterestModule(config=rollover_config)
+    interest_rate_data = provider.read_csv("short-term-interest.csv")
+    interest_rate_records = [
+        InterestRateRecord(location=row.LOCATION, time=row.TIME, value=row.Value)
+        for row in interest_rate_data.itertuples(index=False)
+    ]
+    rollover = FXRolloverInterestModule(records=interest_rate_records)
 
-    fill_model = FillModel(
+    fill_model = ProbabilisticFillModel(
         prob_fill_on_limit=0.2,
         prob_slippage=0.5,
         random_seed=42,
@@ -104,16 +115,20 @@ def run_backtest():
         base_currency=None,
         starting_balances=[Money(1_000_000, USD), Money(10_000_000, JPY)],
         fill_model=fill_model,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.00002"),
+            taker_rate=Decimal("0.00002"),
+        ),
         modules=[rollover],
     )
 
     USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
     engine.add_instrument(USDJPY_SIM)
 
-    wrangler = QuoteTickDataWrangler(instrument=USDJPY_SIM)
-    ticks = wrangler.process_bar_data(
-        bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-        ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+    ticks = provider.quotes_from_fxcm_bars(
+        instrument=USDJPY_SIM,
+        bid_csv="fxcm/usdjpy-m1-bid-2013.csv",
+        ask_csv="fxcm/usdjpy-m1-ask-2013.csv",
     )
     engine.add_data(ticks)
 
@@ -132,7 +147,7 @@ def run_backtest():
     engine.run()
 
     bars = engine.cache.bars(bar_type)
-    fills = engine.trader.generate_fills_report()
+    fills = engine.generate_fills_report()
     bars_df = (
         pd.DataFrame(
             [
@@ -265,8 +280,8 @@ def panel_a_price_overview(bars: pd.DataFrame) -> go.Figure:
 def panel_b_zoom(
     bars: pd.DataFrame,
     entries: list[dict],
-    closes: list[dict],
-    cycles: list[dict],
+    _closes: list[dict],
+    _cycles: list[dict],
 ) -> go.Figure:
     sel = (bars["ts"] >= ZOOM_START) & (bars["ts"] <= ZOOM_END)
     z = bars.loc[sel].reset_index(drop=True)
@@ -347,7 +362,7 @@ def panel_b_zoom(
 def panel_c_pnl_curve(cycles: list[dict]) -> go.Figure:
     fig = go.Figure()
     if not cycles:
-        apply_layout(fig, "Cumulative realised pnl per closed cycle (no fills)", height=400)
+        apply_layout(fig, "Cumulative realized pnl per closed cycle (no fills)", height=400)
         return fig
     df = pd.DataFrame(cycles)
     df["pnl_jpy"] = (df["close_price"] - df["open_price"]) * df["side"] * df["qty"]
@@ -377,7 +392,7 @@ def panel_c_pnl_curve(cycles: list[dict]) -> go.Figure:
         ),
     )
     fig.add_hline(y=0, line={"color": NEUTRAL, "dash": "dash", "width": 1})
-    apply_layout(fig, "Cumulative realised pnl across all closed cycles (JPY)", height=420)
+    apply_layout(fig, "Cumulative realized pnl across all closed cycles (JPY)", height=420)
     fig.update_xaxes(title_text="cycle close time")
     fig.update_yaxes(title_text="JPY")
     return fig
@@ -387,7 +402,7 @@ def panel_d_distributions(cycles: list[dict]) -> go.Figure:
     fig = make_subplots(
         rows=1,
         cols=2,
-        subplot_titles=("Cycle hold time (minutes)", "Per-cycle realised pnl (JPY)"),
+        subplot_titles=("Cycle hold time (minutes)", "Per-cycle realized pnl (JPY)"),
     )
 
     if not cycles:

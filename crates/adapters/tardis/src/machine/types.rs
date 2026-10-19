@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use nautilus_model::identifiers::InstrumentId;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -25,7 +25,7 @@ pub use crate::machine::client::TardisMachineClient;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -75,7 +75,7 @@ impl TardisInstrumentMiniInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 pub struct TardisInstrumentKey {
     /// The Tardis raw symbol.
@@ -100,7 +100,7 @@ impl TardisInstrumentKey {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -115,9 +115,9 @@ pub struct ReplayNormalizedRequestOptions {
     #[serde(default)]
     pub symbols: Option<Vec<String>>,
     /// Replay period start date (UTC) in a ISO 8601 format, e.g., 2019-10-01.
-    pub from: NaiveDate,
+    pub from: Date,
     /// Replay period start date (UTC) in a ISO 8601 format, e.g., 2019-10-02.
-    pub to: NaiveDate,
+    pub to: Date,
     /// Array of normalized [data types](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
     /// for which real-time data will be provided.
     #[serde(alias = "data_types")]
@@ -135,7 +135,7 @@ pub struct ReplayNormalizedRequestOptions {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.tardis", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.tardis", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

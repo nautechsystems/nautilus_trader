@@ -25,21 +25,17 @@ use std::str::FromStr;
 
 use alloy::{
     network::{EthereumWallet, ReceiptResponse},
-    primitives::{Address, U256, address},
     providers::ProviderBuilder,
     signers::local::PrivateKeySigner,
+    transports::http::reqwest::{Client, redirect::Policy},
 };
 use nautilus_polymarket::{
     common::credential::EvmPrivateKey,
-    signing::eip712::{CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE},
+    signing::eip712::{PolymarketApproval, approval_plan},
 };
 
 const DEFAULT_POLYGON_RPC_URL: &str = "https://polygon.drpc.org";
 const POLYGON_CHAIN_ID: u64 = 137;
-const PUSD_COLLATERAL: Address = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
-const CONDITIONAL_TOKENS: Address = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
-const NEG_RISK_ADAPTER: Address = address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab");
-const APPROVAL_TARGETS: [Address; 3] = [CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE, NEG_RISK_ADAPTER];
 
 alloy::sol! {
     #[sol(rpc)]
@@ -51,12 +47,6 @@ alloy::sol! {
     interface Erc1155 {
         function setApprovalForAll(address operator, bool approved) external;
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Approval {
-    Collateral { spender: Address, amount: U256 },
-    Ctf { operator: Address, approved: bool },
 }
 
 #[tokio::main]
@@ -74,16 +64,20 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
     let private_key = EvmPrivateKey::new(private_key)?;
     let signer = PrivateKeySigner::from_str(private_key.as_hex())?;
     let wallet = EthereumWallet::from(signer);
+    let client = Client::builder().redirect(Policy::none()).build()?;
     let provider = ProviderBuilder::new()
         .with_chain_id(POLYGON_CHAIN_ID)
         .wallet(wallet)
-        .connect_http(rpc_url.parse()?);
-    let collateral = Erc20::new(PUSD_COLLATERAL, provider.clone());
-    let ctf = Erc1155::new(CONDITIONAL_TOKENS, provider);
+        .connect_reqwest(client, rpc_url.parse()?);
 
-    for approval in approval_transactions() {
+    for approval in approval_plan() {
         match approval {
-            Approval::Collateral { spender, amount } => {
+            PolymarketApproval::Collateral {
+                contract,
+                spender,
+                amount,
+            } => {
+                let collateral = Erc20::new(contract, provider.clone());
                 let call = collateral.approve(spender, amount);
                 let receipt = call.send().await?.get_receipt().await?;
                 receipt.ensure_success()?;
@@ -92,7 +86,12 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
                     receipt.transaction_hash(),
                 );
             }
-            Approval::Ctf { operator, approved } => {
+            PolymarketApproval::ConditionalTokens {
+                contract,
+                operator,
+                approved,
+            } => {
+                let ctf = Erc1155::new(contract, provider.clone());
                 let call = ctf.setApprovalForAll(operator, approved);
                 let receipt = call.send().await?.get_receipt().await?;
                 receipt.ensure_success()?;
@@ -107,56 +106,58 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
-fn approval_transactions() -> impl Iterator<Item = Approval> {
-    APPROVAL_TARGETS.into_iter().flat_map(|target| {
-        [
-            Approval::Collateral {
-                spender: target,
-                amount: U256::MAX,
-            },
-            Approval::Ctf {
-                operator: target,
-                approved: true,
-            },
-        ]
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use axum::{Router, http::StatusCode};
 
     use super::*;
 
-    #[rstest]
-    fn approval_transactions_match_exact_polygon_target_plan() {
-        let pusd_collateral = address!("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");
-        let conditional_tokens = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
-        let targets = [
-            address!("0xE111180000d2663C0091e4f400237545B87B996B"),
-            address!("0xe2222d279d744050d28e00520010520000310F59"),
-            address!("0xadA2005600Dec949baf300f4C6120000bDB6eAab"),
-        ];
-        let expected: Vec<_> = targets
-            .into_iter()
-            .flat_map(|target| {
-                [
-                    Approval::Collateral {
-                        spender: target,
-                        amount: U256::MAX,
-                    },
-                    Approval::Ctf {
-                        operator: target,
-                        approved: true,
-                    },
-                ]
-            })
-            .collect();
+    #[tokio::test]
+    async fn test_allowance_requests_reject_redirects() {
+        let origin = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = origin.local_addr().unwrap();
+        let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = destination.local_addr().unwrap();
+        let destination_requests = Arc::new(AtomicUsize::new(0));
+        let requests = destination_requests.clone();
+        let destination_router = Router::new().fallback(move || {
+            let requests = requests.clone();
+            async move {
+                requests.fetch_add(1, Ordering::SeqCst);
+                StatusCode::BAD_REQUEST
+            }
+        });
 
-        assert_eq!(PUSD_COLLATERAL, pusd_collateral);
-        assert_eq!(CONDITIONAL_TOKENS, conditional_tokens);
-        assert_eq!(approval_transactions().collect::<Vec<_>>(), expected);
-        assert_eq!(DEFAULT_POLYGON_RPC_URL, "https://polygon.drpc.org");
-        assert_eq!(POLYGON_CHAIN_ID, 137);
+        let destination_task = tokio::spawn(async move {
+            axum::serve(destination, destination_router).await.unwrap();
+        });
+        let origin_router = Router::new().fallback(move || async move {
+            (
+                StatusCode::TEMPORARY_REDIRECT,
+                [("location", format!("http://{target}/rpc"))],
+            )
+        });
+
+        let origin_task = tokio::spawn(async move {
+            axum::serve(origin, origin_router).await.unwrap();
+        });
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            run(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                &format!("http://{addr}/rpc"),
+            ),
+        )
+        .await;
+        origin_task.abort();
+        destination_task.abort();
+
+        assert_eq!(destination_requests.load(Ordering::SeqCst), 0);
+        assert!(result.unwrap().unwrap_err().to_string().contains("307"));
     }
 }

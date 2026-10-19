@@ -21,3 +21,8 @@
 pub mod base;
 pub mod erc20;
 pub mod uniswap_v3_pool;
+pub mod uniswap_v3_swap;
+pub mod weth;
+
+#[cfg(feature = "hypersync")]
+pub(crate) mod uniswap_v3_quote;

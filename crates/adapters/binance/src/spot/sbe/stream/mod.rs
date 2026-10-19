@@ -162,7 +162,7 @@ impl MessageHeader {
     ///
     /// # Errors
     ///
-    /// Returns error if buffer is less than 8 bytes.
+    /// Returns an error if buffer is less than 8 bytes.
     pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         if buf.len() < Self::ENCODED_LENGTH {
             return Err(StreamDecodeError::BufferTooShort {
@@ -182,7 +182,7 @@ impl MessageHeader {
     ///
     /// # Errors
     ///
-    /// Returns `SchemaMismatch` if the schema ID does not match [`STREAM_SCHEMA_ID`].
+    /// Returns an error if the schema ID does not match [`STREAM_SCHEMA_ID`].
     pub fn validate_schema(&self) -> Result<(), StreamDecodeError> {
         if self.schema_id != STREAM_SCHEMA_ID {
             return Err(StreamDecodeError::SchemaMismatch {
@@ -206,11 +206,26 @@ pub struct PriceLevel {
 impl PriceLevel {
     pub const ENCODED_LENGTH: usize = 16;
 
+    pub(crate) fn decode_group(cursor: &mut SbeCursor<'_>) -> Result<Vec<Self>, SbeDecodeError> {
+        let (block_length, count) = cursor.read_group_header_16()?;
+        if usize::from(block_length) < Self::ENCODED_LENGTH {
+            return Err(SbeDecodeError::InvalidBlockLength {
+                expected: Self::ENCODED_LENGTH as u16,
+                actual: block_length,
+            });
+        }
+
+        cursor.read_group(block_length, u32::from(count), |entry| {
+            let mut entry = SbeCursor::new(entry.read_bytes(Self::ENCODED_LENGTH)?);
+            Self::decode(&mut entry)
+        })
+    }
+
     /// Decode price level from cursor.
     ///
     /// # Errors
     ///
-    /// Returns error if buffer is too short.
+    /// Returns an error if buffer is too short.
     pub fn decode(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
         Ok(Self {
             price_mantissa: cursor.read_i64_le()?,

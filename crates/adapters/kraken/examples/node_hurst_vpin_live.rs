@@ -22,17 +22,18 @@
 //! Run with: `cargo run -p nautilus-kraken --features examples --example kraken-hurst-vpin-live`
 //!
 //! Required credential environment variables:
-//! - `KRAKEN_FUTURES_API_KEY`.
-//! - `KRAKEN_FUTURES_API_SECRET`.
+//! - `KRAKEN_FUTURES_API_KEY`
+//! - `KRAKEN_FUTURES_API_SECRET`
 //!
-//! Point at [demo-futures.kraken.com](https://demo-futures.kraken.com) for
-//! paper trading by setting `demo=true` on `resolve_futures` or by using a
-//! demo key pair.
+//! The example trades Kraken Futures production. To paper trade on
+//! [demo-futures.kraken.com](https://demo-futures.kraken.com), pass `demo=true` to
+//! `resolve_futures` and set `environment: KrakenEnvironment::Demo` on both client
+//! configs; it then reads `KRAKEN_FUTURES_DEMO_API_KEY` and `KRAKEN_FUTURES_DEMO_API_SECRET`.
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
     common::{consts::KRAKEN_CLIENT_ID, credential::KrakenCredential, enums::KrakenProductType},
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
@@ -75,17 +76,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (api_key, api_secret) = credential.into_parts();
 
     let data_config = KrakenDataClientConfig {
-        api_key: Some(api_key.clone()),
-        api_secret: Some(api_secret.clone()),
+        api_key: Some(api_key.clone().into()),
+        api_secret: Some(api_secret.clone().into()),
         product_type,
         ..Default::default()
     };
 
-    let exec_config = KrakenExecClientConfig {
-        trader_id,
+    let exec_config = KrakenExecutionClientConfig {
         account_id,
-        api_key,
-        api_secret,
+        api_key: api_key.into(),
+        api_secret: api_secret.into(),
         product_type,
         ..Default::default()
     };

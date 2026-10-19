@@ -21,7 +21,7 @@
 //!   REST call
 //!
 //! Numbers here decompose the EIP-712 cost (typed-data hash + ECDSA) from the
-//! HMAC path so a regression in either is localisable.
+//! HMAC path so a regression in either is localizable.
 
 use std::hint::black_box;
 
@@ -29,7 +29,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_polymarket::{
     common::{
         credential::{Credential, EvmPrivateKey},
-        enums::{PolymarketOrderSide, SignatureType},
+        enums::{PolymarketOrderSide, PolymarketSignatureType},
     },
     http::models::PolymarketOrder,
     signing::eip712::{OrderSigner, order_hash, sign_clob_auth},
@@ -50,8 +50,8 @@ fn signer() -> OrderSigner {
     OrderSigner::new(&key).unwrap()
 }
 
-fn sample_order(signature_type: SignatureType) -> PolymarketOrder {
-    let order_address = if signature_type == SignatureType::Poly1271 {
+fn sample_order(signature_type: PolymarketSignatureType) -> PolymarketOrder {
+    let order_address = if signature_type == PolymarketSignatureType::Poly1271 {
         TEST_DEPOSIT_WALLET
     } else {
         TEST_ADDRESS
@@ -70,13 +70,13 @@ fn sample_order(signature_type: SignatureType) -> PolymarketOrder {
         timestamp: "1713398400000".to_string(),
         metadata: ZERO_BYTES32.to_string(),
         builder: ZERO_BYTES32.to_string(),
-        signature: String::new(),
+        signature: String::new().into(),
     }
 }
 
 fn bench_sign_order(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order(SignatureType::Eoa);
+    let order = sample_order(PolymarketSignatureType::Eoa);
     c.bench_function("sign_order", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), false).unwrap();
@@ -87,7 +87,7 @@ fn bench_sign_order(c: &mut Criterion) {
 
 fn bench_sign_order_neg_risk(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order(SignatureType::Eoa);
+    let order = sample_order(PolymarketSignatureType::Eoa);
     c.bench_function("sign_order_neg_risk", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), true).unwrap();
@@ -98,7 +98,7 @@ fn bench_sign_order_neg_risk(c: &mut Criterion) {
 
 fn bench_sign_order_poly_1271(c: &mut Criterion) {
     let signer = signer();
-    let order = sample_order(SignatureType::Poly1271);
+    let order = sample_order(PolymarketSignatureType::Poly1271);
     c.bench_function("sign_order_poly_1271", |b| {
         b.iter(|| {
             let sig = signer.sign_order(black_box(&order), false).unwrap();
@@ -108,7 +108,7 @@ fn bench_sign_order_poly_1271(c: &mut Criterion) {
 }
 
 fn bench_order_hash(c: &mut Criterion) {
-    let order = sample_order(SignatureType::Eoa);
+    let order = sample_order(PolymarketSignatureType::Eoa);
     c.bench_function("order_hash", |b| {
         b.iter(|| {
             let h = order_hash(black_box(&order), false).unwrap();
@@ -141,9 +141,9 @@ fn bench_sign_clob_auth(c: &mut Criterion) {
 
 fn bench_hmac_sign(c: &mut Criterion) {
     let credential = Credential::new(
-        "00000000-0000-0000-0000-000000000001",
-        TEST_API_SECRET,
-        "test-passphrase".to_string(),
+        "00000000-0000-0000-0000-000000000001".into(),
+        TEST_API_SECRET.into(),
+        "test-passphrase".into(),
     )
     .unwrap();
     let body = r#"{"order":{"salt":123},"owner":"00000000-0000-0000-0000-000000000001","orderType":"GTC"}"#;

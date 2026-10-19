@@ -22,9 +22,11 @@
 
 use std::collections::HashMap;
 
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{
@@ -44,19 +46,22 @@ use crate::common::{
 /// Public channels (`level2`, `market_trades`, `ticker`, etc.) do not require
 /// a JWT. Set `jwt` to `None` for unauthenticated subscriptions; the field
 /// is omitted from the serialized JSON.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Zeroize)]
 pub struct CoinbaseWsSubscription {
     /// `"subscribe"` or `"unsubscribe"`.
     #[serde(rename = "type")]
+    #[zeroize(skip)]
     pub msg_type: CoinbaseWsAction,
     /// Product IDs to subscribe to (omitted for channel-level subscriptions).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[zeroize(skip)]
     pub product_ids: Vec<Ustr>,
     /// Channel name (subscription-side, e.g. `level2`).
+    #[zeroize(skip)]
     pub channel: CoinbaseWsChannel,
     /// JWT for authentication (required for `user` and `futures_balance_summary`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub jwt: Option<String>,
+    pub jwt: Option<SecretString>,
 }
 
 /// WebSocket subscription action type.
@@ -792,7 +797,7 @@ mod tests {
             msg_type: CoinbaseWsAction::Subscribe,
             product_ids: vec![Ustr::from("BTC-USD")],
             channel: CoinbaseWsChannel::User,
-            jwt: Some("test-jwt-token".to_string()),
+            jwt: Some(SecretString::from("test-jwt-token")),
         };
 
         let json = serde_json::to_value(&sub).unwrap();

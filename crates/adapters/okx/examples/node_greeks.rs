@@ -19,7 +19,7 @@
 //! 1. Queries the cache for all BTC option instruments
 //! 2. Finds the nearest expiry
 //! 3. Filters for CALL options at that expiry
-//! 4. Subscribes to OptionGreeks for each one, alternating three param shapes:
+//! 4. Subscribes to `OptionGreeks` for each one, alternating three param shapes:
 //!    the first third with no params (defaults to both conventions), the second
 //!    third narrowed to Black-Scholes only, and the final third narrowed to
 //!    price-adjusted only.
@@ -32,9 +32,9 @@
 //! Run with: `cargo run --example okx-greeks-tester --package nautilus-okx --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `OKX_API_KEY`.
-//! - `OKX_API_SECRET`.
-//! - `OKX_API_PASSPHRASE`.
+//! - `OKX_API_KEY`
+//! - `OKX_API_SECRET`
+//! - `OKX_API_PASSPHRASE`
 
 use std::fmt::Debug;
 

@@ -15,7 +15,7 @@
 
 //! Python bindings for the Kraken Futures HTTP client.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
@@ -129,7 +129,13 @@ impl KrakenFuturesHttpClient {
         self.cancel_all_requests();
     }
 
-    /// Requests tradable instruments from Kraken Futures.
+    /// Requests the complete tradable instrument catalog from Kraken Futures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying request fails or any instrument definition cannot be
+    /// parsed. An instrument parse failure returns `KrakenHttpError.ParseError` without a
+    /// partial catalog.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -181,8 +187,8 @@ impl KrakenFuturesHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -268,8 +274,8 @@ impl KrakenFuturesHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -325,8 +331,8 @@ impl KrakenFuturesHttpClient {
         py: Python<'py>,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         open_only: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -355,8 +361,8 @@ impl KrakenFuturesHttpClient {
         py: Python<'py>,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 

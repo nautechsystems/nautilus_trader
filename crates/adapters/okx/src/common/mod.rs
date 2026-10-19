@@ -27,9 +27,12 @@
 pub mod consts;
 pub mod credential;
 pub mod enums;
+pub mod failure;
 pub mod models;
 pub mod parse;
 pub mod urls;
+
+pub(crate) mod task;
 
 #[cfg(test)]
 pub(crate) mod testing;

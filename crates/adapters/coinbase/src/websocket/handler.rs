@@ -20,6 +20,7 @@ use std::{fmt::Debug, sync::Arc};
 use ahash::AHashMap;
 use nautilus_core::{
     AtomicMap, UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -36,7 +37,7 @@ use crate::{
     common::consts::COINBASE_VENUE,
     websocket::{
         client::COINBASE_WS_SUBSCRIPTION_KEYS,
-        messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType, WsOrderUpdate},
+        messages::{CoinbaseWsMessage, WsEventType, WsOrderUpdate},
         parse::{
             parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_status_product,
             parse_ws_ticker, parse_ws_trade, parse_ws_user_event_to_order_status_report,
@@ -60,10 +61,18 @@ fn resolve_instrument_id_from_aliases(
 pub enum HandlerCommand {
     /// Provides the network-level WebSocket client.
     SetClient(WebSocketClient),
-    /// Subscribes to a channel for the given product IDs.
-    Subscribe(CoinbaseWsSubscription),
-    /// Unsubscribes from a channel.
-    Unsubscribe(CoinbaseWsSubscription),
+    /// Subscribes with a serialized payload that is zeroized on drop.
+    Subscribe {
+        channel: crate::common::enums::CoinbaseWsChannel,
+        product_ids: Vec<Ustr>,
+        payload: SecretString,
+    },
+    /// Unsubscribes with a serialized payload that is zeroized on drop.
+    Unsubscribe {
+        channel: crate::common::enums::CoinbaseWsChannel,
+        product_ids: Vec<Ustr>,
+        payload: SecretString,
+    },
     /// Disconnects the WebSocket.
     Disconnect,
     /// Caches instruments for precision lookups during parsing.
@@ -82,8 +91,8 @@ impl Debug for HandlerCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SetClient(_) => f.write_str("SetClient"),
-            Self::Subscribe(s) => write!(f, "Subscribe({:?})", s.channel),
-            Self::Unsubscribe(s) => write!(f, "Unsubscribe({:?})", s.channel),
+            Self::Subscribe { channel, .. } => write!(f, "Subscribe({channel:?})"),
+            Self::Unsubscribe { channel, .. } => write!(f, "Unsubscribe({channel:?})"),
             Self::Disconnect => f.write_str("Disconnect"),
             Self::InitializeInstruments(v) => write!(f, "InitializeInstruments({})", v.len()),
             Self::UpdateInstrument(i) => write!(f, "UpdateInstrument({})", i.id()),
@@ -156,6 +165,7 @@ pub struct FeedHandler {
     bar_types: AHashMap<String, BarType>,
     account_id: Option<AccountId>,
     buffer: Vec<NautilusWsMessage>,
+    last_heartbeat_counter: Option<u64>,
 }
 
 impl FeedHandler {
@@ -177,6 +187,7 @@ impl FeedHandler {
             bar_types: AHashMap::new(),
             account_id: None,
             buffer: Vec::new(),
+            last_heartbeat_counter: None,
         }
     }
 
@@ -211,11 +222,9 @@ impl FeedHandler {
                         HandlerCommand::SetClient(client) => {
                             self.client = Some(client);
                         }
-                        HandlerCommand::Subscribe(sub) => {
-                            self.send_subscription(&sub).await;
-                        }
-                        HandlerCommand::Unsubscribe(sub) => {
-                            self.send_subscription(&sub).await;
+                        HandlerCommand::Subscribe { payload, .. }
+                        | HandlerCommand::Unsubscribe { payload, .. } => {
+                            self.send_subscription(&payload).await;
                         }
                         HandlerCommand::Disconnect => {
                             if let Some(client) = self.client.take() {
@@ -255,7 +264,7 @@ impl FeedHandler {
                             if let Some(client) = &self.client
                                 && let Err(e) = client.send_pong(data.to_vec()).await
                             {
-                                log::error!("Failed to send pong: {e}");
+                                log::warn!("Failed to send pong: {e}");
                             }
                         }
                         Message::Close(_) => return None,
@@ -267,27 +276,26 @@ impl FeedHandler {
         }
     }
 
-    async fn send_subscription(&self, sub: &CoinbaseWsSubscription) {
+    async fn send_subscription(&self, payload: &SecretString) {
         let Some(client) = &self.client else {
             log::warn!("Cannot send subscription, no WebSocket client set");
             return;
         };
 
-        match serde_json::to_string(sub) {
-            Ok(json) => {
-                if let Err(e) = client
-                    .send_text(json, Some(COINBASE_WS_SUBSCRIPTION_KEYS.as_slice()))
-                    .await
-                {
-                    log::error!("Failed to send subscription: {e}");
-                }
-            }
-            Err(e) => log::error!("Failed to serialize subscription: {e}"),
+        if let Err(e) = client
+            .send_text(
+                payload.expose_secret().to_owned(),
+                Some(COINBASE_WS_SUBSCRIPTION_KEYS.as_slice()),
+            )
+            .await
+        {
+            log::error!("Failed to send subscription: {e}");
         }
     }
 
     fn handle_text(&mut self, text: &str) -> Option<NautilusWsMessage> {
         if text == RECONNECTED {
+            self.last_heartbeat_counter = None;
             return Some(NautilusWsMessage::Reconnected);
         }
 
@@ -315,7 +323,16 @@ impl FeedHandler {
                 timestamp, events, ..
             } => self.handle_ticker(&events, &timestamp, ts_init),
             CoinbaseWsMessage::Candles { events, .. } => self.handle_candles(&events, ts_init),
-            CoinbaseWsMessage::Heartbeats { .. } => None,
+            CoinbaseWsMessage::Heartbeats { events, .. } => {
+                for event in events {
+                    if let Some((expected, actual)) =
+                        self.note_heartbeat_counter(event.heartbeat_counter)
+                    {
+                        log::warn!("Heartbeat counter gap: expected {expected}, was {actual}");
+                    }
+                }
+                None
+            }
             CoinbaseWsMessage::Subscriptions { events, .. } => {
                 // Coinbase emits this after every subscribe and unsubscribe
                 // with the full current subscription set, so it's noisy at
@@ -333,6 +350,15 @@ impl FeedHandler {
                 timestamp, events, ..
             } => self.handle_status_events(&events, &timestamp, ts_init),
         }
+    }
+
+    fn note_heartbeat_counter(&mut self, counter: u64) -> Option<(u64, u64)> {
+        let gap = self.last_heartbeat_counter.and_then(|last| {
+            let expected = last.saturating_add(1);
+            (counter != expected).then_some((expected, counter))
+        });
+        self.last_heartbeat_counter = Some(counter);
+        gap
     }
 
     fn handle_l2_events(
@@ -727,32 +753,22 @@ mod tests {
 
     fn btc_usd_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("BTC-USD"),
-            Currency::get_or_create_crypto("BTC"),
-            Currency::get_or_create_crypto("USD"),
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            Some(Quantity::from("0.00000001")),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("BTC-USD"))
+                .base_currency(Currency::get_or_create_crypto("BTC"))
+                .quote_currency(Currency::get_or_create_crypto("USD"))
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .min_quantity(Quantity::from("0.00000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -799,7 +815,7 @@ mod tests {
                     carrier.report.client_order_id.unwrap().as_str(),
                     "11111-000000-000001"
                 );
-                assert_eq!(carrier.report.order_side, OrderSide::Buy);
+                assert_eq!(carrier.report.order_side, OrderSide::Buy.into());
                 assert_eq!(carrier.report.order_status, OrderStatus::Accepted);
                 assert_eq!(carrier.report.filled_qty, Quantity::from("0.00000000"));
                 assert_eq!(carrier.report.quantity, Quantity::from("0.00100000"));
@@ -1016,6 +1032,37 @@ mod tests {
         let mut handler = test_handler();
         let result = handler.handle_text(RECONNECTED);
         assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
+    }
+
+    #[rstest]
+    fn test_heartbeat_counter_tracks_sequence_and_detects_gaps() {
+        let mut handler = test_handler();
+
+        assert_eq!(handler.note_heartbeat_counter(42), None);
+        assert_eq!(handler.last_heartbeat_counter, Some(42));
+        assert_eq!(handler.note_heartbeat_counter(43), None);
+        assert_eq!(handler.last_heartbeat_counter, Some(43));
+        assert_eq!(handler.note_heartbeat_counter(45), Some((44, 45)));
+        assert_eq!(handler.last_heartbeat_counter, Some(45));
+        assert_eq!(handler.note_heartbeat_counter(40), Some((46, 40)));
+        assert_eq!(handler.last_heartbeat_counter, Some(40));
+    }
+
+    #[rstest]
+    fn test_handle_text_heartbeats_updates_counter_and_reconnect_resets_it() {
+        let json = load_test_fixture("ws_heartbeats.json");
+        let mut handler = test_handler();
+
+        assert!(handler.handle_text(&json).is_none());
+        assert_eq!(handler.last_heartbeat_counter, Some(42));
+
+        let next = json.replace("\"heartbeat_counter\": 42", "\"heartbeat_counter\": 43");
+        assert!(handler.handle_text(&next).is_none());
+        assert_eq!(handler.last_heartbeat_counter, Some(43));
+
+        let result = handler.handle_text(RECONNECTED);
+        assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
+        assert_eq!(handler.last_heartbeat_counter, None);
     }
 
     #[rstest]

@@ -15,22 +15,21 @@
 
 //! Python bindings for Deribit HTTP client.
 
-use std::collections::HashSet;
-
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::{
-    UnixNanos,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{BarType, forward::ForwardPrice},
-    identifiers::{AccountId, InstrumentId, Symbol},
+    data::BarType,
+    identifiers::{AccountId, InstrumentId},
     python::instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
 };
 use pyo3::{conversion::IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
-    common::{consts::DERIBIT_VENUE, enums::DeribitEnvironment},
+    common::enums::DeribitEnvironment,
+    data_types::DeribitBookSummary,
     http::{
         client::DeribitHttpClient,
         error::DeribitHttpError,
@@ -115,7 +114,7 @@ impl DeribitHttpClient {
 
     /// # Errors
     ///
-    /// Returns a Python exception if adding the instrument to the cache fails.
+    /// Returns an error if adding the instrument to the cache fails.
     #[pyo3(name = "cache_instrument")]
     pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         let inst = pyobject_to_instrument_any(py, instrument)?;
@@ -189,9 +188,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument name format is invalid (error code `-32602`)
-    /// - The instrument doesn't exist (error code `13020`)
-    /// - Network or API errors occur
+    /// - The instrument name format is invalid (error code `-32602`).
+    /// - The instrument doesn't exist (error code `13020`).
+    /// - Network or API errors occur.
     #[pyo3(name = "request_instrument")]
     fn py_request_instrument<'py>(
         &self,
@@ -218,8 +217,8 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The request fails
-    /// - Currency conversion fails
+    /// - The request fails.
+    /// - Currency conversion fails.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -252,9 +251,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument is not found in cache
-    /// - The request fails
-    /// - Trade parsing fails
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Trade parsing fails.
     ///
     /// # Pagination
     ///
@@ -267,8 +266,8 @@ impl DeribitHttpClient {
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -297,10 +296,10 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Aggregation source is not EXTERNAL
-    /// - Bar aggregation type is not supported by Deribit
-    /// - The instrument is not found in cache
-    /// - The request fails or response cannot be parsed
+    /// - Aggregation source is not EXTERNAL.
+    /// - Bar aggregation type is not supported by Deribit.
+    /// - The instrument is not found in cache.
+    /// - The request fails or response cannot be parsed.
     ///
     /// # Supported Resolutions
     ///
@@ -311,8 +310,8 @@ impl DeribitHttpClient {
         &self,
         py: Python<'py>,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
@@ -346,9 +345,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument is not found in cache
-    /// - The request fails
-    /// - Order book parsing fails
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Order book parsing fails.
     #[pyo3(name = "request_book_snapshot")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_request_book_snapshot<'py>(
@@ -501,76 +500,49 @@ impl DeribitHttpClient {
         })
     }
 
-    /// Request forward prices for option chain ATM determination.
+    /// Requests book summaries for a currency via `public/get_book_summary_by_currency`.
     ///
-    /// Single-instrument path (1 HTTP call) if `instrument_id` is provided,
-    /// otherwise bulk path via book summaries.
-    #[pyo3(name = "request_forward_prices")]
-    #[pyo3(signature = (currency, instrument_id=None))]
-    fn py_request_forward_prices<'py>(
+    /// Defaults to product kind `option`.
+    /// Entries include mark/IV, bid-ask, volumes, and `underlying_price` (forward) when present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[pyo3(name = "request_book_summaries")]
+    #[pyo3(signature = (currency, kind=None))]
+    fn py_request_book_summaries<'py>(
         &self,
         py: Python<'py>,
         currency: String,
-        instrument_id: Option<InstrumentId>,
+        kind: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let forward_prices = if let Some(inst_id) = instrument_id {
-                // Single-instrument path: 1 HTTP call to public/ticker
-                let instrument_name = inst_id.symbol.to_string();
-                let ticker = client
-                    .request_ticker(&instrument_name)
-                    .await
-                    .map_err(to_pyvalue_err)?;
-
-                let ts = UnixNanos::default();
-                ticker
-                    .underlying_price
-                    .map(|up| {
-                        vec![ForwardPrice::new(
-                            inst_id,
-                            up,
-                            ticker.underlying_index.filter(|s| !s.is_empty()),
-                            ts,
-                            ts,
-                        )]
-                    })
-                    .unwrap_or_default()
-            } else {
-                // Bulk path: fetch all book summaries
-                let summaries = client
-                    .request_book_summaries(&currency)
-                    .await
-                    .map_err(to_pyvalue_err)?;
-
-                let ts = nautilus_core::UnixNanos::default();
-                let mut seen_indices = HashSet::new();
-                summaries
-                    .into_iter()
-                    .filter_map(|s| {
-                        let up = s.underlying_price?;
-                        let idx = s.underlying_index.clone().unwrap_or_default();
-                        if !seen_indices.insert(idx.clone()) {
-                            return None;
-                        }
-                        Some(ForwardPrice::new(
-                            InstrumentId::new(Symbol::new(&s.instrument_name), *DERIBIT_VENUE),
-                            up,
-                            Some(idx).filter(|s| !s.is_empty()),
-                            ts,
-                            ts,
-                        ))
-                    })
-                    .collect()
-            };
+            let currency = currency.trim().to_ascii_uppercase();
+            if currency.is_empty() {
+                return Err(to_pyvalue_err(
+                    "request_book_summaries requires a non-empty currency",
+                ));
+            }
+            let kind = kind
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map_or_else(|| "option".to_string(), str::to_ascii_lowercase);
+            let summaries = client
+                .request_book_summaries_kind(&currency, Some(kind.as_str()))
+                .await
+                .map_err(to_pyvalue_err)?;
+            // Stamp observed time after the HTTP round-trip completes.
+            let ts = get_atomic_clock_realtime().get_time_ns();
 
             Python::attach(|py| {
-                let py_prices: PyResult<Vec<_>> = forward_prices
+                let py_items: PyResult<Vec<_>> = summaries
                     .into_iter()
-                    .map(|fp| Py::new(py, fp))
+                    .map(|raw| Py::new(py, DeribitBookSummary::from_raw(raw, ts)))
                     .collect();
-                let pylist = PyList::new(py, py_prices?)?.into_any().unbind();
+                let pylist = PyList::new(py, py_items?)?.into_any().unbind();
                 Ok(pylist)
             })
         })

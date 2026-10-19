@@ -1,0 +1,25 @@
+{
+  "id": "market-123",
+  "conditionId": "0xcondition",
+  "question": "Will the outcome occur?",
+  "clobTokenIds": "[\"yes-token\",\"no-token\"]",
+  "outcomes": "[\"Yes\",\"No\"]",
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "active": true,
+  "closed": false,
+  "acceptingOrders": true,
+  "gameId": -1,
+  "events": [{
+    "id": "event-456",
+    "title": "Parent event",
+    "tags": [{"id": "tag-789", "label": "Example"}],
+    "series": [{"id": "series-012", "recurrence": "daily"}]
+  }],
+  "unknownMetadata": {
+    "decimal": 0.1234567890123456789012345678,
+    "integer": 184467440737095516160,
+    "null": null,
+    "array": [true, "native"]
+  }
+}

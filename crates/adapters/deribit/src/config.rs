@@ -15,7 +15,10 @@
 
 //! Configuration structures for the Deribit adapter.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +36,7 @@ use crate::{
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.deribit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -41,21 +44,21 @@ use crate::{
 )]
 pub struct DeribitDataClientConfig {
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Product types to load (e.g., Future, Option, Spot).
     #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
+    /// The Deribit environment (mainnet or testnet).
+    #[builder(default)]
+    pub environment: DeribitEnvironment,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
-    /// The Deribit environment (mainnet or testnet).
-    #[builder(default)]
-    pub environment: DeribitEnvironment,
+    pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -146,35 +149,32 @@ impl DeribitDataClientConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.deribit", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.deribit", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
 )]
-pub struct DeribitExecClientConfig {
-    /// The trader ID for this client.
-    #[builder(default)]
-    pub trader_id: TraderId,
+pub struct DeribitExecutionClientConfig {
     /// The account ID for this client.
     #[builder(default = AccountId::from("DERIBIT-001"))]
     pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Product types to load (e.g., Future, Option, Spot).
     #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
+    /// The Deribit environment (mainnet or testnet).
+    #[builder(default)]
+    pub environment: DeribitEnvironment,
     /// Optional override for the HTTP base URL.
     pub base_url_http: Option<String>,
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
-    /// The Deribit environment (mainnet or testnet).
-    #[builder(default)]
-    pub environment: DeribitEnvironment,
+    pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -196,8 +196,7 @@ pub struct DeribitExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(DeribitExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(DeribitExecutionClientConfig {
     account_id: AccountId,
     product_types: Vec<DeribitProductType>,
     environment: DeribitEnvironment,
@@ -211,13 +210,13 @@ nautilus_core::impl_pyo3_config_getters!(DeribitExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for DeribitExecClientConfig {
+impl Default for DeribitExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl DeribitExecClientConfig {
+impl DeribitExecutionClientConfig {
     /// Returns `true` when API credentials are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
@@ -249,6 +248,37 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = DeribitDataClientConfig {
+            api_key: Some("data-api-key".into()),
+            api_secret: Some("data-api-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = DeribitExecutionClientConfig {
+            api_key: Some("exec-api-key".into()),
+            api_secret: Some("exec-api-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-api-key",
+            "data-api-secret",
+            "data-proxy",
+            "exec-api-key",
+            "exec-api-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
 
     #[rstest]
     fn test_default_config() {
@@ -291,8 +321,8 @@ mod tests {
     #[rstest]
     fn test_has_api_credentials_in_config() {
         let config = DeribitDataClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
         assert!(config.has_api_credentials());
@@ -321,10 +351,8 @@ auto_load_missing_instruments = true
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: DeribitExecClientConfig = toml::from_str("").unwrap();
-        let expected = DeribitExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: DeribitExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = DeribitExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.product_types, expected.product_types);

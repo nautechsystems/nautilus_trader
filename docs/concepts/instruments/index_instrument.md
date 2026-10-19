@@ -22,14 +22,18 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 | `tick_scheme`     | `Option<Ustr>`   | `str \| None`  | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>` | `dict \| None` | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `IndexInstrument` has asset class `Index` and instrument class `Spot`.
-- It is a reference instrument and should not be used for order submission.
 - It has no limits, margins, fees, contract multiplier, expiry, or settlement currency.
 - Use option or futures types for tradable derivatives whose underlyings are indexes.
+
+:::warning
+`IndexInstrument` is a reference instrument, not a tradable contract. Do not submit orders against it. Trade
+the corresponding futures or option instrument instead.
+:::
 
 ## Example
 
@@ -78,10 +82,8 @@ spx = IndexInstrument(
 
 ## Adapters
 
-Representative adapters that create or consume `IndexInstrument` instruments include:
-
-- [Interactive Brokers](../../integrations/ib.md) for reference indexes.
-- [Databento](../../integrations/databento.md) for reference data feeds.
+The [Interactive Brokers](../../integrations/interactive_brokers.md) adapter creates
+`IndexInstrument` definitions for reference indexes.
 
 ## Related guides
 

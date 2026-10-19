@@ -16,7 +16,11 @@
 //! Binance Futures HTTP query parameter builders.
 
 use derive_builder::Builder;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::common::enums::{
     BinanceAlgoType, BinanceFuturesOrderType, BinanceIncomeType, BinanceMarginType,
@@ -578,8 +582,11 @@ impl BatchCancelItem {
 pub struct BatchModifyItem {
     /// Trading symbol.
     pub symbol: String,
-    /// Order ID to modify.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Order ID to modify, serialized as a string because the batch endpoint rejects JSON numbers.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_batch_order_id"
+    )]
     pub order_id: Option<i64>,
     /// Original client order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -593,11 +600,11 @@ pub struct BatchModifyItem {
 }
 
 /// Listen key request parameters.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Zeroize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListenKeyParams {
     /// The listen key to extend or close.
-    pub listen_key: String,
+    pub listen_key: SecretString,
 }
 
 /// Query parameters for `POST /fapi/v1/algoOrder` (new algo order).
@@ -752,11 +759,39 @@ pub struct BinanceCancelAllAlgoOrdersParams {
     pub recv_window: Option<u64>,
 }
 
+fn serialize_batch_order_id<S: serde::Serializer>(
+    order_id: &Option<i64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match order_id {
+        Some(id) => serializer.collect_str(id),
+        None => serializer.serialize_none(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use zeroize::Zeroize;
 
     use super::*;
+
+    #[rstest]
+    fn test_listen_key_params_preserve_wire_value_and_redact_debug() {
+        let mut params = ListenKeyParams {
+            listen_key: SecretString::from("listen-key-secret"),
+        };
+
+        let serialized = serde_urlencoded::to_string(&params).unwrap();
+        let debug = format!("{params:?}");
+
+        assert_eq!(serialized, "listenKey=listen-key-secret");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(params.listen_key.expose_secret()));
+
+        params.zeroize();
+        assert!(params.listen_key.expose_secret().is_empty());
+    }
 
     #[rstest]
     fn test_depth_params_builder() {

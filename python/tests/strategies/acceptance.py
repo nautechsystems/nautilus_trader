@@ -16,7 +16,7 @@
 Strategies used by acceptance tests.
 
 Each strategy is importable via ImportableStrategyConfig. They aim to exercise specific
-engine behaviours - multi-cycle PnL accounting, cascading order submission, timer
+engine behaviors - multi-cycle PnL accounting, cascading order submission, timer
 firing, etc.
 
 """
@@ -33,7 +33,6 @@ from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitOrder
 from nautilus_trader.model import MarketOrder
@@ -71,7 +70,7 @@ def _market_order(
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
 
@@ -131,22 +130,23 @@ def _limit_order(
 
 
 class BarEntryExitConfig(StrategyConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "bar_type", "trade_size", "entry_bar", "exit_bar")
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect bar entry exit config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
         entry_bar: int = 0,
         exit_bar: int = 10,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.bar_type = bar_type
@@ -160,7 +160,10 @@ class BarEntryExit(Strategy):
     Submit a single buy market order on entry_bar and a single sell on exit_bar.
     """
 
-    def __init__(self, config: BarEntryExitConfig):
+    def __init__(self, config: BarEntryExitConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         from nautilus_trader.model import BarType
 
@@ -171,10 +174,16 @@ class BarEntryExit(Strategy):
         self._exit_bar = config.exit_bar
         self._bar_count = 0
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_bars(self._bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, _bar: Bar) -> None:
+        """
+        On bar.
+        """
         if self._bar_count == self._entry_bar:
             self.submit_order(
                 _market_order(self, self._instrument_id, OrderSide.BUY, self._qty),
@@ -185,8 +194,10 @@ class BarEntryExit(Strategy):
             )
         self._bar_count += 1
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
 
 
 class TickScheduledConfig(StrategyConfig):
@@ -194,26 +205,30 @@ class TickScheduledConfig(StrategyConfig):
     Submit a market order at each (tick_index, side, quantity) entry in `actions`.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "actions")
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         actions: list,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.actions = actions
 
 
 class TickScheduled(Strategy):
-    def __init__(self, config: TickScheduledConfig):
+    """
+    Collect tick scheduled tests.
+    """
+
+    def __init__(self, config: TickScheduledConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._actions: dict[int, list[tuple[OrderSide, Quantity]]] = {}
@@ -226,51 +241,73 @@ class TickScheduled(Strategy):
 
         self._tick_count = 0
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self._instrument_id)
 
-    def on_quote(self, tick: QuoteTick):
+    def on_quote(self, _tick: QuoteTick) -> None:
+        """
+        On quote.
+        """
         self._tick_count += 1
         for side, qty in self._actions.get(self._tick_count, []):
             self.submit_order(_market_order(self, self._instrument_id, side, qty))
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
 
 
 class OrderBookImbalanceConfig(StrategyConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect order book imbalance config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
 
 
 class OrderBookImbalance(Strategy):
+    """
+    Collect order book imbalance tests.
+    """
+
     _MIN_IMBALANCE_SIZE = Decimal(100)
     _MAX_IMBALANCE_RATIO = Decimal("0.20")
 
-    def __init__(self, config: OrderBookImbalanceConfig):
+    def __init__(self, config: OrderBookImbalanceConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._trade_size = Quantity.from_str(config.trade_size)
         self._has_submitted = False
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_book_deltas(self._instrument_id, BookType.L2_MBP)
 
-    def on_book_deltas(self, deltas: OrderBookDeltas):
+    def on_book_deltas(self, deltas: OrderBookDeltas) -> None:
+        """
+        On book deltas.
+        """
         if self._has_submitted:
             return
 
@@ -321,11 +358,17 @@ class OrderBookImbalance(Strategy):
             ),
         )
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.cancel_all_orders(self._instrument_id)
         self.close_all_positions(self._instrument_id)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._has_submitted = False
 
 
@@ -334,24 +377,28 @@ class MultiInstrumentTickScheduledConfig(StrategyConfig):
     Submit market orders from an instrument keyed action schedule.
     """
 
-    _CUSTOM_FIELDS = ("instrument_actions",)
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_actions: dict,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_actions = instrument_actions
 
 
 class MultiInstrumentTickScheduled(Strategy):
-    def __init__(self, config: MultiInstrumentTickScheduledConfig):
+    """
+    Collect multi instrument tick scheduled tests.
+    """
+
+    def __init__(self, config: MultiInstrumentTickScheduledConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._actions: dict[InstrumentId, dict[int, list[tuple[OrderSide, Quantity]]]] = {}
         self._tick_counts: dict[InstrumentId, int] = {}
@@ -368,41 +415,36 @@ class MultiInstrumentTickScheduled(Strategy):
             self._actions[instrument_id] = instrument_actions
             self._tick_counts[instrument_id] = 0
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         for instrument_id in self._actions:
             self.subscribe_quotes(instrument_id)
 
-    def on_quote(self, tick: QuoteTick):
+    def on_quote(self, tick: QuoteTick) -> None:
+        """
+        On quote.
+        """
         instrument_id = tick.instrument_id
         self._tick_counts[instrument_id] += 1
         for side, qty in self._actions[instrument_id].get(self._tick_counts[instrument_id], []):
             self.submit_order(_market_order(self, instrument_id, side, qty))
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
 
 
 class EMACrossStopEntryConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "fast_ema_period",
-        "slow_ema_period",
-        "atr_period",
-        "trailing_atr_multiple",
-        "trailing_offset_type",
-        "trigger_type",
-        "emulation_trigger",
-    )
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect emacross stop entry config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
@@ -413,8 +455,11 @@ class EMACrossStopEntryConfig(StrategyConfig):
         trailing_offset_type: str = "PRICE",
         trigger_type: str = "LAST_PRICE",
         emulation_trigger: str = "NO_TRIGGER",
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.bar_type = bar_type
@@ -429,27 +474,13 @@ class EMACrossStopEntryConfig(StrategyConfig):
 
 
 class EMACrossTrailingStopConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "fast_ema_period",
-        "slow_ema_period",
-        "atr_period",
-        "trailing_atr_multiple",
-        "trailing_offset_type",
-        "trigger_type",
-        "emulation_trigger",
-        "activate_at_market",
-    )
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect emacross trailing stop config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
@@ -461,8 +492,11 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         trigger_type: str = "BID_ASK",
         emulation_trigger: str = "BID_ASK",
         activate_at_market: bool = False,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.bar_type = bar_type
@@ -478,7 +512,10 @@ class EMACrossTrailingStopConfig(StrategyConfig):
 
 
 class _EMACrossTrailingWorkflow(Strategy):
-    def __init__(self, config):
+    def __init__(self, config: object) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._bar_type = BarType.from_str(config.bar_type)
@@ -505,10 +542,14 @@ class _EMACrossTrailingWorkflow(Strategy):
         self.entry = None
         self.trailing_stop = None
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self._instrument = self.cache.instrument(self._instrument_id)
         if self._instrument is None:
-            self.log.error(f"Could not find instrument for {self._instrument_id}")
+            log_msg = f"Could not find instrument for {self._instrument_id}"
+            self.log.error(log_msg)
             self.stop()
             return
 
@@ -517,11 +558,14 @@ class _EMACrossTrailingWorkflow(Strategy):
         self.subscribe_quotes(self._instrument_id)
         self.subscribe_trades(self._instrument_id)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         self._update_indicators(bar)
         if not self._indicators_ready():
             return
-        if not self.portfolio.is_flat(self._instrument_id):
+        if not self.portfolio.is_net_flat(self._instrument_id):
             return
         if self.entry is not None and not self.entry.is_closed():
             return
@@ -531,7 +575,10 @@ class _EMACrossTrailingWorkflow(Strategy):
         else:
             self._submit_entry(OrderSide.SELL, bar)
 
-    def on_order_filled(self, event: OrderFilled):
+    def on_order_filled(self, event: OrderFilled) -> None:
+        """
+        On order filled.
+        """
         if self.entry and event.client_order_id == self.entry.client_order_id:
             if event.order_side == OrderSide.BUY:
                 self._submit_trailing_stop(OrderSide.SELL, event.last_px, event.position_id)
@@ -541,20 +588,35 @@ class _EMACrossTrailingWorkflow(Strategy):
             self.entry = None
             self.trailing_stop = None
 
-    def on_order_rejected(self, event):
+    def on_order_rejected(self, event: object) -> None:
+        """
+        On order rejected.
+        """
         self._clear_terminal_entry(event.client_order_id)
 
-    def on_order_canceled(self, event):
+    def on_order_canceled(self, event: object) -> None:
+        """
+        On order canceled.
+        """
         self._clear_terminal_entry(event.client_order_id)
 
-    def on_order_expired(self, event):
+    def on_order_expired(self, event: object) -> None:
+        """
+        On order expired.
+        """
         self._clear_terminal_entry(event.client_order_id)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.cancel_all_orders(self._instrument_id)
         self.close_all_positions(self._instrument_id)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._bar_count = 0
         self._fast_ema = Decimal(0)
         self._slow_ema = Decimal(0)
@@ -563,10 +625,15 @@ class _EMACrossTrailingWorkflow(Strategy):
         self.entry = None
         self.trailing_stop = None
 
-    def _submit_entry(self, side: OrderSide, bar: Bar):
+    def _submit_entry(self, side: OrderSide, bar: Bar) -> None:
         raise NotImplementedError
 
-    def _submit_trailing_stop(self, side: OrderSide, activation_price: Price, position_id):
+    def _submit_trailing_stop(
+        self,
+        side: OrderSide,
+        activation_price: Price,
+        position_id: object,
+    ) -> None:
         if self._instrument is None:
             self.log.error("No instrument loaded")
             return
@@ -591,7 +658,7 @@ class _EMACrossTrailingWorkflow(Strategy):
         self.trailing_stop = order
         self.submit_order(order, position_id=position_id)
 
-    def _update_indicators(self, bar: Bar):
+    def _update_indicators(self, bar: Bar) -> None:
         high = bar.high.as_decimal()
         low = bar.low.as_decimal()
         close = bar.close.as_decimal()
@@ -619,13 +686,17 @@ class _EMACrossTrailingWorkflow(Strategy):
     def _indicators_ready(self) -> bool:
         return self._bar_count >= max(self._slow_period, self._atr_period)
 
-    def _clear_terminal_entry(self, client_order_id: ClientOrderId):
+    def _clear_terminal_entry(self, client_order_id: ClientOrderId) -> None:
         if self.entry and client_order_id == self.entry.client_order_id:
             self.entry = None
 
 
 class EMACrossStopEntry(_EMACrossTrailingWorkflow):
-    def _submit_entry(self, side: OrderSide, bar: Bar):
+    """
+    Collect emacross stop entry tests.
+    """
+
+    def _submit_entry(self, side: OrderSide, bar: Bar) -> None:
         if self._instrument is None:
             self.log.error("No instrument loaded")
             return
@@ -650,7 +721,11 @@ class EMACrossStopEntry(_EMACrossTrailingWorkflow):
 
 
 class EMACrossTrailingStop(_EMACrossTrailingWorkflow):
-    def _submit_entry(self, side: OrderSide, bar: Bar):
+    """
+    Collect emacross trailing stop tests.
+    """
+
+    def _submit_entry(self, side: OrderSide, _bar: Bar) -> None:
         if self._instrument is None:
             self.log.error("No instrument loaded")
             return
@@ -666,20 +741,21 @@ class EMACrossTrailingStop(_EMACrossTrailingWorkflow):
 
 
 class CascadingStopConfig(StrategyConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size", "stop_price")
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect cascading stop config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         stop_price: str,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
@@ -687,7 +763,14 @@ class CascadingStopConfig(StrategyConfig):
 
 
 class CascadingStop(Strategy):
-    def __init__(self, config: CascadingStopConfig):
+    """
+    Collect cascading stop tests.
+    """
+
+    def __init__(self, config: CascadingStopConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
@@ -695,17 +778,26 @@ class CascadingStop(Strategy):
         self._tick_count = 0
         self._entry_filled = False
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self._instrument_id)
 
-    def on_quote(self, tick: QuoteTick):
+    def on_quote(self, _tick: QuoteTick) -> None:
+        """
+        On quote.
+        """
         self._tick_count += 1
         if self._tick_count == 1:
             self.submit_order(
                 _market_order(self, self._instrument_id, OrderSide.BUY, self._qty),
             )
 
-    def on_order_filled(self, event: OrderFilled):
+    def on_order_filled(self, _event: OrderFilled) -> None:
+        """
+        On order filled.
+        """
         if not self._entry_filled:
             self._entry_filled = True
             self.submit_order(
@@ -718,26 +810,29 @@ class CascadingStop(Strategy):
                 ),
             )
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
 
 
 class MultiCascadeConfig(StrategyConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size", "stop_price", "limit_price")
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect multi cascade config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         stop_price: str,
         limit_price: str,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
@@ -746,7 +841,14 @@ class MultiCascadeConfig(StrategyConfig):
 
 
 class MultiCascade(Strategy):
-    def __init__(self, config: MultiCascadeConfig):
+    """
+    Collect multi cascade tests.
+    """
+
+    def __init__(self, config: MultiCascadeConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
@@ -757,17 +859,26 @@ class MultiCascade(Strategy):
         self._stop_accepted = False
         self._stop_client_order_id: ClientOrderId | None = None
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self._instrument_id)
 
-    def on_quote(self, tick: QuoteTick):
+    def on_quote(self, _tick: QuoteTick) -> None:
+        """
+        On quote.
+        """
         self._tick_count += 1
         if self._tick_count == 1:
             self.submit_order(
                 _market_order(self, self._instrument_id, OrderSide.BUY, self._qty),
             )
 
-    def on_order_filled(self, event: OrderFilled):
+    def on_order_filled(self, _event: OrderFilled) -> None:
+        """
+        On order filled.
+        """
         if not self._entry_filled:
             self._entry_filled = True
             stop_order = _stop_market_order(
@@ -780,7 +891,10 @@ class MultiCascade(Strategy):
             self._stop_client_order_id = stop_order.client_order_id
             self.submit_order(stop_order)
 
-    def on_order_accepted(self, event):
+    def on_order_accepted(self, event: object) -> None:
+        """
+        On order accepted.
+        """
         if (
             self._stop_client_order_id is not None
             and event.client_order_id == self._stop_client_order_id
@@ -797,25 +911,28 @@ class MultiCascade(Strategy):
                 ),
             )
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
 
 
 class DualTimerConfig(StrategyConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size", "alert_iso")
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect dual timer config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         alert_iso: str,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
@@ -823,7 +940,14 @@ class DualTimerConfig(StrategyConfig):
 
 
 class DualTimer(Strategy):
-    def __init__(self, config: DualTimerConfig):
+    """
+    Collect dual timer tests.
+    """
+
+    def __init__(self, config: DualTimerConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
@@ -831,7 +955,10 @@ class DualTimer(Strategy):
         self.fired_a = False
         self.fired_b = False
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self._instrument_id)
 
         iso = self._alert_iso
@@ -844,45 +971,42 @@ class DualTimer(Strategy):
         self.clock.set_time_alert("timer_a", alert_time, self._on_timer_a)
         self.clock.set_time_alert("timer_b", alert_time, self._on_timer_b)
 
-    def _on_timer_a(self, event):
+    def _on_timer_a(self, _event: object) -> None:
         self.fired_a = True
         self.submit_order(
             _market_order(self, self._instrument_id, OrderSide.BUY, self._qty),
         )
 
-    def _on_timer_b(self, event):
+    def _on_timer_b(self, _event: object) -> None:
         self.fired_b = True
         self.submit_order(
             _market_order(self, self._instrument_id, OrderSide.SELL, self._qty),
         )
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
 
 
 class MACDStrategyConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "trade_size",
-        "fast_period",
-        "slow_period",
-        "entry_threshold",
-    )
-
-    def __new__(cls, *args, **kwargs):
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
+    """
+    Collect macdstrategy config tests.
+    """
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         fast_period: int = 12,
         slow_period: int = 26,
         entry_threshold: float = 0.00010,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
@@ -901,7 +1025,10 @@ class MACDTradeTickStrategy(Strategy):
 
     """
 
-    def __init__(self, config: MACDStrategyConfig):
+    def __init__(self, config: MACDStrategyConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
@@ -913,10 +1040,16 @@ class MACDTradeTickStrategy(Strategy):
         )
         self._position_side: OrderSide | None = None  # None=flat, BUY=long, SELL=short
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_trades(self._instrument_id)
 
-    def on_trade(self, tick: TradeTick):
+    def on_trade(self, tick: TradeTick) -> None:
+        """
+        On trade.
+        """
         self.macd.handle_trade_tick(tick)
         if not self.macd.initialized:
             return
@@ -942,5 +1075,7 @@ class MACDTradeTickStrategy(Strategy):
             )
             self._position_side = OrderSide.SELL
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """

@@ -21,7 +21,7 @@ use nautilus_model::{
     data::{
         DataType, HasTsInit,
         bar::{Bar, BarType},
-        custom::CustomDataTrait,
+        custom::{CustomData, CustomDataTrait},
     },
     types::{Price, Quantity},
 };
@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 /// `taker_buy_base_volume`, and `taker_buy_quote_volume`.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -117,8 +117,7 @@ impl BinanceBar {
     /// Returns the taker sell base asset volume.
     #[must_use]
     pub fn taker_sell_base_volume(&self) -> Decimal {
-        Decimal::from(self.volume.raw) / Decimal::new(10i64.pow(self.volume.precision.into()), 0)
-            - self.taker_buy_base_volume
+        self.volume.as_decimal() - self.taker_buy_base_volume
     }
 
     /// Returns the taker sell quote asset volume.
@@ -160,6 +159,16 @@ pub(crate) fn binance_bar_data_type(bar_type: BarType) -> DataType {
         serde_json::Value::String(bar_type.instrument_id().to_string()),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
+}
+
+pub(crate) fn binance_bars_to_custom_data(
+    bar_type: BarType,
+    bars: Vec<BinanceBar>,
+) -> Vec<CustomData> {
+    let data_type = binance_bar_data_type(bar_type);
+    bars.into_iter()
+        .map(|bar| CustomData::new(Arc::new(bar), data_type.clone()))
+        .collect()
 }
 
 pub(crate) fn parse_binance_bar_type(data_type: &DataType) -> anyhow::Result<BarType> {
@@ -231,16 +240,20 @@ mod tests {
     use super::*;
 
     fn stub_binance_bar() -> BinanceBar {
+        binance_bar_with_volumes(Quantity::from("148976.11427815"), dec!(1756.87402397))
+    }
+
+    fn binance_bar_with_volumes(volume: Quantity, taker_buy_base_volume: Decimal) -> BinanceBar {
         BinanceBar::new(
             BarType::from("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
             Price::from("0.01634790"),
             Price::from("0.01640000"),
             Price::from("0.01575800"),
             Price::from("0.01577100"),
-            Quantity::from("148976.11427815"),
+            volume,
             dec!(2434.19055334),
             100,
-            dec!(1756.87402397),
+            taker_buy_base_volume,
             dec!(28.46694368),
             UnixNanos::from(1_650_000_000_000_000_000u64),
             UnixNanos::from(1_650_000_000_000_000_000u64),
@@ -252,6 +265,34 @@ mod tests {
         let bar = stub_binance_bar();
         assert_eq!(bar.type_name(), "BinanceBar");
         assert_eq!(BinanceBar::type_name_static(), "BinanceBar");
+    }
+
+    #[rstest]
+    fn test_taker_sell_base_volume() {
+        let bar = binance_bar_with_volumes(Quantity::from("10.00"), dec!(3));
+        assert_eq!(bar.taker_sell_base_volume(), dec!(7));
+    }
+
+    #[rstest]
+    fn test_taker_sell_base_volume_fractional() {
+        let bar = stub_binance_bar();
+        assert_eq!(bar.taker_sell_base_volume(), dec!(147219.24025418));
+    }
+
+    #[rstest]
+    #[case("10")]
+    #[case("10.0")]
+    #[case("10.00")]
+    #[case("10.00000")]
+    fn test_taker_sell_base_volume_matches_across_display_precisions(#[case] volume: &str) {
+        let bar = binance_bar_with_volumes(Quantity::from(volume), dec!(3));
+        assert_eq!(bar.taker_sell_base_volume(), dec!(7));
+    }
+
+    #[rstest]
+    fn test_taker_sell_base_volume_zero_when_total_equals_taker_buy() {
+        let bar = binance_bar_with_volumes(Quantity::from("10.00"), dec!(10));
+        assert_eq!(bar.taker_sell_base_volume(), dec!(0));
     }
 
     #[rstest]
@@ -268,5 +309,62 @@ mod tests {
         let restored = BinanceBar::from_json(value).unwrap();
         let restored_bar = restored.as_any().downcast_ref::<BinanceBar>().unwrap();
         assert_eq!(restored_bar, &bar);
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_binance_bar_catalog_round_trip() {
+        use std::sync::Arc;
+
+        use nautilus_model::data::{CustomData as CatalogCustomData, Data, DataType};
+        use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+        use nautilus_serialization::ensure_custom_data_registered;
+        use tempfile::TempDir;
+
+        ensure_custom_data_registered::<BinanceBar>();
+        let temp_dir = TempDir::new().unwrap();
+        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let mut catalog = catalog;
+        let bar = stub_binance_bar();
+        let bar_type_str = bar.bar_type.to_string();
+        let data_type = DataType::new("BinanceBar", None, Some(bar_type_str.clone()));
+
+        let path = catalog
+            .write_custom_data_batch(
+                vec![CatalogCustomData::new(Arc::new(bar.clone()), data_type)],
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+        assert!(
+            path.to_string_lossy()
+                .contains("data/custom/BinanceBar/BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL")
+        );
+
+        let rows = catalog
+            .query_custom_data_dynamic(
+                "BinanceBar",
+                Some(&[bar_type_str]),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+
+        match &rows[0] {
+            Data::Custom(custom) => {
+                let row = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceBar>()
+                    .expect("expected BinanceBar");
+                assert_eq!(row, &bar);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
     }
 }

@@ -2,60 +2,33 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.live
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.live.data_client
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 ```
 
+## Python adapter clients
+
+Override hooks are documented in the [adapter interface](../developer_guide/python_adapters.md).
+This API listing shows public methods; see the guide for ownership and migration rules.
+
 ```{eval-rst}
-.. automodule:: nautilus_trader.live.data_engine
+.. automodule:: nautilus_trader.live.clients
+   :members: DataClientFactory, DataClient, MarketDataClient, ExecutionClientFactory, ExecutionClient
    :show-inheritance:
    :inherited-members:
-   :members:
    :member-order: bysource
 ```
 
+## Python instrument providers
+
 ```{eval-rst}
-.. automodule:: nautilus_trader.live.execution_client
-   :show-inheritance:
-   :inherited-members:
-   :members:
+.. automodule:: nautilus_trader.live.providers
+   :members: InstrumentProvider
    :member-order: bysource
 ```
 
-```{eval-rst}
-.. automodule:: nautilus_trader.live.execution_engine
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
+## Importable adapter configuration
 
-```{eval-rst}
-.. automodule:: nautilus_trader.live.risk_engine
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.live.node
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.live.node_builder
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
+See `ImportableConfig` and `ImportableFactoryConfig` in the [configuration API](config.md).

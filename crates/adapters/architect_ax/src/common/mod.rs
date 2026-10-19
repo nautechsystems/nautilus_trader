@@ -20,7 +20,7 @@
 //! - Shared enums (instrument state, order status, etc.)
 //! - Shared data models
 //! - Credential management and signing utilities
-//! - Parsing helpers
+//! - Parsers
 //! - Test fixtures
 
 pub mod auth;
@@ -28,3 +28,5 @@ pub mod consts;
 pub mod credential;
 pub mod enums;
 pub mod parse;
+
+pub(crate) mod retry;

@@ -21,19 +21,20 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use arrow::record_batch::RecordBatch;
-use chrono::{DateTime, Duration, NaiveDate};
 use futures_util::{StreamExt, pin_mut};
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable};
 use nautilus_model::{
     data::{
-        Bar, BarType, CatalogPathPrefix, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, Data, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth,
+        QuoteTick, TradeTick,
     },
     identifiers::InstrumentId,
 };
+use nautilus_persistence::common::paths::CatalogPathPrefix;
 use nautilus_serialization::arrow::{
     bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-    book_depth10_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
+    book_depths_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
     quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
 };
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
@@ -46,7 +47,7 @@ use crate::{
 
 struct DateCursor {
     /// Cursor date UTC.
-    date_utc: NaiveDate,
+    date_utc: Date,
     /// Cursor end timestamp UNIX nanoseconds.
     end_ns: UnixNanos,
 }
@@ -54,16 +55,21 @@ struct DateCursor {
 impl DateCursor {
     /// Creates a new [`DateCursor`] instance.
     fn new(current_ns: UnixNanos) -> Self {
-        let current_utc = DateTime::from_timestamp_nanos(current_ns.as_i64());
-        let date_utc = current_utc.date_naive();
+        let current_utc = current_ns.to_datetime_utc();
+        let date_utc = Offset::UTC.to_datetime(current_utc).date();
 
         // Calculate end of the current UTC day
-        let end_utc =
-            date_utc.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
-        let end_ns = UnixNanos::from(end_utc.and_utc().timestamp_nanos_opt().unwrap() as u64);
+        let end_utc = utc_timestamp(date_utc, 23, 59, 59, 999_999_999);
+        let end_ns = UnixNanos::from(u64::try_from(end_utc.as_nanosecond()).unwrap_or(u64::MAX));
 
         Self { date_utc, end_ns }
     }
+}
+
+fn utc_timestamp(date: Date, hour: i8, minute: i8, second: i8, nanosecond: i32) -> Timestamp {
+    Offset::UTC
+        .to_timestamp(date.at(hour, minute, second, nanosecond))
+        .expect("valid UTC civil datetime")
 }
 
 /// Runs the Tardis Machine replay from a JSON configuration file.
@@ -121,13 +127,22 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     let http_client = TardisHttpClient::new(
         None,
-        None,
+        config
+            .tardis_http_url
+            .as_ref()
+            .map(|value| value.expose_secret()),
         None,
         normalize_symbols,
-        config.proxy_url.clone(),
+        config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
     )?;
     let mut machine_client = TardisMachineClient::new(
-        config.tardis_ws_url.as_deref(),
+        config
+            .tardis_ws_url
+            .as_ref()
+            .map(|value| value.expose_secret()),
         normalize_symbols,
         book_snapshot_output,
     )?;
@@ -157,7 +172,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     // Initialize date collection maps
     let mut deltas_map: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
-    let mut depths_map: AHashMap<InstrumentId, Vec<OrderBookDepth10>> = AHashMap::new();
+    let mut depths_map: AHashMap<InstrumentId, Vec<OrderBookDepth>> = AHashMap::new();
     let mut quotes_map: AHashMap<InstrumentId, Vec<QuoteTick>> = AHashMap::new();
     let mut trades_map: AHashMap<InstrumentId, Vec<TradeTick>> = AHashMap::new();
     let mut bars_map: AHashMap<BarType, Vec<Bar>> = AHashMap::new();
@@ -169,7 +184,13 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         match result {
             Ok(msg) => {
                 match msg {
-                    Data::Deltas(msg) => {
+                    Data::BookDelta(delta) => {
+                        log::warn!(
+                            "Skipping individual delta message for {} (use Deltas batch instead)",
+                            delta.instrument_id
+                        );
+                    }
+                    Data::BookDeltas(msg) => {
                         handle_deltas_msg(
                             &msg,
                             &mut deltas_map,
@@ -178,8 +199,8 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::Depth10(msg) => {
-                        handle_depth10_msg(
+                    Data::BookDepth(msg) => {
+                        handle_depth_msg(
                             *msg,
                             &mut depths_map,
                             &mut depths_cursors,
@@ -208,10 +229,10 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                     Data::Bar(msg) => {
                         handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path, compression);
                     }
-                    Data::Delta(delta) => {
-                        log::warn!(
-                            "Skipping individual delta message for {} (use Deltas batch instead)",
-                            delta.instrument_id
+                    Data::MarkPrice(_) | Data::IndexPrice(_) | Data::FundingRate(_) => {
+                        log::debug!(
+                            "Skipping unsupported data type for instrument {}",
+                            msg.instrument_id()
                         );
                     }
                     Data::OptionGreeks(msg) => {
@@ -223,12 +244,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::MarkPriceUpdate(_)
-                    | Data::IndexPriceUpdate(_)
-                    | Data::FundingRateUpdate(_)
-                    | Data::InstrumentStatus(_)
-                    | Data::InstrumentClose(_)
-                    | Data::Custom(_) => {
+                    Data::InstrumentStatus(_) | Data::InstrumentClose(_) | Data::Custom(_) => {
                         log::debug!(
                             "Skipping unsupported data type for instrument {}",
                             msg.instrument_id()
@@ -246,7 +262,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                 }
             }
             Err(e) => {
-                log::error!("Stream error: {e:?}");
+                e.log_stream_error();
                 break;
             }
         }
@@ -292,7 +308,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 }
 
 fn handle_deltas_msg(
-    deltas: &OrderBookDeltas_API,
+    deltas: &OrderBookDeltas,
     map: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,
@@ -321,34 +337,34 @@ fn handle_deltas_msg(
         .extend(&*deltas.deltas);
 }
 
-fn handle_depth10_msg(
-    depth10: OrderBookDepth10,
-    map: &mut AHashMap<InstrumentId, Vec<OrderBookDepth10>>,
+fn handle_depth_msg(
+    depth: OrderBookDepth,
+    map: &mut AHashMap<InstrumentId, Vec<OrderBookDepth>>,
     cursors: &mut AHashMap<InstrumentId, DateCursor>,
     path: &Path,
     compression: Compression,
 ) {
     let cursor = cursors
-        .entry(depth10.instrument_id)
-        .or_insert_with(|| DateCursor::new(depth10.ts_init));
+        .entry(depth.instrument_id)
+        .or_insert_with(|| DateCursor::new(depth.ts_init));
 
-    if depth10.ts_init > cursor.end_ns {
-        if let Some(depths_vec) = map.remove(&depth10.instrument_id) {
+    if depth.ts_init > cursor.end_ns {
+        if let Some(depths_vec) = map.remove(&depth.instrument_id) {
             batch_and_write_depths(
                 &depths_vec,
-                &depth10.instrument_id,
+                &depth.instrument_id,
                 cursor.date_utc,
                 path,
                 compression,
             );
         }
         // Update cursor
-        *cursor = DateCursor::new(depth10.ts_init);
+        *cursor = DateCursor::new(depth.ts_init);
     }
 
-    map.entry(depth10.instrument_id)
+    map.entry(depth.instrument_id)
         .or_insert_with(|| Vec::with_capacity(100_000))
-        .push(depth10);
+        .push(depth);
 }
 
 fn handle_quote_msg(
@@ -468,7 +484,7 @@ fn handle_option_greeks_msg(
 fn batch_and_write_deltas(
     deltas: &[OrderBookDelta],
     instrument_id: &InstrumentId,
-    date: NaiveDate,
+    date: Date,
     path: &Path,
     compression: Compression,
 ) {
@@ -488,23 +504,23 @@ fn batch_and_write_deltas(
 }
 
 fn batch_and_write_depths(
-    depths: &[OrderBookDepth10],
+    depths: &[OrderBookDepth],
     instrument_id: &InstrumentId,
-    date: NaiveDate,
+    date: Date,
     path: &Path,
     compression: Compression,
 ) {
-    match book_depth10_to_arrow_record_batch_bytes(depths) {
+    match book_depths_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(
             &batch,
-            OrderBookDepth10::path_prefix(),
+            OrderBookDepth::path_prefix(),
             instrument_id,
             date,
             path,
             compression,
         ),
         Err(e) => {
-            log::error!("Error converting OrderBookDepth10 to Arrow: {e:?}");
+            log::error!("Error converting OrderBookDepth to Arrow: {e:?}");
         }
     }
 }
@@ -512,7 +528,7 @@ fn batch_and_write_depths(
 fn batch_and_write_quotes(
     quotes: &[QuoteTick],
     instrument_id: &InstrumentId,
-    date: NaiveDate,
+    date: Date,
     path: &Path,
     compression: Compression,
 ) {
@@ -534,7 +550,7 @@ fn batch_and_write_quotes(
 fn batch_and_write_trades(
     trades: &[TradeTick],
     instrument_id: &InstrumentId,
-    date: NaiveDate,
+    date: Date,
     path: &Path,
     compression: Compression,
 ) {
@@ -556,7 +572,7 @@ fn batch_and_write_trades(
 fn batch_and_write_bars(
     bars: &[Bar],
     bar_type: &BarType,
-    date: NaiveDate,
+    date: Date,
     path: &Path,
     compression: Compression,
 ) {
@@ -579,7 +595,7 @@ fn batch_and_write_bars(
 fn batch_and_write_greeks(
     greeks: &[OptionGreeks],
     instrument_id: &InstrumentId,
-    date: NaiveDate,
+    date: Date,
     path: &Path,
     compression: Compression,
 ) {
@@ -604,8 +620,8 @@ fn batch_and_write_greeks(
 ///
 /// Panics if the date is before 1970-01-01, as pre-epoch dates cannot be
 /// reliably represented as UnixNanos without overflow issues.
-fn assert_post_epoch(date: NaiveDate) {
-    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("UNIX epoch must exist");
+fn assert_post_epoch(date: Date) {
+    let epoch = Date::constant(1970, 1, 1);
     assert!(
         date >= epoch,
         "Tardis replay filenames require dates on or after 1970-01-01; received {date}"
@@ -631,24 +647,17 @@ fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> Str
     format!("{datetime_1}_{datetime_2}.parquet")
 }
 
-fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDate) -> PathBuf {
+fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: Date) -> PathBuf {
     assert_post_epoch(date);
 
     let instrument_id_str = instrument_id.to_string().replace('/', "");
 
-    let start_utc = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
-    let end_utc = date.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
-
-    let start_nanos = start_utc
-        .timestamp_nanos_opt()
-        .expect("valid nanosecond timestamp");
-    let end_nanos = (end_utc.and_utc())
-        .timestamp_nanos_opt()
-        .expect("valid nanosecond timestamp");
+    let start_nanos = utc_timestamp(date, 0, 0, 0, 0).as_nanosecond();
+    let end_nanos = utc_timestamp(date, 23, 59, 59, 999_999_999).as_nanosecond();
 
     let filename = timestamps_to_filename(
-        UnixNanos::from(start_nanos as u64),
-        UnixNanos::from(end_nanos as u64),
+        UnixNanos::from(u64::try_from(start_nanos).expect("date fits UnixNanos")),
+        UnixNanos::from(u64::try_from(end_nanos).expect("date fits UnixNanos")),
     );
 
     PathBuf::new()
@@ -657,25 +666,18 @@ fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDat
         .join(filename)
 }
 
-fn parquet_filepath_bars(bar_type: &BarType, date: NaiveDate) -> PathBuf {
+fn parquet_filepath_bars(bar_type: &BarType, date: Date) -> PathBuf {
     assert_post_epoch(date);
 
     let bar_type_str = bar_type.to_string().replace('/', "");
 
     // Calculate start and end timestamps for the day (UTC)
-    let start_utc = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
-    let end_utc = date.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
-
-    let start_nanos = start_utc
-        .timestamp_nanos_opt()
-        .expect("valid nanosecond timestamp");
-    let end_nanos = (end_utc.and_utc())
-        .timestamp_nanos_opt()
-        .expect("valid nanosecond timestamp");
+    let start_nanos = utc_timestamp(date, 0, 0, 0, 0).as_nanosecond();
+    let end_nanos = utc_timestamp(date, 23, 59, 59, 999_999_999).as_nanosecond();
 
     let filename = timestamps_to_filename(
-        UnixNanos::from(start_nanos as u64),
-        UnixNanos::from(end_nanos as u64),
+        UnixNanos::from(u64::try_from(start_nanos).expect("date fits UnixNanos")),
+        UnixNanos::from(u64::try_from(end_nanos).expect("date fits UnixNanos")),
     );
 
     PathBuf::new()
@@ -688,7 +690,7 @@ fn write_batch(
     batch: &RecordBatch,
     typename: &str,
     instrument_id: &InstrumentId,
-    date: NaiveDate,
+    date: Date,
     path: &Path,
     compression: Compression,
 ) {
@@ -724,8 +726,8 @@ fn write_parquet_local(
 mod tests {
     use std::sync::Arc;
 
-    use chrono::{TimeZone, Utc};
-    use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    use nautilus_core::DurationNanos;
+    use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
     use rstest::rstest;
 
     use super::*;
@@ -739,34 +741,56 @@ mod tests {
         },
     };
 
+    fn utc_nanos(
+        year: i16,
+        month: i8,
+        day: i8,
+        hour: i8,
+        minute: i8,
+        second: i8,
+        nanosecond: i32,
+    ) -> u64 {
+        u64::try_from(
+            utc_timestamp(
+                Date::new(year, month, day).unwrap(),
+                hour,
+                minute,
+                second,
+                nanosecond,
+            )
+            .as_nanosecond(),
+        )
+        .unwrap()
+    }
+
     #[rstest]
     #[case(
     // Start of day: 2024-01-01 00:00:00 UTC
-    Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap().timestamp_nanos_opt().unwrap() as u64,
-    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+    utc_nanos(2024, 1, 1, 0, 0, 0, 0),
+    Date::new(2024, 1, 1).unwrap(),
+    utc_nanos(2024, 1, 1, 23, 59, 59, 999_999_999)
 )]
     #[case(
     // Midday: 2024-01-01 12:00:00 UTC
-    Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap().timestamp_nanos_opt().unwrap() as u64,
-    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+    utc_nanos(2024, 1, 1, 12, 0, 0, 0),
+    Date::new(2024, 1, 1).unwrap(),
+    utc_nanos(2024, 1, 1, 23, 59, 59, 999_999_999)
 )]
     #[case(
     // End of day: 2024-01-01 23:59:59.999999999 UTC
-    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999,
-    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+    utc_nanos(2024, 1, 1, 23, 59, 59, 999_999_999),
+    Date::new(2024, 1, 1).unwrap(),
+    utc_nanos(2024, 1, 1, 23, 59, 59, 999_999_999)
 )]
     #[case(
     // Start of new day: 2024-01-02 00:00:00 UTC
-    Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap().timestamp_nanos_opt().unwrap() as u64,
-    NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
-    Utc.with_ymd_and_hms(2024, 1, 2, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+    utc_nanos(2024, 1, 2, 0, 0, 0, 0),
+    Date::new(2024, 1, 2).unwrap(),
+    utc_nanos(2024, 1, 2, 23, 59, 59, 999_999_999)
 )]
     fn test_date_cursor(
         #[case] timestamp: u64,
-        #[case] expected_date: NaiveDate,
+        #[case] expected_date: Date,
         #[case] expected_end_ns: u64,
     ) {
         let unix_nanos = UnixNanos::from(timestamp);
@@ -799,8 +823,8 @@ mod tests {
         };
 
         let mut greeks_2 = greeks_1;
-        greeks_2.ts_event = greeks_1.ts_event + 1_000_000_000;
-        greeks_2.ts_init = greeks_1.ts_init + 1_000_000_000;
+        greeks_2.ts_event = greeks_1.ts_event + DurationNanos::from_secs(1);
+        greeks_2.ts_init = greeks_1.ts_init + DurationNanos::from_secs(1);
         greeks_2.greeks.delta = 0.26;
 
         let option_quote: BookSnapshotMsg =
@@ -814,8 +838,8 @@ mod tests {
         };
 
         let mut quote_2 = quote_1;
-        quote_2.ts_event = quote_1.ts_event + 1_000_000_000;
-        quote_2.ts_init = quote_1.ts_init + 1_000_000_000;
+        quote_2.ts_event = quote_1.ts_event + DurationNanos::from_secs(1);
+        quote_2.ts_init = quote_1.ts_init + DurationNanos::from_secs(1);
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_path = temp_dir.path().join("data");
@@ -896,8 +920,8 @@ mod tests {
         };
 
         let mut trade_2 = trade_1;
-        trade_2.ts_event = trade_1.ts_event + 1_000_000_000;
-        trade_2.ts_init = trade_1.ts_init + 1_000_000_000;
+        trade_2.ts_event = trade_1.ts_event + DurationNanos::from_secs(1);
+        trade_2.ts_init = trade_1.ts_init + DurationNanos::from_secs(1);
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_path = temp_dir.path().join("data");
@@ -941,13 +965,8 @@ mod tests {
         let compression = ParquetCompression::Zstd.as_parquet_compression();
         let bar_type = BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
 
-        let ts_1 = UnixNanos::from(
-            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
-                .unwrap()
-                .timestamp_nanos_opt()
-                .unwrap() as u64,
-        );
-        let ts_2 = ts_1 + 1_000_000_000;
+        let ts_1 = UnixNanos::from(utc_nanos(2024, 1, 1, 0, 0, 0, 0));
+        let ts_2 = ts_1 + DurationNanos::from_secs(1);
 
         let bar_1 = Bar::new(
             bar_type,

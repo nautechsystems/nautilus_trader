@@ -16,10 +16,11 @@
 //! Live market data client implementation for the Derive adapter.
 
 use std::{
+    borrow::Cow,
     num::NonZeroUsize,
     str::FromStr,
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -30,19 +31,23 @@ use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
-    cache::{InstrumentLookupError, quote::QuoteCache},
+    cache::{InstrumentLookupError, fifo::FifoCache, quote::QuoteCache},
     clients::DataClient,
-    live::{get_runtime, runner::get_data_event_sender, task::TaskHandles},
+    live::{
+        dst::time::{self, Instant},
+        runner::get_data_event_sender,
+        sender::EventSender,
+    },
     messages::{
         DataEvent,
         data::{
-            BarsResponse, DataResponse, ForwardPricesResponse, FundingRatesResponse,
-            InstrumentResponse, InstrumentsResponse, QuotesResponse, RequestBars,
-            RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestQuotes, RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
+            BarsResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, OptionChainReferencePriceResponse, QuotesResponse, RequestBars,
+            RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBookDeltas,
+            SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
             SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeFundingRates,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeFundingRates,
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
             UnsubscribeQuotes, UnsubscribeTrades,
         },
@@ -50,21 +55,27 @@ use nautilus_common::{
     providers::InstrumentProvider,
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, AtomicSet, Params, UnixNanos,
     datetime::{NANOSECONDS_IN_SECOND, datetime_to_unix_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_model::{
-    data::{Bar, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
-    enums::{AggregationSource, BookType, PriceType},
-    identifiers::{ClientId, InstrumentId, Venue},
-    instruments::{Instrument, InstrumentAny},
-    types::{Price, Quantity},
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
 };
-use tokio::task::JoinHandle;
+use nautilus_model::{
+    data::{Bar, Data, QuoteTick},
+    enums::{AggregationSource, BookType, PriceType},
+    identifiers::{ClientId, InstrumentId, TradeId, Venue},
+    instruments::{Instrument, InstrumentAny},
+    types::Price,
+};
+use parking_lot::Mutex;
+use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    book::{recovery::spawn_recovery, sync::BookSyncTracker},
     common::{
         consts::{
             DERIVE_CANDLES_DEFAULT_LIMIT, DERIVE_CANDLES_MAX_PAGES, DERIVE_TRADES_PAGE_SIZE,
@@ -76,19 +87,20 @@ use crate::{
         parse::{format_instrument_id, format_venue_symbol, parse_derive_instrument_any},
     },
     config::DeriveDataClientConfig,
-    http::DeriveHttpClient,
+    http::{DeriveHttpClient, query::PaginationCursor},
     providers::{
         DeriveInstrumentProvider, fetch_instrument_definitions, parse_instrument_definitions,
     },
     websocket::{
         DEFAULT_ORDERBOOK_DEPTH, DEFAULT_ORDERBOOK_GROUP, DEFAULT_TICKER_INTERVAL,
-        DerivePublicWsData, DeriveTickerMsg, DeriveWebSocketClient,
-        DeriveWebSocketSubscriptionHandle, DeriveWsError, DeriveWsMessage, WsMessageContext,
-        bar_spec_to_derive_period, orderbook_channel, parse_candle_record, parse_funding_rate,
+        DeriveOrderbookMsg, DerivePublicWsData, DeriveTickerMsg, DeriveTradesMsg,
+        DeriveWebSocketClient, DeriveWebSocketSubscriptionHandle, DeriveWsError, DeriveWsMessage,
+        WsMessageContext, bar_spec_to_derive_period, dispatch::TRADE_DEDUP_CAPACITY,
+        orderbook_channel, parse_candle_record, parse_funding_rate,
         parse_funding_rate_history_record, parse_index_price, parse_mark_price,
-        parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth10, parse_public_ws_data,
-        parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick, ticker_channel,
-        trades_channel,
+        parse_option_greeks, parse_orderbook_deltas, parse_orderbook_depth, parse_public_ws_data,
+        parse_ticker_quote, parse_ticker_quote_from_rest, parse_trade_tick,
+        parse_trade_tick_from_rest, ticker_channel, trades_channel,
     },
 };
 
@@ -102,12 +114,13 @@ pub struct DeriveDataClient {
     ws_client: DeriveWebSocketClient,
     is_connected: Arc<AtomicBool>,
     cancellation_token: CancellationToken,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
-    active_book_depth10_channels: Arc<AtomicMap<InstrumentId, String>>,
+    active_book_depth_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_ticker_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
@@ -117,7 +130,9 @@ pub struct DeriveDataClient {
     active_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     channel_subscriptions: Arc<ChannelSubscriptionRegistry>,
     subscription_lock: Arc<Mutex<()>>,
+    book_sync: BookSyncTracker,
     quote_cache: Arc<Mutex<QuoteCache>>,
+    trades_emitted: Arc<Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>>,
     clock: &'static AtomicTime,
 }
 
@@ -126,14 +141,19 @@ impl DeriveDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error when the HTTP client cannot be initialized.
+    /// Returns an error if the HTTP client cannot be initialized.
     pub fn new(client_id: ClientId, config: DeriveDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+
         let http_client = DeriveHttpClient::new(
             config.rest_url(),
             Some(config.http_timeout_secs),
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             None,
         )?;
         let provider = DeriveInstrumentProvider::with_expired(
@@ -141,16 +161,29 @@ impl DeriveDataClient {
             config.currencies.clone(),
             config.include_expired,
         );
+        let book_sync = BookSyncTracker::default();
         let mut ws_client = DeriveWebSocketClient::new(
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
-        );
+            proxy_url,
+        )
+        .with_book_sync(
+            book_sync.clone(),
+            Duration::from_secs(config.book_snapshot_timeout_secs),
+        )
+        .with_socket_control(SocketControl::new(
+            client_id,
+            Some(*DERIVE_VENUE),
+            "derive-data-streams",
+        ));
 
         if let Some(secs) = config.ws_timeout_secs {
             ws_client.set_request_timeout(Duration::from_secs(secs));
         }
+
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
 
         Ok(Self {
             client_id,
@@ -160,12 +193,13 @@ impl DeriveDataClient {
             ws_client,
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
-            ws_stream_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             active_book_delta_channels: Arc::new(AtomicMap::new()),
-            active_book_depth10_channels: Arc::new(AtomicMap::new()),
+            active_book_depth_channels: Arc::new(AtomicMap::new()),
             active_ticker_channels: Arc::new(AtomicMap::new()),
             active_quote_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
@@ -175,34 +209,40 @@ impl DeriveDataClient {
             active_greeks_subs: Arc::new(AtomicSet::new()),
             channel_subscriptions: Arc::new(ChannelSubscriptionRegistry::default()),
             subscription_lock: Arc::new(Mutex::new(())),
+            book_sync,
             quote_cache: Arc::new(Mutex::new(QuoteCache::new())),
+            trades_emitted: Arc::new(Mutex::new(FifoCache::new())),
             clock,
         })
     }
 
     /// Spawns a fire-and-forget task, tracks its handle in `pending_tasks`
     /// for teardown abort, and logs failures with the task description.
-    fn spawn_task<F>(&self, description: &'static str, fut: F)
+    fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
-            if let Err(e) = fut.await {
-                log::warn!("{description} failed: {e:?}");
-            }
-        });
+        let description = description.into();
+        let task_description = description.clone();
 
-        self.pending_tasks.push(handle);
+        let future = async move {
+            if fut.await.is_err() {
+                log::warn!("{task_description} failed");
+            }
+        };
+
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Derive {description} after shutdown began: {e}");
+        }
     }
 
-    /// Drains and aborts every tracked pending task.
-    fn abort_pending_tasks(&self) -> Vec<JoinHandle<()>> {
-        let tasks = self.pending_tasks.take_all();
-        for handle in &tasks {
-            handle.abort();
-        }
-        tasks
+    fn abort_pending_tasks(&self) {
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
     }
 
     /// Clears every local subscription map. Called from `disconnect` and
@@ -210,10 +250,11 @@ impl DeriveDataClient {
     /// and aborted in-flight subscribe tasks can leak entries staged before
     /// spawn (they never reach their on-error rollback branch).
     fn clear_subscription_state(&self) {
-        let _guard = self.subscription_lock.lock().expect(MUTEX_POISONED);
+        let _guard = self.subscription_lock.lock();
         self.channel_subscriptions.clear();
+        self.book_sync.clear();
         self.active_book_delta_channels.store(AHashMap::new());
-        self.active_book_depth10_channels.store(AHashMap::new());
+        self.active_book_depth_channels.store(AHashMap::new());
         self.active_ticker_channels.store(AHashMap::new());
         self.active_quote_subs.store(AHashSet::new());
         self.active_trade_subs.store(AHashSet::new());
@@ -221,16 +262,51 @@ impl DeriveDataClient {
         self.active_index_subs.store(AHashSet::new());
         self.active_funding_subs.store(AHashSet::new());
         self.active_greeks_subs.store(AHashSet::new());
-        self.quote_cache.lock().expect(MUTEX_POISONED).clear();
+        self.quote_cache.lock().clear();
+        self.trades_emitted.lock().clear();
     }
 
-    fn spawn_stream_task(&mut self, mut rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>) {
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.cancellation_token.cancel();
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        if let Err(e) = self.ws_client.disconnect().await {
+            self.shutdown_errors
+                .push(format!("Derive WebSocket shutdown failed: {e}"));
+        }
+
+        let (session_result, pending_result) =
+            tokio::join!(self.join_session_tasks(), self.join_pending_tasks());
+        self.clear_subscription_state();
+        self.channel_subscriptions.clear_transitions();
+        self.is_connected.store(false, Ordering::Release);
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+
+        Ok(())
+    }
+
+    fn spawn_stream_task(
+        &self,
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
+    ) -> anyhow::Result<()> {
         let ctx = WsMessageContext {
             clock: self.clock,
             data_sender: self.data_sender.clone(),
             instruments: Arc::clone(&self.instruments),
             active_book_delta_channels: Arc::clone(&self.active_book_delta_channels),
-            active_book_depth10_channels: Arc::clone(&self.active_book_depth10_channels),
+            active_book_depth_channels: Arc::clone(&self.active_book_depth_channels),
             active_ticker_channels: Arc::clone(&self.active_ticker_channels),
             active_quote_subs: Arc::clone(&self.active_quote_subs),
             active_trade_subs: Arc::clone(&self.active_trade_subs),
@@ -239,14 +315,22 @@ impl DeriveDataClient {
             active_funding_subs: Arc::clone(&self.active_funding_subs),
             active_greeks_subs: Arc::clone(&self.active_greeks_subs),
             subscription_lock: Arc::clone(&self.subscription_lock),
+            book_sync: self.book_sync.clone(),
             quote_cache: Arc::clone(&self.quote_cache),
+            trades_emitted: Arc::clone(&self.trades_emitted),
         };
+
         let cancellation = self.cancellation_token.clone();
         let is_connected = Arc::clone(&self.is_connected);
 
-        let handle = get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             loop {
                 tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => {
+                        log::debug!("Derive WebSocket data stream task cancelled");
+                        break;
+                    }
                     maybe_msg = rx.recv() => {
                         match maybe_msg {
                             Some(msg) => {
@@ -261,15 +345,55 @@ impl DeriveDataClient {
                             }
                         }
                     }
-                    () = cancellation.cancelled() => {
-                        log::debug!("Derive WebSocket data stream task cancelled");
-                        break;
+                }
+            }
+
+            is_connected.store(false, Ordering::Release);
+
+            if !cancellation.is_cancelled() {
+                log::warn!("Derive data WebSocket stream ended unexpectedly");
+            }
+        })?;
+
+        Ok(())
+    }
+
+    fn spawn_book_monitor(&self) -> anyhow::Result<()> {
+        let tracker = self.book_sync.clone();
+        let ws = self.ws_handle();
+        let registry = Arc::clone(&self.channel_subscriptions);
+        let stale_timeout = Duration::from_secs(self.config.book_stale_threshold_secs);
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+        let tasks = self.pending_tasks.spawner()?;
+        let cancellation = self.cancellation_token.clone();
+
+        self.session_tasks.spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(1));
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    _ = interval.tick() => {
+                        for (channel, signal, recovery) in tracker.recoveries(stale_timeout, Instant::now()) {
+                            signal.log();
+                            let transition = registry.transition(&channel);
+                            spawn_recovery(
+                                channel,
+                                signal.instrument_id,
+                                recovery,
+                                ws.clone(),
+                                transition,
+                                snapshot_timeout,
+                                &tasks,
+                            );
+                        }
                     }
                 }
             }
-        });
+        })?;
 
-        self.ws_stream_handle = Some(handle);
+        Ok(())
     }
 
     fn handle_ws_message(message: DeriveWsMessage, ctx: &WsMessageContext) {
@@ -287,13 +411,38 @@ impl DeriveDataClient {
                     );
                 }
             },
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation,
+            } => {
+                let _guard = ctx.subscription_lock.lock();
+
+                if generation.is_cancelled() {
+                    return;
+                }
+
+                match parse_public_ws_data(&payload) {
+                    Ok(DerivePublicWsData::Orderbook(msg)) => {
+                        Self::handle_public_book(&msg, ctx, Some(&generation));
+                    }
+                    Err(e) => {
+                        ctx.book_sync.reject_snapshot(
+                            payload.channel.as_str(),
+                            Arc::new(DeriveWsError::Transport(e.to_string())),
+                            Some(&generation),
+                        );
+                        log::warn!("Failed to parse Derive book snapshot: {e}");
+                    }
+                    Ok(_) => {}
+                }
+            }
             DeriveWsMessage::Reconnected => {
-                let _guard = ctx.subscription_lock.lock().expect(MUTEX_POISONED);
-                ctx.quote_cache.lock().expect(MUTEX_POISONED).clear();
+                let _guard = ctx.subscription_lock.lock();
+                ctx.quote_cache.lock().clear();
                 log::info!("Derive WebSocket reconnected");
             }
-            DeriveWsMessage::SessionRecoveryFailed(reason) => {
-                log::error!("Derive WebSocket session recovery failed: {reason}");
+            DeriveWsMessage::SessionRecoveryFailed(_) => {
+                log::error!("Derive WebSocket session recovery failed");
             }
             DeriveWsMessage::Authenticated => log::debug!("Derive WebSocket authenticated"),
         }
@@ -302,166 +451,266 @@ impl DeriveDataClient {
     fn handle_public_ws_data(data: DerivePublicWsData, ctx: &WsMessageContext) {
         // Lifecycle mutation takes this lock before QuoteCache, so a feed
         // generation cannot change during cache mutation.
-        let _guard = ctx.subscription_lock.lock().expect(MUTEX_POISONED);
-
+        let _guard = ctx.subscription_lock.lock();
         match data {
-            DerivePublicWsData::Orderbook(msg) => {
-                let instrument_id = msg.data.instrument_id();
-                let channel = msg.channel.as_str();
-                let deltas_active =
-                    channel_is_active(&ctx.active_book_delta_channels, instrument_id, channel);
-                let depth10_active =
-                    channel_is_active(&ctx.active_book_depth10_channels, instrument_id, channel);
+            DerivePublicWsData::Orderbook(msg) => Self::handle_public_book(&msg, ctx, None),
+            DerivePublicWsData::Trades(msg) => Self::handle_public_trades(&msg, ctx),
+            DerivePublicWsData::Ticker(msg) => Self::handle_public_ticker(&msg, ctx),
+        }
+    }
 
-                if !deltas_active && !depth10_active {
+    fn handle_public_book(
+        msg: &DeriveOrderbookMsg,
+        ctx: &WsMessageContext,
+        generation: Option<&CancellationToken>,
+    ) {
+        let instrument_id = match msg.data.instrument_id() {
+            Ok(instrument_id) => instrument_id,
+            Err(e) => {
+                log::warn!("Invalid Derive feed instrument: {e:#}");
+                return;
+            }
+        };
+
+        let channel = msg.channel.as_str();
+        let deltas_active =
+            channel_is_active(&ctx.active_book_delta_channels, instrument_id, channel);
+        let depth_active =
+            channel_is_active(&ctx.active_book_depth_channels, instrument_id, channel);
+
+        if !deltas_active && !depth_active {
+            return;
+        }
+
+        let Some(instrument) = ctx.instruments.get_cloned(&instrument_id) else {
+            log::warn!("Orderbook message received for unknown instrument {instrument_id}");
+            return;
+        };
+
+        let ts_init = ctx.clock.get_time_ns();
+
+        let deltas = if deltas_active {
+            match parse_orderbook_deltas(
+                msg,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                ts_init,
+            ) {
+                Ok(deltas) => Some(deltas),
+                Err(e) => {
+                    ctx.book_sync.reject_snapshot(
+                        channel,
+                        Arc::new(DeriveWsError::Transport(e.to_string())),
+                        generation,
+                    );
+
+                    log::warn!("Failed to parse Derive book deltas: {e}");
                     return;
-                }
-
-                let Some(instrument) = ctx.instruments.get_cloned(&instrument_id) else {
-                    log::warn!("Orderbook message received for unknown instrument {instrument_id}");
-                    return;
-                };
-
-                let ts_init = ctx.clock.get_time_ns();
-
-                if deltas_active {
-                    match parse_orderbook_deltas(
-                        &msg,
-                        instrument.price_precision(),
-                        instrument.size_precision(),
-                        ts_init,
-                    ) {
-                        Ok(deltas) => {
-                            Self::send_data(ctx, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-                        }
-                        Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
-                    }
-                }
-
-                if depth10_active {
-                    match parse_orderbook_depth10(
-                        &msg,
-                        instrument.price_precision(),
-                        instrument.size_precision(),
-                        ts_init,
-                    ) {
-                        Ok(depth) => Self::send_data(ctx, Data::Depth10(Box::new(depth))),
-                        Err(e) => log::warn!("Failed to parse Derive orderbook depth10: {e}"),
-                    }
                 }
             }
-            DerivePublicWsData::Trades(msg) => {
-                let ts_init = ctx.clock.get_time_ns();
+        } else {
+            None
+        };
 
-                for trade in &msg.trades {
-                    let instrument_id = format_instrument_id(trade.instrument_name.as_str());
+        let depth = if depth_active {
+            match parse_orderbook_depth(
+                msg,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                ts_init,
+            ) {
+                Ok(depth) => Some(depth),
+                Err(e) => {
+                    ctx.book_sync.reject_snapshot(
+                        channel,
+                        Arc::new(DeriveWsError::Transport(e.to_string())),
+                        generation,
+                    );
 
-                    if !ctx.active_trade_subs.contains(&instrument_id) {
-                        continue;
-                    }
-
-                    let Some(instrument) = ctx.instruments.get_cloned(&instrument_id) else {
-                        log::warn!("Trade message received for unknown instrument {instrument_id}");
-                        continue;
-                    };
-
-                    match parse_trade_tick(
-                        trade,
-                        instrument.price_precision(),
-                        instrument.size_precision(),
-                        ts_init,
-                    ) {
-                        Ok(tick) => Self::send_data(ctx, Data::Trade(tick)),
-                        Err(e) => log::warn!("Failed to parse Derive trade tick: {e}"),
-                    }
+                    log::warn!("Failed to parse Derive book depth: {e}");
+                    return;
                 }
             }
-            DerivePublicWsData::Ticker(msg) => {
-                let instrument_id = msg.data.instrument_id();
+        } else {
+            None
+        };
 
-                if !channel_is_active(
-                    &ctx.active_ticker_channels,
-                    instrument_id,
-                    msg.channel.as_str(),
-                ) {
-                    return;
+        if !ctx
+            .book_sync
+            .record_snapshot(channel, msg.data.timestamp, generation, Instant::now())
+        {
+            return;
+        }
+
+        if let Some(deltas) = deltas {
+            Self::send_data(ctx, Data::BookDeltas(Box::new(deltas)));
+        }
+
+        if let Some(depth) = depth {
+            Self::send_data(ctx, Data::BookDepth(Box::new(depth)));
+        }
+    }
+
+    fn handle_public_ticker(msg: &DeriveTickerMsg, ctx: &WsMessageContext) {
+        let instrument_id = match msg.data.instrument_id() {
+            Ok(instrument_id) => instrument_id,
+            Err(e) => {
+                log::warn!("Invalid Derive feed instrument: {e:#}");
+                return;
+            }
+        };
+
+        if !channel_is_active(
+            &ctx.active_ticker_channels,
+            instrument_id,
+            msg.channel.as_str(),
+        ) {
+            return;
+        }
+
+        let Some(instrument) = ctx.instruments.get_cloned(&instrument_id) else {
+            log::warn!("Ticker message received for unknown instrument {instrument_id}");
+            return;
+        };
+
+        let ts_init = ctx.clock.get_time_ns();
+        let price_precision = instrument.price_precision();
+
+        if ctx.active_quote_subs.contains(&instrument_id) {
+            let mut quote_cache = ctx.quote_cache.lock();
+
+            match process_ticker_quote(
+                msg,
+                price_precision,
+                instrument.size_precision(),
+                ts_init,
+                &mut quote_cache,
+            ) {
+                Ok(Some(quote)) => {
+                    Self::send_data(ctx, Data::Quote(quote));
                 }
+                Ok(None) => {}
+                Err(e) => log::warn!("Failed to parse Derive ticker quote: {e}"),
+            }
+        }
 
-                let Some(instrument) = ctx.instruments.get_cloned(&instrument_id) else {
-                    log::warn!("Ticker message received for unknown instrument {instrument_id}");
-                    return;
-                };
+        Self::handle_ticker_prices(msg, ctx, instrument_id, price_precision, ts_init);
+        Self::handle_ticker_derivatives(msg, ctx, instrument_id, ts_init);
+    }
 
-                let ts_init = ctx.clock.get_time_ns();
-                let price_precision = instrument.price_precision();
-
-                if ctx.active_quote_subs.contains(&instrument_id) {
-                    let mut quote_cache = ctx.quote_cache.lock().expect(MUTEX_POISONED);
-
-                    match process_ticker_quote(
-                        &msg,
-                        price_precision,
-                        instrument.size_precision(),
-                        ts_init,
-                        &mut quote_cache,
-                    ) {
-                        Ok(Some(quote)) => Self::send_data(ctx, Data::Quote(quote)),
-                        Ok(None) => {}
-                        Err(e) => log::warn!("Failed to parse Derive ticker quote: {e}"),
-                    }
+    fn handle_ticker_prices(
+        msg: &DeriveTickerMsg,
+        ctx: &WsMessageContext,
+        instrument_id: InstrumentId,
+        price_precision: u8,
+        ts_init: UnixNanos,
+    ) {
+        if ctx.active_mark_subs.contains(&instrument_id) {
+            match parse_mark_price(msg, price_precision, ts_init) {
+                Ok(Some(update)) => {
+                    Self::send_data(ctx, Data::MarkPrice(update));
                 }
+                Ok(None) => {}
+                Err(e) => log::warn!("Failed to parse Derive mark price: {e}"),
+            }
+        }
 
-                if ctx.active_mark_subs.contains(&instrument_id) {
-                    match parse_mark_price(&msg, price_precision, ts_init) {
-                        Ok(Some(update)) => Self::send_data(ctx, Data::MarkPriceUpdate(update)),
-                        Ok(None) => {}
-                        Err(e) => log::warn!("Failed to parse Derive mark price: {e}"),
-                    }
+        if ctx.active_index_subs.contains(&instrument_id) {
+            match parse_index_price(msg, price_precision, ts_init) {
+                Ok(Some(update)) => {
+                    Self::send_data(ctx, Data::IndexPrice(update));
                 }
-
-                if ctx.active_index_subs.contains(&instrument_id) {
-                    match parse_index_price(&msg, price_precision, ts_init) {
-                        Ok(Some(update)) => Self::send_data(ctx, Data::IndexPriceUpdate(update)),
-                        Ok(None) => {}
-                        Err(e) => log::warn!("Failed to parse Derive index price: {e}"),
-                    }
-                }
-
-                if ctx.active_funding_subs.contains(&instrument_id) {
-                    match parse_funding_rate(&msg, ts_init) {
-                        Ok(Some(update)) => {
-                            if let Err(e) = ctx.data_sender.send(DataEvent::FundingRate(update)) {
-                                log::error!("Failed to send Derive funding rate: {e}");
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(e) => log::warn!("Failed to parse Derive funding rate: {e}"),
-                    }
-                }
-
-                if ctx.active_greeks_subs.contains(&instrument_id) {
-                    match parse_option_greeks(&msg, ts_init) {
-                        Ok(Some(greeks)) => {
-                            if let Err(e) = ctx.data_sender.send(DataEvent::OptionGreeks(greeks)) {
-                                log::error!("Failed to send Derive option greeks: {e}");
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(e) => log::warn!("Failed to parse Derive option greeks: {e}"),
-                    }
-                }
+                Ok(None) => {}
+                Err(e) => log::warn!("Failed to parse Derive index price: {e}"),
             }
         }
     }
 
-    fn send_data(ctx: &WsMessageContext, data: Data) {
-        if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-            log::error!("Failed to send Derive data event: {e}");
+    fn handle_ticker_derivatives(
+        msg: &DeriveTickerMsg,
+        ctx: &WsMessageContext,
+        instrument_id: InstrumentId,
+        ts_init: UnixNanos,
+    ) {
+        if ctx.active_funding_subs.contains(&instrument_id) {
+            match parse_funding_rate(msg, ts_init) {
+                Ok(Some(update)) => {
+                    if let Err(e) = ctx.data_sender.send(DataEvent::FundingRate(update)) {
+                        log::error!("Failed to send Derive funding rate: {e}");
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("Failed to parse Derive funding rate: {e}"),
+            }
+        }
+
+        if ctx.active_greeks_subs.contains(&instrument_id) {
+            match parse_option_greeks(msg, ts_init) {
+                Ok(Some(greeks)) => {
+                    if let Err(e) = ctx.data_sender.send(DataEvent::OptionGreeks(greeks)) {
+                        log::error!("Failed to send Derive option greeks: {e}");
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("Failed to parse Derive option greeks: {e}"),
+            }
+        }
+    }
+
+    fn handle_public_trades(msg: &DeriveTradesMsg, ctx: &WsMessageContext) {
+        let ts_init = ctx.clock.get_time_ns();
+
+        for trade in &msg.trades {
+            let instrument_id = match format_instrument_id(trade.instrument_name) {
+                Ok(instrument_id) => instrument_id,
+                Err(e) => {
+                    log::warn!("Invalid Derive trade instrument: {e:#}");
+                    continue;
+                }
+            };
+
+            if !ctx.active_trade_subs.contains(&instrument_id) {
+                continue;
+            }
+
+            let Some(instrument) = ctx.instruments.get_cloned(&instrument_id) else {
+                log::warn!("Trade message received for unknown instrument {instrument_id}");
+                continue;
+            };
+
+            match parse_trade_tick(
+                trade,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                ts_init,
+            ) {
+                Ok(tick) => {
+                    let mut emitted = ctx.trades_emitted.lock();
+                    if emitted.contains(&tick.trade_id) {
+                        continue;
+                    }
+
+                    if Self::send_data(ctx, Data::Trade(tick)) {
+                        emitted.add(tick.trade_id);
+                    }
+                }
+                Err(e) => log::warn!("Failed to parse Derive trade tick: {e}"),
+            }
+        }
+    }
+
+    fn send_data(ctx: &WsMessageContext, data: Data) -> bool {
+        match ctx.data_sender.send(DataEvent::Data(data)) {
+            Ok(()) => true,
+            Err(e) => {
+                log::error!("Failed to send Derive data event: {e}");
+                false
+            }
         }
     }
 
     fn cache_provider_instruments(&self) {
-        let instruments = self
+        let mut instruments = self
             .provider
             .store()
             .get_all()
@@ -469,6 +718,7 @@ impl DeriveDataClient {
             .cloned()
             .collect::<Vec<_>>();
 
+        instruments.sort_by_key(|instrument| instrument.id());
         for instrument in instruments {
             self.cache_instrument(&instrument);
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
@@ -491,6 +741,7 @@ impl DeriveDataClient {
                 "Instrument {instrument_id} not found and `auto_load_missing_instruments` is disabled"
             );
         }
+
         Ok(true)
     }
 
@@ -510,6 +761,7 @@ impl DeriveDataClient {
             if instrument.id() == instrument_id {
                 found = true;
             }
+
             cache_instrument(&instruments, &instrument);
         }
 
@@ -528,9 +780,11 @@ impl DeriveDataClient {
         SubscriptionLifecycle {
             registry: Arc::clone(&self.channel_subscriptions),
             lock: Arc::clone(&self.subscription_lock),
+            snapshot_timeout: Duration::from_secs(self.config.book_snapshot_timeout_secs),
             dispatch: SubscriptionDispatchState {
+                book_sync: self.book_sync.clone(),
                 active_book_delta_channels: Arc::clone(&self.active_book_delta_channels),
-                active_book_depth10_channels: Arc::clone(&self.active_book_depth10_channels),
+                active_book_depth_channels: Arc::clone(&self.active_book_depth_channels),
                 active_ticker_channels: Arc::clone(&self.active_ticker_channels),
                 active_quote_subs: Arc::clone(&self.active_quote_subs),
                 active_trade_subs: Arc::clone(&self.active_trade_subs),
@@ -554,6 +808,7 @@ impl DeriveDataClient {
             instrument_id,
             feed,
         };
+
         let lifecycle = self.subscription_lifecycle();
         if lifecycle.is_active(owner) {
             return Ok(());
@@ -567,11 +822,14 @@ impl DeriveDataClient {
                 ticker_channel(&instrument_name, &interval)
             }
         };
+
         let request = ChannelRequest::from_channel(&channel)?;
         let needs_load = self.prepare_subscribe(instrument_id)?;
+
         let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
             return Ok(());
         };
+
         let ws = self.ws_handle();
         let http_client = self.http_client.clone();
         let include_expired = self.config.include_expired;
@@ -600,6 +858,7 @@ impl DeriveDataClient {
 
     fn unsubscribe_channel_owner(&self, owner: ChannelOwner) -> anyhow::Result<()> {
         let lifecycle = self.subscription_lifecycle();
+
         let Some(removed) = lifecycle.remove(owner) else {
             return Ok(());
         };
@@ -607,15 +866,17 @@ impl DeriveDataClient {
         if !removed.channel_empty {
             return Ok(());
         }
+
         let Some(channel) = removed.channel else {
             return Ok(());
         };
+
         let request = ChannelRequest::from_channel(&channel)?;
         let ws = self.ws_handle();
-
         self.spawn_task("unsubscribe_channel", async move {
             run_channel_unsubscribe(lifecycle, request, ws).await
         });
+
         Ok(())
     }
 }
@@ -638,6 +899,9 @@ impl DataClient for DeriveDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Derive data client: {}", self.client_id);
         self.cancellation_token.cancel();
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+        self.book_sync.clear();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -646,18 +910,15 @@ impl DataClient for DeriveDataClient {
         log::info!("Resetting Derive data client: {}", self.client_id);
         self.cancellation_token.cancel();
 
-        drop(self.abort_pending_tasks());
-
-        if let Some(handle) = self.ws_stream_handle.as_ref() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+        self.is_connected.store(false, Ordering::Relaxed);
 
         // Leave the cancellation token cancelled; connect() refreshes it
         // (and tears down the inner WS client) on the next lifecycle start.
         self.instruments.store(AHashMap::new());
         self.clear_subscription_state();
         self.provider.store_mut().clear();
-        self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
@@ -675,28 +936,38 @@ impl DataClient for DeriveDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected()
+            && !self.cancellation_token.is_cancelled()
+            && self.session_tasks.is_open()
+            && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
         // Completes the async teardown deferred by sync reset()/stop().
-        if self.cancellation_token.is_cancelled() {
-            if let Err(e) = self.ws_client.disconnect().await {
-                log::debug!("Error tearing down WebSocket on reconnect: {e}");
-            }
-            let ws_handle = self.ws_stream_handle.take();
-            if let Some(handle) = ws_handle
-                && let Err(e) = handle.await
-                && !e.is_cancelled()
-            {
-                log::error!("Error joining prior Derive WebSocket data task: {e:?}");
-            }
-            let pending_tasks = self.abort_pending_tasks();
-            self.join_pending_tasks(pending_tasks).await;
-            self.clear_subscription_state();
-            self.channel_subscriptions.clear_transitions();
+        if self.cancellation_token.is_cancelled()
+            || !self.session_tasks.is_open()
+            || !self.pending_tasks.is_open()
+        {
+            self.teardown_partial_connect().await?;
             self.cancellation_token = CancellationToken::new();
+            self.session_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start Derive data session generation: {e}")
+            })?;
+
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Derive data task generation: {e}"))?;
         }
+
+        let cancellation_token = self.cancellation_token.clone();
+        let ws_shutdown = self.ws_client.shutdown_handle();
+
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                cancellation_token.cancel();
+                ws_shutdown.begin_shutdown();
+            });
 
         if !self.config.currencies.is_empty() {
             self.provider
@@ -710,13 +981,25 @@ impl DataClient for DeriveDataClient {
             .connect()
             .await
             .context("failed to connect Derive WebSocket")?;
-        let rx = self
+        let session_result = self
             .ws_client
             .take_event_receiver()
-            .ok_or_else(|| anyhow::anyhow!("Derive WebSocket event receiver not initialized"))?;
-        self.spawn_stream_task(rx);
+            .ok_or_else(|| anyhow::anyhow!("Derive WebSocket event receiver not initialized"))
+            .and_then(|rx| self.spawn_stream_task(rx))
+            .and_then(|()| self.spawn_book_monitor());
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive data startup teardown failed: {teardown_error}"
+                )));
+            }
+
+            return Err(e);
+        }
 
         self.is_connected.store(true, Ordering::Release);
+        setup_guard.disarm();
         log::info!(
             "Connected Derive data client ({:?})",
             self.config.environment
@@ -725,37 +1008,7 @@ impl DataClient for DeriveDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
-            return Ok(());
-        }
-
-        self.cancellation_token.cancel();
-
-        if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error while disconnecting Derive WebSocket: {e}");
-        }
-
-        // Await the WS consumption loop so its sender is dropped before we
-        // return; abort the request-handler tasks since they don't observe
-        // the cancellation token and would otherwise outlive the client.
-        let ws_handle = self.ws_stream_handle.take();
-        if let Some(handle) = ws_handle
-            && let Err(e) = handle.await
-        {
-            log::error!("Error joining Derive WebSocket data task: {e:?}");
-        }
-        let pending_tasks = self.abort_pending_tasks();
-        self.join_pending_tasks(pending_tasks).await;
-
-        // Aborting in-flight subscribe tasks skips their on-error rollback,
-        // so any `active_*` entries staged before spawn would leak across
-        // a reconnect and silently suppress the next subscribe. Clear the
-        // local subscription state to match the venue-side reality that
-        // disconnect drops all subscriptions.
-        self.clear_subscription_state();
-        self.channel_subscriptions.clear_transitions();
-
-        self.is_connected.store(false, Ordering::Relaxed);
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected Derive data client");
         Ok(())
     }
@@ -778,9 +1031,11 @@ impl DataClient for DeriveDataClient {
         let channel = orderbook_channel(&instrument_name, &group, &depth);
         let request = ChannelRequest::from_channel(&channel)?;
         let needs_load = self.prepare_subscribe(instrument_id)?;
+
         let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
             return Ok(());
         };
+
         let ws = self.ws_handle();
         let http_client = self.http_client.clone();
         let include_expired = self.config.include_expired;
@@ -807,13 +1062,13 @@ impl DataClient for DeriveDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
         if cmd.book_type != BookType::L2_MBP {
             anyhow::bail!("Derive only supports L2_MBP order book depth");
         }
 
         let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::BookDepth10(instrument_id);
+        let owner = ChannelOwner::BookDepth(instrument_id);
         let lifecycle = self.subscription_lifecycle();
         if lifecycle.is_active(owner) {
             return Ok(());
@@ -825,15 +1080,17 @@ impl DataClient for DeriveDataClient {
         let channel = orderbook_channel(&instrument_name, &group, &depth);
         let request = ChannelRequest::from_channel(&channel)?;
         let needs_load = self.prepare_subscribe(instrument_id)?;
+
         let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
             return Ok(());
         };
+
         let ws = self.ws_handle();
         let http_client = self.http_client.clone();
         let include_expired = self.config.include_expired;
         let instruments = Arc::clone(&self.instruments);
 
-        self.spawn_task("subscribe_book_depth10", async move {
+        self.spawn_task("subscribe_book_depth", async move {
             if needs_load
                 && let Err(e) = Self::lazy_load_instrument(
                     http_client,
@@ -844,7 +1101,7 @@ impl DataClient for DeriveDataClient {
                 .await
             {
                 lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (book depth10): {e}");
+                log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
                 return Ok(());
             }
 
@@ -867,9 +1124,11 @@ impl DataClient for DeriveDataClient {
         }
 
         let needs_load = self.prepare_subscribe(instrument_id)?;
+
         let Some(generation) = lifecycle.activate(owner, None) else {
             return Ok(());
         };
+
         let ws = self.ws_handle();
         let http_client = self.http_client.clone();
         let include_expired = self.config.include_expired;
@@ -899,6 +1158,7 @@ impl DataClient for DeriveDataClient {
                 log::error!("Instrument {instrument_id} not found for Derive trades");
                 return Ok(());
             };
+
             let channel = match trade_channel(&instrument) {
                 Ok(channel) => channel,
                 Err(e) => {
@@ -907,6 +1167,7 @@ impl DataClient for DeriveDataClient {
                     return Ok(());
                 }
             };
+
             let request = match ChannelRequest::from_channel(&channel) {
                 Ok(request) => request,
                 Err(e) => {
@@ -966,8 +1227,8 @@ impl DataClient for DeriveDataClient {
         self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(cmd.instrument_id))
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::BookDepth10(cmd.instrument_id))
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
+        self.unsubscribe_channel_owner(ChannelOwner::BookDepth(cmd.instrument_id))
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
@@ -1029,7 +1290,7 @@ impl DataClient for DeriveDataClient {
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
 
-        self.spawn_task("request_quotes", async move {
+        self.spawn_task(format!("request_quotes {instrument_id}"), async move {
             let ticker = match http_client.get_ticker(&venue_symbol).await {
                 Ok(ticker) => ticker,
                 Err(e) => {
@@ -1039,6 +1300,7 @@ impl DataClient for DeriveDataClient {
             };
 
             let ts_init = clock.get_time_ns();
+
             let quotes = match parse_ticker_quote_from_rest(
                 &ticker,
                 price_precision,
@@ -1075,6 +1337,7 @@ impl DataClient for DeriveDataClient {
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send Derive quotes response: {e}");
             }
+
             Ok(())
         });
 
@@ -1102,9 +1365,10 @@ impl DataClient for DeriveDataClient {
         let limit = request.limit.map(NonZeroUsize::get);
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
-        let from_timestamp = start.map(|dt| dt.timestamp_millis());
+        let from_timestamp = start.map(|dt| dt.as_millisecond());
+
         let to_timestamp = Some(match end {
-            Some(dt) => dt.timestamp_millis(),
+            Some(dt) => dt.as_millisecond(),
             None => i64::try_from(clock.get_time_ms())
                 .context("Derive current time exceeds i64 milliseconds")?,
         });
@@ -1116,13 +1380,20 @@ impl DataClient for DeriveDataClient {
             let page_size = limit.map_or(DERIVE_TRADES_PAGE_SIZE, |cap| {
                 cap.min(DERIVE_TRADES_PAGE_SIZE as usize) as u32
             });
+
             let mut trades = Vec::new();
             let mut seen_trade_ids = AHashSet::new();
-            let mut page = 1u32;
+            let mut pages = PaginationCursor::new_public();
 
             loop {
                 let result = match http_client
-                    .get_trade_history(&venue_symbol, from_timestamp, to_timestamp, page, page_size)
+                    .get_trade_history(
+                        &venue_symbol,
+                        from_timestamp,
+                        to_timestamp,
+                        pages.page(),
+                        page_size,
+                    )
                     .await
                 {
                     Ok(result) => result,
@@ -1132,15 +1403,35 @@ impl DataClient for DeriveDataClient {
                     }
                 };
 
-                if result.trades.is_empty() {
-                    break;
-                }
+                let row_ids: Vec<String> = result
+                    .trades
+                    .iter()
+                    .map(|trade| {
+                        format!(
+                            "{}:{:?}:{:?}",
+                            trade.trade_id, trade.liquidity_role, trade.subaccount_id
+                        )
+                    })
+                    .collect();
 
-                let num_pages = result.pagination.num_pages;
+                let more =
+                    match pages.advance(&result.pagination, row_ids.iter().map(String::as_str)) {
+                        Ok(more) => more,
+                        Err(e) => {
+                            log::error!("Failed to collect Derive trades for {instrument_id}: {e}");
+                            return Ok(());
+                        }
+                    };
+
                 let ts_init = clock.get_time_ns();
 
                 for trade in &result.trades {
-                    match parse_trade_tick(trade, price_precision, size_precision, ts_init) {
+                    match parse_trade_tick_from_rest(
+                        trade,
+                        price_precision,
+                        size_precision,
+                        ts_init,
+                    ) {
                         Ok(tick) if seen_trade_ids.insert(tick.trade_id) => trades.push(tick),
                         Ok(_) => {}
                         Err(e) => log::warn!(
@@ -1156,10 +1447,9 @@ impl DataClient for DeriveDataClient {
                     break;
                 }
 
-                if (page as i64) >= num_pages {
+                if !more {
                     break;
                 }
-                page += 1;
             }
 
             trades.sort_by_key(|trade| trade.ts_event);
@@ -1183,6 +1473,7 @@ impl DataClient for DeriveDataClient {
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send Derive trades response: {e}");
             }
+
             Ok(())
         });
 
@@ -1212,8 +1503,8 @@ impl DataClient for DeriveDataClient {
         let limit = request.limit.map(NonZeroUsize::get);
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
-        let start_ms = start.map(|dt| dt.timestamp_millis());
-        let end_ms = end.map(|dt| dt.timestamp_millis());
+        let start_ms = start.map(|dt| dt.as_millisecond());
+        let end_ms = end.map(|dt| dt.as_millisecond());
 
         self.spawn_task("request_funding_rates", async move {
             let result = match http_client
@@ -1263,6 +1554,7 @@ impl DataClient for DeriveDataClient {
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send Derive funding rates response: {e}");
             }
+
             Ok(())
         });
 
@@ -1309,9 +1601,9 @@ impl DataClient for DeriveDataClient {
         // and start to one window of `limit` buckets (or 1000) before end.
         let request_time = clock.get_time_ns();
         let now_secs = (request_time.as_u64() / NANOSECONDS_IN_SECOND) as i64;
-        let end_ts = end.map_or(now_secs, |dt| dt.timestamp());
+        let end_ts = end.map_or(now_secs, |dt| dt.as_second());
         let default_span = i64::from(period) * limit.unwrap_or(DERIVE_CANDLES_DEFAULT_LIMIT) as i64;
-        let start_ts = start.map_or(end_ts - default_span, |dt| dt.timestamp());
+        let start_ts = start.map_or(end_ts - default_span, |dt| dt.as_second());
 
         self.spawn_task("request_bars", async move {
             // Venue caps each call at 5000 candles; walk backwards by shrinking
@@ -1321,7 +1613,6 @@ impl DataClient for DeriveDataClient {
             let mut total_bars = 0usize;
             let mut current_end = end_ts;
             let mut page_count = 0;
-
             loop {
                 page_count += 1;
 
@@ -1437,30 +1728,26 @@ impl DataClient for DeriveDataClient {
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send Derive bars response: {e}");
             }
+
             Ok(())
         });
 
         Ok(())
     }
 
-    fn request_forward_prices(&self, request: RequestForwardPrices) -> anyhow::Result<()> {
-        // The DataEngine drives this from `subscribe_option_chain` to bootstrap
-        // the ATM price for the option series. It passes one option instrument
-        // from the target series; that instrument's ticker carries the forward
-        // price for every option at the same expiry. Bulk mode is unsupported
-        // because Derive has no per-currency ticker endpoint.
-        let Some(instrument_id) = request.instrument_id else {
-            anyhow::bail!(
-                "Derive request_forward_prices requires an `instrument_id`; bulk fetch is not supported",
-            );
-        };
+    fn request_option_chain_reference_price(
+        &self,
+        request: RequestOptionChainReferencePrice,
+    ) -> anyhow::Result<()> {
+        let series_id = request.series_id;
+        let instrument_id = request.instrument_id;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         anyhow::ensure!(
             matches!(instrument, InstrumentAny::CryptoOption(_)),
-            "Derive forward prices are only meaningful for options (got {instrument_id})",
+            "Derive option-chain reference prices require an option instrument (got {instrument_id})",
         );
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
 
@@ -1469,54 +1756,53 @@ impl DataClient for DeriveDataClient {
         let clock = self.clock;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let request_id = request.request_id;
-        let venue = request.venue;
-        let underlying = request.underlying;
         let params = request.params;
 
-        self.spawn_task("request_forward_prices", async move {
-            // The engine inserts this request into `pending_option_chain_requests`
-            // and blocks `OptionChainManager` creation until a response arrives.
-            // Always emit a response so the engine can fall back to live-tick
-            // bootstrap when the REST ticker is unavailable or non-option.
-            let forwards: Vec<ForwardPrice> = match http_client.get_ticker(&venue_symbol).await {
+        self.spawn_task("request_option_chain_reference_price", async move {
+            let price = match http_client.get_ticker(&venue_symbol).await {
                 Ok(ticker) => match ticker.option_pricing.as_ref() {
-                    Some(pricing) => {
-                        let ts_event = clock.get_time_ns();
-                        vec![ForwardPrice::new(
-                            instrument_id,
-                            pricing.forward_price,
-                            Some(underlying.to_string()),
-                            ts_event,
-                            ts_event,
-                        )]
+                    Some(pricing) if pricing.forward_price > Decimal::ZERO => {
+                        match Price::from_decimal(pricing.forward_price) {
+                            Ok(price) => Some(price),
+                            Err(e) => {
+                                log::warn!(
+                                    "Invalid Derive option-chain reference price for {instrument_id}: {e}"
+                                );
+                                None
+                            }
+                        }
                     }
                     None => {
                         log::warn!(
-                            "Derive ticker for {instrument_id} has no option_pricing; emitting empty forward prices",
+                            "Derive ticker for {instrument_id} has no option pricing reference"
                         );
-                        Vec::new()
+                        None
                     }
+                    Some(_) => None,
                 },
                 Err(e) => {
                     log::error!(
-                        "Failed to fetch Derive ticker for {instrument_id}: {e:?}; emitting empty forward prices",
+                        "Option-chain reference price request failed for {series_id}: {e:?}"
                     );
-                    Vec::new()
+                    None
                 }
             };
 
-            let response = DataResponse::ForwardPrices(ForwardPricesResponse::new(
-                request_id,
-                client_id,
-                venue,
-                forwards,
-                clock.get_time_ns(),
-                params,
-            ));
+            let response = DataResponse::OptionChainReferencePrice(
+                OptionChainReferencePriceResponse::new(
+                    request_id,
+                    client_id,
+                    series_id,
+                    price,
+                    clock.get_time_ns(),
+                    params,
+                ),
+            );
 
             if let Err(e) = sender.send(DataEvent::Response(response)) {
-                log::error!("Failed to send Derive forward prices response: {e}");
+                log::error!("Failed to send option-chain reference price response: {e}");
             }
+
             Ok(())
         });
 
@@ -1575,6 +1861,7 @@ impl DataClient for DeriveDataClient {
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send Derive instruments response: {e}");
             }
+
             Ok(())
         });
 
@@ -1605,6 +1892,7 @@ impl DataClient for DeriveDataClient {
             };
 
             let ts_init = clock.get_time_ns();
+
             let instrument = match parse_derive_instrument_any(&definition, ts_init) {
                 Ok(Some(instrument)) => instrument,
                 Ok(None) => {
@@ -1636,6 +1924,7 @@ impl DataClient for DeriveDataClient {
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send Derive instrument response: {e}");
             }
+
             Ok(())
         });
 
@@ -1655,7 +1944,7 @@ enum TickerFeed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ChannelOwner {
     BookDeltas(InstrumentId),
-    BookDepth10(InstrumentId),
+    BookDepth(InstrumentId),
     Ticker {
         instrument_id: InstrumentId,
         feed: TickerFeed,
@@ -1692,8 +1981,9 @@ struct RemovedSubscription {
 
 #[derive(Debug, Clone)]
 struct SubscriptionDispatchState {
+    book_sync: BookSyncTracker,
     active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
-    active_book_depth10_channels: Arc<AtomicMap<InstrumentId, String>>,
+    active_book_depth_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_ticker_channels: Arc<AtomicMap<InstrumentId, String>>,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
@@ -1706,6 +1996,7 @@ struct SubscriptionDispatchState {
 
 #[derive(Debug, Clone)]
 struct SubscriptionLifecycle {
+    snapshot_timeout: Duration,
     registry: Arc<ChannelSubscriptionRegistry>,
     lock: Arc<Mutex<()>>,
     dispatch: SubscriptionDispatchState,
@@ -1742,18 +2033,39 @@ async fn run_channel_subscribe(
     let transition = lifecycle.registry.transition(&channel);
     let _guard = transition.lock().await;
 
-    if !lifecycle.is_current_channel(owner, generation, &channel) || ws.has_subscription(&channel) {
+    if !lifecycle.is_current_channel(owner, generation, &channel) {
         return Ok(());
     }
 
-    if let Err(e) = request.subscribe(&ws).await {
+    let book_pending = lifecycle
+        .dispatch
+        .book_sync
+        .write(&channel)
+        .is_some_and(|write| write.gate.lock().is_closed());
+
+    if ws.has_subscription(&channel) && !book_pending {
+        return Ok(());
+    }
+
+    let result = if matches!(&request, ChannelRequest::Orderbook { .. }) {
+        ws.subscribe_book_gated(channel.clone()).await
+    } else {
+        request.subscribe(&ws).await
+    };
+
+    if let Err(e) = result {
         lifecycle.rollback(owner, generation);
-        log::error!("Failed to subscribe to Derive channel `{channel}`: {e}");
+        log::error!(
+            "Failed to subscribe to Derive channel `{channel}`: {}",
+            e.redacted_message()
+        );
+
         let cleanup_error = match request.unsubscribe(&ws).await {
             Ok(()) => None,
             Err(cleanup_error) => {
                 log::error!(
-                    "Failed to clean up uncertain Derive channel `{channel}`: {cleanup_error}",
+                    "Failed to clean up uncertain Derive channel `{channel}`: {}",
+                    cleanup_error.redacted_message(),
                 );
                 Some(cleanup_error)
             }
@@ -1769,15 +2081,21 @@ async fn run_channel_subscribe(
                 "Derive channel `{channel}` remains uncertain and will replay on reconnect",
             );
         }
+
         return Ok(());
     }
 
+    lifecycle
+        .dispatch
+        .book_sync
+        .subscription_written(&channel, lifecycle.snapshot_timeout);
     if !lifecycle.has_owners(&channel)
         && let Err(e) = request.unsubscribe(&ws).await
     {
         log::error!("Failed to clean up stale Derive channel `{channel}`: {e}");
         ws.forget_subscription(&channel);
     }
+
     Ok(())
 }
 
@@ -1798,80 +2116,89 @@ async fn run_channel_unsubscribe(
         log::error!("Failed to unsubscribe from Derive channel `{channel}`: {e}");
         ws.forget_subscription(&channel);
     }
+
     Ok(())
 }
 
 impl SubscriptionLifecycle {
     fn is_active(&self, owner: ChannelOwner) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        self.registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .owners
-            .contains_key(&owner)
+        let _guard = self.lock.lock();
+        self.registry.state.lock().owners.contains_key(&owner)
     }
 
     fn activate(&self, owner: ChannelOwner, channel: Option<&str>) -> Option<u64> {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        let mut state = self.registry.state.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
+        let mut state = self.registry.state.lock();
         let generation = state.activate(owner, channel)?;
         self.dispatch.activate(owner, channel);
+
+        if let ChannelOwner::BookDeltas(instrument_id) | ChannelOwner::BookDepth(instrument_id) =
+            owner
+        {
+            self.dispatch
+                .book_sync
+                .record_subscription(channel.expect("book channel present"), instrument_id);
+        }
+
         Some(generation)
     }
 
     fn attach_channel(&self, owner: ChannelOwner, generation: u64, channel: String) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
         self.registry
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .attach_channel(owner, generation, channel)
     }
 
     fn is_current(&self, owner: ChannelOwner, generation: u64) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        self.registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .is_current(owner, generation)
+        let _guard = self.lock.lock();
+        self.registry.state.lock().is_current(owner, generation)
     }
 
     fn is_current_channel(&self, owner: ChannelOwner, generation: u64, channel: &str) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
         self.registry
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .is_current_channel(owner, generation, channel)
     }
 
     fn rollback(&self, owner: ChannelOwner, generation: u64) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        let mut state = self.registry.state.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
+        let mut state = self.registry.state.lock();
+
         let Some(removed) = state.remove_if_generation(owner, generation) else {
             return false;
         };
+
         self.dispatch.deactivate(owner, removed.channel_empty);
+        if removed.channel_empty
+            && let Some(channel) = &removed.channel
+        {
+            self.dispatch.book_sync.remove(channel);
+        }
+
         true
     }
 
     fn remove(&self, owner: ChannelOwner) -> Option<RemovedSubscription> {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        let mut state = self.registry.state.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
+        let mut state = self.registry.state.lock();
         let removed = state.remove(owner)?;
         self.dispatch.deactivate(owner, removed.channel_empty);
+        if removed.channel_empty
+            && let Some(channel) = &removed.channel
+        {
+            self.dispatch.book_sync.remove(channel);
+        }
+
         Some(removed)
     }
 
     fn has_owners(&self, channel: &str) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        self.registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .has_owners(channel)
+        let _guard = self.lock.lock();
+        self.registry.state.lock().has_owners(channel)
     }
 }
 
@@ -1884,8 +2211,8 @@ impl SubscriptionDispatchState {
                     channel.expect("book channel present").to_string(),
                 );
             }
-            ChannelOwner::BookDepth10(instrument_id) => {
-                self.active_book_depth10_channels.insert(
+            ChannelOwner::BookDepth(instrument_id) => {
+                self.active_book_depth_channels.insert(
                     instrument_id,
                     channel.expect("book channel present").to_string(),
                 );
@@ -1911,8 +2238,8 @@ impl SubscriptionDispatchState {
             ChannelOwner::BookDeltas(instrument_id) => {
                 self.active_book_delta_channels.remove(&instrument_id);
             }
-            ChannelOwner::BookDepth10(instrument_id) => {
-                self.active_book_depth10_channels.remove(&instrument_id);
+            ChannelOwner::BookDepth(instrument_id) => {
+                self.active_book_depth_channels.remove(&instrument_id);
             }
             ChannelOwner::Ticker {
                 instrument_id,
@@ -1920,10 +2247,7 @@ impl SubscriptionDispatchState {
             } => {
                 self.ticker_subscriptions(feed).remove(&instrument_id);
                 if feed == TickerFeed::Quote {
-                    self.quote_cache
-                        .lock()
-                        .expect(MUTEX_POISONED)
-                        .remove(&instrument_id);
+                    self.quote_cache.lock().remove(&instrument_id);
                 }
 
                 if channel_empty {
@@ -1965,8 +2289,9 @@ impl ChannelSubscriptionRegistry {
     }
 
     fn clear(&self) {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         let next_generation = state.next_generation;
+
         *state = ChannelSubscriptionState {
             next_generation,
             ..Default::default()
@@ -1996,6 +2321,7 @@ impl ChannelSubscriptionState {
                 .or_default()
                 .insert(owner);
         }
+
         self.owners.insert(
             owner,
             OwnedChannel {
@@ -2003,6 +2329,7 @@ impl ChannelSubscriptionState {
                 channel: channel.map(ToOwned::to_owned),
             },
         );
+
         Some(generation)
     }
 
@@ -2044,15 +2371,18 @@ impl ChannelSubscriptionState {
         if !self.is_current(owner, generation) {
             return None;
         }
+
         self.remove(owner)
     }
 
     fn remove(&mut self, owner: ChannelOwner) -> Option<RemovedSubscription> {
         let owned = self.owners.remove(&owner)?;
+
         let channel_empty = owned.channel.as_ref().is_some_and(|channel| {
             let Some(owners) = self.channels.get_mut(channel) else {
                 return true;
             };
+
             owners.remove(&owner);
             owners.is_empty()
         });
@@ -2105,6 +2435,7 @@ impl ChannelRequest {
                 currency: currency.to_string(),
             });
         }
+
         anyhow::bail!("invalid Derive subscription channel `{channel}`")
     }
 
@@ -2138,6 +2469,7 @@ impl ChannelRequest {
                 ..
             } => ws.subscribe_trades(instrument_type, currency).await?,
         }
+
         Ok(())
     }
 
@@ -2166,6 +2498,7 @@ impl ChannelRequest {
                 ..
             } => ws.unsubscribe_trades(instrument_type, currency).await?,
         }
+
         Ok(())
     }
 }
@@ -2192,18 +2525,27 @@ fn retain_channel_for_reconnect(
     } else {
         ws.forget_subscription(channel);
     }
+
     replay
 }
 
 impl DeriveDataClient {
-    async fn join_pending_tasks(&self, tasks: Vec<JoinHandle<()>>) {
-        for handle in tasks {
-            if let Err(e) = handle.await
-                && !e.is_cancelled()
-            {
-                log::error!("Error joining Derive data task: {e:?}");
-            }
-        }
+    async fn join_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Derive data session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn join_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Derive data tasks: {e}"))?;
+        Ok(())
     }
 }
 
@@ -2222,35 +2564,23 @@ fn process_ticker_quote(
     quote_cache: &mut QuoteCache,
 ) -> anyhow::Result<Option<QuoteTick>> {
     let quote = parse_ticker_quote(msg, price_precision, size_precision, ts_init)?;
-    let (bid_price, bid_size) = quote_side(quote.bid_price, quote.bid_size);
-    let (ask_price, ask_size) = quote_side(quote.ask_price, quote.ask_size);
+    if quote.bid_price.is_zero()
+        || quote.ask_price.is_zero()
+        || quote.bid_size.is_zero()
+        || quote.ask_size.is_zero()
+    {
+        // Tickers are complete snapshots; a zero side withdraws cached liquidity
+        quote_cache.remove(&quote.instrument_id);
 
-    match quote_cache.process(
-        quote.instrument_id,
-        bid_price,
-        ask_price,
-        bid_size,
-        ask_size,
-        quote.ts_event,
-        quote.ts_init,
-    ) {
-        Ok(quote) => Ok(Some(quote)),
-        Err(e) => {
-            log::debug!(
-                "Skipping partial Derive ticker quote for {}: {e}",
-                msg.data.instrument_name(),
-            );
-            Ok(None)
-        }
+        log::debug!(
+            "Skipping Derive ticker quote with an empty side for {}",
+            msg.data.instrument_name(),
+        );
+        return Ok(None);
     }
-}
 
-fn quote_side(price: Price, size: Quantity) -> (Option<Price>, Option<Quantity>) {
-    if price.is_zero() || size.is_zero() {
-        (None, None)
-    } else {
-        (Some(price), Some(size))
-    }
+    quote_cache.insert(quote.instrument_id, quote);
+    Ok(Some(quote))
 }
 
 fn channel_is_active(
@@ -2387,13 +2717,16 @@ fn currency_from_instrument_id(instrument_id: &InstrumentId) -> anyhow::Result<&
 // can never produce a panicking slice.
 fn truncated_payload_snippet(raw: &str) -> String {
     const MAX_LEN: usize = 512;
+
     if raw.len() <= MAX_LEN {
         return raw.to_string();
     }
+
     let mut end = MAX_LEN;
     while end > 0 && !raw.is_char_boundary(end) {
         end -= 1;
     }
+
     format!("{}...(truncated)", &raw[..end])
 }
 
@@ -2404,19 +2737,24 @@ mod tests {
     use nautilus_common::{live::runner::replace_data_event_sender, testing::wait_until_async};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
+        enums::AggressorSide,
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
+    use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::{Value, json};
 
     use super::*;
     use crate::{
+        client_logging,
         common::{
             consts::DERIVE_CLIENT_ID, enums::DeriveEnvironment, parse::parse_derive_instrument_any,
+            urls,
         },
         http::models::DeriveInstrument,
-        websocket::{DeriveWsFrame, WsSubscriptionPayload},
+        websocket::{DeriveWsFrame, WsSubscriptionPayload, parse_orderbook_msg, parse_ticker_msg},
     };
 
     fn data_path() -> PathBuf {
@@ -2427,6 +2765,83 @@ mod tests {
         let content = std::fs::read_to_string(data_path().join(filename))
             .unwrap_or_else(|_| panic!("failed to read {filename}"));
         serde_json::from_str(&content).expect("invalid json")
+    }
+
+    #[tokio::test]
+    async fn test_data_task_log_omits_provider_error() {
+        let _capture = client_logging::capture_logs().await;
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client =
+            DeriveDataClient::new(*DERIVE_CLIENT_ID, DeriveDataClientConfig::default()).unwrap();
+        client.spawn_task("Synthetic subscription", async {
+            anyhow::bail!("SYN-secret-provider-error")
+        });
+
+        wait_until_async(
+            || async {
+                client_logging::messages().iter().any(|(level, message)| {
+                    *level == log::Level::Warn && message == "Synthetic subscription failed"
+                })
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        client.join_pending_tasks().await.unwrap();
+        let messages = client_logging::messages();
+        assert!(messages.contains(&(
+            log::Level::Warn,
+            "Synthetic subscription failed".to_string()
+        )));
+        assert!(
+            !messages
+                .iter()
+                .any(|(_, message)| message.contains("SYN-secret"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_failure_log_omits_provider_reason() {
+        let _capture = client_logging::capture_logs().await;
+        let (ctx, _receiver) = make_ctx(None);
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::SessionRecoveryFailed("SYN-secret-provider-reason".to_string()),
+            &ctx,
+        );
+        assert_eq!(
+            client_logging::messages()
+                .into_iter()
+                .filter(|(_, message)| {
+                    message.starts_with("Derive WebSocket session recovery failed")
+                })
+                .collect::<Vec<_>>(),
+            vec![(
+                log::Level::Error,
+                "Derive WebSocket session recovery failed".to_string()
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_public_stream_closure_marks_disconnected() {
+        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client =
+            DeriveDataClient::new(*DERIVE_CLIENT_ID, DeriveDataClientConfig::default()).unwrap();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.is_connected.store(true, Ordering::Release);
+        client.spawn_stream_task(rx).unwrap();
+        assert!(client.is_connected());
+        drop(tx);
+        client.session_tasks.begin_shutdown();
+        client
+            .session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(!client.is_connected());
+        assert!(events.try_recv().is_err());
     }
 
     #[rstest]
@@ -2498,10 +2913,10 @@ mod tests {
         (
             WsMessageContext {
                 clock: get_atomic_clock_realtime(),
-                data_sender,
+                data_sender: data_sender.into(),
                 instruments,
                 active_book_delta_channels: Arc::new(AtomicMap::new()),
-                active_book_depth10_channels: Arc::new(AtomicMap::new()),
+                active_book_depth_channels: Arc::new(AtomicMap::new()),
                 active_ticker_channels: Arc::new(AtomicMap::new()),
                 active_quote_subs: Arc::new(AtomicSet::new()),
                 active_trade_subs: Arc::new(AtomicSet::new()),
@@ -2510,7 +2925,19 @@ mod tests {
                 active_funding_subs: Arc::new(AtomicSet::new()),
                 active_greeks_subs: Arc::new(AtomicSet::new()),
                 subscription_lock: Arc::new(Mutex::new(())),
+                book_sync: {
+                    let tracker = BookSyncTracker::default();
+                    let id = InstrumentId::from("ETH-PERP.DERIVE");
+                    tracker.record_subscription("orderbook.ETH-PERP.1.10", id);
+                    tracker
+                        .write("orderbook.ETH-PERP.1.10")
+                        .unwrap()
+                        .gate
+                        .open();
+                    tracker
+                },
                 quote_cache: Arc::new(Mutex::new(QuoteCache::new())),
+                trades_emitted: Arc::new(Mutex::new(FifoCache::new())),
             },
             data_rx,
         )
@@ -2628,11 +3055,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_ticker_partial_quote_uses_cached_side() {
+    fn test_handle_ticker_empty_side_clears_cached_quote() {
         let instrument = spot_instrument();
         let instrument_id = instrument.id();
         let channel = "ticker_slim.ETH-USDC.1000";
         let (ctx, mut rx) = make_ctx(Some(instrument));
+
         let cached_quote = QuoteTick::new(
             instrument_id,
             Price::from("0.1"),
@@ -2642,26 +3070,217 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(1),
         );
-        ctx.quote_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(instrument_id, cached_quote);
+        ctx.quote_cache.lock().insert(instrument_id, cached_quote);
         install_ticker(&ctx, instrument_id, channel);
         ctx.active_quote_subs.insert(instrument_id);
         let payload = subscription_payload(channel, &spot_ticker_slim_json());
 
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
-        match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Quote(quote)) => {
-                assert_eq!(quote.instrument_id, instrument_id);
-                assert_eq!(quote.bid_price, Price::from("0.2"));
-                assert_eq!(quote.ask_price, Price::from("0.3"));
-                assert_eq!(quote.bid_size, Quantity::from("45.00"));
-                assert_eq!(quote.ask_size, Quantity::from("20.00"));
-            }
-            other => panic!("expected quote data event, was {other:?}"),
+        assert!(rx.try_recv().is_err());
+        assert_eq!(ctx.quote_cache.lock().get(&instrument_id), None);
+    }
+
+    #[rstest]
+    #[case::bid_price("0", "0.4", "45", "67")]
+    #[case::bid_size("0.2", "0.4", "0", "67")]
+    #[case::ask_price("0.2", "0", "45", "67")]
+    #[case::ask_size("0.2", "0.4", "45", "0")]
+    #[case::both_empty("0", "0", "0", "0")]
+    fn test_process_ticker_empty_sides_and_recovery(
+        #[case] bid_price: &str,
+        #[case] ask_price: &str,
+        #[case] bid_size: &str,
+        #[case] ask_size: &str,
+        #[values(false, true)] populated: bool,
+        #[values(false, true)] slim: bool,
+    ) {
+        let (instrument, channel, mut data) = if slim {
+            (
+                spot_instrument(),
+                "ticker_slim.ETH-USDC.1000",
+                spot_ticker_slim_json(),
+            )
+        } else {
+            (perp_instrument(), "ticker.ETH-PERP.1000", ticker_json(1234))
+        };
+
+        let instrument_id = instrument.id();
+        let mut quote_cache = QuoteCache::new();
+        let ts_init = UnixNanos::from(9_876_543_210);
+
+        let expected = QuoteTick::new(
+            instrument_id,
+            Price::from_decimal_dp(dec!(0.2), instrument.price_precision()).unwrap(),
+            Price::from_decimal_dp(dec!(0.4), instrument.price_precision()).unwrap(),
+            Quantity::from_decimal_dp(dec!(45), instrument.size_precision()).unwrap(),
+            Quantity::from_decimal_dp(dec!(67), instrument.size_precision()).unwrap(),
+            UnixNanos::from(1_238_000_000),
+            ts_init,
+        );
+
+        let unrelated_quote = QuoteTick {
+            instrument_id: InstrumentId::from("BTC-PERP.DERIVE"),
+            ..expected
+        };
+
+        quote_cache.insert(unrelated_quote.instrument_id, unrelated_quote);
+        if populated {
+            quote_cache.insert(instrument_id, expected);
         }
+
+        let keys = if slim {
+            ["b", "a", "B", "A"]
+        } else {
+            [
+                "best_bid_price",
+                "best_ask_price",
+                "best_bid_amount",
+                "best_ask_amount",
+            ]
+        };
+
+        for (values, timestamp, expected_result) in [
+            ([bid_price, ask_price, bid_size, ask_size], 1235, None),
+            (["0.6", "0", "89", "0"], 1236, None),
+            (["0", "0.8", "0", "91"], 1237, None),
+            (["0.2", "0.4", "45", "67"], 1238, Some(expected)),
+        ] {
+            data["timestamp"] = json!(timestamp);
+            let snapshot = if slim {
+                &mut data["instrument_ticker"]
+            } else {
+                &mut data
+            };
+
+            for (key, value) in keys.into_iter().zip(values) {
+                snapshot[key] = json!(value);
+            }
+
+            let payload = subscription_payload(channel, &data);
+            let msg = parse_ticker_msg(&payload).unwrap();
+            let result = process_ticker_quote(
+                &msg,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                ts_init,
+                &mut quote_cache,
+            )
+            .unwrap();
+
+            assert_eq!(result, expected_result);
+            assert_eq!(quote_cache.get(&instrument_id), expected_result.as_ref());
+            assert_eq!(
+                quote_cache.get(&unrelated_quote.instrument_id),
+                Some(&unrelated_quote)
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::testnet_spot(DeriveEnvironment::Testnet, "ETH-USDC")]
+    #[case::testnet_perp(DeriveEnvironment::Testnet, "ETH-PERP")]
+    #[case::mainnet_spot(DeriveEnvironment::Mainnet, "ETH-USDC")]
+    #[case::mainnet_perp(DeriveEnvironment::Mainnet, "ETH-PERP")]
+    #[tokio::test]
+    #[ignore = "requires Derive public network access; mainnet requires an isolated NZ route"]
+    async fn test_live_ticker_complete_snapshots(
+        #[case] environment: DeriveEnvironment,
+        #[case] instrument_name: &str,
+    ) {
+        let http =
+            DeriveHttpClient::new(urls::rest_url(environment), Some(15), None, None).unwrap();
+        let definition = http.get_instrument(instrument_name).await.unwrap();
+        let instrument = parse_derive_instrument_any(&definition, UnixNanos::from(1))
+            .unwrap()
+            .unwrap();
+        let instrument_id = instrument.id();
+        let mut ws_client =
+            DeriveWebSocketClient::new(None, environment, TransportBackend::default(), None);
+        ws_client.connect().await.unwrap();
+        let mut events = ws_client.take_event_receiver().unwrap();
+        let validation = async {
+            ws_client
+                .subscribe_ticker(instrument_name, "1000")
+                .await
+                .unwrap();
+            let mut quote_cache = QuoteCache::new();
+
+            let seed = QuoteTick::new(
+                instrument_id,
+                Price::from("0.1"),
+                Price::from("0.3"),
+                Quantity::from("10.00"),
+                Quantity::from("20.00"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            );
+            quote_cache.insert(instrument_id, seed);
+            let mut published = 0;
+            let mut suppressed = 0;
+
+            for _ in 0..3 {
+                let payload = loop {
+                    if let DeriveWsMessage::Subscription(payload) = events.recv().await.unwrap() {
+                        break payload;
+                    }
+                };
+
+                let msg = parse_ticker_msg(&payload).unwrap();
+                let ts_init = UnixNanos::from(9_876_543_210);
+                let expected = parse_ticker_quote(
+                    &msg,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                )
+                .unwrap();
+                let result = process_ticker_quote(
+                    &msg,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    ts_init,
+                    &mut quote_cache,
+                )
+                .unwrap();
+
+                if expected.bid_price.is_zero()
+                    || expected.ask_price.is_zero()
+                    || expected.bid_size.is_zero()
+                    || expected.ask_size.is_zero()
+                {
+                    assert_eq!(result, None);
+                    assert_eq!(quote_cache.get(&instrument_id), None);
+                    suppressed += 1;
+                } else {
+                    assert_eq!(result, Some(expected));
+                    assert_eq!(quote_cache.get(&instrument_id), Some(&expected));
+                    assert_eq!(expected.instrument_id, instrument_id);
+                    assert_eq!(
+                        expected.ts_event,
+                        UnixNanos::from(msg.data.timestamp() as u64 * 1_000_000)
+                    );
+                    assert_eq!(expected.ts_init, ts_init);
+                    published += 1;
+                }
+            }
+
+            ws_client
+                .unsubscribe_ticker(instrument_name, "1000")
+                .await
+                .unwrap();
+            (published, suppressed)
+        };
+
+        let result = tokio::time::timeout(Duration::from_secs(30), validation).await;
+        tokio::time::timeout(Duration::from_secs(5), ws_client.disconnect())
+            .await
+            .expect("ticker validation shutdown exceeds five seconds")
+            .unwrap();
+        let (published, suppressed) = result.expect("ticker validation exceeds 30 seconds");
+        println!(
+            "Derive {environment:?} {instrument_name}: {published} complete quotes, {suppressed} empty snapshots suppressed; unsubscribed and disconnected"
+        );
     }
 
     #[rstest]
@@ -2670,6 +3289,7 @@ mod tests {
         let instrument_id = instrument.id();
         let channel = "ticker_slim.ETH-USDC.1000";
         let (ctx, mut rx) = make_ctx(Some(instrument));
+
         let cached_quote = QuoteTick::new(
             instrument_id,
             Price::from("0.1"),
@@ -2679,14 +3299,14 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(1),
         );
-        ctx.quote_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(instrument_id, cached_quote);
+        ctx.quote_cache.lock().insert(instrument_id, cached_quote);
         install_ticker(&ctx, instrument_id, channel);
         ctx.active_quote_subs.insert(instrument_id);
 
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Reconnected, &ctx);
+
+        assert_eq!(ctx.quote_cache.lock().get(&instrument_id), None);
+
         let payload = subscription_payload(channel, &spot_ticker_slim_json());
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
@@ -2696,16 +3316,19 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_session_recovery_failure_marks_client_disconnected() {
+        let _capture = client_logging::capture_logs().await;
         let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(data_tx);
+
         let config = DeriveDataClientConfig {
             environment: DeriveEnvironment::Mainnet,
             ..Default::default()
         };
-        let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
+
+        let client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
         let (ws_tx, ws_rx) = tokio::sync::mpsc::unbounded_channel();
         client.is_connected.store(true, Ordering::Release);
-        client.spawn_stream_task(ws_rx);
+        client.spawn_stream_task(ws_rx).unwrap();
 
         ws_tx
             .send(DeriveWsMessage::SessionRecoveryFailed(
@@ -2717,6 +3340,7 @@ mod tests {
         assert!(!client.is_connected());
 
         client.cancellation_token.cancel();
+        client.join_session_tasks().await.unwrap();
     }
 
     #[rstest]
@@ -2731,7 +3355,7 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Deltas(deltas)) => {
+            DataEvent::Data(Data::BookDeltas(deltas)) => {
                 assert_eq!(deltas.instrument_id, instrument_id);
                 assert_eq!(deltas.deltas.len(), 3);
                 assert_eq!(deltas.deltas[1].order.price, Price::from("3500.00"));
@@ -2744,26 +3368,140 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_orderbook_subscription_emits_for_depth10_subscription() {
+    fn test_handle_orderbook_subscription_emits_for_depth_subscription() {
         let instrument = perp_instrument();
         let instrument_id = instrument.id();
         let (ctx, mut rx) = make_ctx(Some(instrument));
-        ctx.active_book_depth10_channels
+        ctx.active_book_depth_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         let payload = subscription_payload("orderbook.ETH-PERP.1.10", &orderbook_json());
 
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Depth10(depth)) => {
+            DataEvent::Data(Data::BookDepth(depth)) => {
                 assert_eq!(depth.instrument_id, instrument_id);
                 assert_eq!(depth.bids[0].price, Price::from("3500.00"));
                 assert_eq!(depth.bids[0].size, Quantity::from("1.000"));
                 assert_eq!(depth.asks[0].price, Price::from("3501.00"));
                 assert_eq!(depth.asks[0].size, Quantity::from("2.000"));
             }
-            other => panic!("expected depth10 data event, was {other:?}"),
+            other => panic!("expected depth data event, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[case::null_price(0, Value::Null)]
+    #[case::empty_price(0, json!(""))]
+    #[case::null_amount(1, Value::Null)]
+    #[case::empty_amount(1, json!(""))]
+    fn test_orderbook_missing_numeric_values_preserve_recovery_and_watermark(
+        #[case] field: usize,
+        #[case] value: Value,
+        #[values("bids", "asks")] side: &str,
+        #[values(false, true)] depth: bool,
+    ) {
+        let instrument = perp_instrument();
+        let instrument_id = instrument.id();
+        let price_precision = instrument.price_precision();
+        let size_precision = instrument.size_precision();
+        let (ctx, mut rx) = make_ctx(Some(instrument));
+        let channel = "orderbook.ETH-PERP.1.10";
+
+        let channels = if depth {
+            &ctx.active_book_depth_channels
+        } else {
+            &ctx.active_book_delta_channels
+        };
+
+        channels.insert(instrument_id, channel.to_string());
+
+        let assert_snapshot = |event, msg: &DeriveOrderbookMsg| match event {
+            DataEvent::Data(Data::BookDeltas(deltas)) if !depth => {
+                let expected =
+                    parse_orderbook_deltas(msg, price_precision, size_precision, deltas.ts_init)
+                        .unwrap();
+                assert_eq!(*deltas, expected);
+            }
+            DataEvent::Data(Data::BookDepth(snapshot)) if depth => {
+                let expected =
+                    parse_orderbook_depth(msg, price_precision, size_precision, snapshot.ts_init)
+                        .unwrap();
+                assert_eq!(*snapshot, expected);
+            }
+            other => panic!("expected book data event, was {other:?}"),
+        };
+
+        let initial = orderbook_json();
+        let timestamp = initial["timestamp"].as_i64().unwrap();
+        let write = ctx.book_sync.write(channel).unwrap();
+        let payload = subscription_payload(channel, &initial);
+        let msg = parse_orderbook_msg(&payload).unwrap();
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation.clone(),
+            },
+            &ctx,
+        );
+
+        assert_snapshot(rx.try_recv().unwrap(), &msg);
+
+        let mut malformed = initial.clone();
+        malformed["timestamp"] = json!(timestamp + 2);
+        malformed[side][0][field] = value;
+        let payload = subscription_payload(channel, &malformed);
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation,
+            },
+            &ctx,
+        );
+
+        assert!(rx.try_recv().is_err());
+        let recoveries = ctx.book_sync.recoveries(Duration::ZERO, Instant::now());
+        assert_eq!(recoveries.len(), 1);
+        let recovery = &recoveries[0].2;
+        let write = ctx
+            .book_sync
+            .begin_recovery_write(channel, recovery, recovery.gate.clone())
+            .unwrap();
+        write.gate.open();
+        let payload = subscription_payload(channel, &malformed);
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation.clone(),
+            },
+            &ctx,
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert!(recovery.is_running());
+        assert!(!recovery.is_accepted());
+
+        let mut valid = initial;
+        valid["timestamp"] = json!(timestamp + 1);
+        let payload = subscription_payload(channel, &valid);
+        let msg = parse_orderbook_msg(&payload).unwrap();
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::BookSubscription {
+                payload,
+                generation: write.generation,
+            },
+            &ctx,
+        );
+
+        assert_snapshot(rx.try_recv().unwrap(), &msg);
+        assert!(recovery.is_accepted());
+        assert!(!recovery.is_running());
+        assert!(rx.try_recv().is_err());
+        assert!(
+            ctx.book_sync
+                .recoveries(Duration::ZERO, Instant::now())
+                .is_empty()
+        );
     }
 
     #[rstest]
@@ -2807,6 +3545,122 @@ mod tests {
             }
             other => panic!("expected trade data event, was {other:?}"),
         }
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_public_trade_replay_after_failed_delivery() {
+        let instrument = perp_instrument();
+        let instrument_id = instrument.id();
+        let (mut ctx, rx) = make_ctx(Some(instrument));
+        ctx.clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(42))));
+        ctx.active_trade_subs.insert(instrument_id);
+        drop(rx);
+        let payload = subscription_payload(
+            "trades.perp.ETH",
+            &json!([trade_json("ETH-PERP", "delivery-replay")]),
+        );
+        DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload.clone()), &ctx);
+        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.data_sender = sender.into();
+
+        DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload.clone()), &ctx);
+        DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
+
+        let DataEvent::Data(Data::Trade(trade)) =
+            rx.try_recv().expect("undelivered trade must replay")
+        else {
+            panic!("expected trade data event");
+        };
+
+        assert_eq!(trade.instrument_id, instrument_id);
+        assert_eq!(trade.trade_id, TradeId::from("delivery-replay"));
+        assert_eq!(trade.price, Price::from("3500.00"));
+        assert_eq!(trade.size, Quantity::from("1.000"));
+        assert_eq!(trade.aggressor_side, AggressorSide::Buy);
+        assert_eq!(trade.ts_event, UnixNanos::from(1_700_000_000_001_000_000));
+        assert_eq!(trade.ts_init, UnixNanos::from(42));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_public_trades_continue_after_invalid_id() {
+        let instrument = perp_instrument();
+        let instrument_id = instrument.id();
+        let (ctx, mut rx) = make_ctx(Some(instrument));
+        ctx.active_trade_subs.insert(instrument_id);
+        let payload = subscription_payload(
+            "trades.perp.ETH",
+            &json!([
+                trade_json("ETH-PERP", "1234567890123456789012345678901234567"),
+                trade_json("ETH-PERP", "valid-first")
+            ]),
+        );
+
+        DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
+        let first_event = rx
+            .try_recv()
+            .expect("valid row in the same frame must emit");
+        assert!(rx.try_recv().is_err());
+        let payload = subscription_payload(
+            "trades.perp.ETH",
+            &json!([
+                trade_json("ETH-PERP", "valid-first"),
+                trade_json("ETH-PERP", "valid-next")
+            ]),
+        );
+        DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
+
+        for (event, expected_id) in [
+            (first_event, "valid-first"),
+            (rx.try_recv().unwrap(), "valid-next"),
+        ] {
+            let DataEvent::Data(Data::Trade(trade)) = event else {
+                panic!("expected trade data event");
+            };
+
+            assert_eq!(trade.instrument_id, instrument_id);
+            assert_eq!(trade.trade_id.to_string(), expected_id);
+            assert_eq!(trade.price, Price::from("3500.00"));
+            assert_eq!(trade.size, Quantity::from("1.000"));
+            assert_eq!(trade.aggressor_side, AggressorSide::Buy);
+            assert_eq!(trade.ts_event, UnixNanos::from(1_700_000_000_001_000_000));
+        }
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case("perps/http_public_trades_result_eth_paired_maker_first.json")]
+    #[case("perps/http_public_trades_result_eth_paired_taker_first.json")]
+    fn test_v3_public_paired_rows_deduplicate_across_frames(#[case] filename: &str) {
+        let instrument = perp_instrument();
+        let instrument_id = instrument.id();
+        let (ctx, mut rx) = make_ctx(Some(instrument));
+        ctx.active_trade_subs.insert(instrument_id);
+        let rows = load_json(filename)["trades"].as_array().unwrap().clone();
+        for row in &rows {
+            let payload = subscription_payload("trades.perp.ETH", &json!([row]));
+            DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
+        }
+
+        DeriveDataClient::handle_ws_message(DeriveWsMessage::Reconnected, &ctx);
+        let payload = subscription_payload("trades.perp.ETH", &json!(rows));
+        DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
+
+        match rx.try_recv().unwrap() {
+            DataEvent::Data(Data::Trade(trade)) => {
+                assert_eq!(trade.instrument_id, instrument_id);
+                assert_eq!(trade.aggressor_side, AggressorSide::Buy);
+                assert_eq!(trade.trade_id, TradeId::new("pub-pair-1"));
+                assert_eq!(trade.price, Price::from("3500.00"));
+                assert_eq!(trade.size, Quantity::from("0.250"));
+                assert_eq!(trade.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+            }
+            other => panic!("expected trade data event, was {other:?}"),
+        }
+
         assert!(rx.try_recv().is_err());
     }
 
@@ -2913,6 +3767,7 @@ mod tests {
     fn test_stale_generation_rollback_preserves_resubscription() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
+
         let client = DeriveDataClient::new(
             *DERIVE_CLIENT_ID,
             DeriveDataClientConfig {
@@ -2921,12 +3776,15 @@ mod tests {
             },
         )
         .unwrap();
+
         let lifecycle = client.subscription_lifecycle();
         let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
         let owner = ChannelOwner::Ticker {
             instrument_id,
             feed: TickerFeed::Quote,
         };
+
         let channel = "ticker_slim.ETH-PERP.1000".to_string();
 
         let first_generation = lifecycle.activate(owner, Some(&channel)).unwrap();
@@ -2947,20 +3805,10 @@ mod tests {
     fn test_subscription_registry_clear_does_not_reuse_generation() {
         let registry = ChannelSubscriptionRegistry::default();
         let owner = ChannelOwner::Trades(InstrumentId::from("ETH-20260627-3500-C.DERIVE"));
-        let first_generation = registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .activate(owner, None)
-            .unwrap();
+        let first_generation = registry.state.lock().activate(owner, None).unwrap();
 
         registry.clear();
-        let second_generation = registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .activate(owner, None)
-            .unwrap();
+        let second_generation = registry.state.lock().activate(owner, None).unwrap();
 
         assert!(second_generation > first_generation);
     }
@@ -2980,10 +3828,10 @@ mod tests {
     fn test_subscription_transition_registry_collects_inactive_channels() {
         let registry = ChannelSubscriptionRegistry::default();
         let live = registry.transition("ticker_slim.ETH-PERP.1000");
-
         for index in 0..TRANSITION_GC_THRESHOLD + 16 {
             drop(registry.transition(&format!("ticker_slim.ETH-OPTION-{index}.1000")));
         }
+
         let same_live = registry.transition("ticker_slim.ETH-PERP.1000");
 
         assert!(Arc::ptr_eq(&live, &same_live));
@@ -2994,6 +3842,7 @@ mod tests {
     fn test_ambiguous_cleanup_retains_survivor_for_reconnect() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
+
         let client = DeriveDataClient::new(
             *DERIVE_CLIENT_ID,
             DeriveDataClientConfig {
@@ -3002,13 +3851,16 @@ mod tests {
             },
         )
         .unwrap();
+
         let lifecycle = client.subscription_lifecycle();
         let instrument_id = InstrumentId::from("ETH-20260627-3600-C.DERIVE");
         let owner = ChannelOwner::Trades(instrument_id);
         lifecycle.activate(owner, Some("trades.option.ETH"));
+
         let error = DeriveWsError::Timeout {
             method: "unsubscribe".to_string(),
         };
+
         let ws = client.ws_handle();
 
         let retained = retain_channel_for_reconnect(&ws, "trades.option.ETH", true, Some(&error));
@@ -3023,6 +3875,7 @@ mod tests {
     fn test_explicit_cleanup_rejection_preserves_surviving_channel_owner() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
+
         let client = DeriveDataClient::new(
             *DERIVE_CLIENT_ID,
             DeriveDataClientConfig {
@@ -3031,10 +3884,12 @@ mod tests {
             },
         )
         .unwrap();
+
         let lifecycle = client.subscription_lifecycle();
         let instrument_id = InstrumentId::from("ETH-20260627-3600-C.DERIVE");
         let owner = ChannelOwner::Trades(instrument_id);
         lifecycle.activate(owner, Some("trades.option.ETH"));
+
         let error = DeriveWsError::JsonRpc {
             code: -32603,
             message: "not subscribed".to_string(),
@@ -3056,6 +3911,7 @@ mod tests {
     fn test_ambiguous_cleanup_without_survivor_is_not_replayed() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
+
         let client = DeriveDataClient::new(
             *DERIVE_CLIENT_ID,
             DeriveDataClientConfig {
@@ -3064,8 +3920,10 @@ mod tests {
             },
         )
         .unwrap();
+
         let ws = client.ws_handle();
         ws.remember_subscription("trades.option.ETH");
+
         let error = DeriveWsError::Timeout {
             method: "unsubscribe".to_string(),
         };
@@ -3080,6 +3938,7 @@ mod tests {
     fn test_unsubscribe_quotes_prunes_cached_quote() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
+
         let mut client = DeriveDataClient::new(
             *DERIVE_CLIENT_ID,
             DeriveDataClientConfig {
@@ -3088,15 +3947,18 @@ mod tests {
             },
         )
         .unwrap();
+
         let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
         let owner = ChannelOwner::Ticker {
             instrument_id,
             feed: TickerFeed::Quote,
         };
+
         client
             .subscription_lifecycle()
             .activate(owner, Some("ticker_slim.ETH-PERP.1000"));
-        client.quote_cache.lock().expect(MUTEX_POISONED).insert(
+        client.quote_cache.lock().insert(
             instrument_id,
             QuoteTick::new(
                 instrument_id,
@@ -3108,6 +3970,7 @@ mod tests {
                 UnixNanos::from(1),
             ),
         );
+
         let command = UnsubscribeQuotes::new(
             instrument_id,
             Some(*DERIVE_CLIENT_ID),
@@ -3120,13 +3983,7 @@ mod tests {
 
         client.unsubscribe_quotes(&command).unwrap();
 
-        assert!(
-            !client
-                .quote_cache
-                .lock()
-                .expect(MUTEX_POISONED)
-                .contains(&instrument_id)
-        );
+        assert!(!client.quote_cache.lock().contains(&instrument_id));
     }
 
     #[rstest]
@@ -3134,6 +3991,7 @@ mod tests {
     async fn test_unsubscribe_trades_uses_recorded_channel_without_cached_instrument() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
+
         let mut client = DeriveDataClient::new(
             *DERIVE_CLIENT_ID,
             DeriveDataClientConfig {
@@ -3142,11 +4000,13 @@ mod tests {
             },
         )
         .unwrap();
+
         let instrument_id = InstrumentId::from("ETH-20260627-3500-C.DERIVE");
         let owner = ChannelOwner::Trades(instrument_id);
         let lifecycle = client.subscription_lifecycle();
         let generation = lifecycle.activate(owner, None).unwrap();
         assert!(lifecycle.attach_channel(owner, generation, "trades.option.ETH".to_string(),));
+
         let command = UnsubscribeTrades::new(
             instrument_id,
             Some(*DERIVE_CLIENT_ID),
@@ -3158,7 +4018,6 @@ mod tests {
         );
 
         client.unsubscribe_trades(&command).unwrap();
-
         wait_until_async(
             || {
                 let registry = Arc::clone(&client.channel_subscriptions);
@@ -3181,7 +4040,7 @@ mod tests {
                 "instrument_ticker": ticker_json(1_700_000_000_000)
             }),
         );
-        assert_eq!(payload.channel.as_str(), channel);
+        assert_eq!(payload.channel, channel);
         let _ = instrument_id;
         payload
     }
@@ -3205,12 +4064,13 @@ mod tests {
         );
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::MarkPriceUpdate(mark)) => {
+            DataEvent::Data(Data::MarkPrice(mark)) => {
                 assert_eq!(mark.instrument_id, instrument_id);
                 assert_eq!(mark.value, Price::from("3500.50"));
             }
             other => panic!("expected MarkPriceUpdate, was {other:?}"),
         }
+
         assert!(rx.try_recv().is_err());
     }
 
@@ -3228,12 +4088,13 @@ mod tests {
         );
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::IndexPriceUpdate(index)) => {
+            DataEvent::Data(Data::IndexPrice(index)) => {
                 assert_eq!(index.instrument_id, instrument_id);
                 assert_eq!(index.value, Price::from("3500.00"));
             }
             other => panic!("expected IndexPriceUpdate, was {other:?}"),
         }
+
         assert!(rx.try_recv().is_err());
     }
 
@@ -3257,6 +4118,7 @@ mod tests {
             }
             other => panic!("expected FundingRateUpdate, was {other:?}"),
         }
+
         assert!(rx.try_recv().is_err());
     }
 
@@ -3321,6 +4183,7 @@ mod tests {
             }
             other => panic!("expected OptionGreeks, was {other:?}"),
         }
+
         assert!(rx.try_recv().is_err());
     }
 
@@ -3350,13 +4213,13 @@ mod tests {
                 DataEvent::Data(Data::Quote(q)) => {
                     assert!(quote.replace(q).is_none(), "duplicate Quote emission");
                 }
-                DataEvent::Data(Data::MarkPriceUpdate(m)) => {
+                DataEvent::Data(Data::MarkPrice(m)) => {
                     assert!(
                         mark.replace(m).is_none(),
                         "duplicate MarkPriceUpdate emission"
                     );
                 }
-                DataEvent::Data(Data::IndexPriceUpdate(i)) => {
+                DataEvent::Data(Data::IndexPrice(i)) => {
                     assert!(
                         index.replace(i).is_none(),
                         "duplicate IndexPriceUpdate emission"
@@ -3397,6 +4260,7 @@ mod tests {
             environment: DeriveEnvironment::Mainnet,
             ..Default::default()
         };
+
         let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
         let instrument = perp_instrument();
         let instrument_id = instrument.id();
@@ -3406,7 +4270,7 @@ mod tests {
             .active_book_delta_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
-            .active_book_depth10_channels
+            .active_book_depth_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
             .active_ticker_channels
@@ -3417,7 +4281,6 @@ mod tests {
             .channel_subscriptions
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .activate(ChannelOwner::Trades(instrument_id), Some("trades.perp.ETH"));
         client.channel_subscriptions.transition("trades.perp.ETH");
         client.active_mark_subs.insert(instrument_id);
@@ -3435,21 +4298,13 @@ mod tests {
         );
         assert!(
             !client
-                .active_book_depth10_channels
+                .active_book_depth_channels
                 .contains_key(&instrument_id)
         );
         assert!(!client.active_ticker_channels.contains_key(&instrument_id));
         assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(!client.active_trade_subs.contains(&instrument_id));
-        assert!(
-            client
-                .channel_subscriptions
-                .state
-                .lock()
-                .expect(MUTEX_POISONED)
-                .owners
-                .is_empty()
-        );
+        assert!(client.channel_subscriptions.state.lock().owners.is_empty());
 
         // Sync reset cannot await canceled tasks, so their channel locks stay
         // stable until the next async teardown joins them.
@@ -3475,6 +4330,7 @@ mod tests {
             environment: DeriveEnvironment::Mainnet,
             ..Default::default()
         };
+
         let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
         let instrument = perp_instrument();
         let instrument_id = instrument.id();
@@ -3484,7 +4340,7 @@ mod tests {
             .active_book_delta_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
-            .active_book_depth10_channels
+            .active_book_depth_channels
             .insert(instrument_id, "orderbook.ETH-PERP.1.10".to_string());
         client
             .active_ticker_channels
@@ -3495,7 +4351,6 @@ mod tests {
             .channel_subscriptions
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .activate(ChannelOwner::Trades(instrument_id), Some("trades.perp.ETH"));
         client.channel_subscriptions.transition("trades.perp.ETH");
         client.active_mark_subs.insert(instrument_id);
@@ -3505,11 +4360,15 @@ mod tests {
         client.is_connected.store(true, Ordering::Relaxed);
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (drop_tx, mut drop_rx) = tokio::sync::oneshot::channel::<()>();
-        client.pending_tasks.push(tokio::spawn(async move {
-            let _drop_tx = drop_tx;
-            let _ = started_tx.send(());
-            std::future::pending::<()>().await;
-        }));
+        client
+            .pending_tasks
+            .spawn(async move {
+                let _drop_tx = drop_tx;
+                let _ = started_tx.send(());
+                std::future::pending::<()>().await;
+            })
+            .unwrap();
+
         started_rx.await.unwrap();
 
         client.disconnect().await.unwrap();
@@ -3524,21 +4383,13 @@ mod tests {
         );
         assert!(
             !client
-                .active_book_depth10_channels
+                .active_book_depth_channels
                 .contains_key(&instrument_id)
         );
         assert!(!client.active_ticker_channels.contains_key(&instrument_id));
         assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(!client.active_trade_subs.contains(&instrument_id));
-        assert!(
-            client
-                .channel_subscriptions
-                .state
-                .lock()
-                .expect(MUTEX_POISONED)
-                .owners
-                .is_empty()
-        );
+        assert!(client.channel_subscriptions.state.lock().owners.is_empty());
         assert!(client.channel_subscriptions.transitions.is_empty());
         assert!(!client.active_mark_subs.contains(&instrument_id));
         assert!(!client.active_index_subs.contains(&instrument_id));
@@ -3552,10 +4403,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_spawn_task_prunes_finished_handles() {
-        // Regression: every spawn_task call must prune finished handles
-        // before pushing the new one, otherwise `pending_tasks` grows
-        // unboundedly across long-running sessions.
+    async fn test_task_group_unregisters_finished_tasks_before_drain() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
 
@@ -3563,12 +4411,8 @@ mod tests {
             environment: DeriveEnvironment::Mainnet,
             ..Default::default()
         };
-        let client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
 
-        // Spawn many no-op tasks, then wait until their handles are
-        // observably finished. `spawn_task` uses the global Nautilus runtime,
-        // so a single test-runtime yield is not a reliable completion fence
-        // under a busy full-suite run.
+        let client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
         for _ in 0..100 {
             client.spawn_task("test_noop", async { Ok(()) });
         }
@@ -3579,10 +4423,13 @@ mod tests {
         )
         .await;
 
-        // The next spawn should prune the finished handles before pushing the
-        // new one, leaving exactly the new tracked task.
-        client.spawn_task("test_prune", async { Ok(()) });
-        let len = client.pending_tasks.len();
-        assert_eq!(len, 1, "pending_tasks should retain only the new task");
+        assert!(client.pending_tasks.is_empty());
+        client.pending_tasks.begin_shutdown();
+        client
+            .pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert!(client.pending_tasks.is_empty());
     }
 }

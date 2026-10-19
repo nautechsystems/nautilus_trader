@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use core::fmt::NumBuffer;
 use std::{
     cell::RefCell,
     fmt::{Debug, Write},
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, Timelike};
-use itoa::Buffer;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::{ClientOrderId, StrategyId, TraderId};
 
@@ -53,8 +53,12 @@ fn write_fixed_prefix(
     use_hyphens: bool,
     epoch_second: u64,
 ) {
-    let now_utc = DateTime::from_timestamp_millis((epoch_second * 1_000) as i64)
-        .expect("Milliseconds timestamp should be within valid range");
+    let now_utc = Offset::UTC.to_datetime(
+        Timestamp::from_second(
+            i64::try_from(epoch_second).expect("seconds timestamp should fit i64"),
+        )
+        .expect("seconds timestamp should be within valid range"),
+    );
 
     buf.clear();
 
@@ -97,7 +101,7 @@ pub struct ClientOrderIdGenerator {
     buf: String,
     fixed_prefix_len: usize,
     epoch_second: u64,
-    count_buf: Buffer,
+    count_buf: NumBuffer<usize>,
 }
 
 impl Debug for ClientOrderIdGenerator {
@@ -147,7 +151,7 @@ impl ClientOrderIdGenerator {
             buf,
             fixed_prefix_len: 0,
             epoch_second: u64::MAX,
-            count_buf: Buffer::new(),
+            count_buf: NumBuffer::new(),
         }
     }
 
@@ -201,7 +205,8 @@ impl ClientOrderIdGenerator {
         // The hot path only truncates the old count and appends the new count, avoiding repeated
         // copies of the fixed prefix.
         self.buf.truncate(self.fixed_prefix_len);
-        self.buf.push_str(self.count_buf.format(self.count));
+        self.buf
+            .push_str(self.count.format_into(&mut self.count_buf));
 
         ClientOrderId::from(self.buf.as_str())
     }
@@ -218,14 +223,14 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{clock::TestClock, generators::client_order_id::ClientOrderIdGenerator};
+    use crate::{clock::VirtualClock, generators::client_order_id::ClientOrderIdGenerator};
 
     fn get_client_order_id_generator(
         initial_count: Option<usize>,
         use_uuids: bool,
         use_hyphens: bool,
     ) -> ClientOrderIdGenerator {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         ClientOrderIdGenerator::new(
             TraderId::test_default(),
             StrategyId::test_default(),
@@ -314,7 +319,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_refreshes_persistent_fixed_prefix_when_second_changes() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut generator = ClientOrderIdGenerator::new(
             TraderId::test_default(),
             StrategyId::test_default(),

@@ -21,6 +21,8 @@
 //!
 //! Public entry points:
 //! - [`process_mass_status_for_reconciliation`] - partial-window fill reconstruction
+//! - [`process_mass_status_for_reconciliation_without_synthetic_reports`] - reconstruction that
+//!   preserves the input report set when adjustment would require synthetic reports
 //! - [`generate_reconciliation_order_events`] - venue-temporal event sequence for a report
 //! - [`reconcile_order_report`] - core order-state reconciliation
 //! - [`reconcile_fill_report`] - apply a venue fill to a cached order, with dedup
@@ -28,13 +30,22 @@
 //! - [`check_position_reconciliation`] - final qty and avg-px tolerance check
 //!
 //! Invariants maintained across all paths:
-//! 1. Final position quantity matches the venue within instrument precision.
-//! 2. Position average price matches within tolerance (default 0.01%).
+//! 1. When enabled, synthetic adjustment aligns position quantity with the venue within instrument
+//!    precision.
+//! 2. When enabled, synthetic adjustment aligns average price with the venue within tolerance
+//!    (default 0.01%).
 //! 3. All generated fills preserve correct unrealized PnL.
 //! 4. Synthetic `trade_id` and `venue_order_id` values are deterministic
 //!    functions of the logical event, so restart replays dedupe.
 //!
-//! See `docs/concepts/reconciliation.md` for the operator-facing description.
+//! See `docs/concepts/execution/reconciliation.md` for the operator-facing description.
+
+use nautilus_core::correctness::CorrectnessResult;
+use nautilus_model::{
+    instruments::{Instrument, InstrumentAny},
+    types::{Price, fixed::FIXED_PRECISION},
+};
+use rust_decimal::Decimal;
 
 mod ids;
 mod orders;
@@ -43,21 +54,39 @@ mod types;
 
 #[cfg(test)]
 mod proptests;
+
 #[cfg(test)]
 mod tests;
 
 pub use ids::{
     create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
+    inferred_reconciliation_trade_ids, is_inferred_reconciliation_trade_id_format,
 };
 pub use orders::{
     create_incremental_inferred_fill, create_inferred_fill_for_qty, create_reconciliation_rejected,
     create_reconciliation_triggered, generate_external_order_status_events,
-    generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
-    generate_reconciliation_order_snapshot_events, reconcile_fill_report, reconcile_order_report,
+    generate_external_order_status_events_with_commission, generate_reconciliation_order_events,
+    generate_reconciliation_order_pre_fill_events, generate_reconciliation_order_snapshot_events,
+    generate_reconciliation_order_snapshot_events_with_commission,
+    incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
+    reconcile_fill_report, reconcile_order_report, reconcile_order_report_with_commission,
     should_reconciliation_update,
 };
 pub use positions::{
     calculate_reconciliation_price, check_position_reconciliation,
+    fill_precedes_snapshot_reconciled_position, position_prices_match,
     process_mass_status_for_reconciliation,
+    process_mass_status_for_reconciliation_without_synthetic_reports,
 };
 pub use types::ReconciliationResult;
+
+/// Order tag marking a synthetic order that reconciliation creates to align a position.
+pub const RECONCILIATION_ORDER_TAG: &str = "RECONCILIATION";
+
+fn reconciliation_price(value: Decimal, instrument: &InstrumentAny) -> CorrectnessResult<Price> {
+    // Reconstructed averages need not lie on price ticks, keep their representable precision
+    let precision = instrument
+        .price_precision()
+        .max(value.normalize().scale().min(u32::from(FIXED_PRECISION)) as u8);
+    Price::from_decimal_dp(value, precision)
+}

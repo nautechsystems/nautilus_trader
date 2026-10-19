@@ -15,6 +15,8 @@
 
 //! Pluggable margin calculation models for [`MarginAccount`](super::MarginAccount).
 
+use std::{fmt::Debug, sync::Arc};
+
 use rust_decimal::Decimal;
 
 use crate::{
@@ -23,7 +25,11 @@ use crate::{
 };
 
 /// Determines how margin requirements are calculated for leveraged positions.
-pub trait MarginModel {
+pub trait MarginModel: Send + Sync {
+    /// Returns the stable model name used in canonical backtest results.
+    #[must_use]
+    fn name(&self) -> &'static str;
+
     /// Calculates the initial (order) margin requirement.
     ///
     /// # Errors
@@ -53,6 +59,75 @@ pub trait MarginModel {
     ) -> anyhow::Result<Money>;
 }
 
+/// Shared runtime handle for a margin model.
+#[derive(Clone)]
+pub struct MarginModelHandle(Arc<dyn MarginModel>);
+
+impl MarginModelHandle {
+    /// Creates a new [`MarginModelHandle`] from a margin model.
+    #[must_use]
+    pub fn new<T>(model: T) -> Self
+    where
+        T: MarginModel + 'static,
+    {
+        Self(Arc::new(model))
+    }
+
+    /// Creates a new [`MarginModelHandle`] from an existing atomically reference-counted model.
+    #[must_use]
+    pub fn from_arc(model: Arc<dyn MarginModel>) -> Self {
+        Self(model)
+    }
+}
+
+impl Debug for MarginModelHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(MarginModelHandle))
+            .field(&"<dyn MarginModel>")
+            .finish()
+    }
+}
+
+impl MarginModel for MarginModelHandle {
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    fn calculate_initial_margin(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.0.calculate_initial_margin(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            use_quote_for_inverse,
+        )
+    }
+
+    fn calculate_maintenance_margin(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.0.calculate_maintenance_margin(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            use_quote_for_inverse,
+        )
+    }
+}
+
 /// Enum dispatch for [`MarginModel`] implementations.
 #[derive(Debug, Clone)]
 pub enum MarginModelAny {
@@ -61,6 +136,13 @@ pub enum MarginModelAny {
 }
 
 impl MarginModel for MarginModelAny {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Standard(model) => model.name(),
+            Self::Leveraged(model) => model.name(),
+        }
+    }
+
     fn calculate_initial_margin(
         &self,
         instrument: &dyn Instrument,
@@ -120,20 +202,15 @@ impl Default for MarginModelAny {
     }
 }
 
-/// Resolves the margin currency based on instrument properties.
-fn margin_currency(
-    instrument: &dyn Instrument,
-    use_quote_for_inverse: bool,
-) -> anyhow::Result<crate::types::Currency> {
-    if instrument.is_inverse() && !use_quote_for_inverse {
-        instrument.base_currency().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Inverse instrument {} has no base currency",
-                instrument.id()
-            )
-        })
-    } else {
-        Ok(instrument.quote_currency())
+impl Default for MarginModelHandle {
+    fn default() -> Self {
+        MarginModelAny::default().into()
+    }
+}
+
+impl From<MarginModelAny> for MarginModelHandle {
+    fn from(model: MarginModelAny) -> Self {
+        Self::new(model)
     }
 }
 
@@ -145,7 +222,7 @@ fn margin_currency(
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -154,6 +231,10 @@ fn margin_currency(
 pub struct StandardMarginModel;
 
 impl MarginModel for StandardMarginModel {
+    fn name(&self) -> &'static str {
+        "standard"
+    }
+
     fn calculate_initial_margin(
         &self,
         instrument: &dyn Instrument,
@@ -164,12 +245,14 @@ impl MarginModel for StandardMarginModel {
     ) -> anyhow::Result<Money> {
         let use_quote = use_quote_for_inverse.unwrap_or(false);
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
+        // Spreads and options may quote negative, which carries the sign into the notional.
+        // A requirement is a reserve against exposure magnitude, so take it on `abs`.
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_mul(instrument.margin_init())
             .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
-        let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency).map_err(Into::into)
+        Money::from_decimal(margin, notional.currency).map_err(Into::into)
     }
 
     fn calculate_maintenance_margin(
@@ -184,10 +267,10 @@ impl MarginModel for StandardMarginModel {
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_mul(instrument.margin_maint())
             .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
-        let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency).map_err(Into::into)
+        Money::from_decimal(margin, notional.currency).map_err(Into::into)
     }
 }
 
@@ -199,7 +282,7 @@ impl MarginModel for StandardMarginModel {
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -208,6 +291,10 @@ impl MarginModel for StandardMarginModel {
 pub struct LeveragedMarginModel;
 
 impl MarginModel for LeveragedMarginModel {
+    fn name(&self) -> &'static str {
+        "leveraged"
+    }
+
     fn calculate_initial_margin(
         &self,
         instrument: &dyn Instrument,
@@ -223,11 +310,11 @@ impl MarginModel for LeveragedMarginModel {
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_div(leverage)
             .and_then(|adjusted| adjusted.checked_mul(instrument.margin_init()))
             .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
-        let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency).map_err(Into::into)
+        Money::from_decimal(margin, notional.currency).map_err(Into::into)
     }
 
     fn calculate_maintenance_margin(
@@ -245,11 +332,11 @@ impl MarginModel for LeveragedMarginModel {
         let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
         let margin = notional
             .as_decimal()
+            .abs()
             .checked_div(leverage)
             .and_then(|adjusted| adjusted.checked_mul(instrument.margin_maint()))
             .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
-        let currency = margin_currency(instrument, use_quote)?;
-        Money::from_decimal(margin, currency).map_err(Into::into)
+        Money::from_decimal(margin, notional.currency).map_err(Into::into)
     }
 }
 
@@ -258,12 +345,51 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
-        instruments::{CryptoPerpetual, Instrument, stubs::crypto_perpetual_ethusdt},
+        enums::AssetClass,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{
+            CryptoFuture, CryptoPerpetual, FuturesSpread, Instrument,
+            stubs::{btcusd_inverse_perp, crypto_perpetual_ethusdt, ethbtc_quanto},
+        },
         types::{Currency, Price, Quantity},
     };
+
+    struct FixedMarginModel {
+        initial: Money,
+        maintenance: Money,
+    }
+
+    impl MarginModel for FixedMarginModel {
+        fn name(&self) -> &'static str {
+            "fixed"
+        }
+
+        fn calculate_initial_margin(
+            &self,
+            _instrument: &dyn Instrument,
+            _quantity: Quantity,
+            _price: Price,
+            _leverage: Decimal,
+            _use_quote_for_inverse: Option<bool>,
+        ) -> anyhow::Result<Money> {
+            Ok(self.initial)
+        }
+
+        fn calculate_maintenance_margin(
+            &self,
+            _instrument: &dyn Instrument,
+            _quantity: Quantity,
+            _price: Price,
+            _leverage: Decimal,
+            _use_quote_for_inverse: Option<bool>,
+        ) -> anyhow::Result<Money> {
+            Ok(self.maintenance)
+        }
+    }
 
     fn ethusdt() -> CryptoPerpetual {
         crypto_perpetual_ethusdt()
@@ -306,45 +432,209 @@ mod tests {
         assert_eq!(margin_low, margin_high);
     }
 
+    /// A spread carrying non-zero margin rates, so the assertions below cannot pass on a
+    /// zero requirement. `FuturesSpread` is one of the classes permitting a negative
+    /// price (see `InstrumentClass::allows_negative_price`).
+    fn negative_price_spread() -> FuturesSpread {
+        FuturesSpread::builder()
+            .instrument_id(InstrumentId::from("ESM4-ESU4.GLBX"))
+            .raw_symbol(Symbol::from("ESM4-ESU4"))
+            .asset_class(AssetClass::Index)
+            .underlying(Ustr::from("ES"))
+            .strategy_type(Ustr::from("EQ"))
+            .activation_ns(1_000.into())
+            .expiration_ns(2_000.into())
+            .currency(Currency::USD())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(50))
+            .lot_size(Quantity::from(1))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap()
+    }
+
     #[rstest]
-    fn test_leveraged_zero_leverage_errors() {
+    fn test_standard_margin_is_positive_for_a_negative_price() {
+        let model = StandardMarginModel;
+        let instrument = negative_price_spread();
+        let quantity = Quantity::from(2);
+        let positive = Price::from("2.00");
+        let negative = Price::from("-2.00");
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, negative, dec!(1), None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, negative, dec!(1), None)
+            .unwrap();
+
+        // notional magnitude = 2 * 50 * 2.00 = 200
+        assert_eq!(initial.as_decimal(), dec!(2));
+        assert_eq!(maintenance.as_decimal(), dec!(4));
+        // A negative quote reserves the same as the equivalent positive one.
+        assert_eq!(
+            initial,
+            model
+                .calculate_initial_margin(&instrument, quantity, positive, dec!(1), None)
+                .unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_leveraged_margin_is_positive_for_a_negative_price() {
+        let model = LeveragedMarginModel;
+        let instrument = negative_price_spread();
+        let quantity = Quantity::from(2);
+        let negative = Price::from("-2.00");
+        let leverage = dec!(10);
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, negative, leverage, None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, negative, leverage, None)
+            .unwrap();
+
+        // notional magnitude = 200, adjusted = 200 / 10 = 20
+        assert_eq!(initial.as_decimal(), dec!(0.2));
+        assert_eq!(maintenance.as_decimal(), dec!(0.4));
+    }
+
+    #[rstest]
+    #[case::zero(Decimal::ZERO)]
+    #[case::negative(dec!(-1))]
+    fn test_leveraged_rejects_non_positive_leverage(#[case] leverage: Decimal) {
         let model = LeveragedMarginModel;
         let instrument = ethusdt();
+        let quantity = Quantity::from("1.000");
+        let price = Price::from("5000.00");
+        let expected = format!("Invalid leverage {leverage} for {}", instrument.id());
 
-        let result = model.calculate_initial_margin(
-            &instrument,
-            Quantity::from("1.000"),
-            Price::from("5000.00"),
-            Decimal::ZERO,
-            None,
-        );
+        let initial = model.calculate_initial_margin(&instrument, quantity, price, leverage, None);
+        let maintenance =
+            model.calculate_maintenance_margin(&instrument, quantity, price, leverage, None);
 
-        assert!(result.is_err());
+        assert_eq!(initial.unwrap_err().to_string(), expected);
+        assert_eq!(maintenance.unwrap_err().to_string(), expected);
     }
 
     #[rstest]
     fn test_leveraged_margin_decimal_overflow_returns_error() {
         let model = LeveragedMarginModel;
         let instrument = ethusdt();
+        let quantity = Quantity::from("1.000");
+        let price = Price::from("5000.00");
+        let leverage = Decimal::new(1, 28);
 
-        let result = model.calculate_initial_margin(
-            &instrument,
-            Quantity::from("1.000"),
-            Price::from("5000.00"),
-            Decimal::new(1, 28),
-            None,
-        );
+        let initial = model.calculate_initial_margin(&instrument, quantity, price, leverage, None);
+        let maintenance =
+            model.calculate_maintenance_margin(&instrument, quantity, price, leverage, None);
 
         assert_eq!(
-            result.unwrap_err().to_string(),
+            initial.unwrap_err().to_string(),
             "initial margin calculation overflow"
+        );
+        assert_eq!(
+            maintenance.unwrap_err().to_string(),
+            "maintenance margin calculation overflow"
         );
     }
 
     #[rstest]
     fn test_margin_model_any_default_is_leveraged() {
         let model = MarginModelAny::default();
+        let instrument = ethusdt();
+        let quantity = Quantity::from("10.000");
+        let price = Price::from("5000.00");
+        let leverage = dec!(10);
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+
+        // notional = 10 * 5000 = 50000, adjusted = 50000 / 10 = 5000
         assert!(matches!(model, MarginModelAny::Leveraged(_)));
+        assert_eq!(model.name(), "leveraged");
+        assert_eq!(
+            initial.as_decimal(),
+            Decimal::from(5000) * instrument.margin_init()
+        );
+        assert_eq!(
+            maintenance.as_decimal(),
+            Decimal::from(5000) * instrument.margin_maint()
+        );
+    }
+
+    #[rstest]
+    fn test_margin_model_any_standard_dispatches_to_the_standard_model() {
+        let model = MarginModelAny::Standard(StandardMarginModel);
+        let instrument = ethusdt();
+        let quantity = Quantity::from("10.000");
+        let price = Price::from("5000.00");
+        let leverage = dec!(10);
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+
+        // notional = 10 * 5000 = 50000, which the standard model reserves against in full
+        assert_eq!(model.name(), "standard");
+        assert_eq!(
+            initial.as_decimal(),
+            Decimal::from(50000) * instrument.margin_init()
+        );
+        assert_eq!(
+            maintenance.as_decimal(),
+            Decimal::from(50000) * instrument.margin_maint()
+        );
+        assert_eq!(initial.currency, Currency::USDT());
+    }
+
+    #[rstest]
+    fn test_margin_model_handle_calls_custom_model() {
+        let initial = Money::from("12.34 USDT");
+        let maintenance = Money::from("5.67 USDT");
+        let model: Arc<dyn MarginModel> = Arc::new(FixedMarginModel {
+            initial,
+            maintenance,
+        });
+        let handle = MarginModelHandle::from_arc(model);
+        let cloned_handle = handle.clone();
+        drop(handle);
+        let instrument = ethusdt();
+
+        let initial_result = cloned_handle
+            .calculate_initial_margin(
+                &instrument,
+                Quantity::from("1.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                None,
+            )
+            .unwrap();
+        let maintenance_result = cloned_handle
+            .calculate_maintenance_margin(
+                &instrument,
+                Quantity::from("1.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(cloned_handle.name(), "fixed");
+        assert_eq!(initial_result, initial);
+        assert_eq!(maintenance_result, maintenance);
     }
 
     #[rstest]
@@ -361,5 +651,94 @@ mod tests {
 
         let expected = Decimal::from(50000) / leverage * instrument.margin_maint();
         assert_eq!(margin.as_decimal(), expected);
+    }
+
+    // Rates are 0.1 initial and 0.05 maintenance, notionals are 50000 USDT (linear),
+    // 2 BTC (inverse) and 5 USDT (quanto), halved by the leveraged model at 2x leverage.
+    #[rstest]
+    #[case::standard_linear(
+        MarginModelAny::Standard(StandardMarginModel),
+        "linear",
+        "5000 USDT",
+        "2500 USDT"
+    )]
+    #[case::standard_inverse(
+        MarginModelAny::Standard(StandardMarginModel),
+        "inverse",
+        "0.2 BTC",
+        "0.1 BTC"
+    )]
+    #[case::standard_quanto(
+        MarginModelAny::Standard(StandardMarginModel),
+        "quanto",
+        "0.5 USDT",
+        "0.25 USDT"
+    )]
+    #[case::leveraged_linear(
+        MarginModelAny::Leveraged(LeveragedMarginModel),
+        "linear",
+        "2500 USDT",
+        "1250 USDT"
+    )]
+    #[case::leveraged_inverse(
+        MarginModelAny::Leveraged(LeveragedMarginModel),
+        "inverse",
+        "0.1 BTC",
+        "0.05 BTC"
+    )]
+    #[case::leveraged_quanto(
+        MarginModelAny::Leveraged(LeveragedMarginModel),
+        "quanto",
+        "0.25 USDT",
+        "0.125 USDT"
+    )]
+    fn test_margin_amount_and_currency(
+        #[case] model: MarginModelAny,
+        #[case] contract: &str,
+        #[case] expected_initial: &str,
+        #[case] expected_maintenance: &str,
+        mut crypto_perpetual_ethusdt: CryptoPerpetual,
+        mut btcusd_inverse_perp: CryptoPerpetual,
+        mut ethbtc_quanto: CryptoFuture,
+    ) {
+        let (instrument, quantity, price) = match contract {
+            "linear" => {
+                crypto_perpetual_ethusdt.margin_init = dec!(0.1);
+                crypto_perpetual_ethusdt.margin_maint = dec!(0.05);
+                let quantity = Quantity::from("10.000");
+                (
+                    crypto_perpetual_ethusdt.into_any(),
+                    quantity,
+                    Price::from("5000.00"),
+                )
+            }
+            "inverse" => {
+                btcusd_inverse_perp.margin_init = dec!(0.1);
+                btcusd_inverse_perp.margin_maint = dec!(0.05);
+                let quantity = Quantity::from("100000");
+                (
+                    btcusd_inverse_perp.into_any(),
+                    quantity,
+                    Price::from("50000.0"),
+                )
+            }
+            "quanto" => {
+                ethbtc_quanto.margin_init = dec!(0.1);
+                ethbtc_quanto.margin_maint = dec!(0.05);
+                let quantity = Quantity::from("100.000");
+                (ethbtc_quanto.into_any(), quantity, Price::from("0.05000"))
+            }
+            _ => unreachable!(),
+        };
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, price, dec!(2), None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, price, dec!(2), None)
+            .unwrap();
+
+        assert_eq!(initial, Money::from(expected_initial));
+        assert_eq!(maintenance, Money::from(expected_maintenance));
     }
 }

@@ -2,14 +2,20 @@
 
 ## 1. Install
 
-Set up a Python 3.12-3.14 environment and install the package:
+Set up a Python 3.13-3.14 environment and install the package:
 
 ```bash
-pip install -U nautilus_trader
+pip install -U --pre nautilus_trader
 ```
 
-See the [Installation](installation) guide for platform support, source builds, and
-Docker images.
+PyPI publishes NautilusTrader 2.x as `2.0.0rcN` pre-releases. Include `--pre` until `2.0.0` is
+released. Confirm the install with:
+
+```bash
+python -c "import nautilus_trader; print(nautilus_trader.__version__)"
+```
+
+See the [Installation](installation) guide for platform support and source builds.
 
 ## 2. Run the quickstart
 
@@ -39,16 +45,18 @@ NautilusTrader provides two API levels for backtesting:
 
 | API level                             | Entry point      | Best for                                                              |
 | :------------------------------------ | :--------------- | :-------------------------------------------------------------------- |
-| [Low‑level API](backtest_low_level)   | `BacktestEngine` | Direct component access, library development                          |
-| [High‑level API](backtest_high_level) | `BacktestNode`   | Production workflows, easier transition to live trading (recommended) |
+| [Low-level API](backtest_low_level)   | `BacktestEngine` | Direct component access, library development                          |
+| [High-level API](backtest_high_level) | `BacktestNode`   | Production workflows, easier transition to live trading (recommended) |
 
-The high‑level API requires a Parquet‑based data catalog. The low‑level API works with
-in‑memory data but has no live‑trading path.
+The high-level API requires a Parquet-based data catalog. The low-level API works with
+in-memory data but has no live-trading path.
 
 :::warning[One node per process]
-Running multiple `BacktestNode` or `TradingNode` instances concurrently in the same
+Running multiple `BacktestNode` or `LiveNode` instances concurrently in the same
 process is not supported due to global singleton state. Sequential execution with
-proper disposal between runs is supported.
+proper disposal between runs is supported. A replacement `LiveNode` on the same
+thread also requires dropping the previous node, or releasing all references to
+it in Python, before construction.
 
 See [Processes and threads](../concepts/architecture.md#processes-and-threads) for
 details.
@@ -62,13 +70,12 @@ API level.
 The online documentation shows a subset of examples. For the full set, see the
 repository on GitHub:
 
-| Directory                                                                            | Contains                                                       |
-| :----------------------------------------------------------------------------------- | :------------------------------------------------------------- |
-| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Fully runnable, self‑contained Python examples                 |
-| [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows                       |
-| [docs/concepts/](../concepts/)                                                       | Concept guides with code snippets illustrating key features    |
-| [nautilus_trader/examples/](../../nautilus_trader/examples/)                         | Pure‑Python examples of strategies, indicators, and exec algos |
-| [tests/unit_tests/](../../tests/unit_tests/)                                         | Unit tests covering core functionality and edge cases          |
+| Directory                                                                            | Contains                                              |
+| :----------------------------------------------------------------------------------- | :---------------------------------------------------- |
+| [examples/](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples) | Runnable Python examples organized by environment     |
+| [docs/tutorials/](../tutorials/)                                                     | Tutorials demonstrating common workflows              |
+| [docs/concepts/](../concepts/)                                                       | Concept guides with illustrative code snippets        |
+| [python/tests/unit/](../../python/tests/unit/)                                       | Unit tests covering core functionality and edge cases |
 
 ## Running in Docker
 
@@ -86,6 +93,6 @@ docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly
 Then open <http://localhost:8888> in your browser.
 
 :::warning
-Examples use `log_level="ERROR"` because Nautilus logging exceeds Jupyter's stdout rate
-limit, causing notebooks to hang at lower log levels.
+Examples use `LoggerConfig(stdout_level=LogLevel.ERROR)` because Nautilus logging exceeds
+Jupyter's stdout rate limit, causing notebooks to hang at lower log levels.
 :::

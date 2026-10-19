@@ -39,8 +39,8 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `extension-module`: Builds as a Python extension module.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -61,6 +61,10 @@
     clippy::cast_precision_loss,
     clippy::cast_sign_loss,
     reason = "analysis math casts between usize/i32/i64/f64 with values bounded by sample counts"
+)]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
 )]
 #![cfg_attr(
     test,

@@ -23,10 +23,7 @@ use crate::Returns;
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.analysis",
-        skip_from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.analysis", skip_from_py_object)
 )]
 #[cfg_attr(
     feature = "python",

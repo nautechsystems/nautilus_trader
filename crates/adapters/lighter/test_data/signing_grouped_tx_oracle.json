@@ -1,0 +1,312 @@
+{
+  "metadata": {
+    "license": "Apache-2.0 (SDK repository; compiled signer binary)",
+    "primitive": "lighter_l2_tx",
+    "source": "github.com/elliottech/lighter-python",
+    "upstream_version": "1.1.4",
+    "upstream_revision": "a38b6405f362fc14a562fe7a97df03f3ee756bc1",
+    "note": "Sig is non-deterministic (random k); tx_hash and tx_info carry deterministic byte equality targets."
+  },
+  "vectors": [
+    {
+      "kind": "create_grouped_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 32,
+      "fields": {
+        "grouping_type": 1,
+        "orders": [
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 301,
+            "BaseAmount": 1000,
+            "Price": 405000,
+            "IsAsk": 0,
+            "Type": 0,
+            "TimeInForce": 1,
+            "ReduceOnly": 0,
+            "TriggerPrice": 0,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 303,
+            "BaseAmount": 0,
+            "Price": 379000,
+            "IsAsk": 1,
+            "Type": 3,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 380000,
+            "OrderExpiry": 1999999999000
+          }
+        ],
+        "integrator_account_index": 0,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 28,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"GroupingType\":1,\"Orders\":[{\"MarketIndex\":0,\"ClientOrderIndex\":301,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":0,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":303,\"BaseAmount\":0,\"Price\":379000,\"IsAsk\":1,\"Type\":3,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":380000,\"OrderExpiry\":1999999999000}],\"ExpiredAt\":1791759497496,\"Nonce\":32,\"Sig\":\"FZwOMB2kxNk3kInaS0DrFhvSXh0S4lHKB1ZIWAooP849s5FhIGprL3sYDXSJIzbyWx1tmATACUtoQMcr7VzlJeT5FR0yTuIXPU7mcn8Q9W8=\",\"L2TxAttributes\":null}",
+      "tx_hash": "19ef445b719a3d761b2c89ec6142b7f6746fdeb5a5392f5d2ee6c4f78b20503fc32de1ceda6a3ae6",
+      "sig": "159c0e301da4c4d9379089da4b40eb161bd25e1d12e251ca075648580a283fce3db39161206a6b2f7b180d74892336f25b1d6d9804c0094b6840c72bed5ce525e4f9151d324ee2173d4ee6727f10f56f",
+      "expired_at": 1791759497496
+    },
+    {
+      "kind": "create_grouped_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 33,
+      "fields": {
+        "grouping_type": 1,
+        "orders": [
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 301,
+            "BaseAmount": 1000,
+            "Price": 405000,
+            "IsAsk": 0,
+            "Type": 0,
+            "TimeInForce": 1,
+            "ReduceOnly": 0,
+            "TriggerPrice": 0,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 303,
+            "BaseAmount": 0,
+            "Price": 379000,
+            "IsAsk": 1,
+            "Type": 3,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 380000,
+            "OrderExpiry": 1999999999000
+          }
+        ],
+        "integrator_account_index": 190,
+        "integrator_taker_fee": 2,
+        "integrator_maker_fee": 3,
+        "skip_nonce": 1
+      },
+      "tx_type": 28,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"GroupingType\":1,\"Orders\":[{\"MarketIndex\":0,\"ClientOrderIndex\":301,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":0,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":303,\"BaseAmount\":0,\"Price\":379000,\"IsAsk\":1,\"Type\":3,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":380000,\"OrderExpiry\":1999999999000}],\"ExpiredAt\":1791759497497,\"Nonce\":33,\"Sig\":\"nVRhbs4Jo2b98lp38dwMwvSFKy1OcVSzZHVRHz+3tBiLLYrolJhJerMpw5IPzCcEduNeUYsmVywVZtJZF0YpLCdYGi6HxOi7lQ50U4NCvUA=\",\"L2TxAttributes\":{\"1\":190,\"2\":2,\"3\":3,\"4\":1}}",
+      "tx_hash": "e57adb98fb5223e5e5e264a373cb8f4fe25601376c3a3f228a35d1a5c8837d3d00fde214bad3183f",
+      "sig": "9d54616ece09a366fdf25a77f1dc0cc2f4852b2d4e7154b36475511f3fb7b4188b2d8ae89498497ab329c3920fcc270476e35e518b26572c1566d2591746292c27581a2e87c4e8bb950e74538342bd40",
+      "expired_at": 1791759497497
+    },
+    {
+      "kind": "create_grouped_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 34,
+      "fields": {
+        "grouping_type": 2,
+        "orders": [
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 302,
+            "BaseAmount": 1000,
+            "Price": 419000,
+            "IsAsk": 1,
+            "Type": 5,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 420000,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 303,
+            "BaseAmount": 1000,
+            "Price": 379000,
+            "IsAsk": 1,
+            "Type": 3,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 380000,
+            "OrderExpiry": 1999999999000
+          }
+        ],
+        "integrator_account_index": 0,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 28,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"GroupingType\":2,\"Orders\":[{\"MarketIndex\":0,\"ClientOrderIndex\":302,\"BaseAmount\":1000,\"Price\":419000,\"IsAsk\":1,\"Type\":5,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":420000,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":303,\"BaseAmount\":1000,\"Price\":379000,\"IsAsk\":1,\"Type\":3,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":380000,\"OrderExpiry\":1999999999000}],\"ExpiredAt\":1791759497497,\"Nonce\":34,\"Sig\":\"0lwtaQo0VilVxyx9NTok2GdMTojTjcdxy3h6JbbXnShTP+rzJOWCBfNCF+6vvYsef228zX1HFpwnuO7eNT7TLX34ORiVidmz/Q6JvioeS3k=\",\"L2TxAttributes\":null}",
+      "tx_hash": "165e9cdf123d2b0aa9f7a68faceb483ee02ab9370b1c7b1b814a528953cbd2d39920bead0c045643",
+      "sig": "d25c2d690a34562955c72c7d353a24d8674c4e88d38dc771cb787a25b6d79d28533feaf324e58205f34217eeafbd8b1e7f6dbccd7d47169c27b8eede353ed32d7df839189589d9b3fd0e89be2a1e4b79",
+      "expired_at": 1791759497497
+    },
+    {
+      "kind": "create_grouped_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 35,
+      "fields": {
+        "grouping_type": 2,
+        "orders": [
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 302,
+            "BaseAmount": 1000,
+            "Price": 419000,
+            "IsAsk": 1,
+            "Type": 5,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 420000,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 303,
+            "BaseAmount": 1000,
+            "Price": 379000,
+            "IsAsk": 1,
+            "Type": 3,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 380000,
+            "OrderExpiry": 1999999999000
+          }
+        ],
+        "integrator_account_index": 190,
+        "integrator_taker_fee": 2,
+        "integrator_maker_fee": 3,
+        "skip_nonce": 1
+      },
+      "tx_type": 28,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"GroupingType\":2,\"Orders\":[{\"MarketIndex\":0,\"ClientOrderIndex\":302,\"BaseAmount\":1000,\"Price\":419000,\"IsAsk\":1,\"Type\":5,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":420000,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":303,\"BaseAmount\":1000,\"Price\":379000,\"IsAsk\":1,\"Type\":3,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":380000,\"OrderExpiry\":1999999999000}],\"ExpiredAt\":1791759497498,\"Nonce\":35,\"Sig\":\"fEubM7dELGpXthAwyRygCAF6WFUYRAT+k0/WnlIbpLQ0Dx5m+zu0VRIm4qNiTruldk9j9zwSo8YXdPkUjCObK6J9/cFJkv49Ir/7pA4GE2E=\",\"L2TxAttributes\":{\"1\":190,\"2\":2,\"3\":3,\"4\":1}}",
+      "tx_hash": "f4e53c83ba1c714034962f0911001dfcf8ddadd8872f4392bebbc6f84a3865813b67bfdad16221ef",
+      "sig": "7c4b9b33b7442c6a57b61030c91ca008017a5855184404fe934fd69e521ba4b4340f1e66fb3bb4551226e2a3624ebba5764f63f73c12a3c61774f9148c239b2ba27dfdc14992fe3d22bffba40e061361",
+      "expired_at": 1791759497498
+    },
+    {
+      "kind": "create_grouped_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 36,
+      "fields": {
+        "grouping_type": 3,
+        "orders": [
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 301,
+            "BaseAmount": 1000,
+            "Price": 405000,
+            "IsAsk": 0,
+            "Type": 0,
+            "TimeInForce": 1,
+            "ReduceOnly": 0,
+            "TriggerPrice": 0,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 302,
+            "BaseAmount": 0,
+            "Price": 419000,
+            "IsAsk": 1,
+            "Type": 5,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 420000,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 303,
+            "BaseAmount": 0,
+            "Price": 379000,
+            "IsAsk": 1,
+            "Type": 3,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 380000,
+            "OrderExpiry": 1999999999000
+          }
+        ],
+        "integrator_account_index": 0,
+        "integrator_taker_fee": 0,
+        "integrator_maker_fee": 0,
+        "skip_nonce": 0
+      },
+      "tx_type": 28,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"GroupingType\":3,\"Orders\":[{\"MarketIndex\":0,\"ClientOrderIndex\":301,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":0,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":302,\"BaseAmount\":0,\"Price\":419000,\"IsAsk\":1,\"Type\":5,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":420000,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":303,\"BaseAmount\":0,\"Price\":379000,\"IsAsk\":1,\"Type\":3,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":380000,\"OrderExpiry\":1999999999000}],\"ExpiredAt\":1791759497498,\"Nonce\":36,\"Sig\":\"9sxm3CNphzmpPvuS0DBEoaOvirS/DjRJ8lTh5Nb4oakHA03sVis3UsJt24ghWE3khZM7Tpgd+oPKcmYExMubeZqzOCG127VqKjpK0vWar20=\",\"L2TxAttributes\":null}",
+      "tx_hash": "9d07af7be0eecd64f66a45fd536adafd232c79a22bbb635177e68f8717e65b617776ff15ad825cd1",
+      "sig": "f6cc66dc23698739a93efb92d03044a1a3af8ab4bf0e3449f254e1e4d6f8a1a907034dec562b3752c26ddb8821584de485933b4e981dfa83ca726604c4cb9b799ab33821b5dbb56a2a3a4ad2f59aaf6d",
+      "expired_at": 1791759497498
+    },
+    {
+      "kind": "create_grouped_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 37,
+      "fields": {
+        "grouping_type": 3,
+        "orders": [
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 301,
+            "BaseAmount": 1000,
+            "Price": 405000,
+            "IsAsk": 0,
+            "Type": 0,
+            "TimeInForce": 1,
+            "ReduceOnly": 0,
+            "TriggerPrice": 0,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 302,
+            "BaseAmount": 0,
+            "Price": 419000,
+            "IsAsk": 1,
+            "Type": 5,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 420000,
+            "OrderExpiry": 1999999999000
+          },
+          {
+            "MarketIndex": 0,
+            "ClientOrderIndex": 303,
+            "BaseAmount": 0,
+            "Price": 379000,
+            "IsAsk": 1,
+            "Type": 3,
+            "TimeInForce": 1,
+            "ReduceOnly": 1,
+            "TriggerPrice": 380000,
+            "OrderExpiry": 1999999999000
+          }
+        ],
+        "integrator_account_index": 190,
+        "integrator_taker_fee": 2,
+        "integrator_maker_fee": 3,
+        "skip_nonce": 1
+      },
+      "tx_type": 28,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"GroupingType\":3,\"Orders\":[{\"MarketIndex\":0,\"ClientOrderIndex\":301,\"BaseAmount\":1000,\"Price\":405000,\"IsAsk\":0,\"Type\":0,\"TimeInForce\":1,\"ReduceOnly\":0,\"TriggerPrice\":0,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":302,\"BaseAmount\":0,\"Price\":419000,\"IsAsk\":1,\"Type\":5,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":420000,\"OrderExpiry\":1999999999000},{\"MarketIndex\":0,\"ClientOrderIndex\":303,\"BaseAmount\":0,\"Price\":379000,\"IsAsk\":1,\"Type\":3,\"TimeInForce\":1,\"ReduceOnly\":1,\"TriggerPrice\":380000,\"OrderExpiry\":1999999999000}],\"ExpiredAt\":1791759497499,\"Nonce\":37,\"Sig\":\"+Y2TA7NG9wJId2Gb+etXNsbX9evE5UOMb7IkOctDsYs26vo9a2ZOLoKmXbIvrh+3NNXLLUecswkbs4Rijt5ut5iCorz/hckUVGZ4OffKugA=\",\"L2TxAttributes\":{\"1\":190,\"2\":2,\"3\":3,\"4\":1}}",
+      "tx_hash": "22576e9d571805a6043eba0f8e0a1ed077477d824ff3ea95ca642896f7cd4f5ab7a5a7bbbcf8c602",
+      "sig": "f98d9303b346f7024877619bf9eb5736c6d7f5ebc4e5438c6fb22439cb43b18b36eafa3d6b664e2e82a65db22fae1fb734d5cb2d479cb3091bb384628ede6eb79882a2bcff85c91454667839f7caba00",
+      "expired_at": 1791759497499
+    }
+  ]
+}

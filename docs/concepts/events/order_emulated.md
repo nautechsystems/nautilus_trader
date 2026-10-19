@@ -1,15 +1,14 @@
 # OrderEmulated
 
-`OrderEmulated` represents an order having become emulated by the Nautilus system. The
-`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the
-`MessageBus`. It fires when the `OrderEmulator` takes an order under local emulation.
+`OrderEmulated` records that the `OrderEmulator` has taken an order under local emulation. The
+emulator applies the event to the order, updates the `Cache`, and publishes it on the `MessageBus`.
 
-Transition: `INITIALIZED` -> `EMULATED`. Handler: `on_order_emulated`.
+Typical transition: `INITIALIZED` -> `EMULATED`. Handler: `on_order_emulated`.
 
 ## Fields
 
-`OrderEmulated` carries only the [common order event fields](index.md#common-order-event-fields). On this event, `venue_order_id` and `account_id` are
-both `None`, `reconciliation` is always `False`, and `ts_event` equals `ts_init`.
+`OrderEmulated` exposes only the
+[common Python order event fields](index.md#common-python-order-event-fields).
 
 ## Example
 

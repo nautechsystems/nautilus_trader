@@ -8,19 +8,20 @@ code and add custom charts and themes.
 
 The visualization system has three parts:
 
-1. **Chart Registry** - Decoupled chart definitions that can be extended with custom visualizations.
-2. **Theme System** - Consistent styling with built-in and custom themes.
-3. **Configuration** - Declarative specification of what to render and how to display it.
+- **Chart registry**: decoupled chart definitions that can be extended with custom visualizations.
+- **Theme system**: consistent styling with built-in and custom themes.
+- **Configuration**: declarative specification of what to render and how to display it.
 
-All visualization outputs are self-contained HTML files that can be viewed in any modern
-browser, shared with stakeholders, or archived for future reference.
+Tearsheets are written as **self-contained HTML files** that can be viewed in any modern browser, shared with
+stakeholders, or archived for future reference. An output path with a static image extension (such as `.png`
+or `.pdf`) exports a static image through Kaleido.
 
 :::note
 The visualization system requires the `visualization` extra. It installs Pandas for
 DataFrame handling, Plotly for interactive figures, and Kaleido for static image export:
 
 ```bash
-uv pip install "nautilus_trader[visualization]"
+uv pip install --pre "nautilus_trader[visualization]"
 ```
 
 :::
@@ -37,7 +38,7 @@ Generate a tearsheet with default settings:
 
 ```python
 from nautilus_trader.analysis import create_tearsheet
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
 
 # After running your backtest
 engine.run()
@@ -55,7 +56,7 @@ layout. Open `backtest_results.html` in your browser to view the interactive tea
 ### Backtest result input
 
 Let `result` be a `BacktestResult` returned by a completed backtest. Pass it without its node for a
-result‑only tearsheet:
+result-only tearsheet:
 
 ```python
 create_tearsheet(
@@ -64,8 +65,8 @@ create_tearsheet(
 )
 ```
 
-To include starting account balances from node reports, retain the node state. The node is also
-required when the configured tearsheet includes a cache‑backed chart such as `bars_with_fills`.
+To include starting account balances from node reports, keep the node state. The node is also required when
+the configured tearsheet includes a cache-backed chart such as `bars_with_fills`.
 
 Follow the complete [`BacktestNode` setup](backtesting/apis-and-runs.md#high-level-api),
 setting `dispose_on_completion=False` on its `BacktestRunConfig`. Then pass the completed result and
@@ -79,15 +80,17 @@ create_tearsheet(
 )
 ```
 
+:::warning
 Passing a node whose matching run configuration enables disposal raises `ValueError` because its
 cache and reports are no longer available.
+:::
 
 ### Customization
 
 Control which charts appear and how they're styled:
 
 ```python
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetDrawdownChart
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetRunInfoChart
@@ -116,22 +119,23 @@ create_tearsheet(
 For multi-currency backtests, filter statistics to a specific currency:
 
 ```python
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model import Currency
 
 create_tearsheet(
     engine=engine,
     output_path="usd_only.html",
-    currency=USD,  # Currency object, shows only USD statistics
+    currency=Currency.from_str("USD"),  # Shows only USD statistics
 )
 ```
 
-When `currency` is `None` (default), statistics for all currencies are displayed
-separately in the tearsheet. Return-based charts are reconstructed from account
-reports only when the accounts share one currency; pass `currency` for multi-currency
-backtests so return charts use the selected currency.
+When `currency` is `None` (default), statistics for all currencies are displayed separately in the tearsheet.
 
-For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's
-stored return series remains unchanged.
+For `BacktestEngine` input, return-based charts require a single currency. They are derived from portfolio
+equity snapshots, falling back to account reports, and cannot be built for mixed-currency accounts without a
+filter. Pass `currency` for multi-currency backtests so return charts use the selected currency.
+
+For `BacktestResult` input, `currency` filters PnL statistics and account balances. The result's **stored
+return series stays unchanged**.
 
 ## Available charts
 
@@ -149,8 +153,8 @@ The tearsheet can include any combination of the following built-in charts:
 | `yearly_returns`  | Bar         | Annual return percentages.                              |
 | `bars_with_fills` | Candlestick | Price bars (OHLC) with order fills overlaid as markers. |
 
-All charts are registered in the chart registry and are configured via chart objects in
-`TearsheetConfig.charts` (each chart object maps to a built-in chart name).
+The chart registry contains all charts. Chart objects in `TearsheetConfig.charts` configure them (each chart
+object maps to a built-in chart name).
 
 ### Run information table
 
@@ -194,20 +198,19 @@ create_tearsheet(
 )
 ```
 
-The benchmark series is plotted as-is; ensure the index aligns with your strategy's
-return dates for accurate comparison.
+The benchmark series is plotted as-is. Ensure the index aligns with your strategy's return dates for accurate
+comparison.
 
 ### Monthly and yearly returns
 
-The `monthly_returns` and `yearly_returns` charts default to compounded (time-weighted)
-returns: each cell measures the period's gain against the running start-of-period balance,
-and the periods compound to the total return.
+The `monthly_returns` and `yearly_returns` charts default to compounded (time-weighted) returns. Each cell
+measures the period's gain against the running start-of-period balance. The periods compound to the total
+return.
 
-Set `compounding=False` to report simple, non-compounding returns measured against fixed
-initial capital. Each cell then measures the period's gain as a percentage of the starting
-capital, so the periods sum to the total return instead of compounding to it. This is the
-nominal rate of return, the convention used for constant-capital strategies that trade fixed
-size and withdraw profits.
+Set `compounding=False` to report simple, non-compounding returns measured against fixed initial capital. Each
+cell then measures the period's gain as a percentage of the starting capital. Thus, the periods sum to the
+total return instead of compounding to it. This is the nominal rate of return, the convention used for
+constant-capital strategies that trade fixed size and withdraw profits.
 
 ```python
 config = TearsheetConfig(
@@ -219,10 +222,10 @@ config = TearsheetConfig(
 create_tearsheet(engine=engine, config=config)
 ```
 
-The standalone `create_monthly_returns_heatmap()` and `create_yearly_returns()` functions
-accept the same `compounding` argument. For the non-compounding figures to faithfully
-represent constant capital, size positions at a fixed quantity rather than as a fraction of
-current equity; otherwise later periods inflate as the running balance grows.
+The standalone `create_monthly_returns_heatmap()` and `create_yearly_returns()` functions accept the same
+`compounding` argument. For the non-compounding figures to faithfully represent constant capital, size
+positions at a fixed quantity rather than as a fraction of current equity. Otherwise later periods inflate as
+the running balance grows.
 
 ## Themes
 
@@ -232,7 +235,7 @@ NautilusTrader provides four built-in themes:
 | Theme Name      | Description                                   | Use Case                       |
 | --------------- | --------------------------------------------- | ------------------------------ |
 | `plotly_white`  | Clean light theme with dark gray headers.     | Default, professional reports. |
-| `plotly_dark`   | Dark background with standard Plotly colors.  | Low‑light environments.        |
+| `plotly_dark`   | Dark background with standard Plotly colors.  | Low-light environments.        |
 | `nautilus`      | Light theme with NautilusTrader brand colors. | Official light mode.           |
 | `nautilus_dark` | Dark theme with teal/cyan signature colors.   | Official dark mode.            |
 
@@ -274,9 +277,8 @@ register_theme(
 config = TearsheetConfig(theme="corporate")
 ```
 
-The theme system automatically provides sensible defaults for `table_*` colors based on
-the `background` and `grid` colors, ensuring backward compatibility with themes registered
-before table-specific colors were introduced.
+The theme system derives default `table_*` colors from the `background` and `grid` colors. These defaults
+preserve compatibility with themes registered before table-specific colors existed.
 
 ## Configuration
 
@@ -284,7 +286,7 @@ The `TearsheetConfig` class provides declarative control over tearsheet generati
 
 ```python
 from nautilus_trader.analysis import GridLayout
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetDrawdownChart
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
@@ -314,18 +316,17 @@ config = TearsheetConfig(
 
 | Parameter           | Type                   | Default          | Description                         |
 | ------------------- | ---------------------- | ---------------- | ----------------------------------- |
-| `charts`            | `list[TearsheetChart]` | Built‑ins        | Charts to include, in order.        |
+| `charts`            | `list[TearsheetChart]` | Built-ins        | Charts to include, in order.        |
 | `theme`             | `str`                  | `"plotly_white"` | Theme name for styling.             |
 | `layout`            | `GridLayout`           | `None`           | Custom subplot grid layout.         |
-| `title`             | `str`                  | Auto‑generated   | Tearsheet title.                    |
+| `title`             | `str`                  | Auto-generated   | Tearsheet title.                    |
 | `include_benchmark` | `bool`                 | `True`           | Show benchmark when provided.       |
 | `benchmark_name`    | `str`                  | `"Benchmark"`    | Display name for benchmark.         |
 | `height`            | `int`                  | `1500`           | Total height in pixels.             |
 | `show_logo`         | `bool`                 | `True`           | Reserved for future logo rendering. |
 
-When `layout` is `None`, the grid dimensions and row heights are automatically calculated
-based on the number of charts. For 8 charts (the default), a 4x2 grid is used with
-heights `[0.50, 0.22, 0.16, 0.12]` to give more space to the top row tables.
+When `layout` is `None`, the chart count determines the grid dimensions and row heights. The default 8 charts
+use a 4x2 grid with heights `[0.50, 0.22, 0.16, 0.12]`. These heights give more space to the top row tables.
 
 ## Custom charts
 
@@ -335,7 +336,7 @@ render traces onto a Plotly figure object.
 ### Registering a custom chart
 
 ```python
-from nautilus_trader.analysis.tearsheet import register_chart
+from nautilus_trader.analysis import register_chart
 import plotly.graph_objects as go
 
 
@@ -345,7 +346,7 @@ def my_custom_chart(returns, output_path=None, title="Custom Chart", theme="plot
 
     This function signature matches the built-in chart functions for consistency.
     """
-    from nautilus_trader.analysis.themes import get_theme
+    from nautilus_trader.analysis import get_theme
 
     theme_config = get_theme(theme)
 
@@ -380,13 +381,13 @@ register_chart("my_custom", my_custom_chart)
 
 ### Tearsheet integration
 
-For tearsheet integration with proper grid placement, use `register_tearsheet_chart`. Unlike
-`register_chart` (which registers a standalone function that returns its own figure), a tearsheet
-renderer draws traces directly onto a shared subplot grid cell, so its signature takes the target
-`fig` plus the `row` and `col` to render into.
+For tearsheet integration with proper grid placement, use `register_tearsheet_chart`. Unlike `register_chart`
+(which registers a standalone function that returns its own figure), a tearsheet renderer draws traces
+directly onto a shared subplot grid cell. Thus, its signature takes the target `fig` plus the `row` and `col`
+to render into.
 
 ```python
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetCustomChart
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
@@ -459,7 +460,7 @@ use the lower-level API:
 ```python
 import pandas as pd
 
-from nautilus_trader.analysis.tearsheet import create_tearsheet_from_stats
+from nautilus_trader.analysis import create_tearsheet_from_stats
 
 # Load precomputed data. The structure matches BacktestResult stats fields.
 stats_pnls = {"USD": {"PnL (total)": 1500.0, "Win Rate": 0.55, ...}}  # Per-currency
@@ -507,11 +508,14 @@ This approach is useful for:
 
 ### Custom statistics integration
 
-Custom charts work best when paired with statistics supplied through the same
-`stats_pnls`, `stats_returns`, and `stats_general` dictionaries used by the built-in
-tearsheet charts. For live `BacktestEngine` usage these values come from
-`engine.get_result()`; for offline analysis, pass compatible dictionaries directly to
-`create_tearsheet_from_stats()`:
+Pair custom charts with statistics supplied through the same `stats_pnls`, `stats_returns`, and
+`stats_general` dictionaries used by the built-in tearsheet charts.
+
+For `BacktestEngine` input, these values come from `engine.get_result()`, so a statistic registered with
+`Portfolio.register_statistic()` reaches the tearsheet without any extra wiring. See
+[Custom statistics](portfolio.md#custom-statistics).
+
+For offline analysis, pass compatible dictionaries directly to `create_tearsheet_from_stats()`:
 
 ```python
 stats_returns = {
@@ -522,7 +526,7 @@ stats_returns = {
 
 ## API levels
 
-The visualization system provides two API levels:
+The visualization system provides two API levels, plus standalone chart functions:
 
 ### High-level API
 
@@ -568,10 +572,10 @@ or included in tearsheets:
 from nautilus_trader.analysis import create_bars_with_fills
 from nautilus_trader.analysis import create_tearsheet
 from nautilus_trader.analysis import TearsheetBarsWithFillsChart
-from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.config import TearsheetConfig
 from nautilus_trader.analysis import TearsheetEquityChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
-from nautilus_trader.model.data import BarType
+from nautilus_trader.model import BarType
 
 # Standalone usage
 bar_type = BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
@@ -614,10 +618,10 @@ config = TearsheetConfig(
 create_tearsheet(engine=engine, config=config)
 ```
 
-The visualization shows candlesticks for OHLC price action with triangle markers representing order
-fills (green up-triangles for buys, red down-triangles for sells). Charts that need extra
-configuration (like `bar_type`) take those parameters directly on the chart object
-(e.g. `TearsheetBarsWithFillsChart(bar_type=...)`).
+The visualization shows candlesticks for OHLC price action with triangle markers representing order fills
+(up-triangles for buys and down-triangles for sells, colored with the theme's positive and negative colors).
+Charts that need extra configuration (like `bar_type`) take those parameters directly on the chart object (for
+example, `TearsheetBarsWithFillsChart(bar_type=...)`).
 
 Other individual chart functions include `create_equity_curve`, `create_drawdown_chart`,
 `create_monthly_returns_heatmap`, and more. See the API reference for the complete list.

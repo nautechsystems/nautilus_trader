@@ -1,9 +1,9 @@
-FROM public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:99e09cb2284e2ddbb73a995deee3e91783fd04d177602ccf6eab326d778ee777 AS rust-toolchain
+FROM public.ecr.aws/docker/library/rust:1.99.0-slim-bookworm@sha256:452176c0cefca88c0b3184ce85a4eb03e3d4fa05d2afb5366abcba853221019e AS rust-toolchain
 
-# Pin to specific digest for supply-chain security (python:3.13-slim as of 2026-04-30).
+# Pin to specific digest for supply-chain security (python:3.13-slim as of 2026-08-23).
 # Keep the version tag: scripts/ci/check-docker-toolchain-pins.bash treats it as the
 # canonical Docker Python version and aligns the site-packages paths below to it.
-FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:a0779d7c12fc20be6ec6b4ddc901a4fd7657b8a6bc9def9d3fde89ed5efe0a3d AS base
+FROM public.ecr.aws/docker/library/python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \
@@ -13,7 +13,6 @@ ENV PYTHONUNBUFFERED=1 \
     PYSETUP_PATH="/opt/pysetup" \
     CARGO_HOME="/usr/local/cargo" \
     RUSTUP_HOME="/usr/local/rustup" \
-    BUILD_MODE="release" \
     CC="clang"
 ENV PATH="/root/.local/bin:/usr/local/cargo/bin:$PATH"
 WORKDIR $PYSETUP_PATH
@@ -22,7 +21,7 @@ FROM base AS builder
 
 # Install build deps
 RUN apt-get update && \
-    apt-get install -y curl clang lld git make pkg-config capnproto libcapnp-dev && \
+    apt-get install -y curl clang lld git make pkg-config capnproto libcapnp-dev patchelf && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -31,24 +30,21 @@ COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
 COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
 
 # Install UV
-COPY --from=ghcr.io/astral-sh/uv:0.11.33@sha256:77280f2f771df71f90786c314fe1bbc1e023feac652969bbf139c280babf2eb7 \
+COPY --from=ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 \
   /uv /uvx /root/.local/bin/
 
-# Install package requirements
-COPY uv.lock pyproject.toml build.py ./
-RUN uv sync --no-install-package nautilus_trader
-
-# Build nautilus_trader
 COPY Cargo.toml ./
 COPY Cargo.lock ./
 COPY crates ./crates
 COPY patches ./patches
 COPY examples/tutorials ./examples/tutorials
-RUN cargo build --package nautilus-pyo3 --lib --release --all-features
-
-COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
-RUN uv build --wheel
+COPY python/pyproject.toml python/uv.lock ./python/
+RUN cd python && uv sync --frozen --no-install-package nautilus-trader
+
+COPY python/nautilus_trader ./python/nautilus_trader
+ARG CARGO_BUILD_JOBS=2
+RUN cd python && uv run --no-sync maturin build --locked --release --out ../dist
 RUN uv pip install --system dist/*.whl
 RUN find /usr/local/lib/python3.13/site-packages -name "*.pyc" -exec rm -f {} \;
 

@@ -19,7 +19,8 @@
 //! for quantitative trading and market research. This includes a wide variety of indicators
 //! organized by category, with a unified trait-based architecture for consistent usage:
 //!
-//! - **Moving averages**: SMA, EMA, DEMA, HMA, WMA, VWAP, adaptive averages, and linear regression.
+//! - **Moving averages**: SMA, EMA, DEMA, HMA, WMA, VWAP, adaptive averages, linear regression,
+//!   and z-score.
 //! - **Momentum indicators**: RSI, MACD, Aroon, Bollinger Bands, CCI, Stochastics, and rate of change.
 //! - **Volatility indicators**: ATR, Donchian Channels, Keltner Channels, and volatility ratios.
 //! - **Ratio analysis**: Efficiency ratios and spread analysis for relative performance.
@@ -45,8 +46,8 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `extension-module`: Builds as a Python extension module.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -68,6 +69,13 @@
     clippy::cast_sign_loss,
     reason = "indicator math casts between usize/i64/f64 with values bounded by configured periods"
 )]
+#![allow(
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
+)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 #![cfg_attr(
     test,
     allow(
@@ -83,6 +91,7 @@ pub mod book;
 pub mod indicator;
 pub mod momentum;
 pub mod ratio;
+mod support;
 pub mod testing;
 pub mod volatility;
 

@@ -29,6 +29,9 @@ use serde_json::Value;
 /// This represents a map of string keys to JSON values, used for passing
 /// adapter-specific configuration, metadata, and any generic key-value data.
 ///
+/// `from_pydict` rejects integer values outside the signed or unsigned 64-bit range with
+/// `ValueError`, including values in nested containers.
+///
 /// `Params` uses `IndexMap` to preserve insertion order, which is important for
 /// consistent serialization and debugging.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -53,7 +56,7 @@ impl Params {
     /// Returns `None` if the key is missing or the value cannot be converted to `u64`.
     #[must_use]
     pub fn get_u64(&self, key: &str) -> Option<u64> {
-        self.get(key).and_then(|v| v.as_u64())
+        self.get(key).and_then(Value::as_u64)
     }
 
     /// Extracts an `i64` value from the params map.
@@ -61,7 +64,7 @@ impl Params {
     /// Returns `None` if the key is missing or the value cannot be converted to `i64`.
     #[must_use]
     pub fn get_i64(&self, key: &str) -> Option<i64> {
-        self.get(key).and_then(|v| v.as_i64())
+        self.get(key).and_then(Value::as_i64)
     }
 
     /// Extracts a `usize` value from the params map.
@@ -70,7 +73,7 @@ impl Params {
     #[must_use]
     pub fn get_usize(&self, key: &str) -> Option<usize> {
         self.get(key)
-            .and_then(|v| v.as_u64())
+            .and_then(Value::as_u64)
             .and_then(|n| usize::try_from(n).ok())
     }
 
@@ -87,7 +90,7 @@ impl Params {
     /// Returns `None` if the key is missing or the value is not a boolean.
     #[must_use]
     pub fn get_bool(&self, key: &str) -> Option<bool> {
-        self.get(key).and_then(|v| v.as_bool())
+        self.get(key).and_then(Value::as_bool)
     }
 
     /// Extracts a `f64` value from the params map.
@@ -95,7 +98,7 @@ impl Params {
     /// Returns `None` if the key is missing or the value cannot be converted to `f64`.
     #[must_use]
     pub fn get_f64(&self, key: &str) -> Option<f64> {
-        self.get(key).and_then(|v| v.as_f64())
+        self.get(key).and_then(Value::as_f64)
     }
 
     #[cfg(feature = "python")]
@@ -103,7 +106,7 @@ impl Params {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if conversion of any value fails.
+    /// Returns an error if conversion of any value fails.
     pub fn to_pydict(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::types::PyDict>> {
         crate::python::params::params_to_pydict(py, self)
     }
@@ -139,9 +142,10 @@ impl<'a> IntoIterator for &'a Params {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if:
-/// - the dict cannot be serialized to JSON
-/// - the JSON is not a valid object
+/// Returns an error if:
+/// - The dict cannot be serialized to JSON.
+/// - The JSON is not a valid object.
+/// - An integer value is outside the signed or unsigned 64-bit range.
 pub fn from_pydict(
     py: pyo3::Python<'_>,
     dict: &pyo3::Py<pyo3::types::PyDict>,
@@ -168,83 +172,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_params_option_get_u64() {
-        let params = Some(create_test_params());
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("u64_val")), Some(42));
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("missing")), None);
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("str_val")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_i64() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_i64("i64_val")),
-            Some(-100)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_i64("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_usize() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_usize("usize_val")),
-            Some(5)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_usize("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_str() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_str("str_val")),
-            Some("hello")
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_str("missing")), None);
-        assert_eq!(params.as_ref().and_then(|p| p.get_str("u64_val")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_bool() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_bool("bool_val")),
-            Some(true)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_bool("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_f64() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_f64("f64_val")),
-            Some(2.5)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_f64("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_none() {
-        let params: Option<Params> = None;
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("any")), None);
-        assert_eq!(params.as_ref().and_then(|p| p.get_str("any")), None);
-    }
-
-    #[rstest]
-    fn test_params_ref_get_u64() {
+    fn test_params_getters() {
         let params = create_test_params();
+
         assert_eq!(params.get_u64("u64_val"), Some(42));
-        assert_eq!(params.get_u64("missing"), None);
-    }
-
-    #[rstest]
-    fn test_params_ref_get_usize() {
-        let params = create_test_params();
+        assert_eq!(params.get_i64("i64_val"), Some(-100));
         assert_eq!(params.get_usize("usize_val"), Some(5));
+        assert_eq!(params.get_str("str_val"), Some("hello"));
+        assert_eq!(params.get_bool("bool_val"), Some(true));
+        assert_eq!(params.get_f64("f64_val"), Some(2.5));
+        assert_eq!(params.get_u64("missing"), None);
+        assert_eq!(params.get_i64("missing"), None);
         assert_eq!(params.get_usize("missing"), None);
+        assert_eq!(params.get_str("missing"), None);
+        assert_eq!(params.get_bool("missing"), None);
+        assert_eq!(params.get_f64("missing"), None);
+        assert_eq!(params.get_u64("str_val"), None);
+        assert_eq!(params.get_str("u64_val"), None);
     }
 
     #[rstest]
@@ -258,52 +202,5 @@ mod tests {
         assert_eq!(params.get_usize("u32_overflow"), None);
         #[cfg(target_pointer_width = "64")]
         assert_eq!(params.get_usize("u32_overflow"), Some(4_294_967_296));
-    }
-
-    #[rstest]
-    fn test_params_ref_get_str() {
-        let params = create_test_params();
-        assert_eq!(params.get_str("str_val"), Some("hello"));
-        assert_eq!(params.get_str("missing"), None);
-    }
-
-    #[rstest]
-    fn test_submit_tries_pattern() {
-        let mut params = Params::new();
-        params.insert("submit_tries".to_string(), json!(3u64));
-        let cmd_params = Some(params);
-
-        let submit_tries = cmd_params
-            .as_ref()
-            .and_then(|p| p.get_usize("submit_tries"))
-            .filter(|&n| n > 0);
-
-        assert_eq!(submit_tries, Some(3));
-    }
-
-    #[rstest]
-    fn test_submit_tries_pattern_zero_filtered() {
-        let mut params = Params::new();
-        params.insert("submit_tries".to_string(), json!(0u64));
-        let cmd_params = Some(params);
-
-        let submit_tries = cmd_params
-            .as_ref()
-            .and_then(|p| p.get_usize("submit_tries"))
-            .filter(|&n| n > 0);
-
-        assert_eq!(submit_tries, None);
-    }
-
-    #[rstest]
-    fn test_submit_tries_pattern_missing() {
-        let cmd_params: Option<Params> = None;
-
-        let submit_tries = cmd_params
-            .as_ref()
-            .and_then(|p| p.get_usize("submit_tries"))
-            .filter(|&n| n > 0);
-
-        assert_eq!(submit_tries, None);
     }
 }

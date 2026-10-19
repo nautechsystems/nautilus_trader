@@ -201,7 +201,7 @@ impl OrderFactory {
             self.clock.borrow().timestamp_ns(),
             reduce_only.unwrap_or(false),
             quote_quantity.unwrap_or(false),
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -301,7 +301,7 @@ impl OrderFactory {
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -403,7 +403,7 @@ impl OrderFactory {
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -513,7 +513,7 @@ impl OrderFactory {
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -600,7 +600,7 @@ impl OrderFactory {
             reduce_only.unwrap_or(false),
             quote_quantity.unwrap_or(false),
             display_qty,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -698,7 +698,7 @@ impl OrderFactory {
             quote_quantity.unwrap_or(false),
             emulation_trigger,
             trigger_instrument_id,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -808,7 +808,7 @@ impl OrderFactory {
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -926,7 +926,7 @@ impl OrderFactory {
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -1057,7 +1057,7 @@ impl OrderFactory {
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -1462,7 +1462,6 @@ impl OrderFactory {
         let sl_tp_side = match order_side {
             OrderSide::Buy => OrderSide::Sell,
             OrderSide::Sell => OrderSide::Buy,
-            OrderSide::NoOrderSide => OrderSide::NoOrderSide,
         };
 
         let tp_contingency_type = Some(contingency_type);
@@ -1771,13 +1770,13 @@ pub mod tests {
     use rust_decimal::Decimal;
     use ustr::Ustr;
 
-    use crate::{clock::TestClock, factories::OrderFactory};
+    use crate::{clock::VirtualClock, factories::OrderFactory};
 
     #[fixture]
     pub fn order_factory() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1854,7 +1853,7 @@ pub mod tests {
     pub fn order_factory_with_uuids() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1870,7 +1869,7 @@ pub mod tests {
     pub fn order_factory_with_hyphens_removed() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1886,7 +1885,7 @@ pub mod tests {
     pub fn order_factory_with_uuids_and_hyphens_removed() -> OrderFactory {
         let trader_id = trader_id();
         let strategy_id = strategy_id_ema_cross();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderFactory::new(
             trader_id,
             strategy_id,
@@ -2844,5 +2843,7 @@ pub mod tests {
         );
         assert_eq!(orders[0].order_list_id(), Some(order_list.id));
         assert_eq!(orders[1].order_list_id(), Some(order_list.id));
+        assert_eq!(orders[0].init_event().order_list_id, Some(order_list.id));
+        assert_eq!(orders[1].init_event().order_list_id, Some(order_list.id));
     }
 }

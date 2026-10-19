@@ -2,22 +2,22 @@
 
 `FIX OrdType <40>=3` (Stop)
 
-A *Stop-Market* order is a conditional order which once triggered, will immediately
-place a *Market* order. This order type is often used as a stop-loss to limit losses, either
-as a SELL order against LONG positions, or as a BUY order against SHORT positions.
+A *Stop-Market* order releases a *Market* order when its trigger price is reached. It is often
+used as a stop-loss: a SELL order against a LONG position or a BUY order against a SHORT position.
 
 ## Use cases
 
-Use a *Stop-Market* order when you need execution certainty once a price level is breached, such as a
-protective stop-loss or a breakout entry. Because it converts to a *Market* order on trigger, the
-position is almost always opened or closed. The tradeoff is that the trigger price is not the fill
-price: in fast or gapping markets the fill can land well beyond the stop, so it trades price certainty
-for execution certainty (the opposite of a *Stop-Limit*).
+Use a *Stop-Market* order to prioritize execution after a price level is breached. Examples include protective
+stop-losses or breakout entries.
+
+The trigger price is **not a guaranteed fill price**. A fast or gapping market can produce substantial
+slippage. The released order can still be rejected or stay unfilled when no market is available. A
+*Stop-Limit* provides price protection instead but may not fill.
 
 ## Example
 
-In the following example we create a *Stop-Market* order on the Binance Spot/Margin exchange
-to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
+**Example**: create a *Stop-Market* order on the Binance Spot/Margin exchange to SELL 1 BTC. Set a trigger
+price of 100,000 USDT and keep the order active until further notice.
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -47,13 +47,13 @@ let order = self.order().stop_market(
 ```
 
 ```python tab="Python"
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model import StopMarketOrder
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TriggerType
 
 order: StopMarketOrder = self.order_factory.stop_market(
     instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
@@ -68,10 +68,12 @@ order: StopMarketOrder = self.order_factory.stop_market(
 )
 ```
 
-See the [`StopMarketOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.stop_market.StopMarketOrder) for further details.
+See the
+[`StopMarketOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.StopMarketOrder)
+for further details.
 
 ## Related guides
 
 - [Orders](index.md#trigger-type) - Trigger types and other execution instructions.
 - [Emulated orders](emulated.md) - Emulating conditional orders on venues without native support.
-- [Execution](../execution.md) - How orders reach the venue and fills are handled.
+- [Execution](../execution/) - How orders reach the venue and fills are handled.

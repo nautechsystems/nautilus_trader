@@ -29,8 +29,11 @@ use std::fmt::{Debug, Display};
 
 use aws_lc_rs::hmac;
 use ed25519_dalek::{Signature, Signer, SigningKey};
-use nautilus_core::{hex, string::secret::REDACTED};
-use zeroize::ZeroizeOnDrop;
+use nautilus_core::{
+    hex,
+    string::secret::{REDACTED, SecretString},
+};
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use super::enums::{BinanceEnvironment, BinanceProductType};
 
@@ -157,7 +160,7 @@ pub struct Ed25519Credential {
 impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
-            .field("api_key", &self.api_key)
+            .field("api_key", &REDACTED)
             .field("api_secret", &REDACTED)
             .finish()
     }
@@ -191,7 +194,7 @@ impl Credential {
 impl Debug for Ed25519Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Ed25519Credential))
-            .field("api_key", &self.api_key)
+            .field("api_key", &REDACTED)
             .field("signing_key", &REDACTED)
             .finish()
     }
@@ -222,16 +225,24 @@ impl Ed25519Credential {
     ///
     /// Returns an error if the private key is not valid base64, does not carry
     /// the Ed25519 PKCS#8 OID, or is shorter than 32 bytes after decoding.
-    pub fn new(api_key: String, private_key_base64: &str) -> Result<Self, Ed25519CredentialError> {
-        // Strip PEM headers/footers if present
-        let key_data: String = private_key_base64
-            .lines()
-            .filter(|line| !line.starts_with("-----"))
-            .collect();
+    pub fn new(
+        api_key: SecretString,
+        private_key_base64: SecretString,
+    ) -> Result<Self, Ed25519CredentialError> {
+        let private_key_base64 = Zeroizing::new(private_key_base64.into_inner());
 
-        let private_key_bytes =
+        // Strip PEM headers/footers if present
+        let key_data = Zeroizing::new(
+            private_key_base64
+                .lines()
+                .filter(|line| !line.starts_with("-----"))
+                .collect::<String>(),
+        );
+
+        let private_key_bytes = Zeroizing::new(
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &key_data)
-                .map_err(|e| Ed25519CredentialError::InvalidBase64(e.to_string()))?;
+                .map_err(|e| Ed25519CredentialError::InvalidBase64(e.to_string()))?,
+        );
 
         if !contains_subslice(&private_key_bytes, &ED25519_OID) {
             return Err(Ed25519CredentialError::NotEd25519);
@@ -241,14 +252,16 @@ impl Ed25519Credential {
             return Err(Ed25519CredentialError::InvalidKeyLength);
         }
         let seed_start = private_key_bytes.len() - 32;
-        let key_bytes: [u8; 32] = private_key_bytes[seed_start..]
-            .try_into()
-            .map_err(|_| Ed25519CredentialError::InvalidKeyLength)?;
+        let key_bytes = Zeroizing::new(
+            private_key_bytes[seed_start..]
+                .try_into()
+                .map_err(|_| Ed25519CredentialError::InvalidKeyLength)?,
+        );
 
         let signing_key = SigningKey::from_bytes(&key_bytes);
 
         Ok(Self {
-            api_key: api_key.into_boxed_str(),
+            api_key: api_key.into_inner().into_boxed_str(),
             signing_key,
         })
     }
@@ -326,14 +339,20 @@ impl SigningCredential {
     /// Falls back to HMAC if Ed25519 parsing fails.
     #[must_use]
     pub fn new(api_key: String, api_secret: String) -> Self {
-        match Ed25519Credential::new(api_key.clone(), &api_secret) {
+        let api_key = SecretString::from(api_key);
+        let api_secret = SecretString::from(api_secret);
+
+        match Ed25519Credential::new(api_key.clone(), api_secret.clone()) {
             Ok(ed25519) => {
                 log::debug!("Auto-detected Ed25519 API key");
                 Self::Ed25519(Box::new(ed25519))
             }
             Err(_) => {
                 log::debug!("Using HMAC SHA256 API key");
-                Self::Hmac(Credential::new(api_key, api_secret))
+                Self::Hmac(Credential::new(
+                    api_key.into_inner(),
+                    api_secret.into_inner(),
+                ))
             }
         }
     }
@@ -371,7 +390,7 @@ impl SigningCredential {
 impl Clone for Ed25519Credential {
     fn clone(&self) -> Self {
         // SigningKey is 32 bytes; extract and reconstruct
-        let key_bytes = self.signing_key.to_bytes();
+        let key_bytes = Zeroizing::new(self.signing_key.to_bytes());
         Self {
             api_key: self.api_key.clone(),
             signing_key: SigningKey::from_bytes(&key_bytes),
@@ -494,7 +513,8 @@ mod tests {
         let cred = Credential::new("test_key".to_string(), BINANCE_TEST_SECRET.to_string());
         let dbg_out = format!("{cred:?}");
 
-        assert!(dbg_out.contains(REDACTED));
+        assert_eq!(dbg_out.matches(REDACTED).count(), 2);
+        assert!(!dbg_out.contains("test_key"));
         assert!(!dbg_out.contains("NhqPtmdSJYdKjVHjA7PZj4"));
     }
 
@@ -516,7 +536,7 @@ mod tests {
             ED25519_PKCS8_TEST_VECTOR,
         );
 
-        let cred = Ed25519Credential::new("test_key".to_string(), &key_b64).unwrap();
+        let cred = Ed25519Credential::new("test_key".into(), key_b64.into()).unwrap();
 
         let signature = cred.sign(b"");
 
@@ -533,7 +553,7 @@ mod tests {
         // seeds would silently misclassify HMAC secrets as Ed25519.
         let seed = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0xABu8; 32]);
 
-        let result = Ed25519Credential::new("test_key".to_string(), &seed);
+        let result = Ed25519Credential::new("test_key".into(), seed.into());
 
         assert!(matches!(result, Err(Ed25519CredentialError::NotEd25519)));
     }
@@ -543,7 +563,7 @@ mod tests {
         // Regression: Binance HMAC secrets are 64-char base64 (48 bytes
         // decoded). Before the OID check they matched the PKCS#8 length and
         // were silently accepted as Ed25519, producing garbage signatures.
-        let result = Ed25519Credential::new("test_key".to_string(), BINANCE_TEST_SECRET);
+        let result = Ed25519Credential::new("test_key".into(), BINANCE_TEST_SECRET.into());
 
         assert!(matches!(result, Err(Ed25519CredentialError::NotEd25519)));
     }
@@ -565,10 +585,11 @@ mod tests {
             ED25519_PKCS8_TEST_VECTOR,
         );
 
-        let cred = Ed25519Credential::new("test_key".to_string(), &key_b64).unwrap();
+        let cred = Ed25519Credential::new("test_key".into(), key_b64.clone().into()).unwrap();
         let dbg_out = format!("{cred:?}");
 
-        assert!(dbg_out.contains(REDACTED));
+        assert_eq!(dbg_out.matches(REDACTED).count(), 2);
+        assert!(!dbg_out.contains("test_key"));
         assert!(!dbg_out.contains(&key_b64));
     }
 }

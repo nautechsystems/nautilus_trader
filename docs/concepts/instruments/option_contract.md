@@ -22,14 +22,12 @@ Examples include equity options, index options, and futures options.
 | `currency`        | `Currency`         | `Currency`         | Required         | Premium quote and settlement currency.   |
 | `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.       |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.               |
-| `size_precision`  | `u8`               | `int`              | `0`              | Options trade in whole contracts.        |
-| `size_increment`  | `Quantity`         | `Quantity`         | `1`              | Minimum contract size step.              |
+| `size_precision`  | `u8`               | `int`              | Fixed `0`        | Options trade in whole contracts.        |
+| `size_increment`  | `Quantity`         | `Quantity`         | Fixed `1`        | Minimum contract size step.              |
 | `multiplier`      | `Quantity`         | `Quantity`         | Required         | Contract multiplier.                     |
 | `lot_size`        | `Quantity`         | `Quantity`         | Required         | Rounded lot or contract lot size.        |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`    | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `max_quantity`    | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                  |
 | `min_quantity`    | `Option<Quantity>` | `Quantity \| None` | `1`              | Minimum order quantity.                  |
 | `max_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.      |
@@ -39,7 +37,7 @@ Examples include equity options, index options, and futures options.
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -51,7 +49,7 @@ Examples include equity options, index options, and futures options.
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{AssetClass, OptionKind},
@@ -61,8 +59,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
+let activation: Timestamp = "2021-09-17T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2021-12-17T00:00:00Z".parse().unwrap();
 
 let aapl_call = OptionContract::builder()
     .instrument_id(InstrumentId::from("AAPL211217C00150000.OPRA"))
@@ -73,8 +71,8 @@ let aapl_call = OptionContract::builder()
     .option_kind(OptionKind::Call)
     .strike_price(Price::from("150.00"))
     .currency(Currency::from("USD"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(2)
     .price_increment(Price::from("0.01"))
     .multiplier(Quantity::from("100"))
@@ -119,10 +117,10 @@ aapl_call = OptionContract(
 
 ## Adapters
 
-Representative adapters that create or consume `OptionContract` instruments include:
+**Adapters that create or consume `OptionContract` instruments include**:
 
 - [Databento](../../integrations/databento.md) for listed options data.
-- [Interactive Brokers](../../integrations/ib.md) for listed option contracts.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for listed option contracts.
 
 ## Related guides
 

@@ -26,12 +26,12 @@ use std::{
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use rust_decimal::Decimal;
 
 use super::{BookViewError, OwnBookError, display::pprint_own_book};
 use crate::{
-    enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, TraderId, VenueOrderId},
     orderbook::BookPrice,
     orders::{Order, OrderAny},
@@ -46,7 +46,7 @@ use crate::{
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -59,8 +59,8 @@ pub struct OwnBookOrder {
     pub client_order_id: ClientOrderId,
     /// The venue order ID (if assigned by the venue).
     pub venue_order_id: Option<VenueOrderId>,
-    /// The specified order side (BUY or SELL).
-    pub side: OrderSideSpecified,
+    /// The order side (BUY or SELL).
+    pub side: OrderSide,
     /// The order price.
     pub price: Price,
     /// The remaining order size (leaves quantity).
@@ -69,7 +69,7 @@ pub struct OwnBookOrder {
     pub order_type: OrderType,
     /// The order time in force.
     pub time_in_force: TimeInForce,
-    /// The current order status (`SUBMITTED/ACCEPTED/PENDING_CANCEL/PENDING_UPDATE/PARTIALLY_FILLED`).
+    /// The current order status.
     pub status: OrderStatus,
     /// UNIX timestamp (nanoseconds) when the last order event occurred for this order.
     pub ts_last: UnixNanos,
@@ -89,7 +89,7 @@ impl OwnBookOrder {
         trader_id: TraderId,
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
-        side: OrderSideSpecified,
+        side: OrderSide,
         price: Price,
         size: Quantity,
         order_type: OrderType,
@@ -133,8 +133,8 @@ impl OwnBookOrder {
     #[must_use]
     pub fn signed_size(&self) -> f64 {
         match self.side {
-            OrderSideSpecified::Buy => self.size.as_f64(),
-            OrderSideSpecified::Sell => -(self.size.as_f64()),
+            OrderSide::Buy => self.size.as_f64(),
+            OrderSide::Sell => -(self.size.as_f64()),
         }
     }
 }
@@ -211,7 +211,7 @@ impl Display for OwnBookOrder {
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -255,8 +255,8 @@ impl OwnOrderBook {
             instrument_id,
             ts_last: UnixNanos::default(),
             update_count: 0,
-            bids: OwnBookLadder::new(OrderSideSpecified::Buy),
-            asks: OwnBookLadder::new(OrderSideSpecified::Sell),
+            bids: OwnBookLadder::new(OrderSide::Buy),
+            asks: OwnBookLadder::new(OrderSide::Sell),
         }
     }
 
@@ -273,24 +273,25 @@ impl OwnOrderBook {
         self.update_count = 0;
     }
 
-    /// Adds an own order to the book.
+    /// Adds an own order to its side of the book, replacing any order there with the same client
+    /// order ID.
     pub fn add(&mut self, order: OwnBookOrder) {
         self.increment(&order);
         match order.side {
-            OrderSideSpecified::Buy => self.bids.add(order),
-            OrderSideSpecified::Sell => self.asks.add(order),
+            OrderSide::Buy => self.bids.add(order),
+            OrderSide::Sell => self.asks.add(order),
         }
     }
 
-    /// Updates an existing own order in the book.
+    /// Updates an existing own order in the book, removing it if the size becomes zero.
     ///
     /// # Errors
     ///
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         let result = match order.side {
-            OrderSideSpecified::Buy => self.bids.update(order),
-            OrderSideSpecified::Sell => self.asks.update(order),
+            OrderSide::Buy => self.bids.update(order),
+            OrderSide::Sell => self.asks.update(order),
         };
 
         if result.is_ok() {
@@ -307,8 +308,8 @@ impl OwnOrderBook {
     /// Returns an error if the order is not found.
     pub fn delete(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         let result = match order.side {
-            OrderSideSpecified::Buy => self.bids.delete(order),
-            OrderSideSpecified::Sell => self.asks.delete(order),
+            OrderSide::Buy => self.bids.delete(order),
+            OrderSide::Sell => self.asks.delete(order),
         };
 
         if result.is_ok() {
@@ -475,8 +476,7 @@ impl OwnOrderBook {
     ///
     /// # Errors
     ///
-    /// Returns [`BookViewError::OppositeInstrumentMatch`] if `self` and `opposite` have the
-    /// same instrument ID.
+    /// Returns an error if `self` and `opposite` have the same instrument ID.
     pub fn combined_with_opposite(&self, opposite: &Self) -> Result<Self, BookViewError> {
         if self.instrument_id == opposite.instrument_id {
             return Err(BookViewError::OppositeInstrumentMatch(
@@ -489,13 +489,13 @@ impl OwnOrderBook {
 
         for level in opposite.asks() {
             for order in level.iter() {
-                combined.add(transform_opposite_order(*order, OrderSideSpecified::Buy));
+                combined.add(transform_opposite_order(*order, OrderSide::Buy));
             }
         }
 
         for level in opposite.bids() {
             for order in level.iter() {
-                combined.add(transform_opposite_order(*order, OrderSideSpecified::Sell));
+                combined.add(transform_opposite_order(*order, OrderSide::Sell));
             }
         }
 
@@ -530,14 +530,14 @@ impl OwnOrderBook {
             .collect();
 
         for client_order_id in bids_to_remove {
-            log_audit_error(&client_order_id);
+            log_audit_removal(&client_order_id);
             if let Err(e) = self.bids.remove(&client_order_id) {
                 log::error!("{e}");
             }
         }
 
         for client_order_id in asks_to_remove {
-            log_audit_error(&client_order_id);
+            log_audit_removal(&client_order_id);
             if let Err(e) = self.asks.remove(&client_order_id) {
                 log::error!("{e}");
             }
@@ -545,13 +545,11 @@ impl OwnOrderBook {
     }
 }
 
-fn log_audit_error(client_order_id: &ClientOrderId) {
-    log::error!(
-        "Audit error - {client_order_id} cached order already closed, deleting from own book"
-    );
+fn log_audit_removal(client_order_id: &ClientOrderId) {
+    log::warn!("Audit removing {client_order_id} from own book, absent from valid order IDs");
 }
 
-fn transform_opposite_order(order: OwnBookOrder, side: OrderSideSpecified) -> OwnBookOrder {
+fn transform_opposite_order(order: OwnBookOrder, side: OrderSide) -> OwnBookOrder {
     let parity_price = Price::from_decimal(Decimal::ONE - order.price.as_decimal())
         .expect("Invalid parity transformed price for OwnOrderBook::combined_with_opposite");
 
@@ -619,7 +617,7 @@ fn filter_orders<'a>(
                     ts_now.is_none_or(|ts_now| {
                         order
                             .ts_accepted
-                            .checked_add(accepted_buffer_ns)
+                            .checked_add(DurationNanos::new(accepted_buffer_ns))
                             .is_some_and(|eligible_at| eligible_at.as_u64() <= ts_now)
                     })
                 })
@@ -682,15 +680,13 @@ fn sum_order_sizes<'a, I>(orders: I) -> Decimal
 where
     I: Iterator<Item = &'a OwnBookOrder>,
 {
-    orders.fold(Decimal::ZERO, |total, order| {
-        total + order.size.as_decimal()
-    })
+    orders.map(|order| order.size.as_decimal()).sum()
 }
 
 /// Represents a ladder of price levels for one side of an order book.
 #[derive(Clone)]
 pub(crate) struct OwnBookLadder {
-    pub side: OrderSideSpecified,
+    pub side: OrderSide,
     pub levels: BTreeMap<BookPrice, OwnBookLevel>,
     pub cache: IndexMap<ClientOrderId, BookPrice>,
 }
@@ -698,7 +694,7 @@ pub(crate) struct OwnBookLadder {
 impl OwnBookLadder {
     /// Creates a new [`OwnBookLadder`] instance.
     #[must_use]
-    pub(crate) fn new(side: OrderSideSpecified) -> Self {
+    pub(crate) fn new(side: OrderSide) -> Self {
         Self {
             side,
             levels: BTreeMap::new(),
@@ -727,8 +723,21 @@ impl OwnBookLadder {
     }
 
     /// Adds an order to the ladder at its price level.
+    ///
+    /// Re-adding a client order ID at a different price moves the order to the new level's
+    /// FIFO tail, so each ID lives at exactly one level.
     pub(crate) fn add(&mut self, order: OwnBookOrder) {
         let book_price = order.to_book_price();
+
+        if self
+            .cache
+            .get(&order.client_order_id)
+            .is_some_and(|price| *price != book_price)
+            && let Err(e) = self.remove(&order.client_order_id)
+        {
+            log::error!("{e}");
+        }
+
         self.cache.insert(order.client_order_id, book_price);
 
         if let Some(level) = self.levels.get_mut(&book_price) {
@@ -740,6 +749,7 @@ impl OwnBookLadder {
     }
 
     /// Updates an existing order in the ladder, moving it to a new price level if needed.
+    /// Removes the order if the size becomes zero.
     ///
     /// # Errors
     ///
@@ -777,7 +787,10 @@ impl OwnBookLadder {
             self.levels.remove(&price);
         }
 
-        self.add(order);
+        if !order.size.is_zero() {
+            self.add(order);
+        }
+
         Ok(())
     }
 
@@ -837,10 +850,7 @@ impl OwnBookLadder {
     #[must_use]
     #[allow(dead_code)]
     pub(crate) fn top(&self) -> Option<&OwnBookLevel> {
-        match self.levels.iter().next() {
-            Some((_, l)) => Option::Some(l),
-            None => Option::None,
-        }
+        self.levels.values().next()
     }
 }
 
@@ -923,21 +933,24 @@ impl OwnBookLevel {
     /// Returns the total size of all orders at this price level as a float.
     #[must_use]
     pub fn size(&self) -> f64 {
-        self.orders.iter().map(|(_, o)| o.size.as_f64()).sum()
+        self.orders.values().map(|order| order.size.as_f64()).sum()
     }
 
     /// Returns the total size of all orders at this price level as a decimal.
     #[must_use]
     pub fn size_decimal(&self) -> Decimal {
-        self.orders.iter().map(|(_, o)| o.size.as_decimal()).sum()
+        self.orders
+            .values()
+            .map(|order| order.size.as_decimal())
+            .sum()
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as a float.
     #[must_use]
     pub fn exposure(&self) -> f64 {
         self.orders
-            .iter()
-            .map(|(_, o)| o.price.as_f64() * o.size.as_f64())
+            .values()
+            .map(|order| order.price.as_f64() * order.size.as_f64())
             .sum()
     }
 
@@ -1003,9 +1016,15 @@ impl Ord for OwnBookLevel {
     }
 }
 
+/// Returns whether an order belongs in an own order book.
+///
+/// An eligible order has a price, does not use `IOC` or `FOK` time in force, is not held by the
+/// order emulator, and has a base-denominated quantity. Emulated orders never rest in the public
+/// book, and a quote-quantity order becomes eligible once an update converts it to base units.
 #[must_use]
 pub fn should_handle_own_book_order(order: &OrderAny) -> bool {
     order.has_price()
-        && order.time_in_force() != TimeInForce::Ioc
-        && order.time_in_force() != TimeInForce::Fok
+        && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
+        && order.emulation_trigger().is_none()
+        && !order.is_quote_quantity()
 }

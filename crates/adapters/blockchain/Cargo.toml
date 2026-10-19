@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-blockchain"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -55,20 +54,22 @@ nautilus-core = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
 nautilus-live = { workspace = true, features = ["defi"] }
 nautilus-model = { workspace = true, features = ["defi"] }
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["contract", "signer-local"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 dotenvy = { workspace = true }
 enum_dispatch = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -79,6 +80,7 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 ustr = { workspace = true }
+zeroize = { workspace = true }
 
 hypersync-client = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
@@ -86,12 +88,16 @@ pyo3-stub-gen = { workspace = true, optional = true }
 turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
+
+axum = { workspace = true }
 rstest = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 turmoil = { workspace = true }
 
 [[bin]]
-name = "node_wallet"
+name = "node-wallet"
 path = "bin/node_wallet.rs"
 required-features = ["hypersync"]
 doc = false
@@ -102,8 +108,3 @@ name = "blockchain-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["hypersync"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python", "hypersync"]

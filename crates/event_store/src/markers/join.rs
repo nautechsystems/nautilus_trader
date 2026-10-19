@@ -50,9 +50,9 @@ pub struct JoinedStream {
 ///
 /// # Errors
 ///
-/// Returns [`EventStoreError`] when marker cursor folding fails, when a folded slot has no
-/// dictionary entry, when `count` does not fit in memory on this platform, or when the catalog
-/// fails while planning or loading a replayable slice.
+/// Returns an error if marker cursor folding fails, when a folded slot has no dictionary entry,
+/// when `count` does not fit in memory on this platform, or when the catalog fails while planning
+/// or loading a replayable slice.
 pub fn join_at_entry<C>(
     reader: &MarkerReader,
     catalog: &mut C,
@@ -152,7 +152,7 @@ fn replayable_data_class(data_cls: DataClass) -> Option<&'static str> {
         DataClass::Quote => Some("quotes"),
         DataClass::Trade => Some("trades"),
         DataClass::Bar => Some("bars"),
-        DataClass::BookDeltas | DataClass::BookDepth10 => None,
+        DataClass::BookDeltas | DataClass::BookDepth => None,
     }
 }
 
@@ -330,7 +330,7 @@ mod tests {
 
     #[rstest]
     #[case::deltas(DataClass::BookDeltas)]
-    #[case::depth10(DataClass::BookDepth10)]
+    #[case::depth(DataClass::BookDepth)]
     fn order_book_streams_resolve_order_only(#[case] data_cls: DataClass) {
         let order_book = dict(0, data_cls, "AUD/USD.SIM");
         let reader = reader_with(
@@ -593,7 +593,7 @@ mod tests {
             instrument_id,
             Price::from("1.0001"),
             Quantity::from("100"),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::from("T-1"),
             UnixNanos::from(ts_init),
             UnixNanos::from(ts_init),

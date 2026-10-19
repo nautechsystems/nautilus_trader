@@ -33,12 +33,12 @@ fn separate_with(s: &str, sep: char) -> String {
         result.push('-');
     }
 
-    let chars: Vec<char> = int_part.chars().collect();
-    for (i, c) in chars.iter().enumerate() {
-        if i > 0 && (chars.len() - i).is_multiple_of(3) {
+    let char_count = int_part.chars().count();
+    for (i, c) in int_part.chars().enumerate() {
+        if i > 0 && (char_count - i).is_multiple_of(3) {
             result.push(sep);
         }
-        result.push(*c);
+        result.push(c);
     }
 
     if let Some(dec) = dec_part {
@@ -101,6 +101,7 @@ impl Separable for &str {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -137,5 +138,22 @@ mod tests {
     fn test_string() {
         assert_eq!("1234567".separate_with_commas(), "1,234,567");
         assert_eq!("1234.5678".separate_with_underscores(), "1_234.5678");
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_grouping_preserves_unicode_scalars(input in "[^.\\-]{0,128}") {
+            let chars: Vec<char> = input.chars().collect();
+            let mut expected = String::new();
+
+            for (i, ch) in chars.iter().enumerate() {
+                if i > 0 && (chars.len() - i).is_multiple_of(3) {
+                    expected.push(',');
+                }
+                expected.push(*ch);
+            }
+
+            prop_assert_eq!(input.separate_with_commas(), expected);
+        }
     }
 }

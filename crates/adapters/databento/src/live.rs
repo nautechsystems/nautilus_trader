@@ -38,15 +38,16 @@ use std::{
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
-    dbn::{self, PitSymbolMap, Record, SymbolIndex},
+    dbn::{self, PitSymbolMap, SymbolIndex},
     live::Subscription,
 };
 use indexmap::IndexMap;
 use nautilus_core::{
-    AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
+    AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
+    data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas},
     enums::RecordFlag,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -90,7 +91,7 @@ pub enum DatabentoMessage {
 
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
+    pyo3::pyclass(module = "nautilus_trader.adapters.databento")
 )]
 #[cfg_attr(
     feature = "python",
@@ -566,7 +567,7 @@ impl DatabentoFeedHandler {
         let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
         let gateway_addr = self.gateway_addr.clone();
-        let api_key = self.credential.api_key().to_owned();
+        let api_key = SecretString::from(self.credential.api_key().to_owned());
         let dataset = self.dataset.clone();
 
         let result = tokio::time::timeout(timeout, async move {
@@ -577,7 +578,7 @@ impl DatabentoFeedHandler {
                 base
             };
             base.user_agent_extension(NAUTILUS_USER_AGENT.into())
-                .key(api_key)?
+                .key(api_key.expose_secret().to_owned())?
                 .dataset(dataset)
                 .build()
                 .await
@@ -637,6 +638,9 @@ impl DatabentoFeedHandler {
                 self.subscriptions.len()
             );
 
+            // Anchors remain only when the first connection failed, so this session replays
+            let replay = self.subscriptions.iter().any(|sub| sub.start.is_some());
+
             for sub in self.subscriptions.clone() {
                 client.subscribe(sub).await?;
             }
@@ -644,6 +648,8 @@ impl DatabentoFeedHandler {
             for sub in &mut self.subscriptions {
                 sub.start = None;
             }
+
+            buffering_start = replay.then(|| clock.get_time_ns());
             client.start().await?;
             running = true;
             log::info!("Resubscription complete");
@@ -886,7 +892,7 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
-                    if let Some(Data::Delta(delta)) = &data1 {
+                    if let Some(Data::BookDelta(delta)) = &data1 {
                         initialized_books.insert(delta.instrument_id);
 
                         log::trace!(
@@ -901,7 +907,7 @@ impl DatabentoFeedHandler {
                             &mut buffering_start,
                             &mut buffered_deltas,
                         ) {
-                            Some(deltas) => data1 = Some(Data::Deltas(deltas)),
+                            Some(deltas) => data1 = Some(Data::BookDeltas(Box::new(deltas))),
                             None => continue,
                         }
                     } else {
@@ -926,10 +932,15 @@ impl DatabentoFeedHandler {
                             &mut buffering_start,
                             &mut buffered_deltas,
                         ) {
-                            self.send_msg(DatabentoMessage::Data(Data::Deltas(deltas)));
+                            self.send_msg(DatabentoMessage::Data(Data::BookDeltas(Box::new(
+                                deltas,
+                            ))));
                         }
 
-                        continue;
+                        // Replayed trades stay out of the live stream
+                        if buffering_start.is_some_and(|start| msg.ts_recv <= start) {
+                            continue;
+                        }
                     }
                 }
 
@@ -949,7 +960,7 @@ impl DatabentoFeedHandler {
         log::trace!("Sending {msg:?}");
         match self.msg_tx.send(msg) {
             Ok(()) => {}
-            Err(e) => log::error!("Error sending message: {e}"),
+            Err(e) => log::debug!("Error sending message: {e}"),
         }
     }
 
@@ -1005,10 +1016,9 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
 fn parse_ack_message(message: &str) -> String {
     // Format: "Subscription request N for <schema> data succeeded"
     message
-        .strip_prefix("Subscription request ")
+        .strip_circumfix("Subscription request ", " data succeeded")
         .and_then(|rest| rest.split_once(" for "))
-        .and_then(|(_, after_num)| after_num.strip_suffix(" data succeeded"))
-        .map(|schema| schema.trim().to_string())
+        .map(|(_, schema)| schema.trim().to_string())
         .unwrap_or_default()
 }
 
@@ -1025,7 +1035,7 @@ fn handle_symbol_mapping_msg(
     symbol_map
         .on_symbol_mapping(msg)
         .map_err(|e| anyhow::anyhow!("on_symbol_mapping failed for {msg:?}: {e}"))?;
-    instrument_id_map.remove(&msg.header().instrument_id);
+    instrument_id_map.remove(&msg.hd.instrument_id);
     Ok(())
 }
 
@@ -1320,7 +1330,7 @@ fn process_mbo_delta(
     flags: u8,
     buffering_start: &mut Option<UnixNanos>,
     buffered_deltas: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
-) -> Option<OrderBookDeltas_API> {
+) -> Option<OrderBookDeltas> {
     let is_last = RecordFlag::F_LAST.matches(flags);
     let is_snapshot = RecordFlag::F_SNAPSHOT.matches(flags);
 
@@ -1331,7 +1341,7 @@ fn process_mbo_delta(
         && !buffered_deltas.contains_key(&delta.instrument_id)
     {
         let deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
-        return Some(OrderBookDeltas_API::new(deltas));
+        return Some(deltas);
     }
 
     let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
@@ -1363,7 +1373,7 @@ fn flush_mbo_event_boundary(
     flags: u8,
     buffering_start: &mut Option<UnixNanos>,
     buffered_deltas: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
-) -> Option<OrderBookDeltas_API> {
+) -> Option<OrderBookDeltas> {
     if !RecordFlag::F_LAST.matches(flags) || RecordFlag::F_SNAPSHOT.matches(flags) {
         return None;
     }
@@ -1383,7 +1393,7 @@ fn flush_mbo_event_boundary(
 
     let buffer = buffered_deltas.remove(&instrument_id)?;
     let deltas = OrderBookDeltas::new(instrument_id, buffer);
-    Some(OrderBookDeltas_API::new(deltas))
+    Some(deltas)
 }
 
 #[cfg(test)]

@@ -1,8 +1,8 @@
 # Tokenized Asset
 
-`TokenizedAsset` represents a spot-like token that tracks another asset on a crypto venue.
-Use it for tokenized equities, tokenized funds, or similar instruments where the trading
-venue exposes a token but the economic reference is an external asset.
+`TokenizedAsset` represents a spot-like token that tracks another asset on a crypto venue. Use it for
+tokenized equities, tokenized funds, or similar instruments. In these instruments, the trading venue exposes a
+token whose economic reference is an external asset.
 
 Examples include tokenized stock or ETF symbols on crypto venues.
 
@@ -32,12 +32,10 @@ Examples include tokenized stock or ETF symbols on crypto venues.
 | `min_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`    | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -56,7 +54,6 @@ use nautilus_model::{
     instruments::TokenizedAsset,
     types::{Currency, Price, Quantity},
 };
-use rust_decimal_macros::dec;
 
 let aaplx = TokenizedAsset::builder()
     .instrument_id(InstrumentId::from("AAPLx/USD.KRAKEN"))
@@ -69,8 +66,6 @@ let aaplx = TokenizedAsset::builder()
     .price_increment(Price::from("0.01"))
     .size_increment(Quantity::from("0.0001"))
     .min_quantity(Quantity::from("0.0001"))
-    .maker_fee(dec!(-0.0002))
-    .taker_fee(dec!(0.001))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -78,8 +73,6 @@ let aaplx = TokenizedAsset::builder()
 ```
 
 ```python tab="Python"
-from decimal import Decimal
-
 from nautilus_trader.model import AssetClass
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
@@ -101,16 +94,13 @@ aaplx = TokenizedAsset(
     ts_event=0,
     ts_init=0,
     min_quantity=Quantity.from_str("0.0001"),
-    maker_fee=Decimal("-0.0002"),
-    taker_fee=Decimal("0.001"),
 )
 ```
 
 ## Adapters
 
-Representative adapters that create or consume `TokenizedAsset` instruments include:
-
-- [Kraken](../../integrations/kraken.md) for tokenized assets where the venue exposes them.
+The [Kraken](../../integrations/kraken.md) adapter creates or consumes
+`TokenizedAsset` instruments for tokenized assets where the venue exposes them.
 
 ## Related guides
 

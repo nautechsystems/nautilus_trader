@@ -20,7 +20,6 @@ use nautilus_core::{
     correctness::{CorrectnessError, CorrectnessResultExt, FAILED},
     hex,
 };
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString};
 
@@ -263,55 +262,41 @@ impl TryFrom<&Pool> for CurrencyPair {
     type Error = CorrectnessError;
 
     fn try_from(p: &Pool) -> Result<Self, Self::Error> {
-        let size_precision = p.token0.decimals.min(FIXED_PRECISION);
-        let price_precision = p.token1.decimals.min(FIXED_PRECISION);
+        let base_token = p.get_base_token();
+        let quote_token = p.get_quote_token();
+        let size_precision = base_token.decimals.min(FIXED_PRECISION);
+        let price_precision = quote_token.decimals.min(FIXED_PRECISION);
 
         let price_increment =
             Price::from_mantissa_exponent(1, -price_precision.cast_signed(), price_precision);
         let size_increment =
             Quantity::from_mantissa_exponent(1, -size_precision.cast_signed(), size_precision);
         let base_currency = Currency::new_checked(
-            p.token0.symbol.as_str(),
+            base_token.symbol.as_str(),
             size_precision,
             0,
-            p.token0.name.as_str(),
+            base_token.name.as_str(),
             CurrencyType::Crypto,
         )?;
         let quote_currency = Currency::new_checked(
-            p.token1.symbol.as_str(),
+            quote_token.symbol.as_str(),
             price_precision,
             0,
-            p.token1.name.as_str(),
+            quote_token.name.as_str(),
             CurrencyType::Crypto,
         )?;
-        let taker_fee = p.fee.map(|fee| Decimal::new(i64::from(fee), 6));
-
-        let pair = Self::new_checked(
-            p.instrument_id,
-            p.instrument_id.symbol,
-            base_currency,
-            quote_currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            None, // multiplier
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            taker_fee,
-            None, // tick_scheme
-            None, // info
-            p.ts_event,
-            p.ts_init,
-        )?;
+        let pair = Self::builder()
+            .instrument_id(p.instrument_id)
+            .raw_symbol(p.instrument_id.symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(p.ts_event)
+            .ts_init(p.ts_init)
+            .build()?;
 
         for currency in [base_currency, quote_currency] {
             if let Err(e) = Currency::register(currency, false) {
@@ -342,13 +327,12 @@ impl From<Pool> for InstrumentAny {
 mod tests {
     use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
-    use rust_decimal::Decimal;
 
     use super::{CurrencyPair, DexType};
     use crate::{
         defi::{SharedPool, stubs::rain_pool},
         enums::CurrencyType,
-        types::{currency::Currency, fixed::FIXED_PRECISION},
+        types::{Price, Quantity, currency::Currency, fixed::FIXED_PRECISION},
     };
 
     #[rstest]
@@ -459,7 +443,6 @@ mod tests {
         pool.token1.decimals = price_precision;
 
         let expected_id = pool.instrument_id;
-        let expected_taker_fee = pool.fee.map(|fee| Decimal::new(i64::from(fee), 6));
         let expected_ts_event = pool.ts_event;
         let expected_ts_init = pool.ts_init;
         let pair = CurrencyPair::from(pool);
@@ -468,20 +451,46 @@ mod tests {
 
         assert_eq!(pair.id, expected_id);
         assert_eq!(pair.raw_symbol, expected_id.symbol);
-        assert_eq!(pair.base_currency.code.as_str(), "BTC");
+        assert_eq!(pair.base_currency.code, "BTC");
         assert_eq!(pair.base_currency.precision, expected_size_precision);
-        assert_eq!(pair.quote_currency.code.as_str(), "USDC");
+        assert_eq!(pair.quote_currency.code, "USDC");
         assert_eq!(pair.quote_currency.precision, expected_price_precision);
         assert_eq!(pair.price_precision, expected_price_precision);
         assert_eq!(pair.size_precision, expected_size_precision);
-        assert_eq!(pair.price_increment.raw, 10_i128.pow(price_scale_exponent));
+        assert_eq!(
+            pair.price_increment.raw(),
+            10_i128.pow(price_scale_exponent)
+        );
         assert_eq!(pair.price_increment.precision, expected_price_precision);
-        assert_eq!(pair.size_increment.raw, 10_u128.pow(size_scale_exponent));
+        assert_eq!(pair.size_increment.raw(), 10_u128.pow(size_scale_exponent));
         assert_eq!(pair.size_increment.precision, expected_size_precision);
-        assert_eq!(pair.maker_fee, Decimal::ZERO);
-        assert_eq!(pair.taker_fee, expected_taker_fee.unwrap());
         assert_eq!(pair.ts_event, expected_ts_event);
         assert_eq!(pair.ts_init, expected_ts_init);
+    }
+
+    #[rstest]
+    fn test_pool_to_currency_pair_orients_inverted_pool_by_token_priority(rain_pool: SharedPool) {
+        let mut pool = (*rain_pool).clone();
+        pool.token0.symbol = "USDC".to_string();
+        pool.token0.name = "USD Coin".to_string();
+        pool.token0.decimals = 6;
+        pool.token1.symbol = "WETH".to_string();
+        pool.token1.name = "Wrapped Ether".to_string();
+        pool.token1.decimals = 8;
+        assert!(pool.is_base_quote_inverted());
+
+        let pair = CurrencyPair::from(pool);
+
+        assert_eq!(pair.base_currency.code, "WETH");
+        assert_eq!(pair.base_currency.name, "Wrapped Ether");
+        assert_eq!(pair.base_currency.precision, 8);
+        assert_eq!(pair.quote_currency.code, "USDC");
+        assert_eq!(pair.quote_currency.name, "USD Coin");
+        assert_eq!(pair.quote_currency.precision, 6);
+        assert_eq!(pair.size_precision, 8);
+        assert_eq!(pair.price_precision, 6);
+        assert_eq!(pair.size_increment, Quantity::from("0.00000001"));
+        assert_eq!(pair.price_increment, Price::from("0.000001"));
     }
 
     #[rstest]
@@ -498,15 +507,15 @@ mod tests {
 
         let base = Currency::try_from_str("ENG444BASE").unwrap();
         let quote = Currency::try_from_str("ENG444QUOTE").unwrap();
-        assert_eq!(base.code.as_str(), "ENG444BASE");
+        assert_eq!(base.code, "ENG444BASE");
         assert_eq!(base.precision, 8);
         assert_eq!(base.iso4217, 0);
-        assert_eq!(base.name.as_str(), "ENG-444 Base Token");
+        assert_eq!(base.name, "ENG-444 Base Token");
         assert_eq!(base.currency_type, CurrencyType::Crypto);
-        assert_eq!(quote.code.as_str(), "ENG444QUOTE");
+        assert_eq!(quote.code, "ENG444QUOTE");
         assert_eq!(quote.precision, 6);
         assert_eq!(quote.iso4217, 0);
-        assert_eq!(quote.name.as_str(), "ENG-444 Quote Token");
+        assert_eq!(quote.name, "ENG-444 Quote Token");
         assert_eq!(quote.currency_type, CurrencyType::Crypto);
     }
 

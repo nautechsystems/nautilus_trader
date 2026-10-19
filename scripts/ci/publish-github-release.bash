@@ -33,8 +33,9 @@ retry_gh() {
   for i in $(seq 1 "$publish_attempts"); do
     if "$@"; then
       return 0
+    else
+      status=$?
     fi
-    status=$?
 
     echo "${description} failed (exit=${status}), retry (${i}/${publish_attempts})" >&2
     sleep $((2 ** i))

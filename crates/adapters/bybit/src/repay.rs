@@ -178,7 +178,7 @@ async fn repay_coin(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use axum::{
         Json, Router,
@@ -188,6 +188,7 @@ mod tests {
         routing::{get, post},
     };
     use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+    use parking_lot::Mutex;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -273,7 +274,7 @@ mod tests {
 
     async fn handle_repay(State(state): State<MockVenue>, body: axum::body::Bytes) -> Response {
         let params: Value = serde_json::from_slice(&body).expect("valid repay body");
-        state.repay_bodies.lock().unwrap().push(params);
+        state.repay_bodies.lock().push(params);
         repay_response(state.result_status)
     }
 
@@ -282,7 +283,7 @@ mod tests {
         body: axum::body::Bytes,
     ) -> Response {
         let params: Value = serde_json::from_slice(&body).expect("valid repay body");
-        state.no_convert_repay_bodies.lock().unwrap().push(params);
+        state.no_convert_repay_bodies.lock().push(params);
         repay_response(state.result_status)
     }
 
@@ -322,7 +323,7 @@ mod tests {
     }
 
     fn single_repay_amount(bodies: &RepayBodies, coin: &str) -> Decimal {
-        let bodies = bodies.lock().unwrap();
+        let bodies = bodies.lock();
         assert_eq!(bodies.len(), 1, "Expected exactly one repay request");
 
         let body = &bodies[0];
@@ -373,7 +374,7 @@ mod tests {
         let outcome = repay_coin(&client, request).await.unwrap();
 
         assert_eq!(outcome, RepayOutcome::Repaid);
-        assert!(repay_bodies.lock().unwrap().is_empty());
+        assert!(repay_bodies.lock().is_empty());
         assert_eq!(
             single_repay_amount(&no_convert_repay_bodies, "MNT"),
             dec!(0.9985)
@@ -410,7 +411,7 @@ mod tests {
 
         assert_eq!(outcome, RepayOutcome::Skipped);
         assert!(
-            repay_bodies.lock().unwrap().is_empty(),
+            repay_bodies.lock().is_empty(),
             "Should not repay an outstanding borrow of {outstanding}"
         );
     }
@@ -425,7 +426,7 @@ mod tests {
 
         assert!(result.is_err());
         assert!(
-            repay_bodies.lock().unwrap().is_empty(),
+            repay_bodies.lock().is_empty(),
             "Should not repay when the borrow amount is unknown"
         );
     }

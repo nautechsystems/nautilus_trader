@@ -1,0 +1,62 @@
+{
+  "quotes": [
+    {
+      "type": "QuoteTick",
+      "instrument_id": "AUD/USD.SIM",
+      "bid_price": "1.23456",
+      "ask_price": "1.23478",
+      "bid_size": "123.000001",
+      "ask_size": "456.000002",
+      "ts_event": 1700000000000000123,
+      "ts_init": 1700000000000000124
+    },
+    {
+      "type": "QuoteTick",
+      "instrument_id": "AUD/USD.SIM",
+      "bid_price": "1.34567",
+      "ask_price": "1.34589",
+      "bid_size": "789.000003",
+      "ask_size": "987.000004",
+      "ts_event": 1700000000000000125,
+      "ts_init": 1700000000000000126
+    }
+  ],
+  "instrument": {
+    "type": "CurrencyPair",
+    "id": "AUD/USD.SIM",
+    "raw_symbol": "AUD/USD",
+    "base_currency": "AUD",
+    "quote_currency": "USD",
+    "price_precision": 5,
+    "price_increment": "0.00001",
+    "size_precision": 0,
+    "size_increment": "1",
+    "multiplier": "1",
+    "lot_size": "1000",
+    "max_quantity": "10000000",
+    "min_quantity": "1000",
+    "max_notional": "50000000.00 USD",
+    "min_notional": "1000.00 USD",
+    "max_price": null,
+    "min_price": null,
+    "margin_init": "0.03",
+    "margin_maint": "0.03",
+    "maker_fee": "0.00002",
+    "taker_fee": "0.00002",
+    "ts_event": 1700000000000000133,
+    "ts_init": 1700000000000000134,
+    "tick_scheme_name": null,
+    "info": null
+  },
+  "custom": {
+    "type": "BinanceFuturesMarkPriceUpdate",
+    "instrument_id": "AUD/USD.SIM",
+    "mark": "1.45678",
+    "index": "1.56789",
+    "estimated_settle": "1.67890",
+    "funding_rate": "0.00012345",
+    "next_funding_ns": 1700000000000000223,
+    "ts_event": 1700000000000000143,
+    "ts_init": 1700000000000000144
+  }
+}

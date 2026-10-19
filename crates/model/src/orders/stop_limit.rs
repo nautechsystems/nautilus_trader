@@ -44,7 +44,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -411,6 +411,10 @@ impl Order for StopLimitOrder {
         self.voided_qty
     }
 
+    fn non_reopened_voided_qty(&self) -> Quantity {
+        self.non_reopened_voided_qty
+    }
+
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
     }
@@ -468,7 +472,10 @@ impl Order for StopLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let updates_slippage = matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_),
+        );
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
             Some(event.ts_event())
@@ -487,7 +494,7 @@ impl Order for StopLimitOrder {
             self.ts_triggered = ts_event;
         }
 
-        if is_order_filled {
+        if updates_slippage {
             self.core.set_slippage(self.price);
         }
 
@@ -503,8 +510,7 @@ impl Order for StopLimitOrder {
             self.trigger_price = trigger_price;
         }
 
-        self.quantity = event.quantity;
-        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
+        self.core.apply_updated_quantity(event.quantity);
     }
 
     fn is_triggered(&self) -> Option<bool> {
@@ -622,7 +628,7 @@ impl Display for StopLimitOrder {
                 .map_or("None".to_string(), |position_id| format!("{position_id}")),
             self.tags.clone().map_or("None".to_string(), |tags| tags
                 .iter()
-                .map(|s| s.to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<String>>()
                 .join(", ")),
         )
@@ -636,7 +642,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderSide, TimeInForce, TriggerType},
+        enums::{OrderSide, PositionSide, TimeInForce, TriggerType},
         events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},

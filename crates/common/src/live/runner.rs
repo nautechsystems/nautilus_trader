@@ -15,19 +15,27 @@
 
 //! Tokio-based channel senders for live trading runtime.
 //!
-//! This module provides thread-local storage for tokio mpsc channels used in live trading.
+//! Stores channel senders for the current runtime thread.
+//!
+//! Data and execution event setters accept either a runtime-bound [`EventSender`] or a plain
+//! Tokio sender. Plain senders carry no callback context. Getters and clones preserve the
+//! installed mode and owner; moving a runtime-bound sender to another thread makes its sends
+//! independent ingress.
 
 use std::cell::RefCell;
 
-use crate::messages::{DataEvent, ExecutionEvent};
+use crate::{
+    live::sender::{DispatchSender, EventSender},
+    messages::{DataEvent, ExecutionEvent, SystemCommand, SystemEvent},
+};
 
-/// Gets the global data event sender.
+/// Gets the thread-local data event sender.
 ///
 /// # Panics
 ///
 /// Panics if the sender is uninitialized.
 #[must_use]
-pub fn get_data_event_sender() -> tokio::sync::mpsc::UnboundedSender<DataEvent> {
+pub fn get_data_event_sender() -> EventSender<DataEvent> {
     DATA_EVENT_SENDER.with(|sender| {
         sender
             .borrow()
@@ -37,23 +45,24 @@ pub fn get_data_event_sender() -> tokio::sync::mpsc::UnboundedSender<DataEvent> 
     })
 }
 
-/// Attempts to get the global data event sender without panicking.
+/// Attempts to get the thread-local data event sender without panicking.
 ///
 /// Returns `None` if the sender is not initialized (e.g., in Python/v1 bridge environments
 /// before a runner or adapter bridge has registered a sender).
 #[must_use]
-pub fn try_get_data_event_sender() -> Option<tokio::sync::mpsc::UnboundedSender<DataEvent>> {
+pub fn try_get_data_event_sender() -> Option<EventSender<DataEvent>> {
     DATA_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
-/// Sets the global data event sender.
+/// Sets the thread-local data event sender.
 ///
 /// Can only be called once per thread.
 ///
 /// # Panics
 ///
 /// Panics if a sender has already been set.
-pub fn set_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEvent>) {
+pub fn set_data_event_sender(sender: impl Into<EventSender<DataEvent>>) {
+    let sender = sender.into();
     DATA_EVENT_SENDER.with(|s| {
         let mut slot = s.borrow_mut();
         assert!(slot.is_none(), "Data event sender can only be set once");
@@ -61,20 +70,117 @@ pub fn set_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEven
     });
 }
 
-/// Replaces the global data event sender for the current thread.
-pub fn replace_data_event_sender(sender: tokio::sync::mpsc::UnboundedSender<DataEvent>) {
+/// Replaces the data event sender for the current thread.
+pub fn replace_data_event_sender(sender: impl Into<EventSender<DataEvent>>) {
+    let sender = sender.into();
     DATA_EVENT_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
 }
 
-/// Gets the global execution event sender.
+/// Gets the thread-local system event sender.
 ///
 /// # Panics
 ///
 /// Panics if the sender is uninitialized.
 #[must_use]
-pub fn get_exec_event_sender() -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent> {
+pub fn get_system_event_sender() -> EventSender<SystemEvent> {
+    SYSTEM_EVENT_SENDER.with(|sender| {
+        sender
+            .borrow()
+            .as_ref()
+            .expect("System event sender should be initialized by runner")
+            .clone()
+    })
+}
+
+/// Attempts to get the thread-local system event sender without panicking.
+///
+/// Returns `None` if the sender is not initialized (e.g., in test environments).
+#[must_use]
+pub fn try_get_system_event_sender() -> Option<EventSender<SystemEvent>> {
+    SYSTEM_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
+}
+
+/// Sets the thread-local system event sender.
+///
+/// Can only be called once per thread.
+///
+/// # Panics
+///
+/// Panics if a sender has already been set.
+pub fn set_system_event_sender(sender: impl Into<EventSender<SystemEvent>>) {
+    let sender = sender.into();
+    SYSTEM_EVENT_SENDER.with(|s| {
+        let mut slot = s.borrow_mut();
+        assert!(slot.is_none(), "System event sender can only be set once");
+        *slot = Some(sender);
+    });
+}
+
+/// Replaces the system event sender for the current thread.
+pub fn replace_system_event_sender(sender: impl Into<EventSender<SystemEvent>>) {
+    let sender = sender.into();
+    SYSTEM_EVENT_SENDER.with(|s| {
+        *s.borrow_mut() = Some(sender);
+    });
+}
+
+/// Gets the thread-local system command sender.
+///
+/// # Panics
+///
+/// Panics if the sender is uninitialized.
+#[must_use]
+pub fn get_system_command_sender() -> DispatchSender<SystemCommand> {
+    SYSTEM_COMMAND_SENDER.with(|sender| {
+        sender
+            .borrow()
+            .as_ref()
+            .expect("System command sender should be initialized by runner")
+            .clone()
+    })
+}
+
+/// Attempts to get the thread-local system command sender without panicking.
+///
+/// Returns `None` if the sender is not initialized.
+#[must_use]
+pub fn try_get_system_command_sender() -> Option<DispatchSender<SystemCommand>> {
+    SYSTEM_COMMAND_SENDER.with(|sender| sender.borrow().as_ref().cloned())
+}
+
+/// Sets the thread-local system command sender.
+///
+/// Can only be called once per thread.
+///
+/// # Panics
+///
+/// Panics if a sender has already been set.
+pub fn set_system_command_sender(sender: impl Into<DispatchSender<SystemCommand>>) {
+    let sender = sender.into();
+    SYSTEM_COMMAND_SENDER.with(|s| {
+        let mut slot = s.borrow_mut();
+        assert!(slot.is_none(), "System command sender can only be set once");
+        *slot = Some(sender);
+    });
+}
+
+/// Replaces the system command sender for the current thread.
+pub fn replace_system_command_sender(sender: impl Into<DispatchSender<SystemCommand>>) {
+    let sender = sender.into();
+    SYSTEM_COMMAND_SENDER.with(|s| {
+        *s.borrow_mut() = Some(sender);
+    });
+}
+
+/// Gets the thread-local execution event sender.
+///
+/// # Panics
+///
+/// Panics if the sender is uninitialized.
+#[must_use]
+pub fn get_exec_event_sender() -> EventSender<ExecutionEvent> {
     EXEC_EVENT_SENDER.with(|sender| {
         sender
             .borrow()
@@ -84,22 +190,23 @@ pub fn get_exec_event_sender() -> tokio::sync::mpsc::UnboundedSender<ExecutionEv
     })
 }
 
-/// Attempts to get the global execution event sender without panicking.
+/// Attempts to get the thread-local execution event sender without panicking.
 ///
 /// Returns `None` if the sender is not initialized (e.g., in test environments).
 #[must_use]
-pub fn try_get_exec_event_sender() -> Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>> {
+pub fn try_get_exec_event_sender() -> Option<EventSender<ExecutionEvent>> {
     EXEC_EVENT_SENDER.with(|sender| sender.borrow().as_ref().cloned())
 }
 
-/// Sets the global execution event sender.
+/// Sets the thread-local execution event sender.
 ///
 /// Can only be called once per thread.
 ///
 /// # Panics
 ///
 /// Panics if a sender has already been set.
-pub fn set_exec_event_sender(sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
+pub fn set_exec_event_sender(sender: impl Into<EventSender<ExecutionEvent>>) {
+    let sender = sender.into();
     EXEC_EVENT_SENDER.with(|s| {
         let mut slot = s.borrow_mut();
         assert!(
@@ -110,48 +217,55 @@ pub fn set_exec_event_sender(sender: tokio::sync::mpsc::UnboundedSender<Executio
     });
 }
 
-/// Replaces the global execution event sender for the current thread.
-pub fn replace_exec_event_sender(sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
+/// Replaces the execution event sender for the current thread.
+pub fn replace_exec_event_sender(sender: impl Into<EventSender<ExecutionEvent>>) {
+    let sender = sender.into();
     EXEC_EVENT_SENDER.with(|s| {
         *s.borrow_mut() = Some(sender);
     });
 }
 
 thread_local! {
-    static DATA_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>> = const { RefCell::new(None) };
-    static EXEC_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>> = const { RefCell::new(None) };
+    static DATA_EVENT_SENDER: RefCell<Option<EventSender<DataEvent>>> = const { RefCell::new(None) };
+    static EXEC_EVENT_SENDER: RefCell<Option<EventSender<ExecutionEvent>>> = const { RefCell::new(None) };
+    static SYSTEM_EVENT_SENDER: RefCell<Option<EventSender<SystemEvent>>> = const { RefCell::new(None) };
+    static SYSTEM_COMMAND_SENDER: RefCell<Option<DispatchSender<SystemCommand>>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Barrier};
+
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
     fn test_replace_data_event_sender_overwrites_previous() {
-        std::thread::spawn(|| {
-            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
-            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
-            replace_data_event_sender(tx1);
-            replace_data_event_sender(tx2);
-            let _sender = get_data_event_sender();
-        })
-        .join()
-        .unwrap();
+        assert_sender_replaced(replace_data_event_sender, get_data_event_sender);
     }
 
     #[rstest]
     fn test_replace_exec_event_sender_overwrites_previous() {
-        std::thread::spawn(|| {
-            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
-            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
-            replace_exec_event_sender(tx1);
-            replace_exec_event_sender(tx2);
-            let _sender = get_exec_event_sender();
-        })
-        .join()
-        .unwrap();
+        assert_sender_replaced(replace_exec_event_sender, get_exec_event_sender);
+    }
+
+    #[rstest]
+    fn test_replace_system_event_sender_overwrites_previous() {
+        assert_sender_replaced(replace_system_event_sender, get_system_event_sender);
+    }
+
+    #[rstest]
+    fn test_replace_system_command_sender_overwrites_previous() {
+        assert_sender_replaced(replace_system_command_sender, get_system_command_sender);
+    }
+
+    #[rstest]
+    fn test_event_senders_are_thread_local() {
+        assert_sender_thread_local(replace_data_event_sender, get_data_event_sender);
+        assert_sender_thread_local(replace_exec_event_sender, get_exec_event_sender);
+        assert_sender_thread_local(replace_system_event_sender, get_system_event_sender);
+        assert_sender_thread_local(replace_system_command_sender, get_system_command_sender);
     }
 
     #[rstest]
@@ -179,10 +293,117 @@ mod tests {
     }
 
     #[rstest]
+    fn test_set_system_event_sender_panics_on_double_set() {
+        let result = std::thread::spawn(|| {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+            set_system_event_sender(tx1);
+            set_system_event_sender(tx2);
+        })
+        .join();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_set_system_command_sender_panics_on_double_set() {
+        let result = std::thread::spawn(|| {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+            set_system_command_sender(tx1);
+            set_system_command_sender(tx2);
+        })
+        .join();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_try_get_exec_event_sender_returns_none_when_unset() {
         let result = std::thread::spawn(try_get_exec_event_sender)
             .join()
             .unwrap();
         assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_try_get_system_event_sender_returns_none_when_unset() {
+        let result = std::thread::spawn(try_get_system_event_sender)
+            .join()
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_try_get_system_command_sender_returns_none_when_unset() {
+        let result = std::thread::spawn(try_get_system_command_sender)
+            .join()
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    fn assert_sender_replaced<T: Send + 'static, S: SenderChannel<T> + Send + 'static>(
+        replace: fn(tokio::sync::mpsc::UnboundedSender<T>),
+        get: fn() -> S,
+    ) {
+        std::thread::spawn(move || {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+
+            replace(tx1.clone());
+            replace(tx2.clone());
+            let sender = get();
+
+            assert!(!sender.targets(&tx1));
+            assert!(sender.targets(&tx2));
+        })
+        .join()
+        .expect("sender replacement test thread should join");
+    }
+
+    fn assert_sender_thread_local<T: Send + 'static, S: SenderChannel<T> + Send + 'static>(
+        replace: fn(tokio::sync::mpsc::UnboundedSender<T>),
+        get: fn() -> S,
+    ) {
+        let barrier = Arc::new(Barrier::new(2));
+        let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+        let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+        let expected1 = tx1.clone();
+        let expected2 = tx2.clone();
+
+        let barrier1 = Arc::clone(&barrier);
+
+        let thread1 = std::thread::spawn(move || {
+            replace(tx1);
+            barrier1.wait();
+            assert!(get().targets(&expected1));
+        });
+
+        let thread2 = std::thread::spawn(move || {
+            replace(tx2);
+            barrier.wait();
+            assert!(get().targets(&expected2));
+        });
+
+        thread1
+            .join()
+            .expect("first sender isolation test thread should join");
+        thread2
+            .join()
+            .expect("second sender isolation test thread should join");
+    }
+
+    trait SenderChannel<T> {
+        fn targets(&self, sender: &tokio::sync::mpsc::UnboundedSender<T>) -> bool;
+    }
+
+    impl<T> SenderChannel<T> for tokio::sync::mpsc::UnboundedSender<T> {
+        fn targets(&self, sender: &Self) -> bool {
+            self.same_channel(sender)
+        }
+    }
+
+    impl<T> SenderChannel<T> for EventSender<T> {
+        fn targets(&self, sender: &tokio::sync::mpsc::UnboundedSender<T>) -> bool {
+            self.same_channel(&sender.clone().into())
+        }
     }
 }

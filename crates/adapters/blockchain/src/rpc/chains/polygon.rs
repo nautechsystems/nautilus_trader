@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use alloy::primitives::Address;
+use nautilus_live::SocketControl;
 use nautilus_model::defi::chain::chains;
 use nautilus_network::websocket::TransportBackend;
 
@@ -69,5 +70,9 @@ impl BlockchainRpcClient for PolygonRpcClient {
 
     fn set_transport_backend(&mut self, backend: TransportBackend) {
         self.base_client.set_transport_backend(backend);
+    }
+
+    fn set_socket_control(&mut self, control: SocketControl) {
+        self.base_client.set_socket_control(control);
     }
 }

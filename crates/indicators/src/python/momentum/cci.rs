@@ -13,22 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
 use crate::{
     average::MovingAverageType, indicator::Indicator, momentum::cci::CommodityChannelIndex,
+    python::float_precision,
 };
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CommodityChannelIndex {
-    /// Creates a new `CommodityChannelIndex` instance.
+    /// Commodity channel index.
     #[new]
     #[pyo3(signature = (period, scalar, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, scalar, ma_type)
+    pub fn py_new(
+        period: usize,
+        scalar: f64,
+        ma_type: Option<MovingAverageType>,
+    ) -> PyResult<Self> {
+        Self::new_checked(period, scalar, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -77,8 +82,10 @@ impl CommodityChannelIndex {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

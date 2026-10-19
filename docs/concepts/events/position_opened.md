@@ -1,22 +1,33 @@
 # PositionOpened
 
-`PositionOpened` represents a position having been opened. The `ExecutionEngine` emits it
-when a fill creates a new position (see [From fill to position](index.md#from-fill-to-position-the-causal-chain)). Handler: `on_position_opened`.
+`PositionOpened` records the opening snapshot of a new position. The `ExecutionEngine` emits it when
+a fill creates the position (see
+[From fill to position](index.md#from-fill-to-position-the-causal-chain)). Handler:
+`on_position_opened`.
 
 ## Fields
 
-`PositionOpened` shares the position event field set. See [Position event fields](index.md#position-event-fields) for the full matrix across
-the three events. The fields that distinguish `PositionOpened`:
+See [Position event fields](index.md#position-event-fields) for the complete field matrix. `PositionOpened`
+contains the opening snapshot. Later events expose additional aggregate and lifecycle fields. Its main state
+fields are:
 
-| Field          | Python type    | Description                                    |
-| -------------- | -------------- | ---------------------------------------------- |
-| `entry`        | `OrderSide`    | The entry order side that opened the position. |
-| `side`         | `PositionSide` | The current position side (`LONG` or `SHORT`). |
-| `quantity`     | `Quantity`     | The current open quantity.                     |
-| `avg_px_open`  | `float`        | The average open price.                        |
-| `realized_pnl` | `Money`        | The realized PnL for the position.             |
+| Field          | Python type       | Description                                        |
+| -------------- | ----------------- | -------------------------------------------------- |
+| `entry`        | `OrderSide`       | The entry order side that opened the position.     |
+| `side`         | `PositionSide`    | The current position side (`LONG` or `SHORT`).     |
+| `signed_qty`   | `float`           | The signed position quantity.                      |
+| `quantity`     | `Quantity`        | The current open quantity.                         |
+| `last_qty`     | `Quantity`        | The quantity of the fill that opened the position. |
+| `last_px`      | `Price`           | The price of the fill that opened the position.    |
+| `currency`     | `Currency`        | The position quote currency.                       |
+| `avg_px_open`  | `float`           | The average open price.                            |
+| `realized_pnl` | `Money` or `None` | The current cycle's realized PnL in cost currency. |
 
-At open, `closing_order_id` is `None`, and `avg_px_close` and `realized_return` are zero.
+At opening, realized PnL subtracts the opening fill's commission when that commission is denominated
+in the instrument's [cost currency](../positions.md#currency-considerations). Otherwise, it is zero.
+
+A reopened `NETTING` position starts a new cycle. Realized PnL from the prior cycle stays in the
+[closed position snapshot](../positions.md#position-snapshotting).
 
 ## Example
 

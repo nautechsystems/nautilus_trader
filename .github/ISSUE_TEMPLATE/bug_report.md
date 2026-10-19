@@ -39,6 +39,9 @@ You can test the v2 release-candidate wheels from PyPI by running:
 pip install -U nautilus_trader --pre
 ```
 
+The `--pre` flag is required: without it PyPI installs the stable 1.x line, whose Python API differs
+from the 2.x documentation.
+
 You can test branch development wheels by running:
 
 ```bash
@@ -70,6 +73,21 @@ template, which generates its own data so you do not need to attach market data 
 <!-- If applicable, provide relevant code snippets, error logs, or stack traces. Use code blocks for clarity. -->
 
 ## Specifications
+
+Run this and paste the output, then fill in the remaining fields:
+
+```bash
+python - <<'EOF'
+import platform
+import sys
+
+import nautilus_trader
+
+print(f"- OS platform: {platform.platform()}")
+print(f"- Python version: {sys.version.split()[0]}")
+print(f"- `nautilus_trader` version: {nautilus_trader.__version__}")
+EOF
+```
 
 - OS platform:
 - Python version:

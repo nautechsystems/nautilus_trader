@@ -16,7 +16,7 @@
 //! Instrument definition diffing and emission for the Bybit adapter.
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_common::messages::DataEvent;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -28,9 +28,7 @@ use nautilus_model::{
 /// per-fetch timestamps that always change - so neither is usable for detecting "real" updates.
 /// This compares the fields a strategy prices and sizes against, ignoring timestamps.
 fn economics_differ(a: &InstrumentAny, b: &InstrumentAny) -> bool {
-    a.maker_fee() != b.maker_fee()
-        || a.taker_fee() != b.taker_fee()
-        || a.margin_init() != b.margin_init()
+    a.margin_init() != b.margin_init()
         || a.margin_maint() != b.margin_maint()
         || a.price_precision() != b.price_precision()
         || a.size_precision() != b.size_precision()
@@ -56,7 +54,7 @@ pub fn diff_and_emit_instruments(
     new_instruments: &[InstrumentAny],
     cached: &mut AHashMap<InstrumentId, InstrumentAny>,
     subscriptions: Option<&AHashSet<InstrumentId>>,
-    sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    sender: &EventSender<DataEvent>,
 ) {
     let is_subscribed = |id: &InstrumentId| subscriptions.is_none_or(|subs| subs.contains(id));
 
@@ -87,50 +85,40 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
-    use rust_decimal_macros::dec;
 
     use super::*;
 
     /// Builds a BTCUSDT linear perp with the given economic fields; everything else is fixed so a
     /// single varied field is what the diff sees.
     fn perp(
-        maker_fee: Decimal,
-        taker_fee: Decimal,
+        margin_init: Decimal,
         size_increment: Quantity,
         min_notional: Option<Money>,
     ) -> InstrumentAny {
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
-            Symbol::from("BTCUSDT-LINEAR"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            1,     // price_precision
-            3,     // size_precision
-            Price::from("0.1"),
-            size_increment,
-            None,                          // multiplier
-            None,                          // lot_size
-            None,                          // max_quantity
-            Some(Quantity::from("0.001")), // min_quantity
-            None,                          // max_notional
-            min_notional,
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            Some(maker_fee),
-            Some(taker_fee),
-            None,                 // tick_scheme
-            None,                 // info
-            UnixNanos::default(), // ts_event
-            UnixNanos::default(), // ts_init
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::from("BTCUSDT-LINEAR.BYBIT"))
+                .raw_symbol(Symbol::from("BTCUSDT-LINEAR"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .settlement_currency(Currency::USDT())
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::from("0.1"))
+                .size_increment(size_increment)
+                .min_quantity(Quantity::from("0.001"))
+                .margin_init(margin_init)
+                .maybe_min_notional(min_notional)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn default_perp() -> InstrumentAny {
-        perp(dec!(0.0001), dec!(0.00055), Quantity::from("0.001"), None)
+        perp(Decimal::ZERO, Quantity::from("0.001"), None)
     }
 
     #[rstest]
@@ -139,7 +127,12 @@ mod tests {
         let instrument = default_perp();
         let mut cached = AHashMap::new();
 
-        diff_and_emit_instruments(std::slice::from_ref(&instrument), &mut cached, None, &tx);
+        diff_and_emit_instruments(
+            std::slice::from_ref(&instrument),
+            &mut cached,
+            None,
+            &tx.into(),
+        );
 
         match rx.try_recv().expect("expected instrument event") {
             DataEvent::Instrument(emitted) => assert_eq!(emitted.id(), instrument.id()),
@@ -155,30 +148,29 @@ mod tests {
         let mut cached = AHashMap::new();
         cached.insert(instrument.id(), default_perp());
 
-        diff_and_emit_instruments(&[instrument], &mut cached, None, &tx);
+        diff_and_emit_instruments(&[instrument], &mut cached, None, &tx.into());
 
         assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
-    fn test_emits_on_fee_change() {
+    fn test_emits_on_margin_change() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = default_perp().id();
         let mut cached = AHashMap::new();
         cached.insert(id, default_perp());
 
-        // Same instrument, higher taker fee.
-        let updated = perp(dec!(0.0001), dec!(0.0008), Quantity::from("0.001"), None);
-        diff_and_emit_instruments(&[updated], &mut cached, None, &tx);
+        // Same instrument, higher initial margin.
+        let updated = perp(Decimal::ONE, Quantity::from("0.001"), None);
+        diff_and_emit_instruments(&[updated], &mut cached, None, &tx.into());
 
         match rx
             .try_recv()
-            .expect("expected instrument event on fee change")
+            .expect("expected instrument event on margin change")
         {
-            DataEvent::Instrument(emitted) => assert_eq!(emitted.taker_fee(), dec!(0.0008)),
+            DataEvent::Instrument(emitted) => assert_eq!(emitted.margin_init(), Decimal::ONE),
             _ => panic!("expected Instrument event"),
         }
-        assert_eq!(cached.get(&id).unwrap().taker_fee(), dec!(0.0008));
     }
 
     #[rstest]
@@ -189,20 +181,19 @@ mod tests {
         // size_increment change
         let mut cached = AHashMap::new();
         cached.insert(id, default_perp());
-        let bigger_step = perp(dec!(0.0001), dec!(0.00055), Quantity::from("0.002"), None);
-        diff_and_emit_instruments(&[bigger_step], &mut cached, None, &tx);
+        let bigger_step = perp(Decimal::ZERO, Quantity::from("0.002"), None);
+        diff_and_emit_instruments(&[bigger_step], &mut cached, None, &tx.clone().into());
         assert!(rx.try_recv().is_ok(), "size_increment change should emit");
 
         // min_notional change
         let mut cached = AHashMap::new();
         cached.insert(id, default_perp());
         let with_min = perp(
-            dec!(0.0001),
-            dec!(0.00055),
+            Decimal::ZERO,
             Quantity::from("0.001"),
             Some(Money::new(5.0, Currency::USDT())),
         );
-        diff_and_emit_instruments(&[with_min], &mut cached, None, &tx);
+        diff_and_emit_instruments(&[with_min], &mut cached, None, &tx.into());
         assert!(rx.try_recv().is_ok(), "min_notional change should emit");
     }
 
@@ -215,14 +206,19 @@ mod tests {
         let empty_subs = AHashSet::new();
         let mut cached = AHashMap::new();
         cached.insert(id, default_perp());
-        let updated = perp(dec!(0.0001), dec!(0.0008), Quantity::from("0.001"), None);
+        let updated = perp(Decimal::ONE, Quantity::from("0.001"), None);
 
-        diff_and_emit_instruments(&[updated], &mut cached, Some(&empty_subs), &tx);
+        diff_and_emit_instruments(
+            &[updated],
+            &mut cached,
+            Some(&empty_subs),
+            &tx.clone().into(),
+        );
 
         assert!(rx.try_recv().is_err(), "unsubscribed should not emit");
         assert_eq!(
-            cached.get(&id).unwrap().taker_fee(),
-            dec!(0.0008),
+            cached.get(&id).unwrap().margin_init(),
+            Decimal::ONE,
             "cache should update regardless of subscription"
         );
 
@@ -231,9 +227,9 @@ mod tests {
         subs.insert(id);
         let mut cached = AHashMap::new();
         cached.insert(id, default_perp());
-        let updated = perp(dec!(0.0001), dec!(0.0008), Quantity::from("0.001"), None);
+        let updated = perp(Decimal::ONE, Quantity::from("0.001"), None);
 
-        diff_and_emit_instruments(&[updated], &mut cached, Some(&subs), &tx);
+        diff_and_emit_instruments(&[updated], &mut cached, Some(&subs), &tx.into());
 
         assert!(rx.try_recv().is_ok(), "subscribed should emit");
     }

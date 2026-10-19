@@ -22,7 +22,7 @@ inputs:
     required: false
     default: ""
   rust-cache-workspaces:
-    description: Optional rust-cache workspace mapping, e.g. ". -> target-v2/py3.13"
+    description: Optional rust-cache workspace mapping, e.g. ". -> target/py3.13"
     required: false
     default: ""
   rust-cache-on-failure:
@@ -127,13 +127,7 @@ runs:
         runner.os == 'Linux' &&
         (runner.arch == 'ARM64' || runner.arch == 'aarch64')
       shell: bash
-      run: |
-        sudo swapoff -a || true
-        sudo rm -f /swapfile || true
-        sudo fallocate -l 8G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
+      run: bash scripts/ci/configure-linux-swap.bash
 
     - name: Install runner dependencies
       if: runner.os == 'Linux'
@@ -146,7 +140,8 @@ runs:
         sudo rm -rf /var/lib/apt/lists/*
 
     - name: Install Cap'n Proto
-      uses: ./.github/actions/install-capnp
+      # Depot Windows/ARM runners need ./ until they support runner >=2.336.0
+      uses: ./.github/actions/install-capnp # zizmor: ignore[self-repository]
       with:
         cache-enabled: ${{ inputs.capnp-cache-enabled }}
 
@@ -164,21 +159,23 @@ runs:
       shell: bash
       run: |
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
-        echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
+        printf 'toolchain=%s\n' "$TOOLCHAIN" >> "$GITHUB_OUTPUT"
 
-    # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      # https://github.com/actions-rust-lang/setup-rust-toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
       with:
-        toolchain: ${{ env.TOOLCHAIN }}
+        toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
         components: clippy,rustfmt
         cache: false
         override: true
+        rustflags: -D warnings
+        build-warnings: ""
 
-    # https://github.com/Swatinem/rust-cache
     - name: Rust cache
       if: inputs.rust-cache-enabled == 'true'
-      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # https://github.com/Swatinem/rust-cache
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
         workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
         cache-on-failure: ${{ inputs.rust-cache-on-failure }}
@@ -187,62 +184,63 @@ runs:
 
     - name: Get cargo-nextest version
       if: inputs.build-type != 'pre-commit'
+      id: nextest-version
       shell: bash
       run: |
         version="$(bash scripts/cargo-tool-version.sh cargo-nextest)"
-        if [ -z "$version" ]; then
-          echo "::error::Failed to extract cargo-nextest version"
-          exit 1
-        fi
-        echo "CARGO_NEXTEST_VERSION=$version" >> "$GITHUB_ENV"
+        printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
-      uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+      uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
       with:
-        tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+        tool: cargo-nextest@${{ steps.nextest-version.outputs.version }}
 
     - name: Install cargo-nextest (macOS)
       if: inputs.build-type != 'pre-commit' && runner.os == 'macOS'
       shell: bash
-      run: bash scripts/ci/install-cargo-nextest.sh "${CARGO_NEXTEST_VERSION}"
+      env:
+        CARGO_NEXTEST_VERSION: ${{ steps.nextest-version.outputs.version }}
+      run: bash scripts/ci/install-cargo-nextest.sh "$CARGO_NEXTEST_VERSION"
 
     - name: Set CARGO_INCREMENTAL=0 for CI
       if: inputs.build-type != 'pre-commit'
       shell: bash
-      run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+      run: echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
 
     # > --------------------------------------------------
     # > Python
     - name: Set up Python environment
       # https://github.com/actions/setup-python
-      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Ensure ~/.local/bin on PATH
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env] The fixed user binary directory must be added to PATH.
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Get cache scope
+      id: cache-scope
       shell: bash
       env:
         CACHE_SCOPE: ${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}
       run: |
-        echo "CACHE_SCOPE=$CACHE_SCOPE" >> "$GITHUB_ENV"
+        printf 'value=%s\n' "$CACHE_SCOPE" >> "$GITHUB_OUTPUT"
 
     - name: Get pre-commit config hash
       if: inputs.build-type == 'pre-commit'
+      id: pre-commit-hash
       shell: bash
       run: |
-        python - <<'PY' >> "$GITHUB_ENV"
+        python - <<'PY' >> "$GITHUB_OUTPUT"
         import hashlib
         from pathlib import Path
 
         print(
-            f"PRE_COMMIT_CONFIG_HASH={hashlib.sha256(Path('.pre-commit-config.yaml').read_bytes()).hexdigest()}"
+            f"value={hashlib.sha256(Path('.pre-commit-config.yaml').read_bytes()).hexdigest()}"
         )
         PY
 
@@ -255,28 +253,37 @@ runs:
 
     # > --------------------------------------------------
     # > UV
-    - name: Get uv version from pyproject.toml
+    - name: Get uv version
+      id: uv-version
       shell: bash
       run: |
-        echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> $GITHUB_ENV
+        printf 'version=%s\n' "$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       with:
-        version: ${{ env.UV_VERSION }}
+        version: ${{ steps.uv-version.outputs.version }}
         enable-cache: >-
           ${{ inputs.uv-cache-enabled == 'auto'
           && runner.os == 'macOS'
           && 'false'
           || inputs.uv-cache-enabled }}
-        cache-suffix: ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}
+        cache-suffix: ${{ steps.cache-scope.outputs.value }}-uv-${{ steps.uv-version.outputs.version }}
         prune-cache: true
 
-    - name: Set uv cache-dir
+    - name: Sync pre-commit Python dependencies
+      if: inputs.build-type == 'pre-commit'
       shell: bash
-      run: |
-        echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
+      run: >-
+        VIRTUAL_ENV=""
+        uv sync
+        --project python
+        --group dev
+        --extra visualization
+        --no-install-project
+        --locked
+        --inexact
 
     # Self-hosted and macOS runners skip setup-uv's cache post-step under auto.
     - name: Prune uv cache
@@ -295,12 +302,12 @@ runs:
                 && runner.environment != 'self-hosted'))
       id: cached-prek
       # https://github.com/actions/cache
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/prek
-        key: ${{ env.CACHE_SCOPE }}-prek-${{ env.PRE_COMMIT_CONFIG_HASH }}
+        key: ${{ steps.cache-scope.outputs.value }}-prek-${{ steps.pre-commit-hash.outputs.value }}
         restore-keys: |
-          ${{ env.CACHE_SCOPE }}-prek-
+          ${{ steps.cache-scope.outputs.value }}-prek-
 
     # > --------------------------------------------------
     # > Cache footprint

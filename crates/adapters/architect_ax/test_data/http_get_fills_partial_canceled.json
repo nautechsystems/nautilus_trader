@@ -1,0 +1,46 @@
+{
+  "fills": [
+    {
+      "trade_id": "T-LAST",
+      "order_id": "O-PARTIAL-CANCELED",
+      "fee": "0.10",
+      "is_taker": true,
+      "is_block_trade": false,
+      "is_final_settlement": false,
+      "price": "1.08410",
+      "quantity": 60,
+      "side": "B",
+      "symbol": "EURUSD-PERP",
+      "timestamp": "2024-01-01T00:00:00.508000123Z",
+      "account_id": "account-1"
+    },
+    {
+      "trade_id": "T-FIRST",
+      "order_id": "O-PARTIAL-CANCELED",
+      "fee": "0.10",
+      "is_taker": true,
+      "is_block_trade": false,
+      "is_final_settlement": false,
+      "price": "1.08410",
+      "quantity": 40,
+      "side": "B",
+      "symbol": "EURUSD-PERP",
+      "timestamp": "2024-01-01T00:00:00.507000456Z",
+      "account_id": "account-1"
+    },
+    {
+      "trade_id": "T-OTHER",
+      "order_id": "O-OTHER",
+      "fee": "0.10",
+      "is_taker": true,
+      "is_block_trade": false,
+      "is_final_settlement": false,
+      "price": "1.08410",
+      "quantity": 10,
+      "side": "B",
+      "symbol": "EURUSD-PERP",
+      "timestamp": "2024-01-01T00:00:00.509000789Z",
+      "account_id": "account-1"
+    }
+  ]
+}

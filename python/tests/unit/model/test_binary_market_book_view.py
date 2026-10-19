@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test binary market book view behavior.
+"""
 
 import pytest
 
@@ -31,7 +34,7 @@ from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TraderId
 
 
-def _populate_book(book, bids=None, asks=None):
+def _populate_book(book: OrderBook, bids: object = None, asks: object = None) -> None:
     for i, (price, size) in enumerate(bids or []):
         order = BookOrder(OrderSide.BUY, Price(price, 2), Quantity(size, 0), i)
         book.add(order, 0, 0, 0)
@@ -40,7 +43,12 @@ def _populate_book(book, bids=None, asks=None):
         book.add(order, 0, 0, 0)
 
 
-def _make_own_order(client_order_id, side, price, size):
+def _make_own_order(
+    client_order_id: ClientOrderId,
+    side: object,
+    price: object,
+    size: object,
+) -> object:
     return OwnBookOrder(
         trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId(client_order_id),
@@ -57,7 +65,10 @@ def _make_own_order(client_order_id, side, price, size):
     )
 
 
-def test_binary_market_filtered_view_with_opposite_own_book():
+def test_binary_market_filtered_view_with_opposite_own_book() -> None:
+    """
+    Test binary market filtered view with opposite own book.
+    """
     yes_id = InstrumentId.from_str("YES.XNAS")
     no_id = InstrumentId.from_str("NO.XNAS")
 
@@ -82,7 +93,10 @@ def test_binary_market_filtered_view_with_opposite_own_book():
     assert filtered.best_ask_price() == 0.61
 
 
-def test_filtered_view_instrument_mismatch_raises():
+def test_filtered_view_instrument_mismatch_raises() -> None:
+    """
+    Test filtered view instrument mismatch raises.
+    """
     yes_id = InstrumentId.from_str("YES.XNAS")
     no_id = InstrumentId.from_str("NO.XNAS")
 
@@ -96,7 +110,10 @@ def test_filtered_view_instrument_mismatch_raises():
         book.filtered_view(own_book)
 
 
-def test_combined_with_opposite_same_instrument_raises():
+def test_combined_with_opposite_same_instrument_raises() -> None:
+    """
+    Test combined with opposite same instrument raises.
+    """
     yes_id = InstrumentId.from_str("YES.XNAS")
 
     own_book = OwnOrderBook(yes_id)
@@ -109,7 +126,10 @@ def test_combined_with_opposite_same_instrument_raises():
         own_book.combined_with_opposite(own_synthetic_book)
 
 
-def test_filtered_view_without_own_book():
+def test_filtered_view_without_own_book() -> None:
+    """
+    Test filtered view without own book.
+    """
     yes_id = InstrumentId.from_str("YES.XNAS")
 
     book = OrderBook(yes_id, BookType.L2_MBP)

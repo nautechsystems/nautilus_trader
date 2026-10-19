@@ -1,0 +1,19 @@
+{
+  "channel": "spot_market_stats:4098",
+  "spot_market_stats": {
+    "best_ask_price": "2531.00",
+    "best_bid_price": "",
+    "daily_base_token_volume": 0,
+    "daily_price_change": 0,
+    "daily_price_high": 0,
+    "daily_price_low": 0,
+    "daily_quote_token_volume": 0,
+    "index_price": "2471.940000",
+    "last_trade_price": "0.00",
+    "market_id": 4098,
+    "mid_price": "",
+    "symbol": "ETH/USDC"
+  },
+  "timestamp": 1789706424060,
+  "type": "subscribed/spot_market_stats"
+}

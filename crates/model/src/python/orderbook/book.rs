@@ -13,14 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 use rust_decimal::Decimal;
 
 use crate::{
-    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick},
     enums::{BookType, OrderSide, OrderStatus},
     identifiers::InstrumentId,
     orderbook::{
@@ -28,6 +30,7 @@ use crate::{
         analysis::book_check_integrity,
         own::{OwnOrderBook, validate_accepted_buffer},
     },
+    python::{orderbook::level::check_sizes_float_precision, types::fixed::FloatArithmetic},
     types::{Price, Quantity},
 };
 
@@ -52,6 +55,94 @@ impl OrderBook {
 
     fn __str__(&self) -> String {
         self.to_string()
+    }
+
+    fn __getstate__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let orders = self
+            .bids(None)
+            .chain(self.asks(None))
+            .flat_map(|level| level.iter().copied())
+            .collect::<Vec<_>>();
+        (
+            self.instrument_id,
+            self.book_type.to_string(),
+            self.sequence,
+            self.ts_last.as_u64(),
+            self.update_count,
+            orders,
+            self.bids.batch_state_code(),
+            self.asks.batch_state_code(),
+        )
+            .into_py_any(py)
+    }
+
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let (
+            instrument_id,
+            book_type,
+            sequence,
+            ts_last,
+            update_count,
+            orders,
+            bid_batch_state,
+            ask_batch_state,
+        ): (InstrumentId, String, u64, u64, u64, Vec<BookOrder>, u8, u8) = state.extract()?;
+        let book_type = BookType::from_str(&book_type).map_err(to_pyvalue_err)?;
+
+        if instrument_id != self.instrument_id {
+            return Err(to_pyvalue_err(format!(
+                "OrderBook state instrument ID {instrument_id} does not match instance instrument ID {}",
+                self.instrument_id
+            )));
+        }
+
+        if book_type != self.book_type {
+            return Err(to_pyvalue_err(format!(
+                "OrderBook state book type {book_type:?} does not match instance book type {:?}",
+                self.book_type
+            )));
+        }
+
+        if orders.iter().any(|order| order.side.is_none()) {
+            return Err(to_pyvalue_err(
+                "OrderBook state contains an order with no side",
+            ));
+        }
+
+        let mut restored = Self::new(instrument_id, book_type);
+        for order in orders {
+            restored.add(order, 0, 0, 0.into());
+        }
+        restored
+            .bids
+            .set_batch_state_code(bid_batch_state)
+            .map_err(to_pyvalue_err)?;
+        restored
+            .asks
+            .set_batch_state_code(ask_batch_state)
+            .map_err(to_pyvalue_err)?;
+        restored.sequence = sequence;
+        restored.ts_last = ts_last.into();
+        restored.update_count = update_count;
+        *self = restored;
+        Ok(())
+    }
+
+    fn __reduce__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let args = (self.instrument_id, self.book_type.to_string());
+        let state = self.__getstate__(py)?;
+        (constructor, args, state).into_py_any(py)
+    }
+
+    #[staticmethod]
+    fn _safe_constructor(instrument_id: InstrumentId, book_type: &str) -> PyResult<Self> {
+        let book_type = BookType::from_str(book_type).map_err(to_pyvalue_err)?;
+        Ok(Self::new(instrument_id, book_type))
+    }
+
+    fn __deepcopy__(&self, _memo: &Bound<'_, PyAny>) -> Self {
+        self.clone()
     }
 
     #[getter]
@@ -124,6 +215,9 @@ impl OrderBook {
     }
 
     /// Clears all orders from both sides of the book.
+    ///
+    /// A full clear uses its `sequence` as the new sequence high-water.
+    /// `clear_bids` and `clear_asks` preserve the current high-water.
     #[pyo3(name = "clear")]
     #[pyo3(signature = (sequence, ts_event))]
     fn py_clear(&mut self, sequence: u64, ts_event: u64) {
@@ -148,7 +242,7 @@ impl OrderBook {
     ///
     /// - Acts only when both sides exist and the book is crossed.
     /// - Deletes by removing whole price levels via the ladder API to preserve invariants.
-    /// - `side=None` or `NoOrderSide` clears both overlapped ranges (conservative, may widen spread).
+    /// - `side=None` clears both overlapped ranges (conservative, may widen spread).
     /// - `side=Buy` clears crossed bids only; side=Sell clears crossed asks only.
     /// - Returns removed price levels (crossed bids first, then crossed asks), or None if nothing removed.
     #[pyo3(name = "clear_stale_levels")]
@@ -163,13 +257,13 @@ impl OrderBook {
     ///
     /// Returns an error if:
     /// - The delta's instrument ID does not match this book's instrument ID.
-    /// - An `Add` is given with `NoOrderSide` (either explicitly or because the cache lookup failed).
-    /// - An `Add` with `NoOrderSide` matches an order ID on both sides of the book.
-    /// - After resolution the delta still has `NoOrderSide` but its action is not `Clear`.
+    /// - An `Add` is given with no side, either explicitly or because the cache lookup failed.
+    /// - An `Add` with no side matches an order ID on both sides of the book.
+    /// - After resolution the delta still has no side but its action is not `Clear`.
     ///
     /// # Notes
     ///
-    /// An ambiguous `NoOrderSide` `Update` or `Delete` is skipped with a warning.
+    /// An ambiguous no-side `Update` or `Delete` is skipped with a warning.
     #[pyo3(name = "apply_delta")]
     fn py_apply_delta(&mut self, delta: &OrderBookDelta) -> PyResult<()> {
         self.apply_delta_unchecked(delta).map_err(to_pyruntime_err)
@@ -194,7 +288,7 @@ impl OrderBook {
     ///
     /// Returns an error if the depth's instrument ID does not match this book's instrument ID.
     #[pyo3(name = "apply_depth")]
-    fn py_apply_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+    fn py_apply_depth(&mut self, depth: &OrderBookDepth) -> PyResult<()> {
         self.apply_depth_unchecked(depth).map_err(to_pyruntime_err)
     }
 
@@ -400,14 +494,16 @@ impl OrderBook {
 
     /// Returns the spread between best ask and bid prices if both exist.
     #[pyo3(name = "spread")]
-    fn py_spread(&self) -> Option<f64> {
-        self.spread()
+    fn py_spread(&self) -> PyResult<Option<f64>> {
+        check_top_float_precision(self)?;
+        Ok(self.spread())
     }
 
     /// Returns the midpoint between best ask and bid prices if both exist.
     #[pyo3(name = "midpoint")]
-    fn py_midpoint(&self) -> Option<f64> {
-        self.midpoint()
+    fn py_midpoint(&self) -> PyResult<Option<f64>> {
+        check_top_float_precision(self)?;
+        Ok(self.midpoint())
     }
 
     /// Calculates the average price to fill the specified quantity.
@@ -422,14 +518,23 @@ impl OrderBook {
         self.get_worst_px_for_quantity(qty, order_side)
     }
 
-    /// Calculates average price and quantity for target exposure. Returns (price, quantity, `executed_exposure`).
+    /// Calculates average price and quantity for target exposure.
+    ///
+    /// Returns (average price, quantity, last-touched price).
     #[pyo3(name = "get_avg_px_qty_for_exposure")]
     fn py_get_avg_px_qty_for_exposure(
         &self,
         qty: Quantity,
         order_side: OrderSide,
-    ) -> (f64, f64, f64) {
-        self.get_avg_px_qty_for_exposure(qty, order_side)
+    ) -> PyResult<(f64, f64, f64)> {
+        qty.check_float_precision()?;
+
+        for level in side_levels(self, order_side) {
+            level.price.value.check_float_precision()?;
+            check_sizes_float_precision(level)?;
+        }
+
+        Ok(self.get_avg_px_qty_for_exposure(qty, order_side))
     }
 
     /// Returns the cumulative quantity available at or better than the specified price.
@@ -437,28 +542,73 @@ impl OrderBook {
     /// For a BUY order, sums ask levels at or below the price.
     /// For a SELL order, sums bid levels at or above the price.
     #[pyo3(name = "get_quantity_for_price")]
-    fn py_get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
-        self.get_quantity_for_price(price, order_side)
+    fn py_get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> PyResult<f64> {
+        for level in side_levels(self, order_side) {
+            check_sizes_float_precision(level)?;
+        }
+
+        Ok(self.get_quantity_for_price(price, order_side))
     }
 
     /// Returns the quantity at a specific price level only, or 0 if no level exists.
     ///
     /// Unlike `get_quantity_for_price` which returns cumulative quantity across
     /// multiple levels, this returns only the quantity at the exact price level.
+    ///
+    /// The Python binding raises `ValueError` for an unsupported `size_precision` or an
+    /// aggregated level size that cannot be represented as a `Quantity`.
     #[pyo3(name = "get_quantity_at_level")]
     fn py_get_quantity_at_level(
         &self,
         price: Price,
         order_side: OrderSide,
         size_precision: u8,
-    ) -> Quantity {
-        self.get_quantity_at_level(price, order_side, size_precision)
+    ) -> PyResult<Quantity> {
+        self.get_quantity_at_level_checked(price, order_side, size_precision)
+            .map_err(to_pyvalue_err)
+    }
+
+    /// Returns all price levels crossed by an order at the given price and side.
+    ///
+    /// Unlike `simulate_fills`, this returns ALL crossed levels regardless of
+    /// order quantity. Used when liquidity consumption tracking needs visibility
+    /// into all available levels.
+    ///
+    /// The Python binding raises `ValueError` for an unsupported `size_precision` or an
+    /// aggregated level size that cannot be represented as a `Quantity`.
+    #[pyo3(name = "get_all_crossed_levels")]
+    fn py_get_all_crossed_levels(
+        &self,
+        order_side: OrderSide,
+        price: Price,
+        size_precision: u8,
+    ) -> PyResult<Vec<(Price, Quantity)>> {
+        self.get_all_crossed_levels_checked(order_side, price, size_precision)
+            .map_err(to_pyvalue_err)
     }
 
     /// Simulates fills for an order, returning list of (price, quantity) tuples.
     #[pyo3(name = "simulate_fills")]
     fn py_simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
         self.simulate_fills(order)
+    }
+
+    /// Creates an `OrderBookDeltas` snapshot from the current order book state.
+    ///
+    /// This is the reverse operation of `apply_deltas`: it converts the current book state
+    /// back into a snapshot format with a `Clear` delta followed by `Add` deltas for all orders.
+    ///
+    /// # Parameters
+    ///
+    /// * `ts_event` - UNIX timestamp (nanoseconds) when the book event occurred.
+    /// * `ts_init` - UNIX timestamp (nanoseconds) when the instance was created.
+    ///
+    /// # Returns
+    ///
+    /// An `OrderBookDeltas` containing a snapshot of the current order book state.
+    #[pyo3(name = "to_deltas")]
+    fn py_to_deltas(&self, ts_event: u64, ts_init: u64) -> OrderBookDeltas {
+        self.to_deltas(ts_event.into(), ts_init.into())
     }
 
     /// Return a formatted string representation of the order book.
@@ -473,7 +623,7 @@ impl OrderBook {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the update operation fails.
+/// Returns an error if the update operation fails.
 #[pyfunction()]
 #[pyo3(name = "update_book_with_quote_tick")]
 pub fn py_update_book_with_quote_tick(book: &mut OrderBook, quote: &QuoteTick) -> PyResult<()> {
@@ -484,9 +634,25 @@ pub fn py_update_book_with_quote_tick(book: &mut OrderBook, quote: &QuoteTick) -
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the update operation fails.
+/// Returns an error if the update operation fails.
 #[pyfunction()]
 #[pyo3(name = "update_book_with_trade_tick")]
 pub fn py_update_book_with_trade_tick(book: &mut OrderBook, trade: &TradeTick) -> PyResult<()> {
     book.update_trade_tick(trade).map_err(to_pyvalue_err)
+}
+
+fn check_top_float_precision(book: &OrderBook) -> PyResult<()> {
+    if let (Some(bid), Some(ask)) = (book.best_bid_price(), book.best_ask_price()) {
+        bid.check_float_precision()?;
+        ask.check_float_precision()?;
+    }
+
+    Ok(())
+}
+
+fn side_levels(book: &OrderBook, order_side: OrderSide) -> impl Iterator<Item = &BookLevel> {
+    match order_side {
+        OrderSide::Buy => book.asks.levels.values(),
+        OrderSide::Sell => book.bids.levels.values(),
+    }
 }

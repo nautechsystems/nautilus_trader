@@ -65,7 +65,7 @@ impl BestBidAskStreamEvent {
     ///
     /// # Errors
     ///
-    /// Returns error if buffer is too short or contains invalid data.
+    /// Returns an error if buffer is too short or contains invalid data.
     pub fn decode(buf: &[u8]) -> Result<Self, StreamDecodeError> {
         let header = MessageHeader::decode(buf)?;
         header.validate_schema()?;

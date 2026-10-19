@@ -1,4 +1,4 @@
-# Cfd
+# CFD
 
 `Cfd` represents a contract for difference that tracks an underlying asset without
 transferring ownership of the underlying. The venue defines the quote currency,
@@ -28,21 +28,20 @@ Examples include CFD contracts on FX, equities, indexes, and commodities.
 | `min_price`       | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`    | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`       | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `Cfd` has instrument class `Cfd`.
 - It is never inverse and uses a multiplier of one.
 - It has no activation timestamp, expiration timestamp, strike, or option kind.
-- Use the source market type when a venue offers both cash instruments and CFDs.
+- If a venue offers cash and CFD instruments on the same underlying, use `Cfd` only for the CFD. Use the
+  matching cash type for the underlying market.
 
 ## Example
 
@@ -69,8 +68,6 @@ let audusd = Cfd::builder()
     .lot_size(Quantity::from("1000"))
     .margin_init(dec!(0.03))
     .margin_maint(dec!(0.03))
-    .maker_fee(dec!(0.00002))
-    .taker_fee(dec!(0.00002))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -103,16 +100,13 @@ audusd = Cfd(
     lot_size=Quantity.from_int(1000),
     margin_init=Decimal("0.03"),
     margin_maint=Decimal("0.03"),
-    maker_fee=Decimal("0.00002"),
-    taker_fee=Decimal("0.00002"),
 )
 ```
 
 ## Adapters
 
-Representative adapters that create or consume `Cfd` instruments include:
-
-- [Interactive Brokers](../../integrations/ib.md) for CFD contracts.
+The [Interactive Brokers](../../integrations/interactive_brokers.md) adapter creates or consumes
+`Cfd` instruments for CFD contracts.
 
 ## Related guides
 

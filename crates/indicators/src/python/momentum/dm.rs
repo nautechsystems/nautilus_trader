@@ -13,24 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, momentum::dm::DirectionalMovement};
+use crate::{indicator::Indicator, momentum::dm::DirectionalMovement, python::float_precision};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DirectionalMovement {
-    /// Creates a new `DirectionalMovement` instance.
+    /// Wilder's directional movement, smoothed as a running sum.
+    ///
+    /// The up-move is `high - previous_high` and the down-move is
+    /// `previous_low - low`; only the larger of the two contributes, and only when it
+    /// is positive. The first `period` movements, which start with the second bar,
+    /// are summed to seed `pos` and `neg`. Later bars update them with
+    /// `smoothed = smoothed - smoothed / period + movement`, so both values are
+    /// on the scale of a `period`-bar sum of movements. The first complete output
+    /// arrives after `period + 1` bars.
     #[new]
-    #[pyo3(signature = (period, ma_type=None))]
-    #[must_use]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        Self::new(period, ma_type)
+    fn py_new(period: usize) -> PyResult<Self> {
+        Self::new_checked(period).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
-        format!("DirectionalMovement({},{})", self.period, self.ma_type)
+        format!("DirectionalMovement({})", self.period)
     }
 
     #[getter]
@@ -75,8 +82,10 @@ impl DirectionalMovement {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

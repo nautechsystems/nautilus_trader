@@ -30,11 +30,11 @@ mod examples;
 
 use pyo3::{prelude::*, pymodule};
 
-/// Loaded as `nautilus_pyo3.trading`.
+/// Exposed through `nautilus_trader.trading`.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn trading(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::sessions::ForexSession>()?;
@@ -49,7 +49,7 @@ pub fn trading(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::strategy::ImportableStrategyConfig>()?;
     m.add_class::<algorithm::PyExecutionAlgorithm>()?;
     m.add_class::<crate::algorithm::ExecutionAlgorithmConfig>()?;
-    m.add_class::<crate::algorithm::ImportableExecAlgorithmConfig>()?;
+    m.add_class::<crate::algorithm::ImportableExecutionAlgorithmConfig>()?;
     #[cfg(feature = "examples")]
     m.add_class::<crate::examples::strategies::CompositeMarketMakerConfig>()?;
     #[cfg(feature = "examples")]

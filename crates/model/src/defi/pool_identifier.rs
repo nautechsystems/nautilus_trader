@@ -58,10 +58,10 @@ impl PoolIdentifier {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - String doesn't start with "0x"
-    /// - Length is neither 42 nor 66 characters
-    /// - Contains invalid hex characters
-    /// - Address checksum validation fails (for Address variant)
+    /// - String doesn't start with "0x".
+    /// - Length is neither 42 nor 66 characters.
+    /// - Contains invalid hex characters.
+    /// - Address checksum validation fails (for Address variant).
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
 
@@ -186,7 +186,7 @@ impl PoolIdentifier {
     ///
     /// # Errors
     ///
-    /// Returns error if this is a `PoolId` variant or if parsing fails.
+    /// Returns an error if this is a `PoolId` variant or if parsing fails.
     pub fn to_address(&self) -> anyhow::Result<Address> {
         match self {
             Self::Address(s) => Address::parse_checksummed(s.as_str(), None)
@@ -201,11 +201,11 @@ impl PoolIdentifier {
     ///
     /// # Errors
     ///
-    /// Returns error if this is an Address variant or if hex decoding fails.
+    /// Returns an error if this is an Address variant or if hex decoding fails.
     pub fn to_pool_id_bytes(&self) -> anyhow::Result<[u8; 32]> {
         match self {
             Self::PoolId(s) => {
-                let hex_str = s.as_str().strip_prefix("0x").unwrap_or(s.as_str());
+                let hex_str = s.strip_prefix("0x").unwrap_or(s.as_str());
                 hex::decode_array::<32>(hex_str)
                     .map_err(|e| anyhow::anyhow!("Failed to decode pool ID hex: {e}"))
             }
@@ -228,7 +228,7 @@ impl PartialEq for PoolIdentifier {
         match (self, other) {
             (Self::Address(a), Self::Address(b)) | (Self::PoolId(a), Self::PoolId(b)) => {
                 // Case-insensitive comparison
-                a.as_str().eq_ignore_ascii_case(b.as_str())
+                a.eq_ignore_ascii_case(b)
             }
             // Different variants are never equal
             _ => false,
@@ -246,7 +246,7 @@ impl Hash for PoolIdentifier {
         // Then hash the lowercase version of the string
         match self {
             Self::Address(s) | Self::PoolId(s) => {
-                for byte in s.as_str().bytes() {
+                for byte in s.bytes() {
                     state.write_u8(byte.to_ascii_lowercase());
                 }
             }

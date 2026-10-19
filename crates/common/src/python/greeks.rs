@@ -32,7 +32,7 @@ use crate::{
 
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
+    module = "nautilus_trader.common",
     name = "GreeksCalculator",
     unsendable
 )]
@@ -255,7 +255,7 @@ impl PyGreeksCalculator {
                 venue,
                 instrument_id,
                 strategy_id,
-                Some(side.unwrap_or(PositionSide::NoPositionSide)),
+                side,
                 Some(flat_interest_rate),
                 flat_dividend_yield,
                 Some(spot_shock),
@@ -320,7 +320,7 @@ mod tests {
     use super::*;
     use crate::{
         cache::{Cache, INSTRUMENT_NOT_FOUND},
-        clock::TestClock,
+        clock::VirtualClock,
     };
 
     #[derive(Clone, Copy)]
@@ -346,6 +346,32 @@ mod tests {
             py_instrument_greeks(&calculator, instrument_id, vol_index_instrument_id).unwrap();
 
         assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_py_instrument_greeks_resolves_underlying_on_another_venue() {
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let option = option_contract_appl();
+        let option_id = option.id();
+        let equity = equity_aapl();
+        let equity_id = equity.id();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::OptionContract(option))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::Equity(equity))
+            .unwrap();
+        add_quote(&cache, option_id, "10.50");
+        add_quote(&cache, equity_id, "150.00");
+        let calculator = make_calculator(cache);
+
+        let greeks = py_instrument_greeks(&calculator, option_id, None)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(greeks.underlying_price, 150.0);
     }
 
     #[rstest]
@@ -461,7 +487,7 @@ mod tests {
     }
 
     fn make_calculator(cache: Rc<RefCell<Cache>>) -> PyGreeksCalculator {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         PyGreeksCalculator(GreeksCalculator::new(cache, clock))
     }
 }

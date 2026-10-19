@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
 use crate::{
     common::enums::AxEnvironment,
-    config::{AxDataClientConfig, AxExecClientConfig},
+    config::{AxDataClientConfig, AxExecutionClientConfig},
 };
 
 #[pymethods]
@@ -28,7 +29,7 @@ impl AxDataClientConfig {
     /// Configuration for the AX Exchange live data client.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_ws_public=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, update_instruments_interval_mins=None, funding_rate_poll_interval_mins=None, transport_backend=None))]
+    #[pyo3(signature = (api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_ws_public=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, update_instruments_interval_mins=None, funding_rate_poll_interval_mins=None, transport_backend=None, book_snapshot_timeout_secs=None))]
     fn py_new(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -46,16 +47,17 @@ impl AxDataClientConfig {
         update_instruments_interval_mins: Option<u64>,
         funding_rate_poll_interval_mins: Option<u64>,
         transport_backend: Option<TransportBackend>,
+        book_snapshot_timeout_secs: Option<u64>,
     ) -> Self {
         let default = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             environment: environment.unwrap_or(default.environment),
             base_url_http,
             base_url_ws_public,
             base_url_ws_private,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             max_retries: max_retries.unwrap_or(default.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -68,6 +70,8 @@ impl AxDataClientConfig {
                 .unwrap_or(default.update_instruments_interval_mins),
             funding_rate_poll_interval_mins: funding_rate_poll_interval_mins
                 .unwrap_or(default.funding_rate_poll_interval_mins),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(default.book_snapshot_timeout_secs),
             transport_backend: transport_backend.unwrap_or(default.transport_backend),
         }
     }
@@ -88,13 +92,12 @@ impl AxDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl AxExecClientConfig {
+impl AxExecutionClientConfig {
     /// Configuration for the AX Exchange live execution client.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id=None, account_id=None, api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_orders=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, cancel_on_disconnect=None, transport_backend=None))]
+    #[pyo3(signature = (account_id=None, api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_orders=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, cancel_on_disconnect=None, transport_backend=None))]
     fn py_new(
-        trader_id: Option<TraderId>,
         account_id: Option<AccountId>,
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -114,15 +117,14 @@ impl AxExecClientConfig {
     ) -> Self {
         let default = Self::default();
         Self {
-            trader_id: trader_id.unwrap_or(default.trader_id),
             account_id: account_id.unwrap_or(default.account_id),
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             environment: environment.unwrap_or(default.environment),
             base_url_http,
             base_url_orders,
             base_url_ws_private,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(default.http_timeout_secs),
             max_retries: max_retries.unwrap_or(default.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -142,10 +144,48 @@ impl AxExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(AxExecClientConfig).to_string()
+        stringify!(AxExecutionClientConfig).to_string()
     }
 
     fn __str__(&self) -> String {
-        stringify!(AxExecClientConfig).to_string()
+        stringify!(AxExecutionClientConfig).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::default(None, 10)]
+    #[case::override_value(Some(42), 42)]
+    fn test_data_config_py_new_book_snapshot_timeout(
+        #[case] book_snapshot_timeout_secs: Option<u64>,
+        #[case] expected: u64,
+    ) {
+        let config = AxDataClientConfig::py_new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(7),
+            None,
+            book_snapshot_timeout_secs,
+        );
+
+        assert_eq!(config.funding_rate_poll_interval_mins, 7);
+        assert_eq!(config.book_snapshot_timeout_secs, expected);
     }
 }

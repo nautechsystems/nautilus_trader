@@ -12,13 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test pricing behavior.
+"""
 
 import re
+from collections.abc import Callable
 
 import pytest
 
 from nautilus_trader.model import BlackScholesGreeksResult
-from nautilus_trader.model import ForwardPrice
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import OptionChainSlice
 from nautilus_trader.model import OptionGreeks
@@ -28,29 +31,17 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StrikeRange
+from nautilus_trader.model import Venue
 from nautilus_trader.model import black_scholes_greeks
 from nautilus_trader.model import imply_vol
 from nautilus_trader.model import imply_vol_and_greeks
 from nautilus_trader.model import refine_vol_and_greeks
 
 
-def test_forward_price_properties():
-    value = ForwardPrice(
-        instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
-        forward_price="50123.4",
-        underlying_index="BTCUSD",
-        ts_event=7,
-        ts_init=8,
-    )
-
-    assert value.instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
-    assert value.forward_price == "50123.4"
-    assert value.underlying_index == "BTCUSD"
-    assert value.ts_event == 7
-    assert value.ts_init == 8
-
-
-def test_option_series_id_from_expiry_and_from_str():
+def test_option_series_id_from_expiry_and_from_str() -> None:
+    """
+    Test option series id from expiry and from str.
+    """
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     restored = OptionSeriesId.from_str(series_id.value)
 
@@ -67,7 +58,7 @@ def test_option_series_id_from_expiry_and_from_str():
         (
             "DERIBIT:BTC:USD",
             "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD': "
-            "expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'",
+            "expected format 'VENUE:UNDERLYING:[REFERENCE:]SETTLEMENT:EXPIRY'",
         ),
         (
             ":BTC:USD:1700000000000000000",
@@ -81,7 +72,10 @@ def test_option_series_id_from_expiry_and_from_str():
         ),
     ],
 )
-def test_option_series_id_from_str_when_invalid(value, expected_err):
+def test_option_series_id_from_str_when_invalid(value: object, expected_err: object) -> None:
+    """
+    Test option series id from str when invalid.
+    """
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
         OptionSeriesId.from_str(value)
 
@@ -105,14 +99,24 @@ def test_option_series_id_from_str_when_invalid(value, expected_err):
         ),
     ],
 )
-def test_option_series_id_from_expiry_when_invalid(venue, date_str, expected_err):
+def test_option_series_id_from_expiry_when_invalid(
+    venue: Venue,
+    date_str: object,
+    expected_err: object,
+) -> None:
+    """
+    Test option series id from expiry when invalid.
+    """
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
         OptionSeriesId.from_expiry(venue, "BTC", "USD", date_str)
 
     assert str(exc_info.value) == expected_err
 
 
-def test_option_greeks_and_strike_data_properties():
+def test_option_greeks_and_strike_data_properties() -> None:
+    """
+    Test option greeks and strike data properties.
+    """
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
     quote = QuoteTick(
         instrument_id=instrument_id,
@@ -151,7 +155,10 @@ def test_option_greeks_and_strike_data_properties():
     assert strike.greeks.mark_iv == pytest.approx(0.6)
 
 
-def test_option_chain_slice_empty_state_and_lookups():
+def test_option_chain_slice_empty_state_and_lookups() -> None:
+    """
+    Test option chain slice empty state and lookups.
+    """
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     chain = OptionChainSlice(
         series_id=series_id,
@@ -177,36 +184,108 @@ def test_option_chain_slice_empty_state_and_lookups():
     assert chain.get_put_greeks(Price.from_str("50000.0")) is None
 
 
-def test_black_scholes_greeks_result_properties():
-    result = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
+@pytest.mark.parametrize(
+    ("is_call", "price", "delta", "theta"),
+    [
+        (True, 10.4505767822, 0.6368305683, -0.0175606508),
+        (False, 5.5735168457, -0.3631694317, -0.0045390302),
+    ],
+)
+def test_black_scholes_greeks_result_properties(
+    is_call: object,
+    price: object,
+    delta: object,
+    theta: object,
+) -> None:
+    """
+    Test black scholes greeks result properties.
+    """
+    result = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call, 100.0, 1.0)
 
     assert isinstance(result, BlackScholesGreeksResult)
-    assert result.price > 0.0
-    assert result.vol == pytest.approx(0.2)
-    assert 0.0 < result.delta < 1.0
-    assert result.gamma > 0.0
-    assert result.vega > 0.0
-    assert 0.0 <= result.itm_prob <= 1.0
+    assert result.price == pytest.approx(price, abs=1e-5)
+    assert result.vol == 0.2
+    assert result.delta == pytest.approx(delta, abs=1e-5)
+    assert result.gamma == pytest.approx(0.0187620167, abs=1e-5)
+    assert result.vega == pytest.approx(0.3752403641, abs=1e-5)
+    assert result.theta == pytest.approx(theta, abs=1e-5)
 
 
-def test_imply_vol_and_greeks_matches_input_price():
-    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
-    implied = imply_vol_and_greeks(100.0, 0.01, 0.01, True, 100.0, 0.5, baseline.price)
+def test_black_scholes_greeks_itm_probability_uses_d2() -> None:
+    """
+    Test black scholes greeks itm probability uses d2.
+    """
+    call = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call=True, k=100.0, t=1.0)
+    put = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call=False, k=100.0, t=1.0)
+
+    assert 0.0 < call.itm_prob < call.delta
+    assert 0.0 < put.itm_prob < 1.0
+    assert call.itm_prob + put.itm_prob == pytest.approx(1.0)
+
+
+def test_imply_vol_and_greeks_matches_input_price() -> None:
+    """
+    Test imply vol and greeks matches input price.
+    """
+    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, is_call=True, k=100.0, t=0.5)
+    implied = imply_vol_and_greeks(
+        100.0,
+        0.01,
+        0.01,
+        is_call=True,
+        k=100.0,
+        t=0.5,
+        price=baseline.price,
+    )
 
     assert implied.vol == pytest.approx(0.2, rel=1e-5)
     assert implied.delta == pytest.approx(baseline.delta)
 
 
-def test_imply_vol_matches_baseline_vol():
-    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
-    implied_vol = imply_vol(100.0, 0.01, 0.01, True, 100.0, 0.5, baseline.price)
+def test_imply_vol_and_greeks_matches_put_price() -> None:
+    """
+    Test imply vol and greeks matches put price.
+    """
+    baseline = black_scholes_greeks(100.0, 0.05, 0.05, 0.25, is_call=False, k=105.0, t=0.5)
+    implied = imply_vol_and_greeks(
+        100.0,
+        0.05,
+        0.05,
+        is_call=False,
+        k=105.0,
+        t=0.5,
+        price=baseline.price,
+    )
+
+    assert implied.vol == pytest.approx(0.25, abs=1e-2)
+    assert implied.price == pytest.approx(baseline.price, abs=1e-2)
+
+
+def test_imply_vol_matches_baseline_vol() -> None:
+    """
+    Test imply vol matches baseline vol.
+    """
+    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, is_call=True, k=100.0, t=0.5)
+    implied_vol = imply_vol(100.0, 0.01, 0.01, is_call=True, k=100.0, t=0.5, price=baseline.price)
 
     assert implied_vol == pytest.approx(0.2, rel=1e-5)
 
 
-def test_refine_vol_and_greeks_matches_input_price():
-    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
-    refined = refine_vol_and_greeks(100.0, 0.01, 0.01, True, 100.0, 0.5, baseline.price, 0.3)
+def test_refine_vol_and_greeks_matches_input_price() -> None:
+    """
+    Test refine vol and greeks matches input price.
+    """
+    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, is_call=True, k=100.0, t=0.5)
+    refined = refine_vol_and_greeks(
+        100.0,
+        0.01,
+        0.01,
+        is_call=True,
+        k=100.0,
+        t=0.5,
+        target_price=baseline.price,
+        initial_vol=0.3,
+    )
 
     assert refined.vol == pytest.approx(0.2, rel=2e-4)
     assert refined.price == pytest.approx(baseline.price, rel=2e-4)
@@ -221,14 +300,112 @@ def test_refine_vol_and_greeks_matches_input_price():
         ("delta", (0.25, 0.05)),
     ],
 )
-def test_strike_range_factories(factory_name, args):
+def test_strike_range_factories(factory_name: object, args: tuple[object, ...]) -> None:
+    """
+    Test strike range factories.
+    """
     factory = getattr(StrikeRange, factory_name)
     strike_range = factory(*args)
 
     assert isinstance(strike_range, StrikeRange)
 
 
-def test_strike_range_delta_kind():
+def test_strike_range_delta_kind() -> None:
+    """
+    Test strike range delta kind.
+    """
     strike_range = StrikeRange.delta(0.25, 0.05)
 
     assert strike_range.kind == "Delta"
+
+
+@pytest.mark.parametrize(
+    ("is_call", "db_dr", "expected"),
+    [
+        (True, 1.0, 0.437729301518),
+        (False, 1.0, -0.513500122983),
+        (True, 0.0, -0.075770821464),
+        (False, 0.0, -0.075770821464),
+    ],
+)
+def test_black_scholes_rho_at_zero_carry(is_call: bool, db_dr: float, expected: float) -> None:
+    """
+    Distinguish dividend-linked and fixed-carry rho at equal rates.
+    """
+    result = black_scholes_greeks(100.0, 0.05, 0.0, 0.2, is_call, 100.0, 1.0, db_dr=db_dr)
+
+    assert result.rho == pytest.approx(expected, abs=1e-6)
+
+
+@pytest.mark.parametrize("vol", [0.0, -0.2, float("nan"), float("inf")])
+def test_black_scholes_rejects_invalid_volatility(vol: float) -> None:
+    """
+    Reject volatility values outside the local pricing domain.
+    """
+    with pytest.raises(ValueError, match="Invalid option valuation input: volatility"):
+        black_scholes_greeks(100.0, 0.05, 0.0, vol, True, 100.0, 1.0)
+
+
+@pytest.mark.parametrize("pricing", [imply_vol, imply_vol_and_greeks])
+def test_implied_volatility_rejects_unattainable_price(
+    pricing: Callable[..., float | BlackScholesGreeksResult],
+) -> None:
+    """
+    Reject a premium above the no-arbitrage upper bound.
+    """
+    with pytest.raises(ValueError, match="No finite positive implied volatility"):
+        pricing(100.0, 0.0, 0.0, True, 100.0, 1.0, 200.0)
+
+
+def test_implied_volatility_preserves_a_tiny_premium_solution() -> None:
+    """
+    Keep valid scalar IV solutions independent from fast-kernel repricing.
+    """
+    vol = imply_vol(100.0, 0.05, 0.05, True, 200.0, 1.0, 1e-10)
+
+    assert vol == pytest.approx(0.09942082323383927, abs=1e-12)
+
+
+@pytest.mark.parametrize("pricing", [imply_vol_and_greeks, refine_vol_and_greeks])
+def test_greeks_accept_valid_short_dated_index_option(
+    pricing: Callable[..., BlackScholesGreeksResult],
+) -> None:
+    """
+    Preserve valid index-option valuation when fast-kernel rounding exceeds tolerance.
+    """
+    kwargs = {"initial_vol": 0.2} if pricing is refine_vol_and_greeks else {}
+    result = pricing(
+        5000.0,
+        0.0425,
+        0.0,
+        True,
+        5085.0,
+        1.0 / 365.25,
+        0.14236010628496842,
+        db_dr=1.0,
+        **kwargs,
+    )
+
+    assert (
+        result.price,
+        result.vol,
+        result.delta,
+        result.gamma,
+        result.vega,
+        result.theta,
+        result.itm_prob,
+        result.rho,
+    ) == pytest.approx(
+        (
+            0.14236010628496842,
+            0.141,
+            0.01126789564306093,
+            0.0008016575699433546,
+            0.07736736301301367,
+            -0.5454233444107617,
+            0.011052833335445902,
+            0.001538593240493352,
+        ),
+        rel=1e-8,
+        abs=1e-12,
+    )

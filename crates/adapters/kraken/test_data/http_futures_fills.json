@@ -23,7 +23,7 @@
       "size": 5000.0,
       "price": 1764.65,
       "fillType": "taker",
-      "cli_ord_id": "my-order-ref-456",
+      "cliOrdId": "my-order-ref-456",
       "fee_paid": 0.00685589,
       "fee_currency": "ETH"
     },

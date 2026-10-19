@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Domain model for instruments, orders, positions, and accounts.
+"""
 
 from __future__ import annotations
 

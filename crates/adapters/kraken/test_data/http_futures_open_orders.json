@@ -40,7 +40,7 @@
       "filledSize": 2000.0,
       "reduceOnly": true,
       "lastUpdateTime": "2023-04-07T15:00:00.456Z",
-      "cli_ord_id": "my-client-order-123"
+      "cliOrdId": "my-client-order-123"
     }
   ]
 }

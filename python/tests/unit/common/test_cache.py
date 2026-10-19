@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test cache behavior.
+"""
 
 import pytest
 
@@ -79,6 +82,7 @@ CACHE_NONE_CASES = [
     ("index_price", (INSTRUMENT_ID,)),
     ("index_prices", (INSTRUMENT_ID,)),
     ("instrument", (INSTRUMENT_ID,)),
+    ("instrument_close", (INSTRUMENT_ID,)),
     ("mark_price", (INSTRUMENT_ID,)),
     ("mark_prices", (INSTRUMENT_ID,)),
     ("order", (CLIENT_ORDER_ID,)),
@@ -97,13 +101,13 @@ CACHE_NONE_CASES = [
     ("strategy_id_for_order", (CLIENT_ORDER_ID,)),
     ("strategy_id_for_position", (POSITION_ID,)),
     ("synthetic", (INSTRUMENT_ID,)),
+    ("top_of_book", (INSTRUMENT_ID,)),
     ("trade", (INSTRUMENT_ID, 1)),
     ("trades", (INSTRUMENT_ID,)),
     ("venue_order_id", (CLIENT_ORDER_ID,)),
 ]
 
 CACHE_LIST_CASES = [
-    ("actor_ids", ()),
     ("bar_types", (AggregationSource.EXTERNAL,)),
     ("bar_types", (AggregationSource.EXTERNAL, INSTRUMENT_ID, PriceType.MID)),
     ("client_order_ids", ()),
@@ -163,6 +167,7 @@ CACHE_FALSE_CASES = [
     ("has_bars", (BAR_TYPE,)),
     ("has_funding_rates", (INSTRUMENT_ID,)),
     ("has_index_prices", (INSTRUMENT_ID,)),
+    ("has_instrument_close", (INSTRUMENT_ID,)),
     ("has_instrument_statuses", (INSTRUMENT_ID,)),
     ("has_mark_prices", (INSTRUMENT_ID,)),
     ("has_order_book", (INSTRUMENT_ID,)),
@@ -208,7 +213,10 @@ CACHE_ZERO_CASES = [
 ]
 
 
-def test_fifo_cache_lifecycle():
+def test_fifo_cache_lifecycle() -> None:
+    """
+    Test fifo cache lifecycle.
+    """
     cache = FifoCache()
     cache.add("a")
     cache.add("b")
@@ -229,12 +237,18 @@ def test_fifo_cache_lifecycle():
     assert len(cache) == 0
 
 
-def test_cache_constructor_accepts_default_config():
+def test_cache_constructor_accepts_default_config() -> None:
+    """
+    Test cache constructor accepts default config.
+    """
     assert isinstance(Cache(), Cache)
 
 
 @pytest.mark.parametrize(("method_name", "args"), CACHE_NONE_CASES)
-def test_cache_empty_methods_return_none(method_name, args):
+def test_cache_empty_methods_return_none(method_name: str, args: tuple[object, ...]) -> None:
+    """
+    Test cache empty methods return none.
+    """
     cache = Cache()
 
     result = getattr(cache, method_name)(*args)
@@ -243,7 +257,10 @@ def test_cache_empty_methods_return_none(method_name, args):
 
 
 @pytest.mark.parametrize(("method_name", "args"), CACHE_LIST_CASES)
-def test_cache_empty_methods_return_empty_list(method_name, args):
+def test_cache_empty_methods_return_empty_list(method_name: str, args: tuple[object, ...]) -> None:
+    """
+    Test cache empty methods return empty list.
+    """
     cache = Cache()
 
     result = getattr(cache, method_name)(*args)
@@ -252,7 +269,10 @@ def test_cache_empty_methods_return_empty_list(method_name, args):
 
 
 @pytest.mark.parametrize(("method_name", "args"), CACHE_FALSE_CASES)
-def test_cache_empty_methods_return_false(method_name, args):
+def test_cache_empty_methods_return_false(method_name: str, args: tuple[object, ...]) -> None:
+    """
+    Test cache empty methods return false.
+    """
     cache = Cache()
 
     result = getattr(cache, method_name)(*args)
@@ -261,7 +281,10 @@ def test_cache_empty_methods_return_false(method_name, args):
 
 
 @pytest.mark.parametrize(("method_name", "args"), CACHE_ZERO_CASES)
-def test_cache_empty_methods_return_zero(method_name, args):
+def test_cache_empty_methods_return_zero(method_name: str, args: tuple[object, ...]) -> None:
+    """
+    Test cache empty methods return zero.
+    """
     cache = Cache()
 
     result = getattr(cache, method_name)(*args)
@@ -269,7 +292,10 @@ def test_cache_empty_methods_return_zero(method_name, args):
     assert result == 0
 
 
-def test_cache_add_get_reset_and_dispose():
+def test_cache_add_get_reset_and_dispose() -> None:
+    """
+    Test cache add get reset and dispose.
+    """
     cache = Cache()
 
     assert cache.get("missing") is None
@@ -310,7 +336,10 @@ def _make_position(position_id: str = "P-SNAP-1", account_id: str = "SIM-000") -
     return Position(instrument=AUDUSD_SIM, fill=fill)
 
 
-def test_cache_position_snapshots_round_trip():
+def test_cache_position_snapshots_round_trip() -> None:
+    """
+    Test cache position snapshots round trip.
+    """
     cache = Cache()
     position = _make_position()
 
@@ -343,7 +372,10 @@ def test_cache_position_snapshots_round_trip():
     assert len({str(s.id) for s in snapshots}) == 3
 
 
-def test_cache_position_snapshots_account_filter():
+def test_cache_position_snapshots_account_filter() -> None:
+    """
+    Test cache position snapshots account filter.
+    """
     cache = Cache()
     sim_position = _make_position(position_id="P-SIM", account_id="SIM-000")
     other_position = _make_position(position_id="P-OTHER", account_id="OTHER-000")

@@ -45,7 +45,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -449,6 +449,10 @@ impl Order for TrailingStopLimitOrder {
         self.voided_qty
     }
 
+    fn non_reopened_voided_qty(&self) -> Quantity {
+        self.non_reopened_voided_qty
+    }
+
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
     }
@@ -506,7 +510,10 @@ impl Order for TrailingStopLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let updates_slippage = matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_),
+        );
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
             Some(event.ts_event())
@@ -525,7 +532,7 @@ impl Order for TrailingStopLimitOrder {
             self.ts_triggered = ts_event;
         }
 
-        if is_order_filled && let Some(price) = self.price {
+        if updates_slippage && let Some(price) = self.price {
             self.core.set_slippage(price);
         }
 
@@ -540,8 +547,7 @@ impl Order for TrailingStopLimitOrder {
         if event.trigger_price.is_some() {
             self.trigger_price = event.trigger_price;
         }
-        self.quantity = event.quantity;
-        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
+        self.core.apply_updated_quantity(event.quantity);
     }
 
     fn is_triggered(&self) -> Option<bool> {
@@ -707,6 +713,7 @@ mod tests {
             .limit_offset(dec!(5))
             .trigger_price(Price::from("0.68000"))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 
@@ -851,6 +858,7 @@ mod tests {
             .trigger_price(Price::from("0.68000"))
             .limit_offset(dec!(5))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 
@@ -874,6 +882,7 @@ mod tests {
             .side(OrderSide::Buy)
             .limit_offset(dec!(5))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test sma behavior.
+"""
 
 import pytest
 
@@ -22,30 +25,48 @@ from tests.stubs import TestDataProviderPyo3
 
 @pytest.fixture
 def sma() -> SimpleMovingAverage:
+    """
+    Sma.
+    """
     return SimpleMovingAverage(10)
 
 
 def test_sma(sma: SimpleMovingAverage) -> None:
+    """
+    Test sma.
+    """
     assert sma.name == "SimpleMovingAverage"
 
 
 def test_str_repr_returns_expected_string(sma: SimpleMovingAverage) -> None:
+    """
+    Test str repr returns expected string.
+    """
     # Arrange, Act, Assert
     assert str(sma) == "SimpleMovingAverage(10)"
     assert repr(sma) == "SimpleMovingAverage(10)"
 
 
 def test_period_returns_expected_value(sma: SimpleMovingAverage) -> None:
+    """
+    Test period returns expected value.
+    """
     # Arrange, Act, Assert
     assert sma.period == 10
 
 
 def test_initialized_without_inputs_returns_false(sma: SimpleMovingAverage) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not sma.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(sma: SimpleMovingAverage) -> None:
+    """
+    Test initialized with required inputs returns true.
+    """
     # Arrange
     sma.update_raw(1.0)
     sma.update_raw(2.0)
@@ -65,8 +86,11 @@ def test_initialized_with_required_inputs_returns_true(sma: SimpleMovingAverage)
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
+    """
+    Test handle quote tick updates indicator.
+    """
     # Arrange
-    indicator = SimpleMovingAverage(10, PriceType.MID)
+    indicator = SimpleMovingAverage(1, PriceType.MID)
 
     tick = TestDataProviderPyo3.quote_tick()
 
@@ -79,8 +103,11 @@ def test_handle_quote_tick_updates_indicator() -> None:
 
 
 def test_handle_trade_tick_updates_indicator() -> None:
+    """
+    Test handle trade tick updates indicator.
+    """
     # Arrange
-    indicator = SimpleMovingAverage(10)
+    indicator = SimpleMovingAverage(1)
 
     tick = TestDataProviderPyo3.trade_tick()
 
@@ -93,8 +120,11 @@ def test_handle_trade_tick_updates_indicator() -> None:
 
 
 def test_handle_bar_updates_indicator() -> None:
+    """
+    Test handle bar updates indicator.
+    """
     # Arrange
-    indicator = SimpleMovingAverage(10)
+    indicator = SimpleMovingAverage(1)
 
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -107,15 +137,23 @@ def test_handle_bar_updates_indicator() -> None:
 
 
 def test_value_with_one_input_returns_expected_value(sma: SimpleMovingAverage) -> None:
+    """
+    Test value with one input returns expected value.
+    """
     # Arrange
     sma.update_raw(1.0)
 
     # Act, Assert
-    assert sma.value == 1.0
+    assert not sma.initialized
+    assert sma.value == 0.0
 
 
-def test_value_with_three_inputs_returns_expected_value(sma: SimpleMovingAverage) -> None:
+def test_value_with_three_inputs_returns_expected_value() -> None:
+    """
+    Test value with three inputs returns expected value.
+    """
     # Arrange
+    sma = SimpleMovingAverage(3)
     sma.update_raw(1.0)
     sma.update_raw(2.0)
     sma.update_raw(3.0)
@@ -124,8 +162,12 @@ def test_value_with_three_inputs_returns_expected_value(sma: SimpleMovingAverage
     assert sma.value == 2.0
 
 
-def test_value_at_returns_expected_value(sma: SimpleMovingAverage) -> None:
+def test_value_at_returns_expected_value() -> None:
+    """
+    Test value at returns expected value.
+    """
     # Arrange
+    sma = SimpleMovingAverage(3)
     sma.update_raw(1.0)
     sma.update_raw(2.0)
     sma.update_raw(3.0)
@@ -135,10 +177,13 @@ def test_value_at_returns_expected_value(sma: SimpleMovingAverage) -> None:
 
 
 def test_handle_quote_tick_updates_with_expected_value() -> None:
+    """
+    Test handle quote tick updates with expected value.
+    """
     # Arrange
-    sma_for_ticks1 = SimpleMovingAverage(10, PriceType.ASK)
-    sma_for_ticks2 = SimpleMovingAverage(10, PriceType.MID)
-    sma_for_ticks3 = SimpleMovingAverage(10, PriceType.BID)
+    sma_for_ticks1 = SimpleMovingAverage(1, PriceType.ASK)
+    sma_for_ticks2 = SimpleMovingAverage(1, PriceType.MID)
+    sma_for_ticks3 = SimpleMovingAverage(1, PriceType.BID)
 
     tick = TestDataProviderPyo3.quote_tick(
         bid_price=1.00001,
@@ -160,8 +205,11 @@ def test_handle_quote_tick_updates_with_expected_value() -> None:
 
 
 def test_handle_trade_tick_updates_with_expected_value() -> None:
+    """
+    Test handle trade tick updates with expected value.
+    """
     # Arrange
-    sma_for_ticks = SimpleMovingAverage(10)
+    sma_for_ticks = SimpleMovingAverage(1)
 
     tick = TestDataProviderPyo3.trade_tick()
 
@@ -174,6 +222,9 @@ def test_handle_trade_tick_updates_with_expected_value() -> None:
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(sma: SimpleMovingAverage) -> None:
+    """
+    Test reset successfully returns indicator to fresh state.
+    """
     # Arrange
     for _i in range(1000):
         sma.update_raw(1.0)

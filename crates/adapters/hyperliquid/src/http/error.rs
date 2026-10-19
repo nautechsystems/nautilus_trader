@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_network::http::{HttpClientError, ReqwestError, StatusCode};
+use nautilus_network::http::{HttpClientError, StatusCode};
 use thiserror::Error;
 
 /// Error type for Hyperliquid operations
@@ -136,38 +136,19 @@ impl Error {
         }
     }
 
-    /// Map reqwest errors to appropriate error types
-    #[expect(clippy::needless_pass_by_value)]
-    pub fn from_reqwest(error: ReqwestError) -> Self {
-        if error.is_timeout() {
-            Self::Timeout
-        } else if let Some(status) = error.status() {
-            let status_code = status.as_u16();
-            match status_code {
-                401 | 403 => Self::auth(format!("HTTP {status_code}: authentication failed")),
-                400 => Self::bad_request(format!("HTTP {status_code}: bad request")),
-                429 => Self::rate_limit("unknown", 0, None),
-                500..=599 => Self::exchange(format!("HTTP {status_code}: server error")),
-                _ => Self::http(status_code, format!("HTTP error: {error}")),
-            }
-        } else if error.is_connect() || error.is_request() {
-            Self::transport(format!("Request error: {error}"))
-        } else {
-            Self::transport(format!("Unknown reqwest error: {error}"))
-        }
-    }
-
     /// Map HTTP client errors to appropriate error types
-    #[expect(clippy::needless_pass_by_value)]
     pub fn from_http_client(error: HttpClientError) -> Self {
-        Self::transport(format!("HTTP client error: {error}"))
+        match error {
+            HttpClientError::TimeoutError(_) => Self::Timeout,
+            e => Self::transport(format!("HTTP client error: {e}")),
+        }
     }
 
     /// Check if error is retryable
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::Transport(_) | Self::Timeout | Self::RateLimit { .. } => true,
-            Self::Http { status, .. } => *status >= 500,
+            Self::Http { status, .. } => *status == 408 || (500..=599).contains(status),
             _ => false,
         }
     }

@@ -67,6 +67,7 @@ impl TradeTickDataWrangler {
     ) -> PyResult<Vec<TradeTick>> {
         // Create a StreamReader (from Arrow IPC)
         let cursor = Cursor::new(data);
+
         let reader = match StreamReader::try_new(cursor, None) {
             Ok(reader) => reader,
             Err(e) => return Err(to_pyvalue_err(e)),

@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 use nautilus_network::retry::RetryConfig;
 #[cfg(test)]
@@ -34,7 +34,7 @@ use nautilus_network::websocket::proxy::ProxyUrl;
 
 use crate::{
     common::consts::{POLYMARKET, POLYMARKET_VENUE},
-    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
     data::PolymarketDataClient,
     execution::PolymarketExecutionClient,
     http::{
@@ -53,10 +53,7 @@ impl ClientConfig for PolymarketDataClientConfig {
 /// Factory for creating Polymarket data clients.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.polymarket", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -101,6 +98,8 @@ impl PolymarketDataClientFactory {
     ) -> anyhow::Result<PolymarketDataClient> {
         let client_id = ClientId::from(name);
         let proxy_url = polymarket_config.validated_proxy_url()?;
+        // Fail fast on malformed credentials; the client resolves them again for its feed.
+        polymarket_config.polybolt_credential()?;
 
         let gamma_client = PolymarketGammaHttpClient::new_with_proxy(
             Some(polymarket_config.gamma_url()),
@@ -156,7 +155,7 @@ impl PolymarketDataClientFactory {
     }
 }
 
-impl ClientConfig for PolymarketExecClientConfig {
+impl ClientConfig for PolymarketExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -165,10 +164,7 @@ impl ClientConfig for PolymarketExecClientConfig {
 /// Factory for creating Polymarket execution clients.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.polymarket",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.polymarket", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -180,16 +176,18 @@ pub struct PolymarketExecutionClientFactory;
 impl ExecutionClientFactory for PolymarketExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let polymarket_config = config
             .as_any()
-            .downcast_ref::<PolymarketExecClientConfig>()
+            .downcast_ref::<PolymarketExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for PolymarketExecutionClientFactory. Expected PolymarketExecClientConfig, was {config:?}",
+                    "Invalid config type for PolymarketExecutionClientFactory. Expected PolymarketExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -199,7 +197,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
 
         let client_id = ClientId::from(name);
         let core = ExecutionClientCore::new(
-            polymarket_config.trader_id,
+            trader_id,
             client_id,
             *POLYMARKET_VENUE,
             oms_type,
@@ -219,7 +217,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "PolymarketExecClientConfig"
+        "PolymarketExecutionClientConfig"
     }
 }
 
@@ -275,7 +273,7 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
         live::runner::replace_data_event_sender,
         messages::DataEvent,
@@ -285,7 +283,7 @@ mod tests {
     use super::*;
     use crate::{
         common::credential::Credential,
-        config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+        config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
         http::clob::PolymarketClobHttpClient,
     };
 
@@ -320,7 +318,7 @@ mod tests {
         let factory = PolymarketDataClientFactory;
         let wrong_config = WrongConfig;
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create(POLYMARKET, &wrong_config, cache.into(), clock);
         assert!(result.is_err());
@@ -337,16 +335,16 @@ mod tests {
     fn test_polymarket_execution_client_factory_creation() {
         let factory = PolymarketExecutionClientFactory;
         assert_eq!(factory.name(), POLYMARKET);
-        assert_eq!(factory.config_type(), "PolymarketExecClientConfig");
+        assert_eq!(factory.config_type(), "PolymarketExecutionClientConfig");
     }
 
     #[rstest]
     fn test_polymarket_exec_client_config_implements_client_config() {
-        let config = PolymarketExecClientConfig::default();
+        let config = PolymarketExecutionClientConfig::default();
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
         let downcasted = boxed_config
             .as_any()
-            .downcast_ref::<PolymarketExecClientConfig>();
+            .downcast_ref::<PolymarketExecutionClientConfig>();
         assert!(downcasted.is_some());
     }
 
@@ -356,7 +354,13 @@ mod tests {
         let wrong_config = WrongConfig;
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create(POLYMARKET, &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            POLYMARKET,
+            &wrong_config,
+            cache.into(),
+            Rc::new(RefCell::new(VirtualClock::new())),
+        );
         assert!(result.is_err());
         assert!(
             result
@@ -372,11 +376,11 @@ mod tests {
         const SECRET: &str = "data-factory-proxy-secret";
         let factory = PolymarketDataClientFactory;
         let config = PolymarketDataClientConfig {
-            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
+            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1").into()),
             ..PolymarketDataClientConfig::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let Err(e) = factory.create(POLYMARKET, &config, cache.into(), clock) else {
             panic!("malformed proxy URL should fail");
         };
@@ -388,12 +392,18 @@ mod tests {
     fn execution_factory_invalid_proxy_error_redacts_credentials() {
         const SECRET: &str = "execution-factory-proxy-secret";
         let factory = PolymarketExecutionClientFactory;
-        let config = PolymarketExecClientConfig {
-            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
-            ..PolymarketExecClientConfig::default()
+        let config = PolymarketExecutionClientConfig {
+            proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1").into()),
+            ..PolymarketExecutionClientConfig::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let Err(e) = factory.create(POLYMARKET, &config, cache.into()) else {
+        let Err(e) = factory.create(
+            TraderId::from("TRADER-001"),
+            POLYMARKET,
+            &config,
+            cache.into(),
+            Rc::new(RefCell::new(VirtualClock::new())),
+        ) else {
             panic!("malformed proxy URL should fail");
         };
 
@@ -414,8 +424,8 @@ mod tests {
             base_url_ws: Some("wss://market.fixture/ws".to_string()),
             base_url_gamma: Some("https://gamma.fixture".to_string()),
             base_url_data_api: Some("https://data.fixture".to_string()),
-            base_url_rtds: Some("wss://rtds.fixture/ws".to_string()),
-            proxy_url: Some(proxy_url.clone()),
+            base_url_reference_prices: Some("wss://polybolt.fixture/ws".to_string()),
+            proxy_url: Some(proxy_url.clone().into()),
             http_timeout_secs: 2,
             ..PolymarketDataClientConfig::default()
         };
@@ -445,7 +455,10 @@ mod tests {
         let configured_proxy = client.config().validated_proxy_url().unwrap().unwrap();
 
         assert_eq!(client.ws_client().proxy_url().unwrap().expose(), proxy_url);
-        assert_eq!(client.rtds_feed().proxy_url().unwrap().expose(), proxy_url);
+        assert_eq!(
+            client.polybolt_feed().proxy_url().unwrap().expose(),
+            proxy_url
+        );
         assert_eq!(configured_proxy.expose(), proxy_url);
 
         let requests = requests.lock().await;
@@ -492,9 +505,9 @@ mod tests {
         let proxy_url =
             ProxyUrl::parse(format!("http://{USERNAME}:{SECRET}@{proxy_addr}")).unwrap();
         let credential = Credential::new(
-            "fixture-key",
-            "Zml4dHVyZQ==",
-            "fixture-passphrase".to_string(),
+            "fixture-key".into(),
+            "Zml4dHVyZQ==".into(),
+            "fixture-passphrase".into(),
         )
         .unwrap();
         let clob_auth = PolymarketClobHttpClient::new_with_proxy(

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test polymarket loader behavior.
+"""
 
 import json
 from collections.abc import Iterator
@@ -21,6 +24,7 @@ from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from threading import Thread
 from types import SimpleNamespace
+from typing import ClassVar
 from urllib.parse import parse_qs
 from urllib.parse import urlparse
 
@@ -82,21 +86,43 @@ def _clob_market(slug: str) -> dict[str, object]:
 
 def _trade(asset: str, timestamp: int, suffix: str) -> dict[str, object]:
     return {
-        "asset": asset,
-        "conditionId": CONDITION_ID,
+        "token_id": asset,
+        "condition_id": CONDITION_ID,
         "side": "BUY",
         "price": 0.60,
         "size": 10.0,
         "timestamp": timestamp,
-        "transactionHash": f"0x{suffix}",
+        "transaction_hash": f"0x{suffix}",
+    }
+
+
+def _trades_page() -> dict[str, object]:
+    return {
+        "data": [
+            _trade(YES_TOKEN, 1_710_000_005, "f"),
+            _trade(YES_TOKEN, 1_710_000_004, "e"),
+            _trade(YES_TOKEN, 1_710_000_003, "d"),
+            _trade(YES_TOKEN, 1_710_000_002, "c"),
+            _trade(NO_TOKEN, 1_710_000_001, "b"),
+            _trade(YES_TOKEN, 1_710_000_000, "a"),
+        ],
+        "pagination": {
+            "limit": 1000,
+            "offset": 0,
+            "has_more": False,
+            "next_cursor": None,
+        },
     }
 
 
 class _PolymarketRequestHandler(BaseHTTPRequestHandler):
-    query_log: list[tuple[str, dict[str, list[str]]]] = []
+    query_log: ClassVar[list[tuple[str, dict[str, list[str]]]]] = []
     current_slug = "test-market"
 
     def do_GET(self) -> None:
+        """
+        Do get.
+        """
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         self.query_log.append((parsed.path, query))
@@ -114,17 +140,8 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
             self._send_json([{"id": "1", "label": "Test", "slug": "test"}])
         elif parsed.path == "/public-search":
             self._send_json({"markets": [_gamma_market()], "events": [self._event()]})
-        elif parsed.path == "/trades":
-            self._send_json(
-                [
-                    _trade(YES_TOKEN, 1_710_000_000, "a"),
-                    _trade(NO_TOKEN, 1_710_000_001, "b"),
-                    _trade(YES_TOKEN, 1_710_000_002, "c"),
-                    _trade(YES_TOKEN, 1_710_000_003, "d"),
-                    _trade(YES_TOKEN, 1_710_000_004, "e"),
-                    _trade(YES_TOKEN, 1_710_000_005, "f"),
-                ],
-            )
+        elif parsed.path == "/v2/trades":
+            self._send_json(_trades_page())
         elif parsed.path.startswith("/markets/"):
             self._send_json(_clob_market(self.current_slug))
         else:
@@ -140,7 +157,10 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_json(_gamma_market(slug))
 
-    def log_message(self, _format: str, *args: object) -> None:
+    def log_message(self, _format: str, *_args: object) -> None:
+        """
+        Log message.
+        """
         return
 
     def _markets(self, query: dict[str, list[str]]) -> dict[str, object]:
@@ -185,6 +205,9 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def polymarket_api() -> Iterator[SimpleNamespace]:
+    """
+    Polymarket api.
+    """
     _PolymarketRequestHandler.query_log = []
     _PolymarketRequestHandler.current_slug = "test-market"
     server = ThreadingHTTPServer(("127.0.0.1", 0), _PolymarketRequestHandler)
@@ -202,6 +225,9 @@ def polymarket_api() -> Iterator[SimpleNamespace]:
 
 @pytest.mark.asyncio
 async def test_loader_factory_and_historical_window(polymarket_api: SimpleNamespace) -> None:
+    """
+    Test loader factory and historical window.
+    """
     address = polymarket_api.address
     loader = await PolymarketDataLoader.from_market_slug(
         "test-market",
@@ -220,7 +246,8 @@ async def test_loader_factory_and_historical_window(polymarket_api: SimpleNamesp
     assert isinstance(loader.instrument, BinaryOption)
     assert loader.token_id == YES_TOKEN
     assert loader.condition_id == CONDITION_ID
-    assert str(loader.instrument.taker_fee) == "0.02"
+    assert loader.instrument.description == "Will the loader test pass?"
+    assert loader.instrument.info["description"] == "Test market"
     assert [trade.ts_event for trade in trades] == [
         1_710_000_002_000_000_000,
         1_710_000_003_000_000_000,
@@ -230,12 +257,21 @@ async def test_loader_factory_and_historical_window(polymarket_api: SimpleNamesp
     assert "closed" not in loader.instrument.info
     assert "winner" not in loader.instrument.info
     assert any("condition_ids" in query for _, query in polymarket_api.query_log)
-    assert any(query.get("start") == ["1710000002"] for _, query in polymarket_api.query_log)
-    assert any(query.get("end") == ["1710000004"] for _, query in polymarket_api.query_log)
+    trades_queries = [query for path, query in polymarket_api.query_log if path == "/v2/trades"]
+    assert trades_queries
+    # The v2 condition feed ignores start/end bounds, so the window filters
+    # locally and the wire carries neither parameter.
+    for query in trades_queries:
+        assert query.get("condition") == [CONDITION_ID]
+        assert "start" not in query
+        assert "end" not in query
 
 
 @pytest.mark.asyncio
 async def test_loader_discovery_and_event_factory(polymarket_api: SimpleNamespace) -> None:
+    """
+    Test loader discovery and event factory.
+    """
     address = polymarket_api.address
 
     market = await PolymarketDataLoader.query_market_by_slug("test-market", address)
@@ -280,6 +316,9 @@ async def test_loader_rejects_invalid_market_data(
     slug: str,
     message: str,
 ) -> None:
+    """
+    Test loader rejects invalid market data.
+    """
     address = polymarket_api.address
 
     with pytest.raises(ValueError, match=message):
@@ -295,6 +334,9 @@ async def test_loader_rejects_invalid_market_data(
 async def test_loader_rejects_missing_event_and_malformed_response(
     polymarket_api: SimpleNamespace,
 ) -> None:
+    """
+    Test loader rejects missing event and malformed response.
+    """
     address = polymarket_api.address
 
     with pytest.raises(ValueError, match="Event with slug 'missing-event' not found"):
@@ -310,5 +352,8 @@ async def test_loader_rejects_missing_event_and_malformed_response(
 
 
 def test_loader_rejects_negative_token_index() -> None:
+    """
+    Test loader rejects negative token index.
+    """
     with pytest.raises(ValueError, match="Token index -1 cannot be negative"):
         PolymarketDataLoader.from_market_slug("test-market", token_index=-1)

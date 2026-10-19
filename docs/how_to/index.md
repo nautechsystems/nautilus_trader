@@ -15,10 +15,10 @@ path and [tutorials](../tutorials/) first.
 
 ## Live trading
 
-| Guide                                                   | Description                                             |
-| :------------------------------------------------------ | :------------------------------------------------------ |
-| [Configure a live trading node](configure_live_trading) | Set up TradingNodeConfig, execution engine, and venues. |
-| [Get started with Lighter](get_started_lighter)         | Start Lighter from Rust or Python v2.                   |
+| Guide                                                   | Description                                          |
+| :------------------------------------------------------ | :--------------------------------------------------- |
+| [Configure a live trading node](configure_live_trading) | Set up LiveNodeConfig, execution engine, and venues. |
+| [Get started with Lighter](get_started_lighter)         | Start Lighter from Rust or Python.                   |
 
 ## Rust
 

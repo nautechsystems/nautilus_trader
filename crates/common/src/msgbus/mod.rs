@@ -64,7 +64,7 @@ use nautilus_model::defi::{Block, Pool, PoolFeeCollect, PoolFlash, PoolLiquidity
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -118,7 +118,7 @@ thread_local! {
 
     pub(super) static DELTAS_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderBookDeltas>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
-    pub(super) static DEPTH10_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderBookDepth10>; HANDLER_BUFFER_CAP]>> =
+    pub(super) static DEPTH_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderBookDepth>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
     pub(super) static BOOK_HANDLERS: RefCell<SmallVec<[TypedHandler<OrderBook>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());

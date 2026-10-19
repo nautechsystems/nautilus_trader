@@ -16,7 +16,8 @@
 //! WebSocket message handler for Hyperliquid.
 
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
+    future::Future,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -25,9 +26,8 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{
-    AtomicTime, MUTEX_POISONED, Params, nanos::UnixNanos, time::get_atomic_clock_realtime,
-};
+use nautilus_core::{AtomicTime, Params, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType},
     identifiers::{AccountId, InstrumentId},
@@ -36,11 +36,14 @@ use nautilus_model::{
 };
 use nautilus_network::{
     RECONNECTED,
-    retry::{RetryManager, create_websocket_retry_manager},
+    error::SendError,
+    retry::{RetryError, RetryManager, create_websocket_retry_manager},
     websocket::{SubscriptionState, WebSocketClient},
 };
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
@@ -54,16 +57,23 @@ use super::{
     },
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_open_interest,
-        parse_ws_order_book_deltas, parse_ws_order_book_depth10, parse_ws_order_status_report,
-        parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick,
+        parse_ws_order_book_deltas, parse_ws_order_book_depth, parse_ws_order_status_report,
+        parse_ws_public_trade, parse_ws_quote_tick, parse_ws_trade_tick, parse_ws_twap_history_row,
+        parse_ws_twap_slice_fill,
     },
     post::PostRouter,
+    rate_limits::WebSocketRateLimits,
     trades::TradeStreamUses,
 };
-use crate::data_types::{
-    HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidDexAssetCtx,
-    HyperliquidImpactPrices,
+use crate::{
+    common::consts::HEARTBEAT_INTERVAL,
+    data_types::{
+        HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidDexAssetCtx,
+        HyperliquidImpactPrices,
+    },
 };
+
+const HEARTBEAT_MESSAGE: &str = r#"{"method":"ping"}"#;
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -73,8 +83,11 @@ use crate::data_types::{
 )]
 #[allow(private_interfaces)]
 pub enum HandlerCommand {
-    /// Set the WebSocketClient for the handler to use.
-    SetClient(WebSocketClient),
+    /// Installs the WebSocket client and acknowledges initialization.
+    SetClient {
+        client: WebSocketClient,
+        initialized: tokio::sync::oneshot::Sender<()>,
+    },
     /// Disconnect the WebSocket connection.
     Disconnect,
     /// Subscribe to the given subscriptions.
@@ -85,8 +98,27 @@ pub enum HandlerCommand {
     Unsubscribe {
         subscriptions: Vec<SubscriptionRequest>,
     },
+    /// Resubscribes without interleaving handler input between the two sends.
+    Resubscribe { subscription: SubscriptionRequest },
+    /// Writes an `l2Book` subscription on the current connection, opening `gate` once written.
+    ///
+    /// With `replace`, sends the unsubscribe first so the venue restarts the stream with a
+    /// snapshot. The write always runs, since the stream registry already counts it; `cancel`
+    /// only keeps the gate closed.
+    WriteBook {
+        subscription: SubscriptionRequest,
+        replace: bool,
+        cancel: CancellationToken,
+        gate: SnapshotGate,
+        completion: tokio::sync::oneshot::Sender<Result<(), HyperliquidWsError>>,
+    },
     /// Send a WebSocket post request.
-    Post { id: u64, request: PostRequest },
+    Post {
+        id: u64,
+        request: PostRequest,
+        deadline: tokio::time::Instant,
+        cancellation_token: CancellationToken,
+    },
     /// Initialize the instruments cache with the given instruments.
     InitializeInstruments(Vec<InstrumentAny>),
     /// Update a single instrument in the cache.
@@ -107,8 +139,8 @@ pub enum HandlerCommand {
     /// Cache spot fill coin mappings for instrument lookup.
     CacheSpotFillCoins(AHashMap<Ustr, Ustr>),
     /// Flag whether the `l2Book` stream for `coin` should also be emitted
-    /// as [`NautilusWsMessage::Depth10`] snapshots.
-    SetDepth10Sub { coin: Ustr, subscribed: bool },
+    /// as [`NautilusWsMessage::Depth`] snapshots.
+    SetDepthSub { coin: Ustr, subscribed: bool },
 }
 
 #[derive(Default)]
@@ -155,17 +187,80 @@ impl AssetContextCaches {
     }
 }
 
+#[derive(Debug)]
+struct AllMidsDataTypeCache {
+    dexes: BTreeSet<Option<String>>,
+    projected: Vec<DataType>,
+}
+
+impl Default for AllMidsDataTypeCache {
+    fn default() -> Self {
+        let mut cache = Self {
+            dexes: BTreeSet::new(),
+            projected: Vec::new(),
+        };
+        cache.rebuild();
+        cache
+    }
+}
+
+impl AllMidsDataTypeCache {
+    fn apply(&mut self, subscription: &SubscriptionRequest, subscribed: bool) {
+        let SubscriptionRequest::AllMids { dex } = subscription else {
+            return;
+        };
+        let changed = if subscribed {
+            self.dexes.insert(dex.clone())
+        } else {
+            self.dexes.remove(dex)
+        };
+
+        if changed {
+            self.rebuild();
+        }
+    }
+
+    fn as_slice(&self) -> &[DataType] {
+        &self.projected
+    }
+
+    fn rebuild(&mut self) {
+        self.projected.clear();
+        if self.dexes.is_empty() {
+            self.projected
+                .push(DataType::new("HyperliquidAllMids", None, None));
+            return;
+        }
+
+        self.projected.extend(self.dexes.iter().map(|dex| {
+            let metadata = dex.as_ref().map(|dex| {
+                let mut metadata = Params::new();
+                metadata.insert("dex".to_owned(), serde_json::Value::String(dex.clone()));
+                metadata
+            });
+            DataType::new("HyperliquidAllMids", metadata, None)
+        }));
+    }
+}
+
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     client: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    cmd_closed: bool,
+    raw_closed: bool,
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     account_id: Option<AccountId>,
     subscriptions: SubscriptionState,
+    all_mids_data_types: AllMidsDataTypeCache,
     post_router: Arc<PostRouter>,
+    rate_limits: Arc<WebSocketRateLimits>,
+    client_id: u64,
+    heartbeat: tokio::time::Interval,
     retry_manager: RetryManager<HyperliquidWsError>,
+    retry_manager_post: RetryManager<PostSendError>,
     message_buffer: VecDeque<NautilusWsMessage>,
     instruments: AHashMap<Ustr, InstrumentAny>,
     cloid_cache: CloidCache,
@@ -174,7 +269,7 @@ pub(super) struct FeedHandler {
     asset_context_subs: AHashMap<Ustr, AHashSet<AssetContextDataType>>,
     trade_subs: AHashMap<Ustr, TradeStreamUses>,
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
-    depth10_subs: AHashSet<Ustr>,
+    depth_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
     processed_public_trade_ids: FifoCache<(Ustr, u64), 10_000>,
     asset_context_caches: AssetContextCaches,
@@ -195,18 +290,31 @@ impl FeedHandler {
         subscriptions: SubscriptionState,
         cloid_cache: CloidCache,
         post_router: Arc<PostRouter>,
+        rate_limits: Arc<WebSocketRateLimits>,
+        client_id: u64,
     ) -> Self {
+        let heartbeat = tokio::time::interval_at(
+            tokio::time::Instant::now() + HEARTBEAT_INTERVAL,
+            HEARTBEAT_INTERVAL,
+        );
         Self {
             clock: get_atomic_clock_realtime(),
             signal,
             client: None,
             cmd_rx,
             raw_rx,
+            cmd_closed: false,
+            raw_closed: false,
             out_tx,
             account_id,
             subscriptions,
+            all_mids_data_types: AllMidsDataTypeCache::default(),
             post_router,
+            rate_limits,
+            client_id,
+            heartbeat,
             retry_manager: create_websocket_retry_manager(),
+            retry_manager_post: create_websocket_retry_manager(),
             message_buffer: VecDeque::new(),
             instruments: AHashMap::new(),
             cloid_cache,
@@ -215,7 +323,7 @@ impl FeedHandler {
             asset_context_subs: AHashMap::new(),
             trade_subs: AHashMap::new(),
             all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
-            depth10_subs: AHashSet::new(),
+            depth_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
             processed_public_trade_ids: FifoCache::new(),
             asset_context_caches: AssetContextCaches::default(),
@@ -236,20 +344,25 @@ impl FeedHandler {
 
     async fn send_with_retry(&self, payload: String) -> anyhow::Result<()> {
         if let Some(client) = &self.client {
+            let rate_key = self.rate_limits.message_key();
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
                         async move {
-                            client.send_text(payload, None).await.map_err(|e| {
-                                HyperliquidWsError::ClientError(format!("Send failed: {e}"))
-                            })
+                            client
+                                .send_text(payload, Some(std::slice::from_ref(&rate_key)))
+                                .await
+                                .map_err(|e| {
+                                    HyperliquidWsError::ClientError(format!("Send failed: {e}"))
+                                })
                         }
                     },
                     should_retry_hyperliquid_error,
-                    create_hyperliquid_timeout_error,
+                    |e| create_hyperliquid_timeout_error(e.to_string()),
                 )
+                .execute()
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))
         } else {
@@ -263,75 +376,120 @@ impl FeedHandler {
         }
 
         loop {
+            if self.raw_closed && self.cmd_rx.is_empty() {
+                log::debug!("Handler shutting down: input stream closed");
+                return None;
+            }
+
             tokio::select! {
-                Some(cmd) = self.cmd_rx.recv() => {
+                cmd = self.cmd_rx.recv(), if !self.cmd_closed => {
+                    let Some(cmd) = cmd else {
+                        self.cmd_closed = true;
+                        continue;
+                    };
+
                     match cmd {
-                        HandlerCommand::SetClient(client) => {
+                        HandlerCommand::SetClient { client, initialized } => {
                             log::debug!("Setting WebSocket client in handler");
                             self.client = Some(client);
+                            let _ = initialized.send(());
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Handler received disconnect command");
 
                             if let Some(ref client) = self.client {
+                                self.rate_limits.acquire_message().await;
                                 client.disconnect().await;
                             }
                             self.signal.store(true, Ordering::SeqCst);
                             return None;
                         }
                         HandlerCommand::Subscribe { subscriptions } => {
-                            for subscription in subscriptions {
-                                let key = subscription_to_key(&subscription);
-                                self.subscriptions.mark_subscribe(&key);
-
-                                let request = HyperliquidWsRequest::Subscribe { subscription };
-                                match serde_json::to_string(&request) {
-                                    Ok(payload) => {
-                                        log::debug!("Sending subscribe payload: {payload}");
-                                        if let Err(e) = self.send_with_retry(payload).await {
-                                            log::error!("Error subscribing to {key}: {e}");
-                                            self.subscriptions.mark_failure(&key);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!("Error serializing subscription for {key}: {e}");
-                                        self.subscriptions.mark_failure(&key);
-                                    }
-                                }
-                            }
+                            self.subscribe(subscriptions).await;
                         }
                         HandlerCommand::Unsubscribe { subscriptions } => {
-                            for subscription in subscriptions {
-                                let key = subscription_to_key(&subscription);
-                                self.subscriptions.mark_unsubscribe(&key);
-
-                                let request = HyperliquidWsRequest::Unsubscribe { subscription };
-                                match serde_json::to_string(&request) {
-                                    Ok(payload) => {
-                                        log::debug!("Sending unsubscribe payload: {payload}");
-                                        if let Err(e) = self.send_with_retry(payload).await {
-                                            log::error!("Error unsubscribing from {key}: {e}");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!("Error serializing unsubscription for {key}: {e}");
-                                    }
-                                }
-                            }
+                            self.unsubscribe(subscriptions).await;
                         }
-                        HandlerCommand::Post { id, request } => {
+                        HandlerCommand::Resubscribe { subscription } => {
+                            self.unsubscribe(vec![subscription.clone()]).await;
+                            self.subscribe(vec![subscription]).await;
+                        }
+                        HandlerCommand::WriteBook {
+                            subscription,
+                            replace,
+                            cancel,
+                            gate,
+                            completion,
+                        } => {
+                            // The registry already counts the stream, so skipping or interrupting
+                            // the write could leave a stream that depth shares unsubscribed; a
+                            // later queued unsubscribe settles the final state instead.
+                            let result = self.write_book(subscription, replace).await;
+
+                            if result.is_ok() && !cancel.is_cancelled() {
+                                gate.open();
+                            }
+                            let _ = completion.send(result);
+                        }
+                        HandlerCommand::Post {
+                            id,
+                            request,
+                            deadline,
+                            cancellation_token,
+                        } => {
+                            if cancellation_token.is_cancelled()
+                                || tokio::time::Instant::now() >= deadline
+                            {
+                                self.post_router
+                                    .cancel_registration(id, &cancellation_token)
+                                    .await;
+                                continue;
+                            }
+
                             let request = HyperliquidWsRequest::Post { id, request };
                             match serde_json::to_string(&request) {
                                 Ok(payload) => {
                                     log::debug!("Sending post payload: id={id}");
-                                    if let Err(e) = self.send_with_retry(payload).await {
-                                        log::error!("Error sending post request id={id}: {e}");
-                                        self.post_router.cancel(id).await;
+                                    let result = if let Some(client) = &self.client {
+                                        let rate_key = self.rate_limits.message_key();
+                                        send_post_with_retry(
+                                            &self.retry_manager_post,
+                                            deadline,
+                                            &cancellation_token,
+                                            || {
+                                                let payload = payload.clone();
+                                                async move {
+                                                    let connection_epoch =
+                                                        client.connection_epoch();
+                                                    client
+                                                        .send_text_on_connection(
+                                                            payload,
+                                                            Some(std::slice::from_ref(&rate_key)),
+                                                            connection_epoch,
+                                                        )
+                                                        .await
+                                                        .map_err(PostSendError::Transport)
+                                                }
+                                            },
+                                        )
+                                        .await
+                                        .map_err(|e| anyhow::anyhow!("{e}"))
+                                    } else {
+                                        Err(anyhow::anyhow!("No WebSocket client available"))
+                                    };
+
+                                    if let Err(e) = result {
+                                        log::warn!("Error sending post request id={id}: {e}");
+                                        self.post_router
+                                            .cancel_registration(id, &cancellation_token)
+                                            .await;
                                     }
                                 }
                                 Err(e) => {
                                     log::error!("Error serializing post request id={id}: {e}");
-                                    self.post_router.cancel(id).await;
+                                    self.post_router
+                                        .cancel_registration(id, &cancellation_token)
+                                        .await;
                                 }
                             }
                         }
@@ -374,22 +532,29 @@ impl FeedHandler {
                             }
                         }
                         HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mappings) => {
-                            self.all_dex_asset_ctxs_instrument_ids = mappings;
+                            // merge by dex to match the client cache, so a partial
+                            // mapping keeps the entries of dexes it did not cover
+                            self.all_dex_asset_ctxs_instrument_ids.extend(mappings);
                         }
                         HandlerCommand::CacheSpotFillCoins(_) => {
                             // No longer needed - raw_symbol now contains the proper format
                         }
-                        HandlerCommand::SetDepth10Sub { coin, subscribed } => {
+                        HandlerCommand::SetDepthSub { coin, subscribed } => {
                             if subscribed {
-                                self.depth10_subs.insert(coin);
+                                self.depth_subs.insert(coin);
                             } else {
-                                self.depth10_subs.remove(&coin);
+                                self.depth_subs.remove(&coin);
                             }
                         }
                     }
                 }
 
-                Some(raw_msg) = self.raw_rx.recv() => {
+                raw_msg = self.raw_rx.recv(), if !self.raw_closed => {
+                    let Some(raw_msg) = raw_msg else {
+                        self.raw_closed = true;
+                        continue;
+                    };
+
                     match raw_msg {
                         Message::Text(text) => {
                             if text == RECONNECTED {
@@ -397,19 +562,49 @@ impl FeedHandler {
                                 return Some(NautilusWsMessage::Reconnected);
                             }
 
-                            match serde_json::from_str::<HyperliquidWsMessage>(&text) {
+                            let context = FrameContext {
+                                client_id: self.client_id,
+                                payload_bytes: text.len(),
+                            };
+
+                            match super::messages::decode_ws_message(&text) {
                                 Ok(msg) => {
                                     if let HyperliquidWsMessage::Post { data } = msg {
                                         self.post_router.complete(data).await;
                                         continue;
                                     }
 
+                                    if let HyperliquidWsMessage::SubscriptionResponse { data } = &msg {
+                                        let key = subscription_to_key(&data.subscription);
+                                        match data.method.as_str() {
+                                            "subscribe" => self.subscriptions.confirm_subscribe(&key),
+                                            "unsubscribe" => {
+                                                let was_pending = self
+                                                    .subscriptions
+                                                    .pending_unsubscribe_topics()
+                                                    .iter()
+                                                    .any(|topic| topic == &key);
+                                                self.subscriptions.confirm_unsubscribe(&key);
+
+                                                if was_pending {
+                                                    self.rate_limits.release_subscription(
+                                                        self.client_id,
+                                                        &key,
+                                                    );
+                                                }
+                                            }
+                                            _ => {
+                                                context.log_conversion_error("subscription_response", log::Level::Warn);
+                                            }
+                                        }
+                                        continue;
+                                    }
+
                                     let ts_init = self.clock.get_time_ns();
-                                    let all_mids_data_types =
-                                        Self::all_mids_data_types(&self.subscriptions);
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
+                                        context,
                                         &self.instruments,
                                         &self.cloid_cache,
                                         &self.bar_types_cache,
@@ -417,13 +612,13 @@ impl FeedHandler {
                                         ts_init,
                                         &self.asset_context_subs,
                                         &self.trade_subs,
-                                        &self.depth10_subs,
+                                        &self.depth_subs,
                                         &mut self.processed_trade_ids,
                                         &mut self.processed_public_trade_ids,
                                         &mut self.asset_context_caches,
                                         &mut self.bar_cache,
                                         &self.all_dex_asset_ctxs_instrument_ids,
-                                        &all_mids_data_types,
+                                        self.all_mids_data_types.as_slice(),
                                     );
 
                                     if !nautilus_msgs.is_empty() {
@@ -434,14 +629,17 @@ impl FeedHandler {
                                     }
                                 }
                                 Err(e) => {
-                                    log::error!("Error parsing WebSocket message: {e}, text: {text}");
+                                    context.log_decode_error(&text, &e);
                                 }
                             }
                         }
                         Message::Ping(data) => {
-                            if let Some(ref client) = self.client
-                                && let Err(e) = client.send_pong(data.to_vec()).await {
-                                log::error!("Error sending pong: {e}");
+                            if let Some(ref client) = self.client {
+                                self.rate_limits.acquire_message().await;
+
+                                if let Err(e) = client.send_pong(data.to_vec()).await {
+                                    log::error!("Error sending pong: {e}");
+                                }
                             }
                         }
                         Message::Close(_) => {
@@ -452,9 +650,120 @@ impl FeedHandler {
                     }
                 }
 
-                else => {
-                    log::debug!("Handler shutting down: stream ended or command channel closed");
-                    return None;
+                _ = self.heartbeat.tick() => {
+                    if self.client.as_ref().is_some_and(WebSocketClient::is_active)
+                        && let Err(e) = self.send_with_retry(
+                            HEARTBEAT_MESSAGE.to_string(),
+                        ).await
+                    {
+                        log::error!("Error sending WebSocket heartbeat: {e}");
+                    }
+                }
+
+            }
+        }
+    }
+
+    async fn subscribe(&mut self, subscriptions: Vec<SubscriptionRequest>) {
+        for subscription in subscriptions {
+            let key = subscription_to_key(&subscription);
+            self.subscriptions.mark_subscribe(&key);
+
+            if let Err(e) = self
+                .rate_limits
+                .reserve_subscription(self.client_id, &subscription)
+            {
+                log::error!("Cannot subscribe to {key}: {e}");
+                self.subscriptions.mark_unsubscribe(&key);
+                self.subscriptions.confirm_unsubscribe(&key);
+                continue;
+            }
+
+            self.all_mids_data_types.apply(&subscription, true);
+            let request = HyperliquidWsRequest::Subscribe { subscription };
+            match serde_json::to_string(&request) {
+                Ok(payload) => {
+                    log::debug!("Sending subscribe payload ({} bytes)", payload.len());
+                    if let Err(e) = self.send_with_retry(payload).await {
+                        log::error!("Error subscribing to {key}: {e}");
+                        self.subscriptions.mark_failure(&key);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error serializing subscription for {key}: {e}");
+                    self.subscriptions.mark_failure(&key);
+                }
+            }
+        }
+    }
+
+    async fn write_book(
+        &self,
+        subscription: SubscriptionRequest,
+        replace: bool,
+    ) -> Result<(), HyperliquidWsError> {
+        let client = self.client.as_ref().ok_or_else(|| {
+            HyperliquidWsError::ClientError("No WebSocket client available".to_string())
+        })?;
+
+        let key = subscription_to_key(&subscription);
+        let rate_key = self.rate_limits.message_key();
+        let rate_keys = Some(std::slice::from_ref(&rate_key));
+        let epoch = client.connection_epoch();
+
+        if replace {
+            // Keeps the stream desired for reconnect replay; its unsubscribe ack is then stale
+            self.subscriptions.mark_failure(&key);
+
+            let request = HyperliquidWsRequest::Unsubscribe {
+                subscription: subscription.clone(),
+            };
+
+            client
+                .send_text_on_connection(serialize_request(&request)?, rate_keys, epoch)
+                .await?;
+        } else {
+            self.subscriptions.mark_subscribe(&key);
+
+            if let Err(e) = self
+                .rate_limits
+                .reserve_subscription(self.client_id, &subscription)
+            {
+                self.subscriptions.mark_unsubscribe(&key);
+                self.subscriptions.confirm_unsubscribe(&key);
+                return Err(HyperliquidWsError::ClientError(e));
+            }
+        }
+
+        let request = HyperliquidWsRequest::Subscribe { subscription };
+
+        if let Err(e) = client
+            .send_text_on_connection(serialize_request(&request)?, rate_keys, epoch)
+            .await
+        {
+            self.subscriptions.mark_failure(&key);
+            return Err(e.into());
+        }
+
+        Ok(())
+    }
+
+    async fn unsubscribe(&mut self, subscriptions: Vec<SubscriptionRequest>) {
+        for subscription in subscriptions {
+            let key = subscription_to_key(&subscription);
+            self.subscriptions.mark_unsubscribe(&key);
+            self.all_mids_data_types.apply(&subscription, false);
+
+            let request = HyperliquidWsRequest::Unsubscribe { subscription };
+            match serde_json::to_string(&request) {
+                Ok(payload) => {
+                    log::debug!("Sending unsubscribe payload ({} bytes)", payload.len());
+                    if let Err(e) = self.send_with_retry(payload).await {
+                        log::error!("Error unsubscribing from {key}: {e}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Error serializing unsubscription for {key}: {e}");
                 }
             }
         }
@@ -463,6 +772,7 @@ impl FeedHandler {
     #[expect(clippy::too_many_arguments)]
     fn parse_to_nautilus_messages(
         msg: HyperliquidWsMessage,
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         cloid_cache: &CloidCache,
         bar_types: &AHashMap<String, BarType>,
@@ -470,7 +780,7 @@ impl FeedHandler {
         ts_init: UnixNanos,
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         trade_subs: &AHashMap<Ustr, TradeStreamUses>,
-        depth10_subs: &AHashSet<Ustr>,
+        depth_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
         processed_public_trade_ids: &mut FifoCache<(Ustr, u64), 10_000>,
         asset_context_caches: &mut AssetContextCaches,
@@ -485,6 +795,7 @@ impl FeedHandler {
                 if let Some(account_id) = account_id
                     && let Some(msg) = Self::handle_order_updates(
                         &data,
+                        context,
                         instruments,
                         cloid_cache,
                         account_id,
@@ -499,22 +810,11 @@ impl FeedHandler {
                 match data {
                     WsUserEventData::Fills { fills } => {
                         log::debug!("Received {} fill(s) from userEvents channel", fills.len());
-                        for fill in &fills {
-                            log::debug!(
-                                "Fill: oid={}, coin={}, side={:?}, sz={}, px={}",
-                                fill.oid,
-                                fill.coin,
-                                fill.side,
-                                fill.sz,
-                                fill.px
-                            );
-                        }
 
                         if let Some(account_id) = account_id {
-                            log::debug!("Processing fills with account_id={account_id}");
-
                             if let Some(msg) = Self::handle_user_fills(
                                 &fills,
+                                context,
                                 instruments,
                                 cloid_cache,
                                 account_id,
@@ -551,6 +851,7 @@ impl FeedHandler {
                 if let Some(account_id) = account_id
                     && let Some(msg) = Self::handle_user_fills(
                         &data.fills,
+                        context,
                         instruments,
                         cloid_cache,
                         account_id,
@@ -624,7 +925,7 @@ impl FeedHandler {
                 result.extend(Self::handle_l2_book(
                     &data,
                     instruments,
-                    depth10_subs,
+                    depth_subs,
                     ts_init,
                 ));
             }
@@ -645,6 +946,22 @@ impl FeedHandler {
                     ts_init,
                 ));
             }
+            HyperliquidWsMessage::UserTwapHistory { data } => {
+                result.extend(Self::handle_user_twap_history(
+                    &data,
+                    context,
+                    instruments,
+                    ts_init,
+                ));
+            }
+            HyperliquidWsMessage::UserTwapSliceFills { data } => {
+                result.extend(Self::handle_user_twap_slice_fills(
+                    &data,
+                    context,
+                    instruments,
+                    ts_init,
+                ));
+            }
             HyperliquidWsMessage::Error { data } => {
                 log::warn!("Received error from Hyperliquid WebSocket: {data}");
             }
@@ -657,6 +974,7 @@ impl FeedHandler {
 
     fn handle_order_updates(
         data: &[super::messages::WsOrderData],
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         cloid_cache: &CloidCache,
         account_id: AccountId,
@@ -673,11 +991,7 @@ impl FeedHandler {
                         // Resolve cloid to real client_order_id if cached
                         if let Some(cloid) = &order_update.order.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            let resolved = cloid_cache
-                                .lock()
-                                .expect(MUTEX_POISONED)
-                                .get(&cloid_ustr)
-                                .copied();
+                            let resolved = cloid_cache.lock().get(&cloid_ustr).copied();
 
                             if let Some(real_client_order_id) = resolved {
                                 log::debug!("Resolved cloid {cloid} -> {real_client_order_id}");
@@ -686,12 +1000,12 @@ impl FeedHandler {
                         }
                         exec_reports.push(ExecutionReport::Order(report));
                     }
-                    Err(e) => {
-                        log::error!("Error parsing order update: {e}");
+                    Err(_) => {
+                        context.log_conversion_error("order_update", log::Level::Error);
                     }
                 }
             } else {
-                log::debug!("No instrument found for coin: {}", order_update.order.coin);
+                context.log_conversion_error("order_instrument", log::Level::Debug);
             }
         }
 
@@ -704,6 +1018,7 @@ impl FeedHandler {
 
     fn handle_user_fills(
         fills: &[super::messages::WsFillData],
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         cloid_cache: &CloidCache,
         account_id: AccountId,
@@ -719,9 +1034,7 @@ impl FeedHandler {
             }
 
             let instrument = instruments.get(&fill.coin);
-
             if let Some(instrument) = instrument {
-                log::debug!("Found instrument for fill coin={}", fill.coin);
                 match parse_ws_fill_report(fill, instrument, account_id, ts_init) {
                     Ok(mut report) => {
                         // Mark processed only after successful parse
@@ -729,11 +1042,7 @@ impl FeedHandler {
 
                         if let Some(cloid) = &fill.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            let resolved = cloid_cache
-                                .lock()
-                                .expect(MUTEX_POISONED)
-                                .get(&cloid_ustr)
-                                .copied();
+                            let resolved = cloid_cache.lock().get(&cloid_ustr).copied();
 
                             if let Some(real_client_order_id) = resolved {
                                 log::debug!(
@@ -749,13 +1058,13 @@ impl FeedHandler {
                         );
                         exec_reports.push(ExecutionReport::Fill(report));
                     }
-                    Err(e) => {
-                        log::error!("Error parsing fill: {e}");
+                    Err(_) => {
+                        context.log_conversion_error("fill", log::Level::Error);
                     }
                 }
             } else {
                 // Not marked as processed so fill is retried if instrument loads later
-                log::warn!("No instrument found for fill coin={}", fill.coin);
+                context.log_conversion_error("fill_instrument", log::Level::Warn);
             }
         }
 
@@ -851,7 +1160,7 @@ impl FeedHandler {
     fn handle_l2_book(
         data: &super::messages::WsBookData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
-        depth10_subs: &AHashSet<Ustr>,
+        depth_subs: &AHashSet<Ustr>,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let mut out = Vec::new();
@@ -863,13 +1172,16 @@ impl FeedHandler {
 
         match parse_ws_order_book_deltas(data, instrument, ts_init) {
             Ok(deltas) => out.push(NautilusWsMessage::Deltas(deltas)),
-            Err(e) => log::error!("Error parsing order book deltas: {e}"),
+            Err(e) => {
+                log::error!("Error parsing order book deltas: {e}");
+                out.push(NautilusWsMessage::BookInvalid(instrument.id()));
+            }
         }
 
-        if depth10_subs.contains(&data.coin) {
-            match parse_ws_order_book_depth10(data, instrument, ts_init) {
-                Ok(depth) => out.push(NautilusWsMessage::Depth10(Box::new(depth))),
-                Err(e) => log::error!("Error parsing order book depth10: {e}"),
+        if depth_subs.contains(&data.coin) {
+            match parse_ws_order_book_depth(data, instrument, ts_init) {
+                Ok(depth) => out.push(NautilusWsMessage::Depth(Box::new(depth))),
+                Err(e) => log::error!("Error parsing order book depth: {e}"),
             }
         }
 
@@ -1041,10 +1353,11 @@ impl FeedHandler {
             };
 
             if ctxs.len() != instrument_ids.len() {
-                // Mapping is built once at bootstrap, so a count change means the universe
-                // drifted and positional alignment can no longer be trusted.
+                // Mapping is rebuilt on each instrument refresh, instrument request, and data
+                // client connect, so a count change means the universe drifted since the last
+                // build and positional alignment can no longer be trusted until the next one.
                 log::warn!(
-                    "Hyperliquid allDexsAssetCtxs count mismatch for dex='{dex}': received {} contexts but cached {} instrument IDs (reconnect to refresh)",
+                    "Hyperliquid allDexsAssetCtxs count mismatch for dex='{dex}': received {} contexts but cached {} instrument IDs (the next instrument refresh, instrument request, or data client connect rebuilds the mapping)",
                     ctxs.len(),
                     instrument_ids.len()
                 );
@@ -1105,8 +1418,8 @@ impl FeedHandler {
         let impact_prices = match ctx.shared.impact_pxs {
             Some(values) => match values.as_slice() {
                 [bid, ask] => Some(HyperliquidImpactPrices {
-                    bid: bid.parse::<Price>().map_err(anyhow::Error::msg)?,
-                    ask: ask.parse::<Price>().map_err(anyhow::Error::msg)?,
+                    bid: Price::from_decimal(*bid).map_err(anyhow::Error::msg)?,
+                    ask: Price::from_decimal(*ask).map_err(anyhow::Error::msg)?,
                 }),
                 other => {
                     anyhow::bail!("expected 2 impact prices, received {}", other.len());
@@ -1129,35 +1442,6 @@ impl FeedHandler {
             day_ntl_volume,
             day_base_volume,
         })
-    }
-
-    fn all_mids_data_types(subscriptions: &SubscriptionState) -> Vec<DataType> {
-        let mut topics = subscriptions.all_topics();
-        topics.sort_unstable();
-        topics.dedup();
-
-        let all_mids_channel = HyperliquidWsChannel::AllMids.as_str();
-        let all_mids_prefix = format!("{all_mids_channel}:");
-        let mut data_types = Vec::new();
-
-        for topic in topics {
-            if topic == all_mids_channel {
-                data_types.push(DataType::new("HyperliquidAllMids", None, None));
-            } else if let Some(dex) = topic.strip_prefix(&all_mids_prefix) {
-                let mut metadata = Params::new();
-                metadata.insert(
-                    "dex".to_string(),
-                    serde_json::Value::String(dex.to_string()),
-                );
-                data_types.push(DataType::new("HyperliquidAllMids", Some(metadata), None));
-            }
-        }
-
-        if data_types.is_empty() {
-            data_types.push(DataType::new("HyperliquidAllMids", None, None));
-        }
-
-        data_types
     }
 
     fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
@@ -1185,9 +1469,196 @@ impl FeedHandler {
             Some(instrument_id.to_string()),
         )
     }
+
+    fn handle_user_twap_history(
+        data: &super::messages::WsUserTwapHistoryData,
+        context: FrameContext,
+        instruments: &AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let is_snapshot = data.is_snapshot.unwrap_or(false);
+        let mut result = Vec::with_capacity(data.history.len());
+
+        for row in &data.history {
+            let instrument = instruments.get(&row.state.coin);
+            match parse_ws_twap_history_row(row, &data.user, is_snapshot, instrument, ts_init) {
+                Ok(payload) => {
+                    let user = payload.user.clone();
+                    result.push(NautilusWsMessage::CustomData(Data::Custom(
+                        CustomData::new(Arc::new(payload), Self::twap_history_data_type(&user)),
+                    )));
+                }
+                Err(_) => {
+                    context.log_conversion_error("twap_history", log::Level::Error);
+                }
+            }
+        }
+
+        result
+    }
+
+    fn handle_user_twap_slice_fills(
+        data: &super::messages::WsUserTwapSliceFillsData,
+        context: FrameContext,
+        instruments: &AHashMap<Ustr, InstrumentAny>,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let is_snapshot = data.is_snapshot.unwrap_or(false);
+        let mut result = Vec::with_capacity(data.twap_slice_fills.len());
+
+        for item in &data.twap_slice_fills {
+            let instrument = instruments.get(&item.fill.coin);
+            match parse_ws_twap_slice_fill(item, &data.user, is_snapshot, instrument, ts_init) {
+                Ok(payload) => {
+                    let user = payload.user.clone();
+                    result.push(NautilusWsMessage::CustomData(Data::Custom(
+                        CustomData::new(Arc::new(payload), Self::twap_slice_fill_data_type(&user)),
+                    )));
+                }
+                Err(_) => {
+                    context.log_conversion_error("twap_slice_fill", log::Level::Error);
+                }
+            }
+        }
+
+        result
+    }
+
+    fn twap_history_data_type(user: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        );
+        DataType::new(
+            "HyperliquidTwapHistory",
+            Some(metadata),
+            Some(user.to_string()),
+        )
+    }
+
+    fn twap_slice_fill_data_type(user: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        );
+        DataType::new(
+            "HyperliquidTwapSliceFill",
+            Some(metadata),
+            Some(user.to_string()),
+        )
+    }
 }
 
-pub(crate) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
+#[derive(Clone, Copy)]
+struct FrameContext {
+    client_id: u64,
+    payload_bytes: usize,
+}
+
+impl FrameContext {
+    fn log_decode_error(self, text: &str, e: &serde_json::Error) {
+        // Error Display can echo private values, including unknown tags and invalid fields
+        let channel = serde_json::from_str::<FrameHeader>(text)
+            .map_or("unknown", |header| header.channel.as_str());
+
+        log::error!(
+            "Error parsing WebSocket message: channel={channel}, client_id={}, payload_bytes={}, category={:?}, line={}, column={}",
+            self.client_id,
+            self.payload_bytes,
+            e.classify(),
+            e.line(),
+            e.column(),
+        );
+    }
+
+    fn log_conversion_error(self, class: &'static str, level: log::Level) {
+        log::log!(
+            level,
+            "Error parsing WebSocket message: class={class}, client_id={}, payload_bytes={}, category=conversion",
+            self.client_id,
+            self.payload_bytes,
+        );
+    }
+}
+
+#[derive(Deserialize)]
+struct FrameHeader {
+    channel: HyperliquidWsChannel,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum PostSendError {
+    #[error(transparent)]
+    Transport(SendError),
+    #[error(transparent)]
+    Retry(RetryError),
+    #[error("Post deadline expired")]
+    Deadline,
+}
+
+async fn send_post_with_retry<F, Fut>(
+    retry_manager: &RetryManager<PostSendError>,
+    deadline: tokio::time::Instant,
+    cancellation_token: &CancellationToken,
+    send: F,
+) -> Result<(), PostSendError>
+where
+    F: Fn() -> Fut + Clone,
+    Fut: Future<Output = Result<(), PostSendError>>,
+{
+    let invocation = retry_manager
+        .invocation(
+            "websocket_post_send",
+            || {
+                let send = send.clone();
+                async move { send_post_before_deadline(deadline, cancellation_token, send).await }
+            },
+            should_retry_post_send,
+            PostSendError::Retry,
+        )
+        .cancellation_token(cancellation_token)
+        .execute();
+    tokio::pin!(invocation);
+
+    tokio::select! {
+        biased;
+        () = tokio::time::sleep_until(deadline) => {
+            Err(PostSendError::Deadline)
+        }
+        result = &mut invocation => result,
+    }
+}
+
+async fn send_post_before_deadline<F, Fut>(
+    deadline: tokio::time::Instant,
+    cancellation_token: &CancellationToken,
+    send: F,
+) -> Result<(), PostSendError>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<(), PostSendError>>,
+{
+    if cancellation_token.is_cancelled() {
+        return Err(PostSendError::Retry(RetryError::Canceled));
+    }
+
+    if tokio::time::Instant::now() >= deadline {
+        return Err(PostSendError::Deadline);
+    }
+
+    send().await
+}
+
+fn should_retry_post_send(error: &PostSendError) -> bool {
+    matches!(
+        error,
+        PostSendError::Transport(SendError::Timeout | SendError::ConnectionChanged)
+    )
+}
+
+pub(super) fn subscription_to_key(sub: &SubscriptionRequest) -> String {
     match sub {
         SubscriptionRequest::AllMids { dex } => {
             if let Some(dex_name) = dex {
@@ -1281,79 +1752,173 @@ pub(crate) fn should_retry_hyperliquid_error(error: &HyperliquidWsError) -> bool
     }
 }
 
+fn serialize_request(request: &HyperliquidWsRequest) -> Result<String, HyperliquidWsError> {
+    serde_json::to_string(request)
+        .map_err(|e| HyperliquidWsError::MessageSerialization(e.to_string()))
+}
+
 /// Creates a timeout error for Hyperliquid retry logic.
 pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsError {
     HyperliquidWsError::ClientError(msg)
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::{
-        sync::{Arc, Mutex, atomic::AtomicBool},
+        sync::{
+            Arc, Once,
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+        },
         time::Duration,
     };
 
     use ahash::{AHashMap, AHashSet};
+    use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::cache::fifo::FifoCacheMap;
     use nautilus_core::nanos::UnixNanos;
+    use nautilus_live::book::snapshot::SnapshotGate;
     use nautilus_model::{
         data::Data,
         identifiers::{ClientOrderId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, Instrument, InstrumentAny},
         types::{Currency, Price, Quantity},
     };
-    use nautilus_network::websocket::SubscriptionState;
+    use nautilus_network::{
+        error::SendError,
+        retry::{RetryConfig, RetryError, RetryManager},
+        websocket::SubscriptionState,
+    };
+    use parking_lot::Mutex;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use serde_json::json;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_util::sync::CancellationToken;
     use ustr::Ustr;
 
     use super::{
         super::{
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
+            error::HyperliquidWsError,
             messages::{
-                NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx,
-                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
+                HyperliquidWsRequest, NautilusWsMessage, PerpsAssetCtx, PostRequest,
+                SharedAssetCtx, SpotAssetCtx, SubscriptionRequest, WsActiveAssetCtxData,
+                WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
             },
             post::PostRouter,
+            rate_limits::WebSocketRateLimits,
         },
-        AssetContextCaches, FeedHandler, HandlerCommand,
+        AllMidsDataTypeCache, AssetContextCaches, FeedHandler, HandlerCommand, PostSendError,
+        send_post_before_deadline, send_post_with_retry, should_retry_post_send,
     };
     use crate::{
-        common::consts::HYPERLIQUID_VENUE,
+        common::consts::{
+            HYPERLIQUID_VENUE, HYPERLIQUID_WS_MESSAGES_PER_MINUTE, HYPERLIQUID_WS_SUBSCRIPTIONS_MAX,
+        },
         data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidOpenInterest},
     };
 
-    fn btc_perp() -> InstrumentAny {
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::new(Symbol::new("BTC-PERP"), *HYPERLIQUID_VENUE),
-            Symbol::new("BTC-PERP"),
-            Currency::from("BTC"),
-            Currency::from("USDC"),
-            Currency::from("USDC"),
+    const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
+
+    struct LogCapture {
+        messages: Mutex<Vec<String>>,
+    }
+
+    static LOG_CAPTURE: LogCapture = LogCapture {
+        messages: Mutex::new(Vec::new()),
+    };
+
+    static LOG_INSTALL: Once = Once::new();
+    static LOG_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    impl LogCapture {
+        fn clear(&self) {
+            self.messages.lock().clear();
+        }
+
+        fn messages(&self) -> Vec<String> {
+            self.messages.lock().clone()
+        }
+    }
+
+    impl Log for LogCapture {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.level() <= Level::Debug
+                && metadata.target().starts_with("nautilus_hyperliquid::")
+        }
+
+        fn log(&self, record: &Record<'_>) {
+            if self.enabled(record.metadata()) {
+                let message = record.args().to_string();
+                self.messages.lock().push(message);
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    #[rstest]
+    fn all_mids_cache_projects_subscriptions_without_scanning_every_websocket_message() {
+        let mut cache = AllMidsDataTypeCache::default();
+
+        assert_eq!(cache.as_slice().len(), 1);
+        assert!(cache.as_slice()[0].metadata().is_none());
+
+        cache.apply(
+            &SubscriptionRequest::AllMids {
+                dex: Some("xyz".to_owned()),
+            },
+            true,
+        );
+        assert_eq!(cache.as_slice().len(), 1);
+        assert_eq!(
+            cache.as_slice()[0]
+                .metadata()
+                .and_then(|metadata| metadata.get_str("dex")),
+            Some("xyz"),
+        );
+
+        cache.apply(&SubscriptionRequest::AllMids { dex: None }, true);
+        assert_eq!(cache.as_slice().len(), 2);
+
+        cache.apply(
+            &SubscriptionRequest::AllMids {
+                dex: Some("xyz".to_owned()),
+            },
             false,
-            2,
-            3,
-            Price::from("0.01"),
-            Quantity::from("0.001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        );
+        assert_eq!(cache.as_slice().len(), 1);
+        assert_eq!(cache.as_slice()[0].type_name(), "HyperliquidAllMids");
+        assert!(cache.as_slice()[0].metadata().is_none());
+
+        cache.apply(&SubscriptionRequest::AllMids { dex: None }, false);
+        assert_eq!(cache.as_slice().len(), 1);
+        assert_eq!(cache.as_slice()[0].type_name(), "HyperliquidAllMids");
+        assert!(cache.as_slice()[0].metadata().is_none());
+    }
+
+    fn btc_perp() -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("BTC-PERP"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("BTC-PERP"))
+                .base_currency(Currency::from("BTC"))
+                .quote_currency(Currency::from("USDC"))
+                .settlement_currency(Currency::from("USDC"))
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(3)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn one_level_book() -> WsBookData {
@@ -1401,7 +1966,7 @@ mod tests {
                     prev_day_px: dec!(49000.0),
                     mark_px: dec!(50000.0),
                     mid_px: Some(dec!(50001.0)),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    impact_pxs: Some(vec![dec!(50000.0), dec!(50002.0)]),
                     day_base_vlm: Some(dec!(100.0)),
                 },
                 funding: dec!(0.0001),
@@ -1460,10 +2025,16 @@ mod tests {
             SubscriptionState::new(':'),
             cloid_cache,
             Arc::clone(&post_router),
+            Arc::new(WebSocketRateLimits::new()),
+            1,
         );
 
         let id = 99;
-        let rx = post_router.register(id).await.unwrap();
+        let cancellation_token = CancellationToken::new();
+        let rx = post_router
+            .register_with_cancellation(id, &cancellation_token)
+            .await
+            .unwrap();
 
         let task = tokio::spawn(async move { handler.next().await });
 
@@ -1473,6 +2044,8 @@ mod tests {
                 request: PostRequest::Info {
                     payload: json!({"type": "userRateLimit", "user": "0x123"}),
                 },
+                deadline: tokio::time::Instant::now() + Duration::from_secs(1),
+                cancellation_token,
             })
             .unwrap();
         drop(cmd_tx);
@@ -1490,15 +2063,538 @@ mod tests {
     }
 
     #[rstest]
-    fn handle_l2_book_emits_deltas_only_when_not_in_depth10_subs() {
+    #[tokio::test]
+    async fn write_book_opens_gate_only_after_completed_write() {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::<
+            Ustr,
+            ClientOrderId,
+            CLOID_CACHE_CAPACITY,
+        >::new()));
+
+        let mut handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            cloid_cache,
+            PostRouter::new(),
+            Arc::new(WebSocketRateLimits::new()),
+            1,
+        );
+
+        let subscription = || SubscriptionRequest::L2Book {
+            coin: Ustr::from("BTC"),
+            n_sig_figs: None,
+            mantissa: None,
+        };
+
+        let failed_gate = SnapshotGate::default();
+        failed_gate.lock().close();
+        let (failed_tx, failed_rx) = tokio::sync::oneshot::channel();
+        let cancelled_gate = SnapshotGate::default();
+        cancelled_gate.lock().close();
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+
+        // No client is set, so the write fails before any send
+        cmd_tx
+            .send(HandlerCommand::WriteBook {
+                subscription: subscription(),
+                replace: false,
+                cancel: CancellationToken::new(),
+                gate: failed_gate.clone(),
+                completion: failed_tx,
+            })
+            .unwrap();
+
+        cmd_tx
+            .send(HandlerCommand::WriteBook {
+                subscription: subscription(),
+                replace: true,
+                cancel: cancelled,
+                gate: cancelled_gate.clone(),
+                completion: cancelled_tx,
+            })
+            .unwrap();
+
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = handler.next().await;
+        let failed = failed_rx.await.unwrap();
+        let attempted = cancelled_rx.await.unwrap();
+
+        assert!(next.is_none());
+        assert!(matches!(
+            failed,
+            Err(HyperliquidWsError::ClientError(message))
+                if message == "No WebSocket client available"
+        ));
+        assert!(failed_gate.lock().is_closed());
+        assert!(
+            matches!(
+                attempted,
+                Err(HyperliquidWsError::ClientError(message))
+                    if message == "No WebSocket client available"
+            ),
+            "a cancelled write still runs",
+        );
+        assert!(cancelled_gate.lock().is_closed());
+    }
+
+    fn retry_manager_with_backoff() -> RetryManager<PostSendError> {
+        RetryManager::new(RetryConfig {
+            max_retries: 1,
+            initial_delay_ms: 1_000,
+            max_delay_ms: 1_000,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        })
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn expired_post_deadline_prevents_first_send() {
+        let cancellation_token = CancellationToken::new();
+        let sends = Arc::new(AtomicUsize::new(0));
+        let send_count = Arc::clone(&sends);
+
+        let error = send_post_before_deadline(
+            tokio::time::Instant::now(),
+            &cancellation_token,
+            move || {
+                let send_count = Arc::clone(&send_count);
+                async move {
+                    send_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, PostSendError::Deadline));
+        assert_eq!(sends.load(Ordering::SeqCst), 0);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn post_deadline_while_waiting_for_message_quota_prevents_send() {
+        let manager = retry_manager_with_backoff();
+        let cancellation_token = CancellationToken::new();
+        let limits = Arc::new(WebSocketRateLimits::new());
+        let rate_key = limits.message_key();
+        for _ in 0..HYPERLIQUID_WS_MESSAGES_PER_MINUTE {
+            assert!(limits.messages.check_key(&rate_key).is_ok());
+        }
+        let sends = Arc::new(AtomicUsize::new(0));
+        let send_count = Arc::clone(&sends);
+        let send_limits = Arc::clone(&limits);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(10);
+
+        let error = send_post_with_retry(&manager, deadline, &cancellation_token, move || {
+            let send_count = Arc::clone(&send_count);
+            let send_limits = Arc::clone(&send_limits);
+            async move {
+                send_limits.acquire_message().await;
+                send_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        })
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, PostSendError::Deadline));
+        assert_eq!(sends.load(Ordering::SeqCst), 0);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn post_deadline_during_backoff_prevents_retry() {
+        let manager = retry_manager_with_backoff();
+        let cancellation_token = CancellationToken::new();
+        let sends = Arc::new(AtomicUsize::new(0));
+        let send_count = Arc::clone(&sends);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+
+        let error = send_post_with_retry(&manager, deadline, &cancellation_token, move || {
+            let send_count = Arc::clone(&send_count);
+            async move {
+                send_count.fetch_add(1, Ordering::SeqCst);
+                Err(PostSendError::Transport(SendError::Timeout))
+            }
+        })
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, PostSendError::Deadline));
+        assert_eq!(sends.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn post_deadline_after_send_starts_preserves_unknown_outcome() {
+        let manager = retry_manager_with_backoff();
+        let cancellation_token = CancellationToken::new();
+        let sends = Arc::new(AtomicUsize::new(0));
+        let send_count = Arc::clone(&sends);
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+
+        let error = send_post_with_retry(&manager, deadline, &cancellation_token, move || {
+            let send_count = Arc::clone(&send_count);
+            async move {
+                send_count.fetch_add(1, Ordering::SeqCst);
+                std::future::pending::<Result<(), PostSendError>>().await
+            }
+        })
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, PostSendError::Deadline));
+        assert_eq!(sends.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn post_cancellation_stops_started_send() {
+        let manager = retry_manager_with_backoff();
+        let cancellation_token = CancellationToken::new();
+        let task_cancellation_token = cancellation_token.clone();
+        let started = Arc::new(tokio::sync::Notify::new());
+        let task_started = Arc::clone(&started);
+        let sends = Arc::new(AtomicUsize::new(0));
+        let task_sends = Arc::clone(&sends);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+        let task = tokio::spawn(async move {
+            send_post_with_retry(&manager, deadline, &task_cancellation_token, move || {
+                let task_started = Arc::clone(&task_started);
+                let task_sends = Arc::clone(&task_sends);
+                async move {
+                    task_sends.fetch_add(1, Ordering::SeqCst);
+                    task_started.notify_one();
+                    std::future::pending::<Result<(), PostSendError>>().await
+                }
+            })
+            .await
+        });
+
+        started.notified().await;
+        cancellation_token.cancel();
+        let error = task.await.unwrap().unwrap_err();
+
+        assert!(matches!(error, PostSendError::Retry(RetryError::Canceled)));
+        assert_eq!(sends.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[case(SendError::Timeout, true)]
+    #[case(SendError::ConnectionChanged, true)]
+    #[case(SendError::WriteTimeout, false)]
+    #[case(SendError::BrokenPipe("transport failed".to_string()), false)]
+    #[case(SendError::Closed, false)]
+    #[case(SendError::InvalidInput("invalid payload".to_string()), false)]
+    fn post_send_retries_only_before_writing(#[case] error: SendError, #[case] expected: bool) {
+        assert_eq!(
+            should_retry_post_send(&PostSendError::Transport(error)),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_private_frame_logs_omit_payloads() {
+        let _capture = capture_logs().await;
+
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_malformed_private_frames.json"
+        ))
+        .unwrap();
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::new()));
+
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            Some("HYPERLIQUID-PRIVATE_ACCOUNT_SENTINEL".into()),
+            SubscriptionState::new(':'),
+            cloid_cache,
+            PostRouter::new(),
+            Arc::new(WebSocketRateLimits::new()),
+            937,
+        );
+        let instrument = btc_perp();
+        handler.instruments.insert(Ustr::from("BTC"), instrument);
+        let mut expected = Vec::new();
+
+        for case in fixtures["decode"].as_array().unwrap() {
+            let text = case["text"].as_str().unwrap();
+            let e = super::super::messages::decode_ws_message(text).unwrap_err();
+            let channel = case["channel"].as_str().unwrap();
+            expected.push(format!(
+                "Error parsing WebSocket message: channel={channel}, client_id=937, payload_bytes={}, category={:?}, line={}, column={}",
+                text.len(), e.classify(), e.line(), e.column(),
+            ));
+            raw_tx.send(Message::Text(text.to_owned().into())).unwrap();
+        }
+
+        for case in fixtures["conversion"].as_array().unwrap() {
+            let text = case["message"].to_string();
+            super::super::messages::decode_ws_message(&text).unwrap();
+            let class = case["class"].as_str().unwrap();
+            expected.push(format!(
+                "Error parsing WebSocket message: class={class}, client_id=937, payload_bytes={}, category=conversion",
+                text.len(),
+            ));
+            raw_tx.send(Message::Text(text.into())).unwrap();
+        }
+
+        raw_tx
+            .send(Message::Text(nautilus_network::RECONNECTED.into()))
+            .unwrap();
+        drop(raw_tx);
+        drop(cmd_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(5), handler.next())
+            .await
+            .unwrap();
+        let messages = LOG_CAPTURE.messages();
+
+        let errors: Vec<_> = messages
+            .iter()
+            .filter(|message| {
+                message.starts_with("Error parsing WebSocket message:")
+                    && message.contains("client_id=937,")
+            })
+            .cloned()
+            .collect();
+
+        assert!(matches!(next, Some(NautilusWsMessage::Reconnected)));
+        assert_eq!(errors, expected);
+
+        for secret in fixtures["secrets"].as_array().unwrap() {
+            let secret = secret.as_str().unwrap();
+            assert!(
+                messages.iter().all(|message| !message.contains(secret)),
+                "private value leaked: {secret}"
+            );
+        }
+
+        assert!(errors.iter().all(|message| message.len() < 240));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn outbound_subscription_logs_omit_payload_bodies() {
+        let _capture = capture_logs().await;
+
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let post_router = PostRouter::new();
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::<
+            Ustr,
+            ClientOrderId,
+            CLOID_CACHE_CAPACITY,
+        >::new()));
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            cloid_cache,
+            post_router,
+            Arc::new(WebSocketRateLimits::new()),
+            1,
+        );
+        let subscription = SubscriptionRequest::Notification {
+            user: SECRET_MARKER.to_string(),
+        };
+        let subscribe_len = serde_json::to_string(&HyperliquidWsRequest::Subscribe {
+            subscription: subscription.clone(),
+        })
+        .unwrap()
+        .len();
+        let unsubscribe_len = serde_json::to_string(&HyperliquidWsRequest::Unsubscribe {
+            subscription: subscription.clone(),
+        })
+        .unwrap()
+        .len();
+
+        LOG_CAPTURE.clear();
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                subscriptions: vec![subscription.clone()],
+            })
+            .unwrap();
+        cmd_tx
+            .send(HandlerCommand::Unsubscribe {
+                subscriptions: vec![subscription],
+            })
+            .unwrap();
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        assert!(handler.next().await.is_none());
+
+        let messages: Vec<_> = LOG_CAPTURE
+            .messages()
+            .into_iter()
+            .filter(|message| message.starts_with("Sending "))
+            .collect();
+
+        assert!(
+            messages
+                .iter()
+                .all(|message| !message.contains(SECRET_MARKER)),
+            "outbound logs exposed the secret marker: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message
+                    == &format!("Sending subscribe payload ({subscribe_len} bytes)")),
+            "subscribe metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages.iter().any(|message| {
+                message == &format!("Sending unsubscribe payload ({unsubscribe_len} bytes)")
+            }),
+            "unsubscribe metadata missing or inaccurate: {messages:?}"
+        );
+    }
+
+    pub(in crate::websocket) async fn capture_logs() -> tokio::sync::MutexGuard<'static, ()> {
+        let guard = LOG_LOCK.lock().await;
+        LOG_INSTALL.call_once(|| {
+            log::set_logger(&LOG_CAPTURE).expect("test logger already installed");
+            log::set_max_level(LevelFilter::Debug);
+        });
+
+        LOG_CAPTURE.clear();
+        guard
+    }
+
+    pub(in crate::websocket) fn captured_logs() -> Vec<String> {
+        LOG_CAPTURE.messages()
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_confirmation_releases_shared_reservation() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new(':');
+        let limits = Arc::new(WebSocketRateLimits::new());
+        let released = SubscriptionRequest::Trades {
+            coin: Ustr::from("RELEASED"),
+        };
+        let released_key = super::subscription_to_key(&released);
+        subscriptions.mark_subscribe(&released_key);
+        subscriptions.confirm_subscribe(&released_key);
+        subscriptions.mark_unsubscribe(&released_key);
+        assert!(limits.reserve_subscription(1, &released).unwrap());
+
+        for index in 1..HYPERLIQUID_WS_SUBSCRIPTIONS_MAX {
+            assert!(
+                limits
+                    .reserve_subscription(
+                        1,
+                        &SubscriptionRequest::Trades {
+                            coin: Ustr::from(&format!("COIN-{index}")),
+                        },
+                    )
+                    .unwrap()
+            );
+        }
+        assert!(
+            limits
+                .reserve_subscription(
+                    2,
+                    &SubscriptionRequest::Trades {
+                        coin: Ustr::from("BEFORE-ACK"),
+                    },
+                )
+                .is_err()
+        );
+
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::<
+            Ustr,
+            ClientOrderId,
+            CLOID_CACHE_CAPACITY,
+        >::new()));
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            subscriptions,
+            cloid_cache,
+            PostRouter::new(),
+            Arc::clone(&limits),
+            1,
+        );
+        raw_tx
+            .send(Message::Text(
+                json!({
+                    "channel": "subscriptionResponse",
+                    "data": {
+                        "method": "unsubscribe",
+                        "subscription": {
+                            "type": "trades",
+                            "coin": "RELEASED",
+                        },
+                    },
+                })
+                .to_string()
+                .into(),
+            ))
+            .unwrap();
+        drop(raw_tx);
+        drop(cmd_tx);
+
+        assert!(handler.next().await.is_none());
+        assert!(
+            limits
+                .reserve_subscription(
+                    2,
+                    &SubscriptionRequest::Trades {
+                        coin: Ustr::from("AFTER-ACK"),
+                    },
+                )
+                .unwrap()
+        );
+    }
+
+    #[rstest]
+    fn handle_l2_book_emits_deltas_only_when_not_in_depth_subs() {
         let mut instruments = AHashMap::new();
         instruments.insert(Ustr::from("BTC"), btc_perp());
-        let depth10_subs = AHashSet::<Ustr>::new();
+        let depth_subs = AHashSet::<Ustr>::new();
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 
@@ -1507,33 +2603,56 @@ mod tests {
     }
 
     #[rstest]
-    fn handle_l2_book_emits_deltas_and_depth10_when_coin_in_subs() {
+    fn handle_l2_book_emits_deltas_and_depth_when_coin_in_subs() {
         let mut instruments = AHashMap::new();
         instruments.insert(Ustr::from("BTC"), btc_perp());
-        let mut depth10_subs = AHashSet::<Ustr>::new();
-        depth10_subs.insert(Ustr::from("BTC"));
+        let mut depth_subs = AHashSet::<Ustr>::new();
+        depth_subs.insert(Ustr::from("BTC"));
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 
         assert_eq!(msgs.len(), 2);
         assert!(matches!(msgs[0], NautilusWsMessage::Deltas(_)));
-        assert!(matches!(msgs[1], NautilusWsMessage::Depth10(_)));
+        assert!(matches!(msgs[1], NautilusWsMessage::Depth(_)));
+    }
+
+    #[rstest]
+    fn handle_l2_book_reports_unparsable_frame_as_invalid_book() {
+        let instrument = btc_perp();
+        let instrument_id = instrument.id();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), instrument);
+        let mut book = one_level_book();
+        book.time = u64::MAX;
+
+        let msgs = FeedHandler::handle_l2_book(
+            &book,
+            &instruments,
+            &AHashSet::<Ustr>::new(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            msgs[0],
+            NautilusWsMessage::BookInvalid(id) if id == instrument_id
+        ));
     }
 
     #[rstest]
     fn handle_l2_book_returns_empty_when_instrument_unknown() {
         let instruments = AHashMap::<Ustr, InstrumentAny>::new();
-        let depth10_subs = AHashSet::<Ustr>::new();
+        let depth_subs = AHashSet::<Ustr>::new();
 
         let msgs = FeedHandler::handle_l2_book(
             &one_level_book(),
             &instruments,
-            &depth10_subs,
+            &depth_subs,
             UnixNanos::default(),
         );
 
@@ -1614,6 +2733,9 @@ mod tests {
                     .as_any()
                     .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
                     .expect("expected HyperliquidAllDexsAssetCtxs");
+                let btc_impact_prices = payload.entries[0].impact_prices.as_ref().unwrap();
+                let xyz_impact_prices = payload.entries[1].impact_prices.as_ref().unwrap();
+
                 assert_eq!(payload.entries.len(), 2);
                 assert_eq!(
                     payload.entries[0].instrument_id,
@@ -1626,6 +2748,10 @@ mod tests {
                 );
                 assert_eq!(payload.entries[0].mark_price.to_string(), "77562.0");
                 assert_eq!(payload.entries[1].day_base_volume.to_string(), "5135.2458");
+                assert_eq!(btc_impact_prices.bid.as_decimal(), dec!(77558.0));
+                assert_eq!(btc_impact_prices.ask.as_decimal(), dec!(77559.0));
+                assert_eq!(xyz_impact_prices.bid.as_decimal(), dec!(29854.0));
+                assert_eq!(xyz_impact_prices.ask.as_decimal(), dec!(29855.0));
             }
             other => panic!("expected custom data, found {other:?}"),
         }
@@ -1643,7 +2769,7 @@ mod tests {
                             prev_day_px: dec!(76317.0),
                             mark_px: dec!(77562.0),
                             mid_px: Some(dec!(77558.5)),
-                            impact_pxs: Some(vec!["77558.0".to_string(), "77559.0".to_string()]),
+                            impact_pxs: Some(vec![dec!(77558.0), dec!(77559.0)]),
                             day_base_vlm: Some(dec!(19707.77457)),
                         },
                         funding: dec!(-0.0000015186),
@@ -1657,7 +2783,7 @@ mod tests {
                             prev_day_px: dec!(2094.6),
                             mark_px: dec!(2123.7),
                             mid_px: Some(dec!(2123.95)),
-                            impact_pxs: Some(vec!["2123.65".to_string(), "2124.0".to_string()]),
+                            impact_pxs: Some(vec![dec!(2123.65), dec!(2124.0)]),
                             day_base_vlm: Some(dec!(281686.8234999999)),
                         },
                         funding: dec!(0.0000125),

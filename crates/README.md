@@ -37,7 +37,9 @@ single event-driven architecture, providing research-to-live semantic parity.
 
 ## Feature flags
 
-This crate has no feature flags.
+This crate provides feature flags to control source code inclusion during compilation:
+
+- `test-support`: Enables model test fixtures, builders, specs, and defaults.
 
 ## Documentation
 

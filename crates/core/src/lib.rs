@@ -23,7 +23,7 @@
 //! - UUID generation and management.
 //! - Mathematical functions and interpolation utilities.
 //! - Correctness validation functions.
-//! - Serialization traits and helpers.
+//! - Serialization traits and codecs.
 //! - Cross-platform environment utilities.
 //! - Abstractions over common collections.
 //!
@@ -42,9 +42,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! - `extension-module`: Builds as a Python extension module.
+//! - `ffi`: Enables the C foreign function interface (FFI) from
+//!   [cbindgen](https://crates.io/crates/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://crates.io/crates/madsim).
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -63,17 +66,17 @@
     reason = "match can be clearer than let-else for some patterns"
 )]
 #![allow(
-    clippy::redundant_closure_for_method_calls,
-    reason = "causes clippy ICE on Rust 1.94; matches the workaround in workspace Cargo.toml"
+    clippy::assert_is_empty,
+    reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
 )]
 
 pub mod collections;
 pub mod consts;
 pub mod correctness;
 pub mod datetime;
-pub mod drop;
 pub mod env;
 pub mod hex;
+pub mod interval;
 pub mod math;
 pub mod nanos;
 pub mod params;
@@ -99,24 +102,16 @@ pub mod python;
 compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, Windows, and wasm32");
 
 // Re-exports
+pub use interval::ClosedInterval;
+
 #[cfg(feature = "python")]
 pub use crate::params::from_pydict;
 pub use crate::{
     collections::{AtomicMap, AtomicSet},
-    drop::CleanDrop,
-    nanos::UnixNanos,
+    nanos::{DurationNanos, DurationNanosOutOfRangeError, UnixNanos},
     params::Params,
     shared::{SharedCell, WeakCell},
     string::stack_str::{STACKSTR_CAPACITY, StackStr},
     time::AtomicTime,
     uuid::UUID4,
 };
-
-/// Message for when a mutex guard cannot be acquired due to poisoning.
-///
-/// Mutex guards should use `expect` rather than handle poison errors.
-/// A poisoned mutex indicates a thread panicked while holding the lock,
-/// meaning protected data may be in an inconsistent state. Propagating
-/// the panic is the idiomatic and safe approach, as continuing with
-/// potentially corrupted data would violate safety invariants.
-pub const MUTEX_POISONED: &str = "Mutex poisoned";

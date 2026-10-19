@@ -13,10 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
-use ahash::AHashSet;
-use nautilus_common::{live::get_runtime, messages::DataEvent};
+use ahash::{AHashMap, AHashSet};
+use nautilus_common::messages::DataEvent;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -24,112 +30,196 @@ use nautilus_model::{
 
 use super::{
     PolymarketDataClient,
-    instruments::cache_instrument,
-    runtime::{is_instrument_expired, retire_local_instrument_state},
-    subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
+    instruments::{
+        apply_live_instrument, publish_cached_condition_closed, query_positive_closed_markets,
+    },
+    runtime::is_condition_closed,
+    subscriptions::resolve_token_id_from,
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE, http::query::GetGammaMarketsParams,
+    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    filters::market_closed,
+    http::{
+        gamma::parse_markets_with_transient, models::GammaMarket, query::GetGammaMarketsParams,
+    },
     providers::extract_condition_id,
+    resolve::{
+        StrictResolvedMarket, admit_data_resolution_instrument, apply_watched_condition_resolution,
+        build_strict_resolved_market, remove_data_resolve_watch_entry,
+        upsert_data_resolve_watch_entry_from_instrument,
+    },
 };
 
+#[derive(Debug)]
+enum AutoLoadOutcome {
+    Open(Vec<InstrumentAny>),
+    Closed {
+        instruments: Vec<InstrumentAny>,
+        resolution: Option<StrictResolvedMarket>,
+    },
+    Unknown,
+}
+
+impl AutoLoadOutcome {
+    fn needs_transient_hydration(&self) -> bool {
+        matches!(
+            self,
+            Self::Closed {
+                instruments,
+                resolution: None,
+            } if instruments.is_empty()
+        )
+    }
+}
+
+struct AutoLoadScheduledGuard {
+    scheduled: Arc<AtomicBool>,
+    armed: bool,
+}
+
+impl AutoLoadScheduledGuard {
+    fn new(scheduled: Arc<AtomicBool>) -> Self {
+        Self {
+            scheduled,
+            armed: true,
+        }
+    }
+
+    fn release(&mut self) {
+        if self.armed {
+            self.scheduled.store(false, Ordering::Release);
+            self.armed = false;
+        }
+    }
+}
+
+impl Drop for AutoLoadScheduledGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 impl PolymarketDataClient {
+    pub(super) fn resume_resolution_subscriptions(&self) {
+        let status_ids = self.subscriptions.active_instrument_status_subs.load();
+        let close_ids = self.subscriptions.active_instrument_close_subs.load();
+        let mut instrument_ids = status_ids.union(&close_ids).copied().collect::<Vec<_>>();
+        instrument_ids.sort_unstable();
+        drop(status_ids);
+        drop(close_ids);
+
+        for instrument_id in instrument_ids {
+            let needs_load = {
+                let _guard = self.resolve_watch_apply_mutex.lock();
+
+                if !self
+                    .subscriptions
+                    .active_instrument_status_subs
+                    .contains(&instrument_id)
+                    && !self
+                        .subscriptions
+                        .active_instrument_close_subs
+                        .contains(&instrument_id)
+                {
+                    continue;
+                }
+
+                if self.deferred_resolutions.contains_key(&instrument_id) {
+                    true
+                } else {
+                    let closed = extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
+                        is_condition_closed(&self.subscriptions.closed_condition_ids, &condition_id)
+                    });
+                    let loaded = self.instruments.load();
+                    if let Some(instrument) = loaded.get(&instrument_id) {
+                        if !closed {
+                            upsert_data_resolve_watch_entry_from_instrument(
+                                &self.resolve_poll_watchlist,
+                                instrument,
+                            );
+                        }
+                        false
+                    } else if closed {
+                        continue;
+                    } else {
+                        true
+                    }
+                }
+            };
+
+            if needs_load {
+                self.queue_pending_load(instrument_id);
+            } else {
+                self.sync_ws_subscription(instrument_id);
+            }
+        }
+    }
+
     pub(super) fn queue_pending_load(&self, instrument_id: InstrumentId) {
+        if extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
+            is_condition_closed(&self.subscriptions.closed_condition_ids, &condition_id)
+        }) && !self.deferred_resolutions.contains_key(&instrument_id)
         {
-            let mut pending = self
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned");
+            return;
+        }
+
+        {
+            let mut pending = self.subscriptions.pending_auto_loads.lock();
             pending.insert(instrument_id);
         }
 
         self.ensure_auto_load_task();
     }
 
-    pub(super) fn drop_pending_if_unwanted(&self, instrument_id: InstrumentId) {
-        if self.active_quote_subs.contains(&instrument_id)
-            || self.active_delta_subs.contains(&instrument_id)
-            || self.active_trade_subs.contains(&instrument_id)
-        {
-            return;
-        }
-
-        let mut pending = self
-            .pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned");
-        pending.remove(&instrument_id);
-    }
-
-    pub(super) fn drop_local_book_state_if_unwanted(&self, instrument_id: InstrumentId) {
-        // Stale book/quote leaks across resubscribes
-        if self.active_quote_subs.contains(&instrument_id)
-            || self.active_delta_subs.contains(&instrument_id)
-        {
-            return;
-        }
-
-        self.order_books.remove(&instrument_id);
-        self.last_quotes.remove(&instrument_id);
-    }
-
     fn ensure_auto_load_task(&self) {
         if self
             .auto_load_scheduled
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::AcqRel,
-                std::sync::atomic::Ordering::Acquire,
-            )
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             return;
         }
 
-        let pending = self.pending_auto_loads.clone();
+        let subscriptions = self.subscriptions.clone();
+        let pending = self.subscriptions.pending_auto_loads.clone();
+        let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
         let scheduled = self.auto_load_scheduled.clone();
         let debounce_ms = self.config.auto_load_debounce_ms;
         let max_retries = self.config.auto_load_max_retries;
         let base_secs = self.config.auto_load_retry_delay_initial_secs;
         let max_secs = self.config.auto_load_retry_delay_max_secs;
         let http = self.provider.http_client().clone();
+        let resolve_ctx = self.resolution_context();
         let filters = self.provider.filters();
         let instruments = self.instruments.clone();
-        let token_meta = self.token_meta.clone();
-        let active_quote_subs = self.active_quote_subs.clone();
-        let active_delta_subs = self.active_delta_subs.clone();
-        let active_trade_subs = self.active_trade_subs.clone();
-        let ws_open_tokens = self.ws_open_tokens.clone();
-        let ws_sub_mutex = self.ws_sub_mutex.clone();
-        let ws_client = self.ws_client.handle();
+        let instrument_update_state = self.instrument_update_state.clone();
+        let token_meta = self.subscriptions.token_meta.clone();
+        let active_instrument_status_subs =
+            self.subscriptions.active_instrument_status_subs.clone();
+        let active_instrument_close_subs = self.subscriptions.active_instrument_close_subs.clone();
         let data_sender = self.data_sender.clone();
-        let clock = self.clock;
         let cancellation = self.cancellation_token.clone();
-        let order_books = self.order_books.clone();
-        let last_quotes = self.last_quotes.clone();
         let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
-        let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let resolve_watch_apply_mutex = self.resolve_watch_apply_mutex.clone();
+        let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
+        let future = async move {
+            let mut scheduled_guard = scheduled_guard;
 
-        get_runtime().spawn(async move {
             // Coalesce concurrent misses into one Gamma call.
             tokio::select! {
                 () = tokio::time::sleep(Duration::from_millis(debounce_ms)) => {}
-                () = cancellation.cancelled() => {
-                    scheduled.store(false, std::sync::atomic::Ordering::Release);
-                    return;
-                }
+                () = cancellation.cancelled() => return,
             }
 
             // Drain pending and release `scheduled` so new misses spawn a fresh
             // task in parallel rather than piggybacking on this batch's budget.
             let mut batch: AHashSet<InstrumentId> = {
-                let mut guard = pending.lock().expect("pending_auto_loads mutex poisoned");
+                let mut guard = pending.lock();
                 let snapshot = guard.iter().copied().collect();
                 guard.clear();
                 snapshot
             };
-            scheduled.store(false, std::sync::atomic::Ordering::Release);
+            scheduled_guard.release();
 
             if batch.is_empty() {
                 return;
@@ -146,11 +236,7 @@ impl PolymarketDataClient {
                 }
 
                 // Drop entries the user has since unsubscribed from.
-                batch.retain(|id| {
-                    active_quote_subs.contains(id)
-                        || active_delta_subs.contains(id)
-                        || active_trade_subs.contains(id)
-                });
+                batch.retain(|id| subscriptions.has_intent(*id));
 
                 if batch.is_empty() {
                     return;
@@ -171,11 +257,16 @@ impl PolymarketDataClient {
                     return;
                 }
 
-                // Gamma caps `condition_ids=` filters at ~100; chunk and merge.
-                let mut loaded: Vec<InstrumentAny> = Vec::new();
+                // Gamma caps `condition_ids=` filters at ~100; classify every
+                // condition independently before mutating runtime state.
+                let mut outcomes: AHashMap<String, AutoLoadOutcome> = condition_ids
+                    .iter()
+                    .cloned()
+                    .map(|condition_id| (condition_id, AutoLoadOutcome::Unknown))
+                    .collect();
                 let mut transient: AHashSet<String> = AHashSet::new();
+                let mut failed_condition_ids: AHashSet<String> = AHashSet::new();
                 let mut batch_returned_any = false;
-                let mut chunk_failed = false;
 
                 for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
                     let params = GetGammaMarketsParams {
@@ -183,119 +274,320 @@ impl PolymarketDataClient {
                         ..Default::default()
                     };
 
-                    match http
-                        .request_instruments_by_params_with_transient(params)
-                        .await
-                    {
-                        Ok((insts, trans)) => {
-                            batch_returned_any |= !insts.is_empty() || !trans.is_empty();
-                            loaded.extend(insts);
+                    let normal_result = tokio::select! {
+                        result = http.request_markets_by_params(params) => result,
+                        () = cancellation.cancelled() => return,
+                    };
+
+                    if cancellation.is_cancelled() {
+                        return;
+                    }
+
+                    match normal_result {
+                        Ok(mut markets) => {
+                            markets.retain(|market| chunk.contains(&market.condition_id));
+                            batch_returned_any |= !markets.is_empty();
+                            let (insts, trans) = parse_markets_with_transient(
+                                &markets,
+                                resolve_ctx.clock.get_time_ns(),
+                            );
+                            let classified_condition_ids: AHashSet<String> = insts
+                                .iter()
+                                .filter_map(|instrument| {
+                                    extract_condition_id(&instrument.id()).ok()
+                                })
+                                .collect();
+                            let probe_condition_ids: Vec<String> = chunk
+                                .iter()
+                                .filter(|id| !classified_condition_ids.contains(*id))
+                                .cloned()
+                                .collect();
+
+                            record_auto_load_outcomes(&mut outcomes, &markets, insts);
                             transient.extend(trans);
+
+                            if probe_condition_ids.is_empty() {
+                                continue;
+                            }
+
+                            let closed_result = tokio::select! {
+                                result = query_positive_closed_markets(&http, &probe_condition_ids) => result,
+                                () = cancellation.cancelled() => return,
+                            };
+
+                            if cancellation.is_cancelled() {
+                                return;
+                            }
+
+                            match closed_result {
+                                Ok(markets) => {
+                                    batch_returned_any |= !markets.is_empty();
+                                    let (closed_instruments, closed_transient) =
+                                        parse_markets_with_transient(
+                                            &markets,
+                                            resolve_ctx.clock.get_time_ns(),
+                                        );
+                                    transient.extend(closed_transient);
+                                    record_auto_load_outcomes(
+                                        &mut outcomes,
+                                        &markets,
+                                        closed_instruments,
+                                    );
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "Auto-load closed-market probe failed for {} condition_id(s): {e:?}",
+                                        probe_condition_ids.len(),
+                                    );
+                                    failed_condition_ids.extend(probe_condition_ids);
+                                }
+                            }
                         }
                         Err(e) => {
-                            log::error!(
+                            log::warn!(
                                 "Auto-load batch failed for chunk of {} condition_id(s): {e:?}",
                                 chunk.len(),
                             );
-                            chunk_failed = true;
-                            break;
+                            failed_condition_ids.extend(chunk.iter().cloned());
                         }
                     }
                 }
 
-                // A chunk failure leaves the batch's state unknown; count it
-                // against the retry budget instead of dropping the subscription.
-                let next_batch: AHashSet<InstrumentId> = if chunk_failed {
-                    batch.clone()
-                } else {
-                    let mut retired_expired_ids = AHashSet::new();
+                if cancellation.is_cancelled() {
+                    return;
+                }
 
-                    for inst in loaded {
-                        if !filters.iter().all(|f| f.accept(&inst)) {
-                            log::debug!("Auto-loaded instrument {} filtered out", inst.id());
-                            continue;
-                        }
+                let resolution_condition_ids: AHashSet<String> = batch
+                    .iter()
+                    .filter(|id| {
+                        active_instrument_status_subs.contains(id)
+                            || active_instrument_close_subs.contains(id)
+                    })
+                    .filter_map(|id| extract_condition_id(id).ok())
+                    .collect();
 
-                        if is_instrument_expired(&inst, clock.get_time_ns()) {
-                            log::debug!("Skipping expired auto-loaded instrument {}", inst.id());
-                            retired_expired_ids.insert(inst.id());
-                            retire_local_instrument_state(
-                                inst.id(),
-                                &instruments,
-                                &token_meta,
-                                &order_books,
-                                &last_quotes,
-                                &active_quote_subs,
-                                &active_delta_subs,
-                                &active_trade_subs,
-                                &resolve_poll_watchlist,
-                                &pending_snapshot_after_tick_change,
-                                &pending,
-                                &ws_open_tokens,
-                                &ws_sub_mutex,
-                                &ws_client,
-                            )
-                            .await;
-                            continue;
-                        }
+                let needs_resolution_hydration = |condition_id: &str, outcome: &AutoLoadOutcome| {
+                    resolution_condition_ids.contains(condition_id)
+                        && transient.contains(condition_id)
+                        && outcome.needs_transient_hydration()
+                };
 
-                        cache_instrument(&instruments, &token_meta, &inst);
+                let should_retry_hydration = |condition_id: &str, outcome: &AutoLoadOutcome| {
+                    attempt < max_retries && needs_resolution_hydration(condition_id, outcome)
+                };
 
-                        let instrument_id = inst.id();
-                        if let Err(e) = data_sender.send(DataEvent::Instrument(inst)) {
-                            log::error!(
-                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
-                            );
-                        }
+                for (condition_id, outcome) in &outcomes {
+                    if should_retry_hydration(condition_id, outcome) {
+                        continue;
                     }
 
-                    // Snapshot loaded keys so the arc-swap Guard does not span
-                    // the WS reconciliation awaits below.
-                    let loaded_ids: AHashSet<InstrumentId> = {
-                        let cache = instruments.load();
-                        batch
-                            .iter()
-                            .filter(|id| cache.contains_key(id))
-                            .copied()
-                            .collect()
-                    };
-                    let mut next: AHashSet<InstrumentId> = AHashSet::new();
+                    if attempt >= max_retries && needs_resolution_hydration(condition_id, outcome) {
+                        log::warn!(
+                            "Could not hydrate closed Polymarket condition {condition_id} after {max_retries} retries; retaining resolution subscriptions for manual recovery"
+                        );
+                    }
 
-                    for id in &batch {
-                        let cid = match extract_condition_id(id) {
-                            Ok(c) => c,
-                            Err(_) => continue,
-                        };
+                    match outcome {
+                        AutoLoadOutcome::Open(loaded) => {
+                            if cancellation.is_cancelled() {
+                                continue;
+                            }
 
-                        if loaded_ids.contains(id) {
-                            if let Ok(token_id) = resolve_token_id_from(&instruments, *id) {
-                                sync_ws_subscription_async(
-                                    *id,
-                                    token_id,
-                                    active_quote_subs.clone(),
-                                    active_delta_subs.clone(),
-                                    active_trade_subs.clone(),
-                                    ws_open_tokens.clone(),
-                                    ws_sub_mutex.clone(),
-                                    ws_client.clone(),
+                            for instrument in loaded {
+                                let instrument_id = instrument.id();
+                                let accepted = filters.iter().all(|f| f.accept(instrument));
+
+                                if cancellation.is_cancelled() {
+                                    return;
+                                }
+
+                                if !accepted {
+                                    log::debug!(
+                                        "Auto-loaded instrument {} filtered out",
+                                        instrument.id()
+                                    );
+                                    let _guard = resolve_watch_apply_mutex.lock();
+                                    active_instrument_status_subs.remove(&instrument_id);
+                                    active_instrument_close_subs.remove(&instrument_id);
+                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
+                                    remove_data_resolve_watch_entry(
+                                        &resolve_poll_watchlist,
+                                        instrument_id,
+                                        false,
+                                    );
+                                    continue;
+                                }
+
+                                apply_live_instrument(
+                                    &closed_condition_ids,
+                                    &instrument_update_state,
+                                    &instruments,
+                                    &token_meta,
+                                    instrument,
+                                    |instrument| {
+                                        if let Err(e) = data_sender
+                                            .send(DataEvent::Instrument(instrument.clone()))
+                                        {
+                                            log::error!(
+                                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                                            );
+                                        }
+                                    },
+                                );
+
+                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
+                            }
+                        }
+                        AutoLoadOutcome::Closed {
+                            instruments: loaded,
+                            resolution,
+                        } => {
+                            for instrument in loaded {
+                                let instrument_id = instrument.id();
+                                if !active_instrument_status_subs.contains(&instrument_id)
+                                    && !active_instrument_close_subs.contains(&instrument_id)
+                                {
+                                    continue;
+                                }
+
+                                let accepted = filters.iter().all(|f| f.accept(instrument));
+
+                                if cancellation.is_cancelled() {
+                                    return;
+                                }
+
+                                if !accepted {
+                                    log::debug!(
+                                        "Auto-loaded instrument {} filtered out",
+                                        instrument.id()
+                                    );
+                                    let _guard = resolve_watch_apply_mutex.lock();
+                                    active_instrument_status_subs.remove(&instrument_id);
+                                    active_instrument_close_subs.remove(&instrument_id);
+                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
+                                    remove_data_resolve_watch_entry(
+                                        &resolve_poll_watchlist,
+                                        instrument_id,
+                                        false,
+                                    );
+                                    continue;
+                                }
+
+                                apply_live_instrument(
+                                    &closed_condition_ids,
+                                    &instrument_update_state,
+                                    &instruments,
+                                    &token_meta,
+                                    instrument,
+                                    |instrument| {
+                                        if let Err(e) = data_sender
+                                            .send(DataEvent::Instrument(instrument.clone()))
+                                        {
+                                            log::error!(
+                                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                                            );
+                                        }
+                                    },
+                                );
+
+                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
+                            }
+
+                            if let Some(resolution) = resolution {
+                                tokio::select! {
+                                    _ = apply_watched_condition_resolution(
+                                        &resolve_ctx,
+                                        resolution,
+                                    ) => {}
+                                    () = cancellation.cancelled() => return,
+                                }
+                            }
+
+                            if !subscriptions
+                                .mark_closed(condition_id, Some(&cancellation))
+                                .await
+                            {
+                                return;
+                            }
+
+                            if cancellation.is_cancelled() {
+                                return;
+                            }
+
+                            publish_cached_condition_closed(
+                                condition_id,
+                                &instrument_update_state,
+                                &instruments,
+                                &data_sender,
+                                resolve_ctx.clock,
+                            );
+
+                            subscriptions
+                                .retire_condition(
+                                    condition_id,
+                                    batch.iter().copied(),
+                                    Some(&cancellation),
                                 )
                                 .await;
-                            }
-                        } else if retired_expired_ids.contains(id) {
-                            // Expired instruments are terminal for live auto-load:
-                            // retire any residual runtime state and stop retrying.
-                        } else if transient.contains(&cid) {
-                            // CLOB still hydrating: retry within the budget.
-                            next.insert(*id);
-                        } else {
-                            // Absent from bulk response (same observable state as a
-                            // 404 in the single-market path): also transient.
-                            next.insert(*id);
                         }
+                        AutoLoadOutcome::Unknown => {}
+                    }
+                }
+
+                if cancellation.is_cancelled() {
+                    return;
+                }
+
+                // Snapshot loaded keys so the arc-swap Guard does not span
+                // the WS reconciliation awaits below.
+                let loaded_ids: AHashSet<InstrumentId> = {
+                    let cache = instruments.load();
+                    batch
+                        .iter()
+                        .filter(|id| cache.contains_key(id))
+                        .copied()
+                        .collect()
+                };
+                let mut next_batch: AHashSet<InstrumentId> = AHashSet::new();
+
+                for id in &batch {
+                    if cancellation.is_cancelled() {
+                        return;
                     }
 
-                    next
-                };
+                    let condition_id = match extract_condition_id(id) {
+                        Ok(condition_id) => condition_id,
+                        Err(_) => continue,
+                    };
+
+                    if !subscriptions.has_intent(*id) {
+                        continue;
+                    }
+
+                    match outcomes.get(&condition_id) {
+                        Some(AutoLoadOutcome::Open(_)) => {
+                            if loaded_ids.contains(id)
+                                && let Ok(token_id) = resolve_token_id_from(&instruments, *id)
+                            {
+                                resolve_ctx.sync_ws_subscription(*id, token_id).await;
+                            } else {
+                                next_batch.insert(*id);
+                            }
+                        }
+                        Some(outcome @ AutoLoadOutcome::Closed { .. })
+                            if should_retry_hydration(&condition_id, outcome) =>
+                        {
+                            next_batch.insert(*id);
+                        }
+                        Some(AutoLoadOutcome::Closed { .. }) => {
+                            // Terminal for live data; settlement metadata is
+                            // retained by `retire_instrument`.
+                        }
+                        Some(AutoLoadOutcome::Unknown) | None => {
+                            next_batch.insert(*id);
+                        }
+                    }
+                }
 
                 if next_batch.is_empty() {
                     return;
@@ -309,15 +601,18 @@ impl PolymarketDataClient {
                     };
 
                     for id in &next_batch {
-                        let reason = if chunk_failed {
-                            "Gamma fetch failed"
-                        } else if extract_condition_id(id)
-                            .is_ok_and(|condition_id| transient.contains(&condition_id))
-                        {
-                            "no usable token_id (CLOB lifecycle race)"
-                        } else {
-                            absent_reason
-                        };
+                        let reason = extract_condition_id(id).map_or(
+                            "invalid condition_id",
+                            |condition_id| {
+                                if failed_condition_ids.contains(&condition_id) {
+                                    "Gamma fetch failed"
+                                } else if transient.contains(&condition_id) {
+                                    "no usable token_id (CLOB lifecycle race)"
+                                } else {
+                                    absent_reason
+                                }
+                            },
+                        );
 
                         log::error!(
                             "Cannot find instrument for {id}: {reason} after {max_retries} retries"
@@ -328,8 +623,11 @@ impl PolymarketDataClient {
 
                 let delay =
                     crate::common::retry::auto_load_retry_delay(attempt, base_secs, max_secs);
-                let kind = if chunk_failed {
-                    "chunk failure"
+                let kind = if next_batch.iter().any(|id| {
+                    extract_condition_id(id)
+                        .is_ok_and(|condition_id| failed_condition_ids.contains(&condition_id))
+                }) {
+                    "fetch failure or transient"
                 } else {
                     "transient"
                 };
@@ -348,6 +646,58 @@ impl PolymarketDataClient {
 
                 batch = next_batch;
             }
-        });
+        };
+
+        if let Err(e) = self.tasks.spawn(future) {
+            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
+    }
+}
+
+// Closure and winner evidence do not depend on construction of a tradable instrument
+fn record_auto_load_outcomes(
+    outcomes: &mut AHashMap<String, AutoLoadOutcome>,
+    markets: &[GammaMarket],
+    instruments: Vec<InstrumentAny>,
+) {
+    for market in markets.iter().filter(|market| market.closed == Some(true)) {
+        let incoming = build_strict_resolved_market(market);
+        match outcomes
+            .entry(market.condition_id.clone())
+            .or_insert(AutoLoadOutcome::Unknown)
+        {
+            AutoLoadOutcome::Closed { resolution, .. } => {
+                if resolution.is_none() {
+                    *resolution = incoming;
+                }
+            }
+            outcome => {
+                *outcome = AutoLoadOutcome::Closed {
+                    instruments: Vec::new(),
+                    resolution: incoming,
+                };
+            }
+        }
+    }
+
+    for instrument in instruments {
+        let Ok(condition_id) = extract_condition_id(&instrument.id()) else {
+            continue;
+        };
+
+        match outcomes
+            .entry(condition_id)
+            .or_insert(AutoLoadOutcome::Unknown)
+        {
+            AutoLoadOutcome::Closed { instruments, .. } => {
+                if market_closed(&instrument) == Some(true) {
+                    instruments.push(instrument);
+                }
+            }
+            AutoLoadOutcome::Open(instruments) => instruments.push(instrument),
+            outcome @ AutoLoadOutcome::Unknown => {
+                *outcome = AutoLoadOutcome::Open(vec![instrument]);
+            }
+        }
     }
 }

@@ -25,8 +25,8 @@ use std::{
     rc::Rc,
 };
 
-use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use jiff::Timestamp;
 use nautilus_common::{
     actor::{
         Actor, DataActor, DataActorNative,
@@ -37,25 +37,30 @@ use nautilus_common::{
     clock::Clock,
     component::{Component, with_component_registry},
     enums::ComponentState,
+    messages::system::{QueueStateChanged, SocketStateChanged},
     python::{
         cache::PyCache,
         clock::PyClock,
         config_error_to_pyvalue_err,
         indicators::{registered_python_indicators, wrap_python_indicator},
-        logging::PyLogger,
+        logging::{PyLogger, format_exception},
         order_factory::PyOrderFactory,
+        wrappers::{get_python_message_bus, retain_python_wrapper},
     },
+    runner::SystemChannel,
     signal::Signal,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, UnixNanos, from_pydict,
-    python::{to_pyruntime_err, to_pyvalue_err},
+    Params, UnixNanos,
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED},
+    from_pydict,
+    python::{to_pyruntime_err, to_pyvalue_err, upgrade_py_weakref},
 };
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -68,8 +73,8 @@ use nautilus_model::{
         PositionEvent, PositionOpened,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
-        TraderId, Venue,
+        AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
+        StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, Venue, normalize_order_id_tag,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -85,13 +90,13 @@ use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
 use pyo3::{
     IntoPyObjectExt,
     prelude::*,
-    types::{PyBytes, PyDict, PyList},
+    types::{PyBytes, PyDict, PyList, PyWeakrefReference},
 };
 use ustr::Ustr;
 
 use crate::strategy::{
     BatchModifyOrder, ImportableStrategyConfig, Strategy, StrategyConfig, StrategyCore,
-    StrategyNative,
+    StrategyNative, route_time_event,
 };
 
 #[pyo3::pymethods]
@@ -103,7 +108,7 @@ impl StrategyConfig {
         strategy_id=None,
         order_id_tag=None,
         oms_type=None,
-        external_order_claims=None,
+        external_order_instrument_ids=None,
         manage_contingent_orders=false,
         manage_gtd_expiry=false,
         manage_stop=false,
@@ -127,7 +132,7 @@ impl StrategyConfig {
         strategy_id: Option<StrategyId>,
         order_id_tag: Option<String>,
         oms_type: Option<OmsType>,
-        external_order_claims: Option<Vec<InstrumentId>>,
+        external_order_instrument_ids: Option<Vec<InstrumentId>>,
         manage_contingent_orders: bool,
         manage_gtd_expiry: bool,
         manage_stop: bool,
@@ -148,7 +153,7 @@ impl StrategyConfig {
             use_uuid_client_order_ids,
             use_hyphens_in_client_order_ids,
             oms_type,
-            external_order_claims,
+            external_order_instrument_ids,
             manage_contingent_orders,
             manage_gtd_expiry,
             manage_stop,
@@ -180,8 +185,8 @@ impl StrategyConfig {
     }
 
     #[getter]
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.external_order_instrument_ids.clone()
     }
 
     #[getter]
@@ -302,7 +307,7 @@ impl ImportableStrategyConfig {
 /// Inner state of `PyStrategy`, shared between Python wrapper and Rust registries.
 pub struct PyStrategyInner {
     core: StrategyCore,
-    py_self: Option<Py<PyAny>>,
+    py_self: Option<Py<PyWeakrefReference>>,
     config: Option<Py<PyAny>>,
     clock: PyClock,
     logger: PyLogger,
@@ -312,7 +317,10 @@ impl Debug for PyStrategyInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(PyStrategyInner))
             .field("core", &self.core)
-            .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
+            .field(
+                "py_self",
+                &self.py_self.as_ref().map(|_| "<Py<PyWeakrefReference>>"),
+            )
             .field("config", &self.config.as_ref().map(|_| "<Py<PyAny>>"))
             .field("clock", &self.clock)
             .field("logger", &self.logger)
@@ -326,56 +334,56 @@ impl Debug for PyStrategyInner {
 )]
 impl PyStrategyInner {
     fn dispatch_on_start(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_start"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_stop(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_stop"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_resume(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_resume"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_reset(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_reset"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_dispose(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_dispose"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_degrade(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_degrade"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_fault(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_fault"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_save(&self) -> PyResult<IndexMap<String, Vec<u8>>> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_state = py_self.call_method0(py, "on_save")?;
                 let py_state: &Bound<'_, PyDict> = py_state.cast_bound::<PyDict>(py)?;
@@ -387,7 +395,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_load(&self, state: &IndexMap<String, Vec<u8>>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| -> PyResult<()> {
                 let py_state = state_to_pydict(py, state)?;
                 py_self.call_method1(py, "on_load", (py_state,))?;
@@ -398,21 +406,21 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_market_exit(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "on_market_exit"))?;
         }
         Ok(())
     }
 
     fn dispatch_post_market_exit(&self) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method0(py, "post_market_exit"))?;
         }
         Ok(())
     }
 
     fn dispatch_on_time_event(&self, event: &TimeEvent) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_time_event", (event.clone().into_py_any(py)?,))
             })?;
@@ -421,7 +429,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_initialized(&self, event: OrderInitialized) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_initialized", (event.into_py_any(py)?,))
             })?;
@@ -430,7 +438,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_event(&self, event: OrderEventAny) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_event = order_event_to_pyobject(py, event)?;
                 py_self.call_method1(py, "on_order_event", (py_event,))
@@ -440,7 +448,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_denied(&self, event: OrderDenied) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_denied", (event.into_py_any(py)?,))
             })?;
@@ -449,7 +457,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_emulated(&self, event: OrderEmulated) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_emulated", (event.into_py_any(py)?,))
             })?;
@@ -458,7 +466,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_released(&self, event: OrderReleased) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_released", (event.into_py_any(py)?,))
             })?;
@@ -467,7 +475,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_submitted(&self, event: OrderSubmitted) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_submitted", (event.into_py_any(py)?,))
             })?;
@@ -476,7 +484,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_rejected(&self, event: OrderRejected) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_rejected", (event.into_py_any(py)?,))
             })?;
@@ -485,7 +493,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_accepted(&self, event: OrderAccepted) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_accepted", (event.into_py_any(py)?,))
             })?;
@@ -494,7 +502,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_expired(&self, event: OrderExpired) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_expired", (event.into_py_any(py)?,))
             })?;
@@ -503,7 +511,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_triggered(&self, event: OrderTriggered) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_triggered", (event.into_py_any(py)?,))
             })?;
@@ -512,7 +520,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_pending_update(&self, event: OrderPendingUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_pending_update", (event.into_py_any(py)?,))
             })?;
@@ -521,7 +529,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_pending_cancel(&self, event: OrderPendingCancel) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_pending_cancel", (event.into_py_any(py)?,))
             })?;
@@ -530,7 +538,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_modify_rejected(&self, event: OrderModifyRejected) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_modify_rejected", (event.into_py_any(py)?,))
             })?;
@@ -539,7 +547,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_cancel_rejected(&self, event: OrderCancelRejected) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_cancel_rejected", (event.into_py_any(py)?,))
             })?;
@@ -548,7 +556,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_updated(&self, event: &OrderUpdated) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_updated", ((*event).into_py_any(py)?,))
             })?;
@@ -557,7 +565,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_canceled(&self, event: OrderCanceled) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_canceled", (event.into_py_any(py)?,))
             })?;
@@ -566,7 +574,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_filled(&self, event: &OrderFilled) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_filled", (event.clone().into_py_any(py)?,))
             })?;
@@ -575,7 +583,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_order_fill_voided(&self, event: &OrderFillVoided) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(
                     py,
@@ -588,7 +596,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_opened(&self, event: PositionOpened) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_position_opened", (event.into_py_any(py)?,))
             })?;
@@ -597,7 +605,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_event(&self, event: PositionEvent) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_event = match event {
                     PositionEvent::PositionOpened(event) => event.into_py_any(py)?,
@@ -612,7 +620,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_changed(&self, event: PositionChanged) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_position_changed", (event.into_py_any(py)?,))
             })?;
@@ -621,7 +629,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_position_closed(&self, event: PositionClosed) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_position_closed", (event.into_py_any(py)?,))
             })?;
@@ -630,14 +638,14 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_data", (data,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
             })?;
@@ -645,36 +653,54 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_queue_state(&mut self, event: &QueueStateChanged) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_queue_state", (event.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_socket_state(&mut self, event: &SocketStateChanged) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_socket_state", (event.clone().into_py_any(py)?,))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_instrument(&mut self, instrument: Py<PyAny>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_instrument", (instrument,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_quote", (quote.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_trade", (trade.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_bar(&mut self, bar: Bar) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_book_deltas", (deltas.clone().into_py_any(py)?,))
             })?;
@@ -682,17 +708,17 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any(py)?,))
+                py_self.call_method1(py, "on_book_depth", (depth.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
     }
 
     fn dispatch_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_book", (book.clone().into_py_any(py)?,))
             })?;
@@ -701,7 +727,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any(py)?,))
             })?;
@@ -710,7 +736,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_index_price", (index_price.into_py_any(py)?,))
             })?;
@@ -719,7 +745,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_funding_rate", (funding_rate.into_py_any(py)?,))
             })?;
@@ -728,7 +754,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_instrument_status(&mut self, data: InstrumentStatus) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_instrument_status", (data.into_py_any(py)?,))
             })?;
@@ -737,7 +763,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_instrument_close(&mut self, update: InstrumentClose) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_instrument_close", (update.into_py_any(py)?,))
             })?;
@@ -746,7 +772,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_option_greeks(&mut self, greeks: OptionGreeks) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_option_greeks", (greeks.into_py_any(py)?,))
             })?;
@@ -755,7 +781,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_option_chain(&mut self, slice: &OptionChainSlice) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_option_chain", (slice.clone().into_py_any(py)?,))
             })?;
@@ -764,14 +790,14 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_data(&mut self, data: Py<PyAny>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| py_self.call_method1(py, "on_historical_data", (data,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_historical_book_deltas(&mut self, deltas: Vec<OrderBookDelta>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_deltas = deltas
                     .into_iter()
@@ -783,8 +809,8 @@ impl PyStrategyInner {
         Ok(())
     }
 
-    fn dispatch_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth10>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+    fn dispatch_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth>) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_depths = depths
                     .into_iter()
@@ -797,7 +823,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_quotes = quotes
                     .into_iter()
@@ -810,7 +836,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_trades = trades
                     .into_iter()
@@ -826,7 +852,7 @@ impl PyStrategyInner {
         &mut self,
         funding_rates: Vec<FundingRateUpdate>,
     ) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_funding_rates = funding_rates
                     .into_iter()
@@ -839,7 +865,7 @@ impl PyStrategyInner {
     }
 
     fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_bars = bars
                     .into_iter()
@@ -855,7 +881,7 @@ impl PyStrategyInner {
         &mut self,
         mark_prices: Vec<MarkPriceUpdate>,
     ) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_mark_prices = mark_prices
                     .into_iter()
@@ -871,7 +897,7 @@ impl PyStrategyInner {
         &mut self,
         index_prices: Vec<IndexPriceUpdate>,
     ) -> PyResult<()> {
-        if let Some(ref py_self) = self.py_self {
+        if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 let py_index_prices = index_prices
                     .into_iter()
@@ -881,6 +907,15 @@ impl PyStrategyInner {
             })?;
         }
         Ok(())
+    }
+
+    // The trader owns the wrapper for as long as the strategy stays registered, so a collected
+    // wrapper propagates as an error rather than a skipped callback.
+    fn python_instance(&self) -> PyResult<Option<Py<PyAny>>> {
+        upgrade_py_weakref(
+            self.py_self.as_ref(),
+            &DataActorNative::core(&self.core).actor_id,
+        )
     }
 }
 
@@ -919,104 +954,150 @@ impl StrategyNative for PyStrategyInner {
 }
 
 impl Strategy for PyStrategyInner {
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.core.config.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_instrument_ids.clone()
     }
 
     fn on_market_exit(&mut self) {
-        let _ = self.dispatch_on_market_exit();
+        self.logger
+            .log_callback_error("on_market_exit", self.dispatch_on_market_exit());
     }
 
     fn post_market_exit(&mut self) {
-        let _ = self.dispatch_post_market_exit();
+        self.logger
+            .log_callback_error("post_market_exit", self.dispatch_post_market_exit());
     }
 
     fn on_order_initialized(&mut self, event: OrderInitialized) {
-        let _ = self.dispatch_on_order_initialized(event);
+        self.logger.log_callback_error(
+            "on_order_initialized",
+            self.dispatch_on_order_initialized(event),
+        );
     }
 
     fn on_order_event(&mut self, event: OrderEventAny) {
-        let _ = self.dispatch_on_order_event(event);
+        self.logger
+            .log_callback_error("on_order_event", self.dispatch_on_order_event(event));
     }
 
     fn on_order_denied(&mut self, event: OrderDenied) {
-        let _ = self.dispatch_on_order_denied(event);
+        self.logger
+            .log_callback_error("on_order_denied", self.dispatch_on_order_denied(event));
     }
 
     fn on_order_emulated(&mut self, event: OrderEmulated) {
-        let _ = self.dispatch_on_order_emulated(event);
+        self.logger
+            .log_callback_error("on_order_emulated", self.dispatch_on_order_emulated(event));
     }
 
     fn on_order_released(&mut self, event: OrderReleased) {
-        let _ = self.dispatch_on_order_released(event);
+        self.logger
+            .log_callback_error("on_order_released", self.dispatch_on_order_released(event));
     }
 
     fn on_order_submitted(&mut self, event: OrderSubmitted) {
-        let _ = self.dispatch_on_order_submitted(event);
+        self.logger.log_callback_error(
+            "on_order_submitted",
+            self.dispatch_on_order_submitted(event),
+        );
     }
 
     fn on_order_rejected(&mut self, event: OrderRejected) {
-        let _ = self.dispatch_on_order_rejected(event);
+        self.logger
+            .log_callback_error("on_order_rejected", self.dispatch_on_order_rejected(event));
     }
 
     fn on_order_accepted(&mut self, event: OrderAccepted) {
-        let _ = self.dispatch_on_order_accepted(event);
+        self.logger
+            .log_callback_error("on_order_accepted", self.dispatch_on_order_accepted(event));
     }
 
     fn on_order_expired(&mut self, event: OrderExpired) {
-        let _ = self.dispatch_on_order_expired(event);
+        self.logger
+            .log_callback_error("on_order_expired", self.dispatch_on_order_expired(event));
     }
 
     fn on_order_triggered(&mut self, event: OrderTriggered) {
-        let _ = self.dispatch_on_order_triggered(event);
+        self.logger.log_callback_error(
+            "on_order_triggered",
+            self.dispatch_on_order_triggered(event),
+        );
     }
 
     fn on_order_pending_update(&mut self, event: OrderPendingUpdate) {
-        let _ = self.dispatch_on_order_pending_update(event);
+        self.logger.log_callback_error(
+            "on_order_pending_update",
+            self.dispatch_on_order_pending_update(event),
+        );
     }
 
     fn on_order_pending_cancel(&mut self, event: OrderPendingCancel) {
-        let _ = self.dispatch_on_order_pending_cancel(event);
+        self.logger.log_callback_error(
+            "on_order_pending_cancel",
+            self.dispatch_on_order_pending_cancel(event),
+        );
     }
 
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
-        let _ = self.dispatch_on_order_modify_rejected(event);
+        self.logger.log_callback_error(
+            "on_order_modify_rejected",
+            self.dispatch_on_order_modify_rejected(event),
+        );
     }
 
     fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {
-        let _ = self.dispatch_on_order_cancel_rejected(event);
+        self.logger.log_callback_error(
+            "on_order_cancel_rejected",
+            self.dispatch_on_order_cancel_rejected(event),
+        );
     }
 
     fn on_order_updated(&mut self, event: OrderUpdated) {
-        let _ = self.dispatch_on_order_updated(&event);
+        self.logger
+            .log_callback_error("on_order_updated", self.dispatch_on_order_updated(&event));
     }
 
     fn on_order_canceled(&mut self, event: &OrderCanceled) {
-        let _ = self.dispatch_on_order_canceled(*event);
+        self.logger
+            .log_callback_error("on_order_canceled", self.dispatch_on_order_canceled(*event));
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) {
-        let _ = self.dispatch_on_order_filled(event);
+        self.logger
+            .log_callback_error("on_order_filled", self.dispatch_on_order_filled(event));
     }
 
     fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {
-        let _ = self.dispatch_on_order_fill_voided(event);
+        self.logger.log_callback_error(
+            "on_order_fill_voided",
+            self.dispatch_on_order_fill_voided(event),
+        );
     }
 
     fn on_position_opened(&mut self, event: PositionOpened) {
-        let _ = self.dispatch_on_position_opened(event);
+        self.logger.log_callback_error(
+            "on_position_opened",
+            self.dispatch_on_position_opened(event),
+        );
     }
 
     fn on_position_event(&mut self, event: PositionEvent) {
-        let _ = self.dispatch_on_position_event(event);
+        self.logger
+            .log_callback_error("on_position_event", self.dispatch_on_position_event(event));
     }
 
     fn on_position_changed(&mut self, event: PositionChanged) {
-        let _ = self.dispatch_on_position_changed(event);
+        self.logger.log_callback_error(
+            "on_position_changed",
+            self.dispatch_on_position_changed(event),
+        );
     }
 
     fn on_position_closed(&mut self, event: PositionClosed) {
-        let _ = self.dispatch_on_position_closed(event);
+        self.logger.log_callback_error(
+            "on_position_closed",
+            self.dispatch_on_position_closed(event),
+        );
     }
 }
 
@@ -1024,53 +1105,53 @@ impl DataActor for PyStrategyInner {
     fn on_start(&mut self) -> anyhow::Result<()> {
         Strategy::on_start(self)?;
         self.dispatch_on_start()
-            .map_err(|e| anyhow::anyhow!("Python on_start failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_start failed:\n{}", format_exception(&e)))
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_stop()
-            .map_err(|e| anyhow::anyhow!("Python on_stop failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_stop failed:\n{}", format_exception(&e)))
     }
 
     fn on_resume(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_resume()
-            .map_err(|e| anyhow::anyhow!("Python on_resume failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_resume failed:\n{}", format_exception(&e)))
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_reset()
-            .map_err(|e| anyhow::anyhow!("Python on_reset failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_reset failed:\n{}", format_exception(&e)))
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_dispose()
-            .map_err(|e| anyhow::anyhow!("Python on_dispose failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_dispose failed:\n{}", format_exception(&e)))
     }
 
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_degrade()
-            .map_err(|e| anyhow::anyhow!("Python on_degrade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_degrade failed:\n{}", format_exception(&e)))
     }
 
     fn on_fault(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_fault()
-            .map_err(|e| anyhow::anyhow!("Python on_fault failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_fault failed:\n{}", format_exception(&e)))
     }
 
     fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
         self.dispatch_on_save()
-            .map_err(|e| anyhow::anyhow!("Python on_save failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_save failed:\n{}", format_exception(&e)))
     }
 
     fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         self.dispatch_on_load(&state)
-            .map_err(|e| anyhow::anyhow!("Python on_load failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_load failed:\n{}", format_exception(&e)))
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        Strategy::on_time_event(self, event)?;
+        route_time_event(self, event);
         self.dispatch_on_time_event(event)
-            .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_time_event failed:\n{}", format_exception(&e)))
     }
 
     #[allow(unused_variables)]
@@ -1078,119 +1159,169 @@ impl DataActor for PyStrategyInner {
         Python::attach(|py| {
             let py_data: Py<PyAny> = Py::new(py, data.clone())?.into_any();
             self.dispatch_on_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_data failed: {e}"))
+                .map_err(|e| anyhow::anyhow!("Python on_data failed:\n{}", format_exception(&e)))
         })
     }
 
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         self.dispatch_on_signal(signal)
-            .map_err(|e| anyhow::anyhow!("Python on_signal failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_signal failed:\n{}", format_exception(&e)))
+    }
+
+    fn on_queue_state(&mut self, event: &QueueStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_queue_state(event)
+            .map_err(|e| anyhow::anyhow!("Python on_queue_state failed:\n{}", format_exception(&e)))
+    }
+
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+        self.dispatch_on_socket_state(event).map_err(|e| {
+            anyhow::anyhow!("Python on_socket_state failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         Python::attach(|py| {
             let py_instrument = instrument_any_to_pyobject(py, instrument.clone())
                 .map_err(|e| anyhow::anyhow!("Failed to convert InstrumentAny to Python: {e}"))?;
-            self.dispatch_on_instrument(py_instrument)
-                .map_err(|e| anyhow::anyhow!("Python on_instrument failed: {e}"))
+            self.dispatch_on_instrument(py_instrument).map_err(|e| {
+                anyhow::anyhow!("Python on_instrument failed:\n{}", format_exception(&e))
+            })
         })
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         self.dispatch_on_quote(*quote)
-            .map_err(|e| anyhow::anyhow!("Python on_quote failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_quote failed:\n{}", format_exception(&e)))
     }
 
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         self.dispatch_on_trade(*tick)
-            .map_err(|e| anyhow::anyhow!("Python on_trade failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_trade failed:\n{}", format_exception(&e)))
     }
 
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         self.dispatch_on_bar(*bar)
-            .map_err(|e| anyhow::anyhow!("Python on_bar failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_bar failed:\n{}", format_exception(&e)))
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.dispatch_on_book_deltas(deltas)
-            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed:\n{}", format_exception(&e)))
     }
 
-    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+    fn on_book_depth(&mut self, depth: &OrderBookDepth) -> anyhow::Result<()> {
         self.dispatch_on_book_depth(depth)
-            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed:\n{}", format_exception(&e)))
     }
 
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         self.dispatch_on_book(order_book)
-            .map_err(|e| anyhow::anyhow!("Python on_book failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_book failed:\n{}", format_exception(&e)))
     }
 
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_mark_price(*mark_price)
-            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_mark_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         self.dispatch_on_index_price(*index_price)
-            .map_err(|e| anyhow::anyhow!("Python on_index_price failed: {e}"))
+            .map_err(|e| anyhow::anyhow!("Python on_index_price failed:\n{}", format_exception(&e)))
     }
 
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
-        self.dispatch_on_funding_rate(*funding_rate)
-            .map_err(|e| anyhow::anyhow!("Python on_funding_rate failed: {e}"))
+        self.dispatch_on_funding_rate(*funding_rate).map_err(|e| {
+            anyhow::anyhow!("Python on_funding_rate failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_status(*data)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_status failed: {e}"))
+        self.dispatch_on_instrument_status(*data).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_status failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
-        self.dispatch_on_instrument_close(*update)
-            .map_err(|e| anyhow::anyhow!("Python on_instrument_close failed: {e}"))
+        self.dispatch_on_instrument_close(*update).map_err(|e| {
+            anyhow::anyhow!(
+                "Python on_instrument_close failed:\n{}",
+                format_exception(&e)
+            )
+        })
     }
 
     fn on_option_greeks(&mut self, greeks: &OptionGreeks) -> anyhow::Result<()> {
-        self.dispatch_on_option_greeks(*greeks)
-            .map_err(|e| anyhow::anyhow!("Python on_option_greeks failed: {e}"))
+        self.dispatch_on_option_greeks(*greeks).map_err(|e| {
+            anyhow::anyhow!("Python on_option_greeks failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_option_chain(&mut self, slice: &OptionChainSlice) -> anyhow::Result<()> {
-        self.dispatch_on_option_chain(slice)
-            .map_err(|e| anyhow::anyhow!("Python on_option_chain failed: {e}"))
+        self.dispatch_on_option_chain(slice).map_err(|e| {
+            anyhow::anyhow!("Python on_option_chain failed:\n{}", format_exception(&e))
+        })
     }
 
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Python::attach(|py| {
             let py_data: Py<PyAny> = if let Some(custom_data) = data.downcast_ref::<CustomData>() {
                 Py::new(py, custom_data.clone())?.into_any()
+            } else if let Some(custom_data) = data.downcast_ref::<Vec<CustomData>>() {
+                custom_data.clone().into_py_any(py)?
             } else {
                 anyhow::bail!("Failed to convert historical data to Python: unsupported type");
             };
-            self.dispatch_on_historical_data(py_data)
-                .map_err(|e| anyhow::anyhow!("Python on_historical_data failed: {e}"))
+
+            self.dispatch_on_historical_data(py_data).map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_data failed:\n{}",
+                    format_exception(&e)
+                )
+            })
         })
     }
 
     fn on_historical_book_deltas(&mut self, deltas: &[OrderBookDelta]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_deltas(deltas.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_deltas failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_deltas failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
-    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth10]) -> anyhow::Result<()> {
+    fn on_historical_book_depth(&mut self, depths: &[OrderBookDepth]) -> anyhow::Result<()> {
         self.dispatch_on_historical_book_depth(depths.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_book_depth failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_book_depth failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_quotes(quotes.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_quotes failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_quotes failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         self.dispatch_on_historical_trades(trades.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_trades failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_trades failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_funding_rates(
@@ -1198,17 +1329,32 @@ impl DataActor for PyStrategyInner {
         funding_rates: &[FundingRateUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_funding_rates(funding_rates.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_funding_rates failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_funding_rates failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         self.dispatch_on_historical_bars(bars.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_bars failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_bars failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         self.dispatch_on_historical_mark_prices(mark_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_mark_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_mark_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 
     fn on_historical_index_prices(
@@ -1216,7 +1362,12 @@ impl DataActor for PyStrategyInner {
         index_prices: &[IndexPriceUpdate],
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_index_prices(index_prices.to_vec())
-            .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Python on_historical_index_prices failed:\n{}",
+                    format_exception(&e)
+                )
+            })
     }
 }
 
@@ -1242,7 +1393,8 @@ fn pydict_to_state(state: &Bound<'_, PyDict>) -> PyResult<IndexMap<String, Vec<u
     module = "nautilus_trader.trading",
     name = "Strategy",
     unsendable,
-    subclass
+    subclass,
+    weakref
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")]
 pub struct PyStrategy {
@@ -1276,11 +1428,15 @@ impl PyStrategy {
 }
 
 impl PyStrategy {
-    /// Creates a new `PyStrategy` instance.
-    #[must_use]
-    pub fn new(config: Option<StrategyConfig>) -> Self {
+    /// Creates a new `PyStrategy` instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid `StrategyId`.
+    pub fn new_checked(config: Option<StrategyConfig>) -> CorrectnessResult<Self> {
         let config = config.unwrap_or_default();
-        let core = StrategyCore::new(config);
+        let core = StrategyCore::new_checked(config)?;
         let clock = PyClock::new_test();
         let logger = PyLogger::new(core.actor.actor_id.as_str());
 
@@ -1292,49 +1448,92 @@ impl PyStrategy {
             logger,
         };
 
-        Self {
+        Ok(Self {
             inner: Rc::new(UnsafeCell::new(inner)),
-        }
+        })
+    }
+
+    /// Creates a new `PyStrategy` instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the configured order ID tag contains the '-' strategy ID separator,
+    /// or if composing it into the strategy ID does not produce a valid `StrategyId`.
+    #[must_use]
+    pub fn new(config: Option<StrategyConfig>) -> Self {
+        Self::new_checked(config).expect_display(FAILED)
     }
 
     /// Sets the Python instance reference for method dispatch.
-    pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
-        self.inner_mut().py_self = Some(py_obj);
+    ///
+    /// Only a weak reference is stored, so the caller keeps ownership of `py_obj`. The trader
+    /// owns registered wrappers; an unregistered strategy stays collectable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `py_obj` cannot be weakly referenced.
+    pub fn set_python_instance(&mut self, py_obj: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.inner_mut().py_self = Some(PyWeakrefReference::new(py_obj)?.unbind());
+        Ok(())
     }
 
     /// Stores the original Python config object passed at construction.
     ///
-    /// Retained so the constructed instance exposes `.config` (matching v1) and so
-    /// instance-based registration can source strategy ID, order ID tag, and logging
-    /// flags from the same single config object.
+    /// Retained so the constructed instance exposes `.config` and instance-based registration can
+    /// source strategy ID, order ID tag, and logging flags from the same single config object.
     pub fn set_config(&mut self, config: Option<Py<PyAny>>) {
         self.inner_mut().config = config;
     }
 
-    /// Updates configured external order claim instrument IDs before registration.
-    pub fn set_external_order_claims(&mut self, external_order_claims: Option<Vec<InstrumentId>>) {
-        self.inner_mut().core.config.external_order_claims = external_order_claims;
+    /// Updates the configured external order instrument IDs before registration.
+    pub fn set_external_order_instrument_ids(
+        &mut self,
+        external_order_instrument_ids: Option<Vec<InstrumentId>>,
+    ) {
+        self.inner_mut().core.config.external_order_instrument_ids = external_order_instrument_ids;
     }
 
-    /// Returns the configured external order claim instrument IDs.
+    /// Returns the configured external order instrument IDs.
     #[must_use]
-    pub fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.inner().external_order_claims()
+    pub fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.inner().external_order_instrument_ids()
+    }
+
+    /// Updates the runtime component identity used until a strategy ID is assigned.
+    ///
+    /// Must only be called before registration. See `PyDataActor::set_actor_id`.
+    pub fn set_actor_id(&mut self, actor_id: ActorId) {
+        let inner = self.inner_mut();
+        inner.core.actor.config.actor_id = Some(actor_id);
+        inner.core.actor.actor_id = actor_id;
+        inner.logger = PyLogger::new(actor_id.as_str());
     }
 
     /// Updates the runtime strategy ID.
     ///
     /// Must only be called before registration. See `PyDataActor::set_actor_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if composing the current order ID tag into `strategy_id` does not
+    /// produce a valid `StrategyId`.
     pub fn set_strategy_id(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        inner.core.change_id(strategy_id);
+        inner.core.change_id(strategy_id)?;
+        inner.logger = PyLogger::new(inner.core.actor.actor_id.as_str());
         Ok(())
     }
 
     /// Updates the runtime order ID tag.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `order_id_tag` contains the '-' strategy ID separator, or if
+    /// composing it into the current strategy ID does not produce a valid `StrategyId`.
     pub fn set_order_id_tag(&mut self, order_id_tag: &str) -> anyhow::Result<()> {
         let inner = self.inner_mut();
-        inner.core.change_order_id_tag(order_id_tag);
+        inner.core.change_order_id_tag(order_id_tag)?;
+        inner.logger = PyLogger::new(inner.core.actor.actor_id.as_str());
         Ok(())
     }
 
@@ -1351,9 +1550,24 @@ impl PyStrategy {
     }
 
     /// Returns the strategy ID.
+    ///
+    /// Until registration assigns an order ID tag, an unconfigured strategy reports the
+    /// class-derived ID with the unassigned tag, such as `MyStrategy-None`.
     #[must_use]
     pub fn strategy_id(&self) -> StrategyId {
-        StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
+        StrategyId::new(self.inner().core.actor.actor_id.inner())
+    }
+
+    /// Returns the strategy ID once configured or assigned, otherwise `None`.
+    #[must_use]
+    pub fn configured_strategy_id(&self) -> Option<StrategyId> {
+        self.inner().core.strategy_id()
+    }
+
+    /// Returns the runtime order ID tag.
+    #[must_use]
+    pub fn order_id_tag(&self) -> Option<String> {
+        self.inner().core.order_id_tag().map(str::to_string)
     }
 
     /// Returns a value indicating whether the strategy has been registered with a trader.
@@ -1382,9 +1596,7 @@ impl PyStrategy {
         let actor_id = inner.core.actor.actor_id.inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<PyStrategyInner>(&actor_id) {
-                if let Err(e) = DataActor::on_time_event(&mut *strategy, &event) {
-                    log::error!("Python time event handler failed for strategy {actor_id}: {e}");
-                }
+                strategy.handle_time_event(&event);
             } else {
                 log::error!("Strategy {actor_id} not found for time event handling");
             }
@@ -1395,19 +1607,39 @@ impl PyStrategy {
         Component::initialize(inner)
     }
 
-    /// Registers this strategy in the global component and actor registries.
-    pub fn register_in_global_registries(&self) {
+    /// Registers this strategy in the global component, actor, and wrapper registries.
+    ///
+    /// The Python wrapper is retained as part of the same act, so a registered strategy always has
+    /// an owner for the wrapper its inner only weakly references.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no Python wrapper is attached, or if the attached wrapper has already
+    /// been collected. Nothing is registered in that case.
+    pub fn register_in_global_registries(&self) -> PyResult<()> {
         let inner = self.inner();
-        let component_id = Component::component_id(inner).inner();
+        let component_id = Component::component_id(inner);
         let actor_id = Actor::id(inner);
+
+        let Some(wrapper) = inner.python_instance()? else {
+            return Err(to_pyruntime_err(format!(
+                "Cannot register strategy {actor_id} without a Python wrapper, call `set_python_instance` first"
+            )));
+        };
 
         let inner_ref: Rc<UnsafeCell<PyStrategyInner>> = self.inner.clone();
 
         let component_trait_ref: Rc<UnsafeCell<dyn Component>> = inner_ref.clone();
-        with_component_registry(|registry| registry.insert(component_id, component_trait_ref));
+        with_component_registry(|registry| {
+            registry.insert(component_id.inner(), component_trait_ref);
+        });
 
         let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = inner_ref;
         with_actor_registry(|registry| registry.insert(actor_id, actor_trait_ref));
+
+        retain_python_wrapper(component_id, wrapper, inner.core.actor.message_bus());
+
+        Ok(())
     }
 }
 
@@ -1416,10 +1648,6 @@ impl PyStrategy {
 #[allow(
     clippy::large_types_passed_by_value,
     reason = "PyO3 callbacks accept Python-owned event values"
-)]
-#[expect(
-    clippy::unused_self,
-    reason = "default PyO3 callbacks must remain instance methods"
 )]
 impl PyStrategy {
     /// Creates a new [`PyStrategy`] instance.
@@ -1435,25 +1663,35 @@ impl PyStrategy {
     /// forwarding it to `super().__init__()`.
     #[new]
     #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<Py<PyAny>>) -> Self {
+    fn py_new(config: Option<Py<PyAny>>) -> PyResult<Self> {
         let strategy_config = config
             .as_ref()
             .and_then(|obj| Python::attach(|py| obj.extract::<StrategyConfig>(py).ok()));
-        let mut strategy = Self::new(strategy_config);
+        let mut strategy = Self::new_checked(strategy_config).map_err(to_pyvalue_err)?;
         strategy.set_config(config);
-        strategy
+        Ok(strategy)
     }
 
     /// Captures the Python self reference for Rust→Python event dispatch.
     #[pyo3(signature = (config=None))]
-    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
-        let py_self: Py<PyAny> = slf.clone().unbind().into_any();
-        let mut borrowed = slf.borrow_mut();
-        borrowed.set_python_instance(py_self);
-        // `__new__` retained the config; only a forwarded config overrides it
-        if config.is_some() {
-            borrowed.set_config(config);
+    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) -> PyResult<()> {
+        {
+            let mut borrowed = slf.borrow_mut();
+            borrowed.set_python_instance(slf.as_any())?;
+            // `__new__` retained the config; only a forwarded config overrides it
+            if config.is_some() {
+                borrowed.set_config(config);
+            }
         }
+
+        if !has_configured_strategy_id(slf) {
+            let py_type = slf.get_type();
+            let type_name = py_type.name()?;
+            let actor_id = class_derived_actor_id(slf, type_name.to_str()?)?;
+            slf.borrow_mut().set_actor_id(actor_id);
+        }
+
+        Ok(())
     }
 
     #[getter]
@@ -1465,7 +1703,7 @@ impl PyStrategy {
     #[getter]
     #[pyo3(name = "strategy_id")]
     fn py_strategy_id(&self) -> StrategyId {
-        StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
+        self.strategy_id()
     }
 
     #[getter]
@@ -1501,6 +1739,24 @@ impl PyStrategy {
                 "Strategy must be registered with a trader before accessing cache",
             ))
         }
+    }
+
+    /// Replaces this strategy's active external order claims with `instrument_ids`.
+    ///
+    /// Passing an empty list releases every claim owned by the strategy. Existing cached orders
+    /// keep their assigned strategy ID. The original Python config object is not changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered, the cache is already borrowed, an
+    /// instrument is repeated, or an instrument is claimed by another strategy.
+    #[pyo3(name = "set_external_order_instrument_ids")]
+    fn py_set_external_order_instrument_ids(
+        &mut self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<()> {
+        Strategy::set_external_order_instrument_ids(self.inner_mut(), instrument_ids)
+            .map_err(to_pyruntime_err)
     }
 
     #[getter]
@@ -1608,8 +1864,10 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "publish_data")]
-    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) {
+    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::publish_data(self.inner(), data_type, data);
+        Ok(())
     }
 
     #[pyo3(name = "publish_signal")]
@@ -1625,6 +1883,7 @@ impl PyStrategy {
         value: Py<PyAny>,
         ts_event: u64,
     ) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         let value_str: String = value.bind(py).str()?.extract()?;
         DataActor::publish_signal(self.inner(), name, value_str, UnixNanos::from(ts_event));
         Ok(())
@@ -1632,11 +1891,13 @@ impl PyStrategy {
 
     #[pyo3(name = "add_synthetic")]
     fn py_add_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::add_synthetic(self.inner(), synthetic).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "update_synthetic")]
     fn py_update_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        self.ensure_registered_for_data()?;
         DataActor::update_synthetic(self.inner(), synthetic).map_err(to_pyvalue_err)
     }
 
@@ -1885,12 +2146,13 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "cancel_all_orders")]
-    #[pyo3(signature = (instrument_id, order_side=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, order_side=None, client_id=None, strategy_only=true, params=None))]
     fn py_cancel_all_orders(
         &mut self,
         instrument_id: InstrumentId,
         order_side: Option<OrderSide>,
         client_id: Option<ClientId>,
+        strategy_only: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -1904,6 +2166,7 @@ impl PyStrategy {
             instrument_id,
             order_side,
             client_id,
+            strategy_only,
             params_map,
         )
         .map_err(to_pyruntime_err)
@@ -2013,244 +2276,255 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "on_start")]
-    fn py_on_start(&mut self) {}
+    fn py_on_start(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_stop")]
-    fn py_on_stop(&mut self) {}
+    fn py_on_stop(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_resume")]
-    fn py_on_resume(&mut self) {}
+    fn py_on_resume(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_reset")]
-    fn py_on_reset(&mut self) {}
+    fn py_on_reset(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_dispose")]
-    fn py_on_dispose(&mut self) {}
+    fn py_on_dispose(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_degrade")]
-    fn py_on_degrade(&mut self) {}
+    fn py_on_degrade(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_fault")]
-    fn py_on_fault(&mut self) {}
+    fn py_on_fault(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "on_save")]
-    fn py_on_save(&self, py: Python<'_>) -> Py<PyDict> {
+    fn py_on_save(_slf: &Bound<'_, Self>, py: Python<'_>) -> Py<PyDict> {
         PyDict::new(py).unbind()
     }
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_load")]
-    fn py_on_load(&mut self, state: &Bound<'_, PyDict>) {}
+    fn py_on_load(_slf: &Bound<'_, Self>, state: &Bound<'_, PyDict>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_time_event")]
-    fn py_on_time_event(&mut self, event: TimeEvent) {}
+    fn py_on_time_event(_slf: &Bound<'_, Self>, event: TimeEvent) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_data")]
-    fn py_on_data(&mut self, data: Py<PyAny>) {}
+    fn py_on_data(_slf: &Bound<'_, Self>, data: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_signal")]
-    fn py_on_signal(&mut self, signal: &Signal) {}
+    fn py_on_signal(_slf: &Bound<'_, Self>, signal: &Signal) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_queue_state")]
+    fn py_on_queue_state(_slf: &Bound<'_, Self>, event: QueueStateChanged) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_socket_state")]
+    fn py_on_socket_state(_slf: &Bound<'_, Self>, event: SocketStateChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_instrument")]
-    fn py_on_instrument(&mut self, instrument: Py<PyAny>) {}
+    fn py_on_instrument(_slf: &Bound<'_, Self>, instrument: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_quote")]
-    fn py_on_quote(&mut self, quote: QuoteTick) {}
+    fn py_on_quote(_slf: &Bound<'_, Self>, quote: QuoteTick) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_trade")]
-    fn py_on_trade(&mut self, trade: TradeTick) {}
+    fn py_on_trade(_slf: &Bound<'_, Self>, trade: TradeTick) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_bar")]
-    fn py_on_bar(&mut self, bar: Bar) {}
+    fn py_on_bar(_slf: &Bound<'_, Self>, bar: Bar) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_book_deltas")]
-    fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) {}
+    fn py_on_book_deltas(_slf: &Bound<'_, Self>, deltas: OrderBookDeltas) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book_depth")]
-    fn py_on_book_depth(&mut self, depth: &OrderBookDepth10) {}
+    fn py_on_book_depth(_slf: &Bound<'_, Self>, depth: &OrderBookDepth) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
-    fn py_on_book(&mut self, book: &OrderBook) {}
+    fn py_on_book(_slf: &Bound<'_, Self>, book: &OrderBook) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_mark_price")]
-    fn py_on_mark_price(&mut self, mark_price: MarkPriceUpdate) {}
+    fn py_on_mark_price(_slf: &Bound<'_, Self>, mark_price: MarkPriceUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_index_price")]
-    fn py_on_index_price(&mut self, index_price: IndexPriceUpdate) {}
+    fn py_on_index_price(_slf: &Bound<'_, Self>, index_price: IndexPriceUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_funding_rate")]
-    fn py_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) {}
+    fn py_on_funding_rate(_slf: &Bound<'_, Self>, funding_rate: FundingRateUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_status")]
-    fn py_on_instrument_status(&mut self, status: InstrumentStatus) {}
+    fn py_on_instrument_status(_slf: &Bound<'_, Self>, status: InstrumentStatus) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_close")]
-    fn py_on_instrument_close(&mut self, close: InstrumentClose) {}
+    fn py_on_instrument_close(_slf: &Bound<'_, Self>, close: InstrumentClose) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_option_greeks")]
-    fn py_on_option_greeks(&mut self, greeks: OptionGreeks) {}
+    fn py_on_option_greeks(_slf: &Bound<'_, Self>, greeks: OptionGreeks) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_option_chain")]
-    fn py_on_option_chain(&mut self, slice: OptionChainSlice) {}
+    fn py_on_option_chain(_slf: &Bound<'_, Self>, slice: OptionChainSlice) {}
 
     #[pyo3(name = "on_market_exit")]
-    fn py_on_market_exit(&mut self) {}
+    fn py_on_market_exit(_slf: &Bound<'_, Self>) {}
 
     #[pyo3(name = "post_market_exit")]
-    fn py_post_market_exit(&mut self) {}
+    fn py_post_market_exit(_slf: &Bound<'_, Self>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_initialized")]
-    fn py_on_order_initialized(&mut self, event: OrderInitialized) {}
+    fn py_on_order_initialized(_slf: &Bound<'_, Self>, event: OrderInitialized) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_event")]
-    fn py_on_order_event(&mut self, event: Py<PyAny>) {}
+    fn py_on_order_event(_slf: &Bound<'_, Self>, event: Py<PyAny>) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_denied")]
-    fn py_on_order_denied(&mut self, event: OrderDenied) {}
+    fn py_on_order_denied(_slf: &Bound<'_, Self>, event: OrderDenied) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_emulated")]
-    fn py_on_order_emulated(&mut self, event: OrderEmulated) {}
+    fn py_on_order_emulated(_slf: &Bound<'_, Self>, event: OrderEmulated) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_released")]
-    fn py_on_order_released(&mut self, event: OrderReleased) {}
+    fn py_on_order_released(_slf: &Bound<'_, Self>, event: OrderReleased) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_submitted")]
-    fn py_on_order_submitted(&mut self, event: OrderSubmitted) {}
+    fn py_on_order_submitted(_slf: &Bound<'_, Self>, event: OrderSubmitted) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_rejected")]
-    fn py_on_order_rejected(&mut self, event: OrderRejected) {}
+    fn py_on_order_rejected(_slf: &Bound<'_, Self>, event: OrderRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_accepted")]
-    fn py_on_order_accepted(&mut self, event: OrderAccepted) {}
+    fn py_on_order_accepted(_slf: &Bound<'_, Self>, event: OrderAccepted) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_expired")]
-    fn py_on_order_expired(&mut self, event: OrderExpired) {}
+    fn py_on_order_expired(_slf: &Bound<'_, Self>, event: OrderExpired) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_triggered")]
-    fn py_on_order_triggered(&mut self, event: OrderTriggered) {}
+    fn py_on_order_triggered(_slf: &Bound<'_, Self>, event: OrderTriggered) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_pending_update")]
-    fn py_on_order_pending_update(&mut self, event: OrderPendingUpdate) {}
+    fn py_on_order_pending_update(_slf: &Bound<'_, Self>, event: OrderPendingUpdate) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_pending_cancel")]
-    fn py_on_order_pending_cancel(&mut self, event: OrderPendingCancel) {}
+    fn py_on_order_pending_cancel(_slf: &Bound<'_, Self>, event: OrderPendingCancel) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_modify_rejected")]
-    fn py_on_order_modify_rejected(&mut self, event: OrderModifyRejected) {}
+    fn py_on_order_modify_rejected(_slf: &Bound<'_, Self>, event: OrderModifyRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_cancel_rejected")]
-    fn py_on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {}
+    fn py_on_order_cancel_rejected(_slf: &Bound<'_, Self>, event: OrderCancelRejected) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_updated")]
-    fn py_on_order_updated(&mut self, event: OrderUpdated) {}
+    fn py_on_order_updated(_slf: &Bound<'_, Self>, event: OrderUpdated) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_canceled")]
-    fn py_on_order_canceled(&mut self, event: OrderCanceled) {}
+    fn py_on_order_canceled(_slf: &Bound<'_, Self>, event: OrderCanceled) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
-    fn py_on_order_filled(&mut self, event: OrderFilled) {}
+    fn py_on_order_filled(_slf: &Bound<'_, Self>, event: OrderFilled) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_fill_voided")]
-    fn py_on_order_fill_voided(&mut self, event: OrderFillVoided) {}
+    fn py_on_order_fill_voided(_slf: &Bound<'_, Self>, event: OrderFillVoided) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_opened")]
-    fn py_on_position_opened(&mut self, event: PositionOpened) {}
+    fn py_on_position_opened(_slf: &Bound<'_, Self>, event: PositionOpened) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_event")]
-    fn py_on_position_event(&mut self, event: Py<PyAny>) {}
+    fn py_on_position_event(_slf: &Bound<'_, Self>, event: Py<PyAny>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_changed")]
-    fn py_on_position_changed(&mut self, event: PositionChanged) {}
+    fn py_on_position_changed(_slf: &Bound<'_, Self>, event: PositionChanged) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_closed")]
-    fn py_on_position_closed(&mut self, event: PositionClosed) {}
+    fn py_on_position_closed(_slf: &Bound<'_, Self>, event: PositionClosed) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
-    fn py_on_historical_data(&mut self, data: Py<PyAny>) {
+    fn py_on_historical_data(_slf: &Bound<'_, Self>, data: Py<PyAny>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_book_deltas")]
-    fn py_on_historical_book_deltas(&mut self, deltas: Vec<OrderBookDelta>) {}
+    fn py_on_historical_book_deltas(_slf: &Bound<'_, Self>, deltas: Vec<OrderBookDelta>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_book_depth")]
-    fn py_on_historical_book_depth(&mut self, depths: Vec<OrderBookDepth10>) {}
+    fn py_on_historical_book_depth(_slf: &Bound<'_, Self>, depths: Vec<OrderBookDepth>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_quotes")]
-    fn py_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) {
+    fn py_on_historical_quotes(_slf: &Bound<'_, Self>, quotes: Vec<QuoteTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_trades")]
-    fn py_on_historical_trades(&mut self, trades: Vec<TradeTick>) {
+    fn py_on_historical_trades(_slf: &Bound<'_, Self>, trades: Vec<TradeTick>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_funding_rates")]
-    fn py_on_historical_funding_rates(&mut self, funding_rates: Vec<FundingRateUpdate>) {
+    fn py_on_historical_funding_rates(
+        _slf: &Bound<'_, Self>,
+        funding_rates: Vec<FundingRateUpdate>,
+    ) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_bars")]
-    fn py_on_historical_bars(&mut self, bars: Vec<Bar>) {
+    fn py_on_historical_bars(_slf: &Bound<'_, Self>, bars: Vec<Bar>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_mark_prices")]
-    fn py_on_historical_mark_prices(&mut self, mark_prices: Vec<MarkPriceUpdate>) {
+    fn py_on_historical_mark_prices(_slf: &Bound<'_, Self>, mark_prices: Vec<MarkPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_index_prices")]
-    fn py_on_historical_index_prices(&mut self, index_prices: Vec<IndexPriceUpdate>) {
+    fn py_on_historical_index_prices(_slf: &Bound<'_, Self>, index_prices: Vec<IndexPriceUpdate>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
@@ -2262,6 +2536,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2274,8 +2549,35 @@ impl PyStrategy {
 
     #[pyo3(name = "subscribe_signal")]
     #[pyo3(signature = (name="", priority=None))]
-    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
+    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::subscribe_signal(self.inner_mut(), name, priority);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_queue_state")]
+    #[pyo3(signature = (channel=None, priority=None))]
+    fn py_subscribe_queue_state(
+        &mut self,
+        channel: Option<SystemChannel>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::subscribe_queue_state(self.inner_mut(), channel, priority);
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_socket_state")]
+    #[pyo3(signature = (client_id=None, endpoint=None, priority=None))]
+    fn py_subscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+        priority: Option<u32>,
+    ) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::subscribe_socket_state(self.inner_mut(), client_id, endpoint, priority);
+        Ok(())
     }
 
     #[pyo3(name = "subscribe_instruments")]
@@ -2286,6 +2588,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2304,6 +2607,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2325,6 +2629,7 @@ impl PyStrategy {
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2344,26 +2649,36 @@ impl PyStrategy {
         Ok(())
     }
 
-    #[pyo3(name = "subscribe_book_depth10")]
-    #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
-    fn py_subscribe_book_depth10(
+    #[pyo3(name = "subscribe_book_depth")]
+    #[pyo3(signature = (instrument_id, book_type, depth=None, client_id=None, managed=false, params=None))]
+    fn py_subscribe_book_depth(
         &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
+        depth: Option<usize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
+
+        let depth = depth
+            .map(|value| {
+                NonZeroUsize::new(value).ok_or_else(|| to_pyvalue_err("depth must be positive"))
+            })
+            .transpose()?;
+
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
-        DataActor::subscribe_book_depth10(
+        DataActor::subscribe_book_depth(
             self.inner_mut(),
             instrument_id,
             book_type,
+            depth,
             client_id,
             managed,
             params_map,
@@ -2382,6 +2697,10 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        let interval_ms = NonZeroUsize::new(interval_ms)
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
+
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2389,9 +2708,6 @@ impl PyStrategy {
             }
         })?;
         let depth = depth.and_then(NonZeroUsize::new);
-        let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
-
         DataActor::subscribe_book_at_interval(
             self.inner_mut(),
             instrument_id,
@@ -2412,6 +2728,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2430,6 +2747,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2448,6 +2766,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2466,6 +2785,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2484,6 +2804,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2502,6 +2823,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2520,6 +2842,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2538,6 +2861,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2561,6 +2885,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2587,6 +2912,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = match params {
             Some(dict) => from_pydict(py, &dict)?,
             None => None,
@@ -2610,6 +2936,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2621,8 +2948,30 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "unsubscribe_signal")]
-    fn py_unsubscribe_signal(&mut self, name: &str) {
+    fn py_unsubscribe_signal(&mut self, name: &str) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_signal(self.inner_mut(), name);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_queue_state")]
+    #[pyo3(signature = (channel=None))]
+    fn py_unsubscribe_queue_state(&mut self, channel: Option<SystemChannel>) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::unsubscribe_queue_state(self.inner_mut(), channel);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_socket_state")]
+    #[pyo3(signature = (client_id=None, endpoint=None))]
+    fn py_unsubscribe_socket_state(
+        &mut self,
+        client_id: Option<ClientId>,
+        endpoint: Option<&str>,
+    ) -> PyResult<()> {
+        self.ensure_registered()?;
+        DataActor::unsubscribe_socket_state(self.inner_mut(), client_id, endpoint);
+        Ok(())
     }
 
     #[pyo3(name = "unsubscribe_instruments")]
@@ -2633,6 +2982,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2651,6 +3001,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2669,6 +3020,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2679,21 +3031,22 @@ impl PyStrategy {
         Ok(())
     }
 
-    #[pyo3(name = "unsubscribe_book_depth10")]
+    #[pyo3(name = "unsubscribe_book_depth")]
     #[pyo3(signature = (instrument_id, client_id=None, params=None))]
-    fn py_unsubscribe_book_depth10(
+    fn py_unsubscribe_book_depth(
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
-        DataActor::unsubscribe_book_depth10(self.inner_mut(), instrument_id, client_id, params_map);
+        DataActor::unsubscribe_book_depth(self.inner_mut(), instrument_id, client_id, params_map);
         Ok(())
     }
 
@@ -2706,15 +3059,16 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        let interval_ms = NonZeroUsize::new(interval_ms)
+            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
+
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
                 None => Ok(None),
             }
         })?;
-        let interval_ms = NonZeroUsize::new(interval_ms)
-            .ok_or_else(|| to_pyvalue_err("interval_ms must be > 0"))?;
-
         DataActor::unsubscribe_book_at_interval(
             self.inner_mut(),
             instrument_id,
@@ -2733,6 +3087,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2751,6 +3106,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2769,6 +3125,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2787,6 +3144,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2805,6 +3163,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2823,6 +3182,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2846,6 +3206,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2869,6 +3230,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2892,6 +3254,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
+        self.ensure_registered()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2913,8 +3276,10 @@ impl PyStrategy {
         &mut self,
         series_id: OptionSeriesId,
         client_id: Option<ClientId>,
-    ) {
+    ) -> PyResult<()> {
+        self.ensure_registered()?;
         DataActor::unsubscribe_option_chain(self.inner_mut(), series_id, client_id);
+        Ok(())
     }
 
     #[pyo3(name = "request_data")]
@@ -2923,11 +3288,12 @@ impl PyStrategy {
         &mut self,
         data_type: DataType,
         client_id: ClientId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2953,11 +3319,12 @@ impl PyStrategy {
     fn py_request_instrument(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -2981,11 +3348,12 @@ impl PyStrategy {
     fn py_request_instruments(
         &mut self,
         venue: Option<Venue>,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3013,6 +3381,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3037,12 +3406,13 @@ impl PyStrategy {
     fn py_request_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3069,13 +3439,14 @@ impl PyStrategy {
     fn py_request_book_depth(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3103,12 +3474,13 @@ impl PyStrategy {
     fn py_request_quotes(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3134,12 +3506,13 @@ impl PyStrategy {
     fn py_request_trades(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3165,12 +3538,13 @@ impl PyStrategy {
     fn py_request_funding_rates(
         &mut self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3196,12 +3570,13 @@ impl PyStrategy {
     fn py_request_bars(
         &mut self,
         bar_type: BarType,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
                 Some(dict) => from_pydict(py, &dict),
@@ -3221,6 +3596,106 @@ impl PyStrategy {
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
+
+    /// Requests reconnect of one socket endpoint owned by `client_id`.
+    #[pyo3(name = "reconnect_socket")]
+    fn py_reconnect_socket(&self, client_id: ClientId, endpoint: &str) -> PyResult<()> {
+        DataActor::reconnect_socket(self.inner(), client_id, endpoint).map_err(to_pyruntime_err)
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pyo3::pymethods]
+impl PyStrategy {
+    #[pyo3(name = "publish_message", signature = (topic, message))]
+    fn py_publish_message(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "object"))] message: Py<PyAny>,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.publish_message(topic, message)
+    }
+
+    #[pyo3(name = "subscribe_topic")]
+    #[pyo3(signature = (topic, handler, priority=0))]
+    fn py_subscribe_topic(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "collections.abc.Callable[[object], None]", imports = ("collections.abc",)))]
+        handler: Py<PyAny>,
+        priority: u32,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.subscribe_topic(slf.py(), topic, handler, priority)
+    }
+
+    #[pyo3(name = "unsubscribe_topic", signature = (topic, handler))]
+    fn py_unsubscribe_topic(
+        slf: &Bound<'_, Self>,
+        topic: &str,
+        #[gen_stub(override_type(type_repr = "collections.abc.Callable[[object], None]", imports = ("collections.abc",)))]
+        handler: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let messages = get_python_message_bus(slf.as_any())?;
+        messages.unsubscribe_topic(topic, handler)
+    }
+}
+
+impl PyStrategy {
+    fn ensure_registered_for_data(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "Strategy must be registered before publishing, managing synthetics, or requesting data",
+            ))
+        }
+    }
+
+    fn ensure_registered(&self) -> PyResult<()> {
+        if self.inner().core.actor.is_registered() {
+            Ok(())
+        } else {
+            Err(to_pyruntime_err(
+                "Strategy must be registered before managing subscriptions",
+            ))
+        }
+    }
+}
+
+/// Returns the class-derived component identity, `<ClassName>-<order ID tag>`.
+///
+/// The ID must remain a valid [`StrategyId`], so a strategy without a configured order ID tag
+/// takes the unassigned tag until registration assigns the next one.
+fn class_derived_actor_id(slf: &Bound<'_, PyStrategy>, class_name: &str) -> PyResult<ActorId> {
+    let borrowed = slf.borrow();
+    let order_id_tag = normalize_order_id_tag(borrowed.inner().core.order_id_tag())
+        .unwrap_or(UNASSIGNED_ORDER_ID_TAG);
+
+    ActorId::new_checked(format!("{class_name}-{order_id_tag}")).map_err(to_pyvalue_err)
+}
+
+/// Returns whether the config retained by the strategy supplies a strategy ID.
+///
+/// The config is read through Python rather than the extracted [`StrategyConfig`] so that a
+/// custom subclass config which cannot be extracted still counts as configuring an ID. The
+/// strategy borrow is released before the attribute lookup, which can run user code.
+fn has_configured_strategy_id(slf: &Bound<'_, PyStrategy>) -> bool {
+    let py = slf.py();
+    let config = slf
+        .borrow()
+        .inner()
+        .config
+        .as_ref()
+        .map(|config| config.clone_ref(py));
+
+    config.is_some_and(|config| {
+        config
+            .bind(py)
+            .getattr("strategy_id")
+            .is_ok_and(|strategy_id| !strategy_id.is_none())
+    })
 }
 
 fn py_order_list_to_orders(py: Python<'_>, order_list: &Py<PyAny>) -> PyResult<Vec<OrderAny>> {
@@ -3243,37 +3718,48 @@ mod tests {
     use std::{
         cell::RefCell,
         collections::{BTreeMap, HashMap},
+        num::NonZeroUsize,
         rc::Rc,
         str::FromStr,
     };
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        actor::DataActor,
+        actor::{DataActor, DataActorNative, registry::actor_exists},
         cache::Cache,
-        clock::{Clock, TestClock},
-        component::Component,
+        clock::{Clock, VirtualClock},
+        component::{Component, get_component},
+        enums::ComponentState,
+        live::runner::replace_system_command_sender,
+        logging::{
+            arm_shutdown_on_error, disarm_shutdown_on_error, init_logging,
+            take_shutdown_on_error_trigger,
+        },
         messages::{
+            SystemCommand,
             data::{
                 BarsResponse, DataCommand, QuotesResponse, SubscribeCommand, TradesResponse,
                 UnsubscribeCommand,
             },
             execution::TradingCommand,
+            system::{
+                QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
+            },
         },
         msgbus::{
             self, MessagingSwitchboard,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
-        python::cache::PyCache,
+        python::{cache::PyCache, wrappers::get_python_wrapper},
+        runner::SystemChannel,
         signal::Signal,
         timer::TimeEvent,
     };
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-            MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
-            TradeTick,
+            MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
             close::InstrumentClose,
             greeks::OptionGreekValues,
             option_chain::{OptionChainSlice, OptionGreeks},
@@ -3281,18 +3767,18 @@ mod tests {
         },
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
-            OmsType, OrderSide, OrderType, PositionSide, TimeInForce,
+            OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         },
         events::{
             OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
             OrderEventAny, OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
             OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
             OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
-            order::spec::OrderFilledSpec,
+            order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, OrderListId,
-            PositionId, StrategyId, TradeId, TraderId, Venue,
+            AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, OptionSeriesId,
+            OrderListId, PositionId, StrategyId, TradeId, TraderId, Venue,
         },
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
@@ -3303,9 +3789,9 @@ mod tests {
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use pyo3::{
-        Bound, Py, PyAny, PyResult, Python,
+        Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python,
         ffi::c_str,
-        types::{PyAnyMethods, PyBytes, PyDict, PyList},
+        types::{PyAnyMethods, PyBytes, PyDict, PyList, PyWeakrefMethods, PyWeakrefReference},
     };
     use serde_json::Value;
     use ustr::Ustr;
@@ -3329,6 +3815,8 @@ class TrackingStrategy:
         "on_time_event",
         "on_data",
         "on_signal",
+        "on_queue_state",
+        "on_socket_state",
         "on_instrument",
         "on_quote",
         "on_trade",
@@ -3371,6 +3859,7 @@ class TrackingStrategy:
         "on_order_updated",
         "on_order_canceled",
         "on_order_filled",
+        "on_order_fill_voided",
         "on_position_opened",
         "on_position_event",
         "on_position_changed",
@@ -3379,9 +3868,18 @@ class TrackingStrategy:
 
     def __init__(self):
         self.calls = []
+        self.raise_on = None
 
     def _record(self, method_name, *args):
         self.calls.append((method_name, args))
+        if self.raise_on == method_name:
+            self.fail_callback()
+
+    def fail_callback(self):
+        try:
+            raise ValueError("callback cause")
+        except ValueError as e:
+            raise RuntimeError("callback failure") from e
 
     def was_called(self, method_name):
         return any(call[0] == method_name for call in self.calls)
@@ -3566,6 +4064,33 @@ class IndicatorEventStrategy:
         )
     }
 
+    fn sample_queue_state_changed() -> QueueStateChanged {
+        QueueStateChanged::new(
+            TraderId::from("TRADER-001"),
+            SystemChannel::ExecCommands,
+            QueueCondition::Backlogged,
+            QueueState::Triggered,
+            17,
+            23,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
+        )
+    }
+
+    fn sample_socket_state_changed() -> SocketStateChanged {
+        SocketStateChanged::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("BINANCE"),
+            Some(Venue::from("BINANCE")),
+            Ustr::from("binance-futures-market-streams"),
+            SocketState::Connected,
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1_700_000_000_000_000_001),
+            UnixNanos::from(1_700_000_000_000_000_002),
+        )
+    }
+
     fn sample_quote() -> QuoteTick {
         let instrument = sample_instrument();
         QuoteTick::new(
@@ -3585,7 +4110,7 @@ class IndicatorEventStrategy:
             instrument.id,
             Price::from("1.00000"),
             Quantity::from(100_000),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
             TradeId::new("123456"),
             UnixNanos::default(),
             UnixNanos::default(),
@@ -3619,7 +4144,7 @@ class IndicatorEventStrategy:
         OrderBookDeltas::new(instrument.id, vec![delta])
     }
 
-    fn sample_book_depth() -> OrderBookDepth10 {
+    fn sample_book_depth() -> OrderBookDepth {
         stub_depth10()
     }
 
@@ -3699,7 +4224,7 @@ class IndicatorEventStrategy:
 
     fn sample_option_chain() -> OptionChainSlice {
         OptionChainSlice {
-            series_id: OptionSeriesId::new(
+            series_id: OptionSeriesId::new_derived(
                 Venue::from("SIM"),
                 Ustr::from("AUD"),
                 Ustr::from("USD"),
@@ -3729,6 +4254,7 @@ class IndicatorEventStrategy:
             last_px: Price::from("1.00000"),
             currency: Currency::from("USD"),
             avg_px_open: 1.0,
+            realized_pnl: None,
             event_id: UUID4::new(),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
@@ -3785,7 +4311,7 @@ class IndicatorEventStrategy:
             realized_return: 0.1,
             realized_pnl: Some(Money::new(0.1, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: 1,
+            duration: DurationNanos::new(1),
             event_id: UUID4::new(),
             ts_opened: UnixNanos::default(),
             ts_closed: Some(UnixNanos::default()),
@@ -3837,9 +4363,11 @@ class IndicatorEventStrategy:
     ) -> (Py<PyAny>, PyStrategy) {
         let py_strategy = create_tracking_python_strategy(py).unwrap();
         let mut rust_strategy = PyStrategy::new(config);
-        rust_strategy.set_python_instance(py_strategy.clone_ref(py));
+        rust_strategy
+            .set_python_instance(py_strategy.bind(py))
+            .unwrap();
 
-        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
             clock.clone(),
@@ -3859,17 +4387,218 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_external_order_claims_returns_configured_instruments() {
+    fn test_register_in_global_registries_retains_python_wrapper() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let (py_strategy, rust_strategy) = create_registered_tracking_strategy_with_config(
+                py,
+                Some(StrategyConfig {
+                    strategy_id: Some(StrategyId::from("Retained-001")),
+                    ..Default::default()
+                }),
+            );
+
+            rust_strategy.register_in_global_registries().unwrap();
+
+            let retained = get_python_wrapper(ComponentId::from("Retained-001"))
+                .expect("registering must retain the strategy's Python wrapper");
+
+            assert!(retained.bind(py).is(py_strategy.bind(py)));
+            assert!(get_component(&Ustr::from("Retained-001")).is_some());
+            assert!(actor_exists(&Ustr::from("Retained-001")));
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_registered_python_strategy_routes_time_events_by_state() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let (py_strategy, rust_strategy) = create_registered_tracking_strategy_with_config(
+                py,
+                Some(StrategyConfig {
+                    strategy_id: Some(StrategyId::from("StoppedTimer-001")),
+                    manage_gtd_expiry: true,
+                    ..Default::default()
+                }),
+            );
+            rust_strategy.register_in_global_registries().unwrap();
+            Component::start(rust_strategy.inner_mut()).unwrap();
+
+            let running_client_order_id = ClientOrderId::from("O-RUNNING-001");
+            let running_timer_name = format!("GTD-EXPIRY:{running_client_order_id}");
+            let clock = DataActorNative::clock_rc(rust_strategy.inner());
+            clock
+                .borrow_mut()
+                .set_time_alert_ns(&running_timer_name, UnixNanos::from(1), None, None)
+                .unwrap();
+            rust_strategy
+                .inner_mut()
+                .core
+                .gtd_timers
+                .insert(running_client_order_id, Ustr::from(&running_timer_name));
+            let running_dispatched = dispatch_time_events(&clock, UnixNanos::from(1));
+
+            assert_eq!(running_dispatched, 1);
+            assert!(
+                !rust_strategy
+                    .inner_mut()
+                    .has_gtd_expiry_timer(&running_client_order_id)
+            );
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_time_event"),
+                1
+            );
+
+            let client_order_id = ClientOrderId::from("O-STOPPED-001");
+            let timer_name = format!("GTD-EXPIRY:{client_order_id}");
+            clock
+                .borrow_mut()
+                .set_time_alert_ns(&timer_name, UnixNanos::from(2), None, None)
+                .unwrap();
+            rust_strategy
+                .inner_mut()
+                .core
+                .gtd_timers
+                .insert(client_order_id, Ustr::from(&timer_name));
+            Component::stop(rust_strategy.inner_mut()).unwrap();
+
+            let stopped_dispatched = dispatch_time_events(&clock, UnixNanos::from(2));
+
+            assert_eq!(stopped_dispatched, 1);
+            assert_eq!(
+                Component::state(rust_strategy.inner()),
+                ComponentState::Stopped
+            );
+            assert!(
+                rust_strategy
+                    .inner_mut()
+                    .has_gtd_expiry_timer(&client_order_id)
+            );
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_time_event"),
+                1
+            );
+        });
+    }
+
+    fn dispatch_time_events(clock: &Rc<RefCell<dyn Clock>>, to_time_ns: UnixNanos) -> usize {
+        let handlers = {
+            let mut clock_ref = clock.borrow_mut();
+            let test_clock = clock_ref
+                .as_any_mut()
+                .downcast_mut::<VirtualClock>()
+                .expect("strategy clock must be VirtualClock");
+            let events = test_clock.advance_time(to_time_ns, true);
+            test_clock.match_handlers(events)
+        };
+        let dispatched = handlers.len();
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        dispatched
+    }
+
+    #[rstest::rstest]
+    fn test_register_in_global_registries_rejects_missing_python_wrapper() {
+        pyo3::Python::initialize();
+
+        Python::attach(|_py| {
+            let mut rust_strategy = PyStrategy::new(Some(StrategyConfig {
+                strategy_id: Some(StrategyId::from("Unwrapped-001")),
+                ..Default::default()
+            }));
+
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+            let portfolio = Rc::new(RefCell::new(Portfolio::new(
+                clock.clone(),
+                cache.clone(),
+                None,
+            )));
+            rust_strategy
+                .register(TraderId::from("TRADER-001"), clock, cache, portfolio)
+                .unwrap();
+
+            let error = rust_strategy
+                .register_in_global_registries()
+                .expect_err("registering without a Python wrapper must fail");
+
+            assert!(error.to_string().contains("without a Python wrapper"));
+            assert!(get_component(&Ustr::from("Unwrapped-001")).is_none());
+            assert!(!actor_exists(&Ustr::from("Unwrapped-001")));
+            assert!(get_python_wrapper(ComponentId::from("Unwrapped-001")).is_none());
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_external_order_instrument_ids_returns_configured_instruments() {
         let claims = vec![
             InstrumentId::from("AUDUSD.SIM"),
             InstrumentId::from("BTCUSDT.BINANCE"),
         ];
         let strategy = PyStrategy::new(Some(StrategyConfig {
-            external_order_claims: Some(claims.clone()),
+            external_order_instrument_ids: Some(claims.clone()),
             ..Default::default()
         }));
 
-        assert_eq!(strategy.external_order_claims(), Some(claims));
+        assert_eq!(strategy.external_order_instrument_ids(), Some(claims));
+    }
+
+    #[rstest::rstest]
+    fn test_new_checked_rejects_order_id_tag_with_separator() {
+        let config = StrategyConfig {
+            order_id_tag: Some("A-B".to_string()),
+            ..Default::default()
+        };
+
+        let error = PyStrategy::new_checked(Some(config)).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+        );
+    }
+
+    #[rstest::rstest]
+    fn test_py_new_raises_value_error_for_order_id_tag_with_separator() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            // Built in Rust so it carries a tag `StrategyConfig.__new__` would have rejected,
+            // which is the only way to drive an invalid config through the constructor
+            let config = StrategyConfig {
+                order_id_tag: Some("A-B".to_string()),
+                ..Default::default()
+            };
+            let config_obj = Py::new(py, config).unwrap().into_any();
+
+            let error = PyStrategy::py_new(Some(config_obj)).unwrap_err();
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                "`order_id_tag` cannot contain the '-' strategy ID separator, was 'A-B'"
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_py_new_accepts_a_config_without_a_separator() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let config = StrategyConfig {
+                order_id_tag: Some("001".to_string()),
+                ..Default::default()
+            };
+            let config_obj = Py::new(py, config).unwrap().into_any();
+
+            let strategy = PyStrategy::py_new(Some(config_obj)).unwrap();
+
+            assert_eq!(strategy.order_id_tag(), Some("001".to_string()));
+        });
     }
 
     #[rstest::rstest]
@@ -3885,7 +4614,9 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_python_book_depth10_subscription_methods_send_commands() {
+    #[case(None)]
+    #[case(Some(25))]
+    fn test_python_book_depth_subscription_methods_send_commands(#[case] depth: Option<usize>) {
         pyo3::Python::initialize();
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
@@ -3896,26 +4627,33 @@ class IndicatorEventStrategy:
             );
 
             let instrument_id = sample_instrument().id;
-            let client_id = Some(ClientId::new("DEPTH10-CLIENT"));
+            let client_id = Some(ClientId::new("DEPTH-CLIENT"));
             rust_strategy
-                .py_subscribe_book_depth10(instrument_id, BookType::L2_MBP, client_id, true, None)
+                .py_subscribe_book_depth(
+                    instrument_id,
+                    BookType::L2_MBP,
+                    depth,
+                    client_id,
+                    true,
+                    None,
+                )
                 .unwrap();
             rust_strategy
-                .py_unsubscribe_book_depth10(instrument_id, client_id, None)
+                .py_unsubscribe_book_depth(instrument_id, client_id, None)
                 .unwrap();
 
             let commands = saver.get_messages();
             let [
-                DataCommand::Subscribe(SubscribeCommand::BookDepth10(subscribe)),
-                DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(unsubscribe)),
+                DataCommand::Subscribe(SubscribeCommand::BookDepth(subscribe)),
+                DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth(unsubscribe)),
             ] = commands.as_slice()
             else {
-                panic!("expected BookDepth10 subscribe and unsubscribe commands, was {commands:?}");
+                panic!("expected BookDepth subscribe and unsubscribe commands, was {commands:?}");
             };
 
             assert_eq!(subscribe.instrument_id, instrument_id);
             assert_eq!(subscribe.book_type, BookType::L2_MBP);
-            assert_eq!(subscribe.depth.unwrap().get(), 10);
+            assert_eq!(subscribe.depth.map(NonZeroUsize::get), depth);
             assert_eq!(subscribe.client_id, client_id);
             assert!(subscribe.managed);
             assert_eq!(unsubscribe.instrument_id, instrument_id);
@@ -4004,9 +4742,11 @@ class IndicatorEventStrategy:
             let indicator = create_event_tracking_python_indicator(py, &events).unwrap();
 
             let mut rust_strategy = PyStrategy::new(None);
-            rust_strategy.set_python_instance(py_strategy.clone_ref(py));
+            rust_strategy
+                .set_python_instance(py_strategy.bind(py))
+                .unwrap();
 
-            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
             let cache = Rc::new(RefCell::new(Cache::new(None, None)));
             let portfolio = Rc::new(RefCell::new(Portfolio::new(
                 clock.clone(),
@@ -4148,6 +4888,138 @@ class IndicatorEventStrategy:
         py_strategy
     }
 
+    fn assert_python_callback<F>(
+        py: Python<'_>,
+        method_name: &str,
+        raises: bool,
+        shutdown: bool,
+        invoke: F,
+    ) -> Py<PyAny>
+    where
+        F: Fn(&mut PyStrategy) -> anyhow::Result<()>,
+    {
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        let (py_strategy, mut rust_strategy) = create_registered_tracking_strategy(py);
+        if raises {
+            py_strategy.setattr(py, "raise_on", method_name).unwrap();
+        }
+
+        arm_shutdown_on_error(shutdown);
+        let result = invoke(&mut rust_strategy);
+        let trigger = take_shutdown_on_error_trigger();
+        disarm_shutdown_on_error();
+
+        assert!(result.is_ok());
+        assert_eq!(python_method_call_count(&py_strategy, py, method_name), 1);
+
+        if raises && shutdown {
+            let trigger = trigger.expect("Python callback failure must request shutdown");
+            assert_eq!(
+                trigger.component.as_str(),
+                rust_strategy.inner().core.actor.actor_id.as_str()
+            );
+            assert!(
+                trigger
+                    .message
+                    .contains(&format!("Python {method_name} failed:"))
+            );
+            assert!(trigger.message.contains("in fail_callback"));
+            assert!(trigger.message.contains("ValueError: callback cause"));
+            assert!(trigger.message.contains("RuntimeError: callback failure"));
+        } else {
+            assert_eq!(trigger, None);
+        }
+
+        py_strategy
+    }
+
+    #[rstest::rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_python_timer_callback_exception_requests_shutdown(#[case] shutdown: bool) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let (tracker, strategy) = create_registered_tracking_strategy(py);
+            strategy.register_in_global_registries().unwrap();
+            Component::start(strategy.inner_mut()).unwrap();
+            tracker.setattr(py, "raise_on", "on_time_event").unwrap();
+            let clock = DataActorNative::clock_rc(strategy.inner());
+            clock
+                .borrow_mut()
+                .set_time_alert_ns("CALLBACK", UnixNanos::from(10), None, None)
+                .unwrap();
+            arm_shutdown_on_error(shutdown);
+            let dispatched = dispatch_time_events(&clock, UnixNanos::from(10));
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+
+            assert_eq!(dispatched, 1);
+            assert_eq!(python_method_call_count(&tracker, py, "on_time_event"), 1);
+            assert_eq!(Component::state(strategy.inner()), ComponentState::Running);
+
+            if shutdown {
+                let trigger = trigger.expect("strategy timer exception must request shutdown");
+                assert!(trigger.message.contains("Python on_time_event failed:"));
+                assert!(trigger.message.contains("in fail_callback"));
+                assert!(trigger.message.contains("RuntimeError: callback failure"));
+            } else {
+                assert_eq!(trigger, None);
+            }
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_data_callback_exception_preserves_traceback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let (tracker, strategy) = create_registered_tracking_strategy(py);
+            tracker.setattr(py, "raise_on", "on_bar").unwrap();
+            let error = DataActor::on_bar(strategy.inner_mut(), &sample_bar()).unwrap_err();
+            let message = error.to_string();
+
+            assert_eq!(python_method_call_count(&tracker, py, "on_bar"), 1);
+            assert!(message.contains("Python on_bar failed:"));
+            assert!(message.contains("in fail_callback"));
+            assert!(message.contains("ValueError: callback cause"));
+            assert!(message.contains("RuntimeError: callback failure"));
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_market_exit")]
+    #[case("post_market_exit")]
+    fn test_python_dispatch_market_exit_callback_errors(
+        #[case] method_name: &str,
+        #[values(false, true)] raises: bool,
+        #[values(false, true)] shutdown: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            assert_python_callback(py, method_name, raises, shutdown, |strategy| {
+                match method_name {
+                    "on_market_exit" => Strategy::on_market_exit(strategy.inner_mut()),
+                    "post_market_exit" => Strategy::post_market_exit(strategy.inner_mut()),
+                    _ => unreachable!(),
+                }
+
+                Ok(())
+            });
+        });
+    }
+
     #[rstest::rstest]
     #[case("on_start")]
     #[case("on_stop")]
@@ -4260,7 +5132,9 @@ class IndicatorEventStrategy:
             let signal_pattern: MStr<Pattern> = "data.Signal*".to_string().into();
             msgbus::subscribe_any(signal_pattern, signal_handler, None);
 
-            rust_strategy.py_publish_data(&data.data_type, &data);
+            rust_strategy
+                .py_publish_data(&data.data_type, &data)
+                .unwrap();
 
             let value: Py<PyAny> = 2.0_f64.into_py_any_unwrap(py);
             rust_strategy
@@ -4273,7 +5147,7 @@ class IndicatorEventStrategy:
 
             let received_signals = received_signals.borrow();
             assert_eq!(received_signals.len(), 1);
-            assert_eq!(received_signals[0].name.as_str(), "risk");
+            assert_eq!(received_signals[0].name, "risk");
             assert_eq!(received_signals[0].value, "2.0");
             assert_eq!(
                 received_signals[0].ts_event,
@@ -4299,27 +5173,29 @@ class IndicatorEventStrategy:
             let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
             let symbol = Symbol::from("SYN");
             let original_formula = format!("({comp1} + {comp2}) / 2.0");
-            let synthetic = SyntheticInstrument::new(
-                symbol,
-                2,
-                vec![comp1, comp2],
-                &original_formula,
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
+            let synthetic = SyntheticInstrument::builder()
+                .symbol(symbol)
+                .price_precision(2)
+                .components(vec![comp1, comp2])
+                .formula(&original_formula)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap();
             let synthetic_id = synthetic.id;
 
             rust_strategy.py_add_synthetic(synthetic).unwrap();
 
             let updated_formula = format!("{comp1} + {comp2}");
-            let updated = SyntheticInstrument::new(
-                symbol,
-                2,
-                vec![comp1, comp2],
-                &updated_formula,
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
+            let updated = SyntheticInstrument::builder()
+                .symbol(symbol)
+                .price_precision(2)
+                .components(vec![comp1, comp2])
+                .formula(&updated_formula)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap();
             rust_strategy.py_update_synthetic(updated).unwrap();
 
             let cache = DataActor::cache(rust_strategy.inner());
@@ -4338,17 +5214,130 @@ class IndicatorEventStrategy:
         Python::attach(|py| {
             let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
 
-            rust_strategy.py_subscribe_signal("risk", Some(50));
+            rust_strategy.py_subscribe_signal("risk", Some(50)).unwrap();
 
             let topic = get_signal_topic("risk");
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert_eq!(subscriptions.len(), 1);
             assert_eq!(subscriptions[0].priority, 50);
 
-            rust_strategy.py_unsubscribe_signal("risk");
+            rust_strategy.py_unsubscribe_signal("risk").unwrap();
 
             let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
             assert!(subscriptions.is_empty());
+        });
+    }
+
+    #[rstest::rstest]
+    #[case(None)]
+    #[case(Some(SystemChannel::ExecCommands))]
+    fn test_python_subscribe_and_unsubscribe_queue_state_update_msgbus(
+        #[case] channel: Option<SystemChannel>,
+    ) {
+        use nautilus_common::msgbus::{MessageBus, MessagingSwitchboard, get_message_bus};
+
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            rust_strategy
+                .py_subscribe_queue_state(channel, Some(50))
+                .unwrap();
+
+            let topic =
+                MessagingSwitchboard::queue_state_changed_topic(SystemChannel::ExecCommands);
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert_eq!(subscriptions.len(), 1);
+            assert_eq!(subscriptions[0].priority, 50);
+            let unrelated =
+                MessagingSwitchboard::queue_state_changed_topic(SystemChannel::DataEvents);
+            assert_eq!(
+                get_message_bus()
+                    .borrow_mut()
+                    .matching_subscriptions(unrelated)
+                    .len(),
+                usize::from(channel.is_none())
+            );
+
+            rust_strategy.py_unsubscribe_queue_state(channel).unwrap();
+
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert!(subscriptions.is_empty());
+        });
+    }
+
+    #[rstest::rstest]
+    #[case(None, None)]
+    #[case(Some(ClientId::from("BINANCE")), None)]
+    #[case(None, Some("binance-futures-market-streams"))]
+    #[case(
+        Some(ClientId::from("BINANCE")),
+        Some("binance-futures-market-streams")
+    )]
+    fn test_python_subscribe_and_unsubscribe_socket_state_update_msgbus(
+        #[case] client_id: Option<ClientId>,
+        #[case] endpoint: Option<&str>,
+    ) {
+        use nautilus_common::msgbus::{MessageBus, MessagingSwitchboard, get_message_bus};
+
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            rust_strategy
+                .py_subscribe_socket_state(client_id, endpoint, Some(50))
+                .unwrap();
+
+            let topic = MessagingSwitchboard::socket_state_changed_topic(
+                ClientId::from("BINANCE"),
+                "binance-futures-market-streams",
+            );
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert_eq!(subscriptions.len(), 1);
+            assert_eq!(subscriptions[0].priority, 50);
+            let unrelated =
+                MessagingSwitchboard::socket_state_changed_topic(ClientId::from("BYBIT"), "orders");
+            assert_eq!(
+                get_message_bus()
+                    .borrow_mut()
+                    .matching_subscriptions(unrelated)
+                    .len(),
+                usize::from(client_id.is_none() && endpoint.is_none())
+            );
+
+            rust_strategy
+                .py_unsubscribe_socket_state(client_id, endpoint)
+                .unwrap();
+
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert!(subscriptions.is_empty());
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_reconnect_socket_enqueues_typed_command() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+            replace_system_command_sender(system_tx);
+            let (_, strategy) = create_registered_tracking_strategy(py);
+
+            strategy
+                .py_reconnect_socket(ClientId::from("POLYMARKET"), "polymarket-market-streams")
+                .expect("valid reconnect command");
+            let command = system_rx
+                .try_recv()
+                .expect("reconnect command should be queued");
+            let SystemCommand::ReconnectSocket(command) = command;
+
+            assert_eq!(command.trader_id, TraderId::from("TRADER-001"));
+            assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
+            assert_eq!(command.endpoint, "polymarket-market-streams");
+            assert_eq!(command.ts_init, UnixNanos::default());
         });
     }
 
@@ -4706,6 +5695,8 @@ class IndicatorEventStrategy:
     #[case("on_time_event")]
     #[case("on_data")]
     #[case("on_signal")]
+    #[case("on_queue_state")]
+    #[case("on_socket_state")]
     #[case("on_instrument")]
     #[case("on_quote")]
     #[case("on_trade")]
@@ -4744,6 +5735,14 @@ class IndicatorEventStrategy:
                 "on_signal" => {
                     let signal = sample_signal();
                     rust_strategy.inner_mut().on_signal(&signal)
+                }
+                "on_queue_state" => {
+                    let event = sample_queue_state_changed();
+                    rust_strategy.inner_mut().on_queue_state(&event)
+                }
+                "on_socket_state" => {
+                    let event = sample_socket_state_changed();
+                    rust_strategy.inner_mut().on_socket_state(&event)
                 }
                 "on_instrument" => {
                     let instrument = InstrumentAny::CurrencyPair(sample_instrument());
@@ -4849,6 +5848,46 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
+    fn test_python_dispatch_historical_custom_data_preserves_payload_shape() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let scalar = stub_custom_data(3, 126, None, None);
+            let py_strategy = assert_python_dispatch(py, "on_historical_data", |rust_strategy| {
+                rust_strategy.inner_mut().on_historical_data(&scalar)
+            });
+            let actual_scalar = py_strategy
+                .call_method1(py, "last_call_args", ("on_historical_data",))
+                .unwrap()
+                .bind(py)
+                .get_item(0)
+                .unwrap()
+                .extract::<CustomData>()
+                .unwrap();
+
+            assert_eq!(actual_scalar, scalar);
+
+            let expected = vec![
+                stub_custom_data(1, 42, None, None),
+                stub_custom_data(2, 84, None, None),
+            ];
+            let py_strategy = assert_python_dispatch(py, "on_historical_data", |rust_strategy| {
+                rust_strategy.inner_mut().on_historical_data(&expected)
+            });
+            let actual = py_strategy
+                .call_method1(py, "last_call_args", ("on_historical_data",))
+                .unwrap()
+                .bind(py)
+                .get_item(0)
+                .unwrap()
+                .extract::<Vec<CustomData>>()
+                .unwrap();
+
+            assert_eq!(actual, expected);
+        });
+    }
+
+    #[rstest::rstest]
     fn test_python_dispatch_historical_book_deltas_preserves_batch() {
         pyo3::Python::initialize();
 
@@ -4879,7 +5918,7 @@ class IndicatorEventStrategy:
 
         Python::attach(|py| {
             let first = stub_depth10();
-            let mut second = first;
+            let mut second = first.clone();
             second.sequence = 17;
             second.ts_event = UnixNanos::from(18);
             second.ts_init = UnixNanos::from(19);
@@ -4896,7 +5935,7 @@ class IndicatorEventStrategy:
                 .bind(py)
                 .get_item(0)
                 .unwrap()
-                .extract::<Vec<OrderBookDepth10>>()
+                .extract::<Vec<OrderBookDepth>>()
                 .unwrap();
 
             assert_eq!(actual, expected);
@@ -4921,118 +5960,165 @@ class IndicatorEventStrategy:
     #[case("on_order_updated")]
     #[case("on_order_canceled")]
     #[case("on_order_filled")]
-    fn test_python_dispatch_order_callback_matrix(#[case] method_name: &str) {
+    #[case("on_order_fill_voided")]
+    fn test_python_dispatch_order_callback_matrix(
+        #[case] method_name: &str,
+        #[values(false, true)] raises: bool,
+        #[values(false, true)] shutdown: bool,
+    ) {
         pyo3::Python::initialize();
         Python::attach(|py| {
-            assert_python_dispatch(py, method_name, |rust_strategy| match method_name {
-                "on_order_initialized" => {
-                    Strategy::on_order_initialized(
-                        rust_strategy.inner_mut(),
-                        OrderInitialized::default(),
-                    );
-                    Ok(())
+            assert_python_callback(py, method_name, raises, shutdown, |rust_strategy| {
+                match method_name {
+                    "on_order_initialized" => {
+                        Strategy::on_order_initialized(
+                            rust_strategy.inner_mut(),
+                            OrderInitialized::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_event" => {
+                        Strategy::on_order_event(
+                            rust_strategy.inner_mut(),
+                            OrderEventAny::Accepted(OrderAccepted::default()),
+                        );
+                        Ok(())
+                    }
+                    "on_order_denied" => {
+                        Strategy::on_order_denied(
+                            rust_strategy.inner_mut(),
+                            OrderDenied::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_emulated" => {
+                        Strategy::on_order_emulated(
+                            rust_strategy.inner_mut(),
+                            OrderEmulated::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_released" => {
+                        Strategy::on_order_released(
+                            rust_strategy.inner_mut(),
+                            OrderReleased::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_submitted" => {
+                        Strategy::on_order_submitted(
+                            rust_strategy.inner_mut(),
+                            OrderSubmitted::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_rejected" => {
+                        Strategy::on_order_rejected(
+                            rust_strategy.inner_mut(),
+                            OrderRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_accepted" => {
+                        Strategy::on_order_accepted(
+                            rust_strategy.inner_mut(),
+                            OrderAccepted::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_expired" => {
+                        Strategy::on_order_expired(
+                            rust_strategy.inner_mut(),
+                            OrderExpired::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_triggered" => {
+                        Strategy::on_order_triggered(
+                            rust_strategy.inner_mut(),
+                            OrderTriggered::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_pending_update" => {
+                        Strategy::on_order_pending_update(
+                            rust_strategy.inner_mut(),
+                            OrderPendingUpdate::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_pending_cancel" => {
+                        Strategy::on_order_pending_cancel(
+                            rust_strategy.inner_mut(),
+                            OrderPendingCancel::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_modify_rejected" => {
+                        Strategy::on_order_modify_rejected(
+                            rust_strategy.inner_mut(),
+                            OrderModifyRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_cancel_rejected" => {
+                        Strategy::on_order_cancel_rejected(
+                            rust_strategy.inner_mut(),
+                            OrderCancelRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_updated" => {
+                        Strategy::on_order_updated(
+                            rust_strategy.inner_mut(),
+                            OrderUpdated::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_canceled" => {
+                        let event = OrderCanceled::default();
+                        Strategy::on_order_canceled(rust_strategy.inner_mut(), &event);
+                        Ok(())
+                    }
+                    "on_order_filled" => {
+                        let event = OrderFilledSpec::builder().build();
+                        Strategy::on_order_filled(rust_strategy.inner_mut(), &event);
+                        Ok(())
+                    }
+                    "on_order_fill_voided" => {
+                        let event = OrderFillVoidedSpec::builder().build();
+                        Strategy::on_order_fill_voided(rust_strategy.inner_mut(), &event);
+                        Ok(())
+                    }
+                    _ => unreachable!("unhandled order callback case: {method_name}"),
                 }
-                "on_order_event" => {
-                    Strategy::on_order_event(
-                        rust_strategy.inner_mut(),
-                        OrderEventAny::Accepted(OrderAccepted::default()),
-                    );
-                    Ok(())
-                }
-                "on_order_denied" => {
-                    Strategy::on_order_denied(rust_strategy.inner_mut(), OrderDenied::default());
-                    Ok(())
-                }
-                "on_order_emulated" => {
-                    Strategy::on_order_emulated(
-                        rust_strategy.inner_mut(),
-                        OrderEmulated::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_released" => {
-                    Strategy::on_order_released(
-                        rust_strategy.inner_mut(),
-                        OrderReleased::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_submitted" => {
-                    Strategy::on_order_submitted(
-                        rust_strategy.inner_mut(),
-                        OrderSubmitted::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_rejected" => {
-                    Strategy::on_order_rejected(
-                        rust_strategy.inner_mut(),
-                        OrderRejected::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_accepted" => {
-                    Strategy::on_order_accepted(
-                        rust_strategy.inner_mut(),
-                        OrderAccepted::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_expired" => {
-                    Strategy::on_order_expired(rust_strategy.inner_mut(), OrderExpired::default());
-                    Ok(())
-                }
-                "on_order_triggered" => {
-                    Strategy::on_order_triggered(
-                        rust_strategy.inner_mut(),
-                        OrderTriggered::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_pending_update" => {
-                    Strategy::on_order_pending_update(
-                        rust_strategy.inner_mut(),
-                        OrderPendingUpdate::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_pending_cancel" => {
-                    Strategy::on_order_pending_cancel(
-                        rust_strategy.inner_mut(),
-                        OrderPendingCancel::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_modify_rejected" => {
-                    Strategy::on_order_modify_rejected(
-                        rust_strategy.inner_mut(),
-                        OrderModifyRejected::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_cancel_rejected" => {
-                    Strategy::on_order_cancel_rejected(
-                        rust_strategy.inner_mut(),
-                        OrderCancelRejected::default(),
-                    );
-                    Ok(())
-                }
-                "on_order_updated" => {
-                    Strategy::on_order_updated(rust_strategy.inner_mut(), OrderUpdated::default());
-                    Ok(())
-                }
-                "on_order_canceled" => {
-                    let event = OrderCanceled::default();
-                    Strategy::on_order_canceled(rust_strategy.inner_mut(), &event);
-                    Ok(())
-                }
-                "on_order_filled" => {
-                    let event = OrderFilledSpec::builder().build();
-                    Strategy::on_order_filled(rust_strategy.inner_mut(), &event);
-                    Ok(())
-                }
-                _ => unreachable!("unhandled order callback case: {method_name}"),
             });
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_order_filled")]
+    #[case("on_order_event")]
+    fn test_python_order_event_callback_exception_continues_dispatch(
+        #[case] method_name: &str,
+        #[values(false, true)] shutdown: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let tracker = assert_python_callback(py, method_name, true, shutdown, |strategy| {
+                Component::start(strategy.inner_mut()).unwrap();
+                Strategy::handle_order_event(
+                    strategy.inner_mut(),
+                    OrderEventAny::Filled(OrderFilledSpec::builder().build()),
+                );
+                assert_eq!(Component::state(strategy.inner()), ComponentState::Running);
+                Ok(())
+            });
+
+            assert_eq!(
+                python_method_call_names(&tracker, py),
+                ["on_start", "on_order_filled", "on_order_event"],
+            );
         });
     }
 
@@ -5069,39 +6155,45 @@ class IndicatorEventStrategy:
     #[case("on_position_opened")]
     #[case("on_position_changed")]
     #[case("on_position_closed")]
-    fn test_python_dispatch_position_callback_matrix(#[case] method_name: &str) {
+    fn test_python_dispatch_position_callback_matrix(
+        #[case] method_name: &str,
+        #[values(false, true)] raises: bool,
+        #[values(false, true)] shutdown: bool,
+    ) {
         pyo3::Python::initialize();
         Python::attach(|py| {
-            assert_python_dispatch(py, method_name, |rust_strategy| match method_name {
-                "on_position_event" => {
-                    Strategy::on_position_event(
-                        rust_strategy.inner_mut(),
-                        PositionEvent::PositionOpened(sample_position_opened()),
-                    );
-                    Ok(())
+            assert_python_callback(py, method_name, raises, shutdown, |rust_strategy| {
+                match method_name {
+                    "on_position_event" => {
+                        Strategy::on_position_event(
+                            rust_strategy.inner_mut(),
+                            PositionEvent::PositionOpened(sample_position_opened()),
+                        );
+                        Ok(())
+                    }
+                    "on_position_opened" => {
+                        Strategy::on_position_opened(
+                            rust_strategy.inner_mut(),
+                            sample_position_opened(),
+                        );
+                        Ok(())
+                    }
+                    "on_position_changed" => {
+                        Strategy::on_position_changed(
+                            rust_strategy.inner_mut(),
+                            sample_position_changed(),
+                        );
+                        Ok(())
+                    }
+                    "on_position_closed" => {
+                        Strategy::on_position_closed(
+                            rust_strategy.inner_mut(),
+                            sample_position_closed(),
+                        );
+                        Ok(())
+                    }
+                    _ => unreachable!("unhandled position callback case: {method_name}"),
                 }
-                "on_position_opened" => {
-                    Strategy::on_position_opened(
-                        rust_strategy.inner_mut(),
-                        sample_position_opened(),
-                    );
-                    Ok(())
-                }
-                "on_position_changed" => {
-                    Strategy::on_position_changed(
-                        rust_strategy.inner_mut(),
-                        sample_position_changed(),
-                    );
-                    Ok(())
-                }
-                "on_position_closed" => {
-                    Strategy::on_position_closed(
-                        rust_strategy.inner_mut(),
-                        sample_position_closed(),
-                    );
-                    Ok(())
-                }
-                _ => unreachable!("unhandled position callback case: {method_name}"),
             });
         });
     }
@@ -5131,6 +6223,453 @@ class IndicatorEventStrategy:
                 &call_names[call_names.len() - 2..],
                 ["on_position_opened", "on_position_event"],
             );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_self_is_weak() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let instance = py
+                .get_type::<PyStrategy>()
+                .call0()
+                .expect("Strategy should construct");
+            let weakref =
+                PyWeakrefReference::new(&instance).expect("Strategy should be weak-referenceable");
+            assert!(weakref.upgrade().is_some());
+
+            drop(instance);
+
+            // A strong `py_self` would form an untraceable Rust-Python cycle and keep this alive
+            assert!(
+                weakref.upgrade().is_none(),
+                "an unregistered Strategy must be collected once its last Python owner is dropped",
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("on_start")]
+    #[case("on_stop")]
+    #[case("on_resume")]
+    #[case("on_reset")]
+    #[case("on_dispose")]
+    #[case("on_degrade")]
+    #[case("on_fault")]
+    #[case("on_save")]
+    #[case("on_load")]
+    #[case("on_time_event")]
+    #[case("on_data")]
+    #[case("on_signal")]
+    #[case("on_queue_state")]
+    #[case("on_socket_state")]
+    #[case("on_instrument")]
+    #[case("on_quote")]
+    #[case("on_trade")]
+    #[case("on_bar")]
+    #[case("on_book_deltas")]
+    #[case("on_book_depth")]
+    #[case("on_book")]
+    #[case("on_mark_price")]
+    #[case("on_index_price")]
+    #[case("on_funding_rate")]
+    #[case("on_instrument_status")]
+    #[case("on_instrument_close")]
+    #[case("on_option_greeks")]
+    #[case("on_option_chain")]
+    #[case("on_market_exit")]
+    #[case("post_market_exit")]
+    #[case("on_order_initialized")]
+    #[case("on_order_event")]
+    #[case("on_order_denied")]
+    #[case("on_order_emulated")]
+    #[case("on_order_released")]
+    #[case("on_order_submitted")]
+    #[case("on_order_rejected")]
+    #[case("on_order_accepted")]
+    #[case("on_order_expired")]
+    #[case("on_order_triggered")]
+    #[case("on_order_pending_update")]
+    #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_rejected")]
+    #[case("on_order_updated")]
+    #[case("on_order_canceled")]
+    #[case("on_order_filled")]
+    #[case("on_order_fill_voided")]
+    #[case("on_position_opened")]
+    #[case("on_position_event")]
+    #[case("on_position_changed")]
+    #[case("on_position_closed")]
+    #[case("on_historical_data")]
+    #[case("on_historical_book_deltas")]
+    #[case("on_historical_book_depth")]
+    #[case("on_historical_quotes")]
+    #[case("on_historical_trades")]
+    #[case("on_historical_funding_rates")]
+    #[case("on_historical_bars")]
+    #[case("on_historical_mark_prices")]
+    #[case("on_historical_index_prices")]
+    fn test_default_callback_during_exclusive_borrow(#[case] method: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let argument = match method {
+                "on_start" | "on_stop" | "on_resume" | "on_reset" | "on_dispose" | "on_degrade"
+                | "on_fault" | "on_save" | "on_market_exit" | "post_market_exit" => None,
+                "on_load" => Some(PyDict::new(py).into_any().unbind()),
+                "on_time_event" => Some(sample_time_event().into_py_any(py).unwrap()),
+                "on_data" | "on_instrument" | "on_order_event" | "on_position_event"
+                | "on_historical_data" => Some(py.None()),
+                "on_signal" => Some(sample_signal().into_py_any(py).unwrap()),
+                "on_queue_state" => Some(sample_queue_state_changed().into_py_any(py).unwrap()),
+                "on_socket_state" => Some(sample_socket_state_changed().into_py_any(py).unwrap()),
+                "on_quote" => Some(sample_quote().into_py_any(py).unwrap()),
+                "on_trade" => Some(sample_trade().into_py_any(py).unwrap()),
+                "on_bar" => Some(sample_bar().into_py_any(py).unwrap()),
+                "on_book_deltas" => Some(sample_book_deltas().into_py_any(py).unwrap()),
+                "on_book_depth" => Some(sample_book_depth().into_py_any(py).unwrap()),
+                "on_book" => Some(sample_book().into_py_any(py).unwrap()),
+                "on_mark_price" => Some(sample_mark_price().into_py_any(py).unwrap()),
+                "on_index_price" => Some(sample_index_price().into_py_any(py).unwrap()),
+                "on_funding_rate" => Some(sample_funding_rate().into_py_any(py).unwrap()),
+                "on_instrument_status" => Some(sample_instrument_status().into_py_any(py).unwrap()),
+                "on_instrument_close" => Some(sample_instrument_close().into_py_any(py).unwrap()),
+                "on_option_greeks" => Some(sample_option_greeks().into_py_any(py).unwrap()),
+                "on_option_chain" => Some(sample_option_chain().into_py_any(py).unwrap()),
+                "on_order_initialized" => {
+                    Some(OrderInitialized::default().into_py_any(py).unwrap())
+                }
+                "on_order_denied" => Some(OrderDenied::default().into_py_any(py).unwrap()),
+                "on_order_emulated" => Some(OrderEmulated::default().into_py_any(py).unwrap()),
+                "on_order_released" => Some(OrderReleased::default().into_py_any(py).unwrap()),
+                "on_order_submitted" => Some(OrderSubmitted::default().into_py_any(py).unwrap()),
+                "on_order_rejected" => Some(OrderRejected::default().into_py_any(py).unwrap()),
+                "on_order_accepted" => Some(OrderAccepted::default().into_py_any(py).unwrap()),
+                "on_order_expired" => Some(OrderExpired::default().into_py_any(py).unwrap()),
+                "on_order_triggered" => Some(OrderTriggered::default().into_py_any(py).unwrap()),
+                "on_order_pending_update" => {
+                    Some(OrderPendingUpdate::default().into_py_any(py).unwrap())
+                }
+                "on_order_pending_cancel" => {
+                    Some(OrderPendingCancel::default().into_py_any(py).unwrap())
+                }
+                "on_order_modify_rejected" => {
+                    Some(OrderModifyRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_cancel_rejected" => {
+                    Some(OrderCancelRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_updated" => Some(OrderUpdated::default().into_py_any(py).unwrap()),
+                "on_order_canceled" => Some(OrderCanceled::default().into_py_any(py).unwrap()),
+                "on_order_filled" => {
+                    Some(OrderFilledSpec::builder().build().into_py_any(py).unwrap())
+                }
+                "on_order_fill_voided" => Some(
+                    OrderFillVoidedSpec::builder()
+                        .build()
+                        .into_py_any(py)
+                        .unwrap(),
+                ),
+                "on_position_opened" => Some(sample_position_opened().into_py_any(py).unwrap()),
+                "on_position_changed" => Some(sample_position_changed().into_py_any(py).unwrap()),
+                "on_position_closed" => Some(sample_position_closed().into_py_any(py).unwrap()),
+                "on_historical_book_deltas"
+                | "on_historical_book_depth"
+                | "on_historical_quotes"
+                | "on_historical_trades"
+                | "on_historical_funding_rates"
+                | "on_historical_bars"
+                | "on_historical_mark_prices"
+                | "on_historical_index_prices" => Some(PyList::empty(py).into_any().unbind()),
+                _ => unreachable!(),
+            };
+
+            let instance = py.get_type::<PyStrategy>().call0().unwrap();
+            let _borrow = instance
+                .extract::<pyo3::PyRefMut<'_, PyStrategy>>()
+                .unwrap();
+
+            let result = match argument {
+                Some(argument) => instance.call_method1(method, (argument,)),
+                None => instance.call_method0(method),
+            }
+            .unwrap();
+
+            if method == "on_save" {
+                assert_eq!(result.len().unwrap(), 0);
+            } else {
+                assert!(result.is_none());
+            }
+        });
+    }
+
+    #[rstest::rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_modify_order_no_changes_returns_error_without_logging(#[case] same_values: bool) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let (_, strategy) = create_registered_tracking_strategy(py);
+            let strategy_id = strategy.strategy_id();
+            let cache = strategy.inner().core.cache_rc();
+            let instance = Py::new(py, strategy).unwrap();
+            let client_order_id = ClientOrderId::from("O-NO-CHANGE-001");
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+                .strategy_id(strategy_id)
+                .client_order_id(client_order_id)
+                .price(Price::from("1.23456"))
+                .quantity(Quantity::from(123))
+                .submit(true)
+                .build();
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, true)
+                .unwrap();
+            let argument = client_order_id.into_py_any(py).unwrap();
+            let quantity = same_values.then_some(order.quantity());
+            let price = same_values.then_some(order.price().unwrap());
+            arm_shutdown_on_error(true);
+            let result = instance.call_method1(py, "modify_order", (argument, quantity, price));
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+
+            let e = result.unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert_eq!(
+                e.to_string(),
+                "RuntimeError: Cannot create command ModifyOrder: quantity, price, and trigger were either None or the same as existing values"
+            );
+            assert_eq!(trigger, None);
+            assert_eq!(cache.borrow().order(&client_order_id).unwrap(), &order);
+        });
+    }
+
+    #[rstest::rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_submit_order_list_validation_returns_error_without_logging(
+        #[case] duplicate_ids: bool,
+    ) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let (_, strategy) = create_registered_tracking_strategy(py);
+            let client_order_id = ClientOrderId::from("O-LIST-DUPLICATE-001");
+            let cache = strategy.inner().core.cache_rc();
+            let order =
+                sample_python_market_order(py, strategy.strategy_id(), client_order_id).unwrap();
+
+            let orders = if duplicate_ids {
+                vec![order.clone_ref(py), order]
+            } else {
+                Vec::new()
+            };
+
+            let instance = Py::new(py, strategy).unwrap();
+            arm_shutdown_on_error(true);
+            let result =
+                instance.call_method1(py, "submit_order_list", (PyList::new(py, orders).unwrap(),));
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+
+            let e = result.unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+            assert!(e.to_string().contains(if duplicate_ids {
+                "duplicate"
+            } else {
+                "no orders to submit"
+            }));
+            assert_eq!(trigger, None);
+            assert!(!cache.borrow().order_exists(&client_order_id));
+        });
+    }
+
+    #[rstest::rstest]
+    #[case("submit_order", "default")]
+    #[case("modify_order", "default")]
+    #[case("submit_order", "super")]
+    #[case("modify_order", "super")]
+    #[case("submit_order", "getter")]
+    #[case("modify_order", "getter")]
+    fn test_order_command_callback_borrowing(#[case] method: &str, #[case] callback: &str) {
+        Python::initialize();
+        let _guard = init_logging(
+            TraderId::from("TRADER-001"),
+            UUID4::new(),
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+        Python::attach(|py| {
+            let globals = PyDict::new(py);
+            globals
+                .set_item("Strategy", py.get_type::<PyStrategy>())
+                .unwrap();
+            py.run(
+                c_str!(
+                    r#"
+class CommandStrategy(Strategy):
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+        self.callback = "default"
+
+    def on_start(self):
+        pass
+
+    def on_order_event(self, event):
+
+        if self.callback == "getter":
+            self.calls.append("enter")
+            self.cache
+        else:
+            super().on_order_event(event)
+        self.calls.append("exit")
+"#
+                ),
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+            let instance = py
+                .eval(c_str!("CommandStrategy()"), Some(&globals), None)
+                .unwrap();
+            instance.setattr("callback", callback).unwrap();
+            if callback == "default" {
+                instance.get_type().delattr("on_order_event").unwrap();
+            }
+
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::default()));
+
+            let portfolio = Rc::new(RefCell::new(Portfolio::new(
+                clock.clone(),
+                cache.clone(),
+                None,
+            )));
+            let strategy_id;
+            {
+                let mut strategy = instance
+                    .extract::<pyo3::PyRefMut<'_, PyStrategy>>()
+                    .unwrap();
+                strategy
+                    .register(
+                        TraderId::from("TRADER-001"),
+                        clock,
+                        cache.clone(),
+                        portfolio,
+                    )
+                    .unwrap();
+                strategy.register_in_global_registries().unwrap();
+                Component::start(strategy.inner_mut()).unwrap();
+                strategy_id = strategy.strategy_id();
+            }
+
+            let actor_id = strategy_id.inner();
+
+            let handler = msgbus::TypedHandler::from(move |event: &OrderEventAny| {
+                let mut strategy = nautilus_common::actor::registry::try_get_actor_unchecked::<
+                    super::PyStrategyInner,
+                >(&actor_id)
+                .unwrap();
+                Strategy::handle_order_event(&mut *strategy, event.clone());
+            });
+
+            let topic = format!("events.order.{strategy_id}");
+            msgbus::subscribe_order_events(topic.clone().into(), handler.clone(), None);
+            let (risk_handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+                get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+            msgbus::register_trading_command_endpoint(
+                MessagingSwitchboard::risk_engine_queue_execute(),
+                risk_handler,
+            );
+            let client_order_id = ClientOrderId::from("O-CALLBACK-001");
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(strategy_id)
+                .instrument_id(sample_instrument().id)
+                .client_order_id(client_order_id)
+                .price(Price::from("1.23456"))
+                .quantity(Quantity::from(123))
+                .submit(method == "modify_order")
+                .build();
+
+            if method == "modify_order" {
+                cache
+                    .borrow_mut()
+                    .add_order(order.clone(), None, None, true)
+                    .unwrap();
+            }
+
+            arm_shutdown_on_error(true);
+
+            let result = if method == "submit_order" {
+                instance.call_method1(method, (order_any_to_pyobject(py, order).unwrap(),))
+            } else {
+                instance.call_method1(method, (client_order_id, Quantity::from(234)))
+            };
+
+            let trigger = take_shutdown_on_error_trigger();
+            disarm_shutdown_on_error();
+            msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+            assert!(result.unwrap().is_none());
+            assert_eq!(messages.get_messages().len(), 1);
+            assert_eq!(
+                cache.borrow().order(&client_order_id).unwrap().status(),
+                if method == "submit_order" {
+                    OrderStatus::Initialized
+                } else {
+                    OrderStatus::PendingUpdate
+                }
+            );
+            let calls = instance
+                .getattr("calls")
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+
+            match callback {
+                "default" => {
+                    assert_eq!(calls, Vec::<String>::new());
+                    assert_eq!(trigger, None);
+                }
+                "super" => {
+                    assert_eq!(calls, ["exit"]);
+                    assert_eq!(trigger, None);
+                }
+                "getter" => {
+                    assert_eq!(calls, ["enter"]);
+                    let trigger = trigger.unwrap();
+                    assert_eq!(trigger.component, actor_id);
+                    assert!(
+                        trigger
+                            .message
+                            .starts_with("Python on_order_event failed:\n")
+                    );
+                    assert!(
+                        trigger
+                            .message
+                            .contains("RuntimeError: Already mutably borrowed")
+                    );
+                }
+                _ => unreachable!(),
+            }
         });
     }
 }

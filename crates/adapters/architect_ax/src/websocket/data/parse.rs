@@ -72,6 +72,8 @@ pub fn parse_book_l2_quote(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
+    anyhow::ensure!(book.st, "AX incremental book frames are not supported");
+
     parse_top_of_book_quote(
         book.ts,
         book.tn,
@@ -98,6 +100,8 @@ pub fn parse_book_l3_quote(
     instrument: &InstrumentAny,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
+    anyhow::ensure!(book.st, "AX incremental book frames are not supported");
+
     parse_top_of_book_quote(
         book.ts,
         book.tn,
@@ -128,7 +132,7 @@ fn parse_top_of_book_quote(
     let (bid_price, bid_size) = if let Some((price, quantity)) = bid {
         (
             decimal_to_price_dp(price, price_precision, "book.bid.price")?,
-            Quantity::new(quantity as f64, size_precision),
+            Quantity::from_decimal_dp(Decimal::from(quantity), size_precision)?,
         )
     } else {
         (Price::zero(price_precision), Quantity::zero(size_precision))
@@ -137,7 +141,7 @@ fn parse_top_of_book_quote(
     let (ask_price, ask_size) = if let Some((price, quantity)) = ask {
         (
             decimal_to_price_dp(price, price_precision, "book.ask.price")?,
-            Quantity::new(quantity as f64, size_precision),
+            Quantity::from_decimal_dp(Decimal::from(quantity), size_precision)?,
         )
     } else {
         (Price::zero(price_precision), Quantity::zero(size_precision))
@@ -164,7 +168,7 @@ fn parse_book_level(
     size_precision: u8,
 ) -> anyhow::Result<(Price, Quantity)> {
     let price = decimal_to_price_dp(level.p, price_precision, "book.level.price")?;
-    let size = Quantity::new(level.q as f64, size_precision);
+    let size = Quantity::from_decimal_dp(Decimal::from(level.q), size_precision)?;
     Ok((price, size))
 }
 
@@ -182,6 +186,8 @@ pub fn parse_book_l2_deltas(
     sequence: u64,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
+    anyhow::ensure!(book.st, "AX incremental book frames are not supported");
+
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -269,7 +275,7 @@ fn parse_book_level_l3(
     size_precision: u8,
 ) -> anyhow::Result<(Price, Quantity)> {
     let price = decimal_to_price_dp(level.p, price_precision, "book.level.price")?;
-    let size = Quantity::new(level.q as f64, size_precision);
+    let size = Quantity::from_decimal_dp(Decimal::from(level.q), size_precision)?;
     Ok((price, size))
 }
 
@@ -287,6 +293,8 @@ pub fn parse_book_l3_deltas(
     sequence: u64,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
+    anyhow::ensure!(book.st, "AX incremental book frames are not supported");
+
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -321,7 +329,7 @@ pub fn parse_book_l3_deltas(
                 flags |= RecordFlag::F_LAST as u8;
             }
 
-            let size = Quantity::new(order_qty as f64, size_precision);
+            let size = Quantity::from_decimal_dp(Decimal::from(order_qty), size_precision)?;
             let order = BookOrder::new(OrderSide::Buy, price, size, order_id_counter);
             order_id_counter += 1;
 
@@ -352,7 +360,7 @@ pub fn parse_book_l3_deltas(
                 flags |= RecordFlag::F_LAST as u8;
             }
 
-            let size = Quantity::new(order_qty as f64, size_precision);
+            let size = Quantity::from_decimal_dp(Decimal::from(order_qty), size_precision)?;
             let order = BookOrder::new(OrderSide::Sell, price, size, order_id_counter);
             order_id_counter += 1;
 
@@ -395,7 +403,7 @@ pub fn parse_trade_tick(
     let size_precision = instrument.size_precision();
 
     let price = decimal_to_price_dp(trade.p, price_precision, "trade.price")?;
-    let size = Quantity::new(trade.q as f64, size_precision);
+    let size = Quantity::from_decimal_dp(Decimal::from(trade.q), size_precision)?;
     let aggressor_side: AggressorSide = trade.d.map_or(AggressorSide::NoAggressor, |d| d.into());
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
@@ -430,7 +438,7 @@ pub fn parse_candle_bar(
     let high = decimal_to_price_dp(candle.high, price_precision, "candle.high")?;
     let low = decimal_to_price_dp(candle.low, price_precision, "candle.low")?;
     let close = decimal_to_price_dp(candle.close, price_precision, "candle.close")?;
-    let volume = Quantity::new(candle.volume as f64, size_precision);
+    let volume = Quantity::from_decimal_dp(Decimal::from(candle.volume), size_precision)?;
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(candle.ts, 0)?;
 
@@ -482,36 +490,26 @@ mod tests {
             Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision)
                 .unwrap();
 
-        let instrument = PerpetualContract::new(
-            InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
-            Symbol::new(symbol),
-            underlying,
-            AssetClass::Cryptocurrency,
-            None,
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            None,
-            Some(size_increment),
-            None,
-            Some(size_increment),
-            None,
-            None,
-            None,
-            None,
-            Some(Decimal::new(1, 2)),
-            Some(Decimal::new(5, 3)),
-            Some(Decimal::new(2, 4)),
-            Some(Decimal::new(5, 4)),
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = PerpetualContract::builder()
+            .instrument_id(InstrumentId::new(Symbol::new(symbol), *AX_VENUE))
+            .raw_symbol(Symbol::new(symbol))
+            .underlying(underlying)
+            .asset_class(AssetClass::Cryptocurrency)
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USD())
+            .is_inverse(false)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .lot_size(size_increment)
+            .min_quantity(size_increment)
+            .margin_init(Decimal::new(1, 2))
+            .margin_maint(Decimal::new(5, 3))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         InstrumentAny::PerpetualContract(instrument)
     }
 
@@ -568,7 +566,7 @@ mod tests {
                     q: 150,
                 },
             ],
-            st: false,
+            st: true,
         };
         let l3 = AxMdBookL3 {
             ts: 1700000000,
@@ -598,7 +596,7 @@ mod tests {
                     o: vec![150],
                 },
             ],
-            st: false,
+            st: true,
         };
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
@@ -642,7 +640,7 @@ mod tests {
                     q: 250,
                 },
             ],
-            st: false,
+            st: true,
         };
 
         let instrument = create_test_instrument();
@@ -653,8 +651,8 @@ mod tests {
         // 1 clear + 4 levels
         assert_eq!(deltas.deltas.len(), 5);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
-        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell.into());
 
         // Every delta in the snapshot sequence carries F_SNAPSHOT, and only the last F_LAST
         for delta in &deltas.deltas {
@@ -687,7 +685,7 @@ mod tests {
                 q: 250,
                 o: vec![150, 100],
             }],
-            st: false,
+            st: true,
         };
 
         let instrument = create_test_instrument();
@@ -727,7 +725,7 @@ mod tests {
 
         assert_eq!(tick.price.as_f64(), 50000.50);
         assert_eq!(tick.size.as_f64(), 100.0);
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
     }
 
     #[rstest]
@@ -735,7 +733,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_book_l1_captured.json");
         let book: AxMdBookL1 = serde_json::from_str(json).unwrap();
 
-        assert_eq!(book.s.as_str(), "EURUSD-PERP");
+        assert_eq!(book.s, "EURUSD-PERP");
         assert_eq!(book.b.len(), 1);
         assert_eq!(book.a.len(), 1);
 
@@ -756,7 +754,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_book_l2_captured.json");
         let book: AxMdBookL2 = serde_json::from_str(json).unwrap();
 
-        assert_eq!(book.s.as_str(), "EURUSD-PERP");
+        assert_eq!(book.s, "EURUSD-PERP");
         assert_eq!(book.b.len(), 13);
         assert_eq!(book.a.len(), 12);
 
@@ -774,13 +772,13 @@ mod tests {
 
         // Check first bid level
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price.as_f64(), 1.1712);
         assert_eq!(first_bid.order.size.as_f64(), 300.0);
 
         // Check first ask level (after 13 bids + 1 clear = index 14)
         let first_ask = &deltas.deltas[14];
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price.as_f64(), 1.1719);
         assert_eq!(first_ask.order.size.as_f64(), 400.0);
 
@@ -794,7 +792,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_book_l3_captured.json");
         let book: AxMdBookL3 = serde_json::from_str(json).unwrap();
 
-        assert_eq!(book.s.as_str(), "EURUSD-PERP");
+        assert_eq!(book.s, "EURUSD-PERP");
         assert_eq!(book.b.len(), 15);
         assert_eq!(book.a.len(), 14);
 
@@ -813,7 +811,7 @@ mod tests {
 
         // Check first bid order
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price.as_f64(), 1.1714);
         assert_eq!(first_bid.order.size.as_f64(), 100.0);
 
@@ -827,7 +825,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_trade_captured.json");
         let trade: AxMdTrade = serde_json::from_str(json).unwrap();
 
-        assert_eq!(trade.s.as_str(), "EURUSD-PERP");
+        assert_eq!(trade.s, "EURUSD-PERP");
         assert_eq!(trade.p, dec!(1.1719));
         assert_eq!(trade.q, 400);
         assert_eq!(trade.d, Some(AxOrderSide::Buy));
@@ -840,7 +838,7 @@ mod tests {
         assert_eq!(tick.instrument_id.symbol.as_str(), "EURUSD-PERP");
         assert_eq!(tick.price.as_f64(), 1.1719);
         assert_eq!(tick.size.as_f64(), 400.0);
-        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(
             tick.trade_id.to_string(),
             "1766193240334589144-38b4fe5a94a253d0"
@@ -903,7 +901,7 @@ mod tests {
             s: Ustr::from("TEST-PERP"),
             b: vec![],
             a: vec![],
-            st: false,
+            st: true,
         };
 
         let instrument = create_test_instrument();
@@ -952,7 +950,7 @@ mod tests {
         let json = include_str!("../../../test_data/ws_md_candle.json");
         let candle: AxMdCandle = serde_json::from_str(json).unwrap();
 
-        assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
+        assert_eq!(candle.symbol, "EURUSD-PERP");
         assert_eq!(candle.open, dec!(49500.00));
         assert_eq!(candle.close, dec!(50000.00));
 
@@ -967,5 +965,29 @@ mod tests {
         assert_eq!(bar.close.as_f64(), 50000.00);
         assert_eq!(bar.volume.as_f64(), 5000.0);
         assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
+    }
+
+    #[rstest]
+    fn test_incremental_books_cannot_clear_snapshots_or_supply_quotes() {
+        let mut l2: AxMdBookL2 =
+            serde_json::from_str(include_str!("../../../test_data/captured/ws-md-2.json")).unwrap();
+        let mut l3: AxMdBookL3 =
+            serde_json::from_str(include_str!("../../../test_data/captured/ws-md-3.json")).unwrap();
+        l2.st = false;
+        l3.st = false;
+        let instrument = create_test_instrument();
+        let ts_init = UnixNanos::default();
+
+        for result in [
+            parse_book_l2_quote(&l2, &instrument, ts_init).map(|_| ()),
+            parse_book_l3_quote(&l3, &instrument, ts_init).map(|_| ()),
+            parse_book_l2_deltas(&l2, &instrument, 1, ts_init).map(|_| ()),
+            parse_book_l3_deltas(&l3, &instrument, 1, ts_init).map(|_| ()),
+        ] {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "AX incremental book frames are not supported"
+            );
+        }
     }
 }

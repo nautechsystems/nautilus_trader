@@ -21,11 +21,9 @@ use crate::{
     events::pool_created::PoolCreatedEvent,
     hypersync::{
         HypersyncLog,
-        helpers::{
-            extract_address_from_topic, extract_block_number, validate_event_signature_hash,
-        },
+        log::{extract_address_from_topic, extract_block_number, validate_event_signature_hash},
     },
-    rpc::helpers as rpc_helpers,
+    rpc::log as rpc_log,
 };
 
 const PAIR_CREATED_EVENT_SIGNATURE_HASH: &str =
@@ -83,18 +81,14 @@ pub fn parse_pool_created_event_hypersync(log: HypersyncLog) -> anyhow::Result<P
 ///
 /// Returns an error if the log parsing fails or if the event data is invalid.
 pub fn parse_pool_created_event_rpc(log: &RpcLog) -> anyhow::Result<PoolCreatedEvent> {
-    rpc_helpers::validate_event_signature(
-        log,
-        PAIR_CREATED_EVENT_SIGNATURE_HASH,
-        "PairCreatedEvent",
-    )?;
+    rpc_log::validate_event_signature(log, PAIR_CREATED_EVENT_SIGNATURE_HASH, "PairCreatedEvent")?;
 
-    let block_number = rpc_helpers::extract_block_number(log)?;
-    let token0 = rpc_helpers::extract_address_from_topic(log, 1, "token0")?;
-    let token1 = rpc_helpers::extract_address_from_topic(log, 2, "token1")?;
+    let block_number = rpc_log::extract_block_number(log)?;
+    let token0 = rpc_log::extract_address_from_topic(log, 1, "token0")?;
+    let token1 = rpc_log::extract_address_from_topic(log, 2, "token1")?;
 
     // Extract pair address from data
-    let data_bytes = rpc_helpers::extract_data_bytes(log)?;
+    let data_bytes = rpc_log::extract_data_bytes(log)?;
 
     anyhow::ensure!(
         data_bytes.len() >= 32,

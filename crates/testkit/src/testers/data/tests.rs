@@ -152,32 +152,19 @@ fn test_on_instrument(config: DataTesterConfig) {
     let mut actor = DataTester::new(config);
 
     let instrument_id = InstrumentId::from("BTC-USDT.TEST");
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        Symbol::from("BTC/USDT"),
-        Currency::USD(),
-        Currency::USD(),
-        4,
-        3,
-        Price::from("0.0001"),
-        Quantity::from("0.001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("BTC/USDT"))
+        .base_currency(Currency::USD())
+        .quote_currency(Currency::USD())
+        .price_precision(4)
+        .size_precision(3)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.001"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     let result = actor.on_instrument(&InstrumentAny::CurrencyPair(instrument));
 
     assert!(result.is_ok());

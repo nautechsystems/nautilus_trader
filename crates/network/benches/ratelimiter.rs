@@ -29,7 +29,6 @@ fn bench_check_key_uncontended(c: &mut Criterion) {
     // High rate so we never block in the benchmark loop
     let limiter = make_limiter(1_000_000_000);
     let key = "endpoint".to_string();
-
     group.bench_function("single_key", |b| {
         b.iter(|| black_box(limiter.check_key(black_box(&key))));
     });
@@ -39,7 +38,6 @@ fn bench_check_key_uncontended(c: &mut Criterion) {
 
 fn bench_check_key_contended(c: &mut Criterion) {
     let mut group = c.benchmark_group("ratelimiter/check_key_contended");
-
     for num_threads in [1, 2, 4, 8] {
         group.bench_with_input(
             BenchmarkId::new("threads", num_threads),

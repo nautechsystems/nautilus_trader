@@ -13,13 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::Serialize;
+use serde::{Serialize, ser::SerializeStruct};
 
 use crate::{
-    common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
+    common::{
+        enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
+        parse::is_false_or_none,
+    },
     http::models::{
-        HyperliquidExecBuilderFee, HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
-        HyperliquidExecModifyOrderRequest, HyperliquidExecPlaceOrderRequest,
+        HyperliquidExchangeBuilderFee, HyperliquidExchangeCancelByCloidRequest,
+        HyperliquidExchangeGrouping, HyperliquidExchangeModifyOrderRequest,
+        HyperliquidExchangePlaceOrderRequest,
     },
 };
 
@@ -57,17 +61,19 @@ impl AsRef<str> for ExchangeActionType {
 /// Parameters for placing orders.
 #[derive(Debug, Clone, Serialize)]
 pub struct OrderParams {
-    pub orders: Vec<HyperliquidExecPlaceOrderRequest>,
-    pub grouping: HyperliquidExecGrouping,
+    pub orders: Vec<HyperliquidExchangePlaceOrderRequest>,
+    pub grouping: HyperliquidExchangeGrouping,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub builder: Option<HyperliquidExecBuilderFee>,
+    pub builder: Option<HyperliquidExchangeBuilderFee>,
 }
 
 /// Parameters for canceling orders.
+///
+/// The fast-cancel flag is serialized only when true.
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelParams {
-    pub cancels: Vec<HyperliquidExecCancelByCloidRequest>,
-    #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+    pub cancels: Vec<HyperliquidExchangeCancelByCloidRequest>,
+    #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
     pub fast: Option<bool>,
 }
 
@@ -75,7 +81,7 @@ pub struct CancelParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct ModifyParams {
     #[serde(flatten)]
-    pub request: HyperliquidExecModifyOrderRequest,
+    pub request: HyperliquidExchangeModifyOrderRequest,
 }
 
 /// Parameters for updating leverage.
@@ -109,9 +115,21 @@ pub struct RecentTradesParams {
 }
 
 /// Parameters for user fills request.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct UserFillsParams {
     pub user: String,
+}
+
+impl Serialize for UserFillsParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("UserFillsParams", 2)?;
+        state.serialize_field("user", &self.user)?;
+        state.serialize_field("aggregateByTime", &false)?;
+        state.end()
+    }
 }
 
 /// Parameters for order status request.
@@ -125,12 +143,16 @@ pub struct OrderStatusParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenOrdersParams {
     pub user: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
 }
 
 /// Parameters for clearinghouse state request.
 #[derive(Debug, Clone, Serialize)]
 pub struct ClearinghouseStateParams {
     pub user: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dex: Option<String>,
 }
 
 /// Parameters for spot clearinghouse state request.
@@ -290,20 +312,32 @@ impl InfoRequest {
 
     /// Creates a request to get all open orders for a user.
     pub fn open_orders(user: &str) -> Self {
+        Self::open_orders_for_dex(user, None)
+    }
+
+    /// Creates a request to get all open orders for a user on a specific perp dex.
+    pub(crate) fn open_orders_for_dex(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::OpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
 
     /// Creates a request to get frontend open orders (includes more detail).
     pub fn frontend_open_orders(user: &str) -> Self {
+        Self::frontend_open_orders_for_dex(user, None)
+    }
+
+    /// Creates a frontend open-orders request for a user on a specific perp dex.
+    pub(crate) fn frontend_open_orders_for_dex(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::FrontendOpenOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
@@ -314,16 +348,23 @@ impl InfoRequest {
             request_type: HyperliquidInfoRequestType::HistoricalOrders,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: None,
             }),
         }
     }
 
     /// Creates a request to get user state (balances, positions, margin).
     pub fn clearinghouse_state(user: &str) -> Self {
+        Self::clearinghouse_state_for_dex(user, None)
+    }
+
+    /// Creates a clearinghouse-state request for a user on a specific perp dex.
+    pub(crate) fn clearinghouse_state_for_dex(user: &str, dex: Option<&str>) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::ClearinghouseState,
             params: InfoRequestParams::ClearinghouseState(ClearinghouseStateParams {
                 user: user.to_string(),
+                dex: dex.map(str::to_string),
             }),
         }
     }
@@ -338,12 +379,23 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get the account abstraction mode for a user.
+    pub fn user_abstraction(user: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::UserAbstraction,
+            params: InfoRequestParams::SpotClearinghouseState(SpotClearinghouseStateParams {
+                user: user.to_string(),
+            }),
+        }
+    }
+
     /// Creates a request to get user fee schedule and effective rates.
     pub fn user_fees(user: &str) -> Self {
         Self {
             request_type: HyperliquidInfoRequestType::UserFees,
             params: InfoRequestParams::OpenOrders(OpenOrdersParams {
                 user: user.to_string(),
+                dex: None,
             }),
         }
     }
@@ -414,21 +466,21 @@ where
 impl ExchangeAction {
     /// Creates an action to place orders with builder attribution.
     pub fn order(
-        orders: Vec<HyperliquidExecPlaceOrderRequest>,
-        builder: Option<HyperliquidExecBuilderFee>,
+        orders: Vec<HyperliquidExchangePlaceOrderRequest>,
+        builder: Option<HyperliquidExchangeBuilderFee>,
     ) -> Self {
         Self {
             action_type: ExchangeActionType::Order,
             params: ExchangeActionParams::Order(OrderParams {
                 orders,
-                grouping: HyperliquidExecGrouping::Na,
+                grouping: HyperliquidExchangeGrouping::Na,
                 builder,
             }),
         }
     }
 
     /// Creates an action to cancel orders.
-    pub fn cancel(cancels: Vec<HyperliquidExecCancelByCloidRequest>) -> Self {
+    pub fn cancel(cancels: Vec<HyperliquidExchangeCancelByCloidRequest>) -> Self {
         Self {
             action_type: ExchangeActionType::Cancel,
             params: ExchangeActionParams::Cancel(CancelParams {
@@ -439,7 +491,7 @@ impl ExchangeAction {
     }
 
     /// Creates an action to cancel orders by client order ID.
-    pub fn cancel_by_cloid(cancels: Vec<HyperliquidExecCancelByCloidRequest>) -> Self {
+    pub fn cancel_by_cloid(cancels: Vec<HyperliquidExchangeCancelByCloidRequest>) -> Self {
         Self {
             action_type: ExchangeActionType::CancelByCloid,
             params: ExchangeActionParams::Cancel(CancelParams {
@@ -450,7 +502,7 @@ impl ExchangeAction {
     }
 
     /// Creates an action to modify an order.
-    pub fn modify(request: HyperliquidExecModifyOrderRequest) -> Self {
+    pub fn modify(request: HyperliquidExchangeModifyOrderRequest) -> Self {
         Self {
             action_type: ExchangeActionType::Modify,
             params: ExchangeActionParams::Modify(ModifyParams { request }),
@@ -489,10 +541,44 @@ mod tests {
 
     use super::*;
     use crate::http::models::{
-        Cloid, HyperliquidExecCancelByCloidRequest, HyperliquidExecLimitParams,
-        HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
-        HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+        Cloid, HyperliquidExchangeCancelByCloidRequest, HyperliquidExchangeLimitParams,
+        HyperliquidExchangeModifyOrderRequest, HyperliquidExchangeOrderKind,
+        HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
     };
+
+    #[rstest]
+    fn test_cancel_action_serialization(
+        #[values(None, Some(false), Some(true))] fast: Option<bool>,
+        #[values(false, true)] by_cloid: bool,
+    ) {
+        let cancels = vec![HyperliquidExchangeCancelByCloidRequest {
+            asset: 7,
+            cloid: Cloid::from_hex("0x0123456789abcdef0123456789abcdef").unwrap(),
+        }];
+
+        let (mut action, name) = if by_cloid {
+            (ExchangeAction::cancel_by_cloid(cancels), "cancel_by_cloid")
+        } else {
+            (ExchangeAction::cancel(cancels), "query_cancel")
+        };
+
+        let ExchangeActionParams::Cancel(params) = &mut action.params else {
+            panic!("Expected cancel parameters");
+        };
+
+        params.fast = fast;
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/cancel_actions.json")).unwrap();
+        let expected = &fixtures[name][if fast == Some(true) { "fast" } else { "normal" }];
+        let json = serde_json::to_value(&action).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&action).unwrap();
+
+        assert_eq!(json, expected["json"]);
+        assert_eq!(
+            nautilus_core::hex::encode(msgpack),
+            expected["msgpack"].as_str().unwrap()
+        );
+    }
 
     #[rstest]
     fn test_info_request_meta() {
@@ -540,6 +626,60 @@ mod tests {
     }
 
     #[rstest]
+    fn test_info_request_open_orders_dex_serialization() {
+        let default = serde_json::to_value(InfoRequest::open_orders("0xabc")).unwrap();
+        let xyz =
+            serde_json::to_value(InfoRequest::open_orders_for_dex("0xabc", Some("xyz"))).unwrap();
+
+        assert_eq!(
+            default,
+            serde_json::json!({"type": "openOrders", "user": "0xabc"})
+        );
+        assert_eq!(
+            xyz,
+            serde_json::json!({"type": "openOrders", "user": "0xabc", "dex": "xyz"})
+        );
+    }
+
+    #[rstest]
+    fn test_info_request_frontend_open_orders_dex_serialization() {
+        let default = serde_json::to_value(InfoRequest::frontend_open_orders("0xabc")).unwrap();
+        let xyz = serde_json::to_value(InfoRequest::frontend_open_orders_for_dex(
+            "0xabc",
+            Some("xyz"),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            default,
+            serde_json::json!({"type": "frontendOpenOrders", "user": "0xabc"})
+        );
+        assert_eq!(
+            xyz,
+            serde_json::json!({"type": "frontendOpenOrders", "user": "0xabc", "dex": "xyz"})
+        );
+    }
+
+    #[rstest]
+    fn test_info_request_clearinghouse_state_dex_serialization() {
+        let default = serde_json::to_value(InfoRequest::clearinghouse_state("0xabc")).unwrap();
+        let xyz = serde_json::to_value(InfoRequest::clearinghouse_state_for_dex(
+            "0xabc",
+            Some("xyz"),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            default,
+            serde_json::json!({"type": "clearinghouseState", "user": "0xabc"})
+        );
+        assert_eq!(
+            xyz,
+            serde_json::json!({"type": "clearinghouseState", "user": "0xabc", "dex": "xyz"})
+        );
+    }
+
+    #[rstest]
     fn test_info_request_spot_clearinghouse_state() {
         let req = InfoRequest::spot_clearinghouse_state("0xabc");
 
@@ -550,6 +690,16 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains(r#""type":"spotClearinghouseState""#));
         assert!(json.contains(r#""user":"0xabc""#));
+    }
+
+    #[rstest]
+    fn test_info_request_user_abstraction() {
+        let req = InfoRequest::user_abstraction("0xabc");
+
+        assert_eq!(
+            serde_json::to_value(&req).unwrap(),
+            serde_json::json!({"type": "userAbstraction", "user": "0xabc"})
+        );
     }
 
     #[rstest]
@@ -579,15 +729,15 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_order() {
-        let order = HyperliquidExecPlaceOrderRequest {
+        let order = HyperliquidExchangePlaceOrderRequest {
             asset: 0,
             is_buy: true,
             price: Decimal::new(50000, 0),
             size: Decimal::new(1, 0),
             reduce_only: false,
-            kind: HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Gtc,
+            kind: HyperliquidExchangeOrderKind::Limit {
+                limit: HyperliquidExchangeLimitParams {
+                    tif: HyperliquidExchangeTif::Gtc,
                 },
             },
             cloid: None,
@@ -602,7 +752,7 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_cancel() {
-        let cancel = HyperliquidExecCancelByCloidRequest {
+        let cancel = HyperliquidExchangeCancelByCloidRequest {
             asset: 0,
             cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
         };
@@ -614,15 +764,15 @@ mod tests {
 
     #[rstest]
     fn test_exchange_action_serialization() {
-        let order = HyperliquidExecPlaceOrderRequest {
+        let order = HyperliquidExchangePlaceOrderRequest {
             asset: 0,
             is_buy: true,
             price: Decimal::new(50000, 0),
             size: Decimal::new(1, 0),
             reduce_only: false,
-            kind: HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Gtc,
+            kind: HyperliquidExchangeOrderKind::Limit {
+                limit: HyperliquidExchangeLimitParams {
+                    tif: HyperliquidExchangeTif::Gtc,
                 },
             },
             cloid: None,
@@ -677,7 +827,7 @@ mod tests {
 
     #[rstest]
     fn test_cancel_by_cloid_serialization() {
-        let cancel_request = HyperliquidExecCancelByCloidRequest {
+        let cancel_request = HyperliquidExchangeCancelByCloidRequest {
             asset: 0,
             cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
         };
@@ -690,17 +840,17 @@ mod tests {
 
     #[rstest]
     fn test_modify_serialization() {
-        let modify_request = HyperliquidExecModifyOrderRequest {
+        let modify_request = HyperliquidExchangeModifyOrderRequest {
             oid: 12345.into(),
-            order: HyperliquidExecPlaceOrderRequest {
+            order: HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: Decimal::new(51000, 0),
                 size: Decimal::new(2, 0),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: None,

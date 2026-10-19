@@ -15,44 +15,44 @@
 
 //! Betfair stream client error types.
 
-use std::fmt::Display;
-
 /// Represents stream client errors for the Betfair adapter.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum BetfairStreamError {
     /// Failed to establish a connection.
+    #[error("Connection failed: {0}")]
     ConnectionFailed(String),
     /// Stream authentication failed.
+    #[error("Authentication failed: {0}")]
     AuthenticationFailed(String),
     /// Stream protocol error (unexpected message format).
+    #[error("Protocol error: {0}")]
     ProtocolError(String),
     /// JSON serialization/deserialization error.
+    #[error("JSON error: {0}")]
     JsonError(String),
     /// Connection or read timeout.
+    #[error("Timeout: {0}")]
     Timeout(String),
     /// Connection was lost.
+    #[error("Disconnected: {0}")]
     Disconnected(String),
 }
-
-impl Display for BetfairStreamError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ConnectionFailed(msg) => write!(f, "Connection failed: {msg}"),
-            Self::AuthenticationFailed(msg) => write!(f, "Authentication failed: {msg}"),
-            Self::ProtocolError(msg) => write!(f, "Protocol error: {msg}"),
-            Self::JsonError(msg) => write!(f, "JSON error: {msg}"),
-            Self::Timeout(msg) => write!(f, "Timeout: {msg}"),
-            Self::Disconnected(msg) => write!(f, "Disconnected: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for BetfairStreamError {}
 
 impl From<serde_json::Error> for BetfairStreamError {
     fn from(error: serde_json::Error) -> Self {
         Self::JsonError(error.to_string())
     }
+}
+
+/// Determines if a failed book recovery attempt should retry within its budget.
+///
+/// A full writer queue and a missed snapshot deadline are transient. A closed client, a missing
+/// subscription, and authentication or serialization failures do not clear on their own.
+pub(crate) fn should_retry_stream_error(error: &BetfairStreamError) -> bool {
+    matches!(
+        error,
+        BetfairStreamError::ConnectionFailed(_) | BetfairStreamError::Timeout(_)
+    )
 }
 
 #[cfg(test)]
@@ -88,6 +88,17 @@ mod tests {
     )]
     fn test_display(#[case] error: BetfairStreamError, #[case] expected: &str) {
         assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::queue_full(BetfairStreamError::ConnectionFailed("full".to_string()), true)]
+    #[case::timeout(BetfairStreamError::Timeout("snapshot".to_string()), true)]
+    #[case::closed(BetfairStreamError::Disconnected("closed".to_string()), false)]
+    #[case::auth(BetfairStreamError::AuthenticationFailed("token".to_string()), false)]
+    #[case::protocol(BetfairStreamError::ProtocolError("no subscription".to_string()), false)]
+    #[case::json(BetfairStreamError::JsonError("encode".to_string()), false)]
+    fn test_should_retry_stream_error(#[case] error: BetfairStreamError, #[case] expected: bool) {
+        assert_eq!(should_retry_stream_error(&error), expected);
     }
 
     #[rstest]

@@ -15,7 +15,7 @@
 
 //! Wire-format types for the Kraken WebSocket v2 `level3` channel.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -67,7 +67,7 @@ pub struct KrakenL3Order {
     /// Remaining quantity of the order; preserves the exact JSON string for checksum computation.
     pub order_qty: RawDecimal,
     /// Timestamp when the order was placed or last updated.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 /// Full order book snapshot from the `level3` channel.
@@ -82,7 +82,7 @@ pub struct KrakenL3Snapshot {
     /// CRC32 checksum of the top-10 aggregated price levels.
     pub checksum: u32,
     /// Timestamp of the snapshot.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 /// Event type for an individual order in a `level3` update.
@@ -112,7 +112,7 @@ pub struct KrakenL3OrderEvent {
     #[serde(default)]
     pub order_qty: RawDecimal,
     /// Timestamp of the event.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 /// Incremental update data from the `level3` channel.
@@ -127,7 +127,7 @@ pub struct KrakenL3UpdateData {
     /// CRC32 checksum of the top-10 aggregated price levels after applying this update.
     pub checksum: u32,
     /// Timestamp of the update.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 /// Typed output from the L3 WebSocket handler.

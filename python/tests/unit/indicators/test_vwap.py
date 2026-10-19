@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test vwap behavior.
+"""
 
 import pytest
 
@@ -20,6 +23,9 @@ from tests.stubs import TestDataProviderPyo3
 
 
 def test_handle_bar_uses_typical_price() -> None:
+    """
+    Test handle bar uses typical price.
+    """
     # Arrange
     indicator = VolumeWeightedAveragePrice()
     bar = TestDataProviderPyo3.bar_5decimal()

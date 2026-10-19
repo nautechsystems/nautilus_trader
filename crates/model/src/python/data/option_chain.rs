@@ -30,11 +30,7 @@ use crate::{
 };
 
 /// Python wrapper for `StrikeRange` (complex enum).
-#[pyclass(
-    name = "StrikeRange",
-    module = "nautilus_trader.core.nautilus_pyo3.model",
-    from_py_object
-)]
+#[pyclass(name = "StrikeRange", module = "nautilus_trader.model", from_py_object)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 #[derive(Clone, Debug)]
 pub struct PyStrikeRange {
@@ -237,53 +233,6 @@ impl OptionGreeks {
 
     fn __str__(&self) -> String {
         format!("{self}")
-    }
-}
-
-impl OptionGreeks {
-    /// Creates an `OptionGreeks` from a Python object.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the Python object is missing required attributes.
-    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let instrument_id = obj.getattr("instrument_id")?.extract::<InstrumentId>()?;
-        let delta = obj.getattr("delta")?.extract::<f64>()?;
-        let gamma = obj.getattr("gamma")?.extract::<f64>()?;
-        let vega = obj.getattr("vega")?.extract::<f64>()?;
-        let theta = obj.getattr("theta")?.extract::<f64>()?;
-        let rho = obj.getattr("rho")?.extract::<f64>()?;
-        let mark_iv = obj.getattr("mark_iv")?.extract::<Option<f64>>()?;
-        let bid_iv = obj.getattr("bid_iv")?.extract::<Option<f64>>()?;
-        let ask_iv = obj.getattr("ask_iv")?.extract::<Option<f64>>()?;
-        let underlying_price = obj.getattr("underlying_price")?.extract::<Option<f64>>()?;
-        let open_interest = obj.getattr("open_interest")?.extract::<Option<f64>>()?;
-        let ts_event = obj.getattr("ts_event")?.extract::<u64>()?;
-        let ts_init = obj.getattr("ts_init")?.extract::<u64>()?;
-        let convention = obj
-            .getattr("convention")
-            .ok()
-            .and_then(|v| v.extract::<GreeksConvention>().ok())
-            .unwrap_or_default();
-
-        Ok(Self {
-            instrument_id,
-            convention,
-            greeks: OptionGreekValues {
-                delta,
-                gamma,
-                vega,
-                theta,
-                rho,
-            },
-            mark_iv,
-            bid_iv,
-            ask_iv,
-            underlying_price,
-            open_interest,
-            ts_event: UnixNanos::from(ts_event),
-            ts_init: UnixNanos::from(ts_init),
-        })
     }
 }
 

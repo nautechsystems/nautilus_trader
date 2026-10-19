@@ -30,7 +30,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 
 use crate::{
     error::SendError,
-    transport::{BoxedWsTransport, Message},
+    transport::{BoxedWsTransport, CloseFrame, Message},
 };
 
 /// Sink half of the active WebSocket transport.
@@ -47,13 +47,10 @@ pub type MessageReader = SplitStream<BoxedWsTransport>;
 
 /// Function type for handling WebSocket messages.
 ///
-/// When provided, the client will spawn an internal task to read messages and pass them
-/// to this handler. This enables automatic reconnection where the client can replace the
-/// reader internally.
-///
-/// When `None`, the client returns a `MessageReader` stream (via `connect_stream`) that
-/// the caller owns and reads from directly. This disables automatic reconnection because
-/// the reader cannot be replaced - the caller must manually reconnect.
+/// Handler-mode clients spawn an internal task to read messages and pass them to this handler.
+/// This enables automatic reconnection because the client can replace the reader internally.
+/// [`WebSocketClient::stream_builder`](super::WebSocketClient::stream_builder) returns a
+/// [`MessageReader`] instead.
 pub type MessageHandler = Arc<dyn Fn(Message) + Send + Sync>;
 
 /// Function type for handling WebSocket messages with connection ownership.
@@ -65,21 +62,27 @@ pub type EpochMessageHandler = Arc<dyn Fn(u64, Message) + Send + Sync>;
 /// Function type for handling WebSocket ping messages.
 pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 
+/// Function type for handling WebSocket ping messages with connection ownership.
+pub type EpochPingHandler = Arc<dyn Fn(u64, Vec<u8>) + Send + Sync>;
+
+/// Handles a peer close frame and decides whether automatic reconnection continues.
+///
+/// Returns `true` to use the client's reconnect policy, or `false` to disconnect without retrying.
+/// The callback runs synchronously on the reader task before it ends. Close frames are delivered
+/// only to this callback, not to the message handler.
+pub type CloseHandler = Arc<dyn Fn(Option<CloseFrame>) -> bool + Send + Sync>;
+
 /// Creates a channel-based message handler.
 ///
-/// Returns a tuple containing the message handler and a receiver for messages.
-///
-/// During the migration to the [`crate::transport`] abstraction the receiver still
-/// yields `tokio_tungstenite::tungstenite::Message` so the 18 adapter crates keep
-/// compiling unchanged. The neutral [`Message`] is converted at the channel
-/// boundary; phase 3 of the migration switches both ends to the neutral type and
-/// removes this shim.
+/// The handler accepts neutral [`Message`] values. The receiver yields
+/// `tokio_tungstenite::tungstenite::Message` values for adapter compatibility.
 #[must_use]
 pub fn channel_message_handler() -> (
     MessageHandler,
     tokio::sync::mpsc::UnboundedReceiver<tokio_tungstenite::tungstenite::Message>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
     let handler: MessageHandler = Arc::new(move |msg: Message| {
         match tokio_tungstenite::tungstenite::Message::try_from(msg) {
             Ok(legacy) => {
@@ -90,6 +93,7 @@ pub fn channel_message_handler() -> (
             Err(e) => log::debug!("Dropping message that failed legacy conversion: {e}"),
         }
     });
+
     (handler, rx)
 }
 
@@ -102,6 +106,7 @@ pub fn channel_epoch_message_handler() -> (
     tokio::sync::mpsc::UnboundedReceiver<(u64, tokio_tungstenite::tungstenite::Message)>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
     let handler: EpochMessageHandler =
         Arc::new(
             move |epoch, msg: Message| match tokio_tungstenite::tungstenite::Message::try_from(msg)
@@ -114,20 +119,28 @@ pub fn channel_epoch_message_handler() -> (
                 Err(e) => log::debug!("Dropping message that failed legacy conversion: {e}"),
             },
         );
+
     (handler, rx)
 }
 
-/// Represents a command for the writer task.
+/// A command processed by the WebSocket writer task.
 pub(crate) enum WriterCommand {
-    /// Update the writer reference with a new one after reconnection.
+    /// Replaces the writer after reconnection.
     Update(MessageWriter, tokio::sync::oneshot::Sender<u64>),
-    /// Send message to the server.
+    /// Sends a message to the server.
     Send(Message),
-    /// Send once if the active connection still owns the message.
+    /// Sends a connection keepalive. Never replayed on a replacement connection.
+    Heartbeat(Message),
+    /// Sends once if the active connection still owns the message.
     SendOnConnection {
         message: Message,
         connection_epoch: u64,
         response_tx: tokio::sync::oneshot::Sender<Result<(), SendError>>,
+    },
+    /// Sends a pong if the active connection still owns the ping that caused it.
+    SendPongOnConnection {
+        data: Vec<u8>,
+        connection_epoch: u64,
     },
 }
 
@@ -136,8 +149,12 @@ impl Debug for WriterCommand {
         match self {
             Self::Update(_, _) => f.debug_tuple("Update").field(&"<writer>").finish(),
             Self::Send(msg) => f.debug_tuple("Send").field(msg).finish(),
+            Self::Heartbeat(msg) => f.debug_tuple("Heartbeat").field(msg).finish(),
             Self::SendOnConnection { message, .. } => {
                 f.debug_tuple("SendOnConnection").field(message).finish()
+            }
+            Self::SendPongOnConnection { data, .. } => {
+                f.debug_tuple("SendPongOnConnection").field(data).finish()
             }
         }
     }
@@ -185,6 +202,7 @@ mod tests {
 
         let (connection_epoch, received) = rx.try_recv().expect("text should arrive");
         assert_eq!(connection_epoch, 7);
+
         match received {
             TgMessage::Text(text) => assert_eq!(text.as_str(), "hello"),
             other => panic!("expected text, was {other:?}"),

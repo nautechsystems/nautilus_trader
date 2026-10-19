@@ -1,11 +1,12 @@
 """
 Render the Bybit order book imbalance tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
-    NAUTILUS_DATA_DIR=tests/test_data/local \
-        python3 docs/tutorials/assets/backtest_orderbook_bybit/render_panels.py
+    make sync
+    NAUTILUS_DATA_DIR=test_data/local \
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/backtest_orderbook_bybit/render_panels.py
 
 Replays the same Bybit ob500 XRPUSDT 2024-12-01 deltas as the tutorial, runs
 the shipped ``OrderBookImbalance`` strategy alongside a sampling actor that
@@ -19,33 +20,44 @@ from __future__ import annotations
 import os
 from decimal import Decimal
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from nautilus_trader.adapters.bybit.loaders import BybitOrderBookDeltaDataLoader
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
-from nautilus_trader.backtest.config import BacktestEngineConfig
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.common.config import ActorConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.currencies import XRP
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import LogLevel
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.config import DataActorConfig
+from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
+from nautilus_trader.model import CryptoPerpetual
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
+
+
+TUTORIAL_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(TUTORIAL_DIR))
+
+from orderbook_data import deltas_from_frame
+from orderbook_data import load_bybit_order_book_deltas
+from orderbook_imbalance import OrderBookImbalance
+from orderbook_imbalance import OrderBookImbalanceConfig
 
 
 OUT = Path(__file__).resolve().parent
@@ -61,12 +73,22 @@ NEUTRAL = COLORS["neutral"]
 GRID = COLORS["grid"]
 
 
-class TopBookSamplerConfig(ActorConfig, frozen=True):
-    instrument_id: InstrumentId
-    sample_every_secs: int = 1
+class TopBookSamplerConfig(DataActorConfig):
+    def __init__(
+        self,
+        *,
+        instrument_id: InstrumentId,
+        book_type: str = "L2_MBP",
+        sample_every_secs: int = 1,
+        **_kwargs: object,
+    ) -> None:
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.book_type = book_type
+        self.sample_every_secs = sample_every_secs
 
 
-class TopBookSampler(Actor):
+class TopBookSampler(DataActor):
     def __init__(self, config: TopBookSamplerConfig) -> None:
         super().__init__(config)
         self.samples: list[dict] = []
@@ -74,9 +96,13 @@ class TopBookSampler(Actor):
         self._interval_ns = config.sample_every_secs * 1_000_000_000
 
     def on_start(self) -> None:
-        self.subscribe_order_book_deltas(self.config.instrument_id, BookType.L2_MBP)
+        self.subscribe_book_deltas(
+            self.config.instrument_id,
+            BookType.from_str(self.config.book_type),
+            managed=True,
+        )
 
-    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+    def on_book_deltas(self, deltas: OrderBookDeltas) -> None:
         ts = deltas.ts_event
         if ts - self._last_sample_ns < self._interval_ns:
             return
@@ -118,18 +144,30 @@ def apply_layout(fig: go.Figure, title: str, height: int = 480) -> None:
     fig.update_yaxes(gridcolor=GRID, zeroline=False)
 
 
-def run_backtest(nrows: int = 1_000_000):
+def run_backtest(nrows: int = 1_000_000) -> object:
     update_path = DATA_DIR / "2024-12-01_XRPUSDT_ob500.data.zip"
-    df_raw = BybitOrderBookDeltaDataLoader.load(update_path, nrows=nrows)
+    df_raw = load_bybit_order_book_deltas(update_path, nrows=nrows)
 
-    XRPUSDT_BYBIT = TestInstrumentProvider.xrpusdt_linear_bybit()
-    wrangler = OrderBookDeltaDataWrangler(XRPUSDT_BYBIT)
-    deltas = wrangler.process(df_raw)
+    XRPUSDT_BYBIT = CryptoPerpetual(
+        instrument_id=InstrumentId(Symbol("XRPUSDT-LINEAR"), Venue("BYBIT")),
+        raw_symbol=Symbol("XRPUSDT"),
+        base_currency=Currency.from_str("XRP"),
+        quote_currency=Currency.from_str("USDT"),
+        settlement_currency=Currency.from_str("USDT"),
+        is_inverse=False,
+        price_precision=4,
+        size_precision=0,
+        price_increment=Price(0.0001, precision=4),
+        size_increment=Quantity(1, precision=0),
+        ts_event=0,
+        ts_init=0,
+    )
+    deltas = deltas_from_frame(df_raw, XRPUSDT_BYBIT)
     deltas.sort(key=lambda x: x.ts_init)
 
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
-        logging=LoggingConfig(log_level="ERROR"),
+        trader_id=TraderId.from_str("BACKTESTER-001"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     )
     engine = BacktestEngine(config=config)
 
@@ -139,8 +177,12 @@ def run_backtest(nrows: int = 1_000_000):
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         base_currency=None,
-        starting_balances=[Money(200_000, XRP), Money(100_000, USDT)],
+        starting_balances=[Money.from_str("200000 XRP"), Money.from_str("100000 USDT")],
         book_type=BookType.L2_MBP,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal("0.0002"),
+            taker_rate=Decimal("0.00055"),
+        ),
     )
     engine.add_instrument(XRPUSDT_BYBIT)
     engine.add_data(deltas)
@@ -152,9 +194,9 @@ def run_backtest(nrows: int = 1_000_000):
 
     strategy = OrderBookImbalance(
         OrderBookImbalanceConfig(
-            instrument_id=XRPUSDT_BYBIT.id,
+            instrument_id=str(XRPUSDT_BYBIT.id),
             book_type="L2_MBP",
-            max_trade_size=Decimal("1.000"),
+            max_trade_size="1.000",
             min_seconds_between_triggers=1.0,
         ),
     )
@@ -162,7 +204,7 @@ def run_backtest(nrows: int = 1_000_000):
     engine.run()
 
     samples_df = pd.DataFrame(sampler.samples)
-    fills = engine.trader.generate_fills_report()
+    fills = engine.generate_fills_report()
 
     if not samples_df.empty:
         median_mid = (samples_df["bid"].median() + samples_df["ask"].median()) / 2.0

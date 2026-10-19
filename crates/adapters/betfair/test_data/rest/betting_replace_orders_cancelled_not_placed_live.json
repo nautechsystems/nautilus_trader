@@ -1,0 +1,38 @@
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "customerRef": "f9dea75b785a4a0092b92840f32f3841",
+    "status": "FAILURE",
+    "errorCode": "BET_ACTION_ERROR",
+    "marketId": "1.259300416",
+    "instructionReports": [
+      {
+        "status": "FAILURE",
+        "errorCode": "CANCELLED_NOT_PLACED",
+        "cancelInstructionReport": {
+          "status": "SUCCESS",
+          "instruction": {
+            "betId": "439198201832"
+          },
+          "sizeCancelled": 5.0,
+          "cancelledDate": "2026-08-20T22:50:18.000Z"
+        },
+        "placeInstructionReport": {
+          "status": "FAILURE",
+          "errorCode": "INVALID_ODDS",
+          "instruction": {
+            "selectionId": 1096,
+            "limitOrder": {
+              "size": 5.0,
+              "price": 2.57,
+              "persistenceType": "LAPSE"
+            },
+            "orderType": "LIMIT",
+            "side": "BACK"
+          }
+        }
+      }
+    ]
+  },
+  "id": 1
+}

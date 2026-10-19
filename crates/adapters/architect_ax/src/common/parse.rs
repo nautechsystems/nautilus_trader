@@ -115,7 +115,7 @@ const TRADE_ID_DOMAIN: &[u8] = b"nautilus-architect-ax/trade-id/v1";
 /// over the WebSocket.
 ///
 /// Parity relies on both transports reporting the aggressor side. `GET /trades` always does, and
-/// no sandbox WebSocket trade has omitted it, but `AxMdTrade::d` is modelled as optional and an
+/// no sandbox WebSocket trade has omitted it, but `AxMdTrade::d` is modeled as optional and an
 /// omitted side resolves to [`AggressorSide::NoAggressor`], which would not match the REST
 /// identity for that trade.
 ///
@@ -137,8 +137,8 @@ pub fn create_architect_trade_id(
 
     let side = match aggressor_side {
         AggressorSide::NoAggressor => b'N',
-        AggressorSide::Buyer => b'B',
-        AggressorSide::Seller => b'S',
+        AggressorSide::Buy => b'B',
+        AggressorSide::Sell => b'S',
     };
 
     let mut hasher = blake3::Hasher::new();
@@ -188,7 +188,7 @@ pub fn map_bar_spec_to_candle_width(spec: &BarSpecification) -> anyhow::Result<A
 /// - The quantity represents a fractional number of contracts.
 /// - The quantity is zero.
 pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
-    let raw = quantity.raw;
+    let raw = quantity.raw();
     let scale = 10_u64.pow(FIXED_PRECISION as u32) as QuantityRaw;
 
     // AX requires whole contract quantities
@@ -248,7 +248,7 @@ mod tests {
             UnixNanos::from(CAPTURED_TS_EVENT),
             Price::from_decimal_dp(dec!(1.1719), 4).unwrap(),
             Quantity::from_decimal_dp(dec!(400), 0).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap()
     }
@@ -277,7 +277,7 @@ mod tests {
             UnixNanos::from(CAPTURED_TS_EVENT),
             Price::from_decimal_dp(dec!(1.17190000), 4).unwrap(),
             Quantity::from_decimal_dp(dec!(400.00), 0).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap();
 
@@ -292,7 +292,7 @@ mod tests {
             UnixNanos::from(CAPTURED_TS_EVENT),
             Price::from_decimal_dp(dec!(1.1719), 6).unwrap(),
             Quantity::from_decimal_dp(dec!(400), 2).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap();
 
@@ -300,9 +300,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(dec!(1.1720), dec!(400), AggressorSide::Buyer)]
-    #[case(dec!(1.1719), dec!(100), AggressorSide::Buyer)]
-    #[case(dec!(1.1719), dec!(400), AggressorSide::Seller)]
+    #[case(dec!(1.1720), dec!(400), AggressorSide::Buy)]
+    #[case(dec!(1.1719), dec!(100), AggressorSide::Buy)]
+    #[case(dec!(1.1719), dec!(400), AggressorSide::Sell)]
     #[case(dec!(1.1719), dec!(400), AggressorSide::NoAggressor)]
     fn test_create_architect_trade_id_separates_prints_within_one_timestamp(
         #[case] price: Decimal,
@@ -327,7 +327,7 @@ mod tests {
             UnixNanos::from(u64::MAX),
             Price::from_decimal_dp(dec!(1.1719), 4).unwrap(),
             Quantity::from_decimal_dp(dec!(400), 0).unwrap(),
-            AggressorSide::Buyer,
+            AggressorSide::Buy,
         )
         .unwrap_err();
 
@@ -387,11 +387,11 @@ mod tests {
 
         let recovered = cid_to_client_order_id(cid_a);
         assert!(
-            recovered.inner().as_str().starts_with("CID-"),
+            recovered.inner().starts_with("CID-"),
             "recovered id should have CID prefix: {recovered}",
         );
         assert!(
-            !recovered.inner().as_str().is_empty(),
+            !recovered.inner().is_empty(),
             "recovered id should not be empty",
         );
     }

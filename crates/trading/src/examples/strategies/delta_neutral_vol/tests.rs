@@ -18,7 +18,8 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::{Clock, VirtualClock},
+    timer::TimeEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -28,11 +29,13 @@ use nautilus_model::{
         OrderDenied, OrderExpired, OrderRejected,
         order::spec::{OrderDeniedSpec, OrderExpiredSpec, OrderRejectedSpec},
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
-    types::{Price, Quantity},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId},
+    instruments::{CryptoPerpetual, InstrumentAny},
+    types::{Currency, Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
 use rstest::rstest;
+use ustr::Ustr;
 
 use super::{DeltaNeutralVol, DeltaNeutralVolConfig};
 use crate::strategy::Strategy;
@@ -84,9 +87,29 @@ fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
     )
 }
 
+/// The configured hedge instrument, sized in whole contracts (`size_precision` 0), so a
+/// fractional delta cannot be expressed as a quantity.
+fn hedge_swap_integer_sized() -> CryptoPerpetual {
+    CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("BTC-USD-SWAP.OKX"))
+        .raw_symbol(Symbol::from("BTC-USD-SWAP"))
+        .base_currency(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(0)
+        .price_increment(Price::from("0.1"))
+        .size_increment(Quantity::from(1))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
+}
+
 fn register_strategy(strategy: &mut DeltaNeutralVol) {
     let trader_id = TraderId::from("TESTER-001");
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
         clock.clone(),
@@ -490,6 +513,33 @@ fn test_on_option_greeks_initializes_both_legs_before_rehedging() {
 
     strategy.on_option_greeks(&put_greeks).unwrap();
     assert!(strategy.greeks_initialized());
+}
+
+#[rstest]
+fn test_rehedge_skips_quantity_rounded_to_zero() {
+    let mut strategy = create_initialized_strategy();
+    strategy.config.rehedge_delta_threshold = 0.1;
+    strategy.hedge_position = 0.4;
+    register_strategy(&mut strategy);
+    strategy
+        .core
+        .cache_rc()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(hedge_swap_integer_sized()))
+        .unwrap();
+
+    assert!(strategy.should_rehedge());
+
+    let event = TimeEvent::new(
+        Ustr::from("delta_rehedge"),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    DataActor::on_time_event(&mut strategy, &event).unwrap();
+
+    // The latch stays clear, so a later rehedge at an expressible size is not blocked.
+    assert!(!strategy.hedge_pending);
 }
 
 #[rstest]

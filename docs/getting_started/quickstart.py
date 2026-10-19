@@ -8,8 +8,12 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.12+
-# - `pip install nautilus_trader`
+# - Python 3.13-3.14
+# - NautilusTrader 2.x installed (`pip install -U --pre nautilus_trader`). The `--pre`
+#   flag is required while 2.x ships as `2.0.0rcN`; without it pip installs the 1.x
+#   line, whose Python API differs and cannot run this page.
+# - NumPy and pandas (`pip install numpy pandas`). The wheel declares no runtime
+#   dependencies, so it does not pull them in.
 
 # %% [markdown]
 # ## Write a strategy
@@ -17,56 +21,72 @@
 # A strategy extends the `Strategy` base class and overrides event handlers to
 # react to market data. This one trades an EMA crossover: buy when a fast
 # exponential moving average crosses above a slow one, sell when it crosses below.
+#
+# Its parameters live on a `StrategyConfig` subclass. Declare your own fields as
+# keyword-only arguments and absorb the rest in `**_kwargs`: the base config
+# reads its own fields (`strategy_id`, `oms_type`, and so on) from the same call
+# and ignores the ones it does not recognize.
 
 # %%
 from decimal import Decimal
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.indicators import ExponentialMovingAverage
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderSide
+from nautilus_trader.trading import Strategy
 
 
-class EMACrossConfig(StrategyConfig, frozen=True):
-    instrument_id: InstrumentId
-    bar_type: BarType
-    trade_size: Decimal
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
+class EMACrossConfig(StrategyConfig):
+    def __init__(
+        self,
+        *,
+        instrument_id: InstrumentId,
+        bar_type: BarType,
+        trade_size: Decimal,
+        fast_ema_period: int = 10,
+        slow_ema_period: int = 20,
+        **_kwargs: object,
+    ) -> None:
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.bar_type = bar_type
+        self.trade_size = trade_size
+        self.fast_ema_period = fast_ema_period
+        self.slow_ema_period = slow_ema_period
 
 
 class EMACross(Strategy):
-    def __init__(self, config: EMACrossConfig):
+    def __init__(self, config: EMACrossConfig) -> None:
         super().__init__(config)
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
-    def on_start(self):
+    def on_start(self) -> None:
         self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
         self.subscribe_bars(self.config.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, _bar: Bar) -> None:
         if not self.indicators_initialized():
             return
 
         if self.fast_ema.value >= self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
+            if self.portfolio.is_net_flat(self.config.instrument_id):
                 self.buy()
             elif self.portfolio.is_net_short(self.config.instrument_id):
                 self.close_all_positions(self.config.instrument_id)
                 self.buy()
         elif self.fast_ema.value < self.slow_ema.value:
-            if self.portfolio.is_flat(self.config.instrument_id):
+            if self.portfolio.is_net_flat(self.config.instrument_id):
                 self.sell()
             elif self.portfolio.is_net_long(self.config.instrument_id):
                 self.close_all_positions(self.config.instrument_id)
                 self.sell()
 
-    def buy(self):
+    def buy(self) -> None:
         instrument = self.cache.instrument(self.config.instrument_id)
         order = self.order_factory.market(
             self.config.instrument_id,
@@ -75,7 +95,7 @@ class EMACross(Strategy):
         )
         self.submit_order(order)
 
-    def sell(self):
+    def sell(self) -> None:
         instrument = self.cache.instrument(self.config.instrument_id)
         order = self.order_factory.market(
             self.config.instrument_id,
@@ -84,7 +104,7 @@ class EMACross(Strategy):
         )
         self.submit_order(order)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         self.close_all_positions(self.config.instrument_id)
 
 
@@ -104,19 +124,40 @@ class EMACross(Strategy):
 import numpy as np
 import pandas as pd
 
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.config import LoggerConfig
+from nautilus_trader.execution import MakerTakerFeeModel
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import CurrencyPair
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import Venue
+
 
 # Create a EUR/USD instrument on the SIM venue
-EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+EUR = Currency.from_str("EUR")
+USD = Currency.from_str("USD")
+EURUSD = CurrencyPair(
+    instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+    raw_symbol=Symbol("EUR/USD"),
+    base_currency=EUR,
+    quote_currency=USD,
+    price_precision=5,
+    size_precision=0,
+    price_increment=Price.from_str("0.00001"),
+    size_increment=Quantity.from_int(1),
+    ts_event=0,
+    ts_init=0,
+    lot_size=Quantity.from_int(1_000),
+    margin_init=Decimal("0.03"),
+    margin_maint=Decimal("0.03"),
+)
 
 # Generate synthetic 1-minute bars (random walk around 1.10)
 rng = np.random.default_rng(42)
@@ -136,12 +177,23 @@ bars_df["high"] = bars_df[["open", "high", "close"]].max(axis=1)
 bars_df["low"] = bars_df[["open", "low", "close"]].min(axis=1)
 
 bar_type = BarType.from_str("EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL")
-bars = BarDataWrangler(bar_type, EURUSD).process(bars_df)
+bars = [
+    Bar(
+        bar_type=bar_type,
+        open=Price(row.open, precision=EURUSD.price_precision),
+        high=Price(row.high, precision=EURUSD.price_precision),
+        low=Price(row.low, precision=EURUSD.price_precision),
+        close=Price(row.close, precision=EURUSD.price_precision),
+        volume=Quantity.from_int(1_000_000),
+        ts_event=int(timestamp.value),
+        ts_init=int(timestamp.value),
+    )
+    for timestamp, row in bars_df.iterrows()
+]
 
 # %% [markdown]
-# `BarDataWrangler` converts a pandas DataFrame with OHLCV columns into Nautilus
-# `Bar` objects. The bar type string encodes the instrument, aggregation period,
-# price source, and data origin.
+# Each row becomes a `Bar` with the instrument's price precision. The bar type
+# string encodes the instrument, aggregation period, price source, and data origin.
 
 # %% [markdown]
 # ## Configure and run the engine
@@ -153,7 +205,7 @@ bars = BarDataWrangler(bar_type, EURUSD).process(bars_df)
 # %%
 engine = BacktestEngine(
     config=BacktestEngineConfig(
-        logging=LoggingConfig(log_level="ERROR"),
+        logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     ),
 )
 
@@ -166,6 +218,10 @@ engine.add_venue(
     starting_balances=[Money(1_000_000, USD)],
     base_currency=USD,
     default_leverage=Decimal(1),
+    fee_model=MakerTakerFeeModel(
+        maker_rate=Decimal(0),
+        taker_rate=Decimal(0),
+    ),
 )
 
 # Add instrument, data, and strategy
@@ -197,13 +253,13 @@ engine.run()
 # trade with its realized PnL, and the order fills report shows every execution.
 
 # %%
-engine.trader.generate_account_report(SIM)
+engine.generate_account_report(venue=SIM)
 
 # %%
-engine.trader.generate_positions_report()
+engine.generate_positions_report()
 
 # %%
-engine.trader.generate_order_fills_report()
+engine.generate_order_fills_report()
 
 # %% [markdown]
 # ## Next steps

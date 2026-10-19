@@ -133,7 +133,7 @@ impl TickMap {
         (fee_growth_inside_0, fee_growth_inside_1)
     }
 
-    /// Internal helper to update tick data and return flip status.
+    /// Updates tick data and returns its flip status.
     fn update_tick_data(
         &mut self,
         tick: i32,
@@ -375,6 +375,44 @@ mod tests {
             tick_map.get_fee_growth_inside(-2, 2, 0, fee_growth_global_0, fee_growth_global_1);
         assert_eq!(fee_growth_inside_0, U256::from(9));
         assert_eq!(fee_growth_inside_1, U256::from(11));
+    }
+
+    #[rstest]
+    #[case::current_below_range(-4, (10, 12), (4, 1), (6, 11))]
+    #[case::current_at_upper_tick(2, (2, 3), (10, 12), (8, 9))]
+    fn test_get_fee_growth_inside_outside_range(
+        mut tick_map: TickMap,
+        #[case] current_tick: i32,
+        #[case] lower_outside: (u32, u32),
+        #[case] upper_outside: (u32, u32),
+        #[case] expected_inside: (u32, u32),
+    ) {
+        tick_map.set_tick(PoolTick::new(
+            -2,
+            0,
+            0,
+            U256::from(lower_outside.0),
+            U256::from(lower_outside.1),
+            true,
+            0,
+        ));
+        tick_map.set_tick(PoolTick::new(
+            2,
+            0,
+            0,
+            U256::from(upper_outside.0),
+            U256::from(upper_outside.1),
+            true,
+            0,
+        ));
+
+        let fee_growth_inside =
+            tick_map.get_fee_growth_inside(-2, 2, current_tick, U256::from(15), U256::from(15));
+
+        assert_eq!(
+            fee_growth_inside,
+            (U256::from(expected_inside.0), U256::from(expected_inside.1))
+        );
     }
 
     #[rstest]

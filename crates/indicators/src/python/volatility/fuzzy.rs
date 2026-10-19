@@ -13,15 +13,49 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
 use crate::{
     indicator::Indicator,
+    python::float_precision,
     volatility::fuzzy::{
         CandleBodySize, CandleDirection, CandleSize, CandleWickSize, FuzzyCandle, FuzzyCandlesticks,
     },
 };
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl CandleBodySize {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl CandleDirection {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl CandleSize {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl CandleWickSize {
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -79,17 +113,19 @@ impl FuzzyCandle {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FuzzyCandlesticks {
-    /// Creates a new `FuzzyCandle` instance.
+    /// Creates a new `FuzzyCandlesticks` instance.
+    ///
+    /// A zero period is accepted.
     #[new]
-    #[must_use]
     pub fn py_new(
         period: usize,
         threshold1: f64,
         threshold2: f64,
         threshold3: f64,
         threshold4: f64,
-    ) -> Self {
-        Self::new(period, threshold1, threshold2, threshold3, threshold4)
+    ) -> PyResult<Self> {
+        Self::new_checked(period, threshold1, threshold2, threshold3, threshold4)
+            .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -165,8 +201,10 @@ impl FuzzyCandlesticks {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

@@ -1,0 +1,61 @@
+{
+  "code": "0",
+  "data": [
+    {
+      "instId": "BTC-USDT-SWAP",
+      "instType": "SWAP",
+      "mgnMode": "cross",
+      "posId": "67890",
+      "posSide": "net",
+      "pos": "0.05",
+      "baseBal": "",
+      "ccy": "BTC",
+      "fee": "0.01",
+      "lever": "10.0",
+      "last": "10000",
+      "markPx": "10000",
+      "liqPx": "9000",
+      "mmr": "0.1",
+      "interest": "0",
+      "tradeId": "111",
+      "notionalUsd": "2500",
+      "avgPx": "10000",
+      "upl": "0",
+      "uplRatio": "0",
+      "uTime": "1622559930237",
+      "margin": "",
+      "mgnRatio": "",
+      "adl": "0",
+      "cTime": "1622559930237",
+      "realizedPnl": "0",
+      "uplLastPx": "0",
+      "uplRatioLastPx": "0",
+      "availPos": "0.05",
+      "bePx": "0",
+      "fundingFee": "0",
+      "idxPx": "0",
+      "liqPenalty": "0",
+      "optVal": "0",
+      "pendingCloseOrdLiabVal": "0",
+      "pnl": "0",
+      "posCcy": "",
+      "quoteBal": "",
+      "quoteBorrowed": "0",
+      "quoteInterest": "0",
+      "spotInUseAmt": "",
+      "spotInUseCcy": "",
+      "usdPx": "10000",
+      "closeOrderAlgo": [
+        {
+          "algoId": "close-frac-algo",
+          "slTriggerPx": "50000",
+          "slTriggerPxType": "last",
+          "tpTriggerPx": "",
+          "tpTriggerPxType": "",
+          "closeFraction": "1"
+        }
+      ]
+    }
+  ],
+  "msg": ""
+}

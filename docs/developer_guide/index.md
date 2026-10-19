@@ -2,7 +2,7 @@
 
 Guidance on developing and extending NautilusTrader, or contributing back to the project.
 
-NautilusTrader uses a **Rust core with Python bindings** architecture:
+NautilusTrader has a **Rust core with Python bindings**:
 
 - **Rust** handles networking, data parsing, order matching, and other performance-critical operations.
 - **Python** provides the user-facing API for strategy development, configuration, and system integration.
@@ -14,7 +14,10 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 
 - [Environment Setup](environment_setup.md)
 - [Design Principles](design_principles.md)
+- [Callback Dispatch Contract](callback_dispatch.md)
+- [Runtime Conformance Contract](runtime_conformance.md)
 - [Coding Standards](coding_standards.md)
+- [Shell](shell.md)
 - [Rust](rust.md)
 - [Python](python.md)
 - [Testing](testing.md)
@@ -22,8 +25,9 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Docs Style](docs.md)
 - [Markdown Style](markdown_style.md)
 - [Release Notes](releases.md)
-- [Release Security Architecture](release_security.md)
+- [Security Architecture](security.md)
 - [Adapters](adapters.md)
+- [Python Adapters](python_adapters.md)
 - [Data Testing Spec](spec_data_testing.md)
 - [Execution Testing Spec](spec_exec_testing.md)
 - [Benchmarking](benchmarking.md)

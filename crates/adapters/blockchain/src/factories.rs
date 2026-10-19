@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
@@ -49,10 +49,7 @@ impl ClientConfig for BlockchainDataClientConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -109,10 +106,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.blockchain",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
 )]
 pub struct BlockchainExecutionClientFactory;
 
@@ -133,9 +127,11 @@ impl Default for BlockchainExecutionClientFactory {
 impl ExecutionClientFactory for BlockchainExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let blockchain_execution_config = config
             .as_any()
@@ -147,7 +143,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             })?;
 
         let core_execution_client = ExecutionClientCore::new(
-            blockchain_execution_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *BLOCKCHAIN_VENUE,
             OmsType::Netting,
@@ -192,11 +188,14 @@ mod tests {
         let chain = Arc::new(chains::ETHEREUM.clone());
         let config = BlockchainDataClientConfig::builder()
             .chain(chain)
-            .http_rpc_url("https://eth-mainnet.example.com".to_string())
+            .http_rpc_url("https://eth-mainnet.example.com".into())
             .build();
 
         assert_eq!(config.chain.name, Blockchain::Ethereum);
-        assert_eq!(config.http_rpc_url, "https://eth-mainnet.example.com");
+        assert_eq!(
+            config.http_rpc_url.expose_secret(),
+            "https://eth-mainnet.example.com",
+        );
     }
 
     #[rstest]

@@ -1,3 +1,21 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+"""
+Test generate docstrings behavior.
+"""
+
 from __future__ import annotations
 
 import importlib.util
@@ -7,7 +25,7 @@ from pathlib import Path
 import pytest
 
 
-def _load_generate_docstrings_module():
+def _load_generate_docstrings_module() -> object:
     module_path = Path(__file__).resolve().parents[2] / "generate_docstrings.py"
     module_name = "generate_docstrings_module"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -34,7 +52,10 @@ generate_docstrings = _load_generate_docstrings_module()
         ('feature = "python",', False),
     ],
 )
-def test_attr_end_re_matches_closing_attribute_lines(line, expected):
+def test_attr_end_re_matches_closing_attribute_lines(line: object, expected: object) -> None:
+    """
+    Test attr end re matches closing attribute lines.
+    """
     # Act
     result = generate_docstrings.ATTR_END_RE.search(line) is not None
 
@@ -42,7 +63,10 @@ def test_attr_end_re_matches_closing_attribute_lines(line, expected):
     assert result is expected
 
 
-def test_parse_pyo3_items_tolerates_attribute_with_trailing_comment():
+def test_parse_pyo3_items_tolerates_attribute_with_trailing_comment() -> None:
+    """
+    Test parse pyo3 items tolerates attribute with trailing comment.
+    """
     # Arrange: the trailing comment must not swallow the `#[pymethods]` marker
     lines = [
         "#[allow(unused_imports)] // Used in template pattern",
@@ -68,7 +92,55 @@ def test_parse_pyo3_items_tolerates_attribute_with_trailing_comment():
     assert items[0]["in_pymethods"] is True
 
 
-def test_parse_pyo3_items_captures_multiline_result_signature():
+def test_parse_pyo3_items_keeps_doc_after_parameter_attribute() -> None:
+    """
+    Test parse pyo3 items keeps the doc of a function after a parameter attribute.
+    """
+    # Arrange: the parameter attribute must not swallow the next function's doc comment
+    lines = [
+        "#[pymethods]",
+        "impl PyCatalog {",
+        "    pub fn query(",
+        "        &mut self,",
+        '        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<',
+        "            '_,",
+        "            PyAny,",
+        "        >,",
+        "    ) -> PyResult<()> {",
+        "        Ok(())",
+        "    }",
+        "}",
+        "",
+        "/// Reads a run.",
+        "#[pyfunction]",
+        "pub fn py_read_run() -> PyResult<()> {",
+        "    Ok(())",
+        "}",
+    ]
+
+    # Act
+    items = generate_docstrings.parse_pyo3_items(lines)
+
+    # Assert
+    assert items == [
+        {
+            "fn_name": "py_read_run",
+            "fn_line": 15,
+            "fn_signature": "pub fn py_read_run() -> PyResult<()> {",
+            "impl_type": None,
+            "is_constructor": False,
+            "in_pymethods": False,
+            "doc_start": 13,
+            "doc_end": 13,
+            "insert_line": 13,
+        },
+    ]
+
+
+def test_parse_pyo3_items_captures_multiline_result_signature() -> None:
+    """
+    Test parse pyo3 items captures multiline result signature.
+    """
     # Arrange
     lines = [
         "#[pymethods]",
@@ -102,7 +174,13 @@ def test_parse_pyo3_items_captures_multiline_result_signature():
         ("fn py_get<T>(&self) -> PyResult<T> where T: Clone {", True),
     ],
 )
-def test_rust_fn_returns_result_detects_return_type_only(signature, expected):
+def test_rust_fn_returns_result_detects_return_type_only(
+    signature: object,
+    expected: object,
+) -> None:
+    """
+    Test rust fn returns result detects return type only.
+    """
     # Act
     result = generate_docstrings.rust_fn_returns_result(signature)
 
@@ -110,7 +188,10 @@ def test_rust_fn_returns_result_detects_return_type_only(signature, expected):
     assert result is expected
 
 
-def test_transform_doc_drops_panics_without_warning(capsys):
+def test_transform_doc_drops_panics_without_warning(capsys: pytest.CaptureFixture[str]) -> None:
+    """
+    Test transform doc drops panics without warning.
+    """
     # Arrange
     doc_lines = [
         "Does work.",
@@ -140,7 +221,12 @@ def test_transform_doc_drops_panics_without_warning(capsys):
     assert "Panics if the runtime is unavailable." not in result
 
 
-def test_transform_doc_drops_errors_for_non_result_without_warning(capsys):
+def test_transform_doc_drops_errors_for_non_result_without_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Test transform doc drops errors for non result without warning.
+    """
     # Arrange
     doc_lines = [
         "Does work.",
@@ -164,7 +250,14 @@ def test_transform_doc_drops_errors_for_non_result_without_warning(capsys):
     assert result == ["Does work."]
 
 
-def test_process_crate_preserves_errors_for_multiline_result_wrapper(tmp_path, monkeypatch, capsys):
+def test_process_crate_preserves_errors_for_multiline_result_wrapper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Test process crate preserves errors for multiline result wrapper.
+    """
     # Arrange
     monkeypatch.setattr(generate_docstrings, "ROOT", tmp_path)
     src_dir = tmp_path / "crates" / "network" / "src"
@@ -190,6 +283,7 @@ impl HttpClient {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
     binding_path = python_dir / "http.rs"
     binding_path.write_text(
@@ -205,6 +299,7 @@ impl HttpClient {
     }
 }
 """.strip(),
+        encoding="utf-8",
     )
 
     # Act
@@ -214,14 +309,43 @@ impl HttpClient {
     # Assert
     assert updates == 1
     assert captured.err == ""
-    updated = binding_path.read_text()
+    updated = binding_path.read_text(encoding="utf-8")
     assert "/// # Errors" in updated
     assert "/// Returns an error when the request fails." in updated
     assert "/// # Panics" not in updated
     assert "/// Panics if the runtime is unavailable." not in updated
 
 
-def test_collect_source_docs_attaches_doc_across_commented_attribute(tmp_path):
+def test_process_crate_only_reports_traversal_when_verbose(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """
+    Test process crate only reports traversal when verbose.
+    """
+    # Act
+    updates = generate_docstrings.process_crate("core", tmp_path)
+    normal_output = capsys.readouterr()
+    verbose_updates = generate_docstrings.process_crate("core", tmp_path, verbose=True)
+    verbose_output = capsys.readouterr()
+
+    # Assert
+    assert updates == 0
+    assert normal_output.out == ""
+    assert normal_output.err == ""
+    assert verbose_updates == 0
+    assert verbose_output.out == (
+        "Processing crate: core\n"
+        "  Collected 0 source doc comments\n"
+        "  No python/ directory, skipping\n"
+    )
+    assert verbose_output.err == ""
+
+
+def test_collect_source_docs_attaches_doc_across_commented_attribute(tmp_path: Path) -> None:
+    """
+    Test collect source docs attaches doc across commented attribute.
+    """
     # Arrange: the struct follows the commented attribute directly, so treating
     # the attribute as multi-line would swallow the struct and lose the doc
     source = """\
@@ -237,7 +361,7 @@ pub struct Foo {}
 )] // trailing comment on closing line
 pub struct Bar {}
 """
-    (tmp_path / "lib.rs").write_text(source)
+    (tmp_path / "lib.rs").write_text(source, encoding="utf-8")
 
     # Act
     docs = generate_docstrings.collect_source_docs(tmp_path)
@@ -245,3 +369,32 @@ pub struct Bar {}
     # Assert
     assert docs[(None, "Foo")] == ["Calculates the thing.", "", "More detail."]
     assert (None, "Bar") not in docs  # No doc comment on Bar
+
+
+def test_collect_source_docs_keeps_doc_after_parameter_attribute(tmp_path: Path) -> None:
+    """
+    Test collect source docs keeps the doc of an item after a parameter attribute.
+    """
+    # Arrange: the parameter attribute must not swallow the rest of the file
+    source = """\
+impl RetryManager {
+    /// Runs the operation.
+    pub fn run(
+        #[builder(start_fn)] operation_name: &str,
+    ) {
+    }
+}
+
+/// Creates the default retry manager.
+pub fn create_default_retry_manager() {}
+"""
+    (tmp_path / "lib.rs").write_text(source, encoding="utf-8")
+
+    # Act
+    docs = generate_docstrings.collect_source_docs(tmp_path)
+
+    # Assert
+    assert docs == {
+        ("RetryManager", "run"): ["Runs the operation."],
+        (None, "create_default_retry_manager"): ["Creates the default retry manager."],
+    }

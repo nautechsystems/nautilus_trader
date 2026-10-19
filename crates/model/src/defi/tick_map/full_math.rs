@@ -33,7 +33,7 @@ impl FullMath {
     ///
     /// # Errors
     ///
-    /// Returns error if `denominator` is zero or the result would overflow 256 bits.
+    /// Returns an error if `denominator` is zero or the result would overflow 256 bits.
     pub fn mul_div(a: U256, b: U256, mut denominator: U256) -> anyhow::Result<U256> {
         // 512-bit multiply [prod1 prod0] = a * b
         // Compute the product mod 2**256 and mod 2**256 - 1
@@ -158,7 +158,7 @@ impl FullMath {
     ///
     /// # Errors
     ///
-    /// Returns error if `denominator` is zero or the rounded result would overflow `U256`.
+    /// Returns an error if `denominator` is zero or the rounded result would overflow `U256`.
     pub fn mul_div_rounding_up(a: U256, b: U256, denominator: U256) -> anyhow::Result<U256> {
         let result = Self::mul_div(a, b, denominator)?;
 
@@ -177,7 +177,7 @@ impl FullMath {
     ///
     /// # Errors
     ///
-    /// Returns error if `b` is zero or if the rounded quotient would overflow `U256`.
+    /// Returns an error if `b` is zero or if the rounded quotient would overflow `U256`.
     pub fn div_rounding_up(a: U256, b: U256) -> anyhow::Result<U256> {
         if b.is_zero() {
             anyhow::bail!("Cannot divide by zero");
@@ -246,7 +246,7 @@ impl FullMath {
     /// Solidity's `SafeCast.toInt256()` checks the value fits in `I256::MAX`, then reinterprets.
     ///
     /// # Panics
-    /// Panics if the value exceeds `I256::MAX` (matching Solidity's require check)
+    /// Panics if the value exceeds `I256::MAX` (matching Solidity's require check).
     #[must_use]
     pub fn truncate_to_i256(value: U256) -> I256 {
         I256::from_raw(value)

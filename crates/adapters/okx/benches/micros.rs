@@ -18,7 +18,7 @@
 //! Decimal / Price / UUID construction, dispatch state churn).
 //!
 //! Use these when a `data.rs` or `exec.rs` bench regresses and you need to
-//! localise where the time went, or when evaluating a structural change
+//! localize where the time went, or when evaluating a structural change
 //! (e.g. swapping the JSON tokenizer) and want to confirm the gain landed in
 //! the layer it was supposed to.
 
@@ -94,6 +94,10 @@ fn bench_parse_trade(c: &mut Criterion) {
     group.finish();
 }
 
+#[allow(
+    clippy::manual_let_else,
+    reason = "the match form is clearer than let-else for unpacking the fixture frame"
+)]
 fn bench_parse_book_deltas(c: &mut Criterion) {
     let instrument = btc_usdt_spot();
     let frame: OKXWsFrame = serde_json::from_str(fixtures::BOOK_UPDATE).unwrap();

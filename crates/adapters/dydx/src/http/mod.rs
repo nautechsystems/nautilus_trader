@@ -46,7 +46,7 @@
 //!
 //! # Official Documentation
 //!
-//! See: <https://docs.dydx.xyz/api_integration-indexer/indexer_api>
+//! See: <https://docs.dydx.xyz/indexer-client/http>
 
 pub mod client;
 pub mod error;

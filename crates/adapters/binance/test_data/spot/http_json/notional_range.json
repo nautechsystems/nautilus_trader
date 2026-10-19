@@ -1,0 +1,30 @@
+{
+  "symbol": "ETHUSDT",
+  "status": "TRADING",
+  "baseAsset": "ETH",
+  "baseAssetPrecision": 8,
+  "quoteAsset": "USDT",
+  "quoteAssetPrecision": 8,
+  "filters": [
+    {
+      "filterType": "PRICE_FILTER",
+      "minPrice": "0.01",
+      "maxPrice": "1000000",
+      "tickSize": "0.01"
+    },
+    {
+      "filterType": "LOT_SIZE",
+      "minQty": "0.0001",
+      "maxQty": "9000",
+      "stepSize": "0.0001"
+    },
+    {
+      "filterType": "NOTIONAL",
+      "minNotional": "23.45678912",
+      "maxNotional": "98.76543219",
+      "applyMinToMarket": false,
+      "applyMaxToMarket": true,
+      "avgPriceMins": 3
+    }
+  ]
+}

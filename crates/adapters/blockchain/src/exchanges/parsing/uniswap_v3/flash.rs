@@ -21,12 +21,12 @@ use crate::{
     events::flash::FlashEvent,
     hypersync::{
         HypersyncLog,
-        helpers::{
+        log::{
             extract_address_from_topic, extract_block_number, extract_log_index,
             extract_transaction_hash, extract_transaction_index, validate_event_signature_hash,
         },
     },
-    rpc::helpers as rpc_helpers,
+    rpc::log as rpc_log,
 };
 
 // Placeholder hash - will be calculated properly later
@@ -109,12 +109,12 @@ pub fn parse_flash_event_hypersync(
 ///
 /// Returns an error if the log parsing fails or if the event data is invalid.
 pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<FlashEvent> {
-    rpc_helpers::validate_event_signature(log, FLASH_EVENT_SIGNATURE_HASH, "Flash")?;
+    rpc_log::validate_event_signature(log, FLASH_EVENT_SIGNATURE_HASH, "Flash")?;
 
-    let sender = rpc_helpers::extract_address_from_topic(log, 1, "sender")?;
-    let recipient = rpc_helpers::extract_address_from_topic(log, 2, "recipient")?;
+    let sender = rpc_log::extract_address_from_topic(log, 1, "sender")?;
+    let recipient = rpc_log::extract_address_from_topic(log, 2, "recipient")?;
 
-    let data_bytes = rpc_helpers::extract_data_bytes(log)?;
+    let data_bytes = rpc_log::extract_data_bytes(log)?;
 
     // Validate if data contains 4 parameters of 32 bytes each
     if data_bytes.len() < 4 * 32 {
@@ -127,15 +127,15 @@ pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Fla
         Err(e) => anyhow::bail!("Failed to decode flash event data: {e}"),
     };
 
-    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_address = rpc_log::extract_address(log)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(FlashEvent::new(
         dex,
         pool_identifier,
-        rpc_helpers::extract_block_number(log)?,
-        rpc_helpers::extract_transaction_hash(log)?,
-        rpc_helpers::extract_transaction_index(log)?,
-        rpc_helpers::extract_log_index(log)?,
+        rpc_log::extract_block_number(log)?,
+        rpc_log::extract_transaction_hash(log)?,
+        rpc_log::extract_transaction_index(log)?,
+        rpc_log::extract_log_index(log)?,
         sender,
         recipient,
         decoded.amount0,
@@ -147,6 +147,8 @@ pub fn parse_flash_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Fla
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use alloy::primitives::U256;
     use rstest::*;
     use serde_json::json;
@@ -201,7 +203,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_flash_event_hypersync(hypersync_log: HypersyncLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_flash_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
@@ -227,7 +229,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_flash_event_rpc(rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_flash_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
@@ -253,8 +255,9 @@ mod tests {
 
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
-        let event_hypersync = parse_flash_event_hypersync(dex.clone(), &hypersync_log).unwrap();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
+        let event_hypersync =
+            parse_flash_event_hypersync(Arc::clone(&dex), &hypersync_log).unwrap();
         let event_rpc = parse_flash_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);

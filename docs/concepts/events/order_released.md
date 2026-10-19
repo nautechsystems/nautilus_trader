@@ -1,22 +1,19 @@
 # OrderReleased
 
-`OrderReleased` represents an order having been released from the `OrderEmulator`. The
-`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the
-`MessageBus`. It fires when the emulator's trigger price condition is met and the order is
-released to the venue.
+`OrderReleased` records that the `OrderEmulator` has released an order after its trigger condition
+was met. The emulator applies the event to the order, updates the `Cache`, and publishes it on the
+`MessageBus` before routing the order onward.
 
-Transition: `EMULATED` -> `RELEASED`. Handler: `on_order_released`.
+Typical transition: `EMULATED` -> `RELEASED`. Handler: `on_order_released`.
 
 ## Fields
 
-Beyond the [common order event fields](index.md#common-order-event-fields), `OrderReleased` carries:
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderReleased` carries:
 
 | Field            | Python type | Required/default | Description                                           |
 | ---------------- | ----------- | ---------------- | ----------------------------------------------------- |
 | `released_price` | `Price`     | Required         | The price which released the order from the emulator. |
-
-On this event, `venue_order_id` and `account_id` are both `None`, `reconciliation` is
-always `False`, and `ts_event` equals `ts_init`.
 
 ## Example
 

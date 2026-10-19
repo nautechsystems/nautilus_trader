@@ -47,7 +47,7 @@ for cases where a docs example is missing or stale.
   now accepts both wrapped docs payloads and legacy top-level event payloads.
 - The low-level Spot user-data message structs still deserialize the inner
   event object directly, so wrapped docs fixtures should use the shared
-  `load_event_fixture` helper in tests.
+  `load_event_fixture` loader in tests.
 - For SBE coverage, the docs define the expected fields. Live capture supplies
   the canonical wire bytes.
 - As of March 12, 2026, Binance does not appear to publish a separate USD-M
@@ -63,3 +63,9 @@ for cases where a docs example is missing or stale.
 - The fixture `futures/http_json/position_risk_hedge.json` is a narrow derived
   position-risk response used to cover simultaneous long and short hedge-mode
   rows for one symbol.
+- The fixtures `futures/http_json/order_partially_filled.json` and
+  `futures/http_json/order_partial_fills.json` are synthetic variants of
+  `futures/http_json/order_response.json` and `futures/http_json/user_trade.json`
+  with matching order IDs and fills between creation and update times.
+- The fixture `futures/http_json/algo_order_response.json` uses distinct creation
+  and update times to test acceptance timestamps.

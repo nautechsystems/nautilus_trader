@@ -332,6 +332,75 @@ pub(super) struct TardisOrderBookSnapshot25Record {
     pub bids_24_amount: Option<f64>,
 }
 
+impl TardisOrderBookSnapshot25Record {
+    /// Number of price levels per side in a snapshot25 record.
+    pub(super) const LEVELS: usize = 25;
+
+    /// Returns the bid price and amount at the given `level` (0-based).
+    pub(super) fn bid_level(&self, level: usize) -> (Option<f64>, Option<f64>) {
+        match level {
+            0 => (self.bids_0_price, self.bids_0_amount),
+            1 => (self.bids_1_price, self.bids_1_amount),
+            2 => (self.bids_2_price, self.bids_2_amount),
+            3 => (self.bids_3_price, self.bids_3_amount),
+            4 => (self.bids_4_price, self.bids_4_amount),
+            5 => (self.bids_5_price, self.bids_5_amount),
+            6 => (self.bids_6_price, self.bids_6_amount),
+            7 => (self.bids_7_price, self.bids_7_amount),
+            8 => (self.bids_8_price, self.bids_8_amount),
+            9 => (self.bids_9_price, self.bids_9_amount),
+            10 => (self.bids_10_price, self.bids_10_amount),
+            11 => (self.bids_11_price, self.bids_11_amount),
+            12 => (self.bids_12_price, self.bids_12_amount),
+            13 => (self.bids_13_price, self.bids_13_amount),
+            14 => (self.bids_14_price, self.bids_14_amount),
+            15 => (self.bids_15_price, self.bids_15_amount),
+            16 => (self.bids_16_price, self.bids_16_amount),
+            17 => (self.bids_17_price, self.bids_17_amount),
+            18 => (self.bids_18_price, self.bids_18_amount),
+            19 => (self.bids_19_price, self.bids_19_amount),
+            20 => (self.bids_20_price, self.bids_20_amount),
+            21 => (self.bids_21_price, self.bids_21_amount),
+            22 => (self.bids_22_price, self.bids_22_amount),
+            23 => (self.bids_23_price, self.bids_23_amount),
+            24 => (self.bids_24_price, self.bids_24_amount),
+            _ => unreachable!("level is constrained to 0..25 by loop"),
+        }
+    }
+
+    /// Returns the ask price and amount at the given `level` (0-based).
+    pub(super) fn ask_level(&self, level: usize) -> (Option<f64>, Option<f64>) {
+        match level {
+            0 => (self.asks_0_price, self.asks_0_amount),
+            1 => (self.asks_1_price, self.asks_1_amount),
+            2 => (self.asks_2_price, self.asks_2_amount),
+            3 => (self.asks_3_price, self.asks_3_amount),
+            4 => (self.asks_4_price, self.asks_4_amount),
+            5 => (self.asks_5_price, self.asks_5_amount),
+            6 => (self.asks_6_price, self.asks_6_amount),
+            7 => (self.asks_7_price, self.asks_7_amount),
+            8 => (self.asks_8_price, self.asks_8_amount),
+            9 => (self.asks_9_price, self.asks_9_amount),
+            10 => (self.asks_10_price, self.asks_10_amount),
+            11 => (self.asks_11_price, self.asks_11_amount),
+            12 => (self.asks_12_price, self.asks_12_amount),
+            13 => (self.asks_13_price, self.asks_13_amount),
+            14 => (self.asks_14_price, self.asks_14_amount),
+            15 => (self.asks_15_price, self.asks_15_amount),
+            16 => (self.asks_16_price, self.asks_16_amount),
+            17 => (self.asks_17_price, self.asks_17_amount),
+            18 => (self.asks_18_price, self.asks_18_amount),
+            19 => (self.asks_19_price, self.asks_19_amount),
+            20 => (self.asks_20_price, self.asks_20_amount),
+            21 => (self.asks_21_price, self.asks_21_amount),
+            22 => (self.asks_22_price, self.asks_22_amount),
+            23 => (self.asks_23_price, self.asks_23_amount),
+            24 => (self.asks_24_price, self.asks_24_amount),
+            _ => unreachable!("level is constrained to 0..25 by loop"),
+        }
+    }
+}
+
 /// Represents a Tardis format quote record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct TardisQuoteRecord {

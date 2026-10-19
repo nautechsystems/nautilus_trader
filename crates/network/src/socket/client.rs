@@ -13,21 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! High-performance raw TCP client implementation with TLS capability, automatic reconnection
-//! with exponential backoff and state management.
+//! Raw TCP client with optional TLS, suffix framing, heartbeats, and automatic reconnection.
 //!
-//! **Key features**:
-//! - Connection state tracking (ACTIVE/RECONNECTING/DISCONNECTING/CLOSED).
-//! - Synchronized reconnection with backoff.
-//! - Split read/write architecture.
-//! - Python callback integration.
+//! # State management
 //!
-//! **Design**:
-//! - Single reader, multiple writer model.
-//! - Read half runs in dedicated task.
-//! - Write half runs in dedicated task connected with channel.
-//! - Controller task manages lifecycle.
-//! - Event-driven state notification via `Notify` for immediate wakeup on transitions.
+//! The client tracks active, reconnecting, disconnecting, and closed states. State changes notify
+//! waiting tasks immediately instead of relying only on periodic checks.
+//!
+//! # Connection ownership
+//!
+//! A controller owns the connection lifecycle. A dedicated reader task passes complete messages to
+//! the configured callback, while a dedicated writer task serializes concurrent sends received over
+//! a channel.
+//!
+//! # Framing and heartbeats
+//!
+//! The configured suffix frames the byte stream in both directions. The writer appends it to sent
+//! messages and heartbeats, and the reader uses it to split incoming data into complete messages.
+//! Heartbeats are optional and run in a separate task.
+//!
+//! # Reconnection
+//!
+//! The writer buffers messages while reconnecting. A successful reconnect installs the replacement
+//! writer, drains that buffer, restarts the reader, and then invokes the configured
+//! post-reconnection callback.
 
 use std::{
     collections::VecDeque,
@@ -36,26 +45,33 @@ use std::{
     pin::pin,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
 
 use bytes::Bytes;
-use nautilus_core::CleanDrop;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::{Error, client::IntoClientRequest, stream::Mode};
 
 use super::{SocketConfig, TcpMessageHandler, TcpReader, TcpWriter, WriterCommand};
 use crate::{
-    backoff::{ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, wait_reconnect_delay},
+    SocketStateSink,
+    backoff::{
+        ExponentialBackoff, RECONNECT_STABILITY_THRESHOLD, ReconnectThrottle, wait_reconnect_delay,
+    },
     dst,
     error::{SendError, is_connection_drop_io_error},
     logging::{log_task_aborted, log_task_started, log_task_stopped},
-    mode::{ConnectionMode, ReadSessionFence},
+    mode::{
+        ConnectionMode, ControllerLifecycle, ReadSessionFence, ReconnectOutcome,
+        ReconnectRequestOutcome,
+    },
     net::TcpStream,
-    tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
+    tls::{create_tls_config_from_certs_dir, tcp_tls},
+    writer::{self, DEFAULT_WRITER_CAPACITY, WriterReceiver, WriterSender},
 };
 
 // Connection timing constants
@@ -67,150 +83,43 @@ const WRITE_TIMEOUT_SECS: u64 = 5;
 // Maximum buffer size for read operations (10 MB)
 const MAX_READ_BUFFER_BYTES: usize = 10 * 1024 * 1024;
 
-pub(crate) struct SocketTerminalFinalizer {
-    connection_mode: Arc<AtomicU8>,
-    post_disconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-    notification_started: AtomicBool,
-    completion: Arc<SocketFinalizationState>,
+struct BufferedWrite {
+    data: Bytes,
+    replay_key: Option<u64>,
+    _permit: tokio::sync::OwnedSemaphorePermit,
 }
 
-struct SocketFinalizationState {
-    notification_completed: AtomicBool,
-    completion_notify: tokio::sync::Notify,
-    state_notify: Arc<tokio::sync::Notify>,
-}
+/// Produces protocol messages that must precede buffered application writes after reconnect.
+pub type SocketReconnectReplay = Arc<dyn Fn() -> Vec<Bytes> + Send + Sync>;
 
-struct SocketFinalizationCompletion {
-    state: Arc<SocketFinalizationState>,
-}
-
-impl Drop for SocketFinalizationCompletion {
-    fn drop(&mut self) {
-        self.state
-            .notification_completed
-            .store(true, Ordering::Release);
-        self.state.completion_notify.notify_waiters();
-        self.state.state_notify.notify_waiters();
-    }
-}
-
-impl SocketTerminalFinalizer {
-    pub(crate) fn new(
-        connection_mode: Arc<AtomicU8>,
-        state_notify: Arc<tokio::sync::Notify>,
-        post_disconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-    ) -> Self {
-        Self {
-            connection_mode,
-            post_disconnection,
-            notification_started: AtomicBool::new(false),
-            completion: Arc::new(SocketFinalizationState {
-                notification_completed: AtomicBool::new(false),
-                completion_notify: tokio::sync::Notify::new(),
-                state_notify,
-            }),
-        }
-    }
-
-    pub(crate) fn transition_and_finalize(&self) {
-        self.connection_mode
-            .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
-        self.finalize_closed();
-    }
-
-    fn finalize_closed(&self) {
-        if self
-            .notification_started
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-        {
-            if let Some(handler) = self.post_disconnection.clone() {
-                let completion = SocketFinalizationCompletion {
-                    state: Arc::clone(&self.completion),
-                };
-                let job = move || {
-                    let _completion = completion;
-                    handler();
-                    log::debug!("Called `post_disconnection` handler");
-                };
-
-                if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                    handle.spawn_blocking(job);
-                } else {
-                    let _ = std::thread::Builder::new() // dst-ok: no runtime context
-                        .name("socket-terminal-finalizer".to_string())
-                        .spawn(job);
-                }
-            } else {
-                drop(SocketFinalizationCompletion {
-                    state: Arc::clone(&self.completion),
-                });
-            }
-        }
-    }
-
-    pub(crate) async fn wait_for_completion(&self) {
-        loop {
-            let mut notified = pin!(self.completion.completion_notify.notified());
-            notified.as_mut().enable();
-
-            if self
-                .completion
-                .notification_completed
-                .load(Ordering::Acquire)
-            {
-                return;
-            }
-            notified.await;
-        }
-    }
-}
-
-/// Creates a `TcpStream` with the server.
-///
-/// The stream can be encrypted with TLS or Plain. The stream is split into
-/// read and write ends:
-/// - The read end is passed to the task that keeps receiving
-///   messages from the server and passing them to a handler.
-/// - The write end is passed to a task which receives messages over a channel
-///   to send to the server.
-///
-/// The heartbeat is optional and can be configured with an interval and data to
-/// send.
-///
-/// The client uses a suffix to separate messages on the byte stream. It is
-/// appended to all sent messages and heartbeats. It is also used to split
-/// the received byte stream.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
 struct SocketClientInner {
     config: SocketConfig,
-    connector: Option<Connector>,
-    read_task: Arc<tokio::task::JoinHandle<()>>,
+    connector: Option<Arc<rustls::ClientConfig>>,
+    read_task: tokio::task::JoinHandle<()>,
     read_fence: ReadSessionFence,
     write_task: tokio::task::JoinHandle<()>,
-    writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    writer_tx: WriterSender<WriterCommand>,
     heartbeat_task: Option<tokio::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
     state_notify: Arc<tokio::sync::Notify>,
-    reconnect_timeout: Duration,
+    connect_timeout: Duration,
     backoff: ExponentialBackoff,
-    handler: Option<TcpMessageHandler>,
+    reconnect_throttle: ReconnectThrottle,
     reconnect_max_attempts: Option<u32>,
     reconnect_attempt_count: u32,
+    state_sink: Option<SocketStateSink>,
 }
 
 impl SocketClientInner {
-    /// Connect to a URL with the specified configuration.
+    /// Connects to a URL with the specified configuration.
     ///
     /// # Errors
     ///
     /// Returns an error if connection fails or configuration is invalid.
-    pub(crate) async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
-        const CONNECTION_TIMEOUT_SECS: u64 = 10;
-
+    async fn connect_url(
+        config: SocketConfig,
+        state_sink: Option<SocketStateSink>,
+    ) -> anyhow::Result<Self> {
         install_cryptographic_provider();
 
         // Validate suffix is non-empty to prevent panic in read loop (windows(0) panics)
@@ -218,49 +127,29 @@ impl SocketClientInner {
             anyhow::bail!("Socket suffix cannot be empty: suffix is required for message framing");
         }
 
-        if let Some((interval_secs, _)) = &config.heartbeat
-            && *interval_secs == 0
-        {
-            anyhow::bail!("Heartbeat interval cannot be zero");
-        }
+        // Adapters build this config by struct literal, bypassing the builder, so this is the only
+        // place the field invariants are enforced for them.
+        config.validate()?;
 
-        if config.idle_timeout_ms == Some(0) {
-            anyhow::bail!("Idle timeout cannot be zero");
-        }
+        let connect_timeout = Duration::from_millis(config.connect_timeout_ms.unwrap_or(10_000));
 
-        let SocketConfig {
-            url,
-            mode,
-            heartbeat,
-            suffix,
-            message_handler,
-            reconnect_timeout_ms,
-            reconnect_delay_initial_ms,
-            reconnect_delay_max_ms,
-            reconnect_backoff_factor,
-            reconnect_jitter_ms,
-            connection_max_retries,
-            reconnect_max_attempts,
-            idle_timeout_ms,
-            certs_dir,
-        } = &config.clone();
-        let reconnect_timeout = Duration::from_millis(reconnect_timeout_ms.unwrap_or(10_000));
         let reconnect_backoff = ExponentialBackoff::new(
-            Duration::from_millis(reconnect_delay_initial_ms.unwrap_or(2_000)),
-            Duration::from_millis(reconnect_delay_max_ms.unwrap_or(30_000)),
-            reconnect_backoff_factor.unwrap_or(1.5),
-            reconnect_jitter_ms.unwrap_or(100),
+            Duration::from_millis(config.reconnect_delay_initial_ms.unwrap_or(2_000)),
+            Duration::from_millis(config.reconnect_delay_max_ms.unwrap_or(30_000)),
+            config.reconnect_backoff_factor.unwrap_or(1.5),
+            config.reconnect_jitter_ms.unwrap_or(100),
             true, // immediate-first
         )?;
-        let connector = if let Some(dir) = certs_dir {
+
+        let connector = if let Some(dir) = &config.certs_dir {
             let config = create_tls_config_from_certs_dir(Path::new(dir), false)?;
-            Some(Connector::Rustls(Arc::new(config)))
+            Some(Arc::new(config))
         } else {
             None
         };
 
         // Retry initial connection with exponential backoff to handle transient DNS/network issues
-        let max_retries = connection_max_retries.unwrap_or(5);
+        let max_retries = config.connection_max_retries.unwrap_or(5);
 
         let mut backoff = ExponentialBackoff::new(
             Duration::from_millis(500),
@@ -270,15 +159,13 @@ impl SocketClientInner {
             false,
         )?;
 
-        #[allow(unused_assignments)]
-        let mut last_error = String::new();
         let mut attempt = 0;
         let (reader, writer) = loop {
             attempt += 1;
 
-            match dst::time::timeout(
-                Duration::from_secs(CONNECTION_TIMEOUT_SECS),
-                Self::tls_connect_with_server(url, *mode, connector.clone()),
+            let last_error = match dst::time::timeout(
+                connect_timeout,
+                Self::tls_connect_with_server(&config.url, config.mode, connector.clone()),
             )
             .await
             {
@@ -286,35 +173,32 @@ impl SocketClientInner {
                     if attempt > 1 {
                         log::info!("Socket connection established after {attempt} attempts");
                     }
+
                     break result;
                 }
                 Ok(Err(e)) => {
-                    last_error = e.to_string();
+                    let error = e.to_string();
                     log::warn!(
-                        "Socket connection attempt {attempt}/{max_retries} to {url} failed: {last_error}"
+                        "Socket connection attempt {attempt}/{max_retries} to {REDACTED} failed: {error}"
                     );
+                    error
                 }
                 Err(_) => {
-                    last_error = format!(
-                        "Connection timeout after {CONNECTION_TIMEOUT_SECS}s (possible DNS resolution failure)"
+                    let error = format!(
+                        "Connection timeout after {:.1}s (possible DNS resolution failure)",
+                        connect_timeout.as_secs_f64()
                     );
                     log::warn!(
-                        "Socket connection attempt {attempt}/{max_retries} to {url} timed out"
+                        "Socket connection attempt {attempt}/{max_retries} to {REDACTED} timed out"
                     );
+                    error
                 }
-            }
+            };
 
             if attempt >= max_retries {
                 anyhow::bail!(
-                    "Failed to connect to {} after {} attempts: {}. \
-                    If this is a DNS error, check your network configuration and DNS settings.",
-                    url,
-                    max_retries,
-                    if last_error.is_empty() {
-                        "unknown error"
-                    } else {
-                        &last_error
-                    }
+                    "Failed to connect to {REDACTED} after {max_retries} attempts: {last_error}. \
+                    If this is a DNS error, check your network configuration and DNS settings."
                 );
             }
 
@@ -329,37 +213,45 @@ impl SocketClientInner {
 
         log::debug!("Connected");
 
-        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
+        let outcome =
+            ConnectionMode::complete_reconnect_with_sink(&connection_mode, state_sink.as_ref());
+        debug_assert_eq!(outcome, ReconnectOutcome::Reconnected);
         let read_fence = ReadSessionFence::new();
 
-        let read_task = Arc::new(Self::spawn_read_task(
-            connection_mode.clone(),
+        let read_task = Self::spawn_read_task(
+            Arc::clone(&connection_mode),
             read_fence.clone(),
             reader,
-            message_handler.clone(),
-            suffix.clone(),
-            *idle_timeout_ms,
-        ));
-
-        let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
-
-        let write_task = Self::spawn_write_task(
-            connection_mode.clone(),
-            state_notify.clone(),
-            writer,
-            writer_rx,
-            suffix.clone(),
+            config.message_handler.clone(),
+            config.suffix.clone(),
+            config.resolved_heartbeat_timeout(),
         );
 
-        // Optionally spawn a heartbeat task to periodically ping server
-        let heartbeat_task = heartbeat.as_ref().map(|heartbeat| {
+        let (writer_tx, writer_rx) = writer::channel::<WriterCommand>(
+            config.writer_capacity.unwrap_or(DEFAULT_WRITER_CAPACITY),
+        );
+
+        let write_task = Self::spawn_write_task(
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
+            writer,
+            writer_rx,
+            config.suffix.clone(),
+            state_sink.clone(),
+        );
+
+        let heartbeat_task = config.heartbeat.as_ref().map(|heartbeat| {
             Self::spawn_heartbeat_task(
-                connection_mode.clone(),
-                heartbeat.clone(),
+                Arc::clone(&connection_mode),
+                heartbeat.interval_secs,
+                heartbeat.payload.clone(),
                 writer_tx.clone(),
             )
         });
+
+        let reconnect_max_attempts = config.reconnect_max_attempts;
 
         Ok(Self {
             config,
@@ -371,15 +263,16 @@ impl SocketClientInner {
             heartbeat_task,
             connection_mode,
             state_notify,
-            reconnect_timeout,
+            connect_timeout,
             backoff: reconnect_backoff,
-            handler: message_handler.clone(),
-            reconnect_max_attempts: *reconnect_max_attempts,
+            reconnect_throttle: ReconnectThrottle::default(),
+            reconnect_max_attempts,
             reconnect_attempt_count: 0,
+            state_sink,
         })
     }
 
-    /// Parse URL and extract socket address and request URL.
+    /// Parses a URL into its socket address and request URL.
     ///
     /// Accepts either:
     /// - Raw socket address: "host:port" → returns ("host:port", "scheme://host:port")
@@ -424,6 +317,7 @@ impl SocketClientInner {
                 Mode::Tls => "wss",
                 Mode::Plain => "ws",
             };
+
             Ok((url.to_string(), format!("{scheme}://{url}")))
         }
     }
@@ -440,9 +334,9 @@ impl SocketClientInner {
     pub(crate) async fn tls_connect_with_server(
         url: &str,
         mode: Mode,
-        connector: Option<Connector>,
+        connector: Option<Arc<rustls::ClientConfig>>,
     ) -> Result<(TcpReader, TcpWriter), Error> {
-        log::debug!("Connecting to {url}");
+        log::debug!("Connecting to {REDACTED}");
 
         let (socket_addr, request_url) = Self::parse_socket_url(url, mode)?;
         let tcp_result = TcpStream::connect(&socket_addr).await;
@@ -451,9 +345,8 @@ impl SocketClientInner {
             Ok(stream) => {
                 log::debug!("TCP connection established to {socket_addr}, proceeding with TLS");
 
-                if let Err(e) = stream.set_nodelay(true) {
-                    log::warn!("Failed to enable TCP_NODELAY for socket client: {e:?}");
-                }
+                crate::net::apply_socket_options(&stream);
+
                 let request = request_url.into_client_request()?;
                 tcp_tls(&request, mode, stream, connector)
                     .await
@@ -466,7 +359,7 @@ impl SocketClientInner {
         }
     }
 
-    /// Reconnect with server.
+    /// Reconnects to the server.
     ///
     /// Makes a new connection with server, uses the new read and write halves
     /// to update the reader and writer.
@@ -476,37 +369,25 @@ impl SocketClientInner {
     /// so buffered messages can never drain into a connection that lost its
     /// reader to a timeout; the writer task bounds both the old-writer
     /// shutdown and the buffer drain with its graceful-shutdown timeout.
-    async fn reconnect(&mut self) -> Result<(), Error> {
-        log::debug!("Reconnecting");
+    async fn reconnect(
+        &mut self,
+        reconnect_replay: Option<&SocketReconnectReplay>,
+    ) -> Result<ReconnectOutcome, Error> {
+        log::info!("Reconnecting");
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted due to disconnect state");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
-
-        let SocketConfig {
-            url,
-            mode,
-            heartbeat: _,
-            suffix,
-            message_handler: _,
-            reconnect_timeout_ms: _,
-            reconnect_delay_initial_ms: _,
-            reconnect_backoff_factor: _,
-            reconnect_delay_max_ms: _,
-            reconnect_jitter_ms: _,
-            connection_max_retries: _,
-            reconnect_max_attempts: _,
-            idle_timeout_ms,
-            certs_dir: _,
-        } = &self.config;
-        // Create a fresh connection
-        let connector = self.connector.clone();
 
         // Bound only connection establishment; the swap below must run to completion
         let (reader, new_writer) = dst::time::timeout(
-            self.reconnect_timeout,
-            Self::tls_connect_with_server(url, *mode, connector),
+            self.connect_timeout,
+            Self::tls_connect_with_server(
+                &self.config.url,
+                self.config.mode,
+                self.connector.clone(),
+            ),
         )
         .await
         .map_err(|_| {
@@ -514,22 +395,29 @@ impl SocketClientInner {
                 std::io::ErrorKind::TimedOut,
                 format!(
                     "reconnection timed out after {}s",
-                    self.reconnect_timeout.as_secs_f64()
+                    self.connect_timeout.as_secs_f64()
                 ),
             ))
         })??;
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted mid-flight (after connect)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
+
         log::debug!("Connected");
 
         // Use a oneshot channel to synchronize with the writer task.
         // We must verify that the buffer was successfully drained before transitioning to ACTIVE
         // to prevent silent message loss if the new connection drops immediately.
         let (tx, rx) = tokio::sync::oneshot::channel();
-        if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer, tx)) {
+        let command = if let Some(reconnect_replay) = reconnect_replay {
+            WriterCommand::UpdateWithReplay(new_writer, reconnect_replay(), tx)
+        } else {
+            WriterCommand::Update(new_writer, tx)
+        };
+
+        if let Err(e) = self.writer_tx.send_update(command) {
             log::error!("{e}");
             return Err(Error::Io(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
@@ -561,7 +449,7 @@ impl SocketClientInner {
 
         if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
             log::debug!("Reconnect aborted mid-flight (after delay)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         self.read_fence.invalidate();
@@ -573,36 +461,31 @@ impl SocketClientInner {
 
         // Atomically transition from Reconnect to Active
         // This prevents race condition where disconnect could be requested between check and store
-        if self
-            .connection_mode
-            .compare_exchange(
-                ConnectionMode::Reconnect.as_u8(),
-                ConnectionMode::Active.as_u8(),
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            )
-            .is_err()
+        if ConnectionMode::complete_reconnect_with_sink(
+            &self.connection_mode,
+            self.state_sink.as_ref(),
+        ) == ReconnectOutcome::Aborted
         {
             log::debug!("Reconnect aborted (state changed during reconnect)");
-            return Ok(());
+            return Ok(ReconnectOutcome::Aborted);
         }
 
         // Spawn new read task
         self.read_fence = ReadSessionFence::new();
-        self.read_task = Arc::new(Self::spawn_read_task(
-            self.connection_mode.clone(),
+        self.read_task = Self::spawn_read_task(
+            Arc::clone(&self.connection_mode),
             self.read_fence.clone(),
             reader,
-            self.handler.clone(),
-            suffix.clone(),
-            *idle_timeout_ms,
-        ));
+            self.config.message_handler.clone(),
+            self.config.suffix.clone(),
+            self.config.resolved_heartbeat_timeout(),
+        );
 
-        log::debug!("Reconnect succeeded");
-        Ok(())
+        log::info!("Reconnect succeeded");
+        Ok(ReconnectOutcome::Reconnected)
     }
 
-    /// Check if the client is still alive.
+    /// Returns whether the read and write tasks are still running.
     ///
     /// Returns `true` if both the read and write tasks are still running.
     /// There may be some delay between the connection closing and the
@@ -620,7 +503,7 @@ impl SocketClientInner {
         reader: R,
         handler: Option<TcpMessageHandler>,
         suffix: Vec<u8>,
-        idle_timeout_ms: Option<u64>,
+        heartbeat_timeout_secs: Option<u64>,
     ) -> tokio::task::JoinHandle<()>
     where
         R: AsyncRead + Unpin + Send + 'static,
@@ -629,7 +512,7 @@ impl SocketClientInner {
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS);
-        let idle_timeout = idle_timeout_ms.map(Duration::from_millis);
+        let heartbeat_timeout = heartbeat_timeout_secs.map(Duration::from_secs);
 
         tokio::task::spawn(Self::run_read_loop(
             connection_state,
@@ -637,7 +520,7 @@ impl SocketClientInner {
             reader,
             handler,
             suffix,
-            idle_timeout,
+            heartbeat_timeout,
             check_interval,
         ))
     }
@@ -648,7 +531,7 @@ impl SocketClientInner {
         mut reader: R,
         handler: Option<TcpMessageHandler>,
         suffix: Vec<u8>,
-        idle_timeout: Option<Duration>,
+        heartbeat_timeout: Option<Duration>,
         check_interval: Duration,
     ) where
         R: AsyncRead + Unpin,
@@ -666,6 +549,7 @@ impl SocketClientInner {
                     );
                     buf.clear();
                 }
+
                 break;
             }
 
@@ -714,6 +598,7 @@ impl SocketClientInner {
                                 buf.clear();
                                 break 'read;
                             }
+
                             handler(&data);
                         }
                     }
@@ -726,12 +611,12 @@ impl SocketClientInner {
                     }
                 }
                 Err(_) => {
-                    if let Some(timeout) = idle_timeout {
-                        let idle_duration = last_data_time.elapsed();
-                        if idle_duration >= timeout {
+                    if let Some(timeout) = heartbeat_timeout {
+                        let silent_for = last_data_time.elapsed();
+                        if silent_for >= timeout {
                             log::warn!(
-                                "Read idle timeout: no data received for {:.1}s",
-                                idle_duration.as_secs_f64()
+                                "Heartbeat timeout: no bytes received for {:.1}s",
+                                silent_for.as_secs_f64()
                             );
                             break;
                         }
@@ -753,9 +638,10 @@ impl SocketClientInner {
     /// Returns `true` if a send error occurred (buffer may still contain unsent messages),
     /// `false` if all messages were sent successfully (buffer is empty).
     async fn drain_reconnect_buffer<W>(
-        buffer: &mut VecDeque<Bytes>,
+        buffer: &mut VecDeque<BufferedWrite>,
         writer: &mut W,
         suffix: &[u8],
+        replay: &[Bytes],
     ) -> bool
     where
         W: AsyncWrite + Unpin,
@@ -767,11 +653,16 @@ impl SocketClientInner {
         let initial_buffer_len = buffer.len();
         log::info!("Sending {initial_buffer_len} buffered messages after reconnection");
 
-        let mut send_error_occurred = false;
+        while let Some(buffered) = buffer.front() {
+            if buffered.replay_key.is_some()
+                && replay.iter().any(|replayed| replayed == &buffered.data)
+            {
+                buffer.pop_front();
+                continue;
+            }
 
-        while let Some(buffered_msg) = buffer.front() {
-            let mut combined_msg = Vec::with_capacity(buffered_msg.len() + suffix.len());
-            combined_msg.extend_from_slice(buffered_msg);
+            let mut combined_msg = Vec::with_capacity(buffered.data.len() + suffix.len());
+            combined_msg.extend_from_slice(&buffered.data);
             combined_msg.extend_from_slice(suffix);
 
             if let Err(e) = writer.write_all(&combined_msg).await {
@@ -786,26 +677,74 @@ impl SocketClientInner {
                         buffer.len()
                     );
                 }
-                send_error_occurred = true;
-                break;
+
+                return true;
             }
 
             buffer.pop_front();
         }
 
-        if buffer.is_empty() {
-            log::info!("Successfully sent all {initial_buffer_len} buffered messages");
-        }
+        log::info!("Successfully sent all {initial_buffer_len} buffered messages");
 
-        send_error_occurred
+        false
+    }
+
+    async fn replace_writer<W>(
+        active_writer: &mut W,
+        new_writer: W,
+        replay: Vec<Bytes>,
+        reconnect_buffer: &mut VecDeque<BufferedWrite>,
+        suffix: &[u8],
+    ) -> bool
+    where
+        W: AsyncWrite + Unpin,
+    {
+        log::debug!("Received new writer");
+        dst::time::sleep(Duration::from_millis(GRACEFUL_SHUTDOWN_DELAY_MS)).await;
+
+        _ = dst::time::timeout(
+            Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
+            active_writer.shutdown(),
+        )
+        .await;
+
+        *active_writer = new_writer;
+        log::debug!("Updated writer");
+
+        let drain_result =
+            dst::time::timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS), async {
+                for replay_msg in &replay {
+                    let mut framed = Vec::with_capacity(replay_msg.len() + suffix.len());
+                    framed.extend_from_slice(replay_msg);
+                    framed.extend_from_slice(suffix);
+                    if let Err(e) = active_writer.write_all(&framed).await {
+                        log::warn!("Failed to send reconnect replay: {e}");
+                        return true;
+                    }
+                }
+
+                Self::drain_reconnect_buffer(reconnect_buffer, active_writer, suffix, &replay).await
+            })
+            .await;
+
+        let send_error = drain_result.unwrap_or_else(|_| {
+            log::warn!(
+                "Timed out sending reconnect replay and buffered messages, {} buffered messages remain",
+                reconnect_buffer.len()
+            );
+            true
+        });
+
+        !send_error
     }
 
     fn spawn_write_task<W>(
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
         writer: W,
-        mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand<W>>,
+        mut writer_rx: WriterReceiver<WriterCommand<W>>,
         suffix: Vec<u8>,
+        state_sink: Option<SocketStateSink>,
     ) -> tokio::task::JoinHandle<()>
     where
         W: AsyncWrite + Unpin + Send + 'static,
@@ -817,78 +756,125 @@ impl SocketClientInner {
 
         tokio::task::spawn(async move {
             let mut active_writer = writer;
-            let mut reconnect_buffer: VecDeque<Bytes> = VecDeque::new();
+            let mut reconnect_buffer: VecDeque<BufferedWrite> = VecDeque::new();
             let mut write_buf: Vec<u8> = Vec::new();
 
             loop {
-                if matches!(
-                    ConnectionMode::from_atomic(&connection_state),
-                    ConnectionMode::Disconnect | ConnectionMode::Closed
-                ) {
+                let mode = ConnectionMode::from_atomic(&connection_state);
+
+                if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
                     break;
                 }
 
+                if mode.is_active() && !reconnect_buffer.is_empty() {
+                    let drain_result = dst::time::timeout(
+                        Duration::from_secs(WRITE_TIMEOUT_SECS),
+                        Self::drain_reconnect_buffer(
+                            &mut reconnect_buffer,
+                            &mut active_writer,
+                            &suffix,
+                            &[],
+                        ),
+                    )
+                    .await;
+
+                    let send_error = drain_result.unwrap_or_else(|_| {
+                        log::warn!(
+                            "Timed out draining reconnect buffer after {WRITE_TIMEOUT_SECS}s, {} messages remain",
+                            reconnect_buffer.len()
+                        );
+                        true
+                    });
+
+                    if send_error
+                        && ConnectionMode::request_reconnect_with_sink(
+                            &connection_state,
+                            state_sink.as_ref(),
+                        )
+                    {
+                        log::warn!("Writer triggering reconnect");
+                        state_notify.notify_one();
+                    }
+
+                    continue;
+                }
+
                 match dst::time::timeout(check_interval, writer_rx.recv()).await {
-                    Ok(Some(msg)) => {
+                    Ok(Some((msg, permit))) => {
                         // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
+
                         if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
                             break;
                         }
 
                         match msg {
                             WriterCommand::Update(new_writer, tx) => {
-                                log::debug!("Received new writer");
-
-                                // Delay before closing connection
-                                dst::time::sleep(Duration::from_millis(100)).await;
-
-                                // Attempt to shutdown the writer gracefully before updating,
-                                // we ignore any error as the writer may already be closed.
-                                _ = dst::time::timeout(
-                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
-                                    active_writer.shutdown(),
+                                let sent = Self::replace_writer(
+                                    &mut active_writer,
+                                    new_writer,
+                                    Vec::new(),
+                                    &mut reconnect_buffer,
+                                    &suffix,
                                 )
                                 .await;
 
-                                active_writer = new_writer;
-                                log::debug!("Updated writer");
-
-                                // Bound the drain: a peer that accepts the connection but stops
-                                // reading must not wedge the writer task.
-                                let drain_result = dst::time::timeout(
-                                    Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS),
-                                    Self::drain_reconnect_buffer(
-                                        &mut reconnect_buffer,
-                                        &mut active_writer,
-                                        &suffix,
-                                    ),
-                                )
-                                .await;
-                                let send_error = drain_result.unwrap_or_else(|_| {
-                                    log::warn!(
-                                        "Timed out draining reconnect buffer, {} messages remain",
-                                        reconnect_buffer.len()
-                                    );
-                                    true
-                                });
-
-                                if let Err(e) = tx.send(!send_error) {
+                                if let Err(e) = tx.send(sent) {
                                     log::error!(
                                         "Failed to report drain status to controller: {e:?}"
                                     );
                                 }
                             }
-                            _ if mode.is_reconnect() => {
-                                if let WriterCommand::Send(data) = msg {
-                                    log::debug!(
-                                        "Buffering message while reconnecting ({} bytes)",
-                                        data.len()
+                            WriterCommand::UpdateWithReplay(new_writer, replay, tx) => {
+                                let sent = Self::replace_writer(
+                                    &mut active_writer,
+                                    new_writer,
+                                    replay,
+                                    &mut reconnect_buffer,
+                                    &suffix,
+                                )
+                                .await;
+
+                                if let Err(e) = tx.send(sent) {
+                                    log::error!(
+                                        "Failed to report drain status to controller: {e:?}"
                                     );
-                                    reconnect_buffer.push_back(data);
                                 }
                             }
-                            WriterCommand::Send(msg) => {
+                            WriterCommand::Send(data)
+                                if mode.is_reconnect() || !reconnect_buffer.is_empty() =>
+                            {
+                                log::debug!(
+                                    "Buffering message until reconnect drain completes ({} bytes)",
+                                    data.len()
+                                );
+                                Self::buffer_reconnect_write(
+                                    &mut reconnect_buffer,
+                                    data,
+                                    None,
+                                    permit,
+                                );
+                            }
+                            WriterCommand::SendOrReplay { key, data } if mode.is_reconnect() => {
+                                log::debug!(
+                                    "Buffering replayable message while reconnecting ({} bytes)",
+                                    data.len()
+                                );
+                                Self::buffer_reconnect_write(
+                                    &mut reconnect_buffer,
+                                    data,
+                                    Some(key),
+                                    permit,
+                                );
+                            }
+                            command @ (WriterCommand::Send(_)
+                            | WriterCommand::SendOrReplay { .. }) => {
+                                let (msg, replay_key) = match command {
+                                    WriterCommand::Send(data) => (data, None),
+                                    WriterCommand::SendOrReplay { key, data } => (data, Some(key)),
+                                    _ => unreachable!(),
+                                };
+
                                 write_buf.clear();
                                 write_buf.extend_from_slice(&msg);
                                 write_buf.extend_from_slice(&suffix);
@@ -898,6 +884,7 @@ impl SocketClientInner {
                                     active_writer.write_all(&write_buf),
                                 )
                                 .await;
+
                                 let write_failed = match write_result {
                                     Ok(Ok(())) => false,
                                     Ok(Err(e)) => {
@@ -906,6 +893,7 @@ impl SocketClientInner {
                                         } else {
                                             log::error!("Failed to send message: {e}");
                                         }
+
                                         true
                                     }
                                     Err(_) => {
@@ -917,10 +905,18 @@ impl SocketClientInner {
                                 };
 
                                 if write_failed {
-                                    reconnect_buffer.push_back(msg);
+                                    Self::buffer_reconnect_write(
+                                        &mut reconnect_buffer,
+                                        msg,
+                                        replay_key,
+                                        permit,
+                                    );
 
                                     // CAS: a disconnect landing mid-write must not be overwritten
-                                    if ConnectionMode::request_reconnect(&connection_state) {
+                                    if ConnectionMode::request_reconnect_with_sink(
+                                        &connection_state,
+                                        state_sink.as_ref(),
+                                    ) {
                                         log::warn!("Writer triggering reconnect");
                                         state_notify.notify_one();
                                     }
@@ -951,17 +947,33 @@ impl SocketClientInner {
         })
     }
 
+    fn buffer_reconnect_write(
+        buffer: &mut VecDeque<BufferedWrite>,
+        data: Bytes,
+        replay_key: Option<u64>,
+        permit: tokio::sync::OwnedSemaphorePermit,
+    ) {
+        if let Some(key) = replay_key {
+            buffer.retain(|buffered| buffered.replay_key != Some(key));
+        }
+
+        buffer.push_back(BufferedWrite {
+            data,
+            replay_key,
+            _permit: permit,
+        });
+    }
+
     fn spawn_heartbeat_task(
         connection_state: Arc<AtomicU8>,
-        heartbeat: (u64, Vec<u8>),
-        writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+        interval_secs: u64,
+        message: Vec<u8>,
+        writer_tx: WriterSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
         log_task_started("heartbeat");
-        let (interval_secs, message) = heartbeat;
 
         tokio::task::spawn(async move {
             let interval = Duration::from_secs(interval_secs);
-
             loop {
                 dst::time::sleep(interval).await;
 
@@ -972,7 +984,7 @@ impl SocketClientInner {
                         match writer_tx.send(msg) {
                             Ok(()) => log::trace!("Sent heartbeat to writer task"),
                             Err(e) => {
-                                log::error!("Failed to send heartbeat to writer task: {e}");
+                                log::warn!("Failed to send heartbeat to writer task: {e}");
                             }
                         }
                     }
@@ -988,14 +1000,6 @@ impl SocketClientInner {
 
 impl Drop for SocketClientInner {
     fn drop(&mut self) {
-        // Delegate to explicit cleanup handler
-        self.clean_drop();
-    }
-}
-
-/// Cleanup on drop: aborts background tasks and clears handlers to break reference cycles.
-impl CleanDrop for SocketClientInner {
-    fn clean_drop(&mut self) {
         self.read_fence.invalidate();
 
         if !self.read_task.is_finished() {
@@ -1014,30 +1018,67 @@ impl CleanDrop for SocketClientInner {
             handle.abort();
             log_task_aborted("heartbeat");
         }
-
-        #[cfg(feature = "python")]
-        {
-            // Remove stored handler to break ref cycle
-            self.config.message_handler = None;
-        }
     }
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
+/// A suffix-framed TCP client with optional TLS and automatic reconnection.
+///
+/// The internal writer task serializes concurrent calls to [`Self::send_bytes`]. The configured
+/// suffix frames all sent and received messages, and an optional heartbeat task sends its payload
+/// at the configured interval. See [`SocketConfig`] for framing and reconnect policy.
 pub struct SocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) state_notify: Arc<tokio::sync::Notify>,
-    pub(crate) reconnect_timeout: Duration,
-    pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
-    pub(crate) terminal_finalizer: Arc<SocketTerminalFinalizer>,
+    pub(crate) connect_timeout: Duration,
+    pub writer_tx: WriterSender<WriterCommand>,
+    state_sink: Option<SocketStateSink>,
+    controller_lifecycle: Arc<ControllerLifecycle>,
+    controller_notify: Arc<tokio::sync::Notify>,
+}
+
+/// Cloneable controller handle for requesting one raw socket reconnect.
+#[derive(Clone)]
+pub struct SocketReconnectHandle {
+    connection_mode: Arc<AtomicU8>,
+    state_sink: Option<SocketStateSink>,
+    controller_lifecycle: Arc<ControllerLifecycle>,
+    controller_notify: Arc<tokio::sync::Notify>,
+}
+
+impl Debug for SocketReconnectHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SocketReconnectHandle))
+            .field(
+                "connection_mode",
+                &ConnectionMode::from_atomic(&self.connection_mode),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl SocketReconnectHandle {
+    /// Requests that the controller replace the active transport.
+    ///
+    /// An accepted request reports the transport unavailable and wakes the controller. Rejected
+    /// requests leave the transport state unchanged.
+    #[must_use]
+    pub fn request_reconnect(&self) -> ReconnectRequestOutcome {
+        let Some(_request) = self.controller_lifecycle.enter_request() else {
+            return ReconnectRequestOutcome::Closed;
+        };
+
+        let outcome = ConnectionMode::request_reconnect_outcome_with_sink(
+            &self.connection_mode,
+            self.state_sink.as_ref(),
+        );
+
+        if outcome == ReconnectRequestOutcome::Accepted {
+            self.controller_notify.notify_one();
+        }
+
+        outcome
+    }
 }
 
 impl Debug for SocketClient {
@@ -1046,50 +1087,77 @@ impl Debug for SocketClient {
     }
 }
 
+#[bon::bon]
 impl SocketClient {
-    /// Connect to the server.
+    /// Returns a builder for a new [`SocketClient`] connection.
+    ///
+    /// After a successful reconnect, `post_reconnection` runs after the replacement writer is
+    /// installed, buffered messages are drained, and the replacement reader is started. The
+    /// callback does not run after the initial connection.
+    ///
+    /// `state_sink` receives connection state changes. `reconnect_replay` produces protocol setup
+    /// messages that the client sends before buffered application messages after a reconnect.
     ///
     /// # Errors
     ///
-    /// Returns any error connecting to the server.
-    pub async fn connect(
+    /// Returns an error if connecting to the server fails.
+    #[builder(finish_fn = connect)]
+    pub async fn builder(
         config: SocketConfig,
-        post_connection: Option<Arc<dyn Fn() + Send + Sync>>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-        post_disconnection: Option<Arc<dyn Fn() + Send + Sync>>,
+        state_sink: Option<SocketStateSink>,
+        reconnect_replay: Option<SocketReconnectReplay>,
     ) -> anyhow::Result<Self> {
-        let inner = SocketClientInner::connect_url(config).await?;
+        let inner = SocketClientInner::connect_url(config, state_sink).await?;
         let writer_tx = inner.writer_tx.clone();
-        let connection_mode = inner.connection_mode.clone();
-        let state_notify = inner.state_notify.clone();
-        let reconnect_timeout = inner.reconnect_timeout;
-        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
-            connection_mode.clone(),
-            state_notify.clone(),
-            post_disconnection,
-        ));
-
+        let connection_mode = Arc::clone(&inner.connection_mode);
+        let state_notify = Arc::clone(&inner.state_notify);
+        let connect_timeout = inner.connect_timeout;
+        let state_sink = inner.state_sink.clone();
+        let controller_lifecycle = Arc::new(ControllerLifecycle::new());
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
         let controller_task = Self::spawn_controller_task(
             inner,
-            connection_mode.clone(),
-            state_notify.clone(),
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
+            Arc::clone(&controller_lifecycle),
+            Arc::clone(&controller_notify),
             post_reconnection,
-            Arc::clone(&terminal_finalizer),
+            reconnect_replay,
         );
-
-        if let Some(handler) = post_connection {
-            handler();
-            log::debug!("Called `post_connection` handler");
-        }
+        let abort_handle = controller_task.abort_handle();
+        controller_lifecycle.set_abort(move || abort_handle.abort());
 
         Ok(Self {
             controller_task,
             connection_mode,
             state_notify,
-            reconnect_timeout,
+            connect_timeout,
             writer_tx,
-            terminal_finalizer,
+            state_sink,
+            controller_lifecycle,
+            controller_notify,
         })
+    }
+
+    /// Returns a cloneable handle to this client's reconnect controller.
+    #[must_use]
+    pub fn reconnect_handle(&self) -> SocketReconnectHandle {
+        SocketReconnectHandle {
+            connection_mode: Arc::clone(&self.connection_mode),
+            state_sink: self.state_sink.clone(),
+            controller_lifecycle: Arc::clone(&self.controller_lifecycle),
+            controller_notify: Arc::clone(&self.controller_notify),
+        }
+    }
+
+    /// Requests that the controller replace the active transport.
+    ///
+    /// Returns `true` only when this call transitions the client from active to reconnecting.
+    /// Duplicate, disconnecting, and closed requests return `false`.
+    #[must_use]
+    pub fn request_reconnect(&self) -> bool {
+        self.reconnect_handle().request_reconnect() == ReconnectRequestOutcome::Accepted
     }
 
     /// Returns the current connection mode.
@@ -1098,9 +1166,9 @@ impl SocketClient {
         ConnectionMode::from_atomic(&self.connection_mode)
     }
 
-    /// Check if the client connection is active.
+    /// Returns whether the client connection is active.
     ///
-    /// Returns `true` if the client is connected and has not been signalled to disconnect.
+    /// Returns `true` if the client is connected and has not been signaled to disconnect.
     /// The client will automatically retry connection based on its configuration.
     #[inline]
     #[must_use]
@@ -1108,7 +1176,7 @@ impl SocketClient {
         self.connection_mode().is_active()
     }
 
-    /// Check if the client is reconnecting.
+    /// Returns whether the client is reconnecting.
     ///
     /// Returns `true` if the client lost connection and is attempting to reestablish it.
     /// The client will automatically retry connection based on its configuration.
@@ -1118,7 +1186,7 @@ impl SocketClient {
         self.connection_mode().is_reconnect()
     }
 
-    /// Check if the client is disconnecting.
+    /// Returns whether the client is disconnecting.
     ///
     /// Returns `true` if the client is in disconnect mode.
     #[inline]
@@ -1127,7 +1195,7 @@ impl SocketClient {
         self.connection_mode().is_disconnect()
     }
 
-    /// Check if the client is closed.
+    /// Returns whether the client is closed.
     ///
     /// Returns `true` if the client has been explicitly disconnected or reached
     /// maximum reconnection attempts. In this state, the client cannot be reused
@@ -1143,36 +1211,39 @@ impl SocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
     pub async fn close(&self) {
+        self.begin_shutdown();
         self.close_with_timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS))
             .await;
     }
 
-    async fn close_with_timeout(&self, finalization_timeout: Duration) {
-        // Preserve a CLOSED terminal state; the controller has already exited
+    /// Requests shutdown without waiting for the controller task.
+    pub fn begin_shutdown(&self) {
         ConnectionMode::request_disconnect(&self.connection_mode);
         self.state_notify.notify_waiters();
+    }
 
-        if dst::time::timeout(
-            finalization_timeout,
-            self.terminal_finalizer.wait_for_completion(),
-        )
+    async fn close_with_timeout(&self, shutdown_timeout: Duration) {
+        self.begin_shutdown();
+
+        if dst::time::timeout(shutdown_timeout, async {
+            while !self.controller_task.is_finished() {
+                dst::time::sleep(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
+            }
+        })
         .await
-            == Ok(())
+        .is_err()
         {
-            if !self.controller_task.is_finished() {
-                self.controller_task.abort();
-                log_task_aborted("controller");
-            }
-            log_task_stopped("controller");
-        } else {
             log::warn!("Timeout waiting for controller task to finish");
-
-            if !self.controller_task.is_finished() {
-                self.controller_task.abort();
-                log_task_aborted("controller");
-            }
-            self.terminal_finalizer.transition_and_finalize();
         }
+
+        if !self.controller_task.is_finished() {
+            self.controller_task.abort();
+            log_task_aborted("controller");
+        }
+
+        self.connection_mode
+            .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        self.state_notify.notify_waiters();
     }
 
     /// Checks whether the connection is in a terminal state (disconnecting or closed).
@@ -1207,7 +1278,7 @@ impl SocketClient {
 
         let fallback_interval = Duration::from_millis(FALLBACK_INTERVAL_MS);
 
-        dst::time::timeout(self.reconnect_timeout, async {
+        dst::time::timeout(self.connect_timeout, async {
             loop {
                 // Enable before the state check: an unpolled Notified is unregistered and misses notifies
                 let mut notified = pin!(self.state_notify.notified());
@@ -1236,33 +1307,34 @@ impl SocketClient {
 
     /// Sends a message of the given `data`.
     ///
-    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does NOT
+    /// Returns `Ok(())` when the message is enqueued to the writer channel. This does not
     /// guarantee delivery: if a disconnect occurs concurrently, the writer task may drop the
     /// message. During reconnection, messages are buffered and replayed on the new connection.
     ///
     /// # Errors
     ///
-    /// Returns an error if sending fails.
+    /// Returns an error if the writer capacity is exhausted, or if the client cannot send.
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), SendError> {
         self.check_not_terminal()?;
         self.wait_for_active().await?;
 
         let msg = WriterCommand::Send(data.into());
-        self.writer_tx
-            .send(msg)
-            .map_err(|e| SendError::BrokenPipe(e.to_string()))
+        self.writer_tx.send(msg)
     }
 
     fn spawn_controller_task(
         mut inner: SocketClientInner,
         connection_mode: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
+        controller_lifecycle: Arc<ControllerLifecycle>,
+        controller_notify: Arc<tokio::sync::Notify>,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-        terminal_finalizer: Arc<SocketTerminalFinalizer>,
+        reconnect_replay: Option<SocketReconnectReplay>,
     ) -> tokio::task::JoinHandle<()> {
         const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
 
         tokio::task::spawn(async move {
+            let _activity = controller_lifecycle.activity();
             log_task_started("controller");
 
             let fallback_interval = Duration::from_millis(CONTROLLER_FALLBACK_INTERVAL_MS);
@@ -1271,6 +1343,7 @@ impl SocketClient {
             loop {
                 tokio::select! {
                     biased;
+                    () = controller_notify.notified() => {}
                     () = state_notify.notified() => {}
                     () = dst::time::sleep(fallback_interval) => {}
                 }
@@ -1305,7 +1378,8 @@ impl SocketClient {
                     }
 
                     log::debug!("Closed");
-                    terminal_finalizer.transition_and_finalize();
+                    connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+                    state_notify.notify_waiters();
                     break; // Controller finished
                 }
 
@@ -1325,22 +1399,18 @@ impl SocketClient {
                         log_task_aborted("heartbeat");
                     }
 
-                    terminal_finalizer.finalize_closed();
+                    state_notify.notify_waiters();
                     break;
                 }
 
                 if mode.is_active() && !inner.is_alive() {
-                    if connection_mode
-                        .compare_exchange(
-                            ConnectionMode::Active.as_u8(),
-                            ConnectionMode::Reconnect.as_u8(),
-                            Ordering::SeqCst,
-                            Ordering::SeqCst,
-                        )
-                        .is_ok()
-                    {
-                        log::debug!("Detected dead read task, transitioning to RECONNECT");
+                    if ConnectionMode::request_reconnect_with_sink(
+                        &connection_mode,
+                        inner.state_sink.as_ref(),
+                    ) {
+                        log::info!("Detected dead read task, transitioning to RECONNECT");
                     }
+
                     mode = ConnectionMode::from_atomic(&connection_mode);
                 }
 
@@ -1377,17 +1447,23 @@ impl SocketClient {
                             )
                             .is_ok()
                         {
-                            terminal_finalizer.finalize_closed();
+                            state_notify.notify_waiters();
                             break;
                         }
+
                         continue;
                     }
 
-                    if reconnect_uptime.is_some() && !previous_reconnect_stable {
-                        let duration = inner.backoff.next_duration();
-                        if !duration.is_zero() {
-                            log::warn!("Backing off for {}s...", duration.as_secs_f64());
-                        }
+                    let backoff_delay = if reconnect_uptime.is_some() && !previous_reconnect_stable
+                    {
+                        inner.backoff.next_duration()
+                    } else {
+                        Duration::ZERO
+                    };
+
+                    let duration = inner.reconnect_throttle.gated_delay(backoff_delay);
+                    if !duration.is_zero() {
+                        log::warn!("Backing off for {}s...", duration.as_secs_f64());
 
                         if !wait_reconnect_delay(
                             duration,
@@ -1402,11 +1478,12 @@ impl SocketClient {
                     }
 
                     inner.reconnect_attempt_count += 1;
+                    inner.reconnect_throttle.record_attempt();
 
                     // Race reconnect against disconnect notification
                     let reconnect_result = tokio::select! {
                         biased;
-                        result = inner.reconnect() => Some(result),
+                        result = inner.reconnect(reconnect_replay.as_ref()) => Some(result),
                         () = async {
                             loop {
                                 // Enable before the check so a disconnect notify between iterations is not missed
@@ -1425,12 +1502,15 @@ impl SocketClient {
                         None => {
                             log::debug!("Reconnect interrupted by disconnect");
                         }
-                        Some(Ok(())) => {
+                        Some(Ok(ReconnectOutcome::Reconnected)) => {
                             log::debug!("Reconnected successfully");
                             reconnected_at = Some(dst::time::Instant::now());
 
                             state_notify.notify_waiters();
 
+                            // The outcome records a completed reconnection; emit recovery
+                            // callbacks only while the replacement is still `Active`, not
+                            // after a teardown or another drop.
                             if ConnectionMode::from_atomic(&connection_mode).is_active() {
                                 if let Some(ref handler) = post_reconnection {
                                     handler();
@@ -1442,6 +1522,9 @@ impl SocketClient {
                                 );
                             }
                         }
+                        Some(Ok(ReconnectOutcome::Aborted)) => {
+                            log::debug!("Reconnect aborted");
+                        }
                         Some(Err(e)) => {
                             let duration = inner.backoff.next_duration();
                             log::warn!(
@@ -1451,6 +1534,7 @@ impl SocketClient {
 
                             if !duration.is_zero() {
                                 log::warn!("Backing off for {}s...", duration.as_secs_f64());
+
                                 if !wait_reconnect_delay(
                                     duration,
                                     connection_mode.as_ref(),
@@ -1465,31 +1549,33 @@ impl SocketClient {
                     }
                 }
             }
-            terminal_finalizer.finalize_closed();
 
             log_task_stopped("controller");
         })
     }
 }
 
-// Dropping cancels background work without reporting a terminal lifecycle transition.
+// Dropping cancels background work without reporting a terminal socket state transition.
 impl Drop for SocketClient {
     fn drop(&mut self) {
-        if !self.controller_task.is_finished() {
-            self.controller_task.abort();
+        let controller_running = !self.controller_task.is_finished();
+        self.controller_lifecycle.close_and_abort();
+
+        if controller_running {
             log_task_aborted("controller");
         }
     }
 }
 
 #[cfg(test)]
-#[cfg(feature = "python")]
 #[cfg(not(feature = "turmoil"))]
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
+    use log::Level;
     use nautilus_common::testing::wait_until_async;
-    use pyo3::Python;
+    use parking_lot::Mutex as BlockingMutex;
+    use rstest::rstest;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
@@ -1499,6 +1585,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::{SocketState, logging::tests::capture_logs_for, socket::SocketHeartbeat};
 
     async fn bind_test_server() -> (u16, TcpListener) {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -1541,10 +1628,97 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_writer_capacity_from_config() {
+        let (port, listener) = bind_test_server().await;
+        let config = SocketConfig::builder()
+            .url(format!("127.0.0.1:{port}"))
+            .mode(Mode::Plain)
+            .suffix(b"\r\n".to_vec())
+            .writer_capacity(2)
+            .build()
+            .unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+
+        // Ready sends do not yield on this current-thread runtime, keeping the queue occupied
+        client.send_bytes(vec![1]).await.unwrap();
+        client.send_bytes(vec![2]).await.unwrap();
+        let overflow = client.send_bytes(vec![3]).await;
+
+        assert_eq!(client.connection_mode(), ConnectionMode::Active);
+        assert!(matches!(overflow, Err(SendError::BufferFull)));
+        client.close().await;
+    }
+
+    #[rstest]
+    #[case::drain_failed(
+        Some(false),
+        std::io::ErrorKind::Other,
+        "Failed to drain reconnection buffer"
+    )]
+    #[case::reply_dropped(
+        None,
+        std::io::ErrorKind::BrokenPipe,
+        "Writer task dropped response channel"
+    )]
+    #[tokio::test]
+    async fn test_reconnect_writer_failure_preserves_reconnect_state(
+        #[case] reply: Option<bool>,
+        #[case] kind: std::io::ErrorKind,
+        #[case] message: &str,
+    ) {
+        let (port, listener) = bind_test_server().await;
+        let config = SocketConfig::builder()
+            .url(format!("127.0.0.1:{port}"))
+            .mode(Mode::Plain)
+            .suffix(b"\r\n".to_vec())
+            .build()
+            .unwrap();
+        let mut client = SocketClientInner::connect_url(config, None).await.unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+        client.read_task.abort();
+        client.write_task.abort();
+        let _ = (&mut client.read_task).await;
+        let _ = (&mut client.write_task).await;
+        let (writer_tx, mut writer_rx) = writer::channel(DEFAULT_WRITER_CAPACITY);
+        client.writer_tx = writer_tx;
+        client
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let writer = tokio::spawn(async move {
+            let WriterCommand::Update(_, sender) = writer_rx.recv().await.unwrap().0 else {
+                panic!("expected writer update");
+            };
+
+            if let Some(reply) = reply {
+                sender.send(reply).unwrap();
+            }
+        });
+
+        let error = client.reconnect(None).await.unwrap_err();
+        writer.await.unwrap();
+
+        let Error::Io(error) = error else {
+            panic!("expected I/O error, was {error}");
+        };
+
+        assert_eq!(error.kind(), kind);
+        assert_eq!(error.to_string(), message);
+        assert_eq!(
+            ConnectionMode::from_atomic(&client.connection_mode),
+            ConnectionMode::Reconnect
+        );
+    }
+
     #[tokio::test]
     async fn test_basic_send_receive() {
-        Python::initialize();
-
         let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
@@ -1557,18 +1731,21 @@ mod tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: None,
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             connection_max_retries: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .expect("Client connect failed unexpectedly");
 
@@ -1585,8 +1762,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconnect_fail_exhausted() {
-        Python::initialize();
-
         let (port, listener) = bind_test_server().await;
         drop(listener); // We drop it immediately -> no server is listening
 
@@ -1607,28 +1782,115 @@ mod tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(100),
+            connect_timeout_ms: Some(100),
             reconnect_delay_initial_ms: Some(50),
             reconnect_backoff_factor: Some(1.0),
             reconnect_delay_max_ms: Some(50),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client_res = SocketClient::connect(config, None, None, None).await;
+        let client_res = SocketClient::builder().config(config).connect().await;
         assert!(
             client_res.is_err(),
             "Should fail quickly with no server listening"
         );
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_connect_failure_redacts_url_from_logs_and_error() {
+        const ENDPOINT_PATH_SECRET: &str = "unique-endpoint-path-secret";
+        const ENDPOINT_QUERY_SECRET: &str = "unique-endpoint-query-secret";
+
+        let (port, listener) = bind_test_server().await;
+        drop(listener); // We drop it immediately -> no server is listening
+
+        // Wait until port is truly unavailable (OS has released it)
+        wait_until_async(
+            || async {
+                TcpStream::connect(format!("127.0.0.1:{port}"))
+                    .await
+                    .is_err()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let capture = capture_logs_for(&["nautilus_network::socket::client"]).await;
+
+        let config = SocketConfig {
+            url: format!(
+                "ws://127.0.0.1:{port}/{ENDPOINT_PATH_SECRET}?api_key={ENDPOINT_QUERY_SECRET}"
+            ),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            connect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
+            certs_dir: None,
+        };
+
+        let error = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .expect_err("connection should fail with no server listening");
+
+        let error_message = error.to_string();
+        assert!(
+            error_message.starts_with(&format!("Failed to connect to {REDACTED}")),
+            "connect error omitted the redaction placeholder: {error_message}"
+        );
+        assert!(
+            !error_message.contains(ENDPOINT_PATH_SECRET)
+                && !error_message.contains(ENDPOINT_QUERY_SECRET),
+            "connect error exposed the secret marker: {error_message}"
+        );
+
+        let messages = capture.messages();
+
+        // Asserted positively so the blanket secret assertion below cannot pass vacuously by
+        // capturing no warning at all.
+        let (_, attempt_warning) = messages
+            .iter()
+            .find(|(level, message)| {
+                *level == Level::Warn && message.starts_with("Socket connection attempt 1/1 ")
+            })
+            .expect("connect-failure warning was not captured");
+
+        assert!(
+            attempt_warning.contains(REDACTED),
+            "connect-failure warning omitted the redaction placeholder: {attempt_warning}"
+        );
+        assert!(
+            messages.iter().any(|(level, message)| {
+                *level == Level::Debug && *message == format!("Connecting to {REDACTED}")
+            }),
+            "connect debug log should redact the endpoint, was {messages:?}"
+        );
+        assert!(
+            messages.iter().all(|(_, message)| {
+                !message.contains(ENDPOINT_PATH_SECRET) && !message.contains(ENDPOINT_QUERY_SECRET)
+            }),
+            "socket client logs exposed the secret marker: {messages:?}"
+        );
+    }
+
     #[tokio::test]
     async fn test_user_disconnect() {
-        Python::initialize();
-
         let (port, listener) = bind_test_server().await;
         let server_task = task::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
@@ -1646,18 +1908,21 @@ mod tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: None,
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             connection_max_retries: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -1668,8 +1933,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_after_closed_returns_fast_and_preserves_state() {
-        Python::initialize();
-
         let (port, listener) = bind_test_server().await;
 
         let server_task = task::spawn(async move {
@@ -1687,18 +1950,21 @@ mod tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(200),
+            connect_timeout_ms: Some(200),
             reconnect_delay_initial_ms: Some(50),
             reconnect_backoff_factor: Some(1.0),
             reconnect_delay_max_ms: Some(50),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: None,
             reconnect_max_attempts: Some(1),
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -1724,13 +1990,50 @@ mod tests {
         server_task.abort();
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_heartbeat_task_warns_when_writer_channel_closed() {
+        let capture = capture_logs_for(&["nautilus_network::socket::client"]).await;
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let (writer_tx, mut writer_rx) = writer::channel(DEFAULT_WRITER_CAPACITY);
+        let task = SocketClientInner::spawn_heartbeat_task(
+            Arc::clone(&connection_state),
+            1,
+            b"ping".to_vec(),
+            writer_tx,
+        );
+
+        let _ = tokio::time::timeout(Duration::from_secs(2), writer_rx.recv())
+            .await
+            .expect("timed out waiting for the first heartbeat")
+            .expect("heartbeat channel closed before the first heartbeat");
+        drop(writer_rx);
+        tokio::time::sleep(Duration::from_millis(1_200)).await;
+
+        let messages = capture.messages();
+        assert!(
+            messages.iter().any(|(level, message)| {
+                *level == Level::Warn && message.contains("Failed to send heartbeat to writer task")
+            }),
+            "expected WARN when the writer channel is closed, was {messages:?}"
+        );
+        assert!(
+            !messages.iter().any(|(level, _)| *level == Level::Error),
+            "a closed writer channel must not log ERROR, was {messages:?}"
+        );
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("heartbeat task should stop after close")
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn test_heartbeat() {
-        Python::initialize();
-
         let (port, listener) = bind_test_server().await;
         let received = Arc::new(Mutex::new(Vec::new()));
-        let received2 = received.clone();
+        let received2 = Arc::clone(&received);
 
         let server_task = task::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();
@@ -1753,27 +2056,30 @@ mod tests {
             }
         });
 
-        // Heartbeat every 1 second
-        let heartbeat = Some((1, b"ping".to_vec()));
-
         let config = SocketConfig {
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
-            heartbeat,
-            reconnect_timeout_ms: None,
+            heartbeat: Some(SocketHeartbeat {
+                interval_secs: 1,
+                payload: b"ping".to_vec(),
+            }),
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_backoff_factor: None,
             reconnect_delay_max_ms: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             connection_max_retries: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -1798,8 +2104,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconnect_success() {
-        Python::initialize();
-
         let (port, listener) = bind_test_server().await;
 
         // Spawn a server task that:
@@ -1827,18 +2131,21 @@ mod tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(5_000),
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
             reconnect_jitter_ms: Some(50),
             reconnect_max_attempts: None,
             connection_max_retries: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .expect("Client connect failed unexpectedly");
 
@@ -1857,6 +2164,115 @@ mod tests {
         client.close().await;
         server_task.abort();
     }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_state_sink_reports_initial_loss_and_recovery() {
+        let (port, listener) = bind_test_server().await;
+        let server_task = task::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            sleep(Duration::from_millis(100)).await;
+            socket.shutdown().await.unwrap();
+
+            let (socket, _) = listener.accept().await.unwrap();
+            run_echo_server(socket).await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            connect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(10),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_delay_max_ms: Some(10),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(3),
+            connection_max_retries: Some(1),
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
+            certs_dir: None,
+        };
+
+        let states = Arc::new(BlockingMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+
+        let client = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
+            .await
+            .unwrap();
+
+        assert_eq!(*states.lock(), vec![SocketState::Connected]);
+
+        wait_until_async(
+            || {
+                let states = Arc::clone(&states);
+                async move { states.lock().len() == 3 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert_eq!(
+            *states.lock(),
+            vec![
+                SocketState::Connected,
+                SocketState::Disconnected,
+                SocketState::Connected,
+            ]
+        );
+
+        client.close().await;
+        assert_eq!(states.lock().len(), 3);
+        server_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_state_sink_ignores_initial_connection_failure() {
+        let (port, listener) = bind_test_server().await;
+        drop(listener);
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            connect_timeout_ms: Some(100),
+            reconnect_delay_initial_ms: Some(1),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_delay_max_ms: Some(1),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: Some(1),
+            connection_max_retries: Some(1),
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
+            certs_dir: None,
+        };
+
+        let states = Arc::new(BlockingMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+
+        let result = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
+            .await;
+
+        assert!(result.is_err());
+        assert_eq!(*states.lock(), Vec::new());
+    }
 }
 
 #[cfg(test)]
@@ -1866,13 +2282,14 @@ mod rust_tests {
     use std::{
         pin::Pin,
         sync::{
-            Arc, Condvar, Mutex as StdMutex,
-            atomic::{AtomicUsize, Ordering as AtomicOrdering},
+            Arc,
+            atomic::{AtomicBool, AtomicUsize},
         },
         task::{Context, Poll, Waker},
     };
 
     use nautilus_common::testing::wait_until_async;
+    use parking_lot::{Condvar, Mutex};
     use rstest::rstest;
     use tokio::{
         io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf},
@@ -1883,23 +2300,22 @@ mod rust_tests {
     };
 
     use super::*;
+    use crate::{SocketState, socket::SocketHeartbeat};
 
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     struct CondvarReleaseGuard {
-        release: Arc<(StdMutex<bool>, Condvar)>,
+        release: Arc<(Mutex<bool>, Condvar)>,
     }
 
     impl CondvarReleaseGuard {
-        fn new(release: Arc<(StdMutex<bool>, Condvar)>) -> Self {
+        fn new(release: Arc<(Mutex<bool>, Condvar)>) -> Self {
             Self { release }
         }
 
         fn release(&self) {
             let (lock, condvar) = self.release.as_ref();
-            let mut released = lock
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut released = lock.lock();
             *released = true;
             condvar.notify_all();
         }
@@ -1940,17 +2356,184 @@ mod rust_tests {
         }
     }
 
-    async fn wait_for_finalizer(finalizer: &SocketTerminalFinalizer, name: &'static str) {
-        tokio::time::timeout(TEST_TIMEOUT, finalizer.wait_for_completion())
+    fn reconnect_test_config(port: u16) -> SocketConfig {
+        SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            connect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
+            certs_dir: None,
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_outcome_is_aborted_before_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port), None)
             .await
-            .unwrap_or_else(|_| panic!("{name} completion was not published"));
+            .unwrap();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect(None).await.unwrap();
+
+        assert_eq!(outcome, ReconnectOutcome::Aborted);
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_outcome_is_reconnected() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (_first, _) = listener.accept().await.unwrap();
+            let (_second, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port), None)
+            .await
+            .unwrap();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect(None).await.unwrap();
+
+        assert_eq!(outcome, ReconnectOutcome::Reconnected);
+        assert_eq!(
+            ConnectionMode::from_atomic(&inner.connection_mode),
+            ConnectionMode::Active
+        );
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_aborts_retired_reader() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut inner = SocketClientInner::connect_url(reconnect_test_config(port), None)
+            .await
+            .unwrap();
+        let (_peer, _) = listener.accept().await.unwrap();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel::<()>();
+        let pending_reader = tokio::spawn(async move {
+            let _sender = dropped_tx;
+            std::future::pending::<()>().await;
+        });
+
+        let previous_reader = std::mem::replace(&mut inner.read_task, pending_reader);
+        previous_reader.abort();
+        let _ = previous_reader.await;
+        let old_fence = inner.read_fence.clone();
+        inner
+            .connection_mode
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let outcome = inner.reconnect(None).await.unwrap();
+        let reader_result = tokio::time::timeout(Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("retired reader task must be canceled");
+
+        assert_eq!(outcome, ReconnectOutcome::Reconnected);
+        assert!(
+            reader_result.is_err(),
+            "retired reader must drop its sender without sending"
+        );
+        assert!(!old_fence.is_valid());
+        assert!(inner.read_fence.is_valid());
+        assert_eq!(
+            ConnectionMode::from_atomic(&inner.connection_mode),
+            ConnectionMode::Active
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_inner_drop_invalidates_read_fence_and_aborts_tasks() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let mut config = reconnect_test_config(port);
+        config.heartbeat = Some(SocketHeartbeat {
+            interval_secs: 60,
+            payload: b"ping\r\n".to_vec(),
+        });
+
+        let inner = SocketClientInner::connect_url(config, None).await.unwrap();
+        let read_fence = inner.read_fence.clone();
+        let read_abort = inner.read_task.abort_handle();
+        let write_abort = inner.write_task.abort_handle();
+        let heartbeat_abort = inner
+            .heartbeat_task
+            .as_ref()
+            .expect("heartbeat task should be spawned for a configured heartbeat")
+            .abort_handle();
+
+        assert!(read_fence.is_valid(), "read fence should start valid");
+        assert!(
+            !read_abort.is_finished(),
+            "read task should be running before drop"
+        );
+        assert!(
+            !write_abort.is_finished(),
+            "write task should be running before drop"
+        );
+        assert!(
+            !heartbeat_abort.is_finished(),
+            "heartbeat task should be running before drop"
+        );
+
+        drop(inner);
+        wait_until_async(
+            || async {
+                read_abort.is_finished()
+                    && write_abort.is_finished()
+                    && heartbeat_abort.is_finished()
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        assert!(!read_fence.is_valid(), "read fence was not invalidated");
+        assert!(read_abort.is_finished(), "read task was not aborted");
+        assert!(write_abort.is_finished(), "write task was not aborted");
+        assert!(
+            heartbeat_abort.is_finished(),
+            "heartbeat task was not aborted"
+        );
+        server.abort();
     }
 
     struct ScriptedReader {
         first: Option<Vec<u8>>,
-        remainder: Arc<StdMutex<Option<Vec<u8>>>>,
+        remainder: Arc<Mutex<Option<Vec<u8>>>>,
         pending_tx: Option<oneshot::Sender<()>>,
-        waker: Arc<StdMutex<Option<Waker>>>,
+        waker: Arc<Mutex<Option<Waker>>>,
     }
 
     impl AsyncRead for ScriptedReader {
@@ -1964,7 +2547,7 @@ mod rust_tests {
                 return Poll::Ready(Ok(()));
             }
 
-            if let Some(remainder) = self.remainder.lock().unwrap().take() {
+            if let Some(remainder) = self.remainder.lock().take() {
                 buf.put_slice(&remainder);
                 return Poll::Ready(Ok(()));
             }
@@ -1972,8 +2555,33 @@ mod rust_tests {
             if let Some(tx) = self.pending_tx.take() {
                 let _ = tx.send(());
             }
-            *self.waker.lock().unwrap() = Some(cx.waker().clone());
+
+            *self.waker.lock() = Some(cx.waker().clone());
             Poll::Pending
+        }
+    }
+
+    struct LimitProbeReader {
+        remaining: usize,
+        read_after_limit: Arc<AtomicBool>,
+    }
+
+    impl AsyncRead for LimitProbeReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if self.remaining == 0 {
+                self.read_after_limit.store(true, Ordering::SeqCst);
+                return Poll::Ready(Ok(()));
+            }
+
+            let read_len = self.remaining.min(buf.remaining());
+            buf.initialize_unfilled_to(read_len).fill(b'x');
+            buf.advance(read_len);
+            self.remaining -= read_len;
+            Poll::Ready(Ok(()))
         }
     }
 
@@ -1994,6 +2602,7 @@ mod rust_tests {
             {
                 let _ = tx.send(());
             }
+
             result
         }
 
@@ -2009,8 +2618,31 @@ mod rust_tests {
         }
     }
 
+    struct FailingWriter;
+
+    impl AsyncWrite for FailingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "test writer failure",
+            )))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
     struct RecordingWriter {
-        bytes: Arc<StdMutex<Vec<u8>>>,
+        bytes: Arc<Mutex<Vec<u8>>>,
     }
 
     impl AsyncWrite for RecordingWriter {
@@ -2019,7 +2651,7 @@ mod rust_tests {
             _cx: &mut Context<'_>,
             buf: &[u8],
         ) -> Poll<std::io::Result<usize>> {
-            self.bytes.lock().unwrap().extend_from_slice(buf);
+            self.bytes.lock().extend_from_slice(buf);
             Poll::Ready(Ok(buf.len()))
         }
 
@@ -2035,325 +2667,294 @@ mod rust_tests {
     fn test_socket_client(
         connection_state: Arc<AtomicU8>,
         state_notify: Arc<tokio::sync::Notify>,
-        terminal_finalizer: Arc<SocketTerminalFinalizer>,
         controller_task: tokio::task::JoinHandle<()>,
     ) -> SocketClient {
-        let (writer_tx, _writer_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (writer_tx, _writer_rx) = writer::channel(DEFAULT_WRITER_CAPACITY);
+        let controller_lifecycle = Arc::new(ControllerLifecycle::new());
+        let abort_handle = controller_task.abort_handle();
+        controller_lifecycle.set_abort(move || abort_handle.abort());
 
         SocketClient {
             controller_task,
             connection_mode: connection_state,
             state_notify,
-            reconnect_timeout: Duration::from_secs(1),
+            connect_timeout: Duration::from_secs(1),
             writer_tx,
-            terminal_finalizer,
-        }
-    }
-
-    fn wait_for_finalizer_sync(finalizer: &SocketTerminalFinalizer) {
-        let deadline = std::time::Instant::now() + TEST_TIMEOUT * 2;
-
-        while !finalizer
-            .completion
-            .notification_completed
-            .load(Ordering::Acquire)
-        {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "terminal callback did not complete"
-            );
-            std::thread::yield_now();
+            controller_lifecycle,
+            controller_notify: Arc::new(tokio::sync::Notify::new()),
+            state_sink: None,
         }
     }
 
     #[rstest]
-    #[tokio::test(start_paused = true)]
-    async fn test_close_finalizes_after_controller_was_aborted() {
+    #[tokio::test]
+    async fn test_send_reports_writer_buffer_full() {
+        let state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let notify = Arc::new(tokio::sync::Notify::new());
+
+        let task = tokio::spawn(std::future::pending::<()>());
+        let mut client = test_socket_client(state, notify, task);
+        let (writer_tx, mut writer_rx) = writer::channel(1);
+        client.writer_tx = writer_tx;
+
+        client.send_bytes(vec![1]).await.unwrap();
+        assert!(matches!(
+            client.send_bytes(vec![2]).await,
+            Err(SendError::BufferFull)
+        ));
+        let (command, permit) = writer_rx.recv().await.unwrap();
+        assert!(matches!(command, WriterCommand::Send(data) if data == vec![1]));
+        assert!(matches!(
+            client.send_bytes(vec![2]).await,
+            Err(SendError::BufferFull)
+        ));
+        drop(permit);
+        client.send_bytes(vec![3]).await.unwrap();
+        let (command, _) = writer_rx.recv().await.unwrap();
+        assert!(matches!(command, WriterCommand::Send(data) if data == vec![3]));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_handle_is_closed_after_client_drop() {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_clone = Arc::clone(&callback_count);
-        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
-            Arc::clone(&connection_state),
-            Arc::clone(&state_notify),
-            Some(Arc::new(move || {
-                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
-            })),
-        ));
 
         let controller_task = tokio::spawn(std::future::pending::<()>());
-        controller_task.abort();
-        let client = test_socket_client(
-            connection_state,
-            state_notify,
-            terminal_finalizer,
-            controller_task,
-        );
+        let client = test_socket_client(connection_state, state_notify, controller_task);
+        let handle = client.reconnect_handle();
 
-        client.close_with_timeout(Duration::from_millis(1)).await;
-        wait_for_finalizer_sync(&client.terminal_finalizer);
+        drop(client);
 
-        assert!(client.is_closed());
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        assert_eq!(handle.request_reconnect(), ReconnectRequestOutcome::Closed);
     }
 
     #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_close_does_not_wait_for_aborted_controller_to_finish() {
+    #[tokio::test]
+    async fn test_concurrent_drop_defers_controller_abort_until_request_completes() {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
-        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let controller_abort = controller_task.abort_handle();
+        let mut client = test_socket_client(connection_state, state_notify, controller_task);
+        let callback_release = Arc::new((Mutex::new(false), Condvar::new()));
         let callback_release_guard = CondvarReleaseGuard::new(Arc::clone(&callback_release));
         let callback_release_clone = Arc::clone(&callback_release);
         let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
-        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
-            Arc::clone(&connection_state),
-            Arc::clone(&state_notify),
-            Some(Arc::new(move || {
-                callback_entered_tx.send(()).unwrap();
-                let (lock, condvar) = callback_release_clone.as_ref();
-                let mut released = lock.lock().unwrap();
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_clone = Arc::clone(&states);
+        client.state_sink = Some(SocketStateSink::new(move |state| {
+            states_clone.lock().push(state);
+            callback_entered_tx.send(()).unwrap();
+            let (lock, condvar) = callback_release_clone.as_ref();
+            let mut released = lock.lock();
+            while !*released {
+                condvar.wait(&mut released);
+            }
+        }));
 
-                while !*released {
-                    released = condvar.wait(released).unwrap();
-                }
-            })),
-        ));
-        let controller_finalizer = Arc::clone(&terminal_finalizer);
-        let controller_task = tokio::spawn(async move {
-            controller_finalizer.transition_and_finalize();
-        });
-        recv_rendezvous(
-            callback_entered_rx,
-            "controller-claimed terminal callback entry",
-        )
-        .await;
-        let client = test_socket_client(
-            connection_state,
-            state_notify,
-            terminal_finalizer,
-            controller_task,
-        );
+        let handle = client.reconnect_handle();
+        let surviving_handle = handle.clone();
+        let controller_notify = Arc::clone(&handle.controller_notify);
+        let request_thread = std::thread::spawn(move || handle.request_reconnect());
 
-        let close_result = tokio::time::timeout(
-            TEST_TIMEOUT,
-            client.close_with_timeout(Duration::from_millis(1)),
-        )
-        .await;
+        recv_rendezvous(callback_entered_rx, "socket state callback entry").await;
+        let (drop_finished_tx, drop_finished_rx) = std::sync::mpsc::channel();
 
-        callback_release_guard.release();
-
-        assert!(
-            close_result.is_ok(),
-            "close should return after aborting a controller blocked in a callback"
-        );
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_close_dispatches_unclaimed_blocking_callback() {
-        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
-        let state_notify = Arc::new(tokio::sync::Notify::new());
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_clone = Arc::clone(&callback_count);
-        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
-        let callback_release_guard = CondvarReleaseGuard::new(Arc::clone(&callback_release));
-        let callback_release_clone = Arc::clone(&callback_release);
-        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
-        let terminal_finalizer = Arc::new(SocketTerminalFinalizer::new(
-            Arc::clone(&connection_state),
-            Arc::clone(&state_notify),
-            Some(Arc::new(move || {
-                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
-                callback_entered_tx.send(()).unwrap();
-                let (lock, condvar) = callback_release_clone.as_ref();
-                let mut released = lock.lock().unwrap();
-
-                while !*released {
-                    released = condvar.wait(released).unwrap();
-                }
-            })),
-        ));
-
-        let controller_task = tokio::spawn(std::future::pending::<()>());
-        let client = Arc::new(test_socket_client(
-            connection_state,
-            state_notify,
-            Arc::clone(&terminal_finalizer),
-            controller_task,
-        ));
-        let close_client = Arc::clone(&client);
-        let (close_finished_tx, close_finished_rx) = std::sync::mpsc::channel();
-
-        let close_task = tokio::spawn(async move {
-            close_client
-                .close_with_timeout(Duration::from_millis(1))
-                .await;
-            let _ = close_finished_tx.send(());
+        let drop_thread = std::thread::spawn(move || {
+            drop(client);
+            drop_finished_tx.send(()).unwrap();
         });
 
-        recv_rendezvous(callback_entered_rx, "close-claimed terminal callback entry").await;
-        recv_rendezvous(
-            close_finished_rx,
-            "close task completion while terminal callback was blocked",
-        )
-        .await;
-        let completion_while_blocked = terminal_finalizer
-            .completion
-            .notification_completed
-            .load(Ordering::Acquire);
+        recv_rendezvous(drop_finished_rx, "client drop").await;
+        drop_thread.join().unwrap();
+        assert!(!controller_abort.is_finished());
 
         callback_release_guard.release();
-
-        await_task_termination(close_task, "close task", false).await;
-        wait_for_finalizer(&terminal_finalizer, "close-claimed terminal callback").await;
-
-        assert!(!completion_while_blocked);
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
-
-        tokio::time::timeout(
-            TEST_TIMEOUT,
-            client.close_with_timeout(Duration::from_millis(1)),
-        )
-        .await
-        .expect("second close did not return within the test timeout");
-        terminal_finalizer.transition_and_finalize();
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
-    }
-
-    #[rstest]
-    #[tokio::test(start_paused = true)]
-    async fn test_panicking_terminal_callback_still_completes_notification() {
-        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Closed.as_u8()));
-        let state_notify = Arc::new(tokio::sync::Notify::new());
-        let finalizer = SocketTerminalFinalizer::new(
-            connection_state,
-            state_notify,
-            Some(Arc::new(|| panic!("terminal callback panic"))),
-        );
-
-        finalizer.finalize_closed();
-        wait_for_finalizer_sync(&finalizer);
-        assert!(
-            finalizer
-                .completion
-                .notification_completed
-                .load(Ordering::Acquire)
-        );
-    }
-
-    #[rstest]
-    fn test_concurrent_terminal_finalizers_notify_once() {
-        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Closed.as_u8()));
-        let state_notify = Arc::new(tokio::sync::Notify::new());
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_clone = Arc::clone(&callback_count);
-        let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
-        let (callback_release_tx, callback_release_rx) = std::sync::mpsc::channel();
-        let callback_release_rx = Arc::new(StdMutex::new(callback_release_rx));
-        let callback_release_rx_clone = Arc::clone(&callback_release_rx);
-        let finalizer = Arc::new(SocketTerminalFinalizer::new(
-            connection_state,
-            state_notify,
-            Some(Arc::new(move || {
-                callback_entered_tx.send(()).unwrap();
-                callback_release_rx_clone
-                    .lock()
-                    .unwrap()
-                    .recv_timeout(TEST_TIMEOUT)
-                    .expect("terminal callback release did not arrive within the test timeout");
-                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
-            })),
-        ));
-        let first_finalizer = Arc::clone(&finalizer);
-        let first = std::thread::spawn(move || first_finalizer.finalize_closed());
-        callback_entered_rx
-            .recv_timeout(TEST_TIMEOUT)
-            .expect("terminal callback entry did not arrive within the test timeout");
-        let second_finalizer = Arc::clone(&finalizer);
-        let second = std::thread::spawn(move || second_finalizer.finalize_closed());
-
-        second.join().unwrap();
-        callback_release_tx.send(()).unwrap();
-        first.join().unwrap();
-        wait_for_finalizer_sync(&finalizer);
-
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
-        assert!(
-            finalizer
-                .completion
-                .notification_completed
-                .load(Ordering::Acquire)
-        );
-    }
-
-    #[rstest]
-    #[case(false)]
-    #[case(true)]
-    fn test_terminal_finalizer_cas_interleavings_notify_once(#[case] exhaustion_wins: bool) {
-        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
-        let state_notify = Arc::new(tokio::sync::Notify::new());
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_clone = Arc::clone(&callback_count);
-        let callback_state = Arc::clone(&connection_state);
-        let finalizer = SocketTerminalFinalizer::new(
-            Arc::clone(&connection_state),
-            state_notify,
-            Some(Arc::new(move || {
-                assert_eq!(
-                    ConnectionMode::from_atomic(&callback_state),
-                    ConnectionMode::Closed
-                );
-                callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
-            })),
-        );
-
-        if exhaustion_wins {
-            assert!(
-                connection_state
-                    .compare_exchange(
-                        ConnectionMode::Reconnect.as_u8(),
-                        ConnectionMode::Closed.as_u8(),
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    )
-                    .is_ok()
-            );
-            finalizer.finalize_closed();
-            assert!(!ConnectionMode::request_disconnect(&connection_state));
-        } else {
-            assert!(ConnectionMode::request_disconnect(&connection_state));
-            assert!(
-                connection_state
-                    .compare_exchange(
-                        ConnectionMode::Reconnect.as_u8(),
-                        ConnectionMode::Closed.as_u8(),
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    )
-                    .is_err()
-            );
-            finalizer.transition_and_finalize();
-        }
-
-        finalizer.transition_and_finalize();
-        wait_for_finalizer_sync(&finalizer);
         assert_eq!(
-            ConnectionMode::from_atomic(&connection_state),
-            ConnectionMode::Closed
+            request_thread.join().unwrap(),
+            ReconnectRequestOutcome::Accepted
         );
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+            .await
+            .expect("accepted request should notify before deferred controller abort");
+        wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
+
+        assert_eq!(
+            surviving_handle.request_reconnect(),
+            ReconnectRequestOutcome::Closed
+        );
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
         assert!(
-            finalizer
-                .completion
-                .notification_completed
-                .load(Ordering::Acquire)
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "closed request should not notify controller",
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_reconnect_exhaustion_notifies_disconnection_once() {
+    async fn test_reconnect_state_callback_can_drop_client() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let controller_abort = controller_task.abort_handle();
+        let mut client = test_socket_client(connection_state, state_notify, controller_task);
+        let client_slot = Arc::new(Mutex::new(None));
+        let client_slot_callback = Arc::clone(&client_slot);
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        client.state_sink = Some(SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+            drop(client_slot_callback.lock().take());
+        }));
+
+        let handle = client.reconnect_handle();
+        let controller_notify = Arc::clone(&handle.controller_notify);
+        *client_slot.lock() = Some(client);
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || result_tx.send(handle.request_reconnect()).unwrap());
+
+        assert_eq!(
+            recv_rendezvous(result_rx, "reconnect request").await,
+            ReconnectRequestOutcome::Accepted
+        );
+        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+            .await
+            .expect("accepted request should notify before deferred controller abort");
+        wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
+
+        assert!(client_slot.lock().is_none());
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_manual_reconnect_uses_controller_path() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (first_accepted_tx, first_accepted_rx) = oneshot::channel();
+        let (second_accepted_tx, second_accepted_rx) = oneshot::channel();
+        let (payload_tx, payload_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+
+        let server = task::spawn(async move {
+            let (_first, _) = listener.accept().await.unwrap();
+            first_accepted_tx.send(()).unwrap();
+
+            let (mut second, _) = listener.accept().await.unwrap();
+            second_accepted_tx.send(()).unwrap();
+            let mut payload = [0_u8; 8];
+            second.read_exact(&mut payload).await.unwrap();
+            payload_tx.send(payload).unwrap();
+            let _ = release_rx.await;
+        });
+
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = Arc::clone(&callback_count);
+        let post_reconnection = Arc::new(move || {
+            callback_count_clone.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let client = SocketClient::builder()
+            .config(reconnect_test_config(port))
+            .post_reconnection(post_reconnection)
+            .state_sink(sink)
+            .connect()
+            .await
+            .unwrap();
+        first_accepted_rx.await.unwrap();
+        let handle = client.reconnect_handle();
+
+        assert!(client.request_reconnect());
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::AlreadyReconnecting
+        );
+        assert!(!client.request_reconnect());
+        assert_eq!(
+            *states.lock(),
+            vec![SocketState::Connected, SocketState::Disconnected]
+        );
+
+        tokio::time::timeout(TEST_TIMEOUT, second_accepted_rx)
+            .await
+            .expect("controller should establish a replacement connection")
+            .unwrap();
+        wait_until_async(
+            || async { client.is_active() && callback_count.load(Ordering::SeqCst) == 1 },
+            TEST_TIMEOUT,
+        )
+        .await;
+        client.send_bytes(b"manual".to_vec()).await.unwrap();
+
+        assert_eq!(
+            tokio::time::timeout(TEST_TIMEOUT, payload_rx)
+                .await
+                .expect("replacement connection should receive the framed payload")
+                .unwrap(),
+            *b"manual\r\n"
+        );
+        assert_eq!(callback_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *states.lock(),
+            vec![
+                SocketState::Connected,
+                SocketState::Disconnected,
+                SocketState::Connected,
+            ]
+        );
+
+        client.close().await;
+        release_tx.send(()).unwrap();
+        server.await.unwrap();
+        assert_eq!(callback_count.load(Ordering::SeqCst), 1);
+        assert_eq!(states.lock().len(), 3);
+    }
+
+    #[rstest]
+    #[case(ConnectionMode::Disconnect)]
+    #[case(ConnectionMode::Closed)]
+    #[tokio::test]
+    async fn test_send_bytes_rejects_terminal_state(#[case] mode: ConnectionMode) {
+        let connection_state = Arc::new(AtomicU8::new(mode.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        let client = test_socket_client(connection_state, state_notify, controller_task);
+
+        let result = client.send_bytes(b"terminal".to_vec()).await;
+
+        assert!(matches!(result, Err(SendError::Closed)));
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_close_sets_closed_after_controller_was_aborted() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let controller_task = tokio::spawn(std::future::pending::<()>());
+        controller_task.abort();
+        let client = test_socket_client(connection_state, state_notify, controller_task);
+
+        client.close_with_timeout(Duration::from_millis(1)).await;
+
+        assert!(client.is_closed());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_exhaustion_closes_client() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (accepted_tx, accepted_rx) = oneshot::channel();
@@ -2373,50 +2974,49 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(100),
+            connect_timeout_ms: Some(100),
             reconnect_delay_initial_ms: Some(1),
             reconnect_delay_max_ms: Some(1),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: Some(1),
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_clone = Arc::clone(&callback_count);
-        let (callback_tx, callback_rx) = oneshot::channel();
-        let callback_tx = Arc::new(StdMutex::new(Some(callback_tx)));
-        let post_disconnection = Arc::new(move || {
-            callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
-
-            if let Some(tx) = callback_tx.lock().unwrap().take() {
-                let _ = tx.send(());
-            }
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
         });
 
-        let client = SocketClient::connect(config, None, None, Some(post_disconnection))
+        let client = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
             .await
             .unwrap();
         accepted_rx.await.unwrap();
         release_tx.send(()).unwrap();
 
-        tokio::time::timeout(Duration::from_secs(5), callback_rx)
-            .await
-            .expect("reconnect exhaustion should invoke post_disconnection")
-            .unwrap();
+        wait_until_async(|| async { client.is_closed() }, Duration::from_secs(5)).await;
         assert!(client.is_closed());
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        assert_eq!(
+            *states.lock(),
+            vec![SocketState::Connected, SocketState::Disconnected]
+        );
 
         client.close().await;
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
+        assert!(client.is_closed());
+        assert_eq!(states.lock().len(), 2);
         server.await.unwrap();
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_graceful_close_notifies_disconnection_once() {
+    async fn test_drop_suppresses_socket_state_event() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let (accepted_tx, accepted_rx) = oneshot::channel();
@@ -2426,28 +3026,80 @@ mod rust_tests {
             let _ = accepted_tx.send(());
             std::future::pending::<()>().await;
         });
+
         let config = SocketConfig {
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: None,
+            connect_timeout_ms: Some(100),
+            reconnect_delay_initial_ms: Some(1),
+            reconnect_delay_max_ms: Some(1),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            connection_max_retries: Some(1),
+            reconnect_max_attempts: Some(1),
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
+            certs_dir: None,
+        };
+
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+
+        let client = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
+            .await
+            .unwrap();
+        accepted_rx.await.unwrap();
+
+        drop(client);
+        sleep(Duration::from_millis(25)).await;
+
+        assert_eq!(*states.lock(), vec![SocketState::Connected]);
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_graceful_close_is_idempotent() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted_tx, accepted_rx) = oneshot::channel();
+
+        let server = task::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+            let _ = accepted_tx.send(());
+            std::future::pending::<()>().await;
+        });
+
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            message_handler: None,
+            heartbeat: None,
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             connection_max_retries: None,
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
-        let callback_count = Arc::new(AtomicUsize::new(0));
-        let callback_count_clone = Arc::clone(&callback_count);
-        let post_disconnection = Arc::new(move || {
-            callback_count_clone.fetch_add(1, AtomicOrdering::SeqCst);
-        });
-        let client = SocketClient::connect(config, None, None, Some(post_disconnection))
+
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
         accepted_rx.await.unwrap();
@@ -2456,7 +3108,6 @@ mod rust_tests {
         client.close().await;
 
         assert!(client.is_closed());
-        assert_eq!(callback_count.load(AtomicOrdering::SeqCst), 1);
         server.abort();
     }
 
@@ -2465,28 +3116,30 @@ mod rust_tests {
     async fn test_read_loop_drops_remaining_frames_after_session_replaced() {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let read_fence = ReadSessionFence::new();
-        let received = Arc::new(StdMutex::new(Vec::<Vec<u8>>::new()));
+        let received = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let received_clone = Arc::clone(&received);
-        let handler_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let handler_release = Arc::new((Mutex::new(false), Condvar::new()));
         let handler_release_guard = CondvarReleaseGuard::new(Arc::clone(&handler_release));
         let handler_release_clone = Arc::clone(&handler_release);
         let (handler_entered_tx, handler_entered_rx) = std::sync::mpsc::channel();
+
         let handler: TcpMessageHandler = Arc::new(move |data| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone.lock().push(data.to_vec());
             handler_entered_tx.send(()).unwrap();
             let (lock, condvar) = handler_release_clone.as_ref();
-            let mut released = lock.lock().unwrap();
-
+            let mut released = lock.lock();
             while !*released {
-                released = condvar.wait(released).unwrap();
+                condvar.wait(&mut released);
             }
         });
+
         let reader = ScriptedReader {
             first: Some(b"first\r\nsecond\r\n".to_vec()),
-            remainder: Arc::new(StdMutex::new(None)),
+            remainder: Arc::new(Mutex::new(None)),
             pending_tx: None,
-            waker: Arc::new(StdMutex::new(None)),
+            waker: Arc::new(Mutex::new(None)),
         };
+
         let read_task = SocketClientInner::spawn_read_task(
             Arc::clone(&connection_state),
             read_fence.clone(),
@@ -2505,7 +3158,7 @@ mod rust_tests {
         handler_release_guard.release();
         await_task_termination(read_task, "old socket read task", true).await;
 
-        assert_eq!(received.lock().unwrap().as_slice(), &[b"first".to_vec()]);
+        assert_eq!(received.lock().as_slice(), &[b"first".to_vec()]);
     }
 
     #[rstest]
@@ -2513,13 +3166,14 @@ mod rust_tests {
     async fn test_read_loop_drops_partial_old_session_frame() {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let old_read_fence = ReadSessionFence::new();
-        let received = Arc::new(StdMutex::new(Vec::<Vec<u8>>::new()));
+        let received = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let received_clone = Arc::clone(&received);
         let handler: TcpMessageHandler =
-            Arc::new(move |data| received_clone.lock().unwrap().push(data.to_vec()));
+            Arc::new(move |data| received_clone.lock().push(data.to_vec()));
         let (pending_tx, pending_rx) = oneshot::channel();
-        let remainder = Arc::new(StdMutex::new(None));
-        let waker = Arc::new(StdMutex::new(None));
+        let remainder = Arc::new(Mutex::new(None));
+        let waker = Arc::new(Mutex::new(None));
+
         let reader = ScriptedReader {
             first: Some(b"old".to_vec()),
             remainder: Arc::clone(&remainder),
@@ -2540,22 +3194,24 @@ mod rust_tests {
         connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
         old_read_fence.invalidate();
         connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
-        *remainder.lock().unwrap() = Some(b"\r\nnew\r\n".to_vec());
-        waker.lock().unwrap().take().unwrap().wake();
+        *remainder.lock() = Some(b"\r\nnew\r\n".to_vec());
+        waker.lock().take().unwrap().wake();
         read_task.await.unwrap();
 
         let fresh_reader = ScriptedReader {
             first: Some(b"new\r\n".to_vec()),
-            remainder: Arc::new(StdMutex::new(None)),
+            remainder: Arc::new(Mutex::new(None)),
             pending_tx: None,
-            waker: Arc::new(StdMutex::new(None)),
+            waker: Arc::new(Mutex::new(None)),
         };
+
         let fresh_connection_state = Arc::clone(&connection_state);
         let fresh_received = Arc::clone(&received);
         let fresh_handler: TcpMessageHandler = Arc::new(move |data| {
-            fresh_received.lock().unwrap().push(data.to_vec());
+            fresh_received.lock().push(data.to_vec());
             fresh_connection_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
         });
+
         SocketClientInner::spawn_read_task(
             Arc::clone(&connection_state),
             ReadSessionFence::new(),
@@ -2567,7 +3223,7 @@ mod rust_tests {
         .await
         .unwrap();
 
-        assert_eq!(received.lock().unwrap().as_slice(), &[b"new".to_vec()]);
+        assert_eq!(received.lock().as_slice(), &[b"new".to_vec()]);
     }
 
     #[rstest]
@@ -2575,18 +3231,20 @@ mod rust_tests {
     async fn test_read_loop_stops_when_first_handler_ends_session() {
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let handler_state = Arc::clone(&connection_state);
-        let received = Arc::new(StdMutex::new(Vec::<Vec<u8>>::new()));
+        let received = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let received_clone = Arc::clone(&received);
         let handler: TcpMessageHandler = Arc::new(move |data| {
-            received_clone.lock().unwrap().push(data.to_vec());
+            received_clone.lock().push(data.to_vec());
             handler_state.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
         });
+
         let (pending_tx, _pending_rx) = oneshot::channel();
+
         let reader = ScriptedReader {
             first: Some(b"first\r\nsecond\r\n".to_vec()),
-            remainder: Arc::new(StdMutex::new(None)),
+            remainder: Arc::new(Mutex::new(None)),
             pending_tx: Some(pending_tx),
-            waker: Arc::new(StdMutex::new(None)),
+            waker: Arc::new(Mutex::new(None)),
         };
 
         SocketClientInner::spawn_read_task(
@@ -2600,44 +3258,107 @@ mod rust_tests {
         .await
         .unwrap();
 
-        assert_eq!(received.lock().unwrap().as_slice(), &[b"first".to_vec()]);
+        assert_eq!(received.lock().as_slice(), &[b"first".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_closes_when_unframed_buffer_exceeds_limit() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let read_after_limit = Arc::new(AtomicBool::new(false));
+
+        let reader = LimitProbeReader {
+            remaining: MAX_READ_BUFFER_BYTES + 1,
+            read_after_limit: Arc::clone(&read_after_limit),
+        };
+
+        SocketClientInner::run_read_loop(
+            connection_state,
+            ReadSessionFence::new(),
+            reader,
+            None,
+            b"\r\n".to_vec(),
+            None,
+            Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(!read_after_limit.load(Ordering::SeqCst));
     }
 
     #[rstest]
     #[tokio::test(start_paused = true)]
-    async fn test_stalled_socket_write_reconnects_and_replays_complete_message() {
+    async fn test_stalled_socket_write_sends_reconnect_replay_before_buffer() {
         type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
 
         let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let state_notify = Arc::new(tokio::sync::Notify::new());
         let (stream, _non_reading_peer) = tokio::io::duplex(1);
         let (pending_tx, pending_rx) = oneshot::channel();
+
         let writer: TestWriter = Box::pin(BackpressuredWriter {
             stream,
             pending_tx: Some(pending_tx),
         });
-        let (writer_tx, writer_rx) =
-            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+
+        let (writer_tx, writer_rx) = writer::channel::<WriterCommand<TestWriter>>(2);
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+
         let write_task = SocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
             Arc::clone(&state_notify),
             writer,
             writer_rx,
             b"\r\n".to_vec(),
+            Some(sink),
         );
 
         writer_tx
             .send(WriterCommand::Send(Bytes::from_static(b"complete-message")))
             .unwrap();
         pending_rx.await.unwrap();
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"second-message")))
+            .unwrap();
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Active
+        );
 
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        for _ in 0..100 {
+            assert!(matches!(
+                writer_tx.send(WriterCommand::Send(Bytes::from_static(b"overflow"))),
+                Err(SendError::BufferFull)
+            ));
+        }
+
+        tokio::time::advance(Duration::from_secs(WRITE_TIMEOUT_SECS)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect
+        );
+        assert!(matches!(
+            writer_tx.send(WriterCommand::Send(Bytes::from_static(b"overflow"))),
+            Err(SendError::BufferFull)
+        ));
+
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+
         let new_writer: TestWriter = Box::pin(RecordingWriter {
             bytes: Arc::clone(&recorded),
         });
+
         let (update_tx, update_rx) = oneshot::channel();
         writer_tx
-            .send(WriterCommand::Update(new_writer, update_tx))
+            .send_update(WriterCommand::UpdateWithReplay(
+                new_writer,
+                vec![Bytes::from_static(b"authentication")],
+                update_tx,
+            ))
             .unwrap();
 
         tokio::time::advance(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS)).await;
@@ -2654,7 +3375,284 @@ mod rust_tests {
             ConnectionMode::from_atomic(&connection_state),
             ConnectionMode::Reconnect
         );
-        assert_eq!(recorded.lock().unwrap().as_slice(), b"complete-message\r\n");
+        assert_eq!(
+            recorded.lock().as_slice(),
+            b"authentication\r\ncomplete-message\r\nsecond-message\r\n"
+        );
+
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"second-message")))
+            .unwrap();
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_send_after_writer_update_drains_when_reconnect_completes() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let initial_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::new(Mutex::new(Vec::new())),
+        });
+
+        let (writer_tx, writer_rx) =
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            initial_writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            None,
+        );
+
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+
+        let new_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+
+        let (update_tx, update_rx) = oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(new_writer, update_tx))
+            .unwrap();
+        assert!(update_rx.await.unwrap());
+
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"late")))
+            .unwrap();
+        yield_now().await;
+
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"new")))
+            .unwrap();
+        tokio::time::advance(Duration::from_millis(
+            CONNECTION_STATE_CHECK_INTERVAL_MS * 2,
+        ))
+        .await;
+        yield_now().await;
+
+        let actual = recorded.lock().clone();
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+
+        assert_eq!(actual, b"late\r\nnew\r\n");
+    }
+
+    #[rstest]
+    #[case::latest_wins(
+        &["subscription-a", "subscription-b"],
+        &["subscription-b"],
+        b"subscription-b\r\n",
+    )]
+    #[case::different_replay_drains(
+        &["subscription-b"],
+        &["subscription-a"],
+        b"subscription-a\r\nsubscription-b\r\n",
+    )]
+    #[tokio::test]
+    async fn test_send_or_replay_buffering(
+        #[case] buffered: &[&str],
+        #[case] replay: &[&str],
+        #[case] expected: &[u8],
+    ) {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let initial_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::new(Mutex::new(Vec::new())),
+        });
+
+        let (writer_tx, writer_rx) =
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            initial_writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            None,
+        );
+
+        for data in buffered {
+            writer_tx
+                .send(WriterCommand::SendOrReplay {
+                    key: 7,
+                    data: Bytes::copy_from_slice(data.as_bytes()),
+                })
+                .unwrap();
+        }
+
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+
+        let new_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+
+        let (update_tx, update_rx) = oneshot::channel();
+        writer_tx
+            .send(WriterCommand::UpdateWithReplay(
+                new_writer,
+                replay
+                    .iter()
+                    .map(|data| Bytes::copy_from_slice(data.as_bytes()))
+                    .collect(),
+                update_tx,
+            ))
+            .unwrap();
+
+        assert!(update_rx.await.unwrap());
+        assert_eq!(recorded.lock().as_slice(), expected);
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_active_reconnect_buffer_write_failure_reconnects_and_retries() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+
+        let initial_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::new(Mutex::new(Vec::new())),
+        });
+
+        let (writer_tx, writer_rx) =
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            initial_writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            Some(sink),
+        );
+
+        let (update_tx, update_rx) = oneshot::channel();
+        let failing_writer: TestWriter = Box::pin(FailingWriter);
+        writer_tx
+            .send(WriterCommand::Update(failing_writer, update_tx))
+            .unwrap();
+        assert!(update_rx.await.unwrap());
+
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"late")))
+            .unwrap();
+        yield_now().await;
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        tokio::time::advance(Duration::from_millis(
+            CONNECTION_STATE_CHECK_INTERVAL_MS * 2,
+        ))
+        .await;
+        yield_now().await;
+
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect
+        );
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
+
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+
+        let replacement: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+
+        let (retry_tx, retry_rx) = oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(replacement, retry_tx))
+            .unwrap();
+        assert!(retry_rx.await.unwrap());
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+
+        assert_eq!(recorded.lock().as_slice(), b"late\r\n");
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_failed_send_or_replay_is_not_duplicated_after_replay() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let (stream, _non_reading_peer) = tokio::io::duplex(1);
+        let (pending_tx, pending_rx) = oneshot::channel();
+
+        let writer: TestWriter = Box::pin(BackpressuredWriter {
+            stream,
+            pending_tx: Some(pending_tx),
+        });
+
+        let (writer_tx, writer_rx) =
+            writer::channel::<WriterCommand<TestWriter>>(DEFAULT_WRITER_CAPACITY);
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            None,
+        );
+        let subscription = Bytes::from_static(b"subscription");
+
+        writer_tx
+            .send(WriterCommand::SendOrReplay {
+                key: 7,
+                data: subscription.clone(),
+            })
+            .unwrap();
+
+        pending_rx.await.unwrap();
+
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+
+        let new_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+
+        let (update_tx, update_rx) = oneshot::channel();
+        writer_tx
+            .send(WriterCommand::UpdateWithReplay(
+                new_writer,
+                vec![subscription],
+                update_tx,
+            ))
+            .unwrap();
+
+        tokio::time::advance(Duration::from_secs(WRITE_TIMEOUT_SECS)).await;
+        yield_now().await;
+        assert!(update_rx.await.unwrap());
+        assert_eq!(recorded.lock().as_slice(), b"subscription\r\n");
 
         connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
         state_notify.notify_waiters();
@@ -2664,28 +3662,30 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_dial() {
+    async fn test_connect_url_rejects_invalid_reconnect_backoff_before_connect() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let port = listener.local_addr().unwrap().port();
+
         let config = SocketConfig {
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000),
+            connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(100.1),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let error = match SocketClientInner::connect_url(config).await {
+        let error = match SocketClientInner::connect_url(config, None).await {
             Ok(_) => panic!("invalid reconnect backoff should be rejected"),
             Err(e) => e,
         };
@@ -2697,7 +3697,7 @@ mod rust_tests {
         assert_eq!(
             listener.accept().unwrap_err().kind(),
             std::io::ErrorKind::WouldBlock,
-            "invalid reconnect backoff must be rejected before dialing"
+            "invalid reconnect backoff must be rejected before connecting"
         );
     }
 
@@ -2713,6 +3713,7 @@ mod rust_tests {
             if let Ok((mut sock, _)) = listener.accept().await {
                 drop(sock.shutdown());
             }
+
             // Keep listener alive briefly to avoid premature exit
             sleep(Duration::from_secs(1)).await;
         });
@@ -2724,19 +3725,22 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000),
+            connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
         // Connect client (handler=None)
-        let client = SocketClient::connect(config.clone(), None, None, None)
+        let client = SocketClient::builder()
+            .config(config.clone())
+            .connect()
             .await
             .unwrap();
 
@@ -2759,11 +3763,11 @@ mod rust_tests {
         // Bind an ephemeral port and accept a single connection which we immediately close.
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-
         let server = task::spawn(async move {
             if let Ok((sock, _)) = listener.accept().await {
                 drop(sock);
             }
+
             // Give the client a moment to observe the closed connection.
             sleep(Duration::from_millis(50)).await;
         });
@@ -2774,18 +3778,21 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000),
+            connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -2884,11 +3891,11 @@ mod rust_tests {
         // Test that raw socket addresses (host:port) work correctly
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-
         let server = task::spawn(async move {
             if let Ok((sock, _)) = listener.accept().await {
                 drop(sock);
             }
+
             sleep(Duration::from_millis(50)).await;
         });
 
@@ -2898,19 +3905,20 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000),
+            connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
         // Should successfully connect with raw socket address
-        let client = SocketClient::connect(config, None, None, None).await;
+        let client = SocketClient::builder().config(config).connect().await;
         assert!(
             client.is_ok(),
             "Client should connect with raw socket address format"
@@ -2919,6 +3927,7 @@ mod rust_tests {
         if let Ok(client) = client {
             client.close().await;
         }
+
         server.abort();
     }
 
@@ -2928,11 +3937,11 @@ mod rust_tests {
         // Test that URLs with schemes also work
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-
         let server = task::spawn(async move {
             if let Ok((sock, _)) = listener.accept().await {
                 drop(sock);
             }
+
             sleep(Duration::from_millis(50)).await;
         });
 
@@ -2942,19 +3951,20 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000),
+            connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
         // Should successfully connect with URL format
-        let client = SocketClient::connect(config, None, None, None).await;
+        let client = SocketClient::builder().config(config).connect().await;
         assert!(
             client.is_ok(),
             "Client should connect with URL scheme format"
@@ -2963,6 +3973,7 @@ mod rust_tests {
         if let Ok(client) = client {
             client.close().await;
         }
+
         server.abort();
     }
 
@@ -2987,13 +3998,11 @@ mod rust_tests {
         // Test IPv6 loopback address connection
         // Skip if IPv6 is not available on the system
         if TcpListener::bind("[::1]:0").await.is_err() {
-            eprintln!("IPv6 not available, skipping test");
             return;
         }
 
         let listener = TcpListener::bind("[::1]:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-
         let server = task::spawn(async move {
             if let Ok((mut sock, _)) = listener.accept().await {
                 let mut buf = vec![0u8; 1024];
@@ -3002,6 +4011,7 @@ mod rust_tests {
                     let _ = sock.write_all(&buf[..n]).await;
                 }
             }
+
             sleep(Duration::from_millis(50)).await;
         });
 
@@ -3011,18 +4021,19 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000),
+            connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None).await;
+        let client = SocketClient::builder().config(config).connect().await;
         assert!(
             client.is_ok(),
             "Client should connect to IPv6 loopback address"
@@ -3031,6 +4042,7 @@ mod rust_tests {
         if let Ok(client) = client {
             client.close().await;
         }
+
         server.abort();
     }
 
@@ -3074,18 +4086,21 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(5_000), // 5s timeout - enough for reconnect
+            connect_timeout_ms: Some(5_000), // 5s timeout - enough for reconnect
             reconnect_delay_initial_ms: Some(100),
             reconnect_delay_max_ms: Some(200),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -3114,8 +4129,8 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_send_bytes_timeout_uses_configured_reconnect_timeout() {
-        // Test that send_bytes operations respect the configured reconnect_timeout.
+    async fn test_send_bytes_timeout_uses_configured_connect_timeout() {
+        // Test that send_bytes operations respect the configured connect_timeout.
         // When a client is stuck in RECONNECT longer than the timeout, sends should fail with Timeout.
         use nautilus_common::testing::wait_until_async;
 
@@ -3127,6 +4142,7 @@ mod rust_tests {
             if let Ok((sock, _)) = listener.accept().await {
                 drop(sock);
             }
+
             // Drop listener entirely so reconnection fails completely
             drop(listener);
             sleep(Duration::from_mins(1)).await;
@@ -3138,18 +4154,21 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000), // 1s timeout for faster test
+            connect_timeout_ms: Some(1_000), // 1s timeout for faster test
             reconnect_delay_initial_ms: Some(200), // Short backoff (but > timeout) to keep client in RECONNECT
             reconnect_delay_max_ms: Some(200),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -3187,7 +4206,7 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_idle_timeout_triggers_reconnect() {
+    async fn test_heartbeat_timeout_triggers_reconnect() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
 
@@ -3204,33 +4223,36 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(2_000),
+            connect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: Some(1),
-            idle_timeout_ms: Some(500),
+            heartbeat_timeout_secs: Some(1),
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
         assert!(client.is_active());
 
-        // Wait for idle timeout to fire and client to enter reconnect
+        // Wait for the dead-peer timeout to fire and the client to enter reconnect
         wait_until_async(
             || async { client.is_reconnecting() || client.is_closed() },
-            Duration::from_secs(3),
+            Duration::from_secs(4),
         )
         .await;
 
         assert!(
             !client.is_active(),
-            "Client should not be active after idle timeout"
+            "Client should not be active after the dead-peer timeout"
         );
 
         client.close().await;
@@ -3239,13 +4261,14 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_idle_timeout_resets_on_data() {
+    async fn test_heartbeat_timeout_resets_on_inbound_bytes() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
 
         // Server sends data every 200ms (well within the 1s idle timeout)
         let server = task::spawn(async move {
             let (mut sock, _) = listener.accept().await.unwrap();
+
             for _ in 0..10 {
                 sleep(Duration::from_millis(200)).await;
 
@@ -3261,18 +4284,21 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(2_000),
+            connect_timeout_ms: Some(2_000),
             reconnect_delay_initial_ms: Some(50),
             reconnect_delay_max_ms: Some(100),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: Some(1),
             reconnect_max_attempts: Some(1),
-            idle_timeout_ms: Some(1_000),
+            heartbeat_timeout_secs: Some(1),
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -3304,6 +4330,7 @@ mod rust_tests {
             if let Ok((mut sock, _)) = listener.accept().await {
                 drop(sock.shutdown());
             }
+
             // Don't accept again so reconnect fails and enters backoff
             sleep(Duration::from_mins(1)).await;
         });
@@ -3314,18 +4341,21 @@ mod rust_tests {
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: Some(1_000),
+            connect_timeout_ms: Some(1_000),
             reconnect_delay_initial_ms: Some(10_000), // 10s backoff to ensure we're sleeping
             reconnect_delay_max_ms: Some(10_000),
             reconnect_backoff_factor: Some(1.0),
             reconnect_jitter_ms: Some(0),
             connection_max_retries: None,
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .unwrap();
 
@@ -3356,31 +4386,32 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_zero_idle_timeout_rejected() {
+    async fn test_zero_heartbeat_timeout_rejected() {
         let config = SocketConfig {
             url: "127.0.0.1:9999".to_string(),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: None,
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             connection_max_retries: Some(1),
-            idle_timeout_ms: Some(0),
+            heartbeat_timeout_secs: Some(0),
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let result = SocketClient::connect(config, None, None, None).await;
+        let result = SocketClient::builder().config(config).connect().await;
 
-        assert!(result.is_err(), "Zero idle timeout should be rejected");
+        assert!(result.is_err(), "Zero heartbeat timeout should be rejected");
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("Idle timeout cannot be zero"),
-            "Error should mention zero idle timeout, was: {err_msg}"
+            err_msg.contains("heartbeat_timeout_secs"),
+            "Error should name the offending field, was: {err_msg}"
         );
     }
 
@@ -3393,18 +4424,19 @@ mod rust_tests {
             suffix: vec![],
             message_handler: None,
             heartbeat: None,
-            reconnect_timeout_ms: None,
+            connect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
             reconnect_delay_max_ms: None,
             reconnect_backoff_factor: None,
             reconnect_jitter_ms: None,
             reconnect_max_attempts: None,
             connection_max_retries: Some(1),
-            idle_timeout_ms: None,
+            heartbeat_timeout_secs: None,
+            writer_capacity: None,
             certs_dir: None,
         };
 
-        let result = SocketClient::connect(config, None, None, None).await;
+        let result = SocketClient::builder().config(config).connect().await;
 
         assert!(
             result.is_err(),
@@ -3414,6 +4446,92 @@ mod rust_tests {
         assert!(
             err_msg.contains("suffix cannot be empty"),
             "Error should mention empty suffix, was: {err_msg}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod reconnect_request_tests {
+    use std::sync::{Arc, atomic::AtomicU8};
+
+    use parking_lot::Mutex;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::SocketState;
+
+    fn handle(
+        mode: ConnectionMode,
+    ) -> (
+        SocketReconnectHandle,
+        Arc<tokio::sync::Notify>,
+        Arc<Mutex<Vec<SocketState>>>,
+    ) {
+        let controller_notify = Arc::new(tokio::sync::Notify::new());
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let state_sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+
+        let handle = SocketReconnectHandle {
+            connection_mode: Arc::new(AtomicU8::new(mode.as_u8())),
+            state_sink: Some(state_sink),
+            controller_lifecycle: Arc::new(ControllerLifecycle::new()),
+            controller_notify: Arc::clone(&controller_notify),
+        };
+
+        (handle, controller_notify, states)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn accepted_request_reports_loss_and_wakes_controller_once() {
+        let (handle, controller_notify, states) = handle(ConnectionMode::Active);
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::Accepted
+        );
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
+        tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+            .await
+            .expect("accepted request should notify controller");
+
+        assert_eq!(
+            handle.request_reconnect(),
+            ReconnectRequestOutcome::AlreadyReconnecting
+        );
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "duplicate request should not notify controller",
+        );
+    }
+
+    #[rstest]
+    #[case(
+        ConnectionMode::Reconnect,
+        ReconnectRequestOutcome::AlreadyReconnecting
+    )]
+    #[case(ConnectionMode::Disconnect, ReconnectRequestOutcome::Disconnected)]
+    #[case(ConnectionMode::Closed, ReconnectRequestOutcome::Closed)]
+    #[tokio::test]
+    async fn rejected_request_preserves_state_and_does_not_wake_controller(
+        #[case] mode: ConnectionMode,
+        #[case] expected: ReconnectRequestOutcome,
+    ) {
+        let (handle, controller_notify, states) = handle(mode);
+
+        assert_eq!(handle.request_reconnect(), expected);
+        assert!(states.lock().is_empty());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), controller_notify.notified())
+                .await
+                .is_err(),
+            "rejected request should not notify controller",
         );
     }
 }

@@ -34,6 +34,7 @@ use crate::files::ensure_file_exists_or_download_http;
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.testkit")]
 #[pyo3(signature = (filepath, url, checksums=None, timeout_secs=Some(30)))]
 pub fn py_ensure_file_exists_or_download_http(
+    py: Python<'_>,
     filepath: &str,
     url: &str,
     checksums: Option<&str>,
@@ -41,6 +42,6 @@ pub fn py_ensure_file_exists_or_download_http(
 ) -> PyResult<()> {
     let filepath = Path::new(filepath);
     let checksums = checksums.map(Path::new);
-    ensure_file_exists_or_download_http(filepath, url, checksums, timeout_secs)
+    py.detach(|| ensure_file_exists_or_download_http(filepath, url, checksums, timeout_secs))
         .map_err(to_pyruntime_err)
 }

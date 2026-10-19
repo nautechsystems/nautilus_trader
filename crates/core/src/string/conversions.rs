@@ -95,11 +95,6 @@ fn to_snake_case_ascii(bytes: &[u8]) -> String {
 }
 
 fn push_lower_ascii(result: &mut String, word: &[u8], first_word: &mut bool) {
-    if word.is_empty() {
-        *first_word = false;
-        return;
-    }
-
     if !*first_word {
         result.push('_');
     }
@@ -158,11 +153,6 @@ fn to_snake_case_unicode(s: &str) -> String {
 }
 
 fn push_lower_unicode(result: &mut String, word: &str, first_word: &mut bool) {
-    if word.is_empty() {
-        *first_word = false;
-        return;
-    }
-
     if !*first_word {
         result.push('_');
     }
@@ -259,6 +249,7 @@ mod tests {
     #[case("SimpleHTTPServer", "simple_http_server")]
     #[case("version2Release", "version2_release")]
     #[case("ALLCAPS", "allcaps")]
+    #[case("é--x", "é_x")]
     #[case("nautilus_model::data::bar::Bar", "nautilus_model_data_bar_bar")] // nautilus-import-ok
     fn test_to_snake_case(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(to_snake_case(input), expected);

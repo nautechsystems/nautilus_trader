@@ -13,15 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Stdout, stderr, and rotating file log writers.
+
 use std::{
     borrow::Cow,
     collections::VecDeque,
     fs::{File, create_dir_all},
     io::{self, BufWriter, Stderr, Stdout, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
-use chrono::{DateTime, NaiveDate, Utc};
+use anyhow::Context;
+use jiff::{Timestamp, civil::Date, tz::Offset};
 use log::LevelFilter;
 use nautilus_core::consts::NAUTILUS_PREFIX;
 use serde::{Deserialize, Serialize};
@@ -40,6 +43,7 @@ pub trait LogWriter {
     fn enabled(&self, line: &LogLine) -> bool;
 }
 
+/// Writes eligible log lines to stdout with optional buffering and ANSI colors.
 #[derive(Debug)]
 pub struct StdoutWriter {
     pub is_colored: bool,
@@ -78,9 +82,8 @@ impl LogWriter for StdoutWriter {
             StdoutSink::Buffered(io) => io.write_all(line.as_bytes()),
         };
 
-        match result {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
+        if let Err(e) = result {
+            let _ = writeln!(io::stderr(), "Error writing to stdout: {e:?}");
         }
     }
 
@@ -90,9 +93,8 @@ impl LogWriter for StdoutWriter {
             StdoutSink::Buffered(io) => io.flush(),
         };
 
-        match result {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
+        if let Err(e) = result {
+            let _ = writeln!(io::stderr(), "Error flushing stdout: {e:?}");
         }
     }
 
@@ -102,6 +104,7 @@ impl LogWriter for StdoutWriter {
     }
 }
 
+/// Writes error log lines to stderr.
 #[derive(Debug)]
 pub struct StderrWriter {
     pub is_colored: bool,
@@ -119,19 +122,14 @@ impl StderrWriter {
     }
 }
 
+// Diagnostics here use `writeln!` because `eprintln!` panics when stderr is a closed pipe
 impl LogWriter for StderrWriter {
     fn write(&mut self, line: &str) {
-        match self.io.write_all(line.as_bytes()) {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
-        }
+        let _ = self.io.write_all(line.as_bytes());
     }
 
     fn flush(&mut self) {
-        match self.io.flush() {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
-        }
+        let _ = self.io.flush();
     }
 
     fn enabled(&self, line: &LogLine) -> bool {
@@ -139,7 +137,7 @@ impl LogWriter for StderrWriter {
     }
 }
 
-/// File rotation config.
+/// Configures size-based log file rotation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FileRotateConfig {
@@ -152,14 +150,18 @@ pub struct FileRotateConfig {
     cur_file_size: u64,
     /// Current file creation date.
     #[serde(skip, default = "today_date")]
-    cur_file_creation_date: NaiveDate,
+    cur_file_creation_date: Date,
     /// Queue of backup file paths (oldest first).
     #[serde(skip)]
     backup_files: VecDeque<PathBuf>,
 }
 
-fn today_date() -> NaiveDate {
-    Utc::now().date_naive()
+fn utc_date(timestamp: Timestamp) -> Date {
+    Offset::UTC.to_datetime(timestamp).date()
+}
+
+fn today_date() -> Date {
+    utc_date(Timestamp::now())
 }
 
 impl PartialEq for FileRotateConfig {
@@ -176,7 +178,7 @@ impl Default for FileRotateConfig {
             max_file_size: 100 * 1024 * 1024, // 100MB default
             max_backup_count: 5,
             cur_file_size: 0,
-            cur_file_creation_date: Utc::now().date_naive(),
+            cur_file_creation_date: today_date(),
             backup_files: VecDeque::new(),
         }
     }
@@ -189,15 +191,16 @@ impl From<(u64, u32)> for FileRotateConfig {
             max_file_size,
             max_backup_count,
             cur_file_size: 0,
-            cur_file_creation_date: Utc::now().date_naive(),
+            cur_file_creation_date: today_date(),
             backup_files: VecDeque::new(),
         }
     }
 }
 
+/// Configures file log output.
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -234,8 +237,8 @@ impl FileWriterConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
@@ -263,6 +266,7 @@ impl FileWriterConfig {
     }
 }
 
+/// Writes sanitized plain-text or JSON log lines with optional file rotation.
 #[derive(Debug)]
 pub struct FileWriter {
     pub json_format: bool,
@@ -272,7 +276,7 @@ pub struct FileWriter {
     trader_id: String,
     instance_id: String,
     level: LevelFilter,
-    cur_file_date: NaiveDate,
+    cur_file_date: Date,
     sync_on_flush: bool,
 }
 
@@ -281,6 +285,10 @@ const ROTATION_TIMESTAMP_FORMAT: &str = "%Y-%m-%d_%H%M%S-%3f";
 
 impl FileWriter {
     /// Creates a new [`FileWriter`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the log directory cannot be created or the log file cannot be opened.
     pub fn new(
         trader_id: String,
         instance_id: String,
@@ -288,71 +296,70 @@ impl FileWriter {
         fileout_level: LevelFilter,
         clear_log_file: bool,
         sync_on_flush: bool,
-    ) -> Option<Self> {
+    ) -> anyhow::Result<Self> {
         // Set up log file
         let json_format = match file_config.file_format.as_ref().map(|s| s.to_lowercase()) {
             Some(ref format) if format == "json" => true,
             None => false,
             Some(ref unrecognized) => {
-                eprintln!(
+                let _ = writeln!(
+                    io::stderr(),
                     "{NAUTILUS_PREFIX} Unrecognized log file format: {unrecognized}. Using plain text format as default."
                 );
                 false
             }
         };
 
-        let file_path = match Self::create_log_file_path(
+        let file_path = Self::create_log_file_path(
             &file_config,
             &trader_id,
             &instance_id,
             json_format,
-            Utc::now(),
-        ) {
-            Ok(path) => path,
-            Err(e) => {
-                eprintln!("{NAUTILUS_PREFIX} Error creating log directory: {e}");
-                return None;
-            }
-        };
+            Timestamp::now(),
+        )
+        .with_context(|| {
+            format!(
+                "failed to create log directory {}",
+                file_config.directory.as_deref().unwrap_or_default()
+            )
+        })?;
 
         if clear_log_file
             && file_path.exists()
             && let Err(e) = File::create(&file_path)
         {
-            eprintln!("{NAUTILUS_PREFIX} Error clearing log file: {e}");
+            let _ = writeln!(
+                io::stderr(),
+                "{NAUTILUS_PREFIX} Error clearing log file {}: {e}",
+                file_path.display()
+            );
         }
 
-        match File::options()
+        let file = File::options()
             .create(true)
             .append(true)
-            .open(file_path.clone())
-        {
-            Ok(file) => {
-                // Seed cur_file_size from existing file length if rotation is enabled
-                let mut file_config = file_config;
-                if let Some(ref mut rotate_config) = file_config.file_rotate
-                    && let Ok(metadata) = file.metadata()
-                {
-                    rotate_config.cur_file_size = metadata.len();
-                }
+            .open(&file_path)
+            .with_context(|| format!("failed to open log file {}", file_path.display()))?;
 
-                Some(Self {
-                    json_format,
-                    buf: BufWriter::new(file),
-                    path: file_path,
-                    file_config,
-                    trader_id,
-                    instance_id,
-                    level: fileout_level,
-                    cur_file_date: Utc::now().date_naive(),
-                    sync_on_flush,
-                })
-            }
-            Err(e) => {
-                eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}");
-                None
-            }
+        // Seed cur_file_size from existing file length if rotation is enabled
+        let mut file_config = file_config;
+        if let Some(ref mut rotate_config) = file_config.file_rotate
+            && let Ok(metadata) = file.metadata()
+        {
+            rotate_config.cur_file_size = metadata.len();
         }
+
+        Ok(Self {
+            json_format,
+            buf: BufWriter::new(file),
+            path: file_path,
+            file_config,
+            trader_id,
+            instance_id,
+            level: fileout_level,
+            cur_file_date: today_date(),
+            sync_on_flush,
+        })
     }
 
     fn create_log_file_path(
@@ -360,20 +367,24 @@ impl FileWriter {
         trader_id: &str,
         instance_id: &str,
         is_json_format: bool,
-        utc_now: DateTime<Utc>,
+        utc_now: Timestamp,
     ) -> Result<PathBuf, io::Error> {
         let basename = if let Some(file_name) = file_config.file_name.as_ref() {
+            // The format suffix replaces any extension in the configured name
+            let stem = Path::new(file_name).with_extension("");
+            let stem = stem.to_string_lossy();
+
             if file_config.file_rotate.is_some() {
-                let utc_datetime = utc_now.format(ROTATION_TIMESTAMP_FORMAT);
-                format!("{file_name}_{utc_datetime}")
+                let utc_datetime = utc_now.strftime(ROTATION_TIMESTAMP_FORMAT);
+                format!("{stem}_{utc_datetime}")
             } else {
-                file_name.clone()
+                stem.into_owned()
             }
         } else {
             let utc_component = if file_config.file_rotate.is_some() {
-                utc_now.format(ROTATION_TIMESTAMP_FORMAT)
+                utc_now.strftime(ROTATION_TIMESTAMP_FORMAT)
             } else {
-                utc_now.format("%Y-%m-%d")
+                utc_now.strftime("%Y-%m-%d")
             };
 
             format!("{trader_id}_{utc_component}_{instance_id}")
@@ -387,8 +398,8 @@ impl FileWriter {
             create_dir_all(&file_path)?;
         }
 
-        file_path.push(basename);
-        file_path.set_extension(suffix);
+        // Not `set_extension`, which would truncate a basename at a `.` inside a trader ID
+        file_path.push(format!("{basename}.{suffix}"));
         Ok(file_path)
     }
 
@@ -399,7 +410,7 @@ impl FileWriter {
             rotate_config.cur_file_size + next_line_size > rotate_config.max_file_size
         // Otherwise, for default-named logs, rotate on UTC date change
         } else if self.file_config.file_name.is_none() {
-            let today = Utc::now().date_naive();
+            let today = today_date();
             self.cur_file_date != today
         // No rotation for custom-named logs without size-based rotation
         } else {
@@ -408,12 +419,10 @@ impl FileWriter {
     }
 
     fn rotate_file(&mut self) {
-        self.rotate_file_at(Utc::now());
+        self.rotate_file_at(Timestamp::now());
     }
 
-    fn rotate_file_at(&mut self, utc_now: DateTime<Utc>) {
-        self.flush_and_sync_logged();
-
+    fn rotate_file_at(&mut self, utc_now: Timestamp) {
         let new_path = match Self::create_log_file_path(
             &self.file_config,
             &self.trader_id,
@@ -423,7 +432,11 @@ impl FileWriter {
         ) {
             Ok(path) => path,
             Err(e) => {
-                eprintln!("{NAUTILUS_PREFIX} Error creating log directory for rotation: {e}");
+                let _ = writeln!(
+                    io::stderr(),
+                    "{NAUTILUS_PREFIX} Error creating log directory for rotation: {e}"
+                );
+                self.reset_rotation_trigger(utc_now);
                 return;
             }
         };
@@ -435,28 +448,44 @@ impl FileWriter {
             return;
         }
 
-        match File::options().create(true).append(true).open(&new_path) {
-            Ok(new_file) => {
-                // Rotate existing file
-                if let Some(rotate_config) = &mut self.file_config.file_rotate {
-                    // Add current file to backup queue
-                    rotate_config.backup_files.push_back(self.path.clone());
-                    rotate_config.cur_file_size = 0;
-                    rotate_config.cur_file_creation_date = utc_now.date_naive();
-                    cleanup_backups(rotate_config);
-                } else {
-                    // Update creation date for date-based rotation
-                    self.cur_file_date = utc_now.date_naive();
-                }
-
-                self.buf = BufWriter::new(new_file);
-                self.path.clone_from(&new_path);
-                eprintln!(
-                    "{NAUTILUS_PREFIX} Rotated log file, now logging to: {}",
+        let new_file = match File::options().create(true).append(true).open(&new_path) {
+            Ok(file) => file,
+            Err(e) => {
+                let _ = writeln!(
+                    io::stderr(),
+                    "{NAUTILUS_PREFIX} Error creating log file {}: {e}",
                     new_path.display()
                 );
+                self.reset_rotation_trigger(utc_now);
+                return;
             }
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}"),
+        };
+
+        self.flush_and_sync_logged();
+
+        if let Some(rotate_config) = &mut self.file_config.file_rotate {
+            rotate_config.backup_files.push_back(self.path.clone());
+            cleanup_backups(rotate_config);
+        }
+
+        self.reset_rotation_trigger(utc_now);
+
+        self.buf = BufWriter::new(new_file);
+        self.path.clone_from(&new_path);
+        let _ = writeln!(
+            io::stderr(),
+            "{NAUTILUS_PREFIX} Rotated log file, now logging to: {}",
+            new_path.display()
+        );
+    }
+
+    // Also used on rotation failure so the retry waits for the next boundary, not the next line
+    fn reset_rotation_trigger(&mut self, utc_now: Timestamp) {
+        if let Some(rotate_config) = &mut self.file_config.file_rotate {
+            rotate_config.cur_file_size = 0;
+            rotate_config.cur_file_creation_date = utc_date(utc_now);
+        } else {
+            self.cur_file_date = utc_date(utc_now);
         }
     }
 
@@ -493,12 +522,12 @@ impl FileWriter {
     pub fn flush_and_sync_logged(&mut self) {
         let flush_result = self.flush_buffer();
         if let Err(e) = flush_result {
-            eprintln!("{NAUTILUS_PREFIX} Error flushing file: {e:?}");
+            let _ = writeln!(io::stderr(), "{NAUTILUS_PREFIX} Error flushing file: {e:?}");
         }
 
         let sync_result = self.sync_to_disk();
         if let Err(e) = sync_result {
-            eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}");
+            let _ = writeln!(io::stderr(), "{NAUTILUS_PREFIX} Error syncing file: {e:?}");
         }
     }
 }
@@ -514,17 +543,18 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
         .len()
         .saturating_sub(rotate_config.max_backup_count as usize);
     for _ in 0..excess {
-        if let Some(path) = rotate_config.backup_files.pop_front() {
-            if path.exists()
-                && let Err(e) = std::fs::remove_file(&path)
-            {
-                eprintln!(
-                    "{NAUTILUS_PREFIX} Failed to remove old log file {}: {e}",
-                    path.display()
-                );
-            }
-        } else {
+        let Some(path) = rotate_config.backup_files.pop_front() else {
             break;
+        };
+
+        if path.exists()
+            && let Err(e) = std::fs::remove_file(&path)
+        {
+            let _ = writeln!(
+                io::stderr(),
+                "{NAUTILUS_PREFIX} Failed to remove old log file {}: {e}",
+                path.display()
+            );
         }
     }
 }
@@ -539,28 +569,29 @@ impl LogWriter for FileWriter {
             self.rotate_file();
         }
 
-        match self.buf.write_all(line.as_bytes()) {
-            Ok(()) => {
-                // Update current file size
-                if let Some(rotate_config) = &mut self.file_config.file_rotate {
-                    rotate_config.cur_file_size += line_size;
-                }
-            }
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error writing to file: {e:?}"),
+        if let Err(e) = self.buf.write_all(line.as_bytes()) {
+            let _ = writeln!(
+                io::stderr(),
+                "{NAUTILUS_PREFIX} Error writing to file: {e:?}"
+            );
+            return;
+        }
+
+        // Update current file size
+        if let Some(rotate_config) = &mut self.file_config.file_rotate {
+            rotate_config.cur_file_size += line_size;
         }
     }
 
     fn flush(&mut self) {
-        match self.flush_buffer() {
-            Ok(()) => {}
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error flushing file: {e:?}"),
+        if let Err(e) = self.flush_buffer() {
+            let _ = writeln!(io::stderr(), "{NAUTILUS_PREFIX} Error flushing file: {e:?}");
         }
 
-        if self.sync_on_flush {
-            match self.sync_to_disk() {
-                Ok(()) => {}
-                Err(e) => eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}"),
-            }
+        if self.sync_on_flush
+            && let Err(e) = self.sync_to_disk()
+        {
+            let _ = writeln!(io::stderr(), "{NAUTILUS_PREFIX} Error syncing file: {e:?}");
         }
     }
 
@@ -746,12 +777,15 @@ mod tests {
         assert!(writer.path.to_str().unwrap().contains("test_"));
     }
 
-    fn fixed_rotation_time(millis: u32) -> DateTime<Utc> {
-        NaiveDate::from_ymd_opt(2024, 1, 15)
+    fn fixed_rotation_time(millis: u32) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(Date::new(2024, 1, 15).unwrap().at(
+                10,
+                30,
+                45,
+                i32::try_from(millis).unwrap() * 1_000_000,
+            ))
             .unwrap()
-            .and_hms_milli_opt(10, 30, 45, millis)
-            .unwrap()
-            .and_utc()
     }
 
     #[rstest]
@@ -801,6 +835,135 @@ mod tests {
             file_name,
             "TRADER-001_2024-01-15_103045-123_instance-123.log"
         );
+    }
+
+    #[rstest]
+    #[case::custom_name_with_extension_rotating(
+        Some("nautilus.log"),
+        "TRADER-001",
+        true,
+        "nautilus_2024-01-15_103045-123.log"
+    )]
+    #[case::custom_name_with_extension(Some("nautilus.log"), "TRADER-001", false, "nautilus.log")]
+    #[case::custom_name_with_other_extension(Some("app.v2"), "TRADER-001", false, "app.log")]
+    #[case::dotted_trader_id_rotating(
+        None,
+        "TRADER.A-001",
+        true,
+        "TRADER.A-001_2024-01-15_103045-123_instance-123.log"
+    )]
+    #[case::dotted_trader_id_daily(
+        None,
+        "TRADER.A-001",
+        false,
+        "TRADER.A-001_2024-01-15_instance-123.log"
+    )]
+    fn test_create_log_file_path_keeps_dotted_names(
+        #[case] file_name: Option<&str>,
+        #[case] trader_id: &str,
+        #[case] rotate: bool,
+        #[case] expected: &str,
+    ) {
+        let config = FileWriterConfig {
+            directory: None,
+            file_name: file_name.map(str::to_string),
+            file_format: None,
+            file_rotate: rotate.then(|| FileRotateConfig::from((2000, 5))),
+        };
+
+        let path = FileWriter::create_log_file_path(
+            &config,
+            trader_id,
+            "instance-123",
+            false,
+            fixed_rotation_time(123),
+        )
+        .unwrap();
+
+        assert_eq!(path.file_name().unwrap().to_str().unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_rotate_file_with_extension_in_name_moves_to_new_file() {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("nautilus.log".to_string()),
+            file_format: None,
+            file_rotate: Some(FileRotateConfig::from((2000, 5))),
+        };
+
+        let mut writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+            false,
+            true,
+        )
+        .unwrap();
+        let first_path = writer.path.clone();
+
+        writer.rotate_file_at(fixed_rotation_time(123));
+
+        assert_ne!(writer.path, first_path);
+        assert_eq!(
+            writer
+                .file_config
+                .file_rotate
+                .as_ref()
+                .unwrap()
+                .backup_files,
+            VecDeque::from([first_path])
+        );
+    }
+
+    #[rstest]
+    #[case::file_open_fails(false)]
+    #[case::directory_create_fails(true)]
+    fn test_rotate_file_failure_keeps_active_file_until_next_boundary(
+        #[case] directory_fails: bool,
+    ) {
+        let temp_dir = tempdir().unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: Some(FileRotateConfig::from((2000, 5))),
+        };
+
+        let mut writer = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+            false,
+            true,
+        )
+        .unwrap();
+        let active_path = writer.path.clone();
+        writer.write(&"x".repeat(1999));
+        assert!(writer.should_rotate_file(2));
+
+        if directory_fails {
+            // A regular file in place of the log directory makes creating it fail
+            let blocking_file = temp_dir.path().join("not_a_directory");
+            std::fs::write(&blocking_file, "").unwrap();
+            writer.file_config.directory = Some(blocking_file.to_str().unwrap().to_string());
+        } else {
+            // A directory at the next rotation path makes opening the new file fail
+            std::fs::create_dir(temp_dir.path().join("test_2024-01-15_103045-123.log")).unwrap();
+        }
+
+        writer.rotate_file_at(fixed_rotation_time(123));
+
+        let rotate_config = writer.file_config.file_rotate.as_ref().unwrap();
+        assert_eq!(writer.path, active_path);
+        assert_eq!(rotate_config.cur_file_size, 0);
+        assert!(rotate_config.backup_files.is_empty());
+        assert!(!writer.should_rotate_file(2));
     }
 
     #[rstest]
@@ -868,7 +1031,7 @@ mod tests {
 
         writer.rotate_file_at(fixed_rotation_time(123));
 
-        assert_eq!(writer.cur_file_date, fixed_rotation_time(123).date_naive());
+        assert_eq!(writer.cur_file_date, utc_date(fixed_rotation_time(123)));
         let file_name = writer.path.file_name().unwrap().to_str().unwrap();
         assert_eq!(file_name, "TRADER-001_2024-01-15_instance-123.log");
     }
@@ -943,15 +1106,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_file_writer_unwritable_directory_returns_none() {
+    fn test_file_writer_unwritable_directory_returns_error() {
+        let temp_dir = tempdir().unwrap();
+        let blocking_file = temp_dir.path().join("not_a_directory");
+        std::fs::write(&blocking_file, "I am a file").unwrap();
+        let directory = blocking_file.join("nested");
+
         let config = FileWriterConfig {
-            directory: Some("/nonexistent/path/that/should/not/exist".to_string()),
+            directory: Some(directory.to_str().unwrap().to_string()),
             file_name: Some("test".to_string()),
             file_format: None,
             file_rotate: None,
         };
 
-        let writer = FileWriter::new(
+        let result = FileWriter::new(
             "TRADER-001".to_string(),
             "instance-123".to_string(),
             config,
@@ -960,11 +1128,14 @@ mod tests {
             true,
         );
 
-        assert!(writer.is_none());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("failed to create log directory {}", directory.display())
+        );
     }
 
     #[rstest]
-    fn test_file_writer_directory_is_file_returns_none() {
+    fn test_file_writer_directory_is_file_returns_error() {
         let temp_dir = tempdir().unwrap();
         let file_path = temp_dir.path().join("not_a_directory");
         std::fs::write(&file_path, "I am a file").unwrap();
@@ -976,7 +1147,7 @@ mod tests {
             file_rotate: None,
         };
 
-        let writer = FileWriter::new(
+        let result = FileWriter::new(
             "TRADER-001".to_string(),
             "instance-123".to_string(),
             config,
@@ -985,7 +1156,38 @@ mod tests {
             true,
         );
 
-        assert!(writer.is_none());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("failed to create log directory {}", file_path.display())
+        );
+    }
+
+    #[rstest]
+    fn test_file_writer_path_is_directory_returns_error() {
+        let temp_dir = tempdir().unwrap();
+        let blocking_dir = temp_dir.path().join("test.log");
+        std::fs::create_dir(&blocking_dir).unwrap();
+
+        let config = FileWriterConfig {
+            directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+            file_name: Some("test".to_string()),
+            file_format: None,
+            file_rotate: None,
+        };
+
+        let result = FileWriter::new(
+            "TRADER-001".to_string(),
+            "instance-123".to_string(),
+            config,
+            LevelFilter::Info,
+            false,
+            true,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("failed to open log file {}", blocking_dir.display())
+        );
     }
 
     #[rstest]

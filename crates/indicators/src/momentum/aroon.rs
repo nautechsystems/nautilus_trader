@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+};
 
-use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
-use crate::indicator::Indicator;
-
-pub const MAX_PERIOD: usize = 1_024;
-
-const ROUND_DP: f64 = 1_000_000_000_000.0;
+pub use crate::support::MAX_PERIOD;
+use crate::{indicator::Indicator, support::is_valid_high_low};
 
 /// The Aroon Oscillator calculates the Aroon Up and Aroon Down indicators to
 /// determine if an instrument is trending, and the strength of the trend.
@@ -33,7 +33,7 @@ const ROUND_DP: f64 = 1_000_000_000_000.0;
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -47,9 +47,8 @@ pub struct AroonOscillator {
     pub count: usize,
     pub initialized: bool,
     has_inputs: bool,
-    total_count: usize,
-    high_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
-    low_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    high_inputs: VecDeque<f64>,
+    low_inputs: VecDeque<f64>,
 }
 
 impl Display for AroonOscillator {
@@ -95,7 +94,6 @@ impl Indicator for AroonOscillator {
         self.aroon_down = 0.0;
         self.value = 0.0;
         self.count = 0;
-        self.total_count = 0;
         self.has_inputs = false;
         self.initialized = false;
     }
@@ -109,36 +107,36 @@ impl AroonOscillator {
     /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize) -> Self {
-        assert!(
+        Self::new_checked(period).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(period: usize) -> anyhow::Result<Self> {
+        anyhow::ensure!(
             period > 0,
             "AroonOscillator: period must be > 0 (received {period})"
         );
-        assert!(
+        anyhow::ensure!(
             period <= MAX_PERIOD,
             "AroonOscillator: period must be ≤ {MAX_PERIOD} (received {period})"
         );
 
-        Self {
+        Ok(Self {
             period,
             aroon_up: 0.0,
             aroon_down: 0.0,
             value: 0.0,
             count: 0,
-            total_count: 0,
             has_inputs: false,
             initialized: false,
-            high_inputs: ArrayDeque::new(),
-            low_inputs: ArrayDeque::new(),
-        }
+            high_inputs: VecDeque::with_capacity(period + 1),
+            low_inputs: VecDeque::with_capacity(period + 1),
+        })
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64) {
-        debug_assert!(
-            high >= low,
-            "AroonOscillator::update_raw - high must be ≥ low"
-        );
-
-        self.total_count = self.total_count.saturating_add(1);
+        if !is_valid_high_low(high, low) {
+            return;
+        }
 
         if self.count == self.period + 1 {
             let _ = self.high_inputs.pop_front();
@@ -147,11 +145,11 @@ impl AroonOscillator {
             self.count += 1;
         }
 
-        let _ = self.high_inputs.push_back(high);
-        let _ = self.low_inputs.push_back(low);
+        self.high_inputs.push_back(high);
+        self.low_inputs.push_back(low);
 
         let required = self.period + 1;
-        if !self.initialized && self.total_count >= required {
+        if !self.initialized && self.count >= required {
             self.initialized = true;
         }
         self.has_inputs = true;
@@ -161,41 +159,32 @@ impl AroonOscillator {
         }
     }
 
+    // Both scans cover the full `period + 1` window, and ties keep the newest
+    // extreme (the standard Aroon convention), so both lines span [0, 100].
     fn calculate_aroon(&mut self) {
-        let len = self.high_inputs.len();
-        debug_assert_eq!(len, self.period + 1);
+        debug_assert_eq!(self.high_inputs.len(), self.period + 1);
 
         let mut max_idx = 0_usize;
         let mut max_val = f64::MIN;
         for (idx, &hi) in self.high_inputs.iter().enumerate() {
-            if hi > max_val {
+            if hi >= max_val {
                 max_val = hi;
                 max_idx = idx;
             }
         }
 
-        let mut min_idx_rel = 0_usize;
+        let mut min_idx = 0_usize;
         let mut min_val = f64::MAX;
-        for (idx, &lo) in self.low_inputs.iter().skip(1).enumerate() {
-            if lo < min_val {
+        for (idx, &lo) in self.low_inputs.iter().enumerate() {
+            if lo <= min_val {
                 min_val = lo;
-                min_idx_rel = idx;
+                min_idx = idx;
             }
         }
 
-        let periods_since_high = len - 1 - max_idx;
-        let periods_since_low = self.period - 1 - min_idx_rel;
-
-        self.aroon_up =
-            Self::round(100.0 * (self.period - periods_since_high) as f64 / self.period as f64);
-        self.aroon_down =
-            Self::round(100.0 * (self.period - periods_since_low) as f64 / self.period as f64);
-        self.value = Self::round(self.aroon_up - self.aroon_down);
-    }
-
-    #[inline]
-    fn round(v: f64) -> f64 {
-        (v * ROUND_DP).round() / ROUND_DP
+        self.aroon_up = 100.0 * max_idx as f64 / self.period as f64;
+        self.aroon_down = 100.0 * min_idx as f64 / self.period as f64;
+        self.value = self.aroon_up - self.aroon_down;
     }
 }
 
@@ -244,8 +233,8 @@ mod tests {
         aroon.update_raw(110.10, 109.70);
         assert!(aroon.initialized());
         assert_eq!(aroon.aroon_up, 100.0);
-        assert_eq!(aroon.aroon_down, 100.0);
-        assert_eq!(aroon.value, 0.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 100.0);
     }
 
     #[rstest]
@@ -280,7 +269,8 @@ mod tests {
         }
         assert!(aroon.initialized());
         assert_eq!(aroon.aroon_up, 30.0);
-        assert_eq!(aroon.value, -25.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 30.0);
     }
 
     #[rstest]
@@ -337,7 +327,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ignore_oldest_low() {
+    fn test_oldest_low_reaches_zero() {
+        // The low scan covers the full period + 1 window, so a lowest low at
+        // the oldest bar drives Aroon Down to exactly 0.
         let mut aroon = AroonOscillator::new(5);
         aroon.update_raw(10.0, 0.0);
         let inputs = [
@@ -353,7 +345,19 @@ mod tests {
         }
         assert!(aroon.initialized());
         assert_eq!(aroon.aroon_up, 100.0);
-        assert_eq!(aroon.aroon_down, 20.0);
-        assert_eq!(aroon.value, 80.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 100.0);
+    }
+
+    #[rstest]
+    fn test_flat_series_ties_keep_newest_extreme() {
+        let mut aroon = AroonOscillator::new(5);
+        for _ in 0..=5 {
+            aroon.update_raw(1.0, 0.5);
+        }
+        assert!(aroon.initialized());
+        assert_eq!(aroon.aroon_up, 100.0);
+        assert_eq!(aroon.aroon_down, 100.0);
+        assert_eq!(aroon.value, 0.0);
     }
 }

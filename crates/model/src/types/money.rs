@@ -21,6 +21,10 @@
 //!
 //! # Arithmetic behavior
 //!
+//! Adding or subtracting two `Money` values requires matching effective fixed-point scales.
+//! These operations panic on a scale mismatch.
+//! Comparisons and hashes account for scale differences without rounding.
+//!
 //! | Operation         | Result    | Notes                             |
 //! |-------------------|-----------|-----------------------------------|
 //! | `Money + Money`   | `Money`   | Panics if currencies don't match. |
@@ -34,6 +38,13 @@
 //! | `Money * f64`     | `f64`     |                                   |
 //! | `Money / f64`     | `f64`     |                                   |
 //! | `-Money`          | `Money`   |                                   |
+//!
+//! # Ordering behavior
+//!
+//! Rust ordering compares currency codes lexicographically, then scale-adjusted amounts.
+//! This order supports sorting and ordered collections across currencies, but it does not convert
+//! amounts to a common currency. Values with the same currency code compare by numeric value.
+//! Python comparisons reject values with different currency codes.
 //!
 //! # Currency constraints
 //!
@@ -55,7 +66,7 @@ use std::{
 use nautilus_core::{
     correctness::{
         CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
-        check_in_range_inclusive_f64,
+        check_in_range_inclusive_f64, check_predicate_false, check_predicate_true,
     },
     string::formatting::Separable,
 };
@@ -69,9 +80,11 @@ use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
 use crate::types::{
-    Currency,
+    Currency, Quantity,
     fixed::{
-        FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
+        FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, check_fixed_raw_i128,
+        check_fixed_raw_u128, compare_raw_signed, format_scaled_i128,
+        mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
         raw_scale, raw_scales_match, scaled_raw_to_decimal,
     },
 };
@@ -146,19 +159,14 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.model",
-        frozen,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.model", frozen, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct Money {
-    /// Represents the raw fixed-point amount, with `currency.precision` defining the number of decimal places.
-    pub raw: MoneyRaw,
+    pub(crate) raw: MoneyRaw,
     /// The currency denomination associated with the monetary amount.
     pub currency: Currency,
 }
@@ -315,6 +323,24 @@ impl Money {
         }
     }
 
+    /// Returns the stored fixed-point integer without rescaling.
+    ///
+    /// Use this for serialization and explicit fixed-point conversions. Prefer domain
+    /// operations for calculations; the storage scale can differ from display precision.
+    ///
+    /// Direct field access is restricted to this crate:
+    ///
+    /// ```compile_fail
+    /// use nautilus_model::types::Money;
+    /// let value = Money::from("1 USD");
+    /// let raw = value.raw;
+    /// ```
+    #[must_use]
+    #[inline]
+    pub const fn raw(&self) -> MoneyRaw {
+        self.raw
+    }
+
     /// Returns `true` if the value of this instance is zero.
     #[must_use]
     pub fn is_zero(&self) -> bool {
@@ -325,6 +351,18 @@ impl Money {
     #[must_use]
     pub fn is_positive(&self) -> bool {
         self.raw > 0
+    }
+
+    /// Returns `true` if the value of this instance is negative (< 0).
+    #[must_use]
+    pub fn is_negative(&self) -> bool {
+        self.raw < 0
+    }
+
+    /// Returns the absolute amount in the same currency.
+    #[must_use]
+    pub fn abs(self) -> Self {
+        if self.is_negative() { -self } else { self }
     }
 
     /// Performs a checked addition, returning `None` on raw integer overflow, when
@@ -347,10 +385,12 @@ impl Money {
         if !raw_scales_match(self.currency.precision, rhs.currency.precision) {
             return None;
         }
+
         let raw = self.raw.checked_add(rhs.raw)?;
         if raw < MONEY_RAW_MIN || raw > MONEY_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             currency: self.currency,
@@ -377,10 +417,12 @@ impl Money {
         if !raw_scales_match(self.currency.precision, rhs.currency.precision) {
             return None;
         }
+
         let raw = self.raw.checked_sub(rhs.raw)?;
         if raw < MONEY_RAW_MIN || raw > MONEY_RAW_MAX {
             return None;
         }
+
         Some(Self {
             raw,
             currency: self.currency,
@@ -392,7 +434,7 @@ impl Money {
     ///
     /// # Panics
     ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
+    /// Panics if the `defi` feature is enabled and precision exceeds `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]
@@ -406,17 +448,8 @@ impl Money {
 
     #[cfg(not(feature = "high-precision"))]
     /// Returns the value of this instance as an `f64`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
-        #[cfg(feature = "defi")]
-        if self.currency.precision > MAX_FLOAT_PRECISION {
-            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
-        }
-
         fixed_i64_to_f64(self.raw)
     }
 
@@ -441,16 +474,54 @@ impl Money {
     /// Returns a formatted string representation of this instance.
     #[must_use]
     pub fn to_formatted_string(&self) -> String {
-        let amount_str = if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            self.raw.to_string()
-        } else {
-            self.as_decimal().to_string()
-        };
+        let amount_str = format_scaled_i128(self.raw_at_precision(), self.currency.precision);
         format!(
             "{} {}",
             amount_str.separate_with_underscores(),
             self.currency.code
         )
+    }
+
+    /// Converts a quantity denominated in `currency` to money without rounding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the quantity is invalid, the amount is not exactly representable
+    /// at the currency precision, or scaling exceeds the money bounds.
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    pub fn from_quantity(quantity: Quantity, currency: Currency) -> CorrectnessResult<Self> {
+        check_predicate_false(quantity.is_undefined(), "quantity was undefined")?;
+        Quantity::from_raw_checked(quantity.raw, quantity.precision)?;
+        check_fixed_raw_u128(u128::from(quantity.raw), quantity.precision).map_err(|e| {
+            CorrectnessError::PredicateViolation {
+                message: e.to_string(),
+            }
+        })?;
+
+        let raw = i128::try_from(u128::from(quantity.raw)).map_err(|_| {
+            CorrectnessError::PredicateViolation {
+                message: format!("quantity for {currency} exceeds signed raw bounds"),
+            }
+        })?;
+
+        Self::from_rescaled_raw(raw, quantity.precision, currency, "quantity")
+    }
+
+    fn raw_at_precision(&self) -> i128 {
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.currency.precision);
+        let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(precision_diff));
+        Self::raw_as_i128(rescaled_raw)
+    }
+
+    fn raw_as_i128(raw: MoneyRaw) -> i128 {
+        #[allow(
+            clippy::useless_conversion,
+            reason = "i128::from is a widening conversion when MoneyRaw is i64"
+        )]
+        i128::from(raw)
     }
 
     /// Creates a new [`Money`] from a `Decimal` value with specified currency.
@@ -491,6 +562,57 @@ impl Money {
 
         Ok(Self { raw, currency })
     }
+
+    #[allow(
+        clippy::useless_conversion,
+        reason = "the raw width differs when high-precision is disabled"
+    )]
+    pub(crate) fn from_rescaled_raw(
+        raw: i128,
+        source_precision: u8,
+        currency: Currency,
+        subject: &str,
+    ) -> CorrectnessResult<Self> {
+        check_fixed_precision(source_precision)?;
+        check_fixed_precision(currency.precision)?;
+        let source_precision = source_precision.max(FIXED_PRECISION);
+        let target_precision = currency.precision.max(FIXED_PRECISION);
+
+        let raw = match source_precision.cmp(&target_precision) {
+            Ordering::Less => {
+                let scale = 10_i128.pow(u32::from(target_precision - source_precision));
+                raw.checked_mul(scale)
+                    .ok_or_else(|| CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "{subject} for {currency} overflowed while increasing raw scale"
+                        ),
+                    })?
+            }
+            Ordering::Greater => {
+                let scale = 10_i128.pow(u32::from(source_precision - target_precision));
+                check_predicate_true(
+                    raw % scale == 0,
+                    &format!("{subject} for {currency} loses precision when decreasing raw scale"),
+                )?;
+                raw / scale
+            }
+            Ordering::Equal => raw,
+        };
+
+        check_fixed_raw_i128(raw, currency.precision).map_err(|e| {
+            CorrectnessError::PredicateViolation {
+                message: e.to_string(),
+            }
+        })?;
+
+        let raw: MoneyRaw = raw
+            .try_into()
+            .map_err(|_| CorrectnessError::PredicateViolation {
+                message: format!("{subject} for {currency} exceeds Money raw bounds"),
+            })?;
+
+        Self::from_raw_checked(raw, currency)
+    }
 }
 
 impl FromStr for Money {
@@ -508,16 +630,25 @@ impl FromStr for Money {
 
         let clean_amount = parts[0].replace('_', "");
 
-        let decimal = if clean_amount.contains('e') || clean_amount.contains('E') {
-            Decimal::from_scientific(&clean_amount)
-                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?
-        } else {
-            Decimal::from_str(&clean_amount)
-                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?
-        };
-
         let currency = Currency::from_str(parts[1]).map_err(|e| e.to_string())?;
-        Self::from_decimal(decimal, currency).map_err(|e| e.to_string())
+        if clean_amount.contains('e') || clean_amount.contains('E') {
+            let decimal = Decimal::from_scientific(&clean_amount)
+                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?;
+            return Self::from_decimal(decimal, currency).map_err(|e| e.to_string());
+        }
+
+        let (mantissa, amount_precision) = parse_decimal_mantissa(&clean_amount)?;
+        let exponent = -i8::try_from(amount_precision).map_err(|e| e.to_string())?;
+        let raw = mantissa_exponent_to_raw_checked::<MoneyRaw>(
+            mantissa,
+            exponent,
+            currency.precision,
+            "Money::from_str",
+            "MoneyRaw",
+            "Money",
+        )
+        .map_err(|e| e.to_string())?;
+        Self::from_raw_checked(raw, currency).map_err(|e| e.to_string())
     }
 }
 
@@ -541,14 +672,15 @@ impl From<&Money> for f64 {
 
 impl Hash for Money {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.raw.hash(state);
+        self.raw.signum().hash(state);
+        canonical_raw(self.raw.unsigned_abs(), self.currency.precision).hash(state);
         self.currency.hash(state);
     }
 }
 
 impl PartialEq for Money {
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw && self.currency == other.currency
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -556,32 +688,18 @@ impl PartialOrd for Money {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-
-    fn lt(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.lt(&other.raw)
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.le(&other.raw)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.gt(&other.raw)
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.ge(&other.raw)
-    }
 }
 
 impl Ord for Money {
     fn cmp(&self, other: &Self) -> Ordering {
-        assert_eq!(self.currency, other.currency);
-        self.raw.cmp(&other.raw)
+        self.currency.code.cmp(&other.currency.code).then_with(|| {
+            compare_raw_signed(
+                self.raw,
+                self.currency.precision,
+                other.raw,
+                other.currency.precision,
+            )
+        })
     }
 }
 
@@ -603,6 +721,10 @@ impl Add for Money {
             "Currency mismatch: cannot add {} to {}",
             rhs.currency.code, self.currency.code
         );
+        assert!(
+            raw_scales_match(self.currency.precision, rhs.currency.precision),
+            "Cannot add `Money` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -620,6 +742,10 @@ impl Sub for Money {
             self.currency, rhs.currency,
             "Currency mismatch: cannot subtract {} from {}",
             rhs.currency.code, self.currency.code
+        );
+        assert!(
+            raw_scales_match(self.currency.precision, rhs.currency.precision),
+            "Cannot subtract `Money` values with mismatched decimal scales"
         );
         Self {
             raw: self
@@ -690,7 +816,13 @@ impl Div<f64> for Money {
 impl Debug for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            write!(f, "{}({}, {})", stringify!(Money), self.raw, self.currency)
+            write!(
+                f,
+                "{}({}, {})",
+                stringify!(Money),
+                format_scaled_i128(Self::raw_as_i128(self.raw), self.currency.precision),
+                self.currency,
+            )
         } else {
             let precision = self.currency.precision;
             let scale = MoneyRaw::try_from(raw_scale(precision))
@@ -720,11 +852,12 @@ impl Debug for Money {
 
 impl Display for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            write!(f, "{} {}", self.raw, self.currency)
-        } else {
-            write!(f, "{} {}", self.as_decimal(), self.currency)
-        }
+        write!(
+            f,
+            "{} {}",
+            format_scaled_i128(self.raw_at_precision(), self.currency.precision),
+            self.currency,
+        )
     }
 }
 
@@ -771,6 +904,91 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::enums::CurrencyType;
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_as_decimal_above_decimal_mantissa() {
+        // Regression: a precision-16 currency amount above roughly 7.92e12 rescales to a raw
+        // value beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion.
+        let currency = Currency::new("XYZ", 16, 0, "XYZ", crate::enums::CurrencyType::Crypto);
+        let money = Money::from_raw(MONEY_RAW_MAX, currency);
+
+        assert_eq!(money.as_decimal(), dec!(17014118346046));
+    }
+
+    #[rstest]
+    fn test_money_ordering_is_structural_across_currencies() {
+        use std::collections::BTreeSet;
+
+        let aud_low = Money::new(-1.0, Currency::AUD());
+        let aud_high = Money::new(100.0, Currency::AUD());
+        let usd_low = Money::new(-100.0, Currency::USD());
+        let usd_high = Money::new(1.0, Currency::USD());
+
+        assert_eq!(aud_high.cmp(&usd_low), Ordering::Less);
+        assert_eq!(aud_high.partial_cmp(&usd_low), Some(Ordering::Less));
+        assert_eq!(
+            (
+                aud_high < usd_low,
+                aud_high <= usd_low,
+                aud_high > usd_low,
+                aud_high >= usd_low,
+                usd_low < aud_high,
+                usd_low <= aud_high,
+                usd_low > aud_high,
+                usd_low >= aud_high,
+            ),
+            (true, true, false, false, false, false, true, true),
+        );
+
+        let expected = vec![aud_low, aud_high, usd_low, usd_high];
+        let mut sorted = vec![usd_high, aud_high, usd_low, aud_low];
+        sorted.sort();
+        let ordered = BTreeSet::from([usd_high, aud_high, usd_low, aud_low]);
+
+        assert_eq!(sorted, expected);
+        assert_eq!(ordered.into_iter().collect::<Vec<_>>(), expected);
+    }
+
+    #[rstest]
+    fn test_money_cmp_equal_matches_equality() {
+        use crate::enums::CurrencyType;
+
+        let currency = Currency::new("TST", 2, 1, "Test fiat", CurrencyType::Fiat);
+        let same_code = Currency::new("TST", 8, 2, "Test crypto", CurrencyType::Crypto);
+        let other_code = Currency::new("TSU", 2, 1, "Other fiat", CurrencyType::Fiat);
+        let money = Money::from_raw(1, currency);
+        let cases = [
+            (Money::from_raw(1, same_code), true),
+            (Money::from_raw(2, same_code), false),
+            (Money::from_raw(1, other_code), false),
+        ];
+
+        for (other, expected_equal) in cases {
+            assert_eq!(money == other, expected_equal);
+            assert_eq!(money.cmp(&other) == Ordering::Equal, expected_equal);
+        }
+    }
+
+    #[rstest]
+    fn test_from_quantity_rejects_noncanonical_raw() {
+        let precision = FIXED_PRECISION - 1;
+        let quantity = Quantity::from_raw(1, precision);
+        let currency = Currency::new("TOKEN", FIXED_PRECISION, 0, "Token", CurrencyType::Crypto);
+        let result = Money::from_quantity(quantity, currency);
+
+        assert_eq!(
+            result,
+            Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Invalid fixed-point raw value 1 for precision {precision}: \
+                             remainder 1 when divided by scale 10. Raw value should be a multiple of 10. \
+                             This indicates data corruption or incorrect precision/scaling upstream"
+                ),
+            })
+        );
+    }
 
     #[rstest]
     fn test_extreme_money_round_trips_through_raw() {
@@ -785,17 +1003,38 @@ mod tests {
         assert!(Money::from_raw_checked(min.raw, Currency::USD()).is_ok());
     }
 
-    #[cfg(feature = "high-precision")]
+    #[cfg(all(feature = "defi", feature = "high-precision"))]
     #[rstest]
-    fn test_as_decimal_above_decimal_mantissa() {
-        // Regression: a precision-16 currency amount above roughly 7.92e12 rescales to a raw
-        // value beyond `Decimal`'s 96-bit mantissa, which used to panic during conversion and
-        // took `Display` and `to_formatted_string` down with it.
-        let currency = Currency::new("XYZ", 16, 0, "XYZ", crate::enums::CurrencyType::Crypto);
-        let money = Money::from_raw(MONEY_RAW_MAX, currency);
+    fn test_wei_above_decimal_mantissa_formats_exactly() {
+        let raw = 80_000_000_000_000_000_250_000_000_000_i128;
+        let currency = Currency::new("ETH", 18, 0, "Ether", crate::enums::CurrencyType::Crypto);
+        let money = Money::from_raw(raw, currency);
 
-        assert_eq!(money.as_decimal(), dec!(17014118346046));
-        assert_eq!(money.to_formatted_string(), "17_014_118_346_046 XYZ");
+        assert_eq!(money.to_string(), "80000000000.000000250000000000 ETH");
+        assert_eq!(
+            money.to_formatted_string(),
+            "80_000_000_000.000000250000000000 ETH"
+        );
+    }
+
+    #[cfg(all(feature = "defi", feature = "high-precision"))]
+    #[rstest]
+    fn test_wei_money_serde_json_round_trip() {
+        let currency = Currency::new(
+            "WXW",
+            18,
+            0,
+            "Wei exact",
+            crate::enums::CurrencyType::Crypto,
+        );
+        Currency::register(currency, true).unwrap();
+        let money = Money::from_raw(80_000_000_000_000_000_250_000_000_000_i128, currency);
+
+        let json = serde_json::to_string(&money).unwrap();
+        let deserialized = serde_json::from_str::<Money>(&json).unwrap();
+
+        assert_eq!(json, "\"80000000000.000000250000000000 WXW\"");
+        assert_eq!(deserialized, money);
     }
 
     #[rstest]
@@ -849,6 +1088,8 @@ mod tests {
 
     #[rstest]
     #[case(42.0, 0, "JPY", "Money(42, JPY)", "42 JPY")]
+    #[case(0.0, 2, "USD", "Money(0.00, USD)", "0.00 USD")]
+    #[case(-1010.12, 2, "USD", "Money(-1010.12, USD)", "-1010.12 USD")]
     #[case(1010.12, 2, "USD", "Money(1010.12, USD)", "1010.12 USD")] // Normal precision
     #[case(123.456_789, 8, "BTC", "Money(123.45678900, BTC)", "123.45678900 BTC")] // At max normal precision
     fn test_formatting_normal_precision(
@@ -878,15 +1119,15 @@ mod tests {
         1_000_000_000_000_000_000_i128,
         18,
         "wei",
-        "Money(1000000000000000000, wei)",
-        "1000000000000000000 wei"
+        "Money(1.000000000000000000, wei)",
+        "1.000000000000000000 wei"
     )] // High precision
     #[case(
         2_500_000_000_000_000_000_i128,
         18,
         "ETH",
-        "Money(2500000000000000000, ETH)",
-        "2500000000000000000 ETH"
+        "Money(2.500000000000000000, ETH)",
+        "2.500000000000000000 ETH"
     )] // High precision
     fn test_formatting_high_precision(
         #[case] raw_value: i128,
@@ -907,6 +1148,10 @@ mod tests {
 
         assert_eq!(format!("{money:?}"), expected_debug);
         assert_eq!(format!("{money}"), expected_display);
+        assert_eq!(
+            serde_json::to_value(money).unwrap(),
+            serde_json::Value::String(expected_display.to_string()),
+        );
     }
 
     #[rstest]
@@ -966,6 +1211,25 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_new_checked_rejects_float_for_wei_currency() {
+        use crate::enums::CurrencyType;
+
+        let currency = Currency::new("TST18", 18, 0, "Test token", CurrencyType::Crypto);
+        let error = Money::new_checked(1.0, currency).unwrap_err();
+        let message = "`currency.precision` exceeded maximum float precision (16), use \
+                       `Money::from_wei()` for wei values instead";
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: message.to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), message);
+    }
+
     #[rstest]
     fn test_money_is_zero() {
         let zero_usd = Money::new(0.0, Currency::USD());
@@ -994,6 +1258,8 @@ mod tests {
         assert!(m2 > m1);
         assert!(m1 <= m2);
         assert!(m2 >= m1);
+        assert_eq!(m1.cmp(&m2), Ordering::Less);
+        assert_eq!(m2.cmp(&m1), Ordering::Greater);
 
         // Equality
         let m3 = Money::new(100.0, usd);
@@ -1050,6 +1316,36 @@ mod tests {
         let near_min = Money::from_raw(MONEY_RAW_MIN, usd);
         let one = Money::new(1.0, usd);
         assert_eq!(near_min.checked_sub(one), None);
+    }
+
+    #[rstest]
+    fn test_money_checked_add_below_min_returns_none() {
+        let usd = Currency::USD();
+        let minus_one_unit = Money::from_raw(-1, usd);
+
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MIN, usd).checked_add(minus_one_unit),
+            None
+        );
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MIN + 1, usd).checked_add(minus_one_unit),
+            Some(Money::from_raw(MONEY_RAW_MIN, usd))
+        );
+    }
+
+    #[rstest]
+    fn test_money_checked_sub_above_max_returns_none() {
+        let usd = Currency::USD();
+        let minus_one_unit = Money::from_raw(-1, usd);
+
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MAX, usd).checked_sub(minus_one_unit),
+            None
+        );
+        assert_eq!(
+            Money::from_raw(MONEY_RAW_MAX - 1, usd).checked_sub(minus_one_unit),
+            Some(Money::from_raw(MONEY_RAW_MAX, usd))
+        );
     }
 
     #[rstest]
@@ -1209,6 +1505,22 @@ mod tests {
         let money = Money::from(input);
         assert_eq!(money.currency, expected_currency);
         assert_eq!(money.as_decimal(), expected_dec);
+    }
+
+    #[rstest]
+    #[case("1.005 USD", dec!(1.00))]
+    #[case("1.015 USD", dec!(1.02))]
+    #[case("-1.005 USD", dec!(-1.00))]
+    #[case("-1.015 USD", dec!(-1.02))]
+    fn test_from_str_rounds_half_to_even(#[case] input: &str, #[case] expected: Decimal) {
+        let money = input.parse::<Money>().unwrap();
+
+        assert_eq!(
+            money,
+            Money::from_decimal(expected, Currency::USD()).unwrap()
+        );
+        assert_eq!(money.currency, Currency::USD());
+        assert_eq!(money.as_decimal(), expected);
     }
 
     #[rstest]
@@ -1379,6 +1691,24 @@ mod tests {
         let huge = Decimal::from_str("99999999999999999999.99").unwrap();
         let result = Money::from_decimal(huge, Currency::USD());
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_from_decimal_rejects_raw_between_money_and_raw_bounds() {
+        let usd = Currency::USD();
+        let at_max = Decimal::try_from(MONEY_MAX).unwrap();
+        let above_max = at_max + dec!(0.5);
+        let expected_raw = MONEY_RAW_MAX + 5 * MoneyRaw::pow(10, u32::from(FIXED_PRECISION - 1));
+
+        let error = Money::from_decimal(above_max, usd).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Raw value {expected_raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+            )
+        );
+        assert_eq!(Money::from_decimal(at_max, usd).unwrap().raw, MONEY_RAW_MAX);
     }
 
     #[rstest]
@@ -1680,21 +2010,19 @@ mod property_tests {
             money1 in money_strategy(),
             money2 in money_strategy(),
         ) {
-            if money1.currency == money2.currency {
-                let eq = money1 == money2;
-                let lt = money1 < money2;
-                let gt = money1 > money2;
-                let le = money1 <= money2;
-                let ge = money1 >= money2;
+            let eq = money1 == money2;
+            let lt = money1 < money2;
+            let gt = money1 > money2;
+            let le = money1 <= money2;
+            let ge = money1 >= money2;
 
-                let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
-                prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
+            let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
+            prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
 
-                prop_assert_eq!(le, eq || lt, "<= should equal == || <");
-                prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
-                prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
-                prop_assert_eq!(le, money2 >= money1, "<= should be symmetric with >=");
-            }
+            prop_assert_eq!(le, eq || lt, "<= should equal == || <");
+            prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
+            prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
+            prop_assert_eq!(le, money2 >= money1, "<= should be symmetric with >=");
         }
 
         #[rstest]

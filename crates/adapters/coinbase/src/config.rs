@@ -15,7 +15,10 @@
 
 //! Configuration structures for the Coinbase adapter.
 
-use nautilus_model::enums::AccountType;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +32,7 @@ use crate::common::{
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.coinbase", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -37,18 +40,18 @@ use crate::common::{
 )]
 pub struct CoinbaseDataClientConfig {
     /// CDP API key name (falls back to `COINBASE_API_KEY` env var).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// CDP API secret in PEM format (falls back to `COINBASE_API_SECRET` env var).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
+    /// The Coinbase environment to connect to.
+    #[builder(default)]
+    pub environment: CoinbaseEnvironment,
     /// Override for the REST API base URL.
     pub base_url_rest: Option<String>,
     /// Override for the WebSocket market data URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
-    /// The Coinbase environment to connect to.
-    #[builder(default)]
-    pub environment: CoinbaseEnvironment,
+    pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
@@ -71,9 +74,9 @@ pub struct CoinbaseDataClientConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(CoinbaseDataClientConfig {
+    environment: CoinbaseEnvironment,
     base_url_rest: Option<String>,
     base_url_ws: Option<String>,
-    environment: CoinbaseEnvironment,
     http_timeout_secs: u64,
     ws_timeout_secs: u64,
     update_instruments_interval_mins: u64,
@@ -98,11 +101,13 @@ impl CoinbaseDataClientConfig {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.api_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
             && self
                 .api_secret
-                .as_deref()
+                .as_ref()
+                .map(SecretString::expose_secret)
                 .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -128,27 +133,30 @@ impl CoinbaseDataClientConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.coinbase", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.coinbase", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.coinbase")
 )]
-pub struct CoinbaseExecClientConfig {
+pub struct CoinbaseExecutionClientConfig {
+    /// Account identifier for the execution client.
+    #[builder(default = AccountId::from("COINBASE-001"))]
+    pub account_id: AccountId,
     /// CDP API key name (falls back to `COINBASE_API_KEY` env var).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// CDP API secret in PEM format (falls back to `COINBASE_API_SECRET` env var).
-    pub api_secret: Option<String>,
-    /// Override for the REST API base URL.
-    pub base_url_rest: Option<String>,
-    /// Override for the WebSocket user data URL.
-    pub base_url_ws: Option<String>,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
-    /// The Coinbase environment to connect to.
+    pub api_secret: Option<SecretString>,
+    /// Environment to connect to.
     #[builder(default)]
     pub environment: CoinbaseEnvironment,
-    /// HTTP timeout in seconds.
+    /// Optional override for the REST API base URL.
+    pub base_url_rest: Option<String>,
+    /// Optional override for the WebSocket user data URL.
+    pub base_url_ws: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
+    /// Timeout in seconds for HTTP requests.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for HTTP requests.
@@ -181,10 +189,11 @@ pub struct CoinbaseExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(CoinbaseExecClientConfig {
+nautilus_core::impl_pyo3_config_getters!(CoinbaseExecutionClientConfig {
+    account_id: AccountId,
+    environment: CoinbaseEnvironment,
     base_url_rest: Option<String>,
     base_url_ws: Option<String>,
-    environment: CoinbaseEnvironment,
     http_timeout_secs: u64,
     max_retries: u32,
     retry_delay_initial_ms: u64,
@@ -196,13 +205,13 @@ nautilus_core::impl_pyo3_config_getters!(CoinbaseExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for CoinbaseExecClientConfig {
+impl Default for CoinbaseExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl CoinbaseExecClientConfig {
+impl CoinbaseExecutionClientConfig {
     /// Creates a new configuration with default settings.
     #[must_use]
     pub fn new() -> Self {
@@ -213,11 +222,13 @@ impl CoinbaseExecClientConfig {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.api_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
             && self
                 .api_secret
-                .as_deref()
+                .as_ref()
+                .map(SecretString::expose_secret)
                 .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -245,6 +256,37 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = CoinbaseDataClientConfig {
+            api_key: Some("data-api-key".into()),
+            api_secret: Some("data-api-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = CoinbaseExecutionClientConfig {
+            api_key: Some("exec-api-key".into()),
+            api_secret: Some("exec-api-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-api-key",
+            "data-api-secret",
+            "data-proxy",
+            "exec-api-key",
+            "exec-api-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
+
+    #[rstest]
     fn test_data_config_defaults() {
         let config = CoinbaseDataClientConfig::default();
         assert_eq!(config.environment, CoinbaseEnvironment::Live);
@@ -257,8 +299,8 @@ mod tests {
     #[rstest]
     fn test_data_config_has_credentials() {
         let config = CoinbaseDataClientConfig {
-            api_key: Some("key".to_string()),
-            api_secret: Some("secret".to_string()),
+            api_key: Some("key".into()),
+            api_secret: Some("secret".into()),
             ..CoinbaseDataClientConfig::default()
         };
         assert!(config.has_credentials());
@@ -267,8 +309,8 @@ mod tests {
     #[rstest]
     fn test_data_config_empty_credentials() {
         let config = CoinbaseDataClientConfig {
-            api_key: Some("  ".to_string()),
-            api_secret: Some("secret".to_string()),
+            api_key: Some("  ".into()),
+            api_secret: Some("secret".into()),
             ..CoinbaseDataClientConfig::default()
         };
         assert!(!config.has_credentials());
@@ -293,7 +335,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_defaults() {
-        let config = CoinbaseExecClientConfig::default();
+        let config = CoinbaseExecutionClientConfig::default();
         assert_eq!(config.environment, CoinbaseEnvironment::Live);
         assert_eq!(config.http_timeout_secs, 10);
         assert_eq!(config.max_retries, 3);
@@ -301,7 +343,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_ws_url_uses_user_endpoint() {
-        let config = CoinbaseExecClientConfig::default();
+        let config = CoinbaseExecutionClientConfig::default();
         assert!(config.ws_url().contains("user"));
     }
 
@@ -325,8 +367,8 @@ derivatives_poll_interval_secs = 60
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: CoinbaseExecClientConfig = toml::from_str("").unwrap();
-        let expected = CoinbaseExecClientConfig::default();
+        let config: CoinbaseExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = CoinbaseExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);

@@ -15,10 +15,7 @@
 
 //! Enumerations for the Databento integration.
 
-use std::str::FromStr;
-
 use nautilus_model::{enum_strum_serde, enums::FromU8};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
 /// Represents a Databento statistic type.
@@ -46,7 +43,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
         eq,
         eq_int,
         rename_all = "SCREAMING_SNAKE_CASE",
-        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        module = "nautilus_trader.adapters.databento",
         from_py_object
     )
 )]
@@ -130,7 +127,7 @@ impl FromU8 for DatabentoStatisticType {
         eq,
         eq_int,
         rename_all = "SCREAMING_SNAKE_CASE",
-        module = "nautilus_trader.core.nautilus_pyo3.databento",
+        module = "nautilus_trader.adapters.databento",
         from_py_object
     )
 )]

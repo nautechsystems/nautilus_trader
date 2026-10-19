@@ -22,22 +22,21 @@ use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable}
 use serde::{Deserialize, Serialize};
 
 use super::{
-    HasTsInit,
+    ARROW_ENUM_DICTIONARY, ARROW_TIMESTAMP_NANOSECOND, HasTsInit,
     order::{BookOrder, NULL_ORDER},
 };
 use crate::{
     enums::{BookAction, RecordFlag},
     identifiers::InstrumentId,
-    types::{fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
+    types::{fixed::FIXED_DECIMAL, quantity::check_positive_quantity},
 };
 
 /// Represents a single change/delta in an order book.
-#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -140,6 +139,34 @@ impl OrderBookDelta {
         }
     }
 
+    /// Returns whether the delta adds an order.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_add(&self) -> bool {
+        matches!(self.action, BookAction::Add)
+    }
+
+    /// Returns whether the delta updates an order.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_update(&self) -> bool {
+        matches!(self.action, BookAction::Update)
+    }
+
+    /// Returns whether the delta deletes an order.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_delete(&self) -> bool {
+        matches!(self.action, BookAction::Delete)
+    }
+
+    /// Returns whether the delta clears the order book.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_clear(&self) -> bool {
+        matches!(self.action, BookAction::Clear)
+    }
+
     /// Returns the metadata for the type, for use with serialization formats.
     #[must_use]
     pub fn get_metadata(
@@ -158,15 +185,21 @@ impl OrderBookDelta {
     #[must_use]
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
-        metadata.insert("action".to_string(), "UInt8".to_string());
-        metadata.insert("side".to_string(), "UInt8".to_string());
-        metadata.insert("price".to_string(), FIXED_SIZE_BINARY.to_string());
-        metadata.insert("size".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("action".to_string(), ARROW_ENUM_DICTIONARY.to_string());
+        metadata.insert("side".to_string(), ARROW_ENUM_DICTIONARY.to_string());
+        metadata.insert("price".to_string(), FIXED_DECIMAL.to_string());
+        metadata.insert("size".to_string(), FIXED_DECIMAL.to_string());
         metadata.insert("order_id".to_string(), "UInt64".to_string());
         metadata.insert("flags".to_string(), "UInt8".to_string());
         metadata.insert("sequence".to_string(), "UInt64".to_string());
-        metadata.insert("ts_event".to_string(), "UInt64".to_string());
-        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata.insert(
+            "ts_event".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
+        metadata.insert(
+            "ts_init".to_string(),
+            ARROW_TIMESTAMP_NANOSECOND.to_string(),
+        );
         metadata
     }
 }
@@ -212,10 +245,13 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{BookOrder, HasTsInit, OrderBookDelta, stubs::*},
+        data::{
+            ARROW_ENUM_DICTIONARY, ARROW_TIMESTAMP_NANOSECOND, BookOrder, HasTsInit,
+            OrderBookDelta, stubs::*,
+        },
         enums::{BookAction, OrderSide, RecordFlag},
         identifiers::InstrumentId,
-        types::{Price, Quantity},
+        types::{Price, Quantity, fixed::FIXED_DECIMAL},
     };
 
     fn create_test_delta() -> OrderBookDelta {
@@ -242,7 +278,7 @@ mod tests {
 
         assert_eq!(delta.instrument_id, InstrumentId::from("EURUSD.SIM"));
         assert_eq!(delta.action, BookAction::Add);
-        assert_eq!(delta.order.side, OrderSide::Buy);
+        assert_eq!(delta.order.side, OrderSide::Buy.into());
         assert_eq!(delta.order.price, Price::from("1.0500"));
         assert_eq!(delta.order.size, Quantity::from("100000"));
         assert_eq!(delta.order.order_id, 12345);
@@ -274,7 +310,7 @@ mod tests {
         let delta = result.unwrap();
         assert_eq!(delta.instrument_id, InstrumentId::from("GBPUSD.SIM"));
         assert_eq!(delta.action, BookAction::Update);
-        assert_eq!(delta.order.side, OrderSide::Sell);
+        assert_eq!(delta.order.side, OrderSide::Sell.into());
         assert_eq!(delta.flags, 16);
     }
 
@@ -373,7 +409,7 @@ mod tests {
         assert_eq!(delta.action, BookAction::Clear);
         assert!(delta.order.price.is_zero());
         assert!(delta.order.size.is_zero());
-        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.side, None);
         assert_eq!(delta.order.order_id, 0);
         assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(delta.sequence, sequence);
@@ -400,36 +436,38 @@ mod tests {
         let fields = OrderBookDelta::get_fields();
 
         assert_eq!(fields.len(), 9);
-        assert_eq!(fields.get("action"), Some(&"UInt8".to_string()));
-        assert_eq!(fields.get("side"), Some(&"UInt8".to_string()));
+        assert_eq!(
+            fields.get("action"),
+            Some(&ARROW_ENUM_DICTIONARY.to_string())
+        );
+        assert_eq!(fields.get("side"), Some(&ARROW_ENUM_DICTIONARY.to_string()));
 
-        #[cfg(feature = "high-precision")]
-        {
-            assert_eq!(
-                fields.get("price"),
-                Some(&"FixedSizeBinary(16)".to_string())
-            );
-            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(16)".to_string()));
-        }
-        #[cfg(not(feature = "high-precision"))]
-        {
-            assert_eq!(fields.get("price"), Some(&"FixedSizeBinary(8)".to_string()));
-            assert_eq!(fields.get("size"), Some(&"FixedSizeBinary(8)".to_string()));
-        }
+        assert_eq!(fields.get("price"), Some(&FIXED_DECIMAL.to_string()));
+        assert_eq!(fields.get("size"), Some(&FIXED_DECIMAL.to_string()));
 
         assert_eq!(fields.get("order_id"), Some(&"UInt64".to_string()));
         assert_eq!(fields.get("flags"), Some(&"UInt8".to_string()));
         assert_eq!(fields.get("sequence"), Some(&"UInt64".to_string()));
-        assert_eq!(fields.get("ts_event"), Some(&"UInt64".to_string()));
-        assert_eq!(fields.get("ts_init"), Some(&"UInt64".to_string()));
+        assert_eq!(
+            fields.get("ts_event"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(
+            fields.get("ts_init"),
+            Some(&ARROW_TIMESTAMP_NANOSECOND.to_string())
+        );
+        assert_eq!(fields.get("identifier"), None);
     }
 
     #[rstest]
-    #[case(BookAction::Add)]
-    #[case(BookAction::Update)]
-    #[case(BookAction::Delete)]
-    #[case(BookAction::Clear)]
-    fn test_order_book_delta_with_different_actions(#[case] action: BookAction) {
+    #[case::add(BookAction::Add, (true, false, false, false))]
+    #[case::update(BookAction::Update, (false, true, false, false))]
+    #[case::delete(BookAction::Delete, (false, false, true, false))]
+    #[case::clear(BookAction::Clear, (false, false, false, true))]
+    fn test_order_book_delta_action_predicates(
+        #[case] action: BookAction,
+        #[case] expected: (bool, bool, bool, bool),
+    ) {
         let order = BookOrder::new(
             OrderSide::Buy,
             Price::from("100.00"),
@@ -463,6 +501,15 @@ mod tests {
         assert!(result.is_ok());
         let delta = result.unwrap();
         assert_eq!(delta.action, action);
+        assert_eq!(
+            (
+                delta.is_add(),
+                delta.is_update(),
+                delta.is_delete(),
+                delta.is_clear(),
+            ),
+            expected
+        );
     }
 
     #[rstest]
@@ -481,7 +528,7 @@ mod tests {
             UnixNanos::from(2_000_000_000),
         );
 
-        assert_eq!(delta.order.side, side);
+        assert_eq!(delta.order.side, side.into());
     }
 
     #[rstest]
@@ -581,7 +628,7 @@ mod tests {
         assert_eq!(delta.action, action);
         assert_eq!(delta.order.price, price);
         assert_eq!(delta.order.size, size);
-        assert_eq!(delta.order.side, side);
+        assert_eq!(delta.order.side, side.into());
         assert_eq!(delta.order.order_id, order_id);
         assert_eq!(delta.flags, flags);
         assert_eq!(delta.sequence, sequence);
@@ -602,7 +649,7 @@ mod tests {
         assert_eq!(delta.action, BookAction::Clear);
         assert!(delta.order.price.is_zero());
         assert!(delta.order.size.is_zero());
-        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.side, None);
         assert_eq!(delta.order.order_id, 0);
         assert_eq!(delta.flags, 32);
         assert_eq!(delta.sequence, sequence);
@@ -714,7 +761,7 @@ mod tests {
         let json = serde_json::to_string(&delta).unwrap();
         let deserialized: OrderBookDelta = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(delta, deserialized);
+        assert_order_book_delta_fields(&delta, &deserialized);
     }
 
     #[rstest]
@@ -722,7 +769,7 @@ mod tests {
         let delta = stub_delta;
         let serialized = delta.to_json_bytes().unwrap();
         let deserialized = OrderBookDelta::from_json_bytes(serialized.as_ref()).unwrap();
-        assert_eq!(deserialized, delta);
+        assert_order_book_delta_fields(&delta, &deserialized);
     }
 
     #[rstest]
@@ -730,6 +777,19 @@ mod tests {
         let delta = stub_delta;
         let serialized = delta.to_msgpack_bytes().unwrap();
         let deserialized = OrderBookDelta::from_msgpack_bytes(serialized.as_ref()).unwrap();
-        assert_eq!(deserialized, delta);
+        assert_order_book_delta_fields(&delta, &deserialized);
+    }
+
+    fn assert_order_book_delta_fields(expected: &OrderBookDelta, actual: &OrderBookDelta) {
+        assert_eq!(expected.instrument_id, actual.instrument_id);
+        assert_eq!(expected.action, actual.action);
+        assert_eq!(expected.order.side, actual.order.side);
+        assert_eq!(expected.order.price, actual.order.price);
+        assert_eq!(expected.order.size, actual.order.size);
+        assert_eq!(expected.order.order_id, actual.order.order_id);
+        assert_eq!(expected.flags, actual.flags);
+        assert_eq!(expected.sequence, actual.sequence);
+        assert_eq!(expected.ts_event, actual.ts_event);
+        assert_eq!(expected.ts_init, actual.ts_init);
     }
 }

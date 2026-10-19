@@ -28,10 +28,10 @@ use crate::{
 ///
 /// # Panics
 ///
-/// This function panics if:
-/// - `amount1` is zero (division by zero)
-/// - `sqrt(amount1)` is zero during overflow handling
-/// - Mathematical operations result in overflow during `mul_div`
+/// Panics if:
+/// - `amount1` is zero (division by zero).
+/// - `sqrt(amount1)` is zero during overflow handling.
+/// - Mathematical operations result in overflow during `mul_div`.
 #[must_use]
 pub fn encode_sqrt_ratio_x96(amount0: u128, amount1: u128) -> U160 {
     let amount0_u256 = U256::from(amount0);

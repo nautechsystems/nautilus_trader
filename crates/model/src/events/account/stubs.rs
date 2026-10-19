@@ -185,3 +185,53 @@ pub fn margin_account_state() -> AccountState {
         Some(Currency::USD()),
     )
 }
+
+#[fixture]
+pub fn wallet_account_state() -> AccountState {
+    let eth_account_balance = AccountBalance::new(
+        Money::from("10 ETH"),
+        Money::from("0 ETH"),
+        Money::from("10 ETH"),
+    );
+    let usdc_account_balance = AccountBalance::new(
+        Money::from("25000 USDC"),
+        Money::from("0 USDC"),
+        Money::from("25000 USDC"),
+    );
+    AccountState::new(
+        account_id(),
+        AccountType::Wallet,
+        vec![eth_account_balance, usdc_account_balance],
+        vec![],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        None, // multi-currency wallet account
+    )
+}
+
+#[fixture]
+pub fn wallet_account_state_changed() -> AccountState {
+    let eth_account_balance = AccountBalance::new(
+        Money::from("9.5 ETH"),
+        Money::from("0 ETH"),
+        Money::from("9.5 ETH"),
+    );
+    let usdc_account_balance = AccountBalance::new(
+        Money::from("30000 USDC"),
+        Money::from("0 USDC"),
+        Money::from("30000 USDC"),
+    );
+    AccountState::new(
+        account_id(),
+        AccountType::Wallet,
+        vec![eth_account_balance, usdc_account_balance],
+        vec![],
+        true,
+        UUID4::new(),
+        0.into(),
+        0.into(),
+        None, // multi-currency wallet account
+    )
+}

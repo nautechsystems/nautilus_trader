@@ -13,11 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! C foreign function interface (FFI) from [cbindgen](https://crates.io/crates/cbindgen).
 //!
 //! All exported functions route through `abort_on_panic` so that any panic inside the
 //! Rust implementation aborts immediately instead of unwinding across the foreign boundary.
-//! Unwinding into C/Python is undefined behaviour, so this keeps the existing fail-fast
+//! Unwinding into C/Python is undefined behavior, so this keeps the existing fail-fast
 //! semantics while avoiding subtle stack corruption during debugging.
 
 #![allow(unsafe_code)]
@@ -36,8 +36,8 @@ use std::{
 
 /// Executes `f`, aborting the process if it panics.
 ///
-/// FFI exports always call this helper so a panic never unwinds across the
-/// `extern "C"` boundary. Unwinding into C/Python is undefined behaviour and
+/// FFI exports always call `abort_on_panic` so a panic never unwinds across the
+/// `extern "C"` boundary. Unwinding into C/Python is undefined behavior and
 /// can silently corrupt the foreign stack; aborting instead preserves the
 /// fail-fast guarantee with effectively no debugging downside (the panic
 /// message is still logged before the abort).

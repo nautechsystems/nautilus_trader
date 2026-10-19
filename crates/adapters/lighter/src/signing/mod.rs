@@ -26,9 +26,9 @@
 //! reference alongside the curve's design paper. For Poseidon2 and the Schnorr
 //! binding Lighter applies, the Go library
 //! [`elliottech/poseidon_crypto`](https://github.com/elliottech/poseidon_crypto)
-//! is the behavioural reference: parameter sets (round constants, MDS matrices)
+//! is the behavioral reference: parameter sets (round constants, MDS matrices)
 //! are pulled from there as facts, and test vectors derived from it are
-//! reproduced as fixtures so equivalence with the upstream behaviour is
+//! reproduced as fixtures so equivalence with the upstream behavior is
 //! verifiable end-to-end.
 //!
 //! Pornin's reference stays in the publish=false fuzz crate so the crates.io

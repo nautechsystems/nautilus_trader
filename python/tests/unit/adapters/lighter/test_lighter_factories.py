@@ -12,29 +12,91 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test lighter factories behavior.
+"""
 
-import sys
+from unittest.mock import MagicMock
 
 import pytest
 from unit.adapters.example_modules import load_example_module
 
+from nautilus_trader.adapters import lighter
 from nautilus_trader.adapters.lighter import LIGHTER
+from nautilus_trader.adapters.lighter import LIGHTER_CLIENT_ID
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD_CLIENT_ID
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
+from nautilus_trader.adapters.lighter import LighterDeployment
 from nautilus_trader.adapters.lighter import LighterEnvironment
-from nautilus_trader.adapters.lighter import LighterExecClientConfig
+from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
+from nautilus_trader.model import ClientId
 from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
 
 
 lighter_exec_tester = load_example_module("lighter", "exec_tester")
+lighter_composite_mm = load_example_module("lighter", "nvda_composite_mm")
+
+
+def test_lighter_composite_mm_scopes_reconciliation_to_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test composite market maker reconciles only its configured target.
+    """
+    builder = MagicMock()
+    builder.with_reconciliation.return_value = builder
+    builder.with_exec_engine_config.return_value = builder
+    builder.with_delay_post_stop_secs.return_value = builder
+    builder.add_data_client.return_value = builder
+    builder.add_exec_client.return_value = builder
+    node_type = MagicMock()
+    node_type.builder.return_value = builder
+    monkeypatch.setattr(lighter_composite_mm, "LiveNode", node_type)
+    monkeypatch.setattr(lighter_composite_mm, "DATABENTO_API_KEY", "test-api-key")
+
+    lighter_composite_mm.main()
+
+    builder.with_reconciliation.assert_called_once_with(reconciliation=True)
+    config = builder.with_exec_engine_config.call_args.args[0]
+    assert config.reconciliation is True
+    assert config.reconciliation_lookback_mins == 60
+    assert config.reconciliation_instrument_ids == [str(lighter_composite_mm.INSTRUMENT_ID)]
+    assert (
+        str(lighter_composite_mm.SIGNAL_INSTRUMENT_ID) not in config.reconciliation_instrument_ids
+    )
+    assert "BTC-PERP.LIGHTER" not in config.reconciliation_instrument_ids
+    assert config.filter_unclaimed_external_orders is False
+    assert config.filter_position_reports is False
+    assert config.generate_missing_orders is True
+    node = builder.build.return_value
+    strategy_type, strategy_config = node.add_builtin_strategy.call_args.args
+    assert strategy_type == "CompositeMarketMaker"
+    assert strategy_config.instrument_id == lighter_composite_mm.INSTRUMENT_ID
+    assert strategy_config.signal_instrument_id == lighter_composite_mm.SIGNAL_INSTRUMENT_ID
+    assert strategy_config.signal_skew_factor == 55.0
+    node.run.assert_called_once_with()
+
+
+def test_lighter_facade_exports_integrator_revocation() -> None:
+    """
+    Test lighter facade exports integrator revocation.
+    """
+    assert "revoke_lighter_integrator" in lighter.__all__
+    assert callable(lighter.revoke_lighter_integrator)
 
 
 def test_lighter_factories_expose_python_names() -> None:
+    """
+    Test lighter factories expose python names.
+    """
     data_factory = LighterDataClientFactory()
     exec_factory = LighterExecutionClientFactory()
 
@@ -42,7 +104,36 @@ def test_lighter_factories_expose_python_names() -> None:
     assert exec_factory.name() == LIGHTER
 
 
+def test_lighter_configs_expose_deployment_and_custom_venue() -> None:
+    """
+    Test Lighter configs expose deployment and custom venue.
+    """
+    venue = Venue.from_str("LIGHTER_CUSTOM")
+    account_id = AccountId.from_str("LIGHTER_CUSTOM-001")
+
+    data_config = LighterDataClientConfig(
+        deployment=LighterDeployment.ROBINHOOD,
+        venue=venue,
+    )
+    exec_config = LighterExecutionClientConfig(
+        account_id=account_id,
+        deployment=LighterDeployment.ROBINHOOD,
+        venue=venue,
+    )
+
+    assert LIGHTER_ROBINHOOD == "LIGHTER_ROBINHOOD"
+    assert ClientId.from_str(LIGHTER) == LIGHTER_CLIENT_ID
+    assert ClientId.from_str(LIGHTER_ROBINHOOD) == LIGHTER_ROBINHOOD_CLIENT_ID
+    assert data_config.deployment == LighterDeployment.ROBINHOOD
+    assert data_config.venue == venue
+    assert exec_config.deployment == LighterDeployment.ROBINHOOD
+    assert exec_config.venue == venue
+
+
 def test_live_node_builder_accepts_lighter_data_factory() -> None:
+    """
+    Test live node builder accepts lighter data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -60,6 +151,9 @@ def test_live_node_builder_accepts_lighter_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_lighter_exec_factory() -> None:
+    """
+    Test live node builder accepts lighter exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("LIGHTER-001")
 
@@ -74,8 +168,7 @@ def test_live_node_builder_accepts_lighter_exec_factory() -> None:
         .add_exec_client(
             None,
             LighterExecutionClientFactory(),
-            LighterExecClientConfig(
-                trader_id=trader_id,
+            LighterExecutionClientConfig(
                 account_id=account_id,
                 environment=LighterEnvironment.TESTNET,
             ),
@@ -87,69 +180,166 @@ def test_live_node_builder_accepts_lighter_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-@pytest.mark.parametrize(
-    ("extra_args", "expected_buys", "expected_dry_run"),
-    [
-        ([], False, True),
-        (["--live-orders"], True, False),
-    ],
-)
-def test_lighter_exec_tester_limit_sells_stay_disabled(
+def test_live_node_accepts_lighter_and_robinhood_clients() -> None:
+    """
+    Test live node accepts Lighter and Robinhood data and execution clients together.
+    """
+    trader_id = TraderId.from_str("TESTER-001")
+
+    node = (
+        LiveNode.builder("LIGHTER-DUAL-EXEC-PYTEST-001", trader_id, Environment.LIVE)
+        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_reconciliation(False)
+        .add_data_client(
+            LIGHTER,
+            LighterDataClientFactory(),
+            LighterDataClientConfig(environment=LighterEnvironment.TESTNET),
+        )
+        .add_data_client(
+            LIGHTER_ROBINHOOD,
+            LighterDataClientFactory(),
+            LighterDataClientConfig(
+                environment=LighterEnvironment.TESTNET,
+                deployment=LighterDeployment.ROBINHOOD,
+            ),
+        )
+        .add_exec_client(
+            LIGHTER,
+            LighterExecutionClientFactory(),
+            LighterExecutionClientConfig(
+                account_id=AccountId.from_str("LIGHTER-001"),
+                environment=LighterEnvironment.TESTNET,
+            ),
+        )
+        .add_exec_client(
+            LIGHTER_ROBINHOOD,
+            LighterExecutionClientFactory(),
+            LighterExecutionClientConfig(
+                account_id=AccountId.from_str("LIGHTER_ROBINHOOD-001"),
+                environment=LighterEnvironment.TESTNET,
+                deployment=LighterDeployment.ROBINHOOD,
+            ),
+        )
+        .build()
+    )
+
+    assert node.trader_id == trader_id
+    assert node.environment == Environment.LIVE
+
+
+def test_lighter_exec_tester_runs_live_orders_by_default(  # noqa: C901
     monkeypatch: pytest.MonkeyPatch,
-    extra_args: list[str],
-    expected_buys: bool,
-    expected_dry_run: bool,
 ) -> None:
+    """
+    Test lighter exec tester runs live orders by default.
+    """
     captured: dict[str, object] = {}
 
     class CapturingExecTesterConfig:
+        """
+        Collect capturing exec tester config tests.
+        """
+
         def __init__(self, **kwargs: object) -> None:
+            """
+            Initialize the instance.
+            """
             captured["exec_tester_kwargs"] = kwargs
 
     class CapturingNode:
+        """
+        Collect capturing node tests.
+        """
+
         def add_builtin_strategy(self, type_name: str, config: object) -> None:
+            """
+            Add builtin strategy.
+            """
             captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
 
+        def run(self) -> None:
+            """
+            Run.
+            """
+            captured["node_ran"] = True
+
     class CapturingBuilder:
+        """
+        Collect capturing builder tests.
+        """
+
         def with_reconciliation(self, reconciliation: bool) -> "CapturingBuilder":
+            """
+            With reconciliation.
+            """
             captured["reconciliation"] = reconciliation
             return self
 
         def with_exec_engine_config(self, config: object) -> "CapturingBuilder":
+            """
+            With exec engine config.
+            """
             captured["exec_engine_config"] = config
             return self
 
         def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> "CapturingBuilder":
+            """
+            With risk engine config.
+            """
             captured["risk_engine_config"] = config
             return self
 
         def add_data_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add data client.
+            """
             captured["data_client_args"] = args
             return self
 
         def add_exec_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add exec client.
+            """
             captured["exec_client_args"] = args
             return self
 
         def build(self) -> CapturingNode:
+            """
+            Build.
+            """
             return CapturingNode()
 
     class CapturingLiveNode:
+        """
+        Collect capturing live node tests.
+        """
+
         @staticmethod
         def builder(name: str, trader_id: TraderId, environment: Environment) -> CapturingBuilder:
+            """
+            Builder.
+            """
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 
-    monkeypatch.setattr(sys, "argv", ["exec_tester.py", *extra_args])
     monkeypatch.setattr(lighter_exec_tester, "ExecTesterConfig", CapturingExecTesterConfig)
     monkeypatch.setattr(lighter_exec_tester, "LiveNode", CapturingLiveNode)
 
     lighter_exec_tester.main()
 
     assert captured["strategy_type_name"] == "ExecTester"
+    assert captured["reconciliation"] is True
+    assert captured["node_ran"] is True
+    data_client_args = captured["data_client_args"]
+    exec_client_args = captured["exec_client_args"]
+    assert isinstance(data_client_args, tuple)
+    assert isinstance(exec_client_args, tuple)
+    assert data_client_args[0] == lighter_exec_tester.VENUE
+    assert exec_client_args[0] == lighter_exec_tester.VENUE
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
-    assert kwargs["enable_limit_buys"] is expected_buys
-    assert kwargs["enable_limit_sells"] is False
-    assert kwargs["dry_run"] is expected_dry_run
+    assert kwargs["enable_limit_buys"] is True
+    assert kwargs["enable_limit_sells"] is True
+    assert kwargs["use_post_only"] is True
+    assert kwargs["dry_run"] is False

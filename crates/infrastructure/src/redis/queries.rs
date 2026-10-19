@@ -17,12 +17,16 @@ use std::{collections::HashMap, str::FromStr};
 
 use ahash::AHashMap;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use futures::future::join_all;
-use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
+use jiff::Timestamp;
+use nautilus_common::{
+    cache::database::{CacheMap, register_loaded_currencies},
+    enums::SerializationEncoding,
+};
 use nautilus_model::{
     accounts::AccountAny,
-    data::{CustomData, DataType, HasTsInit},
+    data::{CustomData, DataType, HasTsInit, InstrumentClose},
+    enums::CurrencyType,
     events::{AccountState, OrderEventAny, OrderFilled, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
@@ -31,17 +35,68 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{AsyncCommands, aio::ConnectionManager};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
 
 use super::get_index_key;
+
+/// Persisted representation of a [`Currency`].
+///
+/// A `Currency` serializes as its bare code, which only resolves in a process where that code is
+/// already registered, so a currency minted at runtime could not be restored. This record carries
+/// the same fields the Postgres `currency` table stores, keeping the two backends equivalent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CurrencyRecord {
+    pub code: String,
+    pub precision: u8,
+    pub iso4217: u16,
+    pub name: String,
+    pub currency_type: CurrencyType,
+}
+
+impl From<&Currency> for CurrencyRecord {
+    fn from(currency: &Currency) -> Self {
+        Self {
+            code: currency.code.to_string(),
+            precision: currency.precision,
+            iso4217: currency.iso4217,
+            name: currency.name.to_string(),
+            currency_type: currency.currency_type,
+        }
+    }
+}
+
+impl TryFrom<CurrencyRecord> for Currency {
+    type Error = anyhow::Error;
+
+    fn try_from(record: CurrencyRecord) -> Result<Self, Self::Error> {
+        Self::new_checked(
+            record.code.as_str(),
+            record.precision,
+            record.iso4217,
+            record.name.as_str(),
+            record.currency_type,
+        )
+        .map_err(|e| anyhow::anyhow!("Invalid currency record: {e}"))
+    }
+}
+
+/// Outcome of decoding one persisted currency entry.
+enum CurrencyDecode {
+    Currency(Currency),
+    /// A record, or a payload that is not a bare code, that does not yield a valid currency.
+    InvalidRecord(anyhow::Error),
+    /// A bare code that is not registered, so the entry holds nothing recoverable.
+    Undecodable(anyhow::Error),
+}
 
 // Collection keys
 const INDEX: &str = "index";
 const GENERAL: &str = "general";
 const CURRENCIES: &str = "currencies";
 const INSTRUMENTS: &str = "instruments";
+const INSTRUMENT_CLOSES: &str = "instrument_closes";
 const SYNTHETICS: &str = "synthetics";
 const ACCOUNTS: &str = "accounts";
 const ORDERS: &str = "orders";
@@ -94,9 +149,6 @@ impl DatabaseQueries {
             SerializationEncoding::Sbe => {
                 anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
             }
-            SerializationEncoding::Capnp => {
-                anyhow::bail!("Cap'n Proto encoding is not supported for Redis cache payloads")
-            }
         }
     }
 
@@ -116,9 +168,6 @@ impl DatabaseQueries {
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
             SerializationEncoding::Sbe => {
                 anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
-            }
-            SerializationEncoding::Capnp => {
-                anyhow::bail!("Cap'n Proto encoding is not supported for Redis cache payloads")
             }
         };
 
@@ -244,9 +293,8 @@ impl DatabaseQueries {
 
         match collection {
             INDEX => Self::read_index(&mut con, &full_key).await,
-            GENERAL | CURRENCIES | INSTRUMENTS | SYNTHETICS | ACTORS | STRATEGIES => {
-                Self::read_string(&mut con, &full_key).await
-            }
+            GENERAL | CURRENCIES | INSTRUMENTS | INSTRUMENT_CLOSES | SYNTHETICS | ACTORS
+            | STRATEGIES => Self::read_string(&mut con, &full_key).await,
             ACCOUNTS | ORDERS | POSITIONS | SNAPSHOTS => Self::read_list(&mut con, &full_key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
@@ -262,15 +310,21 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
-        let (currencies, instruments, synthetics, accounts, orders, positions) = tokio::try_join!(
-            Self::load_currencies(con, trader_key, encoding),
-            Self::load_instruments(con, trader_key, encoding),
-            Self::load_synthetics(con, trader_key, encoding),
-            Self::load_accounts(con, trader_key, encoding),
-            Self::load_orders(con, trader_key, encoding),
-            Self::load_positions(con, trader_key, encoding)
-        )
-        .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
+        // Currencies must be registered before the dependent payloads decode, because a `Money`
+        // or a `Currency` in them resolves its code through the global registry.
+        let mut currencies = Self::load_currencies(con, trader_key, encoding).await?;
+        register_loaded_currencies(&mut currencies)?;
+
+        let (instruments, instrument_closes, synthetics, accounts, orders, positions) =
+            tokio::try_join!(
+                Self::load_instruments(con, trader_key, encoding),
+                Self::load_instrument_closes(con, trader_key, encoding),
+                Self::load_synthetics(con, trader_key, encoding),
+                Self::load_accounts(con, trader_key, encoding),
+                Self::load_orders(con, trader_key, encoding),
+                Self::load_positions(con, trader_key, encoding)
+            )
+            .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
         // For now, we don't load greeks and yield curves from the database
         // This will be implemented in the future
@@ -280,6 +334,7 @@ impl DatabaseQueries {
         Ok(CacheMap {
             currencies,
             instruments,
+            instrument_closes,
             synthetics,
             accounts,
             orders,
@@ -289,18 +344,47 @@ impl DatabaseQueries {
         })
     }
 
+    /// Decodes a persisted currency, accepting both the record and a bare code.
+    ///
+    /// A bare-code entry holds only the code, which resolves if that code is registered; an
+    /// unregistered one is skipped by bulk loading, since the entry holds nothing recoverable. Anything
+    /// that is not a bare code is a record, and a record that does not decode or describes an
+    /// invalid currency is an error, since the intent is recoverable and dropping it would omit a
+    /// currency the dependent payloads need.
+    fn decode_currency(encoding: SerializationEncoding, value_bytes: &Bytes) -> CurrencyDecode {
+        match Self::deserialize_payload::<CurrencyRecord>(encoding, value_bytes) {
+            Ok(record) => match Currency::try_from(record) {
+                Ok(currency) => CurrencyDecode::Currency(currency),
+                Err(e) => CurrencyDecode::InvalidRecord(e),
+            },
+            Err(record_err) => match Self::deserialize_payload::<String>(encoding, value_bytes) {
+                Ok(code) => match Currency::try_from_str(&code) {
+                    Some(currency) => CurrencyDecode::Currency(currency),
+                    None => CurrencyDecode::Undecodable(anyhow::anyhow!(
+                        "bare currency code {code} is not registered"
+                    )),
+                },
+                Err(_) => CurrencyDecode::InvalidRecord(anyhow::anyhow!(
+                    "payload is not a bare code and does not decode as a currency record: {record_err}"
+                )),
+            },
+        }
+    }
+
     /// Loads all currencies for `trader_key` using the specified `encoding`.
     ///
     /// # Errors
     ///
-    /// Returns an error if scanning keys or reading currency data fails.
+    /// Returns an error if scanning keys or reading currency data fails, or if a stored record
+    /// describes an invalid currency.
     pub async fn load_currencies(
         con: &ConnectionManager,
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         let mut currencies = AHashMap::new();
-        let pattern = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}*");
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
@@ -315,20 +399,36 @@ impl DatabaseQueries {
 
         // Process the bulk results
         for (key, value_opt) in keys.iter().zip(bulk_values.iter()) {
-            let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
-                Ustr::from(code)
-            } else {
-                log::error!("Invalid key format: {key}");
-                continue;
+            // A code can contain the delimiter (Hyperliquid HIP-3 assets such as `xyz:TSLA`), so
+            // the code is everything after the collection prefix, not the last segment.
+            let currency_code = match key.as_str().strip_prefix(prefix.as_str()) {
+                Some(code) if !code.is_empty() => Ustr::from(code),
+                _ => {
+                    log::error!("Invalid key format: {key}");
+                    continue;
+                }
             };
 
             if let Some(value_bytes) = value_opt {
-                match Self::deserialize_payload(encoding, value_bytes) {
-                    Ok(currency) => {
+                match Self::decode_currency(encoding, value_bytes) {
+                    CurrencyDecode::Currency(currency) => {
+                        // The key names the code the dependents resolve, so a record filed under
+                        // another code would register one currency and index another.
+                        if currency.code != currency_code {
+                            anyhow::bail!(
+                                "Currency record under key {currency_code} holds code {}",
+                                currency.code
+                            );
+                        }
                         currencies.insert(currency_code, currency);
                     }
-                    Err(e) => {
-                        log::error!("Failed to deserialize currency {currency_code}: {e}");
+                    CurrencyDecode::InvalidRecord(e) => {
+                        anyhow::bail!("Invalid currency record for {currency_code}: {e}");
+                    }
+                    CurrencyDecode::Undecodable(e) => {
+                        log::error!(
+                            "Skipping currency {currency_code}: {e}; payloads denominated in it will not decode"
+                        );
                     }
                 }
             } else {
@@ -399,11 +499,44 @@ impl DatabaseQueries {
         Ok(instruments)
     }
 
-    /// Loads all synthetic instruments for `trader_key` using the specified `encoding`.
+    /// Loads all instrument closes for `trader_key`.
+    ///
+    /// Missing or invalid close data fails the load so recovery cannot silently omit a close.
     ///
     /// # Errors
     ///
-    /// Returns an error if scanning keys or reading synthetic instrument data fails.
+    /// Returns an error if scanning, reading, parsing, or deserializing instrument closes fails.
+    pub async fn load_instrument_closes(
+        con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        let prefix = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENT_CLOSES}{REDIS_DELIMITER}");
+        let pattern = format!("{prefix}*");
+        log::debug!("Loading {pattern}");
+
+        let mut con = con.clone();
+        let keys = Self::scan_keys(&mut con, pattern).await?;
+        let values = Self::read_bulk(&con, &keys).await?;
+        let mut closes = AHashMap::with_capacity(keys.len());
+
+        for (key, value) in keys.into_iter().zip(values) {
+            let instrument_id = parse_instrument_key(&key, &prefix)?;
+            let value = value
+                .ok_or_else(|| anyhow::anyhow!("Instrument close not found in Redis: {key}"))?;
+            let close: InstrumentClose = Self::deserialize_payload(encoding, &value)?;
+            anyhow::ensure!(
+                close.instrument_id == instrument_id,
+                "Instrument close key ID {instrument_id} did not match payload ID {}",
+                close.instrument_id,
+            );
+            closes.insert(instrument_id, close);
+        }
+
+        log::debug!("Loaded {} instrument close(s)", closes.len());
+        Ok(closes)
+    }
+
     /// Loads all synthetic instruments for `trader_key` using the specified `encoding`.
     ///
     /// # Errors
@@ -770,8 +903,12 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let currency = Self::deserialize_payload(encoding, &result[0])?;
-        Ok(currency)
+        match Self::decode_currency(encoding, &result[0]) {
+            CurrencyDecode::Currency(currency) => Ok(Some(currency)),
+            CurrencyDecode::InvalidRecord(e) | CurrencyDecode::Undecodable(e) => {
+                Err(e.context(format!("Failed to load currency {code}")))
+            }
+        }
     }
 
     /// Loads a single instrument for `trader_key` and `instrument_id` using the specified `encoding`.
@@ -914,7 +1051,7 @@ impl DatabaseQueries {
 
         let mut position = Position::new(&instrument, first_fill.clone());
         for fill in remaining_fills {
-            if position.trade_ids().contains(&fill.trade_id) {
+            if position.trade_ids.contains(&fill.trade_id) {
                 anyhow::bail!(
                     "Duplicate fill event for position {position_id}: {}",
                     fill.trade_id
@@ -1001,8 +1138,9 @@ fn convert_timestamps(value: &mut Value) {
                     && let Value::Number(n) = v
                     && let Some(n) = n.as_u64()
                 {
-                    let dt = DateTime::<Utc>::from_timestamp_nanos(n.cast_signed());
-                    *v = Value::String(dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
+                    let dt = Timestamp::from_nanosecond(i128::from(n))
+                        .expect("UnixNanos is within Jiff's timestamp range");
+                    *v = Value::String(format!("{dt:.9}"));
                 }
                 convert_timestamps(v);
             }
@@ -1022,15 +1160,10 @@ fn convert_timestamp_strings(value: &mut Value) {
             for (key, v) in map {
                 if is_timestamp_field(key)
                     && let Value::String(s) = v
-                    && let Ok(dt) = DateTime::parse_from_rfc3339(s)
+                    && let Ok(dt) = s.parse::<Timestamp>()
                 {
-                    *v = Value::Number(
-                        (dt.with_timezone(&Utc)
-                            .timestamp_nanos_opt()
-                            .expect("Invalid DateTime")
-                            .cast_unsigned())
-                        .into(),
-                    );
+                    let nanos = u64::try_from(dt.as_nanosecond()).expect("Invalid timestamp");
+                    *v = Value::Number(nanos.into());
                 }
                 convert_timestamp_strings(v);
             }
@@ -1048,10 +1181,211 @@ fn convert_timestamp_strings(value: &mut Value) {
 mod tests {
     use std::str::FromStr;
 
-    use nautilus_model::identifiers::InstrumentId;
+    use bytes::Bytes;
+    use nautilus_common::enums::SerializationEncoding;
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::{AccountType, CurrencyType},
+        events::AccountState,
+        identifiers::{AccountId, InstrumentId},
+        types::{AccountBalance, Currency, Money},
+    };
     use rstest::rstest;
+    use serde::Deserialize;
 
-    use super::parse_instrument_key;
+    use super::{CurrencyDecode, CurrencyRecord, DatabaseQueries, parse_instrument_key};
+
+    /// A currency the process never registered must survive the round trip.
+    ///
+    /// This is the whole point of the record: `Currency`'s own encoding is the bare code, which
+    /// only resolves against the global registry.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_currency_record_round_trips_an_unregistered_code(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        // A distinct code per encoding: `CURRENCY_MAP` is process-global and tests run in parallel.
+        let code = match encoding {
+            SerializationEncoding::MsgPack => "ZZREDISM",
+            _ => "ZZREDISJ",
+        };
+        assert!(
+            Currency::try_from_str(code).is_none(),
+            "the fixture code must be unregistered for this test to mean anything"
+        );
+
+        let currency = Currency::new(code, 3, 0, "Redis Fixture", CurrencyType::Crypto);
+        let payload =
+            DatabaseQueries::serialize_payload(encoding, &CurrencyRecord::from(&currency)).unwrap();
+
+        let CurrencyDecode::Currency(restored) =
+            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload))
+        else {
+            panic!("a valid record decodes to a currency");
+        };
+
+        assert_eq!(restored.code.as_str(), code);
+        assert_eq!(restored.precision, 3);
+        assert_eq!(restored.iso4217, 0);
+        assert_eq!(restored.name.as_str(), "Redis Fixture");
+        assert_eq!(restored.currency_type, CurrencyType::Crypto);
+    }
+
+    /// A record written before the full record existed must keep loading.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_legacy_bare_code_still_loads(#[case] encoding: SerializationEncoding) {
+        let payload = DatabaseQueries::serialize_payload(encoding, &Currency::USD()).unwrap();
+
+        let CurrencyDecode::Currency(restored) =
+            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload))
+        else {
+            panic!("a registered bare code decodes to a currency");
+        };
+
+        assert_eq!(restored, Currency::USD());
+    }
+
+    /// A record that decodes but fails validation is an error, not a skip.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_invalid_record_is_classified_as_invalid(#[case] encoding: SerializationEncoding) {
+        let record = CurrencyRecord {
+            code: "ZZQ1".to_string(),
+            precision: 20,
+            iso4217: 0,
+            name: "ZZQ1".to_string(),
+            currency_type: CurrencyType::Crypto,
+        };
+        let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &record).unwrap());
+
+        assert!(matches!(
+            DatabaseQueries::decode_currency(encoding, &bytes),
+            CurrencyDecode::InvalidRecord(_)
+        ));
+    }
+
+    /// A record-shaped payload that does not decode as a record is an error, not a bare code.
+    ///
+    /// A record written by a build with a currency type this one lacks must fail the load rather
+    /// than vanish, or the payloads denominated in it vanish with it.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_record_with_an_unknown_currency_type_is_invalid(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let record = serde_json::json!({
+            "code": "ZZQ3",
+            "precision": 6,
+            "iso4217": 0,
+            "name": "ZZQ3",
+            "currency_type": "STABLECOIN",
+        });
+        let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &record).unwrap());
+
+        assert!(matches!(
+            DatabaseQueries::decode_currency(encoding, &bytes),
+            CurrencyDecode::InvalidRecord(_)
+        ));
+    }
+
+    /// An unregistered bare code is skipped by bulk loading: the entry holds nothing recoverable.
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_unknown_bare_code_is_classified_as_undecodable(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &"ZZQ2").unwrap());
+
+        let CurrencyDecode::Undecodable(error) = DatabaseQueries::decode_currency(encoding, &bytes)
+        else {
+            panic!("an unregistered bare code is undecodable");
+        };
+        assert!(
+            error.to_string().contains("ZZQ2"),
+            "the error names the code so the operator can register it: {error}"
+        );
+    }
+
+    #[derive(Debug, Deserialize, PartialEq, Eq)]
+    struct TimestampPayload {
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_deserialize_chrono_timestamp_payload(#[case] encoding: SerializationEncoding) {
+        let json = include_bytes!("../../test_data/redis_cache_timestamp_chrono.json");
+        let payload = match encoding {
+            SerializationEncoding::Json => json.to_vec(),
+            SerializationEncoding::MsgPack => {
+                let value = serde_json::from_slice::<serde_json::Value>(json).unwrap();
+                rmp_serde::to_vec(&value).unwrap()
+            }
+            SerializationEncoding::Sbe => unreachable!(),
+        };
+
+        let result =
+            DatabaseQueries::deserialize_payload::<TimestampPayload>(encoding, &payload).unwrap();
+
+        assert_eq!(
+            result,
+            TimestampPayload {
+                ts_event: UnixNanos::from(1_123_456_789),
+                ts_init: UnixNanos::from(2_987_654_321),
+            }
+        );
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_wallet_account_state_round_trips_unregistered_currency(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let currency = Currency::new(
+            "ENG729C",
+            6,
+            0,
+            "Cache round-trip token",
+            CurrencyType::Crypto,
+        );
+        let total = Money::from_mantissa_exponent(123_456_789, -6, currency);
+        let state = AccountState::new(
+            AccountId::new("WALLET-CACHE-001"),
+            AccountType::Wallet,
+            vec![AccountBalance::new(total, Money::zero(currency), total)],
+            vec![],
+            true,
+            nautilus_core::UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+        assert!(Currency::try_from_str("ENG729C").is_none());
+
+        let payload = DatabaseQueries::serialize_payload(encoding, &state).unwrap();
+        let restored: AccountState =
+            DatabaseQueries::deserialize_payload(encoding, &payload).unwrap();
+        let restored = restored.balances[0];
+
+        assert_eq!(restored.total.raw(), total.raw());
+        assert_eq!(restored.locked.raw(), 0);
+        assert_eq!(restored.free.raw(), total.raw());
+        assert_eq!(restored.currency.code, currency.code);
+        assert_eq!(restored.currency.precision, currency.precision);
+        assert_eq!(restored.currency.iso4217, currency.iso4217);
+        assert_eq!(restored.currency.name, currency.name);
+        assert_eq!(restored.currency.currency_type, currency.currency_type);
+        assert!(Currency::try_from_str("ENG729C").is_none());
+    }
 
     #[rstest]
     #[case("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3")]

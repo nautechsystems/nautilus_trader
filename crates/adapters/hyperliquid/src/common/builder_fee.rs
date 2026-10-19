@@ -40,7 +40,9 @@ use alloy::{
     sol_types::eip712_domain,
 };
 use alloy_primitives::{Address, B256, keccak256};
-use nautilus_network::http::{HttpClient, Method};
+use nautilus_network::http::{
+    HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -52,6 +54,7 @@ use crate::{
     http::{
         error::{Error, Result},
         models::{HyperliquidSignature, RESPONSE_STATUS_OK},
+        rate_limits::{exchange_weight_for_batch, shared_rest_limiter},
     },
 };
 
@@ -82,9 +85,14 @@ pub struct BuilderFeeApprovalResult {
 /// - Testnet: `HYPERLIQUID_TESTNET_PK`
 /// - Mainnet: `HYPERLIQUID_PK`
 ///
-/// Set `HYPERLIQUID_TESTNET=true` to use testnet.
+/// Set `HYPERLIQUID_TESTNET` to `true` or `1` for testnet, or `false` or `0`
+/// for mainnet (the default when unset). Boolean words are case-insensitive.
+/// Returns `false` without submitting a request if the value is invalid, including empty strings.
 pub async fn approve_from_env(non_interactive: bool) -> bool {
-    let is_testnet = testnet_from_env();
+    let Some(is_testnet) = testnet_from_env() else {
+        return false;
+    };
+
     let Some(private_key) = private_key_from_env(is_testnet) else {
         return false;
     };
@@ -119,9 +127,14 @@ pub async fn approve_from_env(non_interactive: bool) -> bool {
 /// - Testnet: `HYPERLIQUID_TESTNET_PK`
 /// - Mainnet: `HYPERLIQUID_PK`
 ///
-/// Set `HYPERLIQUID_TESTNET=true` to use testnet.
+/// Set `HYPERLIQUID_TESTNET` to `true` or `1` for testnet, or `false` or `0`
+/// for mainnet (the default when unset). Boolean words are case-insensitive.
+/// Returns `false` without submitting a request if the value is invalid, including empty strings.
 pub async fn revoke_from_env(non_interactive: bool) -> bool {
-    let is_testnet = testnet_from_env();
+    let Some(is_testnet) = testnet_from_env() else {
+        return false;
+    };
+
     let Some(private_key) = private_key_from_env(is_testnet) else {
         return false;
     };
@@ -179,8 +192,16 @@ pub async fn revoke_builder_fee(
     submit_builder_fee_update(private_key, is_testnet).await
 }
 
-fn testnet_from_env() -> bool {
-    env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true" || v == "1")
+fn testnet_from_env() -> Option<bool> {
+    match env::var("HYPERLIQUID_TESTNET") {
+        Ok(value) if value.eq_ignore_ascii_case("true") || value == "1" => Some(true),
+        Ok(value) if value.eq_ignore_ascii_case("false") || value == "0" => Some(false),
+        Err(env::VarError::NotPresent) => Some(false),
+        Ok(_) | Err(env::VarError::NotUnicode(_)) => {
+            println!("Error: HYPERLIQUID_TESTNET must be true, false, 1, or 0");
+            None
+        }
+    }
 }
 
 fn private_key_from_env(is_testnet: bool) -> Option<String> {
@@ -256,14 +277,22 @@ async fn submit_builder_fee_update(
         HyperliquidEnvironment::Mainnet
     };
     let url = exchange_url(environment);
+    let limiter = shared_rest_limiter(environment, url, None);
 
-    let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(60), None)
+    let client = HttpClient::builder()
+        .redirect_policy(HttpRedirectPolicy::Reject)
+        .rate_limiters(Vec::new())
+        .timeout_secs(60)
+        .build()
         .map_err(|e| Error::transport(format!("Failed to create client: {e}")))?;
 
     let body_bytes = serde_json::to_vec(&payload)
         .map_err(|e| Error::transport(format!("Failed to serialize: {e}")))?;
 
-    let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
+    let mut headers: HashMap<String, String> =
+        create_standard_nautilus_headers().into_iter().collect();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+    limiter.acquire(exchange_weight_for_batch(0)).await;
     let response = client
         .request(
             Method::POST,
@@ -498,8 +527,14 @@ mod tests {
         let direct = signer.sign_hash_sync(&signing_hash).unwrap();
         let recovered = direct.recover_address_from_prehash(&signing_hash).unwrap();
 
-        assert_eq!(signature.r, format!("0x{:064x}", direct.r()));
-        assert_eq!(signature.s, format!("0x{:064x}", direct.s()));
+        assert_eq!(
+            signature.r.expose_secret(),
+            format!("0x{:064x}", direct.r())
+        );
+        assert_eq!(
+            signature.s.expose_secret(),
+            format!("0x{:064x}", direct.s())
+        );
         assert_eq!(signature.v, if direct.v() { 28 } else { 27 });
         assert_eq!(format!("{recovered:#x}"), TEST_ADDRESS);
     }

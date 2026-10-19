@@ -30,6 +30,7 @@ use nautilus_model::{data::OrderBookDelta, enums::BookAction};
 use super::{
     float64_field, price_to_f64, quantity_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`OrderBookDelta`].
 #[must_use]
@@ -61,7 +62,7 @@ pub fn deltas_schema() -> Schema {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_deltas(data: &[OrderBookDelta]) -> Result<RecordBatch, ArrowError> {
     let mut instrument_id_builder = StringBuilder::new();
     let mut action_builder = StringBuilder::new();
@@ -71,13 +72,21 @@ pub fn encode_deltas(data: &[OrderBookDelta]) -> Result<RecordBatch, ArrowError>
     let mut order_id_builder = StringBuilder::new();
     let mut flags_builder = UInt8Builder::with_capacity(data.len());
     let mut sequence_builder = UInt64Builder::with_capacity(data.len());
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for delta in data {
         instrument_id_builder.append_value(delta.instrument_id.to_string());
         action_builder.append_value(format!("{}", delta.action));
-        side_builder.append_value(format!("{}", delta.order.side));
+        side_builder.append_value(
+            delta
+                .order
+                .side
+                .as_ref()
+                .map_or("NO_ORDER_SIDE", AsRef::as_ref),
+        );
 
         // A `Clear` delta carries a `NULL_ORDER` (zero price/size) and has no
         // meaningful order to render; emit `NaN` so dashboards show empty
@@ -144,7 +153,7 @@ mod tests {
             instrument_id: InstrumentId::from(instrument_id),
             action,
             order: BookOrder {
-                side,
+                side: Some(side),
                 price: Price::from(price),
                 size: Quantity::from(100),
                 order_id,
@@ -180,7 +189,7 @@ mod tests {
         assert_eq!(fields[8].name(), "ts_event");
         assert_eq!(
             fields[8].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[9].name(), "ts_init");
     }
@@ -278,6 +287,11 @@ mod tests {
         let clear = OrderBookDelta::clear(InstrumentId::from("AAPL.XNAS"), 1, 1.into(), 2.into());
 
         let batch = encode_deltas(&[clear]).unwrap();
+        let side_col = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         let price_col = batch
             .column(3)
             .as_any()
@@ -289,6 +303,7 @@ mod tests {
             .downcast_ref::<Float64Array>()
             .unwrap();
 
+        assert_eq!(side_col.value(0), "NO_ORDER_SIDE");
         assert!(
             price_col.value(0).is_nan(),
             "live clear price should be NaN"
@@ -302,7 +317,7 @@ mod tests {
             instrument_id: InstrumentId::from("AAPL.XNAS"),
             action: BookAction::Clear,
             order: BookOrder {
-                side: OrderSide::NoOrderSide,
+                side: None,
                 price: Price::from_raw(PRICE_UNDEF, 0),
                 size: Quantity::from_raw(QUANTITY_UNDEF, 0),
                 order_id: 0,

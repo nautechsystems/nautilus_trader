@@ -20,8 +20,9 @@ use nautilus_hyperliquid::{
     http::{
         client::HyperliquidHttpClient,
         models::{
-            Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
-            HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+            Cloid, HyperliquidExchangeAction, HyperliquidExchangeGrouping,
+            HyperliquidExchangeLimitParams, HyperliquidExchangeOrderKind,
+            HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
         },
     },
 };
@@ -115,15 +116,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cloid_hex = cloid.to_hex();
     log::info!("Cloid: {cloid_hex}");
 
-    let order = HyperliquidExecPlaceOrderRequest {
+    let order = HyperliquidExchangePlaceOrderRequest {
         asset: btc_asset_id as u32,
         is_buy: true,
         price: limit_price,
         size: dec!(0.001),
         reduce_only: false,
-        kind: HyperliquidExecOrderKind::Limit {
-            limit: HyperliquidExecLimitParams {
-                tif: HyperliquidExecTif::Gtc,
+        kind: HyperliquidExchangeOrderKind::Limit {
+            limit: HyperliquidExchangeLimitParams {
+                tif: HyperliquidExchangeTif::Gtc,
             },
         },
         cloid: Some(cloid),
@@ -139,10 +140,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Placing order...");
 
-    // Create the action using the typed HyperliquidExecAction enum
-    let action = HyperliquidExecAction::Order {
+    // Create the action using the typed HyperliquidExchangeAction enum
+    let action = HyperliquidExchangeAction::Order {
         orders: vec![order],
-        grouping: HyperliquidExecGrouping::Na,
+        grouping: HyperliquidExchangeGrouping::Na,
         builder: None,
     };
 

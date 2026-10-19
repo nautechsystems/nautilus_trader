@@ -12,12 +12,12 @@ id = "RUSTSEC-2024-0436"
 reason = "paste crate is unmaintained but a transitive dependency via alloy"
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2025-0134"
-reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a security vulnerability)"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2024-0388"
 reason = "derivative crate is unmaintained, transitive dependency with no available fix"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0449"
+reason = "unsafe-libyaml unmaintained, build-only via dydx-proto, parsing requires V4_PROTO_REBUILD"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2025-0143"
@@ -53,16 +53,12 @@ reason = "bincode unmaintained, transitive via hypersync-client (not a security 
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0194"
-reason = "quick-xml DoS via object_store 0.13.2; no fixed object_store release"
+reason = "quick-xml DoS via DataFusion-aligned object_store 0.13.2"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0195"
-reason = "quick-xml NsReader DoS via object_store 0.13.2; no fixed object_store release"
+reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2"
 
 [[IgnoredVulns]]
-id = "GHSA-6w46-j5rx-g56g"
-reason = "pytest tmpdir local tampering (fixed in 9.0.3); dev/test-only dependency intentionally pinned to 7.x, not a runtime risk"
-
-[[IgnoredVulns]]
-id = "GHSA-2f9f-gq7v-9h6m"
-reason = "thrift 0.17.0 memory-allocation DoS; the affected TCompactInputProtocol is used only by Parquet's feature-gated CLI, which Nautilus does not enable or ship"
+id = "RUSTSEC-2026-0306"
+reason = "faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller"

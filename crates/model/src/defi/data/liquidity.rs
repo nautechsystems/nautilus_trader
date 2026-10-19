@@ -46,7 +46,7 @@ use crate::{
         frozen,
         eq,
         eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.model",
+        module = "nautilus_trader.model",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -68,7 +68,7 @@ pub enum PoolLiquidityUpdateType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -87,6 +87,9 @@ pub struct PoolLiquidityUpdate {
     pub kind: PoolLiquidityUpdateType,
     /// The blockchain block number where the liquidity update occurred.
     pub block: u64,
+    /// The hash of the block observed when this update was ingested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the blockchain transaction containing the liquidity update.
     pub transaction_hash: String,
     /// The index position of the transaction within the block.
@@ -144,6 +147,7 @@ impl PoolLiquidityUpdate {
             pool_identifier,
             kind,
             block,
+            block_hash: None,
             transaction_hash,
             transaction_index,
             log_index,

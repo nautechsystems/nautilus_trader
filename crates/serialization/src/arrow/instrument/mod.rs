@@ -19,7 +19,7 @@
 //! Arrow serialization implementation. Each concrete instrument type implements its own schema
 //! with all fields as columns (wide schema approach), matching the Python implementation.
 
-use std::{any::type_name, collections::HashMap, fmt, str::FromStr};
+use std::{any::type_name, borrow::Borrow, collections::HashMap, fmt, str::FromStr};
 
 use arrow::{
     array::{Array, StringArray},
@@ -44,7 +44,7 @@ use nautilus_model::{
 #[allow(unused)]
 use crate::arrow::{
     ArrowSchemaProvider, Data, DecodeDataFromRecordBatch, DecodeFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
+    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_TYPE_NAME,
 };
 
 pub mod betting;
@@ -147,7 +147,7 @@ impl ArrowSchemaProvider for InstrumentAny {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let instrument_type = metadata
             .as_ref()
-            .and_then(|m| m.get("class"))
+            .and_then(|m| m.get(KEY_TYPE_NAME))
             .map_or("CurrencyPair", |s| s.as_str());
 
         match instrument_type {
@@ -178,10 +178,13 @@ impl ArrowSchemaProvider for InstrumentAny {
 }
 
 impl EncodeToRecordBatch for InstrumentAny {
-    fn encode_batch(
+    fn encode_batch<T>(
         #[allow(unused)] metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         if data.is_empty() {
             return Err(ArrowError::InvalidArgumentError(
                 "Cannot encode empty instrument batch".to_string(),
@@ -190,7 +193,7 @@ impl EncodeToRecordBatch for InstrumentAny {
 
         let mut by_type: HashMap<String, Vec<&Self>> = HashMap::new();
 
-        for instrument in data {
+        for instrument in data.iter().map(Borrow::borrow) {
             let type_name = match instrument {
                 Self::Cfd(_) => "Cfd",
                 Self::Commodity(_) => "Commodity",
@@ -510,7 +513,8 @@ impl EncodeToRecordBatch for InstrumentAny {
             Self::PerpetualContract(_) => "PerpetualContract",
             Self::TokenizedAsset(_) => "TokenizedAsset",
         };
-        metadata.insert("class".to_string(), type_name.to_string());
+
+        metadata.insert(KEY_TYPE_NAME.to_string(), type_name.to_string());
         metadata
     }
 }
@@ -520,15 +524,15 @@ impl EncodeToRecordBatch for InstrumentAny {
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an error if the RecordBatch cannot be decoded.
 pub fn decode_instrument_any_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<InstrumentAny>, EncodingError> {
     let type_name = metadata
-        .get("class")
+        .get(KEY_TYPE_NAME)
         .map(String::as_str)
-        .ok_or_else(|| EncodingError::MissingMetadata("class"))?;
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_TYPE_NAME))?;
 
     match type_name {
         "Cfd" => {
@@ -658,7 +662,7 @@ pub fn decode_instrument_any_batch(
                 .collect())
         }
         _ => Err(EncodingError::ParseError(
-            "class",
+            KEY_TYPE_NAME,
             format!("Unknown instrument type: {type_name}"),
         )),
     }
@@ -668,12 +672,19 @@ pub fn decode_instrument_any_batch(
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{ArrayRef, StringArray, UInt8Array};
-    use nautilus_core::UnixNanos;
+    use arrow::{
+        array::{Array, ArrayRef, StringArray, UInt8Array},
+        datatypes::DataType,
+    };
+    use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
         enums::{AssetClass, CurrencyType, OptionKind},
         identifiers::{InstrumentId, Symbol},
-        instruments::{Instrument, InstrumentAny, currency_pair::CurrencyPair, stubs::betting},
+        instruments::{
+            Instrument, InstrumentAny,
+            currency_pair::CurrencyPair,
+            stubs::{betting, equity_aapl},
+        },
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -685,7 +696,7 @@ mod tests {
     #[rstest]
     fn test_get_schema() {
         let mut metadata = HashMap::new();
-        metadata.insert("class".to_string(), "CurrencyPair".to_string());
+        metadata.insert(KEY_TYPE_NAME.to_string(), "CurrencyPair".to_string());
         let schema = InstrumentAny::get_schema(Some(metadata));
         assert!(schema.fields().len() >= 20);
         assert_eq!(schema.field(0).name(), "id");
@@ -752,32 +763,22 @@ mod tests {
     #[rstest]
     fn test_encode_decode_round_trip() {
         let instrument_id = InstrumentId::from("EUR/USD.SIM");
-        let currency_pair = CurrencyPair::new(
-            instrument_id,
-            Symbol::from("EUR/USD"),
-            Currency::from("EUR"),
-            Currency::from("USD"),
-            5,
-            0, // size_precision must match size_increment precision (0)
-            Price::new(0.00001, 5),
-            Quantity::new(1.0, 0), // precision 0
-            None,                  // multiplier
-            None,                  // lot_size
-            None,                  // max_quantity
-            None,                  // min_quantity
-            None,                  // max_notional
-            None,                  // min_notional
-            None,                  // max_price
-            None,                  // min_price
-            None,                  // margin_init
-            None,                  // margin_maint
-            None,                  // maker_fee
-            None,                  // taker_fee
-            Some(Ustr::from("FOREX_5DECIMAL")),
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let currency_pair = CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("EUR/USD"))
+            .base_currency(Currency::from("EUR"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(5)
+            // size_precision must match size_increment precision (0)
+            .size_precision(0)
+            .price_increment(Price::new(0.00001, 5))
+            // precision 0
+            .size_increment(Quantity::new(1.0, 0))
+            .tick_scheme(Ustr::from("FOREX_5DECIMAL"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::CurrencyPair(currency_pair);
 
         let metadata = instrument.metadata();
@@ -812,32 +813,20 @@ mod tests {
     #[rstest]
     fn test_decode_currency_pair_without_tick_scheme_column_defaults_none() {
         let instrument_id = InstrumentId::from("EUR/USD.SIM");
-        let currency_pair = CurrencyPair::new(
-            instrument_id,
-            Symbol::from("EUR/USD"),
-            Currency::from("EUR"),
-            Currency::from("USD"),
-            5,
-            0,
-            Price::new(0.00001, 5),
-            Quantity::new(1.0, 0),
-            None, // multiplier
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            Some(Ustr::from("FOREX_5DECIMAL")),
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let currency_pair = CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("EUR/USD"))
+            .base_currency(Currency::from("EUR"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(5)
+            .size_precision(0)
+            .price_increment(Price::new(0.00001, 5))
+            .size_increment(Quantity::new(1.0, 0))
+            .tick_scheme(Ustr::from("FOREX_5DECIMAL"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::CurrencyPair(currency_pair);
 
         let metadata = instrument.metadata();
@@ -861,27 +850,16 @@ mod tests {
         use nautilus_model::instruments::{Instrument, equity::Equity};
 
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
-        let equity = Equity::new(
-            instrument_id,
-            Symbol::from("AAPL"),
-            None, // isin
-            Currency::from("USD"),
-            2,
-            Price::new(0.01, 2),
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let equity = Equity::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("AAPL"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::new(0.01, 2))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::Equity(equity);
 
         let metadata = instrument.metadata();
@@ -916,27 +894,26 @@ mod tests {
         let mut info = Params::new();
         info.insert("sector".to_string(), serde_json::json!("technology"));
 
-        let equity = Equity::new(
-            InstrumentId::from("AAPL.NASDAQ"),
-            Symbol::from("AAPL"),
-            Some(Ustr::from("US0378331005")),
-            Currency::from("USD"),
-            2,
-            Price::from("0.01"),
-            Some(Quantity::from("100")),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("1")),
-            Some(Price::from("9999.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            Some(Ustr::from("TOPIX100")),
-            Some(info),
-            1.into(),
-            2.into(),
-        );
+        let equity = Equity::builder()
+            .instrument_id(InstrumentId::from("AAPL.NASDAQ"))
+            .raw_symbol(Symbol::from("AAPL"))
+            .isin(Ustr::from("US0378331005"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .lot_size(Quantity::from("100"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("1"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .tick_scheme(Ustr::from("TOPIX100"))
+            .info(info)
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::Equity(equity.clone());
 
         let metadata = instrument.metadata();
@@ -949,7 +926,7 @@ mod tests {
             panic!("Decoded instrument type mismatch");
         };
 
-        // The quantity constraints are the fields dropped by the v1 Cython `from_dict` (#4461)
+        // The v1 `from_dict` dropped these quantity constraints (#4461), so check them here
         assert_eq!(decoded_equity.max_quantity, equity.max_quantity);
         assert_eq!(decoded_equity.min_quantity, equity.min_quantity);
 
@@ -961,33 +938,73 @@ mod tests {
     }
 
     #[rstest]
-    fn test_encode_decode_round_trip_futures_contract_all_fields() {
-        let contract = FuturesContract::new(
-            InstrumentId::from("ESZ4.XCME"),
-            Symbol::from("ESZ4"),
-            AssetClass::Index,
-            Some(Ustr::from("XCME")),
-            Ustr::from("ES"),
-            1.into(),
-            2.into(),
-            Currency::from("USD"),
-            2,
-            Price::from("0.01"),
-            Quantity::from("1"),
-            Quantity::from("1"),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("5")),
-            Some(Price::from("9999.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            None,
-            None,
-            1.into(),
-            2.into(),
+    fn test_instrument_info_uses_nullable_utf8_json() {
+        let absent = equity_aapl();
+        let mut populated = absent.clone();
+        let mut info = nautilus_core::Params::new();
+        info.insert("enabled".to_string(), serde_json::json!(true));
+        info.insert("source".to_string(), serde_json::json!("unit-test"));
+        populated.info = Some(info);
+        let instruments = [
+            InstrumentAny::Equity(populated.clone()),
+            InstrumentAny::Equity(absent.clone()),
+        ];
+        let metadata = instruments[0].metadata();
+
+        let batch = InstrumentAny::encode_batch(&metadata, &instruments).unwrap();
+        let schema = batch.schema();
+        let field = schema.field_with_name("info").unwrap();
+        let info = batch
+            .column_by_name("info")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let decoded = decode_instrument_any_batch(&metadata, &batch).unwrap();
+
+        assert_eq!(field.data_type(), &DataType::Utf8);
+        assert!(field.is_nullable());
+        assert_eq!(field.extension_type_name(), Some("arrow.json"));
+        assert_eq!(
+            serde_json::from_str::<nautilus_core::Params>(info.value(0)).unwrap(),
+            populated.info.clone().unwrap(),
         );
+        assert!(info.is_null(1));
+        let InstrumentAny::Equity(decoded_populated) = &decoded[0] else {
+            panic!("Decoded instrument type mismatch");
+        };
+        let InstrumentAny::Equity(decoded_absent) = &decoded[1] else {
+            panic!("Decoded instrument type mismatch");
+        };
+        assert_eq!(decoded_populated.info, populated.info);
+        assert_eq!(decoded_absent.info, absent.info);
+    }
+
+    #[rstest]
+    fn test_encode_decode_round_trip_futures_contract_all_fields() {
+        let contract = FuturesContract::builder()
+            .instrument_id(InstrumentId::from("ESZ4.XCME"))
+            .raw_symbol(Symbol::from("ESZ4"))
+            .asset_class(AssetClass::Index)
+            .exchange(Ustr::from("XCME"))
+            .underlying(Ustr::from("ES"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from("1"))
+            .lot_size(Quantity::from("1"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("5"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
 
         let decoded = encode_decode_instrument(&InstrumentAny::FuturesContract(contract.clone()));
         let InstrumentAny::FuturesContract(decoded) = decoded else {
@@ -1002,34 +1019,31 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip_option_contract_all_fields() {
-        let contract = OptionContract::new(
-            InstrumentId::from("AAPL_C100.OPRA"),
-            Symbol::from("AAPL_C100"),
-            AssetClass::Equity,
-            Some(Ustr::from("OPRA")),
-            Ustr::from("AAPL"),
-            OptionKind::Call,
-            Price::from("100.00"),
-            Currency::from("USD"),
-            1.into(),
-            2.into(),
-            2,
-            Price::from("0.01"),
-            Quantity::from("100"),
-            Quantity::from("1"),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("5")),
-            Some(Price::from("9999.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            None,
-            None,
-            1.into(),
-            2.into(),
-        );
+        let contract = OptionContract::builder()
+            .instrument_id(InstrumentId::from("AAPL_C100.OPRA"))
+            .raw_symbol(Symbol::from("AAPL_C100"))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from("OPRA"))
+            .underlying(Ustr::from("AAPL"))
+            .option_kind(OptionKind::Call)
+            .strike_price(Price::from("100.00"))
+            .currency(Currency::from("USD"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from("100"))
+            .lot_size(Quantity::from("1"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("5"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
 
         let decoded = encode_decode_instrument(&InstrumentAny::OptionContract(contract.clone()));
         let InstrumentAny::OptionContract(decoded) = decoded else {
@@ -1044,34 +1058,36 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip_binary_option_all_fields() {
-        let option = BinaryOption::new(
-            InstrumentId::from("ELECTION.POLYMARKET"),
-            Symbol::from("ELECTION"),
-            AssetClass::Alternative,
-            Currency::from("USDC"),
-            1.into(),
-            2.into(),
-            2,
-            0,
-            Price::from("0.01"),
-            Quantity::from("1"),
-            Some(Ustr::from("YES")),
-            Some(Ustr::from("Election outcome")),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("5")),
-            Some(Money::from("50000 USDC")),
-            Some(Money::from("5 USDC")),
-            Some(Price::from("0.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            None,
-            None,
-            1.into(),
-            2.into(),
-        );
+        let mut info = Params::new();
+        let raw = "0.1234567890123456789012345678";
+        info.insert("gamma_market".to_string(), serde_json::json!(raw));
+        let option = BinaryOption::builder()
+            .instrument_id(InstrumentId::from("ELECTION.POLYMARKET"))
+            .raw_symbol(Symbol::from("ELECTION"))
+            .asset_class(AssetClass::Alternative)
+            .currency(Currency::from("USDC"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("1"))
+            .event_id(Ustr::from("event-123"))
+            .info(info)
+            .outcome(Ustr::from("YES"))
+            .description(Ustr::from("Election outcome"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("5"))
+            .max_notional(Money::from("50000 USDC"))
+            .min_notional(Money::from("5 USDC"))
+            .max_price(Price::from("0.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
 
         let decoded = encode_decode_instrument(&InstrumentAny::BinaryOption(option.clone()));
         let InstrumentAny::BinaryOption(decoded) = decoded else {
@@ -1082,6 +1098,26 @@ mod tests {
             serde_json::to_value(&decoded).unwrap(),
             serde_json::to_value(&option).unwrap(),
         );
+    }
+
+    #[rstest]
+    #[case::missing(false)]
+    #[case::null(true)]
+    fn test_binary_option_event_id_legacy_default(#[case] null: bool) {
+        let mut option = nautilus_model::instruments::stubs::binary_option();
+        option.event_id = Some(Ustr::from("event-123"));
+        let metadata = option.metadata();
+        let batch = BinaryOption::encode_batch(&metadata, &[option]).unwrap();
+
+        let batch = if null {
+            batch_with_null_string_column(&batch, "event_id")
+        } else {
+            batch_without_column(&batch, "event_id")
+        };
+
+        let decoded = binary_option::decode_binary_option_batch(&metadata, &batch).unwrap();
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].event_id, None);
     }
 
     // The `betting` stub populates every bound, margin, and fee, so this covers the whole struct
@@ -1254,7 +1290,7 @@ mod tests {
     ))]
     fn test_decode_instrument_checked_constructor_error(#[case] instrument: InstrumentAny) {
         let metadata = instrument.metadata();
-        let class = metadata.get("class").unwrap();
+        let class = metadata.get(KEY_TYPE_NAME).unwrap();
         let first_row_price_precision = Instrument::price_precision(&instrument);
         let instruments = vec![instrument.clone(), instrument];
         let record_batch = InstrumentAny::encode_batch(&metadata, &instruments).unwrap();
@@ -1462,8 +1498,8 @@ mod tests {
 
     #[rstest]
     fn test_roundtrip_crypto_perpetual_inverse() {
-        use nautilus_model::instruments::stubs::xbtusd_bitmex;
-        roundtrip_case(&InstrumentAny::CryptoPerpetual(xbtusd_bitmex()));
+        use nautilus_model::instruments::stubs::btcusd_bybit;
+        roundtrip_case(&InstrumentAny::CryptoPerpetual(btcusd_bybit()));
     }
 
     #[rstest]

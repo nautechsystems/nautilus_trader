@@ -25,7 +25,6 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderSide
@@ -41,35 +40,34 @@ class EMACrossConfig(StrategyConfig):
     Configuration for the EMA cross test strategy.
     """
 
-    def __new__(cls, *args, strategy_id: str | None = None, **kwargs):
-        # `StrategyConfig` is a pyo3 @final type whose `__new__` validates
-        # `strategy_id` as a `StrategyId`. For tests that need to register
-        # multiple instances of the same strategy class, we accept a string
-        # `strategy_id` in the subclass `__new__`, strip just that override
-        # before delegating (so it doesn't fail base-type validation), and
-        # forward every remaining base `StrategyConfig` kwarg
-        # (`order_id_tag`, `log_events`, `oms_type`, etc.) so they're applied
-        # by the pyo3 base. The override is exposed via a property below.
-        kwargs.pop("instrument_id", None)
-        kwargs.pop("bar_type", None)
-        kwargs.pop("trade_size", None)
-        kwargs.pop("fast_ema_period", None)
-        kwargs.pop("slow_ema_period", None)
+    def __new__(cls, *args: object, strategy_id: str | None = None, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
+        # The pyo3 base validates `strategy_id` as a `StrategyId`. Tests that
+        # register several instances of one strategy class need a string
+        # instead, so capture that override here and keep it out of the base
+        # call; a property below exposes it. Every remaining base keyword is
+        # forwarded, and the base ignores the subclass fields.
         instance = super().__new__(cls, *args, **kwargs)
         instance._strategy_id_override = strategy_id
         return instance
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
         fast_ema_period: int = 10,
         slow_ema_period: int = 20,
-        strategy_id: str | None = None,
-        **kwargs,
-    ):
-        # The pyo3 base initialises its state in `__new__`, so `__init__`
+        _strategy_id: str | None = None,
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the instance.
+        """
+        # The pyo3 base initializes its state in `__new__`, so `__init__`
         # falls through to `object.__init__` which only accepts `self`.
         super().__init__()
         self.instrument_id = instrument_id
@@ -79,7 +77,10 @@ class EMACrossConfig(StrategyConfig):
         self.slow_ema_period = slow_ema_period
 
     @property
-    def strategy_id(self):
+    def strategy_id(self) -> object:
+        """
+        Strategy id.
+        """
         if self._strategy_id_override is not None:
             return self._strategy_id_override
         return super().strategy_id
@@ -95,7 +96,10 @@ class EMACross(Strategy):
 
     """
 
-    def __init__(self, config: EMACrossConfig):
+    def __init__(self, config: EMACrossConfig) -> None:
+        """
+        Initialize the instance.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._bar_type = BarType.from_str(config.bar_type)
@@ -113,12 +117,21 @@ class EMACross(Strategy):
 
     @property
     def bar_count(self) -> int:
+        """
+        Bar count.
+        """
         return self._bar_count
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_bars(self._bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         close = float(bar.close)
         self._bar_count += 1
 
@@ -144,7 +157,7 @@ class EMACross(Strategy):
         elif not fast_above and was_above:
             self._enter(OrderSide.SELL)
 
-    def _enter(self, side: OrderSide):
+    def _enter(self, side: OrderSide) -> None:
         if self._position_side == PositionSide.LONG and side == OrderSide.BUY:
             return
         if self._position_side == PositionSide.SHORT and side == OrderSide.SELL:
@@ -160,14 +173,14 @@ class EMACross(Strategy):
         else:
             self._position_side = PositionSide.SHORT
 
-    def _flat(self):
+    def _flat(self) -> None:
         if self._position_side == PositionSide.LONG:
             self._submit_market(OrderSide.SELL)
         elif self._position_side == PositionSide.SHORT:
             self._submit_market(OrderSide.BUY)
         self._position_side = PositionSide.FLAT
 
-    def _submit_market(self, side: OrderSide):
+    def _submit_market(self, side: OrderSide) -> None:
         self._order_count += 1
         order = MarketOrder(
             trader_id=self.trader_id,
@@ -181,16 +194,21 @@ class EMACross(Strategy):
             time_in_force=TimeInForce.GTC,
             reduce_only=False,
             quote_quantity=False,
-            contingency_type=ContingencyType.NO_CONTINGENCY,
+            contingency_type=None,
         )
         self.submit_order(order)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._fast_ema = 0.0
         self._slow_ema = 0.0
         self._bar_count = 0
         self._order_count = 0
         self._position_side = PositionSide.FLAT
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """

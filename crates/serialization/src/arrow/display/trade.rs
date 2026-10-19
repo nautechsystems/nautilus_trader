@@ -28,6 +28,7 @@ use nautilus_model::data::TradeTick;
 use super::{
     float64_field, price_to_f64, quantity_to_f64, timestamp_field, unix_nanos_to_i64, utf8_field,
 };
+use crate::arrow::timestamp_data_type;
 
 /// Returns the display-mode Arrow schema for [`TradeTick`].
 #[must_use]
@@ -55,15 +56,17 @@ pub fn trades_schema() -> Schema {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_trades(data: &[TradeTick]) -> Result<RecordBatch, ArrowError> {
     let mut instrument_id_builder = StringBuilder::new();
     let mut price_builder = Float64Builder::with_capacity(data.len());
     let mut size_builder = Float64Builder::with_capacity(data.len());
     let mut aggressor_side_builder = StringBuilder::new();
     let mut trade_id_builder = StringBuilder::new();
-    let mut ts_event_builder = TimestampNanosecondBuilder::with_capacity(data.len());
-    let mut ts_init_builder = TimestampNanosecondBuilder::with_capacity(data.len());
+    let mut ts_event_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
+    let mut ts_init_builder =
+        TimestampNanosecondBuilder::with_capacity(data.len()).with_data_type(timestamp_data_type());
 
     for trade in data {
         instrument_id_builder.append_value(trade.instrument_id.to_string());
@@ -140,20 +143,20 @@ mod tests {
         assert_eq!(fields[5].name(), "ts_event");
         assert_eq!(
             fields[5].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
         assert_eq!(fields[6].name(), "ts_init");
         assert_eq!(
             fields[6].data_type(),
-            &DataType::Timestamp(TimeUnit::Nanosecond, None)
+            &DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
         );
     }
 
     #[rstest]
     fn test_encode_trades_values() {
         let trades = vec![
-            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buyer, "T-1", 1_000),
-            make_trade("AAPL.XNAS", "100.20", AggressorSide::Seller, "T-2", 2_000),
+            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buy, "T-1", 1_000),
+            make_trade("AAPL.XNAS", "100.20", AggressorSide::Sell, "T-2", 2_000),
         ];
         let batch = encode_trades(&trades).unwrap();
 
@@ -199,8 +202,8 @@ mod tests {
         assert!((price_col.value(0) - 100.10).abs() < 1e-9);
         assert!((price_col.value(1) - 100.20).abs() < 1e-9);
         assert!((size_col.value(0) - 1_000.0).abs() < 1e-9);
-        assert_eq!(aggressor_col.value(0), format!("{}", AggressorSide::Buyer));
-        assert_eq!(aggressor_col.value(1), format!("{}", AggressorSide::Seller));
+        assert_eq!(aggressor_col.value(0), format!("{}", AggressorSide::Buy));
+        assert_eq!(aggressor_col.value(1), format!("{}", AggressorSide::Sell));
         assert_eq!(trade_id_col.value(0), "T-1");
         assert_eq!(trade_id_col.value(1), "T-2");
         assert_eq!(ts_event_col.value(0), 1_000);
@@ -216,8 +219,8 @@ mod tests {
     #[rstest]
     fn test_encode_trades_mixed_instruments() {
         let trades = vec![
-            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buyer, "A-1", 1),
-            make_trade("MSFT.XNAS", "250.00", AggressorSide::Seller, "M-1", 2),
+            make_trade("AAPL.XNAS", "100.10", AggressorSide::Buy, "A-1", 1),
+            make_trade("MSFT.XNAS", "250.00", AggressorSide::Sell, "M-1", 2),
         ];
         let batch = encode_trades(&trades).unwrap();
         let instrument_id_col = batch

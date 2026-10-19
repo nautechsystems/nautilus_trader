@@ -17,7 +17,10 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, volatility::atr::AverageTrueRange};
+use crate::{
+    average::MovingAverageType, indicator::Indicator, python::float_precision,
+    volatility::atr::AverageTrueRange,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -25,14 +28,13 @@ impl AverageTrueRange {
     /// An indicator which calculates an Average True Range (ATR) across a rolling window.
     #[new]
     #[pyo3(signature = (period, ma_type=None, use_previous=None, value_floor=None))]
-    #[must_use]
     pub fn py_new(
         period: usize,
         ma_type: Option<MovingAverageType>,
         use_previous: Option<bool>,
         value_floor: Option<f64>,
-    ) -> Self {
-        Self::new(period, ma_type, use_previous, value_floor)
+    ) -> PyResult<Self> {
+        Self::new_checked(period, ma_type, use_previous, value_floor).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -40,6 +42,24 @@ impl AverageTrueRange {
             "AverageTrueRange({},{},{},{})",
             self.period, self.ma_type, self.use_previous, self.value_floor,
         )
+    }
+
+    #[getter]
+    #[pyo3(name = "ma_type")]
+    const fn py_ma_type(&self) -> MovingAverageType {
+        self.ma_type
+    }
+
+    #[getter]
+    #[pyo3(name = "use_previous")]
+    const fn py_use_previous(&self) -> bool {
+        self.use_previous
+    }
+
+    #[getter]
+    #[pyo3(name = "value_floor")]
+    const fn py_value_floor(&self) -> f64 {
+        self.value_floor
     }
 
     #[getter]
@@ -94,8 +114,10 @@ impl AverageTrueRange {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

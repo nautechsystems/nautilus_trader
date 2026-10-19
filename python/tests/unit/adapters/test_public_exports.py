@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test public exports behavior.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from nautilus_trader.model import Venue
+
 
 ADAPTERS_ROOT = Path(__file__).resolve().parents[3] / "nautilus_trader" / "adapters"
 
@@ -28,13 +33,12 @@ ADAPTERS_ROOT = Path(__file__).resolve().parents[3] / "nautilus_trader" / "adapt
 ADAPTERS = sorted(p.name for p in ADAPTERS_ROOT.iterdir() if (p / "__init__.py").exists())
 
 # Venue adapters expose canonical <VENUE>, <VENUE>_CLIENT_ID, <VENUE>_VENUE constants.
-# Data providers (databento, tardis), the blockchain data client, the sandbox exec
+# Data providers (coinapi, databento, tardis), the blockchain data client, the sandbox exec
 # client, and the multi-venue interactive_brokers broker intentionally omit them.
 VENUE_ADAPTERS = {
     "architect_ax": "AX",
     "betfair": "BETFAIR",
     "binance": "BINANCE",
-    "bitmex": "BITMEX",
     "bybit": "BYBIT",
     "coinbase": "COINBASE",
     "deribit": "DERIBIT",
@@ -49,8 +53,24 @@ VENUE_ADAPTERS = {
 
 NON_VENUE_ADAPTERS = sorted(set(ADAPTERS) - set(VENUE_ADAPTERS))
 
+REMOVED_PYTHON_WEBSOCKET_TYPES = {
+    "architect_ax": ("AxMdWebSocketClient", "AxOrdersWebSocketClient"),
+    "bybit": (
+        "BybitWebSocketClient",
+        "BybitWebSocketError",
+        "BybitWsAmendOrderParams",
+        "BybitWsCancelOrderParams",
+        "BybitWsPlaceOrderParams",
+    ),
+    "deribit": ("DeribitUpdateInterval", "DeribitWebSocketClient"),
+    "dydx": ("DydxWebSocketClient",),
+    "hyperliquid": ("HyperliquidWebSocketClient",),
+    "kraken": ("KrakenFuturesWebSocketClient", "KrakenSpotWebSocketClient"),
+    "okx": ("OKXWebSocketClient", "OKXWebSocketError"),
+}
+
 # Members that must never reach a facade's public surface: raw transport clients,
-# endpoint helpers, and leaked future-import names.
+# endpoint URL resolvers, and leaked future-import names.
 FORBIDDEN_SUFFIXES = (
     "HttpClient",
     "RawHttpClient",
@@ -69,18 +89,18 @@ def _is_forbidden(name: str) -> bool:
         return True
     if name.endswith(FORBIDDEN_SUFFIXES):
         return True
-    # Endpoint helpers such as get_<adapter>_http_base_url / get_<adapter>_ws_url,
+    # Endpoint URL resolvers such as get_<adapter>_http_base_url / get_<adapter>_ws_url,
     # but not legitimate utilities such as get_<adapter>_arrow_schema_map.
     return name.startswith("get_") and "url" in name
 
 
-def _import(adapter: str):
+def _import(adapter: str) -> object:
     return importlib.import_module(f"nautilus_trader.adapters.{adapter}")
 
 
 def _stub_all(adapter: str) -> list[str]:
     stub_path = ADAPTERS_ROOT / adapter / "__init__.pyi"
-    tree = ast.parse(stub_path.read_text())
+    tree = ast.parse(stub_path.read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
@@ -90,7 +110,10 @@ def _stub_all(adapter: str) -> list[str]:
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS)
-def test_adapter_all_is_unique_nonempty(adapter):
+def test_adapter_all_is_unique_nonempty(adapter: object) -> None:
+    """
+    Test adapter all is unique nonempty.
+    """
     module = _import(adapter)
 
     assert module.__all__, f"{adapter} __all__ must be non-empty"
@@ -102,7 +125,10 @@ def test_adapter_all_is_unique_nonempty(adapter):
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS)
-def test_adapter_all_names_resolve(adapter):
+def test_adapter_all_names_resolve(adapter: object) -> None:
+    """
+    Test adapter all names resolve.
+    """
     module = _import(adapter)
 
     missing = [name for name in module.__all__ if not hasattr(module, name)]
@@ -110,7 +136,10 @@ def test_adapter_all_names_resolve(adapter):
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS)
-def test_runtime_all_matches_stub_all_exactly(adapter):
+def test_runtime_all_matches_stub_all_exactly(adapter: object) -> None:
+    """
+    Test runtime all matches stub all exactly.
+    """
     module = _import(adapter)
 
     assert list(module.__all__) == _stub_all(adapter), (
@@ -119,7 +148,10 @@ def test_runtime_all_matches_stub_all_exactly(adapter):
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS)
-def test_facade_exposes_no_raw_clients_endpoints_or_helpers(adapter):
+def test_facade_exposes_no_raw_clients_endpoints_or_url_resolvers(adapter: object) -> None:
+    """
+    Test facade exposes no raw clients, endpoints, or URL resolvers.
+    """
     module = _import(adapter)
 
     leaked = [name for name in module.__all__ if _is_forbidden(name)]
@@ -127,8 +159,28 @@ def test_facade_exposes_no_raw_clients_endpoints_or_helpers(adapter):
     assert not leaked, f"{adapter} __all__ leaks private members: {leaked}"
 
 
+@pytest.mark.parametrize(
+    ("adapter", "name"),
+    [
+        (adapter, name)
+        for adapter, names in REMOVED_PYTHON_WEBSOCKET_TYPES.items()
+        for name in names
+    ],
+)
+def test_adapter_exposes_no_low_level_websocket_types(adapter: str, name: str) -> None:
+    """
+    Test adapter exposes no low-level WebSocket types.
+    """
+    module = _import(adapter)
+
+    assert not hasattr(module, name)
+
+
 @pytest.mark.parametrize("adapter", ADAPTERS)
-def test_public_classes_owned_by_adapter_package(adapter):
+def test_public_classes_owned_by_adapter_package(adapter: object) -> None:
+    """
+    Test public classes owned by adapter package.
+    """
     module = _import(adapter)
     expected_module = f"nautilus_trader.adapters.{adapter}"
 
@@ -143,7 +195,10 @@ def test_public_classes_owned_by_adapter_package(adapter):
 
 
 @pytest.mark.parametrize(("adapter", "venue"), sorted(VENUE_ADAPTERS.items()))
-def test_venue_adapter_exposes_canonical_constants(adapter, venue):
+def test_venue_adapter_exposes_canonical_constants(adapter: object, venue: Venue) -> None:
+    """
+    Test venue adapter exposes canonical constants.
+    """
     module = _import(adapter)
 
     assert module.__all__.count(venue) == 1
@@ -153,22 +208,28 @@ def test_venue_adapter_exposes_canonical_constants(adapter, venue):
 
 
 @pytest.mark.parametrize("adapter", NON_VENUE_ADAPTERS)
-def test_non_venue_adapter_has_no_venue_constants(adapter):
+def test_non_venue_adapter_has_no_venue_constants(adapter: object) -> None:
+    """
+    Test non venue adapter has no venue constants.
+    """
     module = _import(adapter)
 
     venue_constants = [name for name in module.__all__ if name.endswith("_VENUE")]
     assert not venue_constants, f"{adapter} must not define venue constants: {venue_constants}"
 
 
-def test_known_adapter_set_is_complete():
+def test_known_adapter_set_is_complete() -> None:
+    """
+    Test known adapter set is complete.
+    """
     # Guards against a new adapter landing without a deliberate facade decision.
     expected = {
         "architect_ax",
         "betfair",
         "binance",
-        "bitmex",
         "blockchain",
         "bybit",
+        "coinapi",
         "coinbase",
         "databento",
         "deribit",

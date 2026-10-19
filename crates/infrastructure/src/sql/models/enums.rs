@@ -25,27 +25,27 @@ use sqlx::{
 };
 
 #[derive(Debug)]
-pub struct CurrencyTypeModel(pub CurrencyType);
+pub struct CurrencyTypePg(pub CurrencyType);
 
 #[derive(Debug)]
-pub struct PriceTypeModel(pub PriceType);
+pub struct PriceTypePg(pub PriceType);
 
 #[derive(Debug)]
-pub struct BarAggregationModel(pub BarAggregation);
+pub struct BarAggregationPg(pub BarAggregation);
 
 #[derive(Debug)]
-pub struct AssetClassModel(pub AssetClass);
+pub struct AssetClassPg(pub AssetClass);
 
 #[derive(Debug)]
-pub struct TrailingOffsetTypeModel(pub TrailingOffsetType);
+pub struct TrailingOffsetTypePg(pub Option<TrailingOffsetType>);
 
 #[derive(Debug)]
-pub struct AggressorSideModel(pub AggressorSide);
+pub struct AggressorSidePg(pub AggressorSide);
 
 #[derive(Debug)]
-pub struct AggregationSourceModel(pub AggregationSource);
+pub struct AggregationSourcePg(pub AggregationSource);
 
-impl sqlx::Encode<'_, sqlx::Postgres> for CurrencyTypeModel {
+impl sqlx::Encode<'_, sqlx::Postgres> for CurrencyTypePg {
     fn encode_by_ref(
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
@@ -59,7 +59,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for CurrencyTypeModel {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for CurrencyTypeModel {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for CurrencyTypePg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let currency_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let currency_type = CurrencyType::from_str(currency_type_str).map_err(|_| {
@@ -69,7 +69,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for CurrencyTypeModel {
     }
 }
 
-impl sqlx::Type<sqlx::Postgres> for CurrencyTypeModel {
+impl sqlx::Type<sqlx::Postgres> for CurrencyTypePg {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("currency_type")
     }
@@ -79,7 +79,7 @@ impl sqlx::Type<sqlx::Postgres> for CurrencyTypeModel {
     }
 }
 
-impl sqlx::Encode<'_, sqlx::Postgres> for AssetClassModel {
+impl sqlx::Encode<'_, sqlx::Postgres> for AssetClassPg {
     fn encode_by_ref(
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
@@ -97,7 +97,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for AssetClassModel {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AssetClassModel {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AssetClassPg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let asset_class_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let asset_class = AssetClass::from_str(asset_class_str).map_err(|_| {
@@ -107,7 +107,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AssetClassModel {
     }
 }
 
-impl sqlx::Type<sqlx::Postgres> for AssetClassModel {
+impl sqlx::Type<sqlx::Postgres> for AssetClassPg {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("asset_class")
     }
@@ -117,36 +117,35 @@ impl sqlx::Type<sqlx::Postgres> for AssetClassModel {
     }
 }
 
-impl sqlx::Encode<'_, sqlx::Postgres> for TrailingOffsetTypeModel {
+impl sqlx::Encode<'_, sqlx::Postgres> for TrailingOffsetTypePg {
     fn encode_by_ref(
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
-        let trailing_offset_type_str = match self.0 {
-            TrailingOffsetType::NoTrailingOffset => "NO_TRAILING_OFFSET",
-            TrailingOffsetType::Price => "PRICE",
-            TrailingOffsetType::BasisPoints => "BASIS_POINTS",
-            TrailingOffsetType::Ticks => "TICKS",
-            TrailingOffsetType::PriceTier => "PRICE_TIER",
-        };
-        <&str as sqlx::Encode<sqlx::Postgres>>::encode(trailing_offset_type_str, buf)
+        let value = self.0.as_ref().map_or("NO_TRAILING_OFFSET", AsRef::as_ref);
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(value, buf)
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TrailingOffsetTypeModel {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TrailingOffsetTypePg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let trailing_offset_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
-        let trailing_offset_type =
-            TrailingOffsetType::from_str(trailing_offset_type_str).map_err(|_| {
-                sqlx::Error::Decode(
-                    format!("Invalid trailing offset type: {trailing_offset_type_str}").into(),
-                )
-            })?;
+        let trailing_offset_type = if trailing_offset_type_str == "NO_TRAILING_OFFSET" {
+            None
+        } else {
+            Some(
+                TrailingOffsetType::from_str(trailing_offset_type_str).map_err(|_| {
+                    sqlx::Error::Decode(
+                        format!("Invalid trailing offset type: {trailing_offset_type_str}").into(),
+                    )
+                })?,
+            )
+        };
         Ok(Self(trailing_offset_type))
     }
 }
 
-impl sqlx::Type<sqlx::Postgres> for TrailingOffsetTypeModel {
+impl sqlx::Type<sqlx::Postgres> for TrailingOffsetTypePg {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("trailing_offset_type")
     }
@@ -156,21 +155,21 @@ impl sqlx::Type<sqlx::Postgres> for TrailingOffsetTypeModel {
     }
 }
 
-impl sqlx::Encode<'_, sqlx::Postgres> for AggressorSideModel {
+impl sqlx::Encode<'_, sqlx::Postgres> for AggressorSidePg {
     fn encode_by_ref(
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
         let aggressor_side_str = match self.0 {
             AggressorSide::NoAggressor => "NO_AGGRESSOR",
-            AggressorSide::Buyer => "BUYER",
-            AggressorSide::Seller => "SELLER",
+            AggressorSide::Buy => "BUY",
+            AggressorSide::Sell => "SELL",
         };
         <&str as sqlx::Encode<sqlx::Postgres>>::encode(aggressor_side_str, buf)
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggressorSideModel {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggressorSidePg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let aggressor_side_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let aggressor_side = AggressorSide::from_str(aggressor_side_str).map_err(|_| {
@@ -180,7 +179,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggressorSideModel {
     }
 }
 
-impl sqlx::Type<sqlx::Postgres> for AggressorSideModel {
+impl sqlx::Type<sqlx::Postgres> for AggressorSidePg {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("aggressor_side")
     }
@@ -190,7 +189,7 @@ impl sqlx::Type<sqlx::Postgres> for AggressorSideModel {
     }
 }
 
-impl sqlx::Encode<'_, sqlx::Postgres> for AggregationSourceModel {
+impl sqlx::Encode<'_, sqlx::Postgres> for AggregationSourcePg {
     fn encode_by_ref(
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
@@ -203,7 +202,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for AggregationSourceModel {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggregationSourceModel {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggregationSourcePg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let aggregation_source_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let aggregation_source =
@@ -216,7 +215,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggregationSourceModel {
     }
 }
 
-impl sqlx::Type<sqlx::Postgres> for AggregationSourceModel {
+impl sqlx::Type<sqlx::Postgres> for AggregationSourcePg {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("aggregation_source")
     }
@@ -226,7 +225,7 @@ impl sqlx::Type<sqlx::Postgres> for AggregationSourceModel {
     }
 }
 
-impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
+impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationPg {
     fn encode_by_ref(
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
@@ -241,7 +240,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
             BarAggregation::Value => "VALUE",
             BarAggregation::ValueImbalance => "VALUE_IMBALANCE",
             BarAggregation::ValueRuns => "VALUE_RUNS",
-            BarAggregation::Millisecond => "TIME",
+            BarAggregation::Millisecond => "MILLISECOND",
             BarAggregation::Second => "SECOND",
             BarAggregation::Minute => "MINUTE",
             BarAggregation::Hour => "HOUR",
@@ -255,7 +254,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BarAggregationModel {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BarAggregationPg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let bar_aggregation_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let bar_aggregation = BarAggregation::from_str(bar_aggregation_str).map_err(|_| {
@@ -265,7 +264,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BarAggregationModel {
     }
 }
 
-impl sqlx::Type<sqlx::Postgres> for BarAggregationModel {
+impl sqlx::Type<sqlx::Postgres> for BarAggregationPg {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("bar_aggregation")
     }
@@ -275,7 +274,7 @@ impl sqlx::Type<sqlx::Postgres> for BarAggregationModel {
     }
 }
 
-impl sqlx::Encode<'_, sqlx::Postgres> for PriceTypeModel {
+impl sqlx::Encode<'_, sqlx::Postgres> for PriceTypePg {
     fn encode_by_ref(
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
@@ -291,7 +290,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for PriceTypeModel {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for PriceTypeModel {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for PriceTypePg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let price_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let price_type = PriceType::from_str(price_type_str).map_err(|_| {
@@ -301,12 +300,142 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for PriceTypeModel {
     }
 }
 
-impl sqlx::Type<sqlx::Postgres> for PriceTypeModel {
+impl sqlx::Type<sqlx::Postgres> for PriceTypePg {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("price_type")
     }
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
         *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::enums::{AccountType, BookAction, InstrumentClass, OrderStatus};
+    use regex::Regex;
+    use rstest::rstest;
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    // Reads the shipped schema rather than a copy of it, so a type declared here can never
+    // drift from the Rust enum it mirrors.
+    fn types_sql() -> String {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql/types.sql");
+        std::fs::read_to_string(path).expect("failed to read types.sql")
+    }
+
+    fn sql_enum_labels(type_name: &str) -> Vec<String> {
+        let sql = types_sql();
+        let declaration = Regex::new(&format!(
+            r"(?s)CREATE\s+TYPE\s+{type_name}\s+AS\s+ENUM\s*\((.*?)\);"
+        ))
+        .expect("invalid declaration pattern")
+        .captures(&sql)
+        .unwrap_or_else(|| panic!("no CREATE TYPE found for {type_name}"))[1]
+            .to_string();
+
+        Regex::new("'([A-Z_0-9]+)'")
+            .expect("invalid label pattern")
+            .captures_iter(&declaration)
+            .map(|label| label[1].to_string())
+            .collect()
+    }
+
+    fn rust_enum_labels<T: IntoEnumIterator + AsRef<str>>() -> Vec<String> {
+        T::iter().map(|value| value.as_ref().to_string()).collect()
+    }
+
+    // The single source of truth for coverage, so a type declared in types.sql without an entry
+    // here fails `every_declared_sql_enum_type_is_guarded`.
+    fn guarded_sql_enum_types() -> Vec<(&'static str, Vec<String>)> {
+        vec![
+            ("ACCOUNT_TYPE", rust_enum_labels::<AccountType>()),
+            (
+                "AGGREGATION_SOURCE",
+                rust_enum_labels::<AggregationSource>(),
+            ),
+            ("AGGRESSOR_SIDE", rust_enum_labels::<AggressorSide>()),
+            ("ASSET_CLASS", rust_enum_labels::<AssetClass>()),
+            ("BAR_AGGREGATION", rust_enum_labels::<BarAggregation>()),
+            ("BOOK_ACTION", rust_enum_labels::<BookAction>()),
+            ("CURRENCY_TYPE", rust_enum_labels::<CurrencyType>()),
+            ("INSTRUMENT_CLASS", rust_enum_labels::<InstrumentClass>()),
+            ("ORDER_STATUS", rust_enum_labels::<OrderStatus>()),
+            ("PRICE_TYPE", rust_enum_labels::<PriceType>()),
+            (
+                "TRAILING_OFFSET_TYPE",
+                std::iter::once("NO_TRAILING_OFFSET".to_string())
+                    .chain(rust_enum_labels::<TrailingOffsetType>())
+                    .collect(),
+            ),
+        ]
+    }
+
+    #[rstest]
+    fn sql_enum_type_matches_rust_enum() {
+        for (type_name, expected) in guarded_sql_enum_types() {
+            assert_eq!(sql_enum_labels(type_name), expected, "{type_name}");
+        }
+    }
+
+    #[rstest]
+    fn every_declared_sql_enum_type_is_guarded() {
+        let mut declared: Vec<String> = Regex::new(r"CREATE\s+TYPE\s+(\w+)\s+AS\s+ENUM")
+            .expect("invalid type name pattern")
+            .captures_iter(&types_sql())
+            .map(|name| name[1].to_string())
+            .collect();
+        let mut guarded: Vec<String> = guarded_sql_enum_types()
+            .into_iter()
+            .map(|(type_name, _)| type_name.to_string())
+            .collect();
+        declared.sort();
+        guarded.sort();
+
+        assert_eq!(declared, guarded);
+    }
+
+    #[rstest]
+    #[case(AggressorSide::NoAggressor, "NO_AGGRESSOR")]
+    #[case(AggressorSide::Buy, "BUY")]
+    #[case(AggressorSide::Sell, "SELL")]
+    fn aggressor_side_pg_encodes_postgres_labels(
+        #[case] value: AggressorSide,
+        #[case] expected: &str,
+    ) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(AggressorSidePg(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Millisecond, "MILLISECOND")]
+    #[case(BarAggregation::Second, "SECOND")]
+    #[case(BarAggregation::Month, "MONTH")]
+    #[case(BarAggregation::Year, "YEAR")]
+    #[case(BarAggregation::Renko, "RENKO")]
+    fn bar_aggregation_pg_encodes_postgres_labels(
+        #[case] value: BarAggregation,
+        #[case] expected: &str,
+    ) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(BarAggregationPg(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+        assert_eq!(BarAggregation::from_str(expected), Ok(value));
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid, "BID")]
+    #[case(PriceType::Ask, "ASK")]
+    #[case(PriceType::Mid, "MID")]
+    #[case(PriceType::Last, "LAST")]
+    #[case(PriceType::Mark, "MARK")]
+    fn price_type_pg_encodes_postgres_labels(#[case] value: PriceType, #[case] expected: &str) {
+        let mut buf = sqlx::postgres::PgArgumentBuffer::default();
+        let _ = sqlx::Encode::<sqlx::Postgres>::encode(PriceTypePg(value), &mut buf);
+        assert_eq!(&buf[..], expected.as_bytes());
+        assert_eq!(PriceType::from_str(expected), Ok(value));
     }
 }

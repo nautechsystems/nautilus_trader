@@ -40,3 +40,9 @@ mod spot;
 
 pub use futures::KrakenFuturesDataClient;
 pub use spot::KrakenSpotDataClient;
+
+#[cfg(test)]
+pub(crate) mod tests {
+    #[allow(unused_imports)]
+    pub(crate) use super::futures::tests::benchmarks::{bench_quotes, bench_snapshots};
+}

@@ -15,8 +15,8 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [Lighter](https://lighter.xyz) DEX.
 //!
-//! The `nautilus-lighter` crate provides integration with the Lighter API for trading
-//! perpetual futures and spot markets on a zk-rollup decentralized exchange.
+//! The `nautilus-lighter` crate provides integration with the Lighter protocol for trading
+//! perpetual futures and spot markets on the Lighter and Robinhood Chain deployments.
 //!
 //! # NautilusTrader
 //!
@@ -33,27 +33,35 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
+//! - `fuzz`: Enables libFuzzer integration for fuzz targets.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //!
 //! Python bindings for the Lighter adapter are intentionally scoped to configuration,
 //! enums, factory wiring, and integrator revocation. Data and execution
 //! clients are consumed directly through the Rust trait surface.
 //!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
-//!
 //! # Integrator attribution
 //!
-//! Submitted create and modify order transactions carry the NautilusTrader integrator account index
-//! in Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration and prioritize
-//! ongoing maintenance. Maker and taker integrator fees are set to zero, so attribution adds no
-//! trading cost.
+//! NautilusTrader participates in [Lighter's partner program](https://apidocs.lighter.xyz/docs/partner-integration).
+//! On Lighter Mainnet, create and modify order transactions from the execution client carry the
+//! NautilusTrader integrator account index in `L2TxAttributes` across all account tiers, including
+//! Standard. Maker and taker integrator fees are zero. Lighter Testnet and both Robinhood environments
+//! leave `L2TxAttributes` empty.
 //!
 //! Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to
-//! orders. During startup, the execution client submits the required zero-fee approval for the
-//! configured L2 account. See the
-//! [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
-//! for approval and revocation details.
+//! Lighter Mainnet orders. During startup, the execution client submits the required zero-fee
+//! approval for a configured L2 account with a non-maker-only API key. Lighter Testnet and both
+//! Robinhood environments do not submit an approval.
+//!
+//! Robinhood Mainnet instead applies the `NAUTILUS` referral to the account's public L1 address
+//! during execution-client startup. Application failures log a warning and do not block trading.
+//! Robinhood Testnet does not apply a referral. See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
+//! for attribution and revocation details.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -61,6 +69,9 @@
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 
 pub mod common;
 pub mod config;
@@ -71,5 +82,10 @@ pub mod http;
 pub mod signing;
 pub mod websocket;
 
+pub(crate) mod book;
+
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(test)]
+mod tests;

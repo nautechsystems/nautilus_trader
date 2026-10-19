@@ -21,12 +21,12 @@ use crate::{
     events::fee_protocol_collect::FeeProtocolCollectEvent,
     hypersync::{
         HypersyncLog,
-        helpers::{
+        log::{
             extract_address_from_topic, extract_block_number, extract_log_index,
             extract_transaction_hash, extract_transaction_index, validate_event_signature_hash,
         },
     },
-    rpc::helpers as rpc_helpers,
+    rpc::log as rpc_log,
 };
 
 const FEE_PROTOCOL_COLLECT_EVENT_SIGNATURE_HASH: &str =
@@ -111,16 +111,16 @@ pub fn parse_fee_protocol_collect_event_rpc(
     dex: SharedDex,
     log: &RpcLog,
 ) -> anyhow::Result<FeeProtocolCollectEvent> {
-    rpc_helpers::validate_event_signature(
+    rpc_log::validate_event_signature(
         log,
         FEE_PROTOCOL_COLLECT_EVENT_SIGNATURE_HASH,
         "CollectProtocol",
     )?;
 
-    let sender = rpc_helpers::extract_address_from_topic(log, 1, "sender")?;
-    let recipient = rpc_helpers::extract_address_from_topic(log, 2, "recipient")?;
+    let sender = rpc_log::extract_address_from_topic(log, 1, "sender")?;
+    let recipient = rpc_log::extract_address_from_topic(log, 2, "recipient")?;
 
-    let data_bytes = rpc_helpers::extract_data_bytes(log)?;
+    let data_bytes = rpc_log::extract_data_bytes(log)?;
 
     // Validate the data contains 2 parameters of 32 bytes each
     if data_bytes.len() < 2 * 32 {
@@ -132,15 +132,15 @@ pub fn parse_fee_protocol_collect_event_rpc(
         Err(e) => anyhow::bail!("Failed to decode CollectProtocol event data: {e}"),
     };
 
-    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_address = rpc_log::extract_address(log)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(FeeProtocolCollectEvent::new(
         dex,
         pool_identifier,
-        rpc_helpers::extract_block_number(log)?,
-        rpc_helpers::extract_transaction_hash(log)?,
-        rpc_helpers::extract_transaction_index(log)?,
-        rpc_helpers::extract_log_index(log)?,
+        rpc_log::extract_block_number(log)?,
+        rpc_log::extract_transaction_hash(log)?,
+        rpc_log::extract_transaction_index(log)?,
+        rpc_log::extract_log_index(log)?,
         sender,
         recipient,
         decoded.amount0,
@@ -150,6 +150,8 @@ pub fn parse_fee_protocol_collect_event_rpc(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use rstest::*;
     use serde_json::json;
 
@@ -207,7 +209,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_fee_protocol_collect_event_hypersync(hypersync_log: HypersyncLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_fee_protocol_collect_event_hypersync(dex, &hypersync_log).unwrap();
 
         assert_eq!(
@@ -231,7 +233,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_fee_protocol_collect_event_rpc(rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event = parse_fee_protocol_collect_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(
@@ -253,9 +255,9 @@ mod tests {
 
     #[rstest]
     fn test_hypersync_rpc_match(hypersync_log: HypersyncLog, rpc_log: RpcLog) {
-        let dex = arbitrum::UNISWAP_V3.dex.clone();
+        let dex = Arc::clone(&arbitrum::UNISWAP_V3.dex);
         let event_hypersync =
-            parse_fee_protocol_collect_event_hypersync(dex.clone(), &hypersync_log).unwrap();
+            parse_fee_protocol_collect_event_hypersync(Arc::clone(&dex), &hypersync_log).unwrap();
         let event_rpc = parse_fee_protocol_collect_event_rpc(dex, &rpc_log).unwrap();
 
         assert_eq!(event_hypersync.pool_identifier, event_rpc.pool_identifier);

@@ -1,0 +1,96 @@
+[
+  {
+    "type": "trade",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "price": 100000000.123456789,
+    "amount": 100000000.123456789,
+    "side": "buy",
+    "timestamp": "2019-10-23T10:32:49.669Z",
+    "localTimestamp": "2019-10-23T10:32:49.740Z"
+  },
+  {
+    "type": "trade",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "price": 100000000.123456788,
+    "amount": 100000000.123456788,
+    "side": "buy",
+    "timestamp": "2019-10-23T10:32:49.669Z",
+    "localTimestamp": "2019-10-23T10:32:49.740Z"
+  },
+  {
+    "type": "trade",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "price": 100000000.005000001,
+    "amount": 100000000.005000001,
+    "side": "sell",
+    "timestamp": "2019-10-23T10:32:49.669Z",
+    "localTimestamp": "2019-10-23T10:32:49.740Z"
+  },
+  {
+    "type": "book_change",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "isSnapshot": false,
+    "bids": [{"price": 100000000.123456789, "amount": 100000000.123456789}],
+    "asks": [{"price": 100000000.123456788, "amount": 100000000.123456788}],
+    "timestamp": "2019-10-23T11:29:53.469Z",
+    "localTimestamp": "2019-10-23T11:29:53.469Z"
+  },
+  {
+    "type": "derivative_ticker",
+    "symbol": "BTC-PERPETUAL",
+    "exchange": "deribit",
+    "fundingRate": 0.30000000000000004,
+    "indexPrice": 100000000.123456789,
+    "markPrice": 100000000.123456788,
+    "timestamp": "2019-10-23T11:34:29.302Z",
+    "localTimestamp": "2019-10-23T11:34:29.416Z"
+  },
+  {
+    "type": "book_change",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "isSnapshot": false,
+    "bids": [{"price": 7984.5, "amount": 1.1102230246251565e-16}],
+    "asks": [],
+    "timestamp": "2019-10-23T11:29:53.469Z",
+    "localTimestamp": "2019-10-23T11:29:53.469Z"
+  },
+  {
+    "type": "trade",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "price": 7996.50,
+    "amount": 50.0,
+    "side": "sell",
+    "timestamp": "2019-10-23T10:32:49.669Z",
+    "localTimestamp": "2019-10-23T10:32:49.740Z"
+  },
+  {
+    "type": "trade",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "price": 7996.5,
+    "amount": 50,
+    "side": "sell",
+    "timestamp": "2019-10-23T10:32:49.669Z",
+    "localTimestamp": "2019-10-23T10:32:49.740Z"
+  },
+  {
+    "type": "book_change",
+    "symbol": "XBTUSD",
+    "exchange": "bitmex",
+    "isSnapshot": false,
+    "bids": [
+      {"price": 7984.5, "amount": 0.129},
+      {"price": 7984.0, "amount": 2.9999999999999996},
+      {"price": 1e20, "amount": 1}
+    ],
+    "asks": [],
+    "timestamp": "2019-10-23T11:29:53.469Z",
+    "localTimestamp": "2019-10-23T11:29:53.469Z"
+  }
+]

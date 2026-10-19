@@ -1,16 +1,18 @@
 # OrderFillVoided
 
-`OrderFillVoided` records that all or part of a previously reported fill no longer has economic
-effect. The `ExecutionEngine` applies the correction to the order and positions, then refreshes
-portfolio position and PnL caches before publishing it on the `MessageBus`. Venue adapters refresh
+`OrderFillVoided` records that all or part of a previously reported fill no longer has economic effect. The
+`ExecutionEngine` applies each successful correction to the order.
+
+When the referenced fill exists locally, the engine also rebuilds each affected position and
+refreshes portfolio position and PnL caches before publishing the correction. Venue adapters refresh
 account balances from their authoritative account endpoints.
 
-The correction updates cached position aggregates in place. It does not synthesize
-`PositionChanged` or `PositionClosed`; strategies receive `OrderFillVoided` after the corrected
-cache state is available.
+Strategies receive `OrderFillVoided` after the corrected cache state is available. When a cached position
+changes, the engine then publishes `PositionChanged` if it stays open or `PositionClosed` if it is closed. A
+successful order-only correction does not produce a position event.
 
-A correction is not an opposite-side fill. It retains the original trade identity so replay,
-reconciliation, and strategy audit history describe the venue action directly.
+A **correction** is not an opposite-side fill. It keeps the original trade identity so replay, reconciliation,
+and strategy audit history describe the venue action directly.
 
 Handler: `on_order_fill_voided`.
 
@@ -26,54 +28,70 @@ interprets the correction:
 
 | Fill is local | `is_reopened` | Outcome                                                               |
 | ------------- | ------------- | --------------------------------------------------------------------- |
-| Yes           | `false`       | Apply; corrected quantity does not become working.                    |
-| Yes           | `true`        | Apply; corrected quantity becomes working, subject to terminal rules. |
-| No            | `false`       | Apply; whole order becomes terminal with zero leaves.                 |
+| Yes           | `false`       | Apply. Corrected quantity does not become working.                    |
+| Yes           | `true`        | Apply. Corrected quantity becomes working, subject to terminal rules. |
+| No            | `false`       | Apply. Whole order becomes terminal with zero leaves.                 |
 | No            | `true`        | Reject.                                                               |
 
-An unapplied non-reopened correction is an order-level terminal assertion. This remains true when
-`voided_qty` is less than the order quantity: the value records the ineffective fill quantity, not
-working leaves. The event must match the order identity, cannot exceed the order quantity, and cannot
-void a non-zero commission. Nautilus does not reverse position or account exposure without a local
-fill.
+An unapplied non-reopened correction is an **order-level terminal assertion**. This stays true when
+`voided_qty` is less than the order quantity: the value records the ineffective fill quantity, not working
+leaves.
+
+For an unapplied non-reopened correction:
+
+- The event must match the order identity.
+- `voided_qty` cannot exceed the order quantity.
+- The event cannot void a non-zero commission.
+- Nautilus does not reverse position or account exposure without a local fill.
 
 ### Adapter requirements
 
 - Publish and persist the referenced `OrderFilled` before a reopened correction or any partial
-  correction that should leave the order executable. Replay enforces the same ordering as live processing.
-- Emit a correction without its referenced fill only when the whole order is authoritatively terminal.
+  correction that should leave the order executable. Replay enforces the same ordering as live
+  processing.
+- Emit a correction without its referenced fill only when the whole order is authoritatively
+  terminal.
 - Do not rely on a later working `OrderStatusReport` to repair event ordering. Continuous
   reconciliation ignores fill decreases in working reports without explicit void evidence,
   `VOIDED` does not reopen, and snapshot reconciliation derives corrections only from retained
   fills.
+- Report `OrderUpdated.quantity` gross (see [OrderUpdated](order_updated.md#contract)): inclusive of filled
+  and non-reopened voided quantity. Nautilus already excludes the non-reopened voided quantity from leaves. An
+  adapter that also nets it out of `quantity` subtracts it twice. The exception is a reconciliation update
+  that closes the order as `FILLED`, whose `quantity` is the effective `filled_qty`.
 
 ### Status behavior with a local fill
 
 The corrected quantity does not become executable by default:
 
 - A filled order becomes terminal `VOIDED`, even when some effective filled quantity survives.
-- A partially filled order preserves the remainder that was already working. Its status derives
-  from the surviving effective fills and its leaves exclude the non-reopened void quantity.
+- A partially filled order preserves the remainder that was already working. Its status derives from the
+  surviving effective fills and its leaves exclude the non-reopened void quantity. This exclusion is preserved
+  across subsequent [`OrderUpdated`](order_updated.md) events. Nautilus always derives leaves as
+  `max(quantity - filled_qty - non_reopened_voided_qty, 0)`. Thus, a later quantity change does not put the
+  voided portion back into leaves.
 - A canceled or expired order keeps its terminal status.
-- A correction with `is_reopened=true` also returns the corrected quantity to working leaves. The
-  order derives `ACCEPTED` when no effective fill remains or `PARTIALLY_FILLED` when some quantity
+- A correction with `is_reopened=true` also returns the corrected quantity to working leaves. The order
+  derives `ACCEPTED` when the effective fill quantity is zero or `PARTIALLY_FILLED` when some quantity
   survives.
 
 `VOIDED` is terminal regardless of the correction path. Later fills, cancels, updates, corrections,
 and working status reports do not reopen it.
 
-:::note
+:::warning[Upgrade consumers before they read corrected data]
 The schemas append this event and status without changing existing records. Older v2 readers do not
 recognize the new values, so upgrade consumers before they read corrected streams or catalog data.
 :::
 
 ## Fields
 
-Beyond the [common order event fields](index.md#common-order-event-fields), `OrderFillVoided`
-carries:
+Beyond the [common Python order event fields](index.md#common-python-order-event-fields),
+`OrderFillVoided` carries:
 
 | Field               | Python type                | Required/default | Description                                             |
 | ------------------- | -------------------------- | ---------------- | ------------------------------------------------------- |
+| `venue_order_id`    | `VenueOrderId`             | Required         | Venue-assigned order identifier.                        |
+| `account_id`        | `AccountId`                | Required         | Account associated with the original fill.              |
 | `correction_id`     | `str`                      | Required         | Identity for this correction revision.                  |
 | `trade_id`          | `TradeId`                  | Required         | Original venue trade ID.                                |
 | `voided_qty`        | `Quantity`                 | Required         | Cumulative ineffective quantity for the trade.          |
@@ -87,6 +105,7 @@ carries:
 | `reason`            | `str` or `None`            | `None`           | Venue or reconciliation reason for the correction.      |
 | `info`              | `dict[str, str]` or `None` | `None`           | Additional venue correction metadata.                   |
 | `is_reopened`       | `bool`                     | `False`          | Whether the venue proves the order is executable again. |
+| `reconciliation`    | `bool`                     | Required         | If generated during reconciliation.                     |
 
 ## Example
 
@@ -99,6 +118,6 @@ def on_order_fill_voided(self, event: OrderFillVoided) -> None:
 
 ## Related guides
 
-- [Execution](../execution.md) - Correction application and publication order.
+- [Execution](../execution/) - Correction application and publication order.
 - [OrderFilled](order_filled.md) - The original fill event.
 - [Orders](../orders/) - Order status and state flow.

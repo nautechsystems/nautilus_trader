@@ -28,23 +28,28 @@
 //! - `EURUSD-PERP` (fx, qty=100, ~$1.15)
 //!
 //! Required credential environment variables:
-//! - `AX_API_KEY`.
-//! - `AX_API_SECRET`.
+//! - `AX_API_KEY`
+//! - `AX_API_SECRET`
 
 use nautilus_architect_ax::{
     common::{consts::AX_CLIENT_ID, enums::AxEnvironment},
-    config::{AxDataClientConfig, AxExecClientConfig},
+    config::{AxDataClientConfig, AxExecutionClientConfig},
     factories::{AxDataClientFactory, AxExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
+    enums::TimeInForce,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const AX_ENVIRONMENT: AxEnvironment = AxEnvironment::Sandbox;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "AX-001";
@@ -68,8 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = AxExecClientConfig {
-        trader_id,
+    let exec_config = AxExecutionClientConfig {
         account_id,
         environment: AX_ENVIRONMENT,
         ..Default::default()
@@ -77,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = AxDataClientFactory::new();
     let exec_factory = AxExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -89,6 +93,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
+        // Unbounded replay pulls the account's full order history into the cache
+        .with_reconciliation_lookback_mins(3 * 24 * 60)
         .with_delay_post_stop_secs(5)
         .build()?;
 
@@ -104,17 +110,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .open_position_on_start_qty(order_qty.as_decimal())
+        .open_position_time_in_force(TimeInForce::Ioc)
         .tob_offset_ticks(1)
         .use_post_only(true)
+        .subscribe_book(true)
+        .modify_orders_to_maintain_tob_offset(true)
+        .cancel_orders_on_stop(true)
+        .close_positions_on_stop(true)
         .reduce_only_on_stop(false)
-        .log_data(false)
+        // .log_data(true)
         .build()?;
 
     let tester = ExecTester::new(tester_config);

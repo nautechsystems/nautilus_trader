@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-betfair"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,6 +20,7 @@ name = "nautilus_betfair"
 crate-type = ["rlib"]
 
 [features]
+arrow = ["dep:arrow", "nautilus-serialization"]
 examples = ["nautilus-live/node", "nautilus-trading/examples"]
 extension-module = [
   "nautilus-common/extension-module",
@@ -33,7 +33,7 @@ extension-module = [
 ]
 high-precision = [
   "nautilus-model/high-precision",
-  "nautilus-serialization/high-precision",
+  "nautilus-serialization?/high-precision",
 ]
 python = [
   "dep:nautilus-system",
@@ -46,11 +46,14 @@ python = [
 ]
 
 [package.metadata.cargo-machete]
-ignored = ["arrow"] # Used by `custom_data` macro expansion
+ignored = [
+  "arrow", # Used by `custom_data` macro expansion
+  "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
+]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["high-precision"]
+features = ["arrow", "high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -59,20 +62,21 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-persistence-macros = { workspace = true }
-nautilus-serialization = { workspace = true, features = ["arrow"] }
+nautilus-serialization = { workspace = true, features = [
+  "arrow",
+], optional = true }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-arrow = { workspace = true } # Used by `custom_data` macro expansion (cargo-machete false positive)
 async-trait = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 bzip2 = { workspace = true }
-chrono = { workspace = true }
 flate2 = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -84,25 +88,36 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+arrow = { workspace = true, optional = true } # Used by `custom_data` macro expansion (cargo-machete false positive)
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-backtest = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-live = { workspace = true, features = ["node"] }
-nautilus-portfolio = { workspace = true }
-nautilus-risk = { workspace = true }
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
 nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
+criterion = { workspace = true }
 dotenvy = { workspace = true }
+futures-util = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+rust_decimal_macros = { workspace = true }
+rustls = { workspace = true }
+tokio = { workspace = true, features = ["full", "test-util"] }
+tokio-rustls = { workspace = true }
 toml = { workspace = true }
+webpki-roots = { workspace = true }
+
+[[bench]]
+name = "fill_tracker_criterion"
+path = "benches/fill_tracker_criterion.rs"
+harness = false
 
 # Run with `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
 [[example]]
@@ -131,7 +146,11 @@ path = "examples/betfair_backtest.rs"
 required-features = ["examples"]
 doc = false
 
+# Mainnet market-data validation; requires Betfair credentials and a live application key.
+# Run with `cargo test --package nautilus-betfair --features examples --test betfair-book-stress -- --timeout 10 --rounds 10`
 [[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]
+name = "betfair-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

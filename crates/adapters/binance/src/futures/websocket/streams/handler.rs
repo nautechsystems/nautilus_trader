@@ -49,6 +49,9 @@ use super::{
 use crate::common::{
     consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION,
     enums::{BinanceWsEventType, BinanceWsMethod},
+    websocket::{
+        PendingSubscriptionRequest, PendingSubscriptionRequests, reset_requests_after_reconnect,
+    },
 };
 
 /// Handler for Binance Futures WebSocket JSON streams.
@@ -66,7 +69,8 @@ pub struct BinanceFuturesDataWsFeedHandler {
     inner: Option<WebSocketClient>,
     subscriptions_state: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
-    pending_requests: AHashMap<u64, Vec<String>>,
+    pending_requests: PendingSubscriptionRequests,
+    unsubscribe_correlations: AHashMap<u64, (u64, Vec<String>)>,
 }
 
 impl Debug for BinanceFuturesDataWsFeedHandler {
@@ -95,7 +99,8 @@ impl BinanceFuturesDataWsFeedHandler {
             inner: None,
             subscriptions_state,
             request_id_counter,
-            pending_requests: AHashMap::new(),
+            pending_requests: PendingSubscriptionRequests::default(),
+            unsubscribe_correlations: AHashMap::new(),
         }
     }
 
@@ -138,13 +143,20 @@ impl BinanceFuturesDataWsFeedHandler {
             BinanceFuturesWsStreamsCommand::Subscribe { streams } => {
                 self.send_subscribe(streams).await;
             }
-            BinanceFuturesWsStreamsCommand::Unsubscribe { streams } => {
-                self.send_unsubscribe(streams).await;
+            BinanceFuturesWsStreamsCommand::Unsubscribe {
+                streams,
+                correlation,
+            } => {
+                self.send_unsubscribe(streams, correlation).await;
             }
         }
     }
 
     async fn send_subscribe(&mut self, streams: Vec<String>) {
+        for stream in &streams {
+            self.subscriptions_state.mark_subscribe(stream);
+        }
+
         let Some(client) = &self.inner else {
             log::warn!("Cannot subscribe: no client connected");
             return;
@@ -152,15 +164,9 @@ impl BinanceFuturesDataWsFeedHandler {
 
         let request_id = self.request_id_counter.fetch_add(1, Ordering::Relaxed);
 
-        self.pending_requests.insert(request_id, streams.clone());
-
-        for stream in &streams {
-            self.subscriptions_state.mark_subscribe(stream);
-        }
-
         let request = BinanceFuturesWsSubscribeRequest {
             method: BinanceWsMethod::Subscribe,
-            params: streams,
+            params: streams.clone(),
             id: request_id,
         };
 
@@ -172,21 +178,38 @@ impl BinanceFuturesDataWsFeedHandler {
             }
         };
 
+        self.pending_requests
+            .insert(request_id, PendingSubscriptionRequest::subscribe(streams));
+
         if let Err(e) = client
             .send_text(json, Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
             .await
         {
+            if let Some(request) = self.pending_requests.take(request_id) {
+                request.mark_failure(&self.subscriptions_state);
+            }
             log::error!("Failed to send subscribe request: {e}");
         }
     }
 
-    async fn send_unsubscribe(&self, streams: Vec<String>) {
+    async fn send_unsubscribe(&mut self, streams: Vec<String>, correlation: Option<u64>) {
+        for stream in &streams {
+            self.subscriptions_state.mark_unsubscribe(stream);
+        }
+
+        let request_id = self.request_id_counter.fetch_add(1, Ordering::Relaxed);
+
+        // Record the correlation even when the wire send cannot happen: the drain it
+        // protects must stay resolvable, and only a reconnect can abandon it
+        if let Some(correlation) = correlation {
+            self.unsubscribe_correlations
+                .insert(request_id, (correlation, streams.clone()));
+        }
+
         let Some(client) = &self.inner else {
             log::warn!("Cannot unsubscribe: no client connected");
             return;
         };
-
-        let request_id = self.request_id_counter.fetch_add(1, Ordering::Relaxed);
 
         let request = BinanceFuturesWsSubscribeRequest {
             method: BinanceWsMethod::Unsubscribe,
@@ -202,16 +225,15 @@ impl BinanceFuturesDataWsFeedHandler {
             }
         };
 
+        self.pending_requests
+            .insert(request_id, PendingSubscriptionRequest::unsubscribe(streams));
+
         if let Err(e) = client
             .send_text(json, Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
             .await
         {
+            self.pending_requests.take(request_id);
             log::error!("Failed to send unsubscribe request: {e}");
-        }
-
-        for stream in &streams {
-            self.subscriptions_state.mark_unsubscribe(stream);
-            self.subscriptions_state.confirm_unsubscribe(stream);
         }
     }
 
@@ -219,8 +241,15 @@ impl BinanceFuturesDataWsFeedHandler {
         if let Ok(text) = std::str::from_utf8(&raw)
             && text == RECONNECTED
         {
+            let abandoned = self
+                .unsubscribe_correlations
+                .values()
+                .map(|(correlation, _)| *correlation)
+                .collect();
+            self.unsubscribe_correlations.clear();
+            reset_requests_after_reconnect(&mut self.pending_requests, &self.subscriptions_state);
             log::debug!("WebSocket reconnected signal received");
-            return Some(BinanceFuturesWsStreamsMessage::Reconnected);
+            return Some(BinanceFuturesWsStreamsMessage::Reconnected(abandoned));
         }
 
         let json: serde_json::Value = match serde_json::from_slice(&raw) {
@@ -232,8 +261,7 @@ impl BinanceFuturesDataWsFeedHandler {
         };
 
         if json.get("result").is_some() || json.get("id").is_some() {
-            self.handle_subscription_response(&json);
-            return None;
+            return self.handle_subscription_response(&json);
         }
 
         if let Some(code) = json.get("code")
@@ -252,42 +280,55 @@ impl BinanceFuturesDataWsFeedHandler {
         self.handle_stream_data(&json)
     }
 
-    fn handle_subscription_response(&mut self, json: &serde_json::Value) {
-        if let Ok(response) =
-            serde_json::from_value::<BinanceFuturesWsSubscribeResponse>(json.clone())
-        {
-            if let Some(streams) = self.pending_requests.remove(&response.id) {
-                if response.result.is_none() {
-                    for stream in &streams {
-                        self.subscriptions_state.confirm_subscribe(stream);
-                    }
-                    log::debug!("Subscription confirmed: streams={streams:?}");
-                } else {
-                    for stream in &streams {
-                        self.subscriptions_state.mark_failure(stream);
-                    }
-                    log::warn!(
-                        "Subscription failed: streams={streams:?}, result={:?}",
-                        response.result
-                    );
-                }
-            }
-        } else if let Ok(error) =
-            serde_json::from_value::<BinanceFuturesWsErrorResponse>(json.clone())
-        {
+    fn handle_subscription_response(
+        &mut self,
+        json: &serde_json::Value,
+    ) -> Option<BinanceFuturesWsStreamsMessage> {
+        if let Ok(error) = serde_json::from_value::<BinanceFuturesWsErrorResponse>(json.clone()) {
             if let Some(id) = error.id
-                && let Some(streams) = self.pending_requests.remove(&id)
+                && let Some(request) = self.pending_requests.take(id)
             {
-                for stream in &streams {
-                    self.subscriptions_state.mark_failure(stream);
-                }
+                // A rejected unsubscribe yields no confirmation; the drain fails
+                // closed, and the ledger entry survives so a reconnect can abandon it
+                request.mark_failure(&self.subscriptions_state);
             }
             log::warn!(
                 "WebSocket error response: code={}, msg={}",
                 error.code,
                 error.msg
             );
+        } else if let Ok(response) =
+            serde_json::from_value::<BinanceFuturesWsSubscribeResponse>(json.clone())
+        {
+            if response.result.is_none() {
+                if let Some(request) = self.pending_requests.take(response.id) {
+                    request.confirm(&self.subscriptions_state);
+                    log::debug!("Subscription request confirmed: request={request:?}");
+                }
+
+                // The venue confirmed the unsubscribe even when a superseding
+                // resubscribe dropped the local request, so resolve its drain from
+                // the ledger regardless
+                if let Some((correlation, streams)) =
+                    self.unsubscribe_correlations.remove(&response.id)
+                {
+                    return Some(BinanceFuturesWsStreamsMessage::Unsubscribed {
+                        streams,
+                        correlation: Some(correlation),
+                    });
+                }
+            } else if let Some(request) = self.pending_requests.take(response.id) {
+                // A rejected unsubscribe yields no confirmation; keep the ledger
+                // entry so a reconnect can still abandon the drain
+                request.mark_failure(&self.subscriptions_state);
+                log::warn!(
+                    "Subscription request failed: request={request:?}, result={:?}",
+                    response.result
+                );
+            }
         }
+
+        None
     }
 
     fn handle_stream_data(
@@ -438,7 +479,7 @@ impl BinanceFuturesDataWsFeedHandler {
                 if let Ok(msg) =
                     serde_json::from_value::<BinanceFuturesListenKeyExpiredMsg>(json.clone())
                 {
-                    log::warn!("Listen key expired at {}", msg.event_time);
+                    log::debug!("Listen key expired at {}", msg.event_time);
                 }
                 Some(BinanceFuturesWsStreamsMessage::ListenKeyExpired)
             }
@@ -447,5 +488,150 @@ impl BinanceFuturesDataWsFeedHandler {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscription_intent_is_preserved_without_active_client() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(1));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+        let subscribe_topic = "btcusdt@aggTrade";
+        let unsubscribe_topic = "ethusdt@aggTrade";
+        subscriptions.mark_subscribe(unsubscribe_topic);
+        subscriptions.confirm_subscribe(unsubscribe_topic);
+
+        let mut handler = BinanceFuturesDataWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            subscriptions.clone(),
+            request_id_counter,
+        );
+
+        handler
+            .send_subscribe(vec![subscribe_topic.to_string()])
+            .await;
+        handler
+            .send_unsubscribe(vec![unsubscribe_topic.to_string()], None)
+            .await;
+
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            [subscribe_topic.to_string()]
+        );
+        assert_eq!(
+            subscriptions.pending_unsubscribe_topics(),
+            [unsubscribe_topic.to_string()]
+        );
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(handler.pending_requests.len(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_correlated_unsubscribe_without_client_is_abandoned_on_reconnect() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(1));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+
+        let mut handler = BinanceFuturesDataWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            subscriptions,
+            request_id_counter,
+        );
+
+        // Without a connected client the wire send cannot happen, but the correlation
+        // must survive so the reconnect abandons the drain it protects
+        handler
+            .send_unsubscribe(vec!["btcusdt@depth5@100ms".to_string()], Some(7))
+            .await;
+
+        let msg = handler
+            .handle_raw_message(RECONNECTED.as_bytes().to_vec())
+            .await;
+        let Some(BinanceFuturesWsStreamsMessage::Reconnected(abandoned)) = msg else {
+            panic!("expected Reconnected");
+        };
+        assert_eq!(abandoned, vec![7]);
+        assert!(out_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_error_responses_preserve_subscription_intent() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(3));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+        let subscribe_topic = "btcusdt@aggTrade";
+        let unsubscribe_topic = "ethusdt@aggTrade";
+        subscriptions.mark_subscribe(subscribe_topic);
+        subscriptions.mark_subscribe(unsubscribe_topic);
+        subscriptions.confirm_subscribe(unsubscribe_topic);
+        subscriptions.mark_unsubscribe(unsubscribe_topic);
+
+        let mut handler = BinanceFuturesDataWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            subscriptions.clone(),
+            request_id_counter,
+        );
+        handler.pending_requests.insert(
+            1,
+            PendingSubscriptionRequest::subscribe(vec![subscribe_topic.to_string()]),
+        );
+        handler.pending_requests.insert(
+            2,
+            PendingSubscriptionRequest::unsubscribe(vec![unsubscribe_topic.to_string()]),
+        );
+        let error = serde_json::json!({"code": 2, "msg": "Invalid request", "id": 1});
+
+        handler.handle_subscription_response(&error);
+
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            [subscribe_topic.to_string()]
+        );
+        assert_eq!(
+            subscriptions.pending_unsubscribe_topics(),
+            [unsubscribe_topic.to_string()]
+        );
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(handler.pending_requests.len(), 1);
+
+        let error = serde_json::json!({"code": 2, "msg": "Invalid request", "id": 2});
+        handler.handle_subscription_response(&error);
+
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            [subscribe_topic.to_string()]
+        );
+        assert_eq!(
+            subscriptions.pending_unsubscribe_topics(),
+            [unsubscribe_topic.to_string()]
+        );
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(handler.pending_requests.len(), 0);
     }
 }

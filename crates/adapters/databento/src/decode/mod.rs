@@ -56,6 +56,7 @@ pub use instruments::{
     decode_equity, decode_futures_contract, decode_futures_spread, decode_instrument_def_msg,
     decode_option_contract, decode_option_spread,
 };
+pub(crate) use market_data::MboDeltaBuffer;
 pub use market_data::{
     decode_bar_type, decode_bbo_msg, decode_cbbo_msg, decode_cmbp1_msg, decode_mbo_msg,
     decode_mbp1_msg, decode_mbp10_msg, decode_ohlcv_msg, decode_record, decode_status_msg,

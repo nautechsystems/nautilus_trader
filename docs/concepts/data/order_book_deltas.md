@@ -1,14 +1,14 @@
 # OrderBookDeltas
 
-`OrderBookDeltas` groups a non‑empty batch of `OrderBookDelta` records from one logical book event.
-It reduces per‑message overhead when an adapter receives or produces several changes at once.
+`OrderBookDeltas` groups a non-empty batch of `OrderBookDelta` records from one logical book event.
+It reduces per-message overhead when an adapter receives or produces several changes at once.
 
 ## Fields
 
 | Field           | Rust type             | Python type            | Required/default | Notes                                |
 | --------------- | --------------------- | ---------------------- | ---------------- | ------------------------------------ |
 | `instrument_id` | `InstrumentId`        | `InstrumentId`         | Required         | Instrument whose book is changing.   |
-| `deltas`        | `Vec<OrderBookDelta>` | `list[OrderBookDelta]` | Required         | Non‑empty batch of deltas.           |
+| `deltas`        | `Vec<OrderBookDelta>` | `list[OrderBookDelta]` | Required         | Non-empty batch of deltas.           |
 | `flags`         | `u8`                  | `int`                  | From last delta  | Last delta flags.                    |
 | `sequence`      | `u64`                 | `int`                  | From last delta  | Last delta sequence number.          |
 | `ts_event`      | `UnixNanos`           | `int`                  | From last delta  | Last delta event timestamp.          |
@@ -17,8 +17,10 @@ It reduces per‑message overhead when an adapter receives or produces several c
 ## Behavior
 
 - The batch must contain at least one delta.
+- Each delta's `instrument_id` must match the batch `instrument_id`.
 - The batch metadata mirrors the final delta.
-- The final delta should carry `F_LAST` when it closes a logical event group.
+- The final delta should carry `F_LAST` when it closes a logical event group. See
+  [Delta flags and event boundaries](index.md#delta-flags-and-event-boundaries).
 - Snapshot batches usually begin with a `CLEAR` delta and end with `F_SNAPSHOT | F_LAST`.
 
 ## Example
@@ -59,12 +61,12 @@ let deltas = OrderBookDeltas::new(instrument_id, vec![bid, ask]);
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model import BookAction
+from nautilus_trader.model import BookOrder
+from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import RecordFlag
 
 instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 bid = OrderBookDelta(

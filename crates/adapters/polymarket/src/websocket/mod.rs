@@ -22,3 +22,7 @@ pub mod handler;
 pub mod messages;
 pub mod parse;
 pub mod pool;
+
+pub(crate) const MARKET_STREAMS_ENDPOINT: &str = "polymarket-market-streams";
+pub(crate) const POLYBOLT_STREAMS_ENDPOINT: &str = "polymarket-polybolt-streams";
+pub(crate) const USER_STREAMS_ENDPOINT: &str = "polymarket-user-streams";

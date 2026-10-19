@@ -370,7 +370,10 @@ impl NautilusKernelBuilder {
             risk_engine: self.risk_engine,
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
+            #[cfg(feature = "streaming")]
             streaming: None,
+            #[cfg(feature = "streaming")]
+            catalogs: Vec::new(),
         };
 
         let kernel = NautilusKernel::new_with_dependencies(
@@ -421,7 +424,7 @@ mod tests {
     use std::{
         cell::Cell,
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicBool, Ordering},
         },
     };
@@ -439,15 +442,17 @@ mod tests {
     };
     use nautilus_core::UnixNanos;
     use nautilus_execution::engine::SnapshotAnchorer;
+    #[cfg(feature = "live")]
+    use nautilus_model::identifiers::ComponentId;
     use nautilus_model::{
         accounts::AccountAny,
         data::{
-            Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
-            greeks::{GreeksData, YieldCurveData},
+            Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
+            greeks::{GreeksData, YieldCurve},
         },
         events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
         identifiers::{
-            AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+            AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
             TraderId, VenueOrderId,
         },
         instruments::{InstrumentAny, SyntheticInstrument},
@@ -456,6 +461,7 @@ mod tests {
         position::Position,
         types::{Currency, Money},
     };
+    use parking_lot::Mutex;
     use rstest::*;
     use ustr::Ustr;
 
@@ -567,7 +573,7 @@ mod tests {
 
         nautilus_common::msgbus::publish_quote("data.quotes.TEST".into(), &quote);
 
-        let publications = publications.lock().unwrap();
+        let publications = publications.lock();
         assert_eq!(publications.len(), 1);
         assert_eq!(publications[0].topic, "data.quotes.TEST");
         assert_eq!(
@@ -671,7 +677,7 @@ mod tests {
     #[cfg(feature = "live")]
     #[rstest]
     fn test_builder_with_clock_factory_drives_kernel_and_component_clocks() {
-        use nautilus_common::clock::TestClock;
+        use nautilus_common::clock::VirtualClock;
 
         let calls = Rc::new(Cell::new(0usize));
         let calls_in_closure = calls.clone();
@@ -683,7 +689,7 @@ mod tests {
         )
         .with_clock_factory(move || {
             calls_in_closure.set(calls_in_closure.get() + 1);
-            Rc::new(RefCell::new(TestClock::new())) as Rc<RefCell<dyn Clock>>
+            Rc::new(RefCell::new(VirtualClock::new())) as Rc<RefCell<dyn Clock>>
         })
         .build()
         .expect("kernel builds with clock factory");
@@ -694,8 +700,8 @@ mod tests {
             "kernel clock must consume exactly one factory call"
         );
         assert!(
-            (*kernel.clock().borrow()).as_any().is::<TestClock>(),
-            "kernel clock must be the factory-produced TestClock"
+            (*kernel.clock().borrow()).as_any().is::<VirtualClock>(),
+            "kernel clock must be the factory-produced VirtualClock"
         );
 
         let c1 = kernel
@@ -712,8 +718,8 @@ mod tests {
             3,
             "factory must back kernel clock and each component clock"
         );
-        assert!((*c1.borrow()).as_any().is::<TestClock>());
-        assert!((*c2.borrow()).as_any().is::<TestClock>());
+        assert!((*c1.borrow()).as_any().is::<VirtualClock>());
+        assert!((*c2.borrow()).as_any().is::<VirtualClock>());
     }
 
     #[cfg(feature = "live")]
@@ -879,13 +885,10 @@ mod tests {
         }
 
         fn publish(&self, message: BusMessage) {
-            self.publications
-                .lock()
-                .unwrap()
-                .push(CapturedEgressMessage {
-                    topic: message.topic.to_string(),
-                    payload: message.payload,
-                });
+            self.publications.lock().push(CapturedEgressMessage {
+                topic: message.topic.to_string(),
+                payload: message.payload,
+            });
         }
 
         fn close(&mut self) {
@@ -918,6 +921,12 @@ mod tests {
         }
 
         async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+            Ok(AHashMap::new())
+        }
+
+        async fn load_instrument_closes(
+            &self,
+        ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
             Ok(AHashMap::new())
         }
 
@@ -986,10 +995,7 @@ mod tests {
             Ok(None)
         }
 
-        fn load_actor(
-            &self,
-            _component_id: &ComponentId,
-        ) -> anyhow::Result<AHashMap<String, Bytes>> {
+        fn load_actor(&self, _actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
             Ok(AHashMap::new())
         }
 
@@ -1053,6 +1059,10 @@ mod tests {
             Ok(())
         }
 
+        fn add_instrument_close(&self, _close: &InstrumentClose) -> anyhow::Result<()> {
+            Ok(())
+        }
+
         fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
             Ok(())
         }
@@ -1109,11 +1119,11 @@ mod tests {
             Ok(())
         }
 
-        fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+        fn add_yield_curve(&self, _yield_curve: &YieldCurve) -> anyhow::Result<()> {
             Ok(())
         }
 
-        fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
+        fn delete_actor(&self, _actor_id: &ActorId) -> anyhow::Result<()> {
             Ok(())
         }
 
@@ -1155,7 +1165,7 @@ mod tests {
 
         fn update_actor(
             &self,
-            _component_id: &ComponentId,
+            _actor_id: &ActorId,
             _state: &AHashMap<String, Bytes>,
         ) -> anyhow::Result<()> {
             Ok(())

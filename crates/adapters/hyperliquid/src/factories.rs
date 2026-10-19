@@ -26,12 +26,12 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::{AccountId, ClientId, TraderId},
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
     common::consts::{HYPERLIQUID, HYPERLIQUID_VENUE},
-    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
     data::HyperliquidDataClient,
     execution::HyperliquidExecutionClient,
 };
@@ -42,7 +42,7 @@ impl ClientConfig for HyperliquidDataClientConfig {
     }
 }
 
-impl ClientConfig for HyperliquidExecClientConfig {
+impl ClientConfig for HyperliquidExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -52,10 +52,7 @@ impl ClientConfig for HyperliquidExecClientConfig {
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -109,52 +106,11 @@ impl DataClientFactory for HyperliquidDataClientFactory {
     }
 }
 
-/// Configuration for creating Hyperliquid execution clients via factory.
-///
-/// This wraps [`HyperliquidExecClientConfig`] with the additional trader and account
-/// identifiers required by the [`ExecutionClientCore`].
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
-)]
-pub struct HyperliquidExecFactoryConfig {
-    /// The trader ID for the execution client.
-    pub trader_id: TraderId,
-    /// The account ID for the execution client.
-    pub account_id: AccountId,
-    /// The underlying execution client configuration.
-    pub config: HyperliquidExecClientConfig,
-}
-
-#[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(HyperliquidExecFactoryConfig {
-    trader_id: TraderId,
-    account_id: AccountId,
-    config: HyperliquidExecClientConfig,
-});
-
-impl ClientConfig for HyperliquidExecFactoryConfig {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 /// Factory for creating Hyperliquid execution clients.
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -179,16 +135,18 @@ impl Default for HyperliquidExecutionClientFactory {
 impl ExecutionClientFactory for HyperliquidExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        _clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-        let factory_config = config
+        let hyperliquid_config = config
             .as_any()
-            .downcast_ref::<HyperliquidExecFactoryConfig>()
+            .downcast_ref::<HyperliquidExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for HyperliquidExecutionClientFactory. Expected HyperliquidExecFactoryConfig, was {config:?}",
+                    "Invalid config type for HyperliquidExecutionClientFactory. Expected HyperliquidExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -200,17 +158,17 @@ impl ExecutionClientFactory for HyperliquidExecutionClientFactory {
         let account_type = AccountType::Margin;
 
         let core = ExecutionClientCore::new(
-            factory_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *HYPERLIQUID_VENUE,
             oms_type,
-            factory_config.account_id,
+            hyperliquid_config.account_id,
             account_type,
             None,
             cache,
         );
 
-        let client = HyperliquidExecutionClient::new(core, factory_config.config)?;
+        let client = HyperliquidExecutionClient::new(core, hyperliquid_config)?;
         Ok(Box::new(client))
     }
 
@@ -219,7 +177,7 @@ impl ExecutionClientFactory for HyperliquidExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "HyperliquidExecFactoryConfig"
+        "HyperliquidExecutionClientConfig"
     }
 }
 
@@ -229,14 +187,14 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::VirtualClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     };
-    use nautilus_model::identifiers::{AccountId, TraderId};
+    use nautilus_model::identifiers::TraderId;
     use rstest::rstest;
 
     use super::*;
-    use crate::config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig};
+    use crate::config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig};
 
     #[rstest]
     fn test_hyperliquid_data_client_factory_creation() {
@@ -255,7 +213,7 @@ mod tests {
     fn test_hyperliquid_execution_client_factory_creation() {
         let factory = HyperliquidExecutionClientFactory::new();
         assert_eq!(factory.name(), HYPERLIQUID);
-        assert_eq!(factory.config_type(), "HyperliquidExecFactoryConfig");
+        assert_eq!(factory.config_type(), "HyperliquidExecutionClientConfig");
     }
 
     #[rstest]
@@ -276,19 +234,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_hyperliquid_exec_factory_config_implements_client_config() {
-        let config = HyperliquidExecFactoryConfig {
-            trader_id: TraderId::from("TRADER-001"),
-            account_id: AccountId::from("HYPERLIQUID-001"),
-            config: HyperliquidExecClientConfig::builder()
-                .private_key("test_private_key".to_string())
-                .build(),
-        };
+    fn test_hyperliquid_exec_client_config_implements_client_config() {
+        let config = HyperliquidExecutionClientConfig::builder()
+            .private_key("test_private_key".into())
+            .build();
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
         let downcasted = boxed_config
             .as_any()
-            .downcast_ref::<HyperliquidExecFactoryConfig>();
+            .downcast_ref::<HyperliquidExecutionClientConfig>();
 
         assert!(downcasted.is_some());
     }
@@ -296,16 +250,12 @@ mod tests {
     #[rstest]
     fn test_hyperliquid_data_client_factory_rejects_wrong_config_type() {
         let factory = HyperliquidDataClientFactory::new();
-        let wrong_config = HyperliquidExecFactoryConfig {
-            trader_id: TraderId::from("TRADER-001"),
-            account_id: AccountId::from("HYPERLIQUID-001"),
-            config: HyperliquidExecClientConfig::builder()
-                .private_key("test_private_key".to_string())
-                .build(),
-        };
+        let wrong_config = HyperliquidExecutionClientConfig::builder()
+            .private_key("test_private_key".into())
+            .build();
 
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let result = factory.create("HYPERLIQUID-TEST", &wrong_config, cache.into(), clock);
         assert!(result.is_err());
@@ -325,7 +275,13 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("HYPERLIQUID-TEST", &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "HYPERLIQUID-TEST",
+            &wrong_config,
+            cache.into(),
+            Rc::new(RefCell::new(VirtualClock::new())),
+        );
         assert!(result.is_err());
         assert!(
             result

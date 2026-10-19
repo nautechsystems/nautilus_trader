@@ -15,20 +15,23 @@
 
 //! Python bindings for backtest configuration types.
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, fmt::Display, str::FromStr, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::MessageBusConfig, python::config_error_to_pyvalue_err,
 };
-use nautilus_core::{UUID4, UnixNanos, python::to_pyvalue_err};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    python::{to_pytype_err, to_pyvalue_err},
+};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
-    models::{fill::FillModelAny, latency::LatencyModelAny},
     python::{
         fee::{fee_model_any_to_pyobject, pyobject_to_fee_model_any},
-        fill::pyobject_to_fill_model_any,
+        fill::{fill_model_any_to_pyobject, pyobject_to_fill_model_any},
+        latency::{latency_model_any_to_pyobject, pyobject_to_latency_model_any},
     },
 };
 use nautilus_model::{
@@ -36,24 +39,26 @@ use nautilus_model::{
     data::BarSpecification,
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId},
+    python::data::PyNautilusDataType,
     types::Currency,
+};
+use nautilus_persistence::{
+    config::{DataCatalogConfig, StreamingConfig},
+    python::config::PyCatalogBackend,
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_trading::ImportableControllerConfig;
-use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
+use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python, types::PyAnyMethods};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::engine::{
-    pyobject_to_latency_model_any, pyobject_to_margin_model_any, pyobject_to_simulation_module_any,
+use super::{
+    engine::pyobject_to_margin_model_any,
+    modules::{pyobject_to_simulation_module_any, simulation_module_any_to_pyobject},
 };
-use crate::{
-    config::{
-        BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
-        NautilusDataType,
-    },
-    modules::SimulationModuleAny,
+use crate::config::{
+    BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -83,6 +88,8 @@ impl BacktestEngineConfig {
         exec_engine = None,
         portfolio = None,
         controller = None,
+        streaming = None,
+        catalogs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -107,6 +114,8 @@ impl BacktestEngineConfig {
         exec_engine: Option<ExecutionEngineConfig>,
         portfolio: Option<PortfolioConfig>,
         controller: Option<ImportableControllerConfig>,
+        streaming: Option<StreamingConfig>,
+        catalogs: Option<Vec<DataCatalogConfig>>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -132,7 +141,8 @@ impl BacktestEngineConfig {
             exec_engine,
             portfolio,
             controller,
-            streaming: None,
+            streaming,
+            catalogs: catalogs.unwrap_or_default(),
         }
     }
 
@@ -262,6 +272,18 @@ impl BacktestEngineConfig {
         self.controller.clone()
     }
 
+    #[getter]
+    #[pyo3(name = "streaming")]
+    fn py_streaming(&self) -> Option<StreamingConfig> {
+        self.streaming.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "catalogs")]
+    fn py_catalogs(&self) -> Vec<DataCatalogConfig> {
+        self.catalogs.clone()
+    }
+
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
@@ -276,8 +298,8 @@ impl BacktestVenueConfig {
         name,
         oms_type,
         account_type,
-        book_type,
         starting_balances,
+        book_type = None,
         routing = None,
         frozen_account = None,
         reject_stop_orders = None,
@@ -303,7 +325,6 @@ impl BacktestVenueConfig {
         latency_model = None,
         fee_model = None,
         price_protection_points = None,
-        settlement_prices = None,
         liquidation_enabled = None,
         liquidation_trigger_ratio = None,
         liquidation_cancel_open_orders = None,
@@ -311,10 +332,15 @@ impl BacktestVenueConfig {
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         name: &str,
-        oms_type: OmsType,
-        account_type: AccountType,
-        book_type: BookType,
+        #[gen_stub(override_type(type_repr = "model.OmsType | str"))] oms_type: &Bound<'_, PyAny>,
+        #[gen_stub(override_type(type_repr = "model.AccountType | str"))] account_type: &Bound<
+            '_,
+            PyAny,
+        >,
         starting_balances: Vec<String>,
+        #[gen_stub(override_type(type_repr = "model.BookType | str | None"))] book_type: Option<
+            &Bound<'_, PyAny>,
+        >,
         routing: Option<bool>,
         frozen_account: Option<bool>,
         reject_stop_orders: Option<bool>,
@@ -330,7 +356,8 @@ impl BacktestVenueConfig {
         liquidity_consumption: Option<bool>,
         allow_cash_borrowing: Option<bool>,
         queue_position: Option<bool>,
-        oto_trigger_mode: Option<OtoTriggerMode>,
+        #[gen_stub(override_type(type_repr = "model.OtoTriggerMode | str | None"))]
+        oto_trigger_mode: Option<&Bound<'_, PyAny>>,
         base_currency: Option<Currency>,
         default_leverage: Option<Decimal>,
         leverages: Option<HashMap<InstrumentId, Decimal>>,
@@ -340,20 +367,24 @@ impl BacktestVenueConfig {
         latency_model: Option<Py<PyAny>>,
         fee_model: Option<Py<PyAny>>,
         price_protection_points: Option<u32>,
-        settlement_prices: Option<HashMap<InstrumentId, f64>>,
         liquidation_enabled: Option<bool>,
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: Option<bool>,
     ) -> pyo3::PyResult<Self> {
+        let oms_type = enum_from_python(oms_type)?;
+        let account_type = enum_from_python(account_type)?;
+        let book_type = book_type
+            .map(enum_from_python)
+            .transpose()?
+            .unwrap_or(BookType::L1_MBP);
+        let oto_trigger_mode = oto_trigger_mode.map(enum_from_python).transpose()?;
         let margin_model = margin_model
             .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(py, obj.bind(py))))
             .transpose()?;
         let modules = modules
             .map(|objs| {
                 objs.into_iter()
-                    .map(|obj| {
-                        Python::attach(|py| pyobject_to_simulation_module_any(py, obj.bind(py)))
-                    })
+                    .map(|obj| Python::attach(|py| pyobject_to_simulation_module_any(obj.bind(py))))
                     .collect::<pyo3::PyResult<Vec<_>>>()
             })
             .transpose()?
@@ -362,7 +393,7 @@ impl BacktestVenueConfig {
             .map(|obj| Python::attach(|py| pyobject_to_fill_model_any(obj.bind(py))))
             .transpose()?;
         let latency_model = latency_model
-            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(py, obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?;
         let fee_model = fee_model
             .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
@@ -399,7 +430,6 @@ impl BacktestVenueConfig {
             .maybe_latency_model(latency_model)
             .maybe_fee_model(fee_model)
             .maybe_price_protection_points(price_protection_points)
-            .maybe_settlement_prices(settlement_prices.map(|m| m.into_iter().collect()))
             .maybe_liquidation_enabled(liquidation_enabled)
             .maybe_liquidation_trigger_ratio(liquidation_trigger_ratio)
             .maybe_liquidation_cancel_open_orders(liquidation_cancel_open_orders)
@@ -541,7 +571,7 @@ impl BacktestVenueConfig {
 
     #[getter]
     #[pyo3(name = "default_leverage")]
-    fn py_default_leverage(&self) -> Decimal {
+    fn py_default_leverage(&self) -> Option<Decimal> {
         self.default_leverage()
     }
 
@@ -604,13 +634,6 @@ impl BacktestVenueConfig {
     }
 
     #[getter]
-    #[pyo3(name = "settlement_prices")]
-    fn py_settlement_prices(&self) -> Option<HashMap<InstrumentId, f64>> {
-        self.settlement_prices()
-            .map(|prices| prices.iter().map(|(key, value)| (*key, *value)).collect())
-    }
-
-    #[getter]
     #[pyo3(name = "liquidation_enabled")]
     fn py_liquidation_enabled(&self) -> bool {
         self.liquidation_enabled()
@@ -654,56 +677,91 @@ impl BacktestDataConfig {
         bar_spec = None,
         bar_types = None,
         optimize_file_loading = None,
+        catalog_backend = None,
+        batch_deltas = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        data_type: &str,
+        #[gen_stub(override_type(type_repr = "model.NautilusDataType"))] data_type: &Bound<
+            '_,
+            PyAny,
+        >,
         catalog_path: String,
         catalog_fs_protocol: Option<String>,
         catalog_fs_storage_options: Option<HashMap<String, String>>,
         catalog_fs_rust_storage_options: Option<HashMap<String, String>>,
         instrument_id: Option<InstrumentId>,
         instrument_ids: Option<Vec<InstrumentId>>,
-        start_time: Option<u64>,
-        end_time: Option<u64>,
+        #[gen_stub(override_type(
+            type_repr = "int | str | datetime.datetime | pd.Timestamp | None",
+            imports = ("datetime", "pandas as pd")
+        ))]
+        start_time: Option<Py<PyAny>>,
+        #[gen_stub(override_type(
+            type_repr = "int | str | datetime.datetime | pd.Timestamp | None",
+            imports = ("datetime", "pandas as pd")
+        ))]
+        end_time: Option<Py<PyAny>>,
         filter_expr: Option<String>,
         client_id: Option<ClientId>,
         metadata: Option<HashMap<String, String>>,
         bar_spec: Option<BarSpecification>,
         bar_types: Option<Vec<String>>,
         optimize_file_loading: Option<bool>,
+        catalog_backend: Option<pyo3::PyRef<'_, PyCatalogBackend>>,
+        batch_deltas: Option<bool>,
     ) -> pyo3::PyResult<Self> {
         let data_type = data_type
-            .parse::<NautilusDataType>()
-            .map_err(to_pyvalue_err)?;
+            .extract::<pyo3::PyRef<'_, PyNautilusDataType>>()
+            .map(|data_type| data_type.inner())
+            .map_err(|_| to_pytype_err("data_type must be NautilusDataType"))?;
+        let start_time = timestamp_from_python(start_time)?;
+        let end_time = timestamp_from_python(end_time)?;
         Self::builder()
             .data_type(data_type)
             .catalog_path(catalog_path)
+            .catalog_backend(
+                catalog_backend
+                    .map(|backend| backend.inner())
+                    .unwrap_or_default(),
+            )
             .maybe_catalog_fs_protocol(catalog_fs_protocol)
-            .maybe_catalog_fs_storage_options(
-                catalog_fs_storage_options.map(|m| m.into_iter().collect()),
-            )
-            .maybe_catalog_fs_rust_storage_options(
-                catalog_fs_rust_storage_options.map(|m| m.into_iter().collect()),
-            )
+            .maybe_catalog_fs_storage_options(catalog_fs_storage_options.map(|m| {
+                m.into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect()
+            }))
+            .maybe_catalog_fs_rust_storage_options(catalog_fs_rust_storage_options.map(|m| {
+                m.into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect()
+            }))
             .maybe_instrument_id(instrument_id)
             .maybe_instrument_ids(instrument_ids)
-            .maybe_start_time(start_time.map(UnixNanos::from))
-            .maybe_end_time(end_time.map(UnixNanos::from))
+            .maybe_start_time(start_time)
+            .maybe_end_time(end_time)
             .maybe_filter_expr(filter_expr)
             .maybe_client_id(client_id)
             .maybe_metadata(metadata.map(|m| m.into_iter().collect()))
             .maybe_bar_spec(bar_spec)
             .maybe_bar_types(bar_types)
             .maybe_optimize_file_loading(optimize_file_loading)
+            .maybe_batch_deltas(batch_deltas)
             .build()
             .map_err(config_error_to_pyvalue_err)
     }
 
+    /// Returns the configured catalog backend.
+    #[getter]
+    #[pyo3(name = "catalog_backend")]
+    fn py_catalog_backend(&self) -> PyCatalogBackend {
+        PyCatalogBackend::new(self.catalog_backend())
+    }
+
     #[getter]
     #[pyo3(name = "data_type")]
-    fn py_data_type(&self) -> String {
-        self.data_type().to_string()
+    fn py_data_type(&self) -> PyNautilusDataType {
+        PyNautilusDataType::new(self.data_type().clone())
     }
 
     #[getter]
@@ -803,6 +861,12 @@ impl BacktestDataConfig {
         self.optimize_file_loading()
     }
 
+    #[getter]
+    #[pyo3(name = "batch_deltas")]
+    fn py_batch_deltas(&self) -> bool {
+        self.batch_deltas()
+    }
+
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
@@ -834,9 +898,19 @@ impl BacktestRunConfig {
         chunk_size: Option<usize>,
         raise_exception: Option<bool>,
         dispose_on_completion: Option<bool>,
-        start: Option<u64>,
-        end: Option<u64>,
+        #[gen_stub(override_type(
+            type_repr = "int | str | datetime.datetime | pd.Timestamp | None",
+            imports = ("datetime", "pandas as pd")
+        ))]
+        start: Option<Py<PyAny>>,
+        #[gen_stub(override_type(
+            type_repr = "int | str | datetime.datetime | pd.Timestamp | None",
+            imports = ("datetime", "pandas as pd")
+        ))]
+        end: Option<Py<PyAny>>,
     ) -> pyo3::PyResult<Self> {
+        let start = timestamp_from_python(start)?;
+        let end = timestamp_from_python(end)?;
         Self::builder()
             .venues(venues)
             .data(data)
@@ -845,8 +919,8 @@ impl BacktestRunConfig {
             .maybe_chunk_size(chunk_size)
             .maybe_raise_exception(raise_exception)
             .maybe_dispose_on_completion(dispose_on_completion)
-            .maybe_start(start.map(UnixNanos::from))
-            .maybe_end(end.map(UnixNanos::from))
+            .maybe_start(start)
+            .maybe_end(end)
             .build()
             .map_err(config_error_to_pyvalue_err)
     }
@@ -910,6 +984,34 @@ impl BacktestRunConfig {
     }
 }
 
+fn timestamp_from_python(value: Option<Py<PyAny>>) -> PyResult<Option<UnixNanos>> {
+    value
+        .map(|value| {
+            Python::attach(|py| {
+                py.import("nautilus_trader.core.datetime")?
+                    .getattr("dt_to_unix_nanos")?
+                    .call1((value,))?
+                    .extract::<u64>()
+                    .map(UnixNanos::from)
+            })
+        })
+        .transpose()
+}
+
+fn enum_from_python<'py, E>(value: &Bound<'py, PyAny>) -> PyResult<E>
+where
+    E: pyo3::conversion::FromPyObjectOwned<'py> + FromStr,
+    E::Err: Display,
+{
+    if let Ok(value) = value.extract::<E>() {
+        return Ok(value);
+    }
+    value
+        .extract::<String>()?
+        .parse::<E>()
+        .map_err(to_pyvalue_err)
+}
+
 fn margin_model_any_to_pyobject(py: Python<'_>, model: &MarginModelAny) -> PyResult<Py<PyAny>> {
     match model {
         MarginModelAny::Standard(model) => (*model).into_py_any(py),
@@ -917,33 +1019,102 @@ fn margin_model_any_to_pyobject(py: Python<'_>, model: &MarginModelAny) -> PyRes
     }
 }
 
-fn simulation_module_any_to_pyobject(
-    py: Python<'_>,
-    module: &SimulationModuleAny,
-) -> PyResult<Py<PyAny>> {
-    match module {
-        SimulationModuleAny::FXRolloverInterest(module) => module.clone().into_py_any(py),
-    }
-}
+#[cfg(test)]
+mod tests {
+    use ahash::AHashMap;
+    use nautilus_core::string::secret::SecretString;
+    use nautilus_model::data::NautilusDataType;
+    use rstest::rstest;
 
-fn latency_model_any_to_pyobject(py: Python<'_>, model: &LatencyModelAny) -> PyResult<Py<PyAny>> {
-    match model {
-        LatencyModelAny::Static(model) => model.clone().into_py_any(py),
-    }
-}
+    use super::*;
 
-fn fill_model_any_to_pyobject(py: Python<'_>, model: &FillModelAny) -> PyResult<Py<PyAny>> {
-    match model {
-        FillModelAny::Default(model) => model.clone().into_py_any(py),
-        FillModelAny::BestPrice(model) => model.clone().into_py_any(py),
-        FillModelAny::OneTickSlippage(model) => model.clone().into_py_any(py),
-        FillModelAny::Probabilistic(model) => model.clone().into_py_any(py),
-        FillModelAny::TwoTier(model) => model.clone().into_py_any(py),
-        FillModelAny::ThreeTier(model) => model.clone().into_py_any(py),
-        FillModelAny::LimitOrderPartialFill(model) => model.clone().into_py_any(py),
-        FillModelAny::SizeAware(model) => model.clone().into_py_any(py),
-        FillModelAny::CompetitionAware(model) => model.clone().into_py_any(py),
-        FillModelAny::VolumeSensitive(model) => model.clone().into_py_any(py),
-        FillModelAny::MarketHours(model) => model.clone().into_py_any(py),
+    #[rstest]
+    fn test_data_config_py_new_keeps_storage_option_values() {
+        Python::initialize();
+
+        let config = Python::attach(|py| {
+            let data_type =
+                Bound::new(py, PyNautilusDataType::new(NautilusDataType::QuoteTick)).unwrap();
+            BacktestDataConfig::py_new(
+                data_type.as_any(),
+                "bucket/catalog".to_string(),
+                Some("s3".to_string()),
+                Some(HashMap::from([("key".to_string(), "fs-key".to_string())])),
+                Some(HashMap::from([(
+                    "aws_secret_access_key".to_string(),
+                    "rust-secret".to_string(),
+                )])),
+                Some(InstrumentId::from("EUR/USD.SIM")),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+        });
+
+        assert_eq!(
+            config.catalog_fs_storage_options(),
+            Some(&AHashMap::from([(
+                "key".to_string(),
+                SecretString::from("fs-key"),
+            )]))
+        );
+        assert_eq!(
+            config.catalog_fs_rust_storage_options(),
+            Some(&AHashMap::from([(
+                "aws_secret_access_key".to_string(),
+                SecretString::from("rust-secret"),
+            )]))
+        );
+    }
+
+    #[rstest]
+    #[case::default(None, true)]
+    #[case::disabled(Some(false), false)]
+    #[case::enabled(Some(true), true)]
+    fn test_data_config_py_new_sets_batch_deltas(
+        #[case] batch_deltas: Option<bool>,
+        #[case] expected: bool,
+    ) {
+        Python::initialize();
+
+        let config = Python::attach(|py| {
+            let data_type = Bound::new(
+                py,
+                PyNautilusDataType::new(NautilusDataType::OrderBookDelta),
+            )
+            .unwrap();
+            BacktestDataConfig::py_new(
+                data_type.as_any(),
+                "catalog".to_string(),
+                None,
+                None,
+                None,
+                Some(InstrumentId::from("EUR/USD.SIM")),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                batch_deltas,
+            )
+            .unwrap()
+        });
+
+        assert_eq!(config.batch_deltas(), expected);
+        assert_eq!(config.py_batch_deltas(), expected);
     }
 }

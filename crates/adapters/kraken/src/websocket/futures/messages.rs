@@ -15,11 +15,15 @@
 
 //! Data models for Kraken Futures WebSocket v1 API messages.
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString};
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{KrakenFillType, KrakenFuturesOrderType, KrakenOrderSide},
@@ -342,7 +346,13 @@ pub struct KrakenFuturesBookLevel {
 #[derive(Debug, Clone, Serialize)]
 pub struct KrakenFuturesChallengeRequest {
     pub event: KrakenFuturesEvent,
-    pub api_key: String,
+    pub api_key: SecretString,
+}
+
+impl Zeroize for KrakenFuturesChallengeRequest {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+    }
 }
 
 /// Challenge response from WebSocket.
@@ -357,9 +367,17 @@ pub struct KrakenFuturesChallengeResponse {
 pub struct KrakenFuturesPrivateSubscribeRequest {
     pub event: KrakenFuturesEvent,
     pub feed: KrakenFuturesFeed,
-    pub api_key: String,
-    pub original_challenge: String,
-    pub signed_challenge: String,
+    pub api_key: SecretString,
+    pub original_challenge: SecretString,
+    pub signed_challenge: SecretString,
+}
+
+impl Zeroize for KrakenFuturesPrivateSubscribeRequest {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+        self.original_challenge.zeroize();
+        self.signed_challenge.zeroize();
+    }
 }
 
 /// Open order from Kraken Futures WebSocket.
@@ -430,6 +448,15 @@ impl KrakenFuturesOpenOrdersDelta {
     pub fn is_fill_driven_cancel(&self) -> bool {
         self.is_cancel && matches!(self.reason.as_deref(), Some("full_fill" | "partial_fill"))
     }
+
+    /// Returns whether this delta terminally removes a part-filled order whose
+    /// remainder the venue discarded (a converted Maker Protection hold or an
+    /// IOC-style order), as opposed to a resting order's partial-fill update
+    /// which carries `is_cancel=false`.
+    #[must_use]
+    pub fn is_partial_fill_removal(&self) -> bool {
+        self.is_cancel && self.reason.as_deref() == Some("partial_fill")
+    }
 }
 
 /// Open orders cancel notification from Kraken Futures WebSocket.
@@ -492,6 +519,56 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    fn test_api_key() -> String {
+        ["api-key-", "12345678"].concat()
+    }
+
+    #[rstest]
+    fn test_challenge_request_serialization_redaction_and_zeroization() {
+        let mut request = KrakenFuturesChallengeRequest {
+            event: KrakenFuturesEvent::Challenge,
+            api_key: SecretString::from(test_api_key()),
+        };
+        let wire = serde_json::to_value(&request).unwrap();
+        let debug = format!("{request:?}");
+
+        assert_eq!(wire["event"], "challenge");
+        assert_eq!(wire["api_key"], "api-key-12345678");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("api-key-12345678"));
+
+        request.zeroize();
+        assert!(request.api_key.expose_secret().is_empty());
+    }
+
+    #[rstest]
+    fn test_private_request_serialization_redaction_and_zeroization() {
+        let mut request = KrakenFuturesPrivateSubscribeRequest {
+            event: KrakenFuturesEvent::Subscribe,
+            feed: KrakenFuturesFeed::OpenOrders,
+            api_key: SecretString::from(test_api_key()),
+            original_challenge: SecretString::from("original-challenge"),
+            signed_challenge: SecretString::from("signed-challenge"),
+        };
+        let wire = serde_json::to_value(&request).unwrap();
+        let debug = format!("{request:?}");
+
+        assert_eq!(wire["event"], "subscribe");
+        assert_eq!(wire["feed"], "open_orders");
+        assert_eq!(wire["api_key"], "api-key-12345678");
+        assert_eq!(wire["original_challenge"], "original-challenge");
+        assert_eq!(wire["signed_challenge"], "signed-challenge");
+        assert_eq!(debug.matches(REDACTED).count(), 3);
+        assert!(!debug.contains("api-key-12345678"));
+        assert!(!debug.contains("original-challenge"));
+        assert!(!debug.contains("signed-challenge"));
+
+        request.zeroize();
+        assert!(request.api_key.expose_secret().is_empty());
+        assert!(request.original_challenge.expose_secret().is_empty());
+        assert!(request.signed_challenge.expose_secret().is_empty());
+    }
 
     #[rstest]
     fn test_deserialize_ticker_data() {
@@ -656,6 +733,16 @@ mod tests {
     #[case::full_fill(true, Some("full_fill"), true)]
     #[case::partial_fill(true, Some("partial_fill"), true)]
     #[case::cancel_no_reason(true, None, false)]
+    // Maker Protection outcomes are genuine terminal cancels, never
+    // fill-driven: a converted hold that cannot trade at release, and a
+    // resting maker cancelled by the account's own released aggressor.
+    #[case::ioc_not_executed(
+        true,
+        Some("ioc_order_failed_because_it_would_not_be_executed"),
+        false
+    )]
+    #[case::ioc_would_enter_book(true, Some("IOC_WOULD_ENTER_BOOK"), false)]
+    #[case::cancelled_by_self_trade(true, Some("CANCELLED_BY_SELF_TRADE"), false)]
     fn test_open_orders_delta_is_fill_driven_cancel(
         #[case] is_cancel: bool,
         #[case] reason: Option<&'static str>,
@@ -683,6 +770,40 @@ mod tests {
         };
 
         assert_eq!(delta.is_fill_driven_cancel(), expected);
+    }
+
+    #[rstest]
+    #[case::partial_removal(true, Some("partial_fill"), true)]
+    #[case::resting_partial_fill(false, Some("partial_fill"), false)]
+    #[case::full_fill(true, Some("full_fill"), false)]
+    #[case::user_cancel(true, Some("cancelled_by_user"), false)]
+    fn test_open_orders_delta_is_partial_fill_removal(
+        #[case] is_cancel: bool,
+        #[case] reason: Option<&'static str>,
+        #[case] expected: bool,
+    ) {
+        let delta = KrakenFuturesOpenOrdersDelta {
+            feed: KrakenFuturesFeed::OpenOrders,
+            order: KrakenFuturesOpenOrder {
+                instrument: Ustr::from("PF_XBTUSD"),
+                time: 0,
+                last_update_time: 0,
+                qty: dec!(0.0001),
+                filled: Decimal::ZERO,
+                limit_price: Some(dec!(70000)),
+                stop_price: None,
+                order_type: KrakenFuturesOrderType::Limit,
+                order_id: "test".to_string(),
+                cli_ord_id: None,
+                direction: 0,
+                reduce_only: false,
+                trigger_signal: None,
+            },
+            is_cancel,
+            reason: reason.map(str::to_string),
+        };
+
+        assert_eq!(delta.is_partial_fill_removal(), expected);
     }
 
     #[rstest]

@@ -15,15 +15,21 @@
 
 //! Binance adapter configuration structures.
 
-use std::{any::Any, collections::HashMap, str::FromStr};
+use std::{any::Any, collections::HashMap, fmt::Debug, str::FromStr, time::Duration};
 
 use nautilus_common::factories::ClientConfig;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{
     enums::OmsType,
-    identifiers::{AccountId, InstrumentId, TraderId},
+    identifiers::{AccountId, InstrumentId},
     types::Currency,
 };
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{
+    backoff::ExponentialBackoff, retry::RetryConfig, websocket::TransportBackend,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +40,7 @@ use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProduct
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -58,6 +64,9 @@ pub struct BinanceInstrumentProviderConfig {
     /// applied it and Rust live clients cannot safely invoke arbitrary Python.
     pub filter_callable: Option<String>,
     /// Whether instrument parser failures should be logged as warnings.
+    ///
+    /// Non-trading symbols skipped during bulk loads always log at debug;
+    /// this flag applies to explicitly selected symbols and unexpected failures.
     #[builder(default = true)]
     pub log_warnings: bool,
     /// Whether to query account-specific commission rates for every loaded symbol.
@@ -76,8 +85,8 @@ impl BinanceInstrumentProviderConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error for malformed IDs, unsupported filters, or a legacy
-    /// callable filter that Binance v2 cannot execute safely.
+    /// Returns an error if IDs are malformed, filters are unsupported, or a legacy callable filter
+    /// cannot run safely in Binance v2.
     pub fn validate(&self, product_type: BinanceProductType) -> anyhow::Result<()> {
         if let Some(filter_callable) = self
             .filter_callable
@@ -118,6 +127,15 @@ impl BinanceInstrumentProviderConfig {
 
         Ok(())
     }
+
+    pub(crate) fn excludes(&self, instrument_id: InstrumentId) -> bool {
+        !self.load_all
+            && self.load_ids.as_ref().is_some_and(|load_ids| {
+                load_ids
+                    .iter()
+                    .all(|raw_id| InstrumentId::from(raw_id.as_str()) != instrument_id)
+            })
+    }
 }
 
 fn validate_filter_strings(name: &str, value: &serde_json::Value) -> anyhow::Result<()> {
@@ -143,11 +161,7 @@ fn validate_filter_strings(name: &str, value: &serde_json::Value) -> anyhow::Res
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.binance",
-        eq,
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", eq, from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -168,7 +182,7 @@ pub enum BinanceSpotMarketDataMode {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -181,6 +195,10 @@ pub struct BinanceDataClientConfig {
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
+    /// API key (Ed25519).
+    pub api_key: Option<SecretString>,
+    /// API secret (Ed25519 base64-encoded or PEM).
+    pub api_secret: Option<SecretString>,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket.
@@ -188,10 +206,8 @@ pub struct BinanceDataClientConfig {
     /// Live USD-M Futures data overrides are normalized onto the matching
     /// `/market/ws` and `/public/ws` routes.
     pub base_url_ws: Option<String>,
-    /// API key (Ed25519).
-    pub api_key: Option<String>,
-    /// API secret (Ed25519 base64-encoded or PEM).
-    pub api_secret: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// Spot market-data transport mode.
     ///
     /// - `Sbe` uses SBE streams and requires Ed25519 credentials.
@@ -201,7 +217,7 @@ pub struct BinanceDataClientConfig {
     /// Instrument loading and fee configuration.
     #[builder(default)]
     pub instrument_provider: BinanceInstrumentProviderConfig,
-    /// Interval in seconds for a full instrument catalogue refresh.
+    /// Interval in seconds for a full instrument catalog refresh.
     ///
     /// Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
@@ -210,11 +226,24 @@ pub struct BinanceDataClientConfig {
     /// changes (e.g. Trading -> Halt). Set to 0 to disable. Defaults to 3600 (60 minutes).
     #[builder(default = 3600)]
     pub instrument_status_poll_secs: u64,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    /// Maximum time to wait for an initial, post-reconnect, or recovery order book
+    /// snapshot in seconds.
+    ///
+    /// Bounds each REST depth snapshot request for diff depth books. Set to 0 to disable.
+    #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
+    pub book_snapshot_timeout_secs: u64,
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
+    /// Maximum retries for HTTP GET requests. Mutating requests are sent once.
+    #[builder(default = RetryConfig::default().max_retries)]
+    pub max_retries: u32,
+    /// Initial HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().initial_delay_ms)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum exponential HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().max_delay_ms)]
+    pub retry_delay_max_ms: u64,
     /// Whether to route this Spot client to Binance US.
     #[builder(default)]
     pub us: bool,
@@ -233,7 +262,11 @@ nautilus_core::impl_pyo3_config_getters!(BinanceDataClientConfig {
     instrument_provider: BinanceInstrumentProviderConfig,
     instrument_refresh_interval_secs: u64,
     instrument_status_poll_secs: u64,
+    book_snapshot_timeout_secs: u64,
     recv_window_ms: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
     us: bool,
     transport_backend: TransportBackend,
 });
@@ -249,9 +282,10 @@ impl BinanceDataClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid receive-window, provider, or Binance US settings.
+    /// Returns an error if the receive-window, provider, or Binance US settings are invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
+        validate_retry_config(&self.retry_config())?;
         self.instrument_provider.validate(self.product_type)?;
 
         if self.us {
@@ -271,6 +305,15 @@ impl BinanceDataClientConfig {
 
         Ok(())
     }
+
+    pub(crate) fn retry_config(&self) -> RetryConfig {
+        RetryConfig {
+            max_retries: self.max_retries,
+            initial_delay_ms: self.retry_delay_initial_ms,
+            max_delay_ms: self.retry_delay_max_ms,
+            ..crate::common::http::retry_config()
+        }
+    }
 }
 
 impl ClientConfig for BinanceDataClientConfig {
@@ -287,16 +330,13 @@ impl ClientConfig for BinanceDataClientConfig {
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.adapters.binance", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
-pub struct BinanceExecClientConfig {
-    /// Trader ID for the client.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct BinanceExecutionClientConfig {
     /// Account ID for the client.
     #[builder(default = AccountId::from("BINANCE-001"))]
     pub account_id: AccountId,
@@ -306,6 +346,10 @@ pub struct BinanceExecClientConfig {
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
+    /// API key (uses an environment variable if not provided).
+    pub api_key: Option<SecretString>,
+    /// API secret (Ed25519 for Global or HMAC for Binance US).
+    pub api_secret: Option<SecretString>,
     /// Optional base URL override for HTTP API.
     pub base_url_http: Option<String>,
     /// Optional base URL override for WebSocket user data stream.
@@ -314,6 +358,8 @@ pub struct BinanceExecClientConfig {
     pub base_url_ws: Option<String>,
     /// Optional base URL override for WebSocket trading API (Spot and USD-M Futures).
     pub base_url_ws_trading: Option<String>,
+    /// Optional proxy URL for HTTP and WebSocket transports.
+    pub proxy_url: Option<SecretString>,
     /// Whether to use the WebSocket trading API for order operations (Spot and USD-M Futures).
     #[builder(default = true)]
     pub use_ws_trading: bool,
@@ -334,12 +380,12 @@ pub struct BinanceExecClientConfig {
     /// to GTC and the strategy must enable `manage_gtd_expiry`.
     #[builder(default = true)]
     pub use_gtd: bool,
-    /// Whether to use Binance Futures hedging position IDs.
+    /// Whether to use canonical Binance Futures position IDs.
     ///
-    /// When true, fill reports include a `venue_position_id` derived from
-    /// the instrument and position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`).
-    /// When false, `venue_position_id` is None, allowing virtual positions
-    /// with `OmsType::Hedging`.
+    /// When true, Futures hedge-mode order and fill reports include a `venue_position_id` derived
+    /// from the instrument and Binance position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`). Hedge-mode
+    /// REST position reports use the same IDs. One-way `BOTH` reports remain unkeyed. When false,
+    /// `venue_position_id` is None, allowing virtual positions with `OmsType::Hedging`.
     #[builder(default = true)]
     pub use_position_ids: bool,
     /// Optional OMS type override for Binance Futures accounts.
@@ -354,18 +400,21 @@ pub struct BinanceExecClientConfig {
     /// Standard Binance Futures taker fee is 0.0004 (0.04%).
     #[builder(default = Decimal::new(4, 4))]
     pub default_taker_fee: Decimal,
-    /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
+    /// Maximum retries for HTTP GET requests. Mutating requests are sent once.
+    #[builder(default = RetryConfig::default().max_retries)]
+    pub max_retries: u32,
+    /// Initial HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().initial_delay_ms)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum exponential HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().max_delay_ms)]
+    pub retry_delay_max_ms: u64,
     /// Whether to route this Spot client to Binance US.
     #[builder(default)]
     pub us: bool,
-    /// API key (uses an environment variable if not provided).
-    pub api_key: Option<String>,
-    /// API secret (Ed25519 for Global or HMAC for Binance US).
-    pub api_secret: Option<String>,
     /// Initial leverage per Binance symbol (e.g. BTCUSDT -> 20), applied during connect.
     pub futures_leverages: Option<HashMap<String, u32>>,
     /// Margin type per Binance symbol (e.g. BTCUSDT -> Cross), applied during connect.
@@ -390,8 +439,7 @@ pub struct BinanceExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(BinanceExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(BinanceExecutionClientConfig {
     account_id: AccountId,
     product_type: BinanceProductType,
     environment: BinanceEnvironment,
@@ -407,6 +455,9 @@ nautilus_core::impl_pyo3_config_getters!(BinanceExecClientConfig {
     oms_type: Option<OmsType>,
     default_taker_fee: Decimal,
     recv_window_ms: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
     us: bool,
     futures_leverages: Option<HashMap<String, u32>>,
     futures_margin_types: Option<HashMap<String, BinanceMarginType>>,
@@ -416,21 +467,22 @@ nautilus_core::impl_pyo3_config_getters!(BinanceExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for BinanceExecClientConfig {
+impl Default for BinanceExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl BinanceExecClientConfig {
+impl BinanceExecutionClientConfig {
     /// Validates Binance execution client configuration.
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid receive-window, WS trading setup timeout, provider, or
-    /// Binance US settings.
+    /// Returns an error if the receive-window, WS trading setup timeout, provider, or Binance US
+    /// settings are invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
+        validate_retry_config(&self.retry_config())?;
         anyhow::ensure!(
             self.ws_trading_setup_timeout_ms > 0,
             "ws_trading_setup_timeout_ms must be greater than 0, was {}",
@@ -451,6 +503,26 @@ impl BinanceExecClientConfig {
 
         Ok(())
     }
+
+    pub(crate) fn retry_config(&self) -> RetryConfig {
+        RetryConfig {
+            max_retries: self.max_retries,
+            initial_delay_ms: self.retry_delay_initial_ms,
+            max_delay_ms: self.retry_delay_max_ms,
+            ..crate::common::http::retry_config()
+        }
+    }
+}
+
+fn validate_retry_config(config: &RetryConfig) -> anyhow::Result<()> {
+    ExponentialBackoff::new(
+        Duration::from_millis(config.initial_delay_ms),
+        Duration::from_millis(config.max_delay_ms),
+        config.backoff_factor,
+        config.jitter_ms,
+        config.immediate_first,
+    )?;
+    Ok(())
 }
 
 fn validate_recv_window(recv_window_ms: u64) -> anyhow::Result<()> {
@@ -461,7 +533,7 @@ fn validate_recv_window(recv_window_ms: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
-impl ClientConfig for BinanceExecClientConfig {
+impl ClientConfig for BinanceExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -472,6 +544,37 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = BinanceDataClientConfig {
+            api_key: Some("data-api-key".into()),
+            api_secret: Some("data-api-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = BinanceExecutionClientConfig {
+            api_key: Some("exec-api-key".into()),
+            api_secret: Some("exec-api-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-api-key",
+            "data-api-secret",
+            "data-proxy",
+            "exec-api-key",
+            "exec-api-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
 
     #[rstest]
     fn test_data_config_toml_minimal() {
@@ -488,6 +591,7 @@ instrument_status_poll_secs = 600
         assert_eq!(config.product_type, BinanceProductType::UsdM);
         assert_eq!(config.spot_market_data_mode, BinanceSpotMarketDataMode::Sbe);
         assert_eq!(config.instrument_status_poll_secs, 600);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
     }
 
     #[rstest]
@@ -519,8 +623,8 @@ product_types = ["SPOT", "USD_M"]
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: BinanceExecClientConfig = toml::from_str("").unwrap();
-        let expected = BinanceExecClientConfig::default();
+        let config: BinanceExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = BinanceExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.product_type, expected.product_type);
@@ -548,7 +652,7 @@ product_types = ["SPOT", "USD_M"]
 
     #[rstest]
     fn test_exec_config_toml_oms_type_override() {
-        let config: BinanceExecClientConfig = toml::from_str(
+        let config: BinanceExecutionClientConfig = toml::from_str(
             r#"
 oms_type = "Hedging"
 "#,
@@ -560,14 +664,14 @@ oms_type = "Hedging"
 
     #[rstest]
     fn test_exec_config_toml_use_gtd_override() {
-        let config: BinanceExecClientConfig = toml::from_str("use_gtd = false").unwrap();
+        let config: BinanceExecutionClientConfig = toml::from_str("use_gtd = false").unwrap();
 
         assert!(!config.use_gtd);
     }
 
     #[rstest]
     fn test_exec_config_toml_ws_trading_setup_timeout_override() {
-        let config: BinanceExecClientConfig =
+        let config: BinanceExecutionClientConfig =
             toml::from_str("ws_trading_setup_timeout_ms = 250").unwrap();
 
         assert_eq!(config.ws_trading_setup_timeout_ms, 250);
@@ -594,7 +698,7 @@ oms_type = "Hedging"
 
     #[rstest]
     fn test_exec_config_rejects_zero_ws_trading_setup_timeout() {
-        let config = BinanceExecClientConfig {
+        let config = BinanceExecutionClientConfig {
             ws_trading_setup_timeout_ms: 0,
             ..Default::default()
         };
@@ -611,7 +715,7 @@ oms_type = "Hedging"
     #[case(1)]
     #[case(60_000)]
     fn test_exec_config_accepts_recv_window_bounds(#[case] recv_window_ms: u64) {
-        let config = BinanceExecClientConfig {
+        let config = BinanceExecutionClientConfig {
             recv_window_ms,
             ..Default::default()
         };
@@ -671,7 +775,7 @@ oms_type = "Hedging"
         #[case] environment: BinanceEnvironment,
         #[case] expected: &str,
     ) {
-        let config = BinanceExecClientConfig {
+        let config = BinanceExecutionClientConfig {
             product_type,
             environment,
             us: true,

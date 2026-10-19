@@ -28,12 +28,11 @@ NC='\033[0m' # No Color
 # Track if we found violations
 VIOLATIONS=0
 
-# Pattern to find files with potential violations
-# Uses word boundaries to match forbidden macros in use statements
-FILE_PATTERN='^\s*(pub(\([^)]*\))?\s+)?use\s+(log|tracing)::[^;]*\b(trace|debug|info|warn|error)\b'
+# Pattern to find files with forbidden imports, including rustfmt-wrapped use statements.
+FILE_PATTERN='^\s*(pub(\([^)]*\))?\s+)?use\s+(log|tracing)::([^;]|//[^\n]*(\n|$))*\b(trace|debug|info|warn|error)\b'
 
 # Find files containing potential violations
-candidate_files=$(rg -l "$FILE_PATTERN" crates --type rust 2> /dev/null || true)
+candidate_files=$(rg -l -U "$FILE_PATTERN" crates --type rust 2> /dev/null || true)
 
 # Process each candidate file to check for actual violations
 while IFS= read -r file; do
@@ -52,21 +51,22 @@ while IFS= read -r file; do
 
   while IFS= read -r line; do
     line_num=$((line_num + 1))
+    line_without_comment="${line%%//*}"
 
     # Detect start of use log:: or use tracing:: statement
     if echo "$line" | grep -qE '^\s*(pub(\([^)]*\))?\s+)?use\s+(log|tracing)::'; then
       in_use_statement=true
-      use_statement="$line"
+      use_statement="$line_without_comment"
       use_start_line=$line_num
     elif [ "$in_use_statement" = true ]; then
       # Continue accumulating multiline statement
-      use_statement="$use_statement $line"
+      use_statement="$use_statement $line_without_comment"
     fi
 
     # Check if statement is complete (ends with semicolon)
     if [ "$in_use_statement" = true ] && echo "$use_statement" | grep -qE ';\s*$'; then
-      # Normalize: remove comments and extra whitespace
-      normalized=$(echo "$use_statement" | sed -e 's|//.*||g' -e 's/[[:space:]]\+/ /g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+      # Normalize whitespace after comments have been removed line by line
+      normalized=$(echo "$use_statement" | sed -e 's/[[:space:]]\+/ /g' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
       # Check if normalized statement contains a forbidden macro as a word
       if echo "$normalized" | grep -qE '\b(trace|debug|info|warn|error)\b'; then
@@ -331,7 +331,7 @@ is_allowed_direct_output() {
 
 direct_output=$(rg -n --no-heading \
   '\b(e?println|e?print)!\s*\(' \
-  "${PRODUCTION_CODE_GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${PRODUCTION_CODE_GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 if [[ -n "$direct_output" ]]; then
   while IFS=: read -r file line_num content; do
@@ -481,7 +481,7 @@ line_has_process_exit_call() {
 
 process_exit=$(rg -n --no-heading \
   '\b(std::process::exit|process::exit|exit)\s*\(' \
-  "${PRODUCTION_CODE_GLOBS[@]}" --type rust 2> /dev/null || true)
+  "${PRODUCTION_CODE_GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 if [[ -n "$process_exit" ]]; then
   while IFS=: read -r file line_num content; do

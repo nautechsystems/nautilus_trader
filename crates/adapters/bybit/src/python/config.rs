@@ -15,13 +15,17 @@
 
 //! Python bindings for Bybit configuration.
 
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
-use pyo3::pymethods;
+use pyo3::{PyResult, pymethods};
 
 use crate::{
-    common::enums::{BybitEnvironment, BybitMarginMode, BybitProductType},
-    config::{BybitDataClientConfig, BybitExecClientConfig},
+    common::{
+        enums::{BybitEnvironment, BybitMarginMode, BybitProductType},
+        parse::parse_smp_type,
+    },
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
 };
 
 #[pymethods]
@@ -47,6 +51,8 @@ impl BybitDataClientConfig {
         update_instruments_interval_mins = None,
         instrument_status_poll_secs = None,
         transport_backend = None,
+        book_snapshot_timeout_secs = None,
+        bars_timestamp_on_close = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -67,17 +73,19 @@ impl BybitDataClientConfig {
         update_instruments_interval_mins: Option<u64>,
         instrument_status_poll_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
+        book_snapshot_timeout_secs: Option<u64>,
+        bars_timestamp_on_close: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
             environment: environment.unwrap_or(defaults.environment),
             base_url_http,
             base_url_ws_public,
             base_url_ws_private,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -90,7 +98,11 @@ impl BybitDataClientConfig {
                 .or(defaults.update_instruments_interval_mins),
             instrument_poll_interval_secs: instrument_status_poll_secs
                 .or(defaults.instrument_poll_interval_secs),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            bars_timestamp_on_close: bars_timestamp_on_close
+                .unwrap_or(defaults.bars_timestamp_on_close),
         }
     }
 
@@ -111,7 +123,7 @@ impl BybitDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BybitExecClientConfig {
+impl BybitExecutionClientConfig {
     /// Configuration for the Bybit live execution client.
     #[new]
     #[pyo3(signature = (
@@ -134,6 +146,7 @@ impl BybitExecClientConfig {
         use_spot_position_reports = None,
         auto_repay_spot_borrows = None,
         margin_mode = None,
+        smp_type = None,
         transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -157,18 +170,24 @@ impl BybitExecClientConfig {
         use_spot_position_reports: Option<bool>,
         auto_repay_spot_borrows: Option<bool>,
         margin_mode: Option<BybitMarginMode>,
+        smp_type: Option<String>,
         transport_backend: Option<TransportBackend>,
-    ) -> Self {
+    ) -> PyResult<Self> {
+        let smp_type = smp_type
+            .map(|value| parse_smp_type(&value))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
         let defaults = Self::default();
-        Self {
-            api_key,
-            api_secret,
+        Ok(Self {
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
             environment: environment.unwrap_or(defaults.environment),
             base_url_http,
             base_url_ws_private,
             base_url_ws_trade,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -186,8 +205,15 @@ impl BybitExecClientConfig {
             futures_leverages: None,
             position_mode: None,
             margin_mode,
+            smp_type,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        })
+    }
+
+    #[getter]
+    #[pyo3(name = "smp_type")]
+    fn py_smp_type(&self) -> Option<String> {
+        self.smp_type.map(|smp_type| smp_type.as_ref().to_string())
     }
 
     #[getter]
@@ -196,6 +222,6 @@ impl BybitExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(BybitExecClientConfig).to_string()
+        stringify!(BybitExecutionClientConfig).to_string()
     }
 }

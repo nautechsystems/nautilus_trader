@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for Polymarket.
+"""
 
 from __future__ import annotations
 
@@ -23,16 +26,25 @@ __all__ = [
     "POLYMARKET",
     "POLYMARKET_CLIENT_ID",
     "POLYMARKET_VENUE",
+    "PolymarketCryptoPrice",
+    "PolymarketCryptoTwap",
     "PolymarketDataClientConfig",
     "PolymarketDataClientFactory",
     "PolymarketDataLoader",
-    "PolymarketExecClientConfig",
+    "PolymarketEquityPrice",
+    "PolymarketExecutionClientConfig",
     "PolymarketExecutionClientFactory",
+    "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
-    "PolymarketRtdsCryptoPrice",
-    "PolymarketRtdsEquityPrice",
+    "PolymarketPositionClient",
+    "PolymarketPositionOutcome",
+    "PolymarketPositionTransaction",
+    "PolymarketSessionKey",
+    "PolymarketSessionKeyClient",
+    "PolymarketSessionKeyClientConfig",
+    "PolymarketSignatureType",
+    "PolymarketSignerType",
     "PolymarketUpDownEventSlugConfig",
-    "SignatureType",
 ]
 
 fixup_module_names(globals(), __name__)

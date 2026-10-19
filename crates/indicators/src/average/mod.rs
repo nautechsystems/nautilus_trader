@@ -25,6 +25,7 @@ pub mod sma;
 pub mod vidya;
 pub mod vwap;
 pub mod wma;
+pub mod zscore;
 
 use nautilus_model::enums::PriceType;
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
@@ -61,8 +62,7 @@ use crate::{
         frozen,
         eq,
         eq_int,
-        hash,
-        module = "nautilus_trader.core.nautilus_pyo3.indicators",
+        module = "nautilus_trader.indicators",
         from_py_object,
     )
 )]
@@ -83,6 +83,7 @@ pub struct MovingAverageFactory;
 
 impl MovingAverageFactory {
     #[must_use]
+    #[rustfmt::skip]
     pub fn create(
         moving_average_type: MovingAverageType,
         period: usize,
@@ -91,12 +92,8 @@ impl MovingAverageFactory {
 
         match moving_average_type {
             MovingAverageType::Simple => Box::new(SimpleMovingAverage::new(period, price_type)),
-            MovingAverageType::Exponential => {
-                Box::new(ExponentialMovingAverage::new(period, price_type))
-            }
-            MovingAverageType::DoubleExponential => {
-                Box::new(DoubleExponentialMovingAverage::new(period, price_type))
-            }
+            MovingAverageType::Exponential => Box::new(ExponentialMovingAverage::new(period, price_type)),
+            MovingAverageType::DoubleExponential => Box::new(DoubleExponentialMovingAverage::new(period, price_type)),
             MovingAverageType::Wilder => Box::new(WilderMovingAverage::new(period, price_type)),
             MovingAverageType::Hull => Box::new(HullMovingAverage::new(period, price_type)),
         }

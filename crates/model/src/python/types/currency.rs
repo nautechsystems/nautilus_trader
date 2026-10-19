@@ -106,9 +106,7 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - A currency with the given `code` does not exist.
-    /// - There is a failure acquiring the lock on the currency map.
+    /// Returns an error if a currency with the given `code` does not exist.
     #[staticmethod]
     #[pyo3(name = "is_fiat")]
     fn py_is_fiat(code: &str) -> PyResult<bool> {
@@ -119,9 +117,7 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - If a currency with the given `code` does not exist.
-    /// - If there is a failure acquiring the lock on the currency map.
+    /// Returns an error if a currency with the given `code` does not exist.
     #[staticmethod]
     #[pyo3(name = "is_crypto")]
     fn py_is_crypto(code: &str) -> PyResult<bool> {
@@ -156,9 +152,7 @@ impl Currency {
     /// - If `overwrite` is `true`, any existing currency will be replaced.
     /// - If `overwrite` is `false` and the currency already exists, the operation is a no-op.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if there is a failure acquiring the lock on the currency map.
+    /// This function does not return an error.
     #[staticmethod]
     #[pyo3(name = "register")]
     #[pyo3(signature = (currency, overwrite = false))]

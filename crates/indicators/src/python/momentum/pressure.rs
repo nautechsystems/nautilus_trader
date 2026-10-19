@@ -13,10 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::Bar;
 use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, momentum::pressure::Pressure};
+use crate::{
+    average::MovingAverageType, indicator::Indicator, momentum::pressure::Pressure,
+    python::float_precision,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -24,13 +28,12 @@ impl Pressure {
     /// Creates a new `Pressure` instance.
     #[new]
     #[pyo3(signature = (period, ma_type=None, atr_floor=None))]
-    #[must_use]
     pub fn py_new(
         period: usize,
         ma_type: Option<MovingAverageType>,
         atr_floor: Option<f64>,
-    ) -> Self {
-        Self::new(period, ma_type, atr_floor)
+    ) -> PyResult<Self> {
+        Self::new_checked(period, ma_type, atr_floor).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -79,8 +82,11 @@ impl Pressure {
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
+        float_precision::check_bar_volume(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

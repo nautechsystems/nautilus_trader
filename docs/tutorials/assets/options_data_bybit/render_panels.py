@@ -1,14 +1,15 @@
 """
 Render the Bybit options data tutorial panels from captured live runs.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
+    make sync
     timeout 30 ./target/release/examples/bybit-greeks-tester > /tmp/bybit_greeks.log 2>&1
     timeout 30 ./target/release/examples/bybit-option-chain > /tmp/bybit_chain.log 2>&1
 
-    uv sync --extra visualization
     GREEKS_LOG=/tmp/bybit_greeks.log CHAIN_LOG=/tmp/bybit_chain.log \
-        python3 docs/tutorials/assets/options_data_bybit/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/options_data_bybit/render_panels.py
 
 Parses ``GREEKS | ...`` lines from the per-instrument tester and
 ``OPTION_CHAIN | ...`` / ``K=...`` lines from the chain tester, then writes
@@ -70,7 +71,7 @@ def parse_greeks(path: Path) -> pd.DataFrame:
 
     if not path.exists():
         return pd.DataFrame()
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = GREEKS.search(line)
         if m:
@@ -95,7 +96,7 @@ def parse_chain(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     current_atm = None
     current_series = None
 
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = CHAIN.search(line)
         if m:

@@ -28,17 +28,18 @@ use std::{
 };
 
 use async_stream::stream;
-use futures_util::{SinkExt, Stream, StreamExt, stream::SplitSink};
-use message::WsMessage;
-use nautilus_common::live::get_runtime;
-use nautilus_core::string::urlencoding;
-use tokio::net::TcpStream;
+use futures_util::{Sink, SinkExt, Stream, StreamExt, pin_mut};
+use message::{WsMessage, decode_ws_message};
+use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::urlencoding};
+use nautilus_network::url_origin;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async,
-    tungstenite::{self, protocol::frame::coding::CloseCode},
+    connect_async,
+    tungstenite::{self, client::IntoClientRequest, protocol::frame::coding::CloseCode},
 };
+use tokio_util::sync::CancellationToken;
 use types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions};
 
+use crate::common::enums::TardisExchange;
 pub use crate::machine::client::TardisMachineClient;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -49,6 +50,9 @@ pub enum Error {
     /// An error that could happen when an empty options array was given.
     #[error("Options cannot be empty")]
     EmptyOptions,
+    /// An exchange supported for replay but not real-time streaming.
+    #[error("Unsupported Tardis streaming exchange: {0} (historical-only; use replay options)")]
+    UnsupportedStreamingExchange(TardisExchange),
     /// An error when failed to connect to Tardis' websocket connection.
     #[error("Failed to connect: {0}")]
     ConnectFailed(#[from] tungstenite::Error),
@@ -71,12 +75,48 @@ pub enum Error {
     Deserialization(#[from] serde_json::Error),
 }
 
+#[cfg(any(feature = "replay", feature = "python", test))]
+impl Error {
+    pub(crate) fn log_stream_error(&self) {
+        log::error!("Tardis Machine stream error: {}", self.redacted_message());
+    }
+
+    fn redacted_message(&self) -> String {
+        match self {
+            Self::EmptyOptions | Self::UnsupportedStreamingExchange(_) => self.to_string(),
+            Self::ConnectFailed(tungstenite::Error::Io(error)) => {
+                format!("Failed to connect: I/O error: {:?}", error.kind())
+            }
+            Self::ConnectFailed(tungstenite::Error::Http(response)) => {
+                format!(
+                    "Failed to connect: HTTP status {}",
+                    response.status().as_u16()
+                )
+            }
+            Self::ConnectFailed(_) => "Failed to connect".to_string(),
+            Self::ConnectRejected { status, .. } => {
+                format!("Connection rejected with status {}", status.as_u16())
+            }
+            Self::ConnectionClosed { reason } if reason == MISSING_INSTRUMENT_INFO => {
+                MISSING_INSTRUMENT_INFO.to_string()
+            }
+            Self::ConnectionClosed { .. } => "Connection closed".to_string(),
+            Self::Deserialization(error) => format!(
+                "Failed to deserialize message at line {}, column {}",
+                error.line(),
+                error.column()
+            ),
+        }
+    }
+}
+
+pub(crate) const MISSING_INSTRUMENT_INFO: &str = "Missing instrument definition info";
+
 /// Connects to the Tardis Machine WS replay endpoint and returns a stream of WebSocket messages.
 ///
 /// # Errors
 ///
-/// Returns `Error::EmptyOptions` if no options provided,
-/// or `Error::ConnectFailed`/`Error::ConnectRejected` if connection fails.
+/// Returns an error if no options are provided or the connection fails.
 pub async fn replay_normalized(
     base_url: &str,
     options: Vec<ReplayNormalizedRequestOptions>,
@@ -89,8 +129,7 @@ pub async fn replay_normalized(
     let path = format!("{base_url}/ws-replay-normalized?options=");
     let options = serde_json::to_string(&options)?;
 
-    let plain_url = format!("{path}{options}");
-    log::debug!("Connecting to {plain_url}");
+    log::debug!("Connecting to {}", url_origin(base_url));
 
     let url = format!("{path}{}", urlencoding::encode(&options));
     stream_from_websocket(base_url, url, signal).await
@@ -100,25 +139,42 @@ pub async fn replay_normalized(
 ///
 /// # Errors
 ///
-/// Returns `Error::EmptyOptions` if no options provided,
-/// or `Error::ConnectFailed`/`Error::ConnectRejected` if connection fails.
+/// Returns an error if no options are provided, the exchange is BitMEX, or the connection fails.
 pub async fn stream_normalized(
     base_url: &str,
     options: Vec<StreamNormalizedRequestOptions>,
     signal: Arc<AtomicBool>,
 ) -> Result<impl Stream<Item = Result<WsMessage>>> {
-    if options.is_empty() {
-        return Err(Error::EmptyOptions);
-    }
+    validate_stream_options(&options)?;
 
     let path = format!("{base_url}/ws-stream-normalized?options=");
     let options = serde_json::to_string(&options)?;
 
-    let plain_url = format!("{path}{options}");
-    log::debug!("Connecting to {plain_url}");
+    log::debug!("Connecting to {}", url_origin(base_url));
 
     let url = format!("{path}{}", urlencoding::encode(&options));
     stream_from_websocket(base_url, url, signal).await
+}
+
+pub(crate) fn validate_stream_options(options: &[StreamNormalizedRequestOptions]) -> Result<()> {
+    if options.is_empty() {
+        return Err(Error::EmptyOptions);
+    }
+
+    for option in options {
+        if option.exchange == TardisExchange::Bitmex {
+            return Err(Error::UnsupportedStreamingExchange(option.exchange));
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn is_unsupported_streaming_error(reason: &str) -> bool {
+    reason
+        .strip_prefix("Error: ")
+        .unwrap_or(reason)
+        .starts_with("Real-time streaming is not supported for exchange ")
 }
 
 async fn stream_from_websocket(
@@ -126,14 +182,24 @@ async fn stream_from_websocket(
     url: String,
     signal: Arc<AtomicBool>,
 ) -> Result<impl Stream<Item = Result<WsMessage>>> {
-    let (ws_stream, ws_resp) = connect_async(url).await?;
+    let mut request = url.into_client_request()?;
+    request.headers_mut().insert(
+        tungstenite::http::header::USER_AGENT,
+        tungstenite::http::HeaderValue::from_static(NAUTILUS_USER_AGENT),
+    );
+
+    let (ws_stream, ws_resp) = connect_async(request).await?;
 
     handle_connection_response(&ws_resp)?;
-    log::debug!("Connected to {base_url}");
+    log::debug!("Connected to {}", url_origin(base_url));
 
     Ok(stream! {
         let (writer, mut reader) = ws_stream.split();
-        get_runtime().spawn(heartbeat(writer));
+        let cancel = CancellationToken::new();
+        let heartbeat = heartbeat(writer, cancel.child_token());
+        pin_mut!(heartbeat);
+        let mut heartbeat_active = true;
+        let _cancel_heartbeat = cancel.drop_guard();
 
         // Timeout awaiting the next record before checking signal
         let timeout = Duration::from_millis(10);
@@ -146,7 +212,13 @@ async fn stream_from_websocket(
                 break;
             }
 
-            let result = tokio::time::timeout(timeout, reader.next()).await;
+            let result = tokio::select! {
+                result = tokio::time::timeout(timeout, reader.next()) => result,
+                () = &mut heartbeat, if heartbeat_active => {
+                    heartbeat_active = false;
+                    continue;
+                }
+            };
             let msg = match result {
                 Ok(msg) => msg,
                 Err(_) => continue, // Timeout
@@ -158,15 +230,15 @@ async fn stream_from_websocket(
                     | tungstenite::Message::Binary(_)
                     | tungstenite::Message::Pong(_)
                     | tungstenite::Message::Ping(_) => {
-                        log::trace!("Received {msg:?}");
+                        log::trace!("Received WebSocket control or binary frame");
                     }
                     tungstenite::Message::Close(Some(frame)) => {
                         let reason = frame.reason.to_string();
                         if frame.code == CloseCode::Normal {
-                            log::debug!("Connection closed normally: {reason}");
+                            log::debug!("Connection closed normally");
                         } else {
                             log::warn!(
-                                "Connection closed abnormally with code: {:?}, reason: {reason}", frame.code
+                                "Connection closed abnormally with code: {:?}", frame.code
                             );
                             yield Err(Error::ConnectionClosed { reason });
                         }
@@ -180,17 +252,17 @@ async fn stream_from_websocket(
                         break;
                     }
                     tungstenite::Message::Text(msg) => {
-                        match serde_json::from_str::<WsMessage>(&msg) {
+                        match decode_ws_message(&msg) {
                             Ok(parsed_msg) => yield Ok(parsed_msg),
                             Err(e) => {
-                                log::error!("Failed to deserialize message: {msg}. Error: {e}");
+                                log::error!("Failed to deserialize message at line {}, column {}", e.line(), e.column());
                                 yield Err(Error::Deserialization(e));
                             }
                         }
                     }
                 },
                 Some(Err(e)) => {
-                    log::warn!("WebSocket error: {e}");
+                    log::warn!("WebSocket error");
                     yield Err(Error::ConnectFailed(e));
                     break;
                 }
@@ -226,20 +298,192 @@ fn handle_connection_response(
     Ok(())
 }
 
-async fn heartbeat(
-    mut sender: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-) {
+async fn heartbeat<S>(mut sender: S, cancel: CancellationToken)
+where
+    S: Sink<tungstenite::Message> + Unpin,
+    S::Error: std::fmt::Display,
+{
     let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(10));
 
     loop {
-        heartbeat_interval.tick().await;
+        tokio::select! {
+            _ = heartbeat_interval.tick() => {}
+            () = cancel.cancelled() => break,
+        }
+
         log::trace!("Sending PING");
 
-        if let Err(e) = sender.send(tungstenite::Message::Ping(vec![].into())).await {
-            log::debug!("Heartbeat send failed (connection closed): {e}");
-            break;
+        tokio::select! {
+            result = sender.send(tungstenite::Message::Ping(vec![].into())) => {
+                if result.is_err() {
+                    log::debug!("Heartbeat send failed (connection closed)");
+                    break;
+                }
+            }
+            () = cancel.cancelled() => break,
         }
     }
 
     log::debug!("Heartbeat task exiting");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        convert::Infallible,
+        pin::Pin,
+        task::{Context, Poll},
+        time::Duration,
+    };
+
+    use futures_util::Sink;
+    use rstest::rstest;
+    use tokio_tungstenite::tungstenite::{self, Message};
+    use tokio_util::sync::CancellationToken;
+
+    use super::{
+        Arc, AtomicBool, Error, MISSING_INSTRUMENT_INFO, StreamNormalizedRequestOptions,
+        TardisExchange, heartbeat, stream_normalized,
+    };
+
+    #[allow(
+        dead_code,
+        reason = "shared capture also provides integration-only servers"
+    )]
+    mod client_logging {
+        include!("../../../../network/tests/integration/common/client_logging.rs");
+    }
+
+    #[rstest]
+    #[case(Error::EmptyOptions, "Options cannot be empty")]
+    #[case(
+        Error::UnsupportedStreamingExchange(TardisExchange::Bitmex),
+        "Unsupported Tardis streaming exchange: bitmex (historical-only; use replay options)"
+    )]
+    #[case(
+        Error::ConnectFailed(tungstenite::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "SYN-secret"
+        ))),
+        "Failed to connect: I/O error: ConnectionRefused"
+    )]
+    #[case(
+        Error::ConnectFailed(tungstenite::Error::ConnectionClosed),
+        "Failed to connect"
+    )]
+    #[case(Error::ConnectFailed(tungstenite::Error::Http(Box::new(tungstenite::http::Response::builder().status(403).body(Some(b"SYN-secret".to_vec())).unwrap()))), "Failed to connect: HTTP status 403")]
+    #[case(Error::ConnectRejected { status: tungstenite::http::StatusCode::UNAUTHORIZED, reason: "SYN-secret".to_string() }, "Connection rejected with status 401")]
+    #[case(Error::ConnectionClosed { reason: "SYN-secret".to_string() }, "Connection closed")]
+    #[case(Error::ConnectionClosed { reason: MISSING_INSTRUMENT_INFO.to_string() }, MISSING_INSTRUMENT_INFO)]
+    #[case(Error::Deserialization(serde_json::from_str::<u64>("\"SYN-secret\"").unwrap_err()), "Failed to deserialize message at line 1, column 12")]
+    #[tokio::test]
+    async fn test_stream_error_logging_omits_payload(#[case] error: Error, #[case] message: &str) {
+        let _capture = client_logging::capture_logs().await;
+        error.log_stream_error();
+        let messages = client_logging::messages();
+        let relevant = messages
+            .iter()
+            .filter(|(_, value)| value.starts_with("Tardis Machine stream error:"))
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            relevant,
+            vec![(
+                log::Level::Error,
+                format!("Tardis Machine stream error: {message}")
+            )]
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|(_, value)| value.contains("SYN-secret"))
+        );
+    }
+
+    #[rstest]
+    #[case(vec![TardisExchange::Bitmex])]
+    #[case(vec![TardisExchange::Deribit, TardisExchange::Bitmex])]
+    #[tokio::test]
+    async fn test_stream_rejects_bitmex_before_connect(#[case] exchanges: Vec<TardisExchange>) {
+        let options = exchanges
+            .into_iter()
+            .map(|exchange| StreamNormalizedRequestOptions {
+                exchange,
+                symbols: None,
+                data_types: vec!["trade".to_string()],
+                with_disconnect_messages: None,
+                timeout_interval_ms: None,
+            })
+            .collect();
+
+        let result =
+            stream_normalized("not a URL", options, Arc::new(AtomicBool::new(false))).await;
+
+        assert!(matches!(
+            result,
+            Err(Error::UnsupportedStreamingExchange(TardisExchange::Bitmex))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_stream_allows_deribit_to_reach_connect() {
+        let options = vec![StreamNormalizedRequestOptions {
+            exchange: TardisExchange::Deribit,
+            symbols: None,
+            data_types: vec!["book_change".to_string()],
+            with_disconnect_messages: None,
+            timeout_interval_ms: None,
+        }];
+
+        let result =
+            stream_normalized("not a URL", options, Arc::new(AtomicBool::new(false))).await;
+
+        assert!(matches!(result, Err(Error::ConnectFailed(_))));
+    }
+
+    struct StallSink;
+
+    impl Sink<Message> for StallSink {
+        type Error = Infallible;
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+
+        fn start_send(self: Pin<&mut Self>, _item: Message) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Pending
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_heartbeat_exits_on_cancel_during_stalled_send() {
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(heartbeat(StallSink, cancel.clone()));
+
+        tokio::task::yield_now().await;
+        cancel.cancel();
+
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("heartbeat should exit after cancel during a stalled send")
+            .unwrap();
+    }
 }

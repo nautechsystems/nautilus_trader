@@ -1,0 +1,43 @@
+{
+  "Cash": {
+    "base": {
+      "id": "SIM-001",
+      "account_type": "CASH",
+      "base_currency": "USD",
+      "calculate_account_state": false,
+      "events": [
+        {
+          "account_id": "SIM-001",
+          "account_type": "CASH",
+          "base_currency": "USD",
+          "balances": [
+            {
+              "currency": "USD",
+              "total": "1525000.00 USD",
+              "locked": "25000.00 USD",
+              "free": "1500000.00 USD"
+            }
+          ],
+          "margins": [],
+          "is_reported": true,
+          "event_id": "16578139-a945-4b65-b46c-bc131a15d8e7",
+          "ts_event": 0,
+          "ts_init": 0
+        }
+      ],
+      "commissions": {},
+      "balances": {
+        "USD": {
+          "currency": "USD",
+          "total": "1525000.00 USD",
+          "locked": "25000.00 USD",
+          "free": "1500000.00 USD"
+        }
+      },
+      "balances_starting": {
+        "USD": "1525000.00 USD"
+      }
+    },
+    "allow_borrowing": false
+  }
+}

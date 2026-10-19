@@ -25,9 +25,9 @@
 //! Run with: `cargo run --example polymarket-election-subscriber --package nautilus-polymarket --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `POLYMARKET_API_KEY`.
-//! - `POLYMARKET_API_SECRET`.
-//! - `POLYMARKET_PASSPHRASE`.
+//! - `POLYMARKET_API_KEY`
+//! - `POLYMARKET_API_SECRET`
+//! - `POLYMARKET_PASSPHRASE`
 
 use std::{collections::HashMap, sync::Arc};
 

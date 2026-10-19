@@ -18,7 +18,11 @@ use std::{env, path::PathBuf};
 use nautilus_tardis::replay::run_tardis_machine_replay_from_config;
 
 // Run the following to start the tardis-machine server:
-// docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
+// docker run \
+//   -p 127.0.0.1:8000:8000 \
+//   -p 127.0.0.1:8001:8001 \
+//   -e "TM_API_KEY=YOUR_API_KEY" \
+//   -d tardisdev/tardis-machine
 
 #[tokio::main]
 async fn main() {

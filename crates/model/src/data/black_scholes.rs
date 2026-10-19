@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// 1. THE HIGH-PRECISION MATHEMATICAL TRAIT
+pub(super) const REFINEMENT_VOL_MIN: f64 = 1e-6;
+pub(super) const REFINEMENT_VOL_MAX: f64 = 10.0;
+
 pub trait BlackScholesReal:
     Sized
     + Copy
@@ -53,7 +55,6 @@ pub trait BlackScholesReal:
     fn signum(self) -> Self;
 }
 
-// 2. SCALAR IMPLEMENTATION (f32) - Manual Minimax for 1e-7 Precision
 impl BlackScholesReal for f32 {
     type Mask = bool;
     #[inline(always)]
@@ -105,6 +106,14 @@ impl BlackScholesReal for f32 {
         // See: J.-M. Muller et al., "Handbook of Floating-Point Arithmetic", 2018, Section 10.2
         //      A. J. Salgado & S. M. Wise, "Classical Numerical Analysis", 2023, Chapter 10
         let bits = self.to_bits();
+
+        // Positive normal bit patterns occupy one contiguous interval, so the ordinary
+        // path reaches the polynomial through a single range test. Everything else -
+        // zeros, negatives, subnormals, infinity, NaN - is handled out of line.
+        if !(0x0080_0000..0x7f80_0000).contains(&bits) {
+            return ln_f32_outside_normal_range(self);
+        }
+
         let exponent = ((bits >> 23) as i32 - 127) as Self;
         let mantissa = Self::from_bits((bits & 0x007F_FFFF) | 0x3f80_0000);
         let x = (mantissa - 1.0) / (mantissa + 1.0);
@@ -128,6 +137,15 @@ impl BlackScholesReal for f32 {
             std::f32::consts::LOG2_E,
             if self > 0.0 { 0.5 } else { -0.5 },
         )) as i32;
+
+        if k <= -151 {
+            return 0.0;
+        }
+
+        if k >= 129 {
+            return Self::INFINITY;
+        }
+
         let r = self - (k as Self * 0.693_145_75) - (k as Self * 1.428_606_8e-6);
         let mut res = 0.001_388_89_f32;
         res = r.mul_add(res, 0.008_333_33);
@@ -135,7 +153,19 @@ impl BlackScholesReal for f32 {
         res = r.mul_add(res, 0.166_666_67);
         res = r.mul_add(res, 0.5);
         res = r.mul_add(res, 1.0);
-        r.mul_add(res, 1.0) * Self::from_bits(((k + 127) as u32) << 23)
+        if (-126..=127).contains(&k) {
+            r.mul_add(res, 1.0) * Self::from_bits(((k + 127) as u32) << 23)
+        } else {
+            // Split 2^k across two valid biased exponents; a single one would be
+            // out of range here. Apply them in sequence: pre-multiplying the two
+            // factors underflows to zero at k = -150 before the polynomial can
+            // round the result up into the subnormal range.
+            let ka = k >> 1;
+            let kb = k - ka;
+            r.mul_add(res, 1.0)
+                * Self::from_bits(((ka + 127) as u32) << 23)
+                * Self::from_bits(((kb + 127) as u32) << 23)
+        }
     }
 
     #[inline(always)]
@@ -163,7 +193,6 @@ impl BlackScholesReal for f32 {
     }
 }
 
-// 3. DATA STRUCTURES & CORE KERNEL
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Greeks<T> {
     pub price: T,
@@ -238,7 +267,6 @@ fn pricing_kernel<T: BlackScholesReal>(
     }
 }
 
-// 5. SOLVERS: STANDALONE GREEKS & IV SEARCH
 #[inline(always)]
 pub fn compute_greeks<T: BlackScholesReal>(
     s: T,
@@ -309,15 +337,13 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
     is_call: T::Mask,
     initial_guess: T,
 ) -> Greeks<T> {
-    // PRE-CALCULATION (Hoisted outside iteration)
     let sqrt_t = t.sqrt();
     let inv_sqrt_t = sqrt_t.recip_precise();
-    let ln_sk_bt = (s.ln() - k.ln()) + (b * t); // Numerical Idea 1: Merged constant with b
-    let half_t = T::splat(0.5) * t; // Numerical Idea 2: Hoisted half-time
+    let ln_sk_bt = (s.ln() - k.ln()) + (b * t);
+    let half_t = T::splat(0.5) * t;
     let df_r = (-r * t).exp();
-    let mut vol = initial_guess;
+    let vol = initial_guess;
 
-    // SINGLE HALLEY PASS
     let inv_vol = vol.recip_precise();
     let inv_scaled_vol = inv_vol * inv_sqrt_t;
     let d1 = (ln_sk_bt + half_t * vol * vol) * inv_scaled_vol;
@@ -331,22 +357,21 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
     let volga = (vega * d1 * d2) * inv_vol;
     let num = T::splat(2.0) * diff * vega;
     let den = T::splat(2.0) * vega * vega - diff * volga;
-    // Clamp denominator magnitude while preserving sig
+
+    // Clamp denominator magnitude while preserving sign
     let den_safe = den.signum() * den.abs().max(T::splat(1e-9));
-    vol = vol - (num * den_safe.recip_precise());
 
-    // Clamp volatility to reasonable bounds to prevent negative or infinite values
-    // Lower bound: 1e-6 (0.0001% annualized), Upper bound: 10.0 (1000% annualized)
-    // Using max/min compiles to single instructions for f32
-    vol = vol.max(T::splat(1e-6)).min(T::splat(10.0));
+    // Clamp volatility between 0.0001% and 1000% annualized to keep outputs finite
+    let vol = (vol - (num * den_safe.recip_precise()))
+        .max(T::splat(REFINEMENT_VOL_MIN))
+        .min(T::splat(REFINEMENT_VOL_MAX));
 
-    // FINAL RE-SYNC
     let inv_vol_f = vol.recip_precise();
     let inv_scaled_vol_f = inv_vol_f * inv_sqrt_t;
     let scaled_vol_f = vol * sqrt_t;
     let d1_f = (ln_sk_bt + half_t * vol * vol) * inv_scaled_vol_f;
     let d2_f = d1_f - scaled_vol_f;
-    let mut g_final = pricing_kernel(
+    pricing_kernel(
         s_forward,
         k,
         df_r,
@@ -360,19 +385,226 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
         b,
         s,
         phi,
-    );
-    g_final.vol = vol;
-
-    g_final
+    )
 }
 
-// 4. UNIT TESTS
+/// Returns `ln(value)` for the inputs outside the positive normal range: zeros, negatives,
+/// subnormals, infinity, and NaN.
+///
+/// Kept out of line because `<f32 as BlackScholesReal>::ln` is `#[inline(always)]`, so any
+/// classification left in its body is duplicated at every call site on the pricing path.
+#[cold]
+#[inline(never)]
+fn ln_f32_outside_normal_range(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let magnitude = bits & 0x7fff_ffff;
+    if magnitude == 0 {
+        return f32::NEG_INFINITY;
+    }
+
+    let exponent_bits = magnitude & 0x7f80_0000;
+    let fraction_bits = magnitude & 0x007f_ffff;
+    if exponent_bits == 0x7f80_0000 && fraction_bits != 0 {
+        return f32::NAN;
+    }
+
+    if bits & 0x8000_0000 != 0 {
+        return f32::NAN;
+    }
+
+    if exponent_bits == 0x7f80_0000 {
+        return f32::INFINITY;
+    }
+
+    // Only positive subnormals remain. Scaling by 2^23 is exact and carries every one of
+    // them into the normal range, so this re-enters the ordinary path exactly once.
+    <f32 as BlackScholesReal>::ln(value * 8_388_608.0) - 23.0 * std::f32::consts::LN_2
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::*;
 
     use super::*;
     use crate::data::greeks::black_scholes_greeks_exact;
+
+    /// The positive-normal `ln` formula exactly as it stood before the domain guard.
+    /// Frozen deliberately: it is the oracle for the byte-identity characterization
+    /// below, so it must not be updated alongside the implementation.
+    fn old_ln_formula(input: f32) -> f32 {
+        let bits = input.to_bits();
+        let exponent = ((bits >> 23) as i32 - 127) as f32;
+        let mantissa = f32::from_bits((bits & 0x007F_FFFF) | 0x3f80_0000);
+        let x = (mantissa - 1.0) / (mantissa + 1.0);
+        let x2 = x * x;
+        let mut res = 0.239_282_85_f32;
+        res = x2.mul_add(res, 0.285_182_11);
+        res = x2.mul_add(res, 0.400_005_83);
+        res = x2.mul_add(res, 0.666_666_7);
+        res = x2.mul_add(res, 2.0);
+        x.mul_add(res, exponent * std::f32::consts::LN_2)
+    }
+
+    fn assert_ln_close(actual: f32, expected: f32, max_ulps: u32) {
+        assert_eq!(actual.is_nan(), expected.is_nan());
+        assert_eq!(actual.is_infinite(), expected.is_infinite());
+        assert_eq!(actual.is_sign_negative(), expected.is_sign_negative());
+        if actual.is_finite() {
+            assert!(
+                actual.to_bits().abs_diff(expected.to_bits()) <= max_ulps,
+                "ln mismatch: actual={actual:e} ({:#010x}), expected={expected:e} ({:#010x})",
+                actual.to_bits(),
+                expected.to_bits(),
+            );
+        }
+    }
+
+    fn assert_exp_close(actual: f32, expected: f32, max_ulps: u32) {
+        assert_eq!(actual.is_nan(), expected.is_nan());
+        assert_eq!(actual.is_infinite(), expected.is_infinite());
+        assert_eq!(actual.is_sign_negative(), expected.is_sign_negative());
+        if actual.is_finite() {
+            assert!(
+                actual.to_bits().abs_diff(expected.to_bits()) <= max_ulps,
+                "exp mismatch: actual={actual:e} ({:#010x}), expected={expected:e} ({:#010x})",
+                actual.to_bits(),
+                expected.to_bits(),
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_ln_special_values() {
+        for input in [0.0_f32, -0.0] {
+            let actual = <f32 as BlackScholesReal>::ln(input);
+            assert_eq!(actual, f32::NEG_INFINITY, "input={input:?}");
+        }
+
+        for input in [-1.0_f32, -2.0, -f32::MIN_POSITIVE, f32::NEG_INFINITY] {
+            assert!(
+                <f32 as BlackScholesReal>::ln(input).is_nan(),
+                "input={input:?}"
+            );
+        }
+
+        assert_eq!(<f32 as BlackScholesReal>::ln(f32::INFINITY), f32::INFINITY);
+
+        for input in [f32::from_bits(0x7fc0_1234), f32::from_bits(0xffc0_5678)] {
+            assert!(
+                <f32 as BlackScholesReal>::ln(input).is_nan(),
+                "input_bits={:#010x}",
+                input.to_bits()
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_ln_positive_subnormals() {
+        for input in [
+            f32::from_bits(1),
+            f32::from_bits(0x0040_0000),
+            f32::from_bits(0x007f_ffff),
+        ] {
+            assert_ln_close(<f32 as BlackScholesReal>::ln(input), input.ln(), 3);
+        }
+    }
+
+    #[rstest]
+    fn test_ln_positive_normal_path_is_unchanged() {
+        // Every normal exponent field crossed with a spread of mantissa patterns.
+        // Exhausting the exponent matters because the final fused addition combines
+        // the polynomial with `exponent * LN_2`, so rounding can differ per exponent
+        // even when mantissa handling is untouched.
+        let fractions = [
+            0x0000_0000,
+            0x0000_0001,
+            0x001f_ffff,
+            0x003f_ffff,
+            0x0040_0000,
+            0x0055_5555,
+            0x007f_fffe,
+            0x007f_ffff,
+        ];
+
+        for exponent in 1_u32..=254 {
+            for fraction in fractions {
+                let input = f32::from_bits((exponent << 23) | fraction);
+                assert_eq!(
+                    <f32 as BlackScholesReal>::ln(input).to_bits(),
+                    old_ln_formula(input).to_bits(),
+                    "input={input:e} ({:#010x})",
+                    input.to_bits()
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_compute_greeks_negative_strike_returns_nan_price() {
+        let greeks = compute_greeks::<f32>(100.0, -100.0, 1.0, 0.05, 0.05, 0.2, true);
+
+        assert!(greeks.price.is_nan());
+    }
+
+    #[rstest]
+    fn test_compute_iv_and_greeks_negative_strike_returns_nan_price() {
+        let greeks = compute_iv_and_greeks::<f32>(10.0, 100.0, -100.0, 1.0, 0.05, 0.05, true, 0.2);
+
+        assert!(greeks.price.is_nan());
+    }
+
+    #[rstest]
+    fn test_exp_exponent_boundaries() {
+        let ln_2 = std::f32::consts::LN_2;
+        let inputs = [
+            -126.5 * ln_2 - 0.000_1,
+            -126.5 * ln_2 + 0.000_1,
+            -127.5 * ln_2 - 0.000_1,
+            -127.5 * ln_2 + 0.000_1,
+            -150.0 * ln_2 + 0.1,
+            88.7,
+            88.8,
+            129.0 * ln_2,
+        ];
+
+        for input in inputs {
+            assert_exp_close(<f32 as BlackScholesReal>::exp(input), input.exp(), 3);
+        }
+    }
+
+    #[rstest]
+    fn test_exp_tail_sweep() {
+        let mut previous = 0.0;
+        let mut input = -105.0_f32;
+        while input <= 89.0 {
+            let actual = <f32 as BlackScholesReal>::exp(input);
+            assert!(!actual.is_nan(), "exp({input}) returned NaN");
+            assert!(actual >= 0.0, "exp({input}) returned {actual}");
+            assert!(
+                actual >= previous,
+                "exp is not monotonic at {input}: {actual} < {previous}"
+            );
+            assert_exp_close(actual, input.exp(), 3);
+            previous = actual;
+            input += 0.031_25;
+        }
+    }
+
+    #[rstest]
+    fn test_exp_extreme_inputs() {
+        for input in [-1e10_f32, -1e30, f32::NEG_INFINITY] {
+            assert_eq!(<f32 as BlackScholesReal>::exp(input), 0.0, "input={input}");
+        }
+
+        for input in [1e10_f32, 1e30, f32::INFINITY] {
+            assert_eq!(
+                <f32 as BlackScholesReal>::exp(input),
+                f32::INFINITY,
+                "input={input}"
+            );
+        }
+        assert!(<f32 as BlackScholesReal>::exp(f32::NAN).is_nan());
+    }
 
     #[rstest]
     fn test_accuracy_1e7() {

@@ -15,8 +15,12 @@
 
 //! Execution client trait definition.
 
+use std::{fmt::Debug, future::Future, pin::Pin};
+
+use anyhow::Context;
 use async_trait::async_trait;
-use nautilus_core::UnixNanos;
+use indexmap::IndexMap;
+use nautilus_core::{DurationNanos, Params, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{LiquiditySide, OmsType},
@@ -24,6 +28,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
+    orders::OrderAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -32,13 +37,63 @@ use rust_decimal::Decimal;
 use super::log_not_implemented;
 use crate::messages::execution::{
     BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-    GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-    ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+    GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+    GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+    GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+    SubmitOrderList,
 };
 
 /// Default maximum absolute position difference tolerated during reconciliation.
 pub const DEFAULT_POSITION_RECONCILIATION_TOLERANCE: Decimal =
     Decimal::from_parts(1, 0, 0, false, 8);
+
+/// Owned report collection with a core-thread continuation.
+///
+/// Only `collection` runs on a worker. `result` receives the collected value and finishes it on
+/// the caller's thread, allowing cache-dependent decisions without moving a live client or cache.
+#[must_use]
+pub struct ExecutionReportTask<T> {
+    /// Worker-safe collection, including decoding and report construction.
+    pub collection: Pin<Box<dyn Future<Output = ()> + Send>>,
+    /// Core-thread receipt and finalization of the collection.
+    pub result: Pin<Box<dyn Future<Output = anyhow::Result<T>>>>,
+}
+
+impl<T> Debug for ExecutionReportTask<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct(stringify!(ExecutionReportTask))
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: 'static> ExecutionReportTask<T> {
+    /// Creates an owned collection and its core-thread continuation.
+    ///
+    /// The collection must not access the live cache. Neither phase may apply execution events.
+    /// The continuation runs only after the worker terminates; canceled collections never run it.
+    pub fn new<C, F, M>(collection: F, finish: M) -> Self
+    where
+        C: Send + 'static,
+        F: Future<Output = anyhow::Result<C>> + Send + 'static,
+        M: FnOnce(C) -> anyhow::Result<T> + 'static,
+    {
+        let (sender, receiver) = futures::channel::oneshot::channel();
+
+        Self {
+            collection: Box::pin(async move {
+                let _ = sender.send(collection.await);
+            }),
+            result: Box::pin(async move {
+                finish(
+                    receiver
+                        .await
+                        .context("report collection stopped without a result")??,
+                )
+            }),
+        }
+    }
+}
 
 /// Defines the interface for an execution client managing order operations.
 ///
@@ -55,9 +110,45 @@ pub trait ExecutionClient {
     fn oms_type(&self) -> OmsType;
     fn get_account(&self) -> Option<AccountAny>;
 
+    /// Returns whether unacknowledged orders require venue evidence before local closure.
+    ///
+    /// `LiveNode` registers this requirement with the live execution manager automatically.
+    /// Registered clients retain these orders after recovery exhaustion, even when local timeout
+    /// or missing-order resolution is enabled.
+    fn retain_unresolved_submissions(&self) -> bool {
+        false
+    }
+
+    /// Returns venue order ID histories for startup reconciliation, keyed by client order ID.
+    ///
+    /// Each history covers one proven logical order: at least two IDs, oldest first and current last.
+    ///
+    /// - Reports share a client order ID and exclude cached orders and indexed venue IDs.
+    /// - Previous reports are closed and contribute only fills and ID history.
+    /// - The current report is open, with logical quantity and cumulative fills.
+    /// - Its acceptance time is no later than any fill in the history.
+    ///
+    /// The live execution manager consumes these histories. Defaults to `None`; overrides must not
+    /// change client state.
+    fn venue_order_ids(
+        &self,
+        _mass_status: &ExecutionMassStatus,
+    ) -> Option<IndexMap<ClientOrderId, Vec<VenueOrderId>>> {
+        None
+    }
+
     /// Returns the maximum absolute position difference tolerated during reconciliation.
     fn position_reconciliation_tolerance(&self) -> Decimal {
         DEFAULT_POSITION_RECONCILIATION_TOLERANCE
+    }
+
+    /// Returns whether reconciliation may raise the order quantity so this fill can apply.
+    ///
+    /// The default is `false`, so an overfill stays rejected when `allow_overfills` is disabled.
+    /// An override must not change client state. The engine raises the quantity to the order's
+    /// filled quantity plus this fill, then applies the fill unchanged.
+    fn allows_reconciliation_overfill(&self, _order: &OrderAny, _report: &FillReport) -> bool {
+        false
     }
 
     /// Returns whether this client can execute orders for the given instrument venue.
@@ -67,6 +158,20 @@ pub trait ExecutionClient {
     /// the instrument's exchange venue.
     fn handles_order_venue(&self, venue: Venue) -> bool {
         self.venue() == venue
+    }
+
+    /// Returns whether a bulk position status report request provides complete coverage for the
+    /// given instrument, so that an absent report is evidence the position is flat.
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        true
+    }
+
+    /// Returns whether this client's venue settles expiring contracts itself, such as a
+    /// simulated venue that closes positions with expiration fills.
+    ///
+    /// The execution engine does not apply `InstrumentClose` settlement for such a venue.
+    fn settles_contract_expirations(&self) -> bool {
+        false
     }
 
     /// Generates and publishes the account state event.
@@ -84,6 +189,7 @@ pub trait ExecutionClient {
         margins: Vec<MarginBalance>,
         reported: bool,
         ts_event: UnixNanos,
+        info: Option<Params>,
     ) -> anyhow::Result<()>;
 
     /// Starts the execution client.
@@ -153,7 +259,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if submission fails.
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -163,7 +269,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if submission fails.
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -173,7 +279,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if modification fails.
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -198,7 +304,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if cancellation fails.
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -208,7 +314,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if cancellation fails.
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -218,7 +324,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if batch cancellation fails.
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -228,7 +334,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if the query fails.
     fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -238,8 +344,19 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if the query fails.
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
+    }
+
+    /// Prepares worker-safe single-order collection, or uses inline collection.
+    ///
+    /// Preparation and the task's continuation run on the core thread. Neither may retain a
+    /// borrowed client across an await. Return `None` when collection is not yet worker-safe.
+    fn generate_order_status_report_task(
+        &self,
+        _cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        None
     }
 
     /// Generates a single order status report.
@@ -251,8 +368,16 @@ pub trait ExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        log_not_implemented(cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(None)
+    }
+
+    /// Prepares worker-safe bulk order collection, or uses inline collection.
+    fn generate_order_status_reports_task(
+        &self,
+        _cmd: &GenerateOrderStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+        None
     }
 
     /// Generates multiple order status reports.
@@ -264,8 +389,16 @@ pub trait ExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        log_not_implemented(cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(Vec::new())
+    }
+
+    /// Prepares worker-safe fill collection, or uses inline collection.
+    fn generate_fill_reports_task(
+        &self,
+        _cmd: &GenerateFillReports,
+    ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+        None
     }
 
     /// Generates fill reports based on execution results.
@@ -277,8 +410,16 @@ pub trait ExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(Vec::new())
+    }
+
+    /// Prepares worker-safe position collection, or uses inline collection.
+    fn generate_position_status_reports_task(
+        &self,
+        _cmd: &GeneratePositionStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
+        None
     }
 
     /// Generates position status reports.
@@ -290,11 +431,15 @@ pub trait ExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        log_not_implemented(cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(Vec::new())
     }
 
     /// Generates mass status for executions.
+    ///
+    /// The default composes the granular report generators using the realtime atomic clock.
+    /// This is clock-correct only for live/realtime clients; clients using a mocked or backtest
+    /// clock must override this method to compose reports with their own clock.
     ///
     /// # Errors
     ///
@@ -303,8 +448,12 @@ pub trait ExecutionClient {
         &self,
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        log_not_implemented(&lookback_mins);
-        Ok(None)
+        generate_mass_status(
+            self,
+            lookback_mins,
+            get_atomic_clock_realtime().get_time_ns(),
+        )
+        .await
     }
 
     /// Registers an external order for tracking by the execution client.
@@ -334,9 +483,17 @@ pub trait ExecutionClient {
     ///
     /// Override this method to provide venue-specific commission logic
     /// for inferred fills generated during reconciliation.
+    /// The quantity, price, and liquidity side match the inferred fill event,
+    /// including any price derived for only the unbooked incremental quantity.
     ///
-    /// Returns `None` by default, signaling callers to use their own
-    /// generic commission formula.
+    /// Returns `Ok(None)` by default, signaling callers to use their own
+    /// generic commission formula. An error means the venue formula applies
+    /// but its result could not be represented, so callers must not substitute
+    /// a zero or generic commission for it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the venue commission cannot be calculated or represented.
     #[expect(unused_variables)]
     fn calculate_commission(
         &self,
@@ -344,9 +501,76 @@ pub trait ExecutionClient {
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
-    ) -> Option<Money> {
-        None
+    ) -> anyhow::Result<Option<Money>> {
+        Ok(None)
     }
+}
+
+/// Composes an execution mass status using the supplied client clock timestamp.
+///
+/// # Errors
+///
+/// Returns an error if the lookback cannot be represented or a report source fails.
+pub async fn generate_mass_status<C: ExecutionClient + ?Sized>(
+    client: &C,
+    lookback_mins: Option<u64>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<ExecutionMassStatus>> {
+    let start = lookback_mins
+        .map(DurationNanos::try_from_mins)
+        .transpose()?
+        .map(|lookback| ts_init.saturating_sub(lookback));
+
+    let order_cmd = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(ts_init)
+        .open_only(false)
+        .start(start)
+        .build()
+        .context("failed to build order status reports command")?;
+    let fill_cmd = GenerateFillReportsBuilder::default()
+        .ts_init(ts_init)
+        .start(start)
+        .build()
+        .context("failed to build fill reports command")?;
+    let position_cmd = GeneratePositionStatusReportsBuilder::default()
+        .ts_init(ts_init)
+        .start(start)
+        .build()
+        .context("failed to build position status reports command")?;
+
+    let (order_reports, fill_reports, position_reports) = futures::try_join!(
+        async {
+            client
+                .generate_order_status_reports(&order_cmd)
+                .await
+                .context("failed to generate order status reports")
+        },
+        async {
+            client
+                .generate_fill_reports(fill_cmd)
+                .await
+                .context("failed to generate fill reports")
+        },
+        async {
+            client
+                .generate_position_status_reports(&position_cmd)
+                .await
+                .context("failed to generate position status reports")
+        },
+    )?;
+
+    let mut mass_status = ExecutionMassStatus::new(
+        client.client_id(),
+        client.account_id(),
+        client.venue(),
+        ts_init,
+        None,
+    );
+    mass_status.add_order_reports(order_reports);
+    mass_status.add_fill_reports(fill_reports);
+    mass_status.add_position_reports(position_reports);
+
+    Ok(Some(mass_status))
 }
 
 #[cfg(test)]
@@ -355,8 +579,11 @@ mod tests {
 
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::OmsType,
-        identifiers::{TraderId, Venue},
+        enums::{
+            LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        },
+        identifiers::{PositionId, TradeId, TraderId, Venue},
+        types::Currency,
     };
     use rstest::rstest;
 
@@ -404,6 +631,7 @@ mod tests {
             _margins: Vec<MarginBalance>,
             _reported: bool,
             _ts_event: UnixNanos,
+            _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
         }
@@ -423,6 +651,150 @@ mod tests {
 
             Ok(())
         }
+    }
+
+    struct MassStatusExecutionClient {
+        order_commands: RefCell<Vec<GenerateOrderStatusReports>>,
+        fill_requests: RefCell<Vec<GenerateFillReports>>,
+        position_queries: RefCell<Vec<GeneratePositionStatusReports>>,
+        fail_fill: bool,
+    }
+
+    impl MassStatusExecutionClient {
+        fn new(fail_fill: bool) -> Self {
+            Self {
+                order_commands: RefCell::new(Vec::new()),
+                fill_requests: RefCell::new(Vec::new()),
+                position_queries: RefCell::new(Vec::new()),
+                fail_fill,
+            }
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for MassStatusExecutionClient {
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from("MASS-STATUS")
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("MASS-STATUS-001")
+        }
+
+        fn venue(&self) -> Venue {
+            Venue::from("SIM")
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Netting
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+            _info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn generate_order_status_reports(
+            &self,
+            cmd: &GenerateOrderStatusReports,
+        ) -> anyhow::Result<Vec<OrderStatusReport>> {
+            self.order_commands.borrow_mut().push(cmd.clone());
+            Ok(vec![test_order_report()])
+        }
+
+        async fn generate_fill_reports(
+            &self,
+            cmd: GenerateFillReports,
+        ) -> anyhow::Result<Vec<FillReport>> {
+            self.fill_requests.borrow_mut().push(cmd);
+
+            if self.fail_fill {
+                anyhow::bail!("sentinel fill report failure");
+            }
+            Ok(vec![test_fill_report()])
+        }
+
+        async fn generate_position_status_reports(
+            &self,
+            cmd: &GeneratePositionStatusReports,
+        ) -> anyhow::Result<Vec<PositionStatusReport>> {
+            self.position_queries.borrow_mut().push(cmd.clone());
+            Ok(vec![test_position_report()])
+        }
+    }
+
+    fn test_order_report() -> OrderStatusReport {
+        OrderStatusReport::new(
+            AccountId::from("MASS-STATUS-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            None,
+            VenueOrderId::from("ORDER-001"),
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("10"),
+            Quantity::from("0"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        )
+    }
+
+    fn test_fill_report() -> FillReport {
+        FillReport::new(
+            AccountId::from("MASS-STATUS-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            VenueOrderId::from("ORDER-001"),
+            TradeId::from("TRADE-001"),
+            OrderSide::Buy,
+            Quantity::from("5"),
+            Price::from("1.00010"),
+            Money::new(1.0, Currency::USD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(4_000_000_000),
+            UnixNanos::from(5_000_000_000),
+            None,
+        )
+    }
+
+    fn test_position_report() -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("MASS-STATUS-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            PositionSide::Long,
+            Quantity::from("5"),
+            UnixNanos::from(6_000_000_000),
+            UnixNanos::from(7_000_000_000),
+            None,
+            Some(PositionId::from("POSITION-001")),
+            None,
+        )
     }
 
     #[rstest]
@@ -478,5 +850,104 @@ mod tests {
         client.batch_modify_orders(command).unwrap();
 
         assert_eq!(modified_order_ids.borrow().as_slice(), &[order1, order2]);
+    }
+
+    #[rstest]
+    fn generate_mass_status_default_composes_granular_reports() {
+        let client = MassStatusExecutionClient::new(false);
+
+        let mass_status = futures::executor::block_on(client.generate_mass_status(Some(5)))
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(mass_status.client_id, ClientId::from("MASS-STATUS"));
+        assert_eq!(mass_status.account_id, AccountId::from("MASS-STATUS-001"));
+        assert_eq!(mass_status.venue, Venue::from("SIM"));
+
+        let order_reports = mass_status.order_reports();
+        let fill_reports = mass_status.fill_reports();
+        let position_reports = mass_status.position_reports();
+        let order_report = order_reports.get(&VenueOrderId::from("ORDER-001")).unwrap();
+        let fill_report = &fill_reports.get(&VenueOrderId::from("ORDER-001")).unwrap()[0];
+        let position_report = &position_reports
+            .get(&InstrumentId::from("AUD/USD.SIM"))
+            .unwrap()[0];
+        assert_eq!(order_reports.len(), 1);
+        assert_eq!(fill_reports.len(), 1);
+        assert_eq!(position_reports.len(), 1);
+        assert_eq!(
+            order_report.instrument_id,
+            InstrumentId::from("AUD/USD.SIM")
+        );
+        assert_eq!(fill_report.trade_id, TradeId::from("TRADE-001"));
+        assert_eq!(
+            position_report.venue_position_id,
+            Some(PositionId::from("POSITION-001")),
+        );
+
+        let order_commands = client.order_commands.borrow();
+        let fill_requests = client.fill_requests.borrow();
+        let position_queries = client.position_queries.borrow();
+        assert_eq!(order_commands.len(), 1);
+        assert_eq!(fill_requests.len(), 1);
+        assert_eq!(position_queries.len(), 1);
+
+        let order_cmd = &order_commands[0];
+        let fill_cmd = &fill_requests[0];
+        let position_cmd = &position_queries[0];
+        assert_eq!(order_cmd.ts_init, mass_status.ts_init);
+        assert_eq!(fill_cmd.ts_init, mass_status.ts_init);
+        assert_eq!(position_cmd.ts_init, mass_status.ts_init);
+        assert_ne!(test_order_report().ts_init, mass_status.ts_init);
+        assert_ne!(test_fill_report().ts_init, mass_status.ts_init);
+        assert_ne!(test_position_report().ts_init, mass_status.ts_init);
+
+        let expected_start = mass_status
+            .ts_init
+            .saturating_sub(DurationNanos::from_mins(5));
+        assert_eq!(order_cmd.start, Some(expected_start));
+        assert_eq!(fill_cmd.start, Some(expected_start));
+        assert_eq!(position_cmd.start, Some(expected_start));
+        assert!(!order_cmd.open_only);
+        assert!(order_cmd.instrument_id.is_none());
+        assert!(order_cmd.end.is_none());
+        assert!(order_cmd.params.is_none());
+        assert!(fill_cmd.instrument_id.is_none());
+        assert!(fill_cmd.venue_order_id.is_none());
+        assert!(fill_cmd.end.is_none());
+        assert!(fill_cmd.params.is_none());
+        assert!(position_cmd.instrument_id.is_none());
+        assert!(position_cmd.end.is_none());
+        assert!(position_cmd.params.is_none());
+    }
+
+    #[rstest]
+    fn generate_mass_status_uses_supplied_clock_for_all_sources() {
+        let client = MassStatusExecutionClient::new(false);
+        let timestamp = UnixNanos::from(900_000_000_123);
+
+        let report = futures::executor::block_on(generate_mass_status(&client, Some(3), timestamp))
+            .unwrap()
+            .unwrap();
+
+        let expected_start = Some(UnixNanos::from(720_000_000_123));
+        assert_eq!(report.ts_init, timestamp);
+        assert_eq!(client.order_commands.borrow()[0].ts_init, timestamp);
+        assert_eq!(client.order_commands.borrow()[0].start, expected_start);
+        assert_eq!(client.fill_requests.borrow()[0].ts_init, timestamp);
+        assert_eq!(client.fill_requests.borrow()[0].start, expected_start);
+        assert_eq!(client.position_queries.borrow()[0].ts_init, timestamp);
+        assert_eq!(client.position_queries.borrow()[0].start, expected_start);
+    }
+
+    #[rstest]
+    fn generate_mass_status_default_propagates_granular_error() {
+        let client = MassStatusExecutionClient::new(true);
+
+        let error = futures::executor::block_on(client.generate_mass_status(Some(5))).unwrap_err();
+
+        let error_chain = format!("{error:#}");
+        assert!(error_chain.contains("failed to generate fill reports"));
+        assert!(error_chain.contains("sentinel fill report failure"));
     }
 }

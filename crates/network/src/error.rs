@@ -20,8 +20,14 @@ use std::{fmt::Display, io};
 use thiserror::Error;
 
 /// Error type for send operations in network clients.
-#[derive(Error, Debug)]
+#[derive(Clone, Error, Debug)]
 pub enum SendError {
+    /// The send input is invalid.
+    #[error("send failed: invalid input ({0})")]
+    InvalidInput(String),
+    /// The writer has reached the message limit for this send.
+    #[error("send failed: writer buffer full")]
+    BufferFull,
     /// The client has been closed or is disconnecting.
     #[error("send failed: client closed or disconnecting")]
     Closed,
@@ -86,8 +92,10 @@ impl Display for NetworkConfigError {
                     if index > 0 {
                         write!(f, "; ")?;
                     }
+
                     write!(f, "{error}")?;
                 }
+
                 Ok(())
             }
         }

@@ -42,7 +42,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -120,7 +120,7 @@ impl MarketToLimitOrder {
             None,
             expire_time,
             display_qty,
-            Some(TriggerType::NoTrigger),
+            None,
             None,
             contingency_type,
             order_list_id,
@@ -385,6 +385,10 @@ impl Order for MarketToLimitOrder {
         self.voided_qty
     }
 
+    fn non_reopened_voided_qty(&self) -> Quantity {
+        self.non_reopened_voided_qty
+    }
+
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
     }
@@ -442,7 +446,10 @@ impl Order for MarketToLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let updates_slippage = matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_),
+        );
 
         self.core.apply(event.clone())?;
 
@@ -450,7 +457,7 @@ impl Order for MarketToLimitOrder {
             self.update(event);
         }
 
-        if is_order_filled && let Some(price) = self.price {
+        if updates_slippage && let Some(price) = self.price {
             self.core.set_slippage(price);
         }
 
@@ -468,8 +475,7 @@ impl Order for MarketToLimitOrder {
             self.price = Some(price);
         }
 
-        self.quantity = event.quantity;
-        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
+        self.core.apply_updated_quantity(event.quantity);
     }
 
     fn is_triggered(&self) -> Option<bool> {

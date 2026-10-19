@@ -19,11 +19,12 @@ use std::{
     collections::HashMap,
     fmt::Display,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex as StdMutex},
+    sync::{Arc, LazyLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use nautilus_network::ratelimiter::quota::Quota;
+use parking_lot::Mutex as BlockingMutex;
 use tokio::{
     sync::Mutex,
     time::{Instant, sleep},
@@ -46,8 +47,8 @@ const RATE_LIMIT_HEADERS: [&str; 5] = [
     HEADER_RETRY_AFTER,
 ];
 
-static SIGNER_LIMITERS: LazyLock<StdMutex<HashMap<String, Arc<PolymarketRateLimiter>>>> =
-    LazyLock::new(|| StdMutex::new(HashMap::new()));
+static SIGNER_LIMITERS: LazyLock<BlockingMutex<HashMap<String, Arc<PolymarketRateLimiter>>>> =
+    LazyLock::new(|| BlockingMutex::new(HashMap::new()));
 
 /// Global REST quota for Polymarket Gamma API requests.
 pub static POLYMARKET_GAMMA_REST_QUOTA: LazyLock<Quota> =
@@ -201,6 +202,10 @@ impl RateLimitHeaders {
                 .unwrap_or(u64::MAX)
         })
     }
+
+    pub(crate) fn has_signer_headers(&self) -> bool {
+        self.remaining.is_some() || self.reset.is_some() || self.tier.is_some()
+    }
 }
 
 #[derive(Debug)]
@@ -211,9 +216,7 @@ pub(crate) struct PolymarketRateLimiter {
 impl PolymarketRateLimiter {
     pub(crate) fn for_signer(signer: &str) -> Arc<Self> {
         let signer = signer.to_ascii_lowercase();
-        let mut limiters = SIGNER_LIMITERS
-            .lock()
-            .expect("Polymarket rate limiter registry mutex poisoned");
+        let mut limiters = SIGNER_LIMITERS.lock();
         limiters
             .entry(signer)
             .or_insert_with(|| {
@@ -526,6 +529,20 @@ mod tests {
             .iter()
             .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
             .collect()
+    }
+
+    #[rstest]
+    #[case::remaining(&[(HEADER_RATE_LIMIT_REMAINING, "0")], true)]
+    #[case::reset(&[(HEADER_RATE_LIMIT_RESET, "1")], true)]
+    #[case::tier(&[(HEADER_RATE_LIMIT_TIER, "Standard")], true)]
+    #[case::retry_after_only(&[(HEADER_RETRY_AFTER, "2")], false)]
+    #[case::warning_only(&[(HEADER_RATE_LIMIT_WARNING, "true")], false)]
+    #[case::empty(&[], false)]
+    fn test_has_signer_headers(#[case] entries: &[(&str, &str)], #[case] expected: bool) {
+        assert_eq!(
+            RateLimitHeaders::parse(&header_map(entries)).has_signer_headers(),
+            expected
+        );
     }
 
     #[rstest]

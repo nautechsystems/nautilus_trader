@@ -18,7 +18,7 @@
 use std::fmt::Debug;
 
 use nautilus_core::UnixNanos;
-use nautilus_model::instruments::{Instrument, InstrumentAny};
+use nautilus_model::instruments::{BinaryOption, Instrument, InstrumentAny};
 
 use crate::{
     http::query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
@@ -263,6 +263,40 @@ pub(crate) fn is_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool 
         .is_some_and(|expiration_ns| expiration_ns.as_u64() != 0 && expiration_ns <= now_ns)
 }
 
+pub(crate) const MARKET_CLOSED_KEY: &str = "closed";
+
+pub(crate) fn market_closed(instrument: &InstrumentAny) -> Option<bool> {
+    match instrument {
+        InstrumentAny::BinaryOption(binary) => binary_market_closed(binary),
+        _ => None,
+    }
+}
+
+pub(crate) fn binary_market_closed(instrument: &BinaryOption) -> Option<bool> {
+    instrument
+        .info
+        .as_ref()
+        .and_then(|info| info.get_bool(MARKET_CLOSED_KEY))
+}
+
+pub(crate) fn set_market_closed(instrument: &mut BinaryOption, closed: bool) {
+    let mut info = instrument.info.clone().unwrap_or_default();
+    info.insert(MARKET_CLOSED_KEY.to_string(), closed.into());
+    instrument.info = Some(info);
+}
+
+/// Returns whether `instrument` is past its expiration without Gamma reporting it still open.
+///
+/// Gamma `endDate` is a scheduled end, not proof that trading stopped, so an expired instrument is
+/// retained while Gamma reports `closed=false`. A missing `closed` key means the instrument did not
+/// come from the live Gamma path, which keeps the time-only retirement behavior.
+pub(crate) fn is_expired_and_not_reported_open(
+    instrument: &InstrumentAny,
+    now_ns: UnixNanos,
+) -> bool {
+    is_expired(instrument, now_ns) && market_closed(instrument) != Some(false)
+}
+
 impl Debug for PredicateFilter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(PredicateFilter))
@@ -414,34 +448,24 @@ mod tests {
         expiration: UnixNanos,
     ) -> InstrumentAny {
         let raw_symbol = Symbol::new("test-token-id");
-        InstrumentAny::BinaryOption(BinaryOption::new(
-            InstrumentId::from("test-token-id.POLYMARKET"),
-            raw_symbol,
-            AssetClass::Alternative,
-            Currency::pUSD(),
-            UnixNanos::default(),
-            expiration,
-            3,
-            2,
-            Price::from("0.001"),
-            Quantity::from("0.01"),
-            outcome.map(Ustr::from),
-            None, // description
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::BinaryOption(
+            BinaryOption::builder()
+                .instrument_id(InstrumentId::from("test-token-id.POLYMARKET"))
+                .raw_symbol(raw_symbol)
+                .asset_class(AssetClass::Alternative)
+                .currency(Currency::pUSD())
+                .activation_ns(UnixNanos::default())
+                .expiration_ns(expiration)
+                .price_precision(3)
+                .size_precision(2)
+                .price_increment(Price::from("0.001"))
+                .size_increment(Quantity::from("0.01"))
+                .maybe_outcome(outcome.map(Ustr::from))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn stub_binary_option(outcome: Option<&str>) -> InstrumentAny {
@@ -495,6 +519,28 @@ mod tests {
         assert!(filter.accept(&instrument));
     }
 
+    #[rstest]
+    #[case(2_000_000, Some(false), false)]
+    #[case(2_000_000, Some(true), true)]
+    #[case(2_000_000, None, true)]
+    #[case(500_000, Some(true), false)]
+    fn test_expired_and_not_reported_open_requires_expiration_and_no_open_market_state(
+        #[case] now: u64,
+        #[case] closed: Option<bool>,
+        #[case] expected: bool,
+    ) {
+        let mut instrument =
+            stub_binary_option_with_expiration(Some("Yes"), UnixNanos::from(1_000_000));
+        if let (Some(closed), InstrumentAny::BinaryOption(binary)) = (closed, &mut instrument) {
+            set_market_closed(binary, closed);
+        }
+
+        assert_eq!(
+            is_expired_and_not_reported_open(&instrument, UnixNanos::from(now)),
+            expected
+        );
+    }
+
     #[fixture]
     fn yes_instrument() -> InstrumentAny {
         stub_binary_option(Some("Yes"))
@@ -523,7 +569,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_predicate_filter_outcome_helper(
+    fn test_predicate_filter_outcome_constructor(
         yes_instrument: InstrumentAny,
         no_instrument: InstrumentAny,
         no_outcome_instrument: InstrumentAny,
@@ -567,6 +613,12 @@ mod tests {
                 title: "Test event".to_string(),
                 description: String::new(),
             }),
+            sports_market_type: None,
+            line: None,
+            game_start_time: None,
+            taker_base_fee: None,
+            fees_enabled: None,
+            fee_schedule: None,
         }
     }
 

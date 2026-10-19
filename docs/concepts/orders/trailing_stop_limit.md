@@ -2,22 +2,21 @@
 
 `FIX OrdType <40>=4` (Stop Limit) + trailing peg
 
-A *Trailing-Stop-Limit* order is a conditional order which trails a stop trigger price
-a fixed offset away from the defined market price. Once triggered a *Limit* order will
-immediately be placed at the defined price (which is also updated as the market moves until triggered).
+A *Trailing-Stop-Limit* order keeps its stop trigger a fixed offset from the specified market price
+as the market moves favorably. It releases a *Limit* order when triggered, and the limit price also
+updates with the market until then.
 
 ## Use cases
 
-Use a *Trailing-Stop-Limit* order when you want the dynamic trail of a trailing stop but also a cap on
-the fill price. The advantage is trailing protection combined with price control. The tradeoff is the
-trailing analogue of a *Stop-Limit*: in a fast reversal the released *Limit* may not fill, leaving the
-position open.
+Use a *Trailing-Stop-Limit* order for dynamic trailing protection with a worst acceptable fill
+price. As with a *Stop-Limit*, the released *Limit* order may not fill during a fast reversal and can
+leave the position open.
 
 ## Example
 
-In the following example we create a *Trailing-Stop-Limit* order on the Currenex FX ECN to BUY 1,250,000 AUD using USD
-at a limit price of 0.71000 USD, activating at 0.72000 USD then trailing at a stop offset of 0.00100 USD
-away from the current ask price, active until further notice:
+**Example**: create a *Trailing-Stop-Limit* order on the Currenex FX ECN to BUY 1,250,000 AUD using USD. It
+starts at a limit price of 0.71000 USD and activates at 0.72000 USD. It then trails at a stop offset of
+0.00100 USD from the current ask price. The order stays active until further notice.
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -55,16 +54,16 @@ let order = self.order().trailing_stop_limit(
 ```
 
 ```python tab="Python"
-import pandas as pd
 from decimal import Decimal
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.enums import TrailingOffsetType
+
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.orders import TrailingStopLimitOrder
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TrailingOffsetType
+from nautilus_trader.model import TrailingStopLimitOrder
+from nautilus_trader.model import TriggerType
 
 order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
     instrument_id=InstrumentId.from_str("AUD/USD.CURRENEX"),
@@ -83,10 +82,17 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 )
 ```
 
-See the [`TrailingStopLimitOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.trailing_stop_limit.TrailingStopLimitOrder) for further details.
+:::info
+If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the current
+market. On the first update, its trigger price materializes from `trailing_offset`.
+:::
+
+See the
+[`TrailingStopLimitOrder` API reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.TrailingStopLimitOrder)
+for further details.
 
 ## Related guides
 
-- [Orders](index.md#trigger-offset-type) - Trigger and trailing offset types.
+- [Orders](index.md#trailing-offset-type) - Trigger and trailing offset types.
 - [Emulated orders](emulated.md) - Emulating trailing stops on venues without native support.
-- [Execution](../execution.md) - How orders reach the venue and fills are handled.
+- [Execution](../execution/) - How orders reach the venue and fills are handled.

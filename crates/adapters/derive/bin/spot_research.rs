@@ -79,10 +79,12 @@ async fn main() -> anyhow::Result<()> {
     nautilus_common::logging::ensure_logging_initialized();
 
     let environment = parse_environment_from_args()?;
+
     let out_dir = match environment {
         DeriveEnvironment::Mainnet => "/tmp/derive_spot_probe_mainnet",
         DeriveEnvironment::Testnet => "/tmp/derive_spot_probe",
     };
+
     fs::create_dir_all(out_dir)?;
 
     let (wallet_var, session_var, subaccount_var) = credential_env_vars(environment);
@@ -132,7 +134,7 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("get_instruments ETH erc20 failed: {e}"))?;
     let instrument = instruments
         .into_iter()
-        .find(|i| i.instrument_name.as_str() == "ETH-USDC")
+        .find(|i| i.instrument_name == "ETH-USDC")
         .ok_or_else(|| anyhow::anyhow!("ETH-USDC not in instruments list"))?;
     fs::write(
         format!("{out_dir}/instrument_eth_usdc.json"),
@@ -213,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
         write_outcome(out_dir, "q4_cancel_buy", &cancel);
     }
 
-    // Q7 reduce_only tests only on testnet: we already characterised the
+    // Q7 reduce_only tests only on testnet: we already characterized the
     // venue's reduce_only error surface; rerunning on mainnet is wasted
     // signed traffic.
     if matches!(environment, DeriveEnvironment::Testnet) {
@@ -296,7 +298,7 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("get_instruments ETH perp failed: {e}"))?;
         let perp = perp_instruments
             .into_iter()
-            .find(|i| i.instrument_name.as_str() == "ETH-PERP")
+            .find(|i| i.instrument_name == "ETH-PERP")
             .ok_or_else(|| anyhow::anyhow!("ETH-PERP not in instruments list"))?;
         let q7c = submit_signed_spot_order(
             &client,
@@ -347,6 +349,7 @@ fn round_down_to_tick(value: Decimal, tick: Decimal) -> Decimal {
     if tick <= Decimal::ZERO {
         return value;
     }
+
     (value / tick).floor() * tick
 }
 
@@ -373,7 +376,6 @@ async fn submit_signed_spot_order(
 ) -> anyhow::Result<Value> {
     let asset_address: Address = instrument
         .base_asset_address
-        .as_str()
         .parse()
         .map_err(|e| anyhow::anyhow!("parse base_asset_address: {e}"))?;
     let sub_id = U256::from_str_radix(instrument.base_asset_sub_id.as_str(), 10)
@@ -405,6 +407,7 @@ async fn submit_signed_spot_order(
         owner,
         signer: signer_address,
     };
+
     let mut action = SignedAction::new(ctx, &trade, domain_separator, action_typehash);
     action
         .sign(signer)
@@ -427,6 +430,7 @@ async fn submit_signed_spot_order(
         trigger_price_type: None,
         trigger_type: None,
     };
+
     fs::write(
         format!("{out_dir}/{label}_request.json"),
         serde_json::to_vec_pretty(&payload)?,

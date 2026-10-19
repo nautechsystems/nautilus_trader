@@ -1,0 +1,3427 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Integration tests for Hyperliquid HTTP client using a mock server.
+
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+
+use axum::{
+    Router,
+    extract::State,
+    http::{StatusCode, header},
+    response::{IntoResponse, Json, Response},
+    routing::post,
+};
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
+use nautilus_hyperliquid::{
+    HyperliquidHttpClient,
+    common::enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
+    http::{
+        client::HYPERLIQUID_FUNDING_HISTORY_MAX_LIMIT,
+        error::Error,
+        models::{
+            Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
+            PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
+        },
+        query::{InfoRequest, InfoRequestParams},
+    },
+};
+use nautilus_model::{
+    accounts::{Account, MarginAccount},
+    data::BarType,
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    instruments::InstrumentAny,
+    reports::FillReport,
+    types::{Currency, Money, Price, Quantity},
+};
+use nautilus_network::http::{HttpClient, Method};
+use rstest::rstest;
+use rust_decimal_macros::dec;
+use serde_json::{Value, json};
+
+#[derive(Clone)]
+struct TestServerState {
+    request_count: Arc<tokio::sync::Mutex<usize>>,
+    last_request_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    rate_limit_after: Arc<AtomicUsize>,
+    frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    frontend_open_orders_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
+    order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    clearinghouse_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
+    spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    user_fills_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    historical_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    spot_fails: Arc<std::sync::atomic::AtomicBool>,
+    user_abstraction_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    funding_history_rows: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    funding_history_calls: Arc<AtomicUsize>,
+}
+
+impl Default for TestServerState {
+    fn default() -> Self {
+        Self {
+            request_count: Arc::new(tokio::sync::Mutex::new(0)),
+            last_request_body: Arc::new(tokio::sync::Mutex::new(None)),
+            rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
+            frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            frontend_open_orders_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
+            clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            clearinghouse_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            user_fills_response: Arc::new(tokio::sync::Mutex::new(None)),
+            historical_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            spot_fails: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            user_abstraction_response: Arc::new(tokio::sync::Mutex::new(None)),
+            funding_history_rows: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            funding_history_calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+fn data_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
+}
+
+fn load_json(filename: &str) -> Value {
+    let content = std::fs::read_to_string(data_path().join(filename))
+        .unwrap_or_else(|_| panic!("failed to read {filename}"));
+    serde_json::from_str(&content).expect("invalid json")
+}
+
+/// Builds a `spotClearinghouseState` response carrying only the named balances
+/// from the shared fixture, so each test resolves exactly the tokens it caches.
+fn spot_balances_response(coins: &[&str]) -> Value {
+    let fixture = load_json("http_spot_clearinghouse_state.json");
+    let balances = fixture["balances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|balance| coins.contains(&balance["coin"].as_str().unwrap()))
+        .cloned()
+        .collect::<Vec<_>>();
+    json!({ "balances": balances })
+}
+
+async fn wait_for_server(addr: SocketAddr, path: &str) {
+    let health_url = format!("http://{addr}{path}");
+    let http_client = HttpClient::builder().build().unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn handle_info(State(state): State<TestServerState>, body: axum::body::Bytes) -> Response {
+    let mut count = state.request_count.lock().await;
+    *count += 1;
+
+    let limit_after = state.rate_limit_after.load(Ordering::Relaxed);
+    if *count > limit_after {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, "0")],
+            Json(json!({
+                "error": "Rate limit exceeded"
+            })),
+        )
+            .into_response();
+    }
+
+    let Ok(request_body): Result<Value, _> = serde_json::from_slice(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": "Invalid JSON body"
+            })),
+        )
+            .into_response();
+    };
+
+    *state.last_request_body.lock().await = Some(request_body.clone());
+
+    let request_type = request_body
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+
+    match request_type {
+        "meta" => {
+            let meta = load_json("http_meta_perp_sample.json");
+            Json(meta).into_response()
+        }
+        "allPerpMetas" => {
+            let meta = load_json("http_meta_perp_sample.json");
+            Json(json!([meta])).into_response()
+        }
+        "spotMeta" => Json(json!({
+            "universe": [],
+            "tokens": []
+        }))
+        .into_response(),
+        "metaAndAssetCtxs" => {
+            let meta = load_json("http_meta_perp_sample.json");
+            Json(json!([meta, []])).into_response()
+        }
+        "spotMetaAndAssetCtxs" => Json(json!([
+            {"universe": [], "tokens": []},
+            []
+        ]))
+        .into_response(),
+        "outcomeMeta" => Json(json!({
+            "outcomes": [
+                {
+                    "outcome": 123,
+                    "quoteToken": "USDC",
+                    "name": "Recurring",
+                    "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m",
+                    "sideSpecs": [
+                        {"name": "Yes"},
+                        {"name": "No"}
+                    ]
+                }
+            ]
+        }))
+        .into_response(),
+        "l2Book" => {
+            let book = load_json("http_l2_book_btc.json");
+            Json(book).into_response()
+        }
+        "userFills" => {
+            let custom = state.user_fills_response.lock().await.clone();
+            Json(custom.unwrap_or(json!([]))).into_response()
+        }
+        "historicalOrders" => {
+            let custom = state.historical_orders_response.lock().await.clone();
+            Json(custom.unwrap_or(json!([]))).into_response()
+        }
+        "orderStatus" => {
+            let custom = state.order_status_response.lock().await;
+            Json(custom.clone().unwrap_or(json!({"statuses": []}))).into_response()
+        }
+        "openOrders" => Json(json!([])).into_response(),
+        "frontendOpenOrders" => {
+            let custom = if let Some(dex) = request_body.get("dex").and_then(Value::as_str) {
+                state
+                    .frontend_open_orders_dex_responses
+                    .lock()
+                    .await
+                    .get(dex)
+                    .cloned()
+            } else {
+                state.frontend_open_orders_response.lock().await.clone()
+            };
+            Json(custom.unwrap_or(json!([]))).into_response()
+        }
+        "clearinghouseState" => {
+            let custom = if let Some(dex) = request_body.get("dex").and_then(Value::as_str) {
+                state
+                    .clearinghouse_dex_responses
+                    .lock()
+                    .await
+                    .get(dex)
+                    .cloned()
+            } else {
+                state.clearinghouse_response.lock().await.clone()
+            };
+            let body = custom.unwrap_or_else(|| {
+                json!({
+                    "marginSummary": {
+                        "accountValue": "10000.0",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "0.0",
+                        "totalRawUsd": "10000.0"
+                    },
+                    "crossMarginSummary": {
+                        "accountValue": "10000.0",
+                        "totalMarginUsed": "0.0",
+                        "totalNtlPos": "0.0",
+                        "totalRawUsd": "10000.0"
+                    },
+                    "crossMaintenanceMarginUsed": "0.0",
+                    "withdrawable": "10000.0",
+                    "assetPositions": []
+                })
+            });
+            Json(body).into_response()
+        }
+        "spotClearinghouseState" => {
+            if state.spot_fails.load(Ordering::Relaxed) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "spot endpoint unavailable"})),
+                )
+                    .into_response();
+            }
+
+            let custom = state.spot_clearinghouse_response.lock().await.clone();
+            let spot = custom.unwrap_or_else(|| load_json("http_spot_clearinghouse_state.json"));
+            Json(spot).into_response()
+        }
+        "userAbstraction" => {
+            let custom = state.user_abstraction_response.lock().await.clone();
+            Json(custom.unwrap_or_else(|| json!("disabled"))).into_response()
+        }
+        "fundingHistory" => {
+            state.funding_history_calls.fetch_add(1, Ordering::Relaxed);
+            let start = request_body["startTime"].as_u64().unwrap_or(0);
+            let end = request_body["endTime"].as_u64().unwrap_or(u64::MAX);
+            let rows: Vec<Value> = state
+                .funding_history_rows
+                .lock()
+                .await
+                .iter()
+                .filter(|row| (start..=end).contains(&row["time"].as_u64().unwrap()))
+                .take(HYPERLIQUID_FUNDING_HISTORY_MAX_LIMIT)
+                .cloned()
+                .collect();
+            Json(json!(rows)).into_response()
+        }
+        "candleSnapshot" => Json(json!([
+            {
+                "t": 1703875200000u64,
+                "T": 1703875260000u64,
+                "s": "BTC",
+                "i": "1m",
+                "o": "98450.00",
+                "c": "98460.00",
+                "h": "98470.00",
+                "l": "98440.00",
+                "v": "100.5",
+                "n": 50
+            }
+        ]))
+        .into_response(),
+        _ => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "error": format!("Unknown request type: {}", request_type)
+            })),
+        )
+            .into_response(),
+    }
+}
+
+async fn handle_exchange(
+    State(state): State<TestServerState>,
+    body: axum::body::Bytes,
+) -> Response {
+    let mut count = state.request_count.lock().await;
+    *count += 1;
+
+    let Ok(request_body): Result<Value, _> = serde_json::from_slice(&body) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "status": "err",
+                "response": {
+                    "type": "error",
+                    "data": "Invalid JSON body"
+                }
+            })),
+        )
+            .into_response();
+    };
+
+    *state.last_request_body.lock().await = Some(request_body.clone());
+
+    // Validate signed request format
+    if request_body.get("action").is_none()
+        || request_body.get("nonce").is_none()
+        || request_body.get("signature").is_none()
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "status": "err",
+                "response": {
+                    "type": "error",
+                    "data": "Missing required fields"
+                }
+            })),
+        )
+            .into_response();
+    }
+
+    Json(json!({
+        "status": "ok",
+        "response": {
+            "type": "order",
+            "data": {
+                "statuses": [{
+                    "resting": {
+                        "oid": 12345
+                    }
+                }]
+            }
+        }
+    }))
+    .into_response()
+}
+
+async fn handle_health() -> impl IntoResponse {
+    StatusCode::OK
+}
+
+fn create_test_router(state: TestServerState) -> Router {
+    Router::new()
+        .route("/info", post(handle_info))
+        .route("/exchange", post(handle_exchange))
+        .route("/health", axum::routing::get(handle_health))
+        .with_state(state)
+}
+
+async fn start_mock_server(state: TestServerState) -> SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let router = create_test_router(state);
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr, "/health").await;
+    addr
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_info_meta_returns_market_metadata() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let result = client.info_meta().await;
+
+    assert!(result.is_ok());
+    let meta = result.unwrap();
+    assert!(!meta.universe.is_empty());
+    assert_eq!(meta.universe[0].name, "BTC");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_info_l2_book_returns_orderbook() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let result = client.info_l2_book("BTC").await;
+
+    assert!(result.is_ok());
+    let book = result.unwrap();
+    assert_eq!(book.coin, "BTC");
+    assert_eq!(book.levels.len(), 2); // bids and asks
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_meta_returns_spot_metadata() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let meta = client.get_spot_meta().await.unwrap();
+
+    assert!(meta.tokens.is_empty());
+    assert!(meta.universe.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_perp_meta_and_ctxs_returns_metadata_with_contexts() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let PerpMetaAndCtxs::Payload(data) = client.get_perp_meta_and_ctxs().await.unwrap();
+
+    let (meta, ctxs) = *data;
+    assert!(!meta.universe.is_empty());
+    assert!(ctxs.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_meta_and_ctxs_returns_metadata_with_contexts() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let SpotMetaAndCtxs::Payload(data) = client.get_spot_meta_and_ctxs().await.unwrap();
+
+    let (meta, ctxs) = *data;
+    assert!(meta.tokens.is_empty());
+    assert!(meta.universe.is_empty());
+    assert!(ctxs.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_outcome_meta_returns_outcome_metadata() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let meta = client.get_outcome_meta().await.unwrap();
+
+    assert_eq!(meta.outcomes.len(), 1);
+    assert_eq!(meta.outcomes[0].outcome, 123);
+    assert_eq!(meta.outcomes[0].quote_token.as_deref(), Some("USDC"));
+    assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
+
+    let request_body = state.last_request_body.lock().await.clone().unwrap();
+    assert_eq!(request_body.get("type").unwrap(), "outcomeMeta");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_info_user_fills_returns_empty_for_new_user() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let result = client
+        .info_user_fills("0x1234567890123456789012345678901234567890")
+        .await;
+
+    assert!(result.is_ok());
+    let fills = result.unwrap();
+    assert!(fills.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_info_open_orders_returns_empty_array() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let orders = client
+        .info_open_orders("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    assert!(orders.is_array());
+    assert!(orders.as_array().unwrap().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_info_clearinghouse_state_returns_account_state() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let result = client
+        .info_clearinghouse_state("0x1234567890123456789012345678901234567890")
+        .await;
+
+    assert!(result.is_ok());
+    let state = result.unwrap();
+    assert!(state.get("marginSummary").is_some());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_info_spot_clearinghouse_state_returns_balances() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let result = client
+        .info_spot_clearinghouse_state("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    let balances = result.get("balances").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(balances.len(), 4);
+    assert_eq!(balances[0].get("coin").unwrap().as_str().unwrap(), "USDC");
+
+    let last_request = state.last_request_body.lock().await;
+    let body = last_request.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "spotClearinghouseState"
+    );
+    assert_eq!(
+        body.get("user").unwrap().as_str().unwrap(),
+        "0x1234567890123456789012345678901234567890"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_dedupes_usdc_with_perp_summary() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    let usdc_balances: Vec<_> = account_state
+        .balances
+        .iter()
+        .filter(|b| b.currency.code == "USDC")
+        .collect();
+    assert_eq!(usdc_balances.len(), 1, "USDC must not be duplicated");
+    assert_eq!(usdc_balances[0].total.as_f64(), 10000.0);
+
+    let non_usdc: Vec<_> = account_state
+        .balances
+        .iter()
+        .filter(|b| b.currency.code != "USDC")
+        .map(|b| b.currency.code.as_str())
+        .collect();
+    assert!(non_usdc.contains(&"PURR"));
+    assert!(non_usdc.contains(&"HYPE"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_balances_emits_one_per_non_zero_token() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let balances = client
+        .request_spot_balances("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    assert_eq!(balances.len(), 4);
+
+    let usdc = balances
+        .iter()
+        .find(|b| b.currency.code == "USDC")
+        .expect("USDC balance");
+    assert_eq!(usdc.total.as_f64(), 14.625485);
+    assert_eq!(usdc.free.as_f64(), 14.625485);
+
+    let purr = balances
+        .iter()
+        .find(|b| b.currency.code == "PURR")
+        .expect("PURR balance");
+    assert_eq!(purr.total.as_f64(), 2000.0);
+    assert_eq!(purr.locked.as_f64(), 100.0);
+    assert_eq!(purr.free.as_f64(), 1900.0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_bars_missing_cached_instrument_returns_bad_request_lookup_error() {
+    let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)
+        .expect("failed to create Hyperliquid HTTP client");
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let bar_type = BarType::from("BTC-USD-PERP.HYPERLIQUID-1-MINUTE-LAST-EXTERNAL");
+
+    let err = client
+        .request_bars(bar_type, None, None, None)
+        .await
+        .expect_err("empty instrument cache must error before making a request");
+
+    assert!(matches!(
+        err,
+        Error::BadRequest(ref message)
+            if message == &InstrumentLookupError::not_found(instrument_id).to_string()
+    ));
+}
+
+const FUNDING_BASE_MS: u64 = 1_769_908_800_000;
+const HOUR_MS: u64 = 3_600_000;
+
+fn funding_row(time_ms: u64, rate: &str) -> Value {
+    json!({"coin": "BTC", "fundingRate": rate, "premium": "0.0001", "time": time_ms})
+}
+
+// Venue rows land a few ms after the hour
+fn hourly_funding_rows(count: u64) -> Vec<Value> {
+    (0..count)
+        .map(|i| funding_row(FUNDING_BASE_MS + i * HOUR_MS + 7, "0.0000125"))
+        .collect()
+}
+
+fn timestamp_ms(ms: u64) -> jiff::Timestamp {
+    jiff::Timestamp::from_millisecond(i64::try_from(ms).unwrap()).unwrap()
+}
+
+fn btc_perp_instrument() -> InstrumentAny {
+    perp_instrument("BTC-USD-PERP.HYPERLIQUID", "BTC")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_parses_signed_rates() {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = vec![
+        funding_row(FUNDING_BASE_MS + 7, "0.0000125"),
+        funding_row(FUNDING_BASE_MS + HOUR_MS + 134, "-0.0000081"),
+    ];
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            Some(timestamp_ms(FUNDING_BASE_MS)),
+            Some(timestamp_ms(FUNDING_BASE_MS + 2 * HOUR_MS)),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(state.funding_history_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(funding_rates.len(), 2);
+    assert_eq!(funding_rates[0].instrument_id, instrument_id);
+    assert_eq!(funding_rates[0].rate, dec!(0.0000125));
+    assert_eq!(funding_rates[0].interval, Some(60));
+    assert_eq!(
+        funding_rates[0].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 7) * 1_000_000
+    );
+    assert_eq!(funding_rates[1].rate, dec!(-0.0000081));
+    assert_eq!(
+        funding_rates[1].ts_event.as_u64(),
+        (FUNDING_BASE_MS + HOUR_MS + 134) * 1_000_000
+    );
+
+    let request_body = state.last_request_body.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "fundingHistory");
+    assert_eq!(request_body["coin"], "BTC");
+    assert_eq!(request_body["startTime"], FUNDING_BASE_MS);
+    assert_eq!(request_body["endTime"], FUNDING_BASE_MS + 2 * HOUR_MS);
+}
+
+#[rstest]
+#[case::two_full_pages_and_short_page(1_100, 3)]
+#[case::full_final_page_then_empty_page(1_000, 3)]
+#[case::single_short_page(10, 1)]
+#[tokio::test]
+async fn test_request_funding_rates_paginates_range(
+    #[case] row_count: u64,
+    #[case] expected_calls: usize,
+) {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = hourly_funding_rows(row_count);
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            Some(timestamp_ms(FUNDING_BASE_MS)),
+            Some(timestamp_ms(FUNDING_BASE_MS + row_count * HOUR_MS)),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        state.funding_history_calls.load(Ordering::Relaxed),
+        expected_calls
+    );
+    assert_eq!(funding_rates.len() as u64, row_count);
+    assert!(
+        funding_rates
+            .windows(2)
+            .all(|pair| pair[0].ts_event < pair[1].ts_event)
+    );
+    assert_eq!(
+        funding_rates.last().unwrap().ts_event.as_u64(),
+        (FUNDING_BASE_MS + (row_count - 1) * HOUR_MS + 7) * 1_000_000
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_with_start_stops_at_limit() {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = hourly_funding_rows(1_100);
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            Some(timestamp_ms(FUNDING_BASE_MS)),
+            Some(timestamp_ms(FUNDING_BASE_MS + 1_100 * HOUR_MS)),
+            Some(2),
+        )
+        .await
+        .unwrap();
+
+    // The limit is reached on the first page, so no further pages are fetched
+    assert_eq!(state.funding_history_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(funding_rates.len(), 2);
+    assert_eq!(
+        funding_rates[0].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 7) * 1_000_000
+    );
+    assert_eq!(
+        funding_rates[1].ts_event.as_u64(),
+        (FUNDING_BASE_MS + HOUR_MS + 7) * 1_000_000
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_without_start_returns_latest_limit() {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = hourly_funding_rows(12);
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let end_ms = FUNDING_BASE_MS + 10 * HOUR_MS + 500;
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            None,
+            Some(timestamp_ms(end_ms)),
+            Some(2),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(funding_rates.len(), 2);
+    assert_eq!(
+        funding_rates[0].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 9 * HOUR_MS + 7) * 1_000_000
+    );
+    assert_eq!(
+        funding_rates[1].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 10 * HOUR_MS + 7) * 1_000_000
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_rejects_start_not_before_end() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let ts = timestamp_ms(FUNDING_BASE_MS);
+
+    let err = client
+        .request_funding_rates(&btc_perp_instrument(), Some(ts), Some(ts), None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, Error::BadRequest(_)));
+    assert_eq!(state.funding_history_calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_build_submit_order_report_missing_cached_instrument_returns_bad_request_lookup_error()
+{
+    use nautilus_model::{
+        enums::OrderSide,
+        types::{Price, Quantity},
+    };
+
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)
+        .expect("failed to create Hyperliquid HTTP client");
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let response = HyperliquidExchangeResponse::Status {
+        status: "ok".to_string(),
+        response: json!({
+            "type": "order",
+            "data": { "statuses": [{ "resting": { "oid": 12345 } }] },
+        }),
+    };
+
+    let err = client
+        .build_submit_order_report(
+            instrument_id,
+            ClientOrderId::new("O-001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("1"),
+            TimeInForce::Gtc,
+            Some(Price::from("100.0")),
+            None,
+            response,
+        )
+        .expect_err("empty instrument cache must error before building the report");
+
+    assert!(matches!(
+        err,
+        Error::BadRequest(ref message)
+            if message == &InstrumentLookupError::not_found(instrument_id).to_string()
+    ));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_skips_spot_fetch_for_perp_filter() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    // Perp filter must not trigger a spotClearinghouseState request
+    let reports = client
+        .request_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("BTC-USD-PERP.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    assert!(reports.is_empty());
+
+    let last = state.last_request_body.lock().await;
+    let body = last.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "clearinghouseState",
+        "filtered perp query must not reach spotClearinghouseState"
+    );
+    assert_eq!(body.get("dex"), None);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_fails_when_instrument_missing() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    // No spot instruments are cached: the non-zero PURR/HYPE/+10 balances in the
+    // fixture cannot be resolved, so the snapshot must fail closed rather than
+    // silently omit real holdings
+    let err = client
+        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
+        .await
+        .expect_err("unresolved spot balances must fail closed");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Spot position snapshot incomplete")),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_emits_for_cached_instrument() {
+    // USDC rides along in the fixture because it is the universal spot quote
+    // with no `USDC-*-SPOT` instrument: it must be skipped without affecting
+    // completeness, leaving exactly the cached PURR balance as a report.
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await =
+        Some(spot_balances_response(&["USDC", "PURR"]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+
+    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("PURR/USDC"))
+        .base_currency(purr)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
+    client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
+
+    let reports = client
+        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(
+        report.instrument_id,
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID")
+    );
+    assert_eq!(report.quantity.as_f64(), 2000.0);
+    // Spot holdings are always Long on Hyperliquid (no spot shorting)
+    assert_eq!(report.position_side, PositionSide::Long);
+    // entryNtl=1234.56 / total=2000 = 0.61728
+    assert_eq!(
+        report.avg_px_open.unwrap(),
+        rust_decimal_macros::dec!(0.61728),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_filters_by_instrument_id() {
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await =
+        Some(spot_balances_response(&["PURR", "HYPE"]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+
+    // Cache PURR/USDC (fixture contains total=2000)
+    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
+    let purr_inst = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("PURR/USDC"))
+        .base_currency(purr)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
+    client.cache_instrument(&InstrumentAny::CurrencyPair(purr_inst));
+
+    // Cache HYPE/USDC (fixture contains total=5.2)
+    let hype = Currency::new("HYPE", 8, 0, "HYPE", CurrencyType::Crypto);
+    let hype_inst = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("HYPE-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("@150"))
+        .base_currency(hype)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(2)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("0.01"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
+    client.cache_instrument(&InstrumentAny::CurrencyPair(hype_inst));
+
+    let reports = client
+        .request_spot_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("PURR-USDC-SPOT.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_propagates_spot_endpoint_failure() {
+    let state = TestServerState::default();
+    state
+        .spot_fails
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let result = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await;
+
+    let err = result.expect_err("spot endpoint failure must propagate");
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("spot") || msg.contains("clearinghouse") || msg.contains("http"),
+        "error must reference the failing spot fetch; got: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_skips_perp_fetch_for_spot_filter() {
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{CurrencyPair, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(spot_balances_response(&["PURR"]));
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("PURR/USDC"))
+        .base_currency(purr)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
+    client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
+
+    let reports = client
+        .request_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("PURR-USDC-SPOT.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    // PURR is cached and fixture has total=2000, so the spot report emerges
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID")
+    );
+
+    // Last request must be the spot endpoint; perp clearinghouseState
+    // must not be called for spot-filtered queries
+    let last = state.last_request_body.lock().await;
+    let body = last.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "spotClearinghouseState",
+        "spot-filtered query must not reach clearinghouseState"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_spot_position_status_reports_resolves_outcome_side_token() {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::AssetClass,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{BinaryOption, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(spot_balances_response(&["+10"]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let usdc = Currency::from("USDC");
+
+    let outcome = BinaryOption::builder()
+        .instrument_id(InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("#10"))
+        .asset_class(AssetClass::Alternative)
+        .currency(usdc)
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(4)
+        .size_precision(2)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.01"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
+    client.cache_instrument(&InstrumentAny::BinaryOption(outcome));
+
+    let reports = client
+        .request_spot_position_status_reports("0x1234567890123456789012345678901234567890", None)
+        .await
+        .unwrap();
+
+    let outcome_report = reports
+        .iter()
+        .find(|r| r.instrument_id == InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
+        .expect("outcome side token must surface as a position report");
+    assert_eq!(outcome_report.position_side, PositionSide::Long);
+    assert_eq!(outcome_report.quantity.as_f64(), 25.0);
+    // entryNtl=12.5 / total=25 = 0.5
+    assert_eq!(
+        outcome_report.avg_px_open.unwrap(),
+        rust_decimal_macros::dec!(0.5),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filter() {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        enums::AssetClass,
+        identifiers::{InstrumentId, Symbol},
+        instruments::{BinaryOption, InstrumentAny},
+        types::{Currency, Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    *state.spot_clearinghouse_response.lock().await = Some(spot_balances_response(&["+10"]));
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let usdc = Currency::from("USDC");
+
+    let outcome = BinaryOption::builder()
+        .instrument_id(InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("#10"))
+        .asset_class(AssetClass::Alternative)
+        .currency(usdc)
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(4)
+        .size_precision(2)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.01"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
+    client.cache_instrument(&InstrumentAny::BinaryOption(outcome));
+
+    let reports = client
+        .request_position_status_reports(
+            "0x1234567890123456789012345678901234567890",
+            Some("1-YES-OUTCOME.HYPERLIQUID".into()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID")
+    );
+
+    // Request count guards against fetching perp first then spot
+    let last = state.last_request_body.lock().await;
+    let body = last.as_ref().unwrap();
+    assert_eq!(
+        body.get("type").unwrap().as_str().unwrap(),
+        "spotClearinghouseState",
+        "outcome-filtered query must not reach clearinghouseState"
+    );
+    assert_eq!(
+        *state.request_count.lock().await,
+        1,
+        "outcome filter must issue exactly one info request"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_resolves_outcome_response_instrument() {
+    // Regression test: after the venue accepts an outcome order, the
+    // response-report builder must resolve the cached BinaryOption via
+    // `cache_alias_for_symbol` (token form `+<encoding>` for outcomes), not
+    // via the leading symbol segment (which would be the literal outcome
+    // index, e.g. "123", and miss the cache).
+    use nautilus_model::{
+        enums::OrderSide,
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    // Populate asset_indices and the instrument cache from the mocked
+    // `outcomeMeta`, which lists outcome 123 with both sides.
+    let instruments = client.request_instruments().await.unwrap();
+    for inst in &instruments {
+        client.cache_instrument(inst);
+    }
+
+    let outcome_id = InstrumentId::from("123-YES-OUTCOME.HYPERLIQUID");
+    let cloid = ClientOrderId::new("O-OUTCOME-SUBMIT-001");
+
+    let report = client
+        .submit_order(
+            outcome_id,
+            cloid,
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("100"),
+            TimeInForce::Gtc,
+            Some(Price::from("0.5000")),
+            None,
+            false,
+            false,
+        )
+        .await
+        .expect("submit_order must succeed and resolve the outcome instrument");
+
+    assert_eq!(report.instrument_id, outcome_id);
+    assert_eq!(report.venue_order_id.as_str(), "12345");
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.client_order_id, Some(cloid));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_from_order_any_denies_quote_quantity() {
+    // The raw HTTP path has no cached market data to convert with, so a
+    // quote-denominated OrderAny must fail locally. The client targets the
+    // mock server so the test stays hermetic even without the guard.
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        enums::OrderSide,
+        identifiers::{StrategyId, TraderId},
+        orders::{LimitOrder, OrderAny},
+        types::{Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let request_count = state.request_count.clone();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let order = OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+        ClientOrderId::new("O-QUOTE-RAW-HTTP"),
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("56730.0"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        true, // quote_quantity
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let err = client
+        .submit_order_from_order_any(&order)
+        .await
+        .expect_err("quote-denominated order must be denied locally");
+    assert_eq!(
+        err.to_string(),
+        "bad request: Quote-denominated quantity orders must submit through the execution client \
+         for quote-to-base conversion"
+    );
+    assert_eq!(*request_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_orders_denies_quote_quantity() {
+    // The batch path converts each OrderAny directly, so one quote-denominated
+    // quantity must fail the whole batch locally.
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        enums::OrderSide,
+        identifiers::{StrategyId, TraderId},
+        orders::{LimitOrder, OrderAny},
+        types::{Price, Quantity},
+    };
+
+    fn make_limit(id: &str, quote_quantity: bool) -> OrderAny {
+        OrderAny::Limit(LimitOrder::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+            ClientOrderId::new(id),
+            OrderSide::Buy,
+            Quantity::from("100"),
+            Price::from("56730.0"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            quote_quantity,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+    }
+
+    let state = TestServerState::default();
+    let request_count = state.request_count.clone();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let orders = [
+        make_limit("O-BATCH-QUOTE", true),
+        make_limit("O-BATCH-BASE", false),
+    ];
+
+    let err = client
+        .submit_orders(&orders.iter().collect::<Vec<_>>())
+        .await
+        .expect_err("quote-denominated order must be denied locally");
+    assert_eq!(
+        err.to_string(),
+        "bad request: Quote-denominated quantity order O-BATCH-QUOTE must submit through the \
+         execution client for quote-to-base conversion"
+    );
+    assert_eq!(*request_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_orders_resolves_outcome_response_instrument() {
+    // Mirror of `test_submit_order_resolves_outcome_response_instrument` for
+    // the batch path. `submit_orders` runs the same alias derivation in a
+    // loop, so a separate regression test guards against the two call sites
+    // drifting apart.
+    use nautilus_model::{
+        enums::OrderSide,
+        identifiers::{InstrumentId, StrategyId, TraderId},
+        orders::{LimitOrder, OrderAny},
+        types::{Price, Quantity},
+    };
+
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let instruments = client.request_instruments().await.unwrap();
+    for inst in &instruments {
+        client.cache_instrument(inst);
+    }
+
+    let outcome_id = InstrumentId::from("123-YES-OUTCOME.HYPERLIQUID");
+    let cloid = ClientOrderId::new("O-OUTCOME-BATCH-001");
+
+    let order = OrderAny::Limit(LimitOrder::new(
+        TraderId::from("TESTER-001"),
+        StrategyId::from("S-001"),
+        outcome_id,
+        cloid,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("0.5000"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Default::default(),
+        Default::default(),
+    ));
+
+    let reports = client
+        .submit_orders(&[&order])
+        .await
+        .expect("submit_orders must succeed and resolve outcome instruments");
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(report.instrument_id, outcome_id);
+    assert_eq!(report.venue_order_id.as_str(), "12345");
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rate_limit_triggers_429_response() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(2, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)
+        .expect("failed to create Hyperliquid HTTP client");
+    client.set_base_info_url(format!("http://{addr}/info"));
+
+    assert!(client.info_meta().await.is_ok());
+    assert!(client.info_meta().await.is_ok());
+
+    let result = client.info_meta().await;
+    assert!(matches!(
+        result,
+        Err(Error::RateLimit {
+            scope: "info",
+            weight: 20,
+            retry_after_ms: Some(0),
+        })
+    ));
+    assert_eq!(*state.request_count.lock().await, 6);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_invalid_request_type_returns_error() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+
+    let request = InfoRequest {
+        request_type: HyperliquidInfoRequestType::Meta,
+        params: InfoRequestParams::None,
+    };
+
+    let result = client.send_info_request_raw(&request).await;
+    assert!(result.is_ok());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_l2_book_request_includes_coin_parameter() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let _ = client.info_l2_book("ETH").await;
+
+    let last_request = state.last_request_body.lock().await;
+    let request_body = last_request.as_ref().unwrap();
+
+    assert_eq!(
+        request_body.get("type").unwrap().as_str().unwrap(),
+        "l2Book"
+    );
+    assert_eq!(request_body.get("coin").unwrap().as_str().unwrap(), "ETH");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_user_fills_request_includes_user_parameter() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_test_client(&addr);
+    let user = "0xabcdef1234567890abcdef1234567890abcdef12";
+    let _ = client.info_user_fills(user).await;
+
+    let last_request = state.last_request_body.lock().await;
+    let request_body = last_request.as_ref().unwrap();
+
+    assert_eq!(
+        request_body.get("type").unwrap().as_str().unwrap(),
+        "userFills"
+    );
+    assert_eq!(request_body.get("user").unwrap().as_str().unwrap(), user);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_preserves_parsed_margins() {
+    // Regression: the HTTP client previously discarded parsed margins by passing
+    // `vec![]` into `AccountState::new`. Verify that a non-zero `totalMarginUsed`
+    // surfaces as a USDC account-wide margin on the returned `AccountState`.
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await = Some(json!({
+        "marginSummary": {
+            "accountValue": "10000.0",
+            "totalMarginUsed": "1250.0",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "10000.0"
+        },
+        "crossMarginSummary": {
+            "accountValue": "10000.0",
+            "totalMarginUsed": "1250.0",
+            "totalNtlPos": "0.0",
+            "totalRawUsd": "10000.0"
+        },
+        "crossMaintenanceMarginUsed": "0.0",
+        "withdrawable": "8750.0",
+        "assetPositions": []
+    }));
+    let addr = start_mock_server(state.clone()).await;
+
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None)
+        .expect("failed to create Hyperliquid HTTP client");
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-001"));
+
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .expect("request_account_state should succeed");
+
+    assert_eq!(
+        account_state.margins.len(),
+        1,
+        "parsed margins must not be discarded by the HTTP client",
+    );
+    let margin = &account_state.margins[0];
+    assert!(
+        margin.instrument_id.is_none(),
+        "Hyperliquid emits account-wide (cross margin) entries, not per-instrument",
+    );
+    assert_eq!(margin.currency.code, "USDC");
+    assert_eq!(margin.initial.as_f64(), 1250.0);
+    assert_eq!(margin.maintenance.as_f64(), 1250.0);
+}
+
+// Account holding longs on the default dex and a HIP-3 dex: the default-dex perp summary
+// carries a negative `totalRawUsd`, while spot USDC holds the collateral and its `hold` is the
+// margin used across both dexes.
+async fn set_open_positions_account_state(state: &TestServerState, mode: &str) {
+    *state.user_abstraction_response.lock().await = Some(json!(mode));
+    *state.clearinghouse_response.lock().await = Some(json!({
+        "marginSummary": {
+            "accountValue": "210.5",
+            "totalMarginUsed": "180.0",
+            "totalNtlPos": "900.0",
+            "totalRawUsd": "-689.5"
+        },
+        "crossMarginSummary": {
+            "accountValue": "210.5",
+            "totalMarginUsed": "180.0",
+            "totalNtlPos": "900.0",
+            "totalRawUsd": "-689.5"
+        },
+        "crossMaintenanceMarginUsed": "36.0",
+        "withdrawable": "30.5",
+        "assetPositions": []
+    }));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({
+        "balances": [
+            {"coin": "USDC", "token": 0, "total": "512.25", "hold": "420.0", "entryNtl": "0.0"}
+        ]
+    }));
+}
+
+#[rstest]
+#[case::unified("unifiedAccount")]
+#[case::portfolio_margin("portfolioMargin")]
+#[tokio::test]
+async fn test_request_account_state_spot_collateral_account_uses_spot_usdc(#[case] mode: &str) {
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .expect("request_account_state should succeed");
+
+    assert_eq!(account_state.balances.len(), 1);
+    let usdc = &account_state.balances[0];
+    assert_eq!(usdc.currency.code, "USDC");
+    assert_eq!(usdc.total.as_decimal(), rust_decimal_macros::dec!(512.25));
+    assert_eq!(usdc.free.as_decimal(), rust_decimal_macros::dec!(92.25));
+    assert_eq!(account_state.margins.len(), 1);
+    assert_eq!(
+        account_state.margins[0].initial.as_decimal(),
+        rust_decimal_macros::dec!(420.0),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_spot_collateral_clears_usdc_when_spot_drops_it(
+    #[values("unifiedAccount", "portfolioMargin")] mode: &str,
+    #[values(
+        json!({"balances": [{"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}]}),
+        json!({"balances": []})
+    )]
+    emptied_spot: Value,
+) {
+    // A funded account whose spot USDC later reads zero or disappears while the perp summary
+    // stays non-zero. Account updates keep any currency an update omits, so the follow-up
+    // snapshot must still carry USDC for the funded balance and margin to be cleared
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let user = "0x1234567890123456789012345678901234567890";
+
+    let funded = client
+        .request_account_state(user)
+        .await
+        .expect("funded request_account_state should succeed");
+    let mut account = MarginAccount::new(funded, true);
+    assert_eq!(
+        account
+            .balance_total(Some(Currency::USDC()))
+            .unwrap()
+            .as_decimal(),
+        rust_decimal_macros::dec!(512.25),
+    );
+    let funded_margin = account
+        .account_margin(&Currency::USDC())
+        .expect("funded snapshot must carry a USDC margin");
+    assert_eq!(
+        funded_margin.initial.as_decimal(),
+        rust_decimal_macros::dec!(420.0)
+    );
+
+    *state.spot_clearinghouse_response.lock().await = Some(emptied_spot);
+    let emptied = client
+        .request_account_state(user)
+        .await
+        .expect("emptied request_account_state should succeed");
+    account.apply(emptied).unwrap();
+
+    let usdc_total = account
+        .balance_total(Some(Currency::USDC()))
+        .expect("USDC balance must still be present");
+    assert!(usdc_total.is_zero(), "stale USDC total {usdc_total}");
+    assert!(
+        account
+            .balance_free(Some(Currency::USDC()))
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        account
+            .balance_locked(Some(Currency::USDC()))
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        account.account_margin(&Currency::USDC()).is_none(),
+        "stale USDC margin {:?}",
+        account.account_margin(&Currency::USDC()),
+    );
+}
+
+fn flat_perp_summary(value: &str, margin_used: &str) -> Value {
+    let summary = json!({
+        "accountValue": value,
+        "totalMarginUsed": margin_used,
+        "totalNtlPos": "0.0",
+        "totalRawUsd": value
+    });
+    json!({
+        "marginSummary": summary,
+        "crossMarginSummary": summary,
+        "crossMaintenanceMarginUsed": "0.0",
+        "withdrawable": value,
+        "assetPositions": []
+    })
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_clears_spot_token_reported_at_zero(
+    #[values("disabled", "unifiedAccount", "portfolioMargin")] mode: &str,
+) {
+    // The venue keeps a sold-out token in the spot state at zero; the account must see it at zero
+    // rather than keep the previous balance
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!(mode));
+    *state.clearinghouse_response.lock().await = Some(flat_perp_summary("100.0", "0.0"));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": [
+        {"coin": "USDC", "token": 0, "total": "100.0", "hold": "0.0", "entryNtl": "0.0"},
+        {"coin": "PURR", "token": 1, "total": "10.0", "hold": "0.0", "entryNtl": "5.0"}
+    ]}));
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let user = "0x1234567890123456789012345678901234567890";
+
+    // The adapter registers PURR on the fly while parsing, so look it up afterwards
+    let funded = client.request_account_state(user).await.unwrap();
+    let purr = Currency::from("PURR");
+    let mut account = MarginAccount::new(funded, true);
+    assert_eq!(
+        account.balance_total(Some(purr)).unwrap().as_decimal(),
+        rust_decimal_macros::dec!(10),
+    );
+
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": [
+        {"coin": "USDC", "token": 0, "total": "100.0", "hold": "0.0", "entryNtl": "0.0"},
+        {"coin": "PURR", "token": 1, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}
+    ]}));
+    account
+        .apply(client.request_account_state(user).await.unwrap())
+        .unwrap();
+
+    let purr_total = account
+        .balance_total(Some(purr))
+        .expect("PURR balance must still be present");
+    assert!(purr_total.is_zero(), "stale PURR total {purr_total}");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_clears_usdc_after_full_withdrawal(
+    #[values("disabled", "default", "dexAbstraction", "someFutureMode")] mode: &str,
+    #[values(
+        json!({"balances": [{"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}]}),
+        json!({"balances": []})
+    )]
+    emptied_spot: Value,
+) {
+    // A standard account that withdraws everything reports a zeroed perp summary and no spot
+    // USDC; the update must still carry USDC at zero
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!(mode));
+    *state.clearinghouse_response.lock().await = Some(flat_perp_summary("500.0", "50.0"));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let user = "0x1234567890123456789012345678901234567890";
+
+    let funded = client.request_account_state(user).await.unwrap();
+    let mut account = MarginAccount::new(funded, true);
+    assert_eq!(
+        account
+            .balance_total(Some(Currency::USDC()))
+            .unwrap()
+            .as_decimal(),
+        rust_decimal_macros::dec!(500),
+    );
+    assert!(account.account_margin(&Currency::USDC()).is_some());
+
+    *state.clearinghouse_response.lock().await = Some(flat_perp_summary("0.0", "0.0"));
+    *state.spot_clearinghouse_response.lock().await = Some(emptied_spot);
+    account
+        .apply(client.request_account_state(user).await.unwrap())
+        .unwrap();
+
+    let usdc_total = account
+        .balance_total(Some(Currency::USDC()))
+        .expect("USDC balance must still be present");
+    assert!(usdc_total.is_zero(), "stale USDC total {usdc_total}");
+    assert!(
+        account
+            .balance_free(Some(Currency::USDC()))
+            .unwrap()
+            .is_zero()
+    );
+    assert!(
+        account.account_margin(&Currency::USDC()).is_none(),
+        "stale USDC margin {:?}",
+        account.account_margin(&Currency::USDC()),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_account_state_keeps_perp_usdc_when_spot_lists_usdc_at_zero() {
+    // A standard account holds its collateral in the perp summary while the venue keeps a zero
+    // spot USDC row; the zero row must not add a second USDC entry over the funded one
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!("disabled"));
+    *state.clearinghouse_response.lock().await = Some(flat_perp_summary("500.0", "0.0"));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": [
+        {"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"},
+        {"coin": "PURR", "token": 1, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}
+    ]}));
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .unwrap();
+
+    let usdc: Vec<_> = account_state
+        .balances
+        .iter()
+        .filter(|balance| balance.currency.code == "USDC")
+        .collect();
+    assert_eq!(usdc.len(), 1, "duplicate USDC entries {usdc:?}");
+    assert_eq!(usdc[0].total.as_decimal(), rust_decimal_macros::dec!(500));
+    assert!(
+        account_state
+            .balances
+            .iter()
+            .any(|balance| balance.currency.code == "PURR" && balance.total.is_zero())
+    );
+}
+
+#[rstest]
+#[case::no_spot_rows(json!({"balances": []}))]
+#[case::zero_usdc_row(json!({"balances": [
+    {"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}
+]}))]
+#[case::zero_usdc_and_token_rows(json!({"balances": [
+    {"coin": "USDC", "token": 0, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"},
+    {"coin": "PURR", "token": 1, "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}
+]}))]
+#[tokio::test]
+async fn test_request_account_state_without_perp_summary_keeps_usdc(#[case] spot: Value) {
+    // A response with no perp summary carries no USDC reading, so the previous balance and its
+    // margin are kept rather than zeroed, whatever zero rows the spot state lists
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!("disabled"));
+    *state.clearinghouse_response.lock().await = Some(flat_perp_summary("500.0", "50.0"));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let user = "0x1234567890123456789012345678901234567890";
+
+    let funded = client.request_account_state(user).await.unwrap();
+    let mut account = MarginAccount::new(funded, true);
+    assert!(account.account_margin(&Currency::USDC()).is_some());
+
+    *state.clearinghouse_response.lock().await = Some(json!({"assetPositions": []}));
+    *state.spot_clearinghouse_response.lock().await = Some(spot);
+    let no_summary = client.request_account_state(user).await.unwrap();
+    assert!(
+        no_summary
+            .balances
+            .iter()
+            .all(|balance| balance.currency.code != "USDC"),
+        "no perp summary must not report USDC: {:?}",
+        no_summary.balances,
+    );
+    account.apply(no_summary).unwrap();
+
+    assert_eq!(
+        account
+            .balance_total(Some(Currency::USDC()))
+            .unwrap()
+            .as_decimal(),
+        rust_decimal_macros::dec!(500),
+    );
+    let margin = account
+        .account_margin(&Currency::USDC())
+        .expect("previous USDC margin must be kept");
+    assert_eq!(margin.initial.as_decimal(), rust_decimal_macros::dec!(50));
+}
+
+#[rstest]
+#[case::disabled("disabled")]
+#[case::default("default")]
+#[case::dex_abstraction("dexAbstraction")]
+#[case::unrecognized("someFutureMode")]
+#[tokio::test]
+async fn test_request_account_state_other_modes_keep_perp_summary_usdc(#[case] mode: &str) {
+    // Same venue state as the spot-collateral test: outside unified and portfolio margin the
+    // default-dex perp summary stays authoritative for USDC, and an unrecognized mode string
+    // must fall back to that logic rather than fail the request
+    let state = TestServerState::default();
+    set_open_positions_account_state(&state, mode).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let account_state = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await
+        .expect("request_account_state should succeed");
+
+    assert_eq!(account_state.balances.len(), 1);
+    let usdc = &account_state.balances[0];
+    assert_eq!(usdc.currency.code, "USDC");
+    assert_eq!(usdc.total.as_decimal(), rust_decimal_macros::dec!(-689.5));
+    assert_eq!(usdc.free.as_decimal(), rust_decimal_macros::dec!(30.5));
+    assert_eq!(account_state.margins.len(), 1);
+    assert_eq!(
+        account_state.margins[0].initial.as_decimal(),
+        rust_decimal_macros::dec!(180.0),
+    );
+}
+
+#[rstest]
+#[case::object(json!({"unexpected": "shape"}))]
+#[case::null_valued_object(json!({"unexpected": null}))]
+#[case::null(json!(null))]
+#[case::number(json!(42))]
+#[tokio::test]
+async fn test_request_account_state_propagates_user_abstraction_failure(#[case] response: Value) {
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(response);
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    let result = client
+        .request_account_state("0x1234567890123456789012345678901234567890")
+        .await;
+
+    let err = result.expect_err("an unreadable account mode must not fall back silently");
+    assert!(
+        err.to_string().contains("user abstraction"),
+        "error must reference the failing abstraction fetch; got: {err}",
+    );
+}
+
+fn create_test_client(addr: &SocketAddr) -> TestHttpClient {
+    TestHttpClient::new(format!("http://{addr}"))
+}
+
+struct TestHttpClient {
+    client: HttpClient,
+    base_url: String,
+}
+
+impl TestHttpClient {
+    fn new(base_url: String) -> Self {
+        let client = HttpClient::builder()
+            .headers(HashMap::from([(
+                "Content-Type".to_string(),
+                "application/json".to_string(),
+            )]))
+            .build()
+            .unwrap();
+
+        Self { client, base_url }
+    }
+
+    async fn send_info_request(&self, request: &InfoRequest) -> Result<Value, String> {
+        let url = format!("{}/info", self.base_url);
+        let body = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+
+        let response = self
+            .client
+            .request(Method::POST, url, None, None, Some(body), None, None)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !response.status.is_success() {
+            return Err(format!("HTTP error: {:?}", response.status));
+        }
+
+        serde_json::from_slice(&response.body).map_err(|e| e.to_string())
+    }
+
+    async fn info_meta(&self) -> Result<PerpMeta, String> {
+        let request = InfoRequest::meta();
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn get_spot_meta(&self) -> Result<SpotMeta, String> {
+        let request = InfoRequest::spot_meta();
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn get_perp_meta_and_ctxs(&self) -> Result<PerpMetaAndCtxs, String> {
+        let request = InfoRequest::meta_and_asset_ctxs();
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn get_spot_meta_and_ctxs(&self) -> Result<SpotMetaAndCtxs, String> {
+        let request = InfoRequest::spot_meta_and_asset_ctxs();
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn get_outcome_meta(&self) -> Result<OutcomeMeta, String> {
+        let request = InfoRequest::outcome_meta();
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn info_l2_book(&self, coin: &str) -> Result<HyperliquidL2Book, String> {
+        let request = InfoRequest::l2_book(coin);
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn info_user_fills(&self, user: &str) -> Result<HyperliquidFills, String> {
+        let request = InfoRequest::user_fills(user);
+        let value = self.send_info_request(&request).await?;
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    }
+
+    async fn info_open_orders(&self, user: &str) -> Result<Value, String> {
+        let request = InfoRequest::open_orders(user);
+        self.send_info_request(&request).await
+    }
+
+    async fn info_clearinghouse_state(&self, user: &str) -> Result<Value, String> {
+        let request = InfoRequest::clearinghouse_state(user);
+        self.send_info_request(&request).await
+    }
+
+    async fn info_spot_clearinghouse_state(&self, user: &str) -> Result<Value, String> {
+        let request = InfoRequest::spot_clearinghouse_state(user);
+        self.send_info_request(&request).await
+    }
+
+    async fn send_info_request_raw(&self, request: &InfoRequest) -> Result<Value, String> {
+        self.send_info_request(request).await
+    }
+}
+
+fn create_domain_client(addr: &SocketAddr) -> HyperliquidHttpClient {
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+    client.set_base_info_url(format!("http://{addr}/info"));
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    client.set_account_id(AccountId::new("HYPERLIQUID-master"));
+    client
+}
+
+fn cache_btc_instrument(client: &HyperliquidHttpClient) {
+    cache_perp_instrument(client, "BTC-USD-PERP.HYPERLIQUID", "BTC");
+}
+
+fn cache_xyz_instrument(client: &HyperliquidHttpClient) {
+    cache_perp_instrument(client, "xyz:XYZ100-USD-PERP.HYPERLIQUID", "xyz:XYZ100");
+}
+
+fn cache_reconciliation_perps(client: &HyperliquidHttpClient) {
+    cache_btc_instrument(client);
+    cache_perp_instrument(client, "flx:TEST-USD-PERP.HYPERLIQUID", "flx:TEST");
+    cache_perp_instrument(client, "flx:OTHER-USD-PERP.HYPERLIQUID", "flx:OTHER");
+    cache_xyz_instrument(client);
+}
+
+fn cache_perp_instrument(client: &HyperliquidHttpClient, instrument_id: &str, symbol: &str) {
+    client.cache_instrument(&perp_instrument(instrument_id, symbol));
+}
+
+fn perp_instrument(instrument_id: &str, symbol: &str) -> InstrumentAny {
+    use nautilus_model::{
+        enums::CurrencyType,
+        identifiers::{InstrumentId, Symbol},
+        instruments::CryptoPerpetual,
+        types::{Currency, Money, Price, Quantity},
+    };
+
+    let base = Currency::new(symbol, 8, 0, symbol, CurrencyType::Crypto);
+    let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
+    let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
+    let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from(instrument_id))
+        .raw_symbol(Symbol::new(symbol))
+        .base_currency(base)
+        .quote_currency(usd)
+        .settlement_currency(usdc)
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(5)
+        .price_increment(Price::from("0.1"))
+        .size_increment(Quantity::from("0.00001"))
+        .min_notional(Money::from("0.1 USDC"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
+
+    InstrumentAny::CryptoPerpetual(instrument)
+}
+
+fn open_order(coin: &str, oid: u64, price: &str, size: &str) -> Value {
+    json!({
+        "coin": coin,
+        "side": "B",
+        "limitPx": price,
+        "sz": size,
+        "oid": oid,
+        "timestamp": 1_700_000_000_000u64,
+        "origSz": size
+    })
+}
+
+fn clearinghouse_position(coin: &str, size: &str, entry_price: &str) -> Value {
+    json!({
+        "assetPositions": [{
+            "type": "oneWay",
+            "position": {
+                "coin": coin,
+                "cumFunding": {
+                    "allTime": "0.0",
+                    "sinceOpen": "0.0",
+                    "sinceChange": "0.0"
+                },
+                "entryPx": entry_price,
+                "leverage": {"type": "cross", "value": 2},
+                "liquidationPx": null,
+                "marginUsed": "1.0",
+                "maxLeverage": 10,
+                "positionValue": "10.0",
+                "returnOnEquity": "0.0",
+                "szi": size,
+                "unrealizedPnl": "0.0"
+            }
+        }]
+    })
+}
+
+async fn configure_open_order_responses(state: &TestServerState) {
+    *state.frontend_open_orders_response.lock().await =
+        Some(json!([open_order("BTC", 1001, "95000.0", "0.10000")]));
+    *state.frontend_open_orders_dex_responses.lock().await = HashMap::from([
+        (
+            "flx".to_string(),
+            json!([open_order("flx:TEST", 2002, "100.0", "0.20000")]),
+        ),
+        (
+            "xyz".to_string(),
+            json!([open_order("xyz:XYZ100", 3003, "25000.0", "0.30000")]),
+        ),
+    ]);
+}
+
+async fn configure_position_responses(state: &TestServerState) {
+    *state.clearinghouse_response.lock().await =
+        Some(clearinghouse_position("BTC", "0.10000", "95000.0"));
+    *state.clearinghouse_dex_responses.lock().await = HashMap::from([
+        (
+            "flx".to_string(),
+            clearinghouse_position("flx:TEST", "0.20000", "100.0"),
+        ),
+        (
+            "xyz".to_string(),
+            clearinghouse_position("xyz:XYZ100", "-0.30000", "25000.0"),
+        ),
+    ]);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_aggregates_all_cached_dexs() {
+    let state = TestServerState::default();
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 3);
+    assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(reports[0].venue_order_id.as_str(), "1001");
+    assert_eq!(
+        reports[1].instrument_id,
+        "flx:TEST-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[1].venue_order_id.as_str(), "2002");
+    assert_eq!(
+        reports[2].instrument_id,
+        "xyz:XYZ100-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[2].venue_order_id.as_str(), "3003");
+    assert_eq!(*state.request_count.lock().await, 3);
+}
+
+#[rstest]
+#[case("flx:TEST-USD-PERP.HYPERLIQUID", "flx", "2002")]
+#[case("xyz:XYZ100-USD-PERP.HYPERLIQUID", "xyz", "3003")]
+#[tokio::test]
+async fn test_request_order_status_reports_routes_builder_dex_filter(
+    #[case] instrument_id: InstrumentId,
+    #[case] expected_dex: &str,
+    #[case] expected_order_id: &str,
+) {
+    let state = TestServerState::default();
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+    assert_eq!(reports[0].venue_order_id.as_str(), expected_order_id);
+    assert_eq!(*state.request_count.lock().await, 1);
+    assert_eq!(
+        state
+            .last_request_body
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|body| body.get("dex")),
+        Some(&json!(expected_dex))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_routes_default_filter() {
+    let state = TestServerState::default();
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", Some("BTC-USD-PERP.HYPERLIQUID".into()))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(*state.request_count.lock().await, 1);
+    assert_eq!(
+        state
+            .last_request_body
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|body| body.get("dex")),
+        None
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_fails_when_later_dex_fetch_fails() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(2, Ordering::Relaxed);
+    configure_open_order_responses(&state).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let result = client.request_order_status_reports("0xuser", None).await;
+
+    assert!(matches!(result, Err(Error::RateLimit { .. })));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
+    let state = TestServerState::default();
+    configure_position_responses(&state).await;
+    // Authoritative empty spot leg: keeps the focus on perp dex aggregation
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 3);
+    assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
+    assert_eq!(reports[0].position_side, PositionSide::Long);
+    assert_eq!(
+        reports[0].quantity.as_decimal(),
+        rust_decimal_macros::dec!(0.1)
+    );
+    assert_eq!(
+        reports[1].instrument_id,
+        "flx:TEST-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[1].position_side, PositionSide::Long);
+    assert_eq!(
+        reports[1].quantity.as_decimal(),
+        rust_decimal_macros::dec!(0.2)
+    );
+    assert_eq!(
+        reports[2].instrument_id,
+        "xyz:XYZ100-USD-PERP.HYPERLIQUID".into()
+    );
+    assert_eq!(reports[2].position_side, PositionSide::Short);
+    assert_eq!(
+        reports[2].quantity.as_decimal(),
+        rust_decimal_macros::dec!(0.3)
+    );
+    assert_eq!(*state.request_count.lock().await, 4);
+}
+
+#[rstest]
+#[case(
+    "flx:TEST-USD-PERP.HYPERLIQUID",
+    "flx",
+    PositionSide::Long,
+    rust_decimal_macros::dec!(0.2)
+)]
+#[case(
+    "xyz:XYZ100-USD-PERP.HYPERLIQUID",
+    "xyz",
+    PositionSide::Short,
+    rust_decimal_macros::dec!(0.3)
+)]
+#[tokio::test]
+async fn test_request_position_status_reports_routes_builder_dex_filter(
+    #[case] instrument_id: InstrumentId,
+    #[case] expected_dex: &str,
+    #[case] expected_side: PositionSide,
+    #[case] expected_quantity: rust_decimal::Decimal,
+) {
+    let state = TestServerState::default();
+    configure_position_responses(&state).await;
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let reports = client
+        .request_position_status_reports("0xuser", Some(instrument_id))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+    assert_eq!(reports[0].position_side, expected_side);
+    assert_eq!(reports[0].quantity.as_decimal(), expected_quantity);
+    assert_eq!(*state.request_count.lock().await, 1);
+    assert_eq!(
+        state
+            .last_request_body
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|body| body.get("dex")),
+        Some(&json!(expected_dex))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_fails_when_later_dex_fetch_fails() {
+    let state = TestServerState::default();
+    state.rate_limit_after.store(2, Ordering::Relaxed);
+    configure_position_responses(&state).await;
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_reconciliation_perps(&client);
+
+    let result = client.request_position_status_reports("0xuser", None).await;
+
+    assert!(matches!(result, Err(Error::RateLimit { .. })));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_open_order() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.05",
+        "oid": 12345,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": "0xaabbccdd00112233aabbccdd00112233",
+        "isTrigger": false,
+        "triggerCondition": "N/A",
+        "triggerPx": "0.0",
+        "tif": "Alo",
+        "reduceOnly": true
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 12345)
+        .await
+        .unwrap()
+        .expect("should find open order");
+
+    // Status stays Accepted (matching bulk path) because we lack avg_px
+    // for safe PartiallyFilled reconciliation. Real fills arrive via WebSocket.
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.time_in_force, TimeInForce::Gtc);
+    assert!(report.post_only);
+    assert!(report.reduce_only);
+    assert!(report.price.is_some(), "open order retains limit price");
+    assert!(
+        report.trigger_price.is_none(),
+        "non-conditional limit order must not carry Hyperliquid's placeholder trigger price"
+    );
+    assert!(report.trigger_type.is_none());
+    assert_eq!(report.filled_qty.as_f64(), 0.05);
+    assert_eq!(report.quantity.as_f64(), 0.1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_triggered_order() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "90000.0",
+        "sz": "0.1",
+        "oid": 99999,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "triggerPx": "91000.0",
+        "isMarket": true,
+        "tpsl": "sl",
+        "triggerActivated": true
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 99999)
+        .await
+        .unwrap()
+        .expect("should find triggered order");
+
+    assert_eq!(report.order_status, OrderStatus::Triggered);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_frontend_trigger_label() {
+    let state = TestServerState::default();
+    // Venue shape: `frontendOpenOrders` rows carry `orderType` / `isTrigger`,
+    // not the WebSocket `tpsl` / `isMarket` fields
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "A",
+        "limitPx": "90000.0",
+        "sz": "0.1",
+        "oid": 77777,
+        "timestamp": 1700000000000u64,
+        "triggerCondition": "Price below 91000",
+        "isTrigger": true,
+        "triggerPx": "91000.0",
+        "children": [],
+        "isPositionTpsl": false,
+        "reduceOnly": true,
+        "orderType": "Stop Market",
+        "origSz": "0.1",
+        "tif": null,
+        "cloid": null
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 77777)
+        .await
+        .unwrap()
+        .expect("should find open stop order");
+
+    assert_eq!(report.order_type, OrderType::StopMarket);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.trigger_price, Some(Price::from("91000.0")));
+    assert!(report.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_closed_order_fallback() {
+    let state = TestServerState::default();
+    // frontendOpenOrders returns empty (order no longer open)
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 55555,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 55555)
+        .await
+        .unwrap()
+        .expect("should find closed order via fallback");
+
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(
+        report.ts_last.as_u64(),
+        1700001000000u64 * 1_000_000,
+        "ts_last should use statusTimestamp"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_filled_with_remainder_is_canceled() {
+    // The venue reports an IOC order `filled` once it stops executing, with `sz` holding the
+    // remainder it canceled
+    let state = TestServerState::default();
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "A",
+                "limitPx": "95000.0",
+                "sz": "0.02",
+                "oid": 55557,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1",
+                "tif": "Ioc"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 55557)
+        .await
+        .unwrap()
+        .expect("should find closed order via fallback");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.quantity, Quantity::from("0.1"));
+    assert_eq!(report.filled_qty, Quantity::from("0.08"));
+    assert!(report.price.is_none());
+    assert_eq!(
+        report.cancel_reason.as_deref(),
+        Some("Unfilled remainder canceled")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_closed_order_fallback_propagates_cloid() {
+    let coid = ClientOrderId::new("O-20240101-000042");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 55556,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1",
+                "cloid": cloid_hex,
+            },
+            "status": "canceled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 55556)
+        .await
+        .unwrap()
+        .expect("should find closed order via fallback");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::new(cloid_hex.as_str())),
+        "closed order report should carry the cloid hex from the API response",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_not_found() {
+    let state = TestServerState::default();
+    // Both endpoints return empty
+    *state.order_status_response.lock().await = Some(json!({"status": "unknownOid"}));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report("0xuser", 99999)
+        .await
+        .unwrap();
+
+    assert!(report.is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_matches_cloid() {
+    let coid = ClientOrderId::new("O-20240101-000001");
+    let cloid = Cloid::from_client_order_id(coid);
+    let cloid_hex = cloid.to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 77777,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let report = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .unwrap()
+        .expect("should match by deterministic cloid");
+
+    assert_eq!(
+        report.client_order_id,
+        Some(coid),
+        "should return original client_order_id, not venue cloid"
+    );
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_no_match() {
+    let state = TestServerState::default();
+    // frontendOpenOrders returns an order with a different cloid
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "0.1",
+        "oid": 88888,
+        "timestamp": 1700000000000u64,
+        "origSz": "0.1",
+        "cloid": "0x0000000000000000000000000000dead"
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let coid = ClientOrderId::new("O-20240101-999999");
+    client.cache_client_order_id_cloid(coid, Cloid::from_client_order_id(coid));
+    let report = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .unwrap();
+
+    assert!(report.is_none(), "should not match different cloid");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_fails_closed_on_malformed_row() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        open_order("BTC", 1001, "95000.0", "0.10000"),
+        { "coin": "BTC", "oid": 1002u64 }, // Missing side/limitPx/sz/timestamp/origSz
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .expect_err("malformed open-order row must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Open-order snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        open_order("BTC", 1001, "95000.0", "0.10000"),
+        open_order("NOCOIN", 1002, "100.0", "1.00000"),
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable open-order coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Open-order snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_reports_empty_snapshot_is_authoritative() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let reports = client
+        .request_order_status_reports("0xuser", None)
+        .await
+        .expect("empty open-order snapshot must stay authoritative");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
+            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
+            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "feeToken": "USDC",
+        },
+        {
+            "coin": "NOCOIN", "px": "100.0", "sz": "1.0", "side": "B",
+            "time": 1_700_000_000_001u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xbbbb",
+            "oid": 1002u64, "crossed": true, "fee": "0.01", "tid": 2u64,
+            "feeToken": "USDC",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable fill coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Fill snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_fails_closed_on_unconvertible_row() {
+    // A non-zero fee denominated in an unregistered token cannot be converted
+    // into a FillReport commission
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
+            "time": 1_700_000_000_000u64, "startPosition": "0",
+            "dir": "Open Long", "closedPnl": "0", "hash": "0xaaaa",
+            "oid": 1001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
+            "feeToken": "NOTACOIN",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect_err("unconvertible fill row must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Fill snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_empty_snapshot_is_authoritative() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let reports = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("empty fill snapshot must stay authoritative");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_resolves_settled_outcome_absent_from_outcome_meta() {
+    // `outcomeMeta` lists only live outcome 123; outcome 20 has settled, so its
+    // rows resolve from the coin encoding without another venue request
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "#200", "px": "0.62", "sz": "15.00", "side": "B",
+            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "dir": "Buy", "closedPnl": "0", "hash": "0xcccc",
+            "oid": 2001u64, "crossed": true, "fee": "0.0", "tid": 3u64,
+            "feeToken": "+200",
+        },
+        {
+            "coin": "#201", "px": "0.37", "sz": "8.00", "side": "A",
+            "time": 1_778_400_000_001u64, "startPosition": "8.00",
+            "dir": "Sell", "closedPnl": "0", "hash": "0xdddd",
+            "oid": 2002u64, "crossed": false, "fee": "0.0", "tid": 4u64,
+            "feeToken": "+201",
+        },
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+
+    let client = create_domain_client(&addr);
+    for instrument in client.request_instruments().await.unwrap() {
+        client.cache_instrument(&instrument);
+    }
+
+    let requests_before = *state.request_count.lock().await;
+    let reports = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("settled outcome fills must form a complete snapshot");
+    let requests_for_fills = *state.request_count.lock().await - requests_before;
+
+    // A later instrument load still omits the settled outcome; its rows must
+    // keep resolving
+    for instrument in client.request_instruments().await.unwrap() {
+        client.cache_instrument(&instrument);
+    }
+
+    let reports_after_reload = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect("settled outcome fills must stay resolvable after a reload");
+
+    let usdc_zero = Money::zero(Currency::USDC());
+
+    let summary = |reports: &[FillReport]| {
+        reports
+            .iter()
+            .map(|report| {
+                (
+                    report.instrument_id,
+                    report.venue_order_id,
+                    report.order_side,
+                    report.last_px,
+                    report.last_qty,
+                    report.commission,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let expected = vec![
+        (
+            InstrumentId::from("20-YES-OUTCOME.HYPERLIQUID"),
+            VenueOrderId::from("2001"),
+            OrderSide::Buy,
+            Price::from("0.6200"),
+            Quantity::from("15.00"),
+            usdc_zero,
+        ),
+        (
+            InstrumentId::from("20-NO-OUTCOME.HYPERLIQUID"),
+            VenueOrderId::from("2002"),
+            OrderSide::Sell,
+            Price::from("0.3700"),
+            Quantity::from("8.00"),
+            usdc_zero,
+        ),
+    ];
+    assert_eq!(summary(&reports), expected);
+    assert_eq!(summary(&reports_after_reload), expected);
+    assert_eq!(requests_for_fills, 1, "only the userFills request is sent");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_fails_closed_on_malformed_outcome_coin() {
+    // Side digit 2 is not a valid HIP-4 side, so the coin cannot resolve
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([
+        {
+            "coin": "#12", "px": "0.62", "sz": "15.00", "side": "B",
+            "time": 1_778_400_000_000u64, "startPosition": "0",
+            "dir": "Buy", "closedPnl": "0", "hash": "0xeeee",
+            "oid": 2003u64, "crossed": true, "fee": "0.0", "tid": 5u64,
+            "feeToken": "+12",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+
+    let err = client
+        .request_fill_reports("0xuser", None)
+        .await
+        .expect_err("a malformed outcome coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Fill snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_fails_closed_on_malformed_row() {
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await = Some(json!({
+        "assetPositions": [
+            {
+                "type": "oneWay",
+                "position": { "coin": "BTC" }, // Missing szi and remaining fields
+            },
+        ],
+    }));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .expect_err("malformed position row must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Position snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await =
+        Some(clearinghouse_position("NOCOIN", "0.10000", "100.0"));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable position coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Position snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_position_status_reports_empty_snapshot_is_authoritative() {
+    let state = TestServerState::default();
+    *state.clearinghouse_response.lock().await = Some(json!({"assetPositions": []}));
+    *state.spot_clearinghouse_response.lock().await = Some(json!({"balances": []}));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let reports = client
+        .request_position_status_reports("0xuser", None)
+        .await
+        .expect("empty position snapshot must stay authoritative");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_historical_order_status_reports_fails_closed_on_unknown_instrument() {
+    let state = TestServerState::default();
+    *state.historical_orders_response.lock().await = Some(json!([
+        {
+            "order": {
+                "coin": "NOCOIN", "side": "B", "limitPx": "100.0", "sz": "0",
+                "oid": 1001u64, "timestamp": 1_700_000_000_000u64, "origSz": "0.10000",
+                "reduceOnly": false, "orderType": "Limit", "tif": "Gtc", "cloid": null,
+            },
+            "status": "filled",
+            "statusTimestamp": 1_700_000_000_001u64,
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_historical_order_status_reports("0xuser", None)
+        .await
+        .expect_err("unresolvable historical-order coin must fail the snapshot");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Historical-order snapshot incomplete")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unknown_instrument() {
+    let coid = ClientOrderId::new("O-20240101-000002");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "NOCOIN",
+        "side": "B",
+        "limitPx": "100.0",
+        "sz": "1.0",
+        "oid": 77778,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .expect_err("matched row with unresolvable instrument must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to resolve instrument")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_fails_closed_on_malformed_response() {
+    let state = TestServerState::default();
+    // Rows missing required fields cannot ground a "not found" conclusion
+    *state.frontend_open_orders_response.lock().await = Some(json!([{ "coin": "BTC" }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let coid = ClientOrderId::new("O-20240101-000003");
+    let err = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .expect_err("undecodable open-orders response must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse open orders response")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unknown_instrument_open_order() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await =
+        Some(json!([open_order("NOCOIN", 12345, "100.0", "1.00000"),]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 12345)
+        .await
+        .expect_err(
+            "matched open row with unresolvable instrument must error, not report not-found",
+        );
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to resolve instrument")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unknown_instrument_closed_order() {
+    let state = TestServerState::default();
+    // frontendOpenOrders empty, orderStatus resolves the oid with an unknown coin
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "NOCOIN",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.0",
+                "oid": 55555,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 55555)
+        .await
+        .expect_err("closed order with unresolvable instrument must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to resolve instrument")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unconvertible_open_order() {
+    // sz exceeds origSz: the derived filled quantity is negative and cannot convert
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "2.0",
+        "oid": 12345,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0"
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 12345)
+        .await
+        .expect_err("matched row that cannot convert must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse order status report for oid 12345")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_by_client_order_id_fails_closed_on_unconvertible_row() {
+    let coid = ClientOrderId::new("O-20240101-000004");
+    let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
+
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([{
+        "coin": "BTC",
+        "side": "B",
+        "limitPx": "95000.0",
+        "sz": "2.0",
+        "oid": 77779,
+        "timestamp": 1700000000000u64,
+        "origSz": "1.0",
+        "cloid": cloid_hex
+    }]));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report_by_client_order_id("0xuser", &coid)
+        .await
+        .expect_err("matched row that cannot convert must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse order status report for cloid")),
+        "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_order_status_report_fails_closed_on_unconvertible_closed_order() {
+    // sz exceeds origSz: the derived filled quantity is negative and cannot convert
+    let state = TestServerState::default();
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": {
+            "order": {
+                "coin": "BTC",
+                "side": "B",
+                "limitPx": "95000.0",
+                "sz": "0.2",
+                "oid": 55555,
+                "timestamp": 1700000000000u64,
+                "origSz": "0.1"
+            },
+            "status": "filled",
+            "statusTimestamp": 1700001000000u64
+        }
+    }));
+
+    let addr = start_mock_server(state).await;
+    let client = create_domain_client(&addr);
+    cache_btc_instrument(&client);
+
+    let err = client
+        .request_order_status_report("0xuser", 55555)
+        .await
+        .expect_err("closed order that cannot convert must error, not report not-found");
+
+    assert!(
+        matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse order status report for oid 55555")),
+        "unexpected error: {err}",
+    );
+}

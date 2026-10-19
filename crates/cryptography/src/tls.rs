@@ -18,9 +18,13 @@ use std::sync::Arc;
 use rustls::{ClientConfig, RootCertStore};
 use webpki_roots;
 
+use crate::providers::install_cryptographic_provider;
+
 /// Loads a TLS client configuration with certificates.
 #[must_use]
 pub fn create_tls_config() -> Arc<ClientConfig> {
+    install_cryptographic_provider();
+
     log::debug!("Loading certificates");
 
     let mut root_store = RootCertStore::empty();
@@ -31,4 +35,24 @@ pub fn create_tls_config() -> Arc<ClientConfig> {
         .with_no_client_auth();
 
     Arc::new(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rustls::crypto::CryptoProvider;
+
+    use super::*;
+
+    #[rstest]
+    fn test_create_tls_config_installs_default_provider() {
+        // Must build without panicking and leave a usable process-default
+        // provider, even when called as the first rustls use in the process.
+        let _config = create_tls_config();
+        assert!(CryptoProvider::get_default().is_some());
+
+        // Second call exercises the idempotent install path
+        let _config = create_tls_config();
+        assert!(CryptoProvider::get_default().is_some());
+    }
 }

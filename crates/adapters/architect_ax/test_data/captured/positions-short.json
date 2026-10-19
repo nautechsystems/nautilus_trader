@@ -1,0 +1,76 @@
+{
+  "positions": [
+    {
+      "account_id": "fixture-0001",
+      "symbol": "EURUSD-PERP",
+      "signed_quantity": -100,
+      "signed_cost_basis": "-113.840000000000",
+      "signed_notional": "-113.840000000000",
+      "timestamp": "2026-09-24T05:20:32.306584134Z",
+      "realized_pnl": "-0.440000000000"
+    },
+    {
+      "account_id": "fixture-0001",
+      "symbol": "GBPUSD-PERP",
+      "signed_quantity": 0,
+      "signed_cost_basis": "0.000000000000",
+      "signed_notional": "0.000000000000",
+      "timestamp": "2026-06-27T23:43:33.582381713Z",
+      "realized_pnl": "-6.430000000000"
+    },
+    {
+      "account_id": "fixture-0001",
+      "symbol": "NVDA-PERP",
+      "signed_quantity": 0,
+      "signed_cost_basis": "0.000000000000",
+      "signed_notional": "0.000000000000",
+      "timestamp": "2026-05-16T23:21:25.701481006Z",
+      "realized_pnl": "-50.000000000000"
+    },
+    {
+      "account_id": "fixture-0001",
+      "symbol": "SPY-PERP",
+      "signed_quantity": 0,
+      "signed_cost_basis": "0.000000000000",
+      "signed_notional": "0.000000000000",
+      "timestamp": "2026-06-27T21:47:47.698645969Z",
+      "realized_pnl": "-223.430000000000"
+    },
+    {
+      "account_id": "fixture-0001",
+      "symbol": "WTIOIL-PERP",
+      "signed_quantity": 0,
+      "signed_cost_basis": "0.000000000000",
+      "signed_notional": "0.000000000000",
+      "timestamp": "2026-06-27T21:47:44.525300443Z",
+      "realized_pnl": "1387.826000000000"
+    },
+    {
+      "account_id": "fixture-0001",
+      "symbol": "XAG-PERP",
+      "signed_quantity": 0,
+      "signed_cost_basis": "0.000000000000",
+      "signed_notional": "0.000000000000",
+      "timestamp": "2026-09-23T09:04:43.869841610Z",
+      "realized_pnl": "-1.140000000000"
+    },
+    {
+      "account_id": "fixture-0001",
+      "symbol": "XAU-PERP",
+      "signed_quantity": 0,
+      "signed_cost_basis": "0.000000000000",
+      "signed_notional": "0.000000000000",
+      "timestamp": "2026-04-26T13:22:34.900003935Z",
+      "realized_pnl": "-0.700000000000"
+    },
+    {
+      "account_id": "fixture-0001",
+      "symbol": "XCU-PERP",
+      "signed_quantity": 0,
+      "signed_cost_basis": "0.000000000000",
+      "signed_notional": "0.000000000000",
+      "timestamp": "2026-07-18T10:28:37.920409009Z",
+      "realized_pnl": "-2.800000000000"
+    }
+  ]
+}

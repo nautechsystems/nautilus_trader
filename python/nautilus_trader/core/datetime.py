@@ -12,24 +12,31 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+UNIX nanosecond timestamp and datetime conversion utilities.
+"""
 
 from __future__ import annotations
 
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING
 
-from nautilus_trader._libnautilus.core import is_within_last_24_hours as is_within_last_24_hours
-from nautilus_trader._libnautilus.core import last_weekday_nanos as last_weekday_nanos
-from nautilus_trader._libnautilus.core import micros_to_nanos as micros_to_nanos
-from nautilus_trader._libnautilus.core import millis_to_nanos as millis_to_nanos
-from nautilus_trader._libnautilus.core import nanos_to_micros as nanos_to_micros
-from nautilus_trader._libnautilus.core import nanos_to_millis as nanos_to_millis
-from nautilus_trader._libnautilus.core import nanos_to_secs as nanos_to_secs
-from nautilus_trader._libnautilus.core import secs_to_millis as secs_to_millis
-from nautilus_trader._libnautilus.core import secs_to_nanos as secs_to_nanos
-from nautilus_trader._libnautilus.core import unix_nanos_to_iso8601 as unix_nanos_to_iso8601
+from nautilus_trader._libnautilus.core import is_within_last_24_hours
+from nautilus_trader._libnautilus.core import last_weekday_nanos
+from nautilus_trader._libnautilus.core import micros_to_nanos
+from nautilus_trader._libnautilus.core import millis_to_nanos
+from nautilus_trader._libnautilus.core import nanos_to_micros
+from nautilus_trader._libnautilus.core import nanos_to_millis
+from nautilus_trader._libnautilus.core import nanos_to_secs
+from nautilus_trader._libnautilus.core import secs_to_millis
+from nautilus_trader._libnautilus.core import secs_to_nanos
+from nautilus_trader._libnautilus.core import unix_nanos_to_iso8601
+
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 __all__ = [
@@ -50,10 +57,11 @@ __all__ = [
 _NANOS_PER_MICROSECOND = 1_000
 _NANOS_PER_SECOND = 1_000_000_000
 _SECONDS_PER_DAY = 86_400
+_MICROSECOND_PRECISION_DIGITS = 6
 _UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
-def unix_nanos_to_dt(nanos: int) -> Any:
+def unix_nanos_to_dt(nanos: int) -> datetime | pd.Timestamp:
     """
     Return the UTC datetime for the given UNIX timestamp in nanoseconds.
     """
@@ -70,7 +78,7 @@ def unix_nanos_to_dt(nanos: int) -> Any:
     return pd.Timestamp(int(nanos), unit="ns", tz="UTC")
 
 
-def dt_to_unix_nanos(value: Any) -> int:
+def dt_to_unix_nanos(value: int | str | datetime | pd.Timestamp | None) -> int:
     """
     Return the UNIX timestamp in nanoseconds for the given datetime-like value.
     """
@@ -108,7 +116,7 @@ def _has_more_than_microsecond_precision(value: str) -> bool:
             break
         digits += 1
 
-    return digits > 6
+    return digits > _MICROSECOND_PRECISION_DIGITS
 
 
 def _datetime_to_unix_nanos(value: datetime) -> int:

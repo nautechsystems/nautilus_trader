@@ -23,7 +23,7 @@
 //! max fees `= 0`.
 //!
 //! See the Lighter integration guide:
-//! <https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution>.
+//! <https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution>.
 //!
 //! Environment selection: pass `testnet` as the first argv to target
 //! testnet; defaults to mainnet.

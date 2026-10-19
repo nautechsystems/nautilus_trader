@@ -1,13 +1,14 @@
 """
 Render the Bybit delta-neutral options tutorial panels.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
+    make sync
     timeout 30 ./target/release/examples/bybit-delta-neutral > /tmp/bybit_dn.log 2>&1
 
-    uv sync --extra visualization
     DN_LOG=/tmp/bybit_dn.log \
-        python3 docs/tutorials/assets/delta_neutral_options_bybit/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/delta_neutral_options_bybit/render_panels.py
 
 The default example has ``enter_strangle: false`` so a clean account
 places no orders. The renderer parses the log for the selected call /
@@ -66,7 +67,7 @@ def parse_log(path: Path) -> dict:
 
     if not path.exists():
         return out
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = SELECTED_CALL.search(line)
         if m:
@@ -163,12 +164,12 @@ def panel_b_delta_drift(call_k: float, put_k: float, underlying: float) -> go.Fi
     moves = np.linspace(-0.05, 0.05, 200)
     spot = underlying * (1.0 + moves)
 
-    def call_delta_bs(s, k):
+    def call_delta_bs(s, k) -> object:
         # Toy approximation: monotonic delta from -0 to 1 around the strike.
         z = (s - k) / (underlying * 0.05)
         return 0.5 * (1.0 + np.tanh(z))
 
-    def put_delta_bs(s, k):
+    def put_delta_bs(s, k) -> object:
         z = (k - s) / (underlying * 0.05)
         return -0.5 * (1.0 + np.tanh(z))
 

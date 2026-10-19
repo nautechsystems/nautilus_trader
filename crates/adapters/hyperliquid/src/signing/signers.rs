@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{fmt::Debug, str::FromStr};
 
 use alloy::{
     signers::{SignerSync, local::PrivateKeySigner},
     sol_types::{Eip712Domain, SolStruct, eip712_domain},
 };
 use alloy_primitives::{Address, B256, Keccak256};
+use nautilus_core::string::secret::REDACTED;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -65,11 +66,21 @@ pub struct SignatureBundle {
 }
 
 /// EIP-712 signer for Hyperliquid.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HyperliquidEip712Signer {
     signer: PrivateKeySigner,
     address: String,
     domain: Eip712Domain,
+}
+
+impl Debug for HyperliquidEip712Signer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(HyperliquidEip712Signer))
+            .field("signer", &REDACTED)
+            .field("address", &self.address)
+            .field("domain", &self.domain)
+            .finish()
+    }
 }
 
 impl HyperliquidEip712Signer {
@@ -212,8 +223,9 @@ mod tests {
 
     use super::*;
     use crate::http::models::{
-        Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
-        HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+        Cloid, HyperliquidExchangeAction, HyperliquidExchangeGrouping,
+        HyperliquidExchangeLimitParams, HyperliquidExchangeOrderKind,
+        HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
     };
 
     #[rstest]
@@ -223,6 +235,7 @@ mod tests {
         )
         .unwrap();
         let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
+        let debug = format!("{signer:?}");
 
         let request = SignRequest {
             action: Some(json!({
@@ -241,8 +254,10 @@ mod tests {
         let result = signer.sign(&request).unwrap();
         let sig_hex = result.signature.to_hex();
         // Verify signature format: 0x + 64 hex chars (r) + 64 hex chars (s) + 2 hex chars (v)
-        assert!(sig_hex.starts_with("0x"));
-        assert_eq!(sig_hex.len(), 132); // 0x + 130 hex chars
+        assert!(sig_hex.expose_secret().starts_with("0x"));
+        assert_eq!(sig_hex.expose_secret().len(), 132); // 0x + 130 hex chars
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(private_key.as_hex()));
     }
 
     // L1 sign with neither field set must error, not panic on missing input
@@ -269,6 +284,136 @@ mod tests {
             matches!(err, Error::BadRequest(_)),
             "expected BadRequest, was {err:?}",
         );
+    }
+
+    #[rstest]
+    fn official_l1_dummy_action_signature_matches_python_sdk_for_both_environments() {
+        // Official L1 vector from hyperliquid-python-sdk tests/signing_test.py
+        // (revision 2fdb18f9517675ea03695a0962bd19eece9c83f0).
+        #[derive(Serialize)]
+        struct DummyAction<'a> {
+            #[serde(rename = "type")]
+            action_type: &'a str,
+            num: u64,
+        }
+
+        let python_quantity_hex = |value: &str| {
+            let digits = value.trim_start_matches("0x").trim_start_matches('0');
+            format!("0x{}", if digits.is_empty() { "0" } else { digits })
+        };
+
+        let private_key = EvmPrivateKey::new(
+            "0x0123456789012345678901234567890123456789012345678901234567890123",
+        )
+        .unwrap();
+        let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
+        let action_bytes = rmp_serde::to_vec_named(&DummyAction {
+            action_type: "dummy",
+            num: 100_000_000_000,
+        })
+        .unwrap();
+        let request = |is_testnet| SignRequest {
+            action: None,
+            action_bytes: Some(action_bytes.clone()),
+            time_nonce: TimeNonce::from_millis(0),
+            action_type: HyperliquidActionType::L1,
+            is_testnet,
+            vault_address: None,
+            expires_after: None,
+        };
+
+        let mainnet = signer.sign_l1_action(&request(false)).unwrap();
+        assert_eq!(
+            python_quantity_hex(mainnet.r.expose_secret()),
+            "0x53749d5b30552aeb2fca34b530185976545bb22d0b3ce6f62e31be961a59298"
+        );
+        assert_eq!(
+            mainnet.s.expose_secret(),
+            "0x755c40ba9bf05223521753995abb2f73ab3229be8ec921f350cb447e384d8ed8"
+        );
+        assert_eq!(mainnet.v, 27);
+
+        let testnet = signer.sign_l1_action(&request(true)).unwrap();
+        assert_eq!(
+            testnet.r.expose_secret(),
+            "0x542af61ef1f429707e3c76c5293c80d01f74ef853e34b76efffcb57e574f9510"
+        );
+        assert_eq!(
+            testnet.s.expose_secret(),
+            "0x17b8b32f086e8cdede991f1e2c529f5dd5297cbe8128500e00cbaf766204a613"
+        );
+        assert_eq!(testnet.v, 28);
+    }
+
+    #[rstest]
+    #[case("limit")]
+    #[case("trigger")]
+    #[case("batch_modify")]
+    fn test_order_decimal_signing_matches_python_sdk(
+        #[case] case_name: &str,
+        #[values(false, true)] is_testnet: bool,
+    ) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/order_decimal_signing.json"))
+                .unwrap();
+        let case = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == case_name)
+            .unwrap();
+        let action: HyperliquidExchangeAction =
+            serde_json::from_value(case["input"].clone()).unwrap();
+        let action_bytes = rmp_serde::to_vec_named(&action).unwrap();
+        let key = EvmPrivateKey::new(
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
+        let signer = HyperliquidEip712Signer::new(&key).unwrap();
+
+        let request = SignRequest {
+            action: None,
+            action_bytes: Some(action_bytes.clone()),
+            time_nonce: TimeNonce::from_millis(i128::from(fixture["nonce"].as_u64().unwrap())),
+            action_type: HyperliquidActionType::L1,
+            is_testnet,
+            vault_address: None,
+            expires_after: None,
+        };
+
+        let connection_id = signer.compute_connection_id(&request).unwrap();
+        let signature = signer.sign_l1_action(&request).unwrap();
+
+        let expected_signature = &case[if is_testnet {
+            "testnet_signature"
+        } else {
+            "mainnet_signature"
+        }];
+
+        let expected_r = format!(
+            "0x{:0>64}",
+            expected_signature["r"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("0x")
+        );
+        let expected_s = format!(
+            "0x{:0>64}",
+            expected_signature["s"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("0x")
+        );
+
+        assert_eq!(serde_json::to_value(&action).unwrap(), case["action"]);
+        assert_eq!(hex::encode(action_bytes), case["msgpack"].as_str().unwrap());
+        assert_eq!(
+            hex::encode(connection_id),
+            case["connection_id"].as_str().unwrap()
+        );
+        assert_eq!(signature.r.expose_secret(), expected_r);
+        assert_eq!(signature.s.expose_secret(), expected_s);
+        assert_eq!(signature.v, expected_signature["v"].as_u64().unwrap());
     }
 
     #[rstest]
@@ -314,24 +459,24 @@ mod tests {
         // json! produces: "grouping", "orders", "type" (alphabetical)
         // This causes hash mismatch!
         //
-        // When using typed structs (HyperliquidExecAction), serde follows declaration order.
+        // When using typed structs (HyperliquidExchangeAction), serde follows declaration order.
         // Let's test with the typed struct approach.
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: None,
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
 
@@ -431,21 +576,21 @@ mod tests {
         .unwrap();
         let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: None,
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
         let action_bytes = rmp_serde::to_vec_named(&typed_action).unwrap();
@@ -481,21 +626,21 @@ mod tests {
         .unwrap();
         let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: None,
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
         let action_bytes = rmp_serde::to_vec_named(&typed_action).unwrap();
@@ -535,21 +680,21 @@ mod tests {
         let cloid = Cloid::from_hex("0x1234567890abcdef1234567890abcdef").unwrap();
         println!("Cloid hex: {}", cloid.to_hex());
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: Some(cloid),
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
 
@@ -646,21 +791,21 @@ mod tests {
         println!("ClientOrderId: {client_order_id}");
         println!("Cloid: {}", cloid.to_hex());
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 3, // BTC on testnet
                 is_buy: true,
                 price: dec!(92572.0),
                 size: dec!(0.001),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: Some(cloid),
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
 
@@ -713,9 +858,9 @@ mod tests {
         // Sign and verify signature format
         let result = signer.sign(&request).unwrap();
         let sig_hex = result.signature.to_hex();
-        println!("Signature: {sig_hex}");
-        assert!(sig_hex.starts_with("0x"));
-        assert_eq!(sig_hex.len(), 132);
+        println!("Signature: {}", sig_hex.expose_secret());
+        assert!(sig_hex.expose_secret().starts_with("0x"));
+        assert_eq!(sig_hex.expose_secret().len(), 132);
     }
 
     #[rstest]

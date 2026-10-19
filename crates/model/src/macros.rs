@@ -18,22 +18,26 @@
 #[macro_export]
 macro_rules! enum_strum_serde {
     ($type:ty) => {
-        impl Serialize for $type {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        impl $crate::__serde::Serialize for $type {
+            fn serialize<S>(&self, serializer: S) -> ::core::result::Result<S::Ok, S::Error>
             where
-                S: Serializer,
+                S: $crate::__serde::Serializer,
             {
-                serializer.serialize_str(&self.to_string())
+                serializer.serialize_str(&::std::string::ToString::to_string(self))
             }
         }
 
-        impl<'de> Deserialize<'de> for $type {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        impl<'de> $crate::__serde::Deserialize<'de> for $type {
+            fn deserialize<D>(deserializer: D) -> ::core::result::Result<Self, D::Error>
             where
-                D: Deserializer<'de>,
+                D: $crate::__serde::Deserializer<'de>,
             {
-                let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-                <$type>::from_str(s.as_ref()).map_err(serde::de::Error::custom)
+                let value =
+                    <::std::borrow::Cow<'de, str> as $crate::__serde::Deserialize>::deserialize(
+                        deserializer,
+                    )?;
+                <$type as ::core::str::FromStr>::from_str(value.as_ref())
+                    .map_err($crate::__serde::de::Error::custom)
             }
         }
     };

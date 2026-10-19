@@ -20,8 +20,8 @@
 //! Run with: `cargo run -p nautilus-kraken --example kraken-data-tester --features examples`
 //!
 //! Credentials are read from the environment when set (optional for public data):
-//! - `KRAKEN_API_KEY`.
-//! - `KRAKEN_API_SECRET`.
+//! - `KRAKEN_API_KEY`
+//! - `KRAKEN_API_SECRET`
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{

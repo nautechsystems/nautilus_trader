@@ -21,67 +21,82 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
+use dashmap::DashMap;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, ForwardPricesResponse, FundingRatesResponse,
-            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
-            RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
+            InstrumentsResponse, OptionChainReferencePriceResponse, RequestBars,
+            RequestBookSnapshot, RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestOptionChainReferencePrice, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeFundingRates,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet,
+    AtomicMap, AtomicSet, UnixNanos,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
+};
 use nautilus_model::{
-    data::{BarType, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
+    data::{BarType, CustomData, Data, DataType, QuoteTick},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::book::OrderBook,
+    types::Price,
 };
 use rust_decimal::Decimal;
-use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
+    book::{
+        BookSequenceOutcome,
+        recovery::{reset_on_reconnect, spawn_subscription_task, start_recovery},
+        sync::BookSyncTracker,
+    },
     common::{
-        consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
+        consts::{
+            BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_QUOTE_DEPTH, BYBIT_VENUE,
+        },
         enums::BybitProductType,
         instruments::diff_and_emit_instruments,
         parse::{extract_raw_symbol, make_bybit_symbol},
         status::{diff_and_emit_statuses, emit_status},
-        symbol::BybitSymbol,
     },
     config::BybitDataClientConfig,
+    data_types::register_bybit_custom_data,
     http::client::BybitHttpClient,
     websocket::{
         client::BybitWebSocketClient,
-        messages::BybitWsMessage,
+        messages::{BybitWsMessage, BybitWsOrderbookDepthMsg},
         parse::{
             parse_kline_topic, parse_millis_i64, parse_orderbook_deltas, parse_orderbook_quote,
-            parse_ticker_linear_funding, parse_ticker_linear_index_price,
-            parse_ticker_linear_mark_price, parse_ticker_linear_quote, parse_ticker_option_greeks,
+            parse_orderbook_topic, parse_ticker_linear_funding, parse_ticker_linear_index_price,
+            parse_ticker_linear_mark_price, parse_ticker_option_greeks,
             parse_ticker_option_index_price, parse_ticker_option_mark_price,
-            parse_ticker_option_quote, parse_ws_kline_bar, parse_ws_trade_tick,
+            parse_ticker_option_quote, parse_ws_kline_bar, parse_ws_liquidation,
+            parse_ws_trade_tick,
         },
     },
 };
@@ -93,20 +108,24 @@ pub struct BybitDataClient {
     config: BybitDataClientConfig,
     http_client: BybitHttpClient,
     ws_clients: Vec<BybitWebSocketClient>,
-    is_connected: AtomicBool,
+    session_established: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
+    data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_depths: Arc<AtomicMap<InstrumentId, u32>>,
-    quote_depths: Arc<AtomicMap<InstrumentId, u32>>,
+    book_sync: BookSyncTracker,
+    quote_subs: Arc<AtomicSet<InstrumentId>>,
+    last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
     ticker_subs: Arc<AtomicMap<InstrumentId, AHashSet<&'static str>>>,
     trade_subs: Arc<AtomicSet<InstrumentId>>,
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
+    liquidation_subs: Arc<AtomicMap<InstrumentId, Arc<DataType>>>,
     instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
     instrument_subs: Arc<AtomicSet<InstrumentId>>,
-    /// Venue-wide subscription: when set, definition updates are emitted for all instruments.
     subscribe_all_instruments: Arc<AtomicBool>,
     clock: &'static AtomicTime,
 }
@@ -120,20 +139,25 @@ impl BybitDataClient {
     pub fn new(client_id: ClientId, config: BybitDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let socket_factory = SocketControlFactory::new(client_id, Some(*BYBIT_VENUE));
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = if let (Some(api_key), Some(api_secret)) =
             (config.api_key.clone(), config.api_secret.clone())
         {
             BybitHttpClient::with_credentials(
-                api_key,
-                api_secret,
+                api_key.into_inner(),
+                api_secret.into_inner(),
                 Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.recv_window_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         } else {
             BybitHttpClient::new(
@@ -143,7 +167,7 @@ impl BybitDataClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.recv_window_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         };
 
@@ -163,26 +187,37 @@ impl BybitDataClient {
                     Some(config.ws_public_url_for(*product_type)),
                     config.heartbeat_interval_secs,
                     config.transport_backend,
-                    config.proxy_url.clone(),
+                    proxy_url.clone(),
+                )
+                .with_socket_control(
+                    socket_factory.control(format!("bybit-{}-data-streams", product_type.as_str())),
                 )
             })
             .collect();
+
+        let session_tasks = TaskGroup::new();
+        let command_tasks = TaskGroup::new();
 
         Ok(Self {
             client_id,
             config,
             http_client,
             ws_clients,
-            is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            session_established: AtomicBool::new(false),
+            cancellation_token: session_tasks.cancellation_token(),
+            session_tasks,
+            command_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             book_depths: Arc::new(AtomicMap::new()),
-            quote_depths: Arc::new(AtomicMap::new()),
+            book_sync: BookSyncTracker::default(),
+            quote_subs: Arc::new(AtomicSet::new()),
+            last_quotes: Arc::new(DashMap::new()),
             ticker_subs: Arc::new(AtomicMap::new()),
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
+            liquidation_subs: Arc::new(AtomicMap::new()),
             instrument_status_subs: Arc::new(AtomicSet::new()),
             status_cache: Arc::new(AtomicMap::new()),
             instrument_subs: Arc::new(AtomicSet::new()),
@@ -214,18 +249,72 @@ impl BybitDataClient {
             .and_then(|_| BybitProductType::from_suffix(instrument_id.symbol.as_str()))
     }
 
+    fn spawn_command<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Bybit data command after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        let mut errors = Vec::new();
+        if let Err(e) = session_result {
+            errors.push(format!("failed to finish Bybit data session tasks: {e}"));
+        }
+
+        if let Err(e) = command_result {
+            errors.push(format!("failed to finish Bybit data command tasks: {e}"));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(errors.join("; "))
+        }
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start Bybit data session task generation")?;
+            self.command_tasks
+                .start_generation()
+                .context("failed to start Bybit data command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+        }
+        Ok(())
+    }
+
     fn spawn_ws<F>(&self, fut: F, context: &'static str)
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::error!("{context}: {e:?}");
             }
-        });
+        };
+
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Bybit {context} after shutdown began: {e}");
+        }
     }
 
-    fn spawn_instrument_polling(&mut self, product_types: &[BybitProductType], poll_secs: u64) {
+    fn spawn_instrument_polling(
+        &self,
+        product_types: &[BybitProductType],
+        poll_secs: u64,
+    ) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
@@ -237,7 +326,7 @@ impl BybitDataClient {
         let clock = self.clock;
         let product_types = product_types.to_vec();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             let mut interval = tokio::time::interval(Duration::from_secs(poll_secs));
             interval.tick().await; // Skip first immediate tick
 
@@ -315,16 +404,103 @@ impl BybitDataClient {
                     }
                 }
             }
-        });
-        self.tasks.push(handle);
+        };
+
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register Bybit instrument polling task")?;
         log::debug!("Instrument polling started: interval={poll_secs}s");
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
+        }
+
+        for ws_client in &mut self.ws_clients {
+            if let Err(e) = ws_client.close().await {
+                self.shutdown_errors.push(e.to_string());
+            }
+        }
+
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.session_established.store(false, Ordering::Release);
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Bybit data shutdown failed: {}", errors.join("; "))
+        }
     }
 }
 
-fn send_data(sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>, data: Data) {
+fn send_data(sender: &EventSender<DataEvent>, data: Data) {
     if let Err(e) = sender.send(DataEvent::Data(data)) {
         log::error!("Failed to emit data event: {e}");
     }
+}
+
+fn validate_orderbook_depth(depth: u32) -> anyhow::Result<()> {
+    if !BYBIT_BOOK_DEPTHS.contains(&depth) {
+        anyhow::bail!("invalid depth {depth}; valid values are {BYBIT_BOOK_DEPTHS:?}");
+    }
+
+    Ok(())
+}
+
+fn liquidation_instrument_id(data_type: &DataType, venue: Venue) -> anyhow::Result<InstrumentId> {
+    let instrument_id = data_type
+        .instrument_id()?
+        .context("BybitLiquidation requires `instrument_id` metadata")?;
+
+    if instrument_id.venue != venue {
+        anyhow::bail!("BybitLiquidation requires a {venue} instrument, received {instrument_id}");
+    }
+
+    Ok(instrument_id)
+}
+
+fn liquidation_product_type(instrument_id: InstrumentId) -> anyhow::Result<BybitProductType> {
+    match BybitProductType::from_suffix(instrument_id.symbol.as_str()) {
+        Some(product_type @ (BybitProductType::Linear | BybitProductType::Inverse)) => {
+            Ok(product_type)
+        }
+        Some(product_type) => {
+            anyhow::bail!("Liquidations not available for {product_type:?} instruments")
+        }
+        None => anyhow::bail!(
+            "Liquidations require a -LINEAR or -INVERSE instrument, received {instrument_id}"
+        ),
+    }
+}
+
+// Each subscribe stores its own `Arc`, so pointer identity tells its entry apart from a later
+// subscription with an equal data type, and only the caller that removes the entry releases the
+// topic reference.
+fn remove_owned_liquidation_sub(
+    subs: &AtomicMap<InstrumentId, Arc<DataType>>,
+    instrument_id: InstrumentId,
+    owned: &Arc<DataType>,
+) -> bool {
+    let mut removed = false;
+
+    subs.rcu(|map| {
+        removed = map
+            .get(&instrument_id)
+            .is_some_and(|current| Arc::ptr_eq(current, owned));
+
+        if removed {
+            map.remove(&instrument_id);
+        }
+    });
+
+    removed
 }
 
 /// Cached funding state per symbol: (funding_rate, next_funding_time, funding_interval_hour).
@@ -333,17 +509,23 @@ type FundingCacheEntry = (Option<String>, Option<String>, Option<String>);
 #[expect(clippy::too_many_arguments)]
 fn handle_ws_message(
     message: &BybitWsMessage,
-    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: &EventSender<DataEvent>,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     product_type: Option<BybitProductType>,
     trade_subs: &Arc<AtomicSet<InstrumentId>>,
     ticker_subs: &Arc<AtomicMap<InstrumentId, AHashSet<&'static str>>>,
-    quote_depths: &Arc<AtomicMap<InstrumentId, u32>>,
+    quote_subs: &Arc<AtomicSet<InstrumentId>>,
     book_depths: &Arc<AtomicMap<InstrumentId, u32>>,
+    book_sync: &BookSyncTracker,
+    ws_client: &BybitWebSocketClient,
     option_greeks_subs: &Arc<AtomicSet<InstrumentId>>,
+    liquidation_subs: &Arc<AtomicMap<InstrumentId, Arc<DataType>>>,
     bar_types_cache: &Arc<AtomicMap<String, BarType>>,
-    quote_cache: &mut AHashMap<InstrumentId, QuoteTick>,
+    bars_timestamp_on_close: bool,
+    last_quotes: &DashMap<InstrumentId, QuoteTick>,
     funding_cache: &mut AHashMap<Ustr, FundingCacheEntry>,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
     clock: &AtomicTime,
 ) {
     let ts_init = clock.get_time_ns();
@@ -360,30 +542,36 @@ fn handle_ws_message(
             };
             let instrument_id = instrument.id();
 
-            // Emit deltas if subscribed to book
-            let has_book_sub = book_depths.contains_key(&instrument_id);
+            let Ok((depth, symbol)) = parse_orderbook_topic(msg.topic.as_str()) else {
+                log::warn!("Invalid orderbook topic: {}", msg.topic);
+                return;
+            };
 
-            if has_book_sub {
-                match parse_orderbook_deltas(msg, instrument, ts_init) {
-                    Ok(deltas) => {
-                        send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
-                    }
-                    Err(e) => log::error!("Failed to parse orderbook deltas: {e}"),
-                }
+            if symbol != msg.data.s.as_str() {
+                log::warn!(
+                    "Orderbook topic symbol does not match payload: {}",
+                    msg.topic
+                );
+                return;
             }
 
-            // Emit quote from best bid/ask if subscribed
-            let has_quote_sub = quote_depths.contains_key(&instrument_id);
-            let has_ticker_quote_sub = ticker_subs
-                .load()
-                .get(&instrument_id)
-                .is_some_and(|s| s.contains("quotes"));
+            if book_depths.load().get(&instrument_id) == Some(&depth) {
+                handle_orderbook_deltas(
+                    msg,
+                    instrument,
+                    data_sender,
+                    book_depths,
+                    book_sync,
+                    ws_client,
+                    snapshot_timeout,
+                    tasks,
+                    ts_init,
+                );
+            }
 
-            if has_quote_sub || has_ticker_quote_sub {
-                let last_quote = quote_cache.get(&instrument_id);
-                match parse_orderbook_quote(msg, instrument, last_quote, ts_init) {
+            if depth == BYBIT_QUOTE_DEPTH && quote_subs.contains(&instrument_id) {
+                match parse_orderbook_quote(msg, instrument, ts_init) {
                     Ok(quote) => {
-                        quote_cache.insert(instrument_id, quote);
                         send_data(data_sender, Data::Quote(quote));
                     }
                     Err(e) => log::error!("Failed to parse orderbook quote: {e}"),
@@ -406,6 +594,29 @@ fn handle_ws_message(
                 }
             }
         }
+        BybitWsMessage::Liquidation(msg) => {
+            let subs = liquidation_subs.load();
+
+            for liquidation in &msg.data {
+                let Some(instrument) = resolve(&liquidation.s) else {
+                    continue;
+                };
+
+                // Emit on the subscribed data type so the message bus topic matches the subscriber
+                let Some(data_type) = subs.get(&instrument.id()) else {
+                    continue;
+                };
+
+                match parse_ws_liquidation(liquidation, instrument, ts_init) {
+                    Ok(liquidation) => {
+                        let custom =
+                            CustomData::new(Arc::new(liquidation), DataType::clone(data_type));
+                        send_data(data_sender, Data::Custom(custom));
+                    }
+                    Err(e) => log::error!("Failed to parse liquidation: {e}"),
+                }
+            }
+        }
         BybitWsMessage::Kline(msg) => {
             let Ok((_, raw_symbol)) = parse_kline_topic(msg.topic.as_str()) else {
                 log::warn!("Invalid kline topic: {}", msg.topic);
@@ -418,7 +629,7 @@ fn handle_ws_message(
             };
             let topic_key = msg.topic.as_str();
             let Some(bar_type) = bar_types_cache.load().get(topic_key).copied() else {
-                log::warn!("No bar type cached for kline topic: {topic_key}");
+                log::debug!("No bar type cached for kline topic: {topic_key}");
                 return;
             };
 
@@ -427,7 +638,13 @@ fn handle_ws_message(
                     continue;
                 }
 
-                match parse_ws_kline_bar(kline, instrument, bar_type, true, ts_init) {
+                match parse_ws_kline_bar(
+                    kline,
+                    instrument,
+                    bar_type,
+                    bars_timestamp_on_close,
+                    ts_init,
+                ) {
                     Ok(bar) => send_data(data_sender, Data::Bar(bar)),
                     Err(e) => log::error!("Failed to parse kline bar: {e}"),
                 }
@@ -442,19 +659,6 @@ fn handle_ws_message(
             let subs = ticker_subs.load();
             let sub_set = subs.get(&instrument_id);
 
-            if sub_set.is_some_and(|s| s.contains("quotes")) && msg.data.bid1_price.is_some() {
-                match parse_ticker_linear_quote(msg, instrument, ts_init) {
-                    Ok(quote) => {
-                        let last = quote_cache.get(&instrument_id);
-                        if last.is_none_or(|q| *q != quote) {
-                            quote_cache.insert(instrument_id, quote);
-                            send_data(data_sender, Data::Quote(quote));
-                        }
-                    }
-                    Err(e) => log::debug!("Skipping partial ticker update: {e}"),
-                }
-            }
-
             let ts_event = match parse_millis_i64(msg.ts, "ticker.ts") {
                 Ok(ts) => ts,
                 Err(e) => {
@@ -464,7 +668,10 @@ fn handle_ws_message(
             };
 
             if sub_set.is_some_and(|s| s.contains("funding"))
-                && matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+                && matches!(
+                    instrument,
+                    InstrumentAny::CryptoPerpetual(_) | InstrumentAny::PerpetualContract(_)
+                )
             {
                 let cache_entry = funding_cache
                     .entry(msg.data.symbol)
@@ -517,7 +724,7 @@ fn handle_ws_message(
 
             if sub_set.is_some_and(|s| s.contains("mark_prices")) && msg.data.mark_price.is_some() {
                 match parse_ticker_linear_mark_price(&msg.data, instrument, ts_event, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::MarkPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::MarkPrice(update)),
                     Err(e) => log::debug!("Skipping mark price update: {e}"),
                 }
             }
@@ -525,7 +732,7 @@ fn handle_ws_message(
             if sub_set.is_some_and(|s| s.contains("index_prices")) && msg.data.index_price.is_some()
             {
                 match parse_ticker_linear_index_price(&msg.data, instrument, ts_event, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::IndexPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::IndexPrice(update)),
                     Err(e) => log::debug!("Skipping index price update: {e}"),
                 }
             }
@@ -545,9 +752,9 @@ fn handle_ws_message(
             if sub_set.is_some_and(|s| s.contains("quotes")) {
                 match parse_ticker_option_quote(msg, instrument, ts_init) {
                     Ok(quote) => {
-                        let last = quote_cache.get(&instrument_id);
-                        if last.is_none_or(|q| *q != quote) {
-                            quote_cache.insert(instrument_id, quote);
+                        let last = last_quotes.get(&instrument_id).map(|quote| *quote);
+                        if last.is_none_or(|q| !q.has_same_bid_ask(&quote)) {
+                            last_quotes.insert(instrument_id, quote);
                             send_data(data_sender, Data::Quote(quote));
                         }
                     }
@@ -557,14 +764,14 @@ fn handle_ws_message(
 
             if sub_set.is_some_and(|s| s.contains("mark_prices")) {
                 match parse_ticker_option_mark_price(msg, instrument, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::MarkPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::MarkPrice(update)),
                     Err(e) => log::error!("Failed to parse ticker option mark price: {e}"),
                 }
             }
 
             if sub_set.is_some_and(|s| s.contains("index_prices")) {
                 match parse_ticker_option_index_price(msg, instrument, ts_init) {
-                    Ok(update) => send_data(data_sender, Data::IndexPriceUpdate(update)),
+                    Ok(update) => send_data(data_sender, Data::IndexPrice(update)),
                     Err(e) => log::error!("Failed to parse ticker option index price: {e}"),
                 }
             }
@@ -581,9 +788,20 @@ fn handle_ws_message(
             }
         }
         BybitWsMessage::Reconnected => {
-            quote_cache.clear();
+            reset_option_quotes(last_quotes, product_type);
             funding_cache.clear();
             log::info!("WebSocket reconnected, cleared caches");
+
+            if let Some(product_type) = product_type {
+                reset_on_reconnect(
+                    product_type,
+                    book_depths,
+                    book_sync,
+                    ws_client,
+                    snapshot_timeout,
+                    tasks,
+                );
+            }
         }
         BybitWsMessage::Error(e) => {
             log::warn!(
@@ -602,11 +820,83 @@ fn handle_ws_message(
     }
 }
 
+// Validates the update ID before parsing, so a delta without levels still advances the book
+#[expect(clippy::too_many_arguments)]
+fn handle_orderbook_deltas(
+    msg: &BybitWsOrderbookDepthMsg,
+    instrument: &InstrumentAny,
+    data_sender: &EventSender<DataEvent>,
+    book_depths: &AtomicMap<InstrumentId, u32>,
+    book_sync: &BookSyncTracker,
+    ws_client: &BybitWebSocketClient,
+    snapshot_timeout: Duration,
+    tasks: &TaskSpawner,
+    ts_init: UnixNanos,
+) {
+    let instrument_id = instrument.id();
+    let is_snapshot = msg.msg_type.eq_ignore_ascii_case("snapshot");
+
+    let outcome = match u64::try_from(msg.data.u) {
+        Ok(update_id) => book_sync.validate(instrument_id, is_snapshot, update_id, Instant::now()),
+        Err(e) => {
+            log::error!(
+                "Invalid orderbook update ID {} for {instrument_id}: {e}",
+                msg.data.u
+            );
+            BookSequenceOutcome::Recover
+        }
+    };
+
+    match outcome {
+        BookSequenceOutcome::Accept => {}
+        BookSequenceOutcome::Suppress => return,
+        BookSequenceOutcome::Recover => {
+            start_recovery(
+                instrument_id,
+                book_depths,
+                book_sync,
+                ws_client,
+                snapshot_timeout,
+                tasks,
+            );
+            return;
+        }
+    }
+
+    if !is_snapshot && msg.data.b.is_empty() && msg.data.a.is_empty() {
+        return;
+    }
+
+    match parse_orderbook_deltas(msg, instrument, ts_init) {
+        Ok(deltas) => send_data(data_sender, Data::BookDeltas(Box::new(deltas))),
+        Err(e) => {
+            log::error!("Failed to parse orderbook deltas for {instrument_id}: {e}");
+            start_recovery(
+                instrument_id,
+                book_depths,
+                book_sync,
+                ws_client,
+                snapshot_timeout,
+                tasks,
+            );
+        }
+    }
+}
+
 fn upsert_instrument(
     cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument: InstrumentAny,
 ) {
     cache.insert(instrument.id(), instrument);
+}
+
+fn reset_option_quotes(
+    last_quotes: &DashMap<InstrumentId, QuoteTick>,
+    product_type: Option<BybitProductType>,
+) {
+    if product_type == Some(BybitProductType::Option) {
+        last_quotes.clear();
+    }
 }
 
 #[async_trait::async_trait(?Send)]
@@ -632,20 +922,30 @@ impl DataClient for BybitDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {id}", id = self.client_id);
-        self.cancellation_token.cancel();
-        self.is_connected.store(false, Ordering::Relaxed);
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
+        }
+        self.session_established.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {id}", id = self.client_id);
-        self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
-        self.tasks.clear();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
+        }
+        self.session_established.store(false, Ordering::Relaxed);
         self.book_depths.store(AHashMap::new());
-        self.quote_depths.store(AHashMap::new());
+        self.book_sync.clear();
+        self.quote_subs.store(AHashSet::new());
+        self.last_quotes.clear();
         self.ticker_subs.store(AHashMap::new());
         self.option_greeks_subs.store(AHashSet::new());
+        self.liquidation_subs.store(AHashMap::new());
         self.instrument_status_subs.store(AHashSet::new());
         self.status_cache.store(AHashMap::new());
         self.instrument_subs.store(AHashSet::new());
@@ -660,9 +960,24 @@ impl DataClient for BybitDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.session_established.load(Ordering::Relaxed)
+            && self.session_tasks.is_open()
+            && self.command_tasks.is_open()
+        {
             return Ok(());
         }
+
+        register_bybit_custom_data();
+
+        self.prepare_task_groups().await?;
+        self.last_quotes.clear();
+        let ws_clients = self.ws_clients.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
+                for ws_client in ws_clients {
+                    ws_client.begin_shutdown();
+                }
+            });
 
         let product_types = if self.config.product_types.is_empty() {
             vec![BybitProductType::Linear]
@@ -749,123 +1064,209 @@ impl DataClient for BybitDataClient {
             Arc::new(map)
         };
 
-        for ws_client in &mut self.ws_clients {
-            ws_client
-                .connect()
-                .await
-                .context("failed to connect Bybit WebSocket")?;
-            ws_client
-                .wait_until_active(10.0)
-                .await
-                .context("WebSocket did not become active")?;
+        let session_result = async {
+            for ws_client in &mut self.ws_clients {
+                ws_client
+                    .connect()
+                    .await
+                    .context("failed to connect Bybit WebSocket")?;
+                ws_client
+                    .wait_until_active(10.0)
+                    .await
+                    .context("WebSocket did not become active")?;
 
-            let stream = ws_client.stream();
-            let product_type = ws_client.product_type();
-            let sender = self.data_sender.clone();
-            let trade_subs = self.trade_subs.clone();
-            let ticker_subs = self.ticker_subs.clone();
-            let quote_depths = self.quote_depths.clone();
-            let book_depths = self.book_depths.clone();
-            let option_greeks_subs = self.option_greeks_subs.clone();
-            let bar_types_cache = ws_client.bar_types_cache().clone();
-            let instruments = Arc::clone(&instruments_by_symbol);
-            let clock = self.clock;
-            let cancel = self.cancellation_token.clone();
+                let stream = ws_client.stream();
+                let product_type = ws_client.product_type();
+                let sender = self.data_sender.clone();
+                let trade_subs = self.trade_subs.clone();
+                let ticker_subs = self.ticker_subs.clone();
+                let quote_subs = self.quote_subs.clone();
+                let last_quotes = self.last_quotes.clone();
+                let book_depths = self.book_depths.clone();
+                let book_sync = self.book_sync.clone();
+                let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+                let tasks = self
+                    .command_tasks
+                    .spawner()
+                    .context("Bybit data command task admission is closed")?;
+                let option_greeks_subs = self.option_greeks_subs.clone();
+                let liquidation_subs = self.liquidation_subs.clone();
+                let bar_types_cache = ws_client.bar_types_cache().clone();
+                let bars_timestamp_on_close = self.config.bars_timestamp_on_close;
+                let instruments = Arc::clone(&instruments_by_symbol);
+                let clock = self.clock;
+                let cancel = self.cancellation_token.clone();
+                let ws_client = ws_client.clone();
 
-            let handle = get_runtime().spawn(async move {
-                let mut quote_cache: AHashMap<InstrumentId, QuoteTick> = AHashMap::new();
-                let mut funding_cache: AHashMap<Ustr, FundingCacheEntry> = AHashMap::new();
+                let future = async move {
+                    let mut funding_cache: AHashMap<Ustr, FundingCacheEntry> = AHashMap::new();
 
-                pin_mut!(stream);
+                    pin_mut!(stream);
 
-                loop {
-                    tokio::select! {
-                        Some(message) = stream.next() => {
-                            handle_ws_message(
-                                &message,
-                                &sender,
-                                &instruments,
-                                product_type,
-                                &trade_subs,
-                                &ticker_subs,
-                                &quote_depths,
-                                &book_depths,
-                                &option_greeks_subs,
-                                &bar_types_cache,
-                                &mut quote_cache,
-                                &mut funding_cache,
-                                clock,
-                            );
-                        }
-                        () = cancel.cancelled() => {
-                            log::debug!("WebSocket stream task cancelled");
-                            break;
+                    loop {
+                        tokio::select! {
+                            Some(message) = stream.next() => {
+                                handle_ws_message(
+                                    &message,
+                                    &sender,
+                                    &instruments,
+                                    product_type,
+                                    &trade_subs,
+                                    &ticker_subs,
+                                    &quote_subs,
+                                    &book_depths,
+                                    &book_sync,
+                                    &ws_client,
+                                    &option_greeks_subs,
+                                    &liquidation_subs,
+                                    &bar_types_cache,
+                                    bars_timestamp_on_close,
+                                    &last_quotes,
+                                    &mut funding_cache,
+                                    snapshot_timeout,
+                                    &tasks,
+                                    clock,
+                                );
+                            }
+                            () = cancel.cancelled() => {
+                                log::debug!("WebSocket stream task cancelled");
+                                break;
+                            }
                         }
                     }
-                }
-            });
-            self.tasks.push(handle);
+                };
+                self.session_tasks
+                    .spawn(future)
+                    .context("failed to register Bybit WebSocket stream task")?;
+            }
+
+            if let Some(poll_secs) = self.config.instrument_poll_interval_secs
+                && poll_secs > 0
+            {
+                self.spawn_instrument_polling(&product_types, poll_secs)?;
+            }
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Bybit data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
-        // Spawn the instrument/status polling task (serves both definition and status subs).
-        if let Some(poll_secs) = self.config.instrument_poll_interval_secs
-            && poll_secs > 0
-        {
-            self.spawn_instrument_polling(&product_types, poll_secs);
-        }
-
-        self.is_connected.store(true, Ordering::Release);
+        setup_guard.disarm();
+        self.session_established.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
-            return Ok(());
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
         }
-
-        self.cancellation_token.cancel();
-
-        // Reinitialize token so reconnect can spawn new stream tasks
-        self.cancellation_token = CancellationToken::new();
 
         for ws_client in &mut self.ws_clients {
             if let Err(e) = ws_client.close().await {
-                log::warn!("Error closing WebSocket: {e:?}");
+                self.shutdown_errors.push(e.to_string());
             }
         }
 
         // Allow time for unsubscribe confirmations
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let handles: Vec<_> = std::mem::take(&mut self.tasks);
-        for handle in handles {
-            if let Err(e) = handle.await {
-                log::error!("Error joining WebSocket task: {e}");
-            }
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
         }
 
         self.book_depths.store(AHashMap::new());
-        self.quote_depths.store(AHashMap::new());
+        self.book_sync.clear();
+        self.quote_subs.store(AHashSet::new());
+        self.last_quotes.clear();
         self.ticker_subs.store(AHashMap::new());
         self.trade_subs.store(AHashSet::new());
         self.option_greeks_subs.store(AHashSet::new());
+        self.liquidation_subs.store(AHashMap::new());
         self.instrument_status_subs.store(AHashSet::new());
         self.status_cache.store(AHashMap::new());
         self.instrument_subs.store(AHashSet::new());
         self.subscribe_all_instruments
             .store(false, Ordering::Relaxed);
-        self.is_connected.store(false, Ordering::Release);
+        self.session_established.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
-        Ok(())
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Bybit data shutdown failed: {}", errors.join("; "))
+        }
     }
 
     fn is_connected(&self) -> bool {
-        self.is_connected.load(Ordering::Relaxed)
+        self.session_established.load(Ordering::Relaxed)
+            && self.ws_clients.iter().all(BybitWebSocketClient::is_active)
     }
 
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
+    }
+
+    fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
+        let data_type = cmd.data_type.type_name();
+        if data_type != "BybitLiquidation" {
+            log::warn!("Unsupported custom data subscription: {data_type}");
+            return Ok(());
+        }
+
+        let instrument_id = liquidation_instrument_id(&cmd.data_type, self.venue())?;
+        let product_type = liquidation_product_type(instrument_id)?;
+
+        let ws = self
+            .get_ws_client_for_product(product_type)
+            .context("no WebSocket client for product type")?
+            .clone();
+
+        if let Some(subscribed) = self.liquidation_subs.get_cloned(&instrument_id) {
+            anyhow::ensure!(
+                *subscribed == cmd.data_type,
+                "Already subscribed to liquidations for {instrument_id} as {subscribed}"
+            );
+            return Ok(());
+        }
+
+        let subscription = Arc::new(cmd.data_type);
+        self.liquidation_subs
+            .insert(instrument_id, Arc::clone(&subscription));
+        let liquidation_subs = Arc::clone(&self.liquidation_subs);
+
+        self.spawn_ws(
+            async move {
+                if let Err(e) = ws.subscribe_liquidations(instrument_id).await {
+                    // An unsubscribe that already removed this entry also released its reference
+                    if remove_owned_liquidation_sub(&liquidation_subs, instrument_id, &subscription)
+                        && let Err(e) = ws.unsubscribe_liquidations(instrument_id).await
+                    {
+                        log::warn!(
+                            "Failed to unsubscribe after liquidation subscription error: {e}"
+                        );
+                    }
+
+                    return Err(e).context("liquidations subscription");
+                }
+
+                Ok(())
+            },
+            "liquidation subscription",
+        );
+
+        Ok(())
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
@@ -877,31 +1278,42 @@ impl DataClient for BybitDataClient {
             .depth
             .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
 
-        if !matches!(depth, 1 | 50 | 200 | 500) {
-            anyhow::bail!("invalid depth {depth}; valid values are 1, 50, 200, or 500");
-        }
+        validate_orderbook_depth(depth)?;
 
         let instrument_id = cmd.instrument_id;
         let product_type = self
             .get_product_type_for_instrument(instrument_id)
             .unwrap_or(BybitProductType::Linear);
 
-        let ws = self
+        let ws_client = self
             .get_ws_client_for_product(product_type)
             .context("no WebSocket client for product type")?
             .clone();
 
-        let book_depths = Arc::clone(&self.book_depths);
+        if let Some(subscribed_depth) = self.book_depths.load().get(&instrument_id) {
+            anyhow::ensure!(
+                *subscribed_depth == depth,
+                "Already subscribed to book depth {subscribed_depth} for {instrument_id}"
+            );
+            return Ok(());
+        }
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_orderbook(instrument_id, depth)
-                    .await
-                    .context("orderbook subscription")?;
-                book_depths.insert(instrument_id, depth);
-                Ok(())
-            },
-            "order book delta subscription",
+        let tasks = match self.command_tasks.spawner() {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                log::warn!("Skipping Bybit data command after shutdown began: {e}");
+                return Ok(());
+            }
+        };
+
+        spawn_subscription_task(
+            instrument_id,
+            depth,
+            Arc::clone(&self.book_depths),
+            self.book_sync.clone(),
+            ws_client,
+            Duration::from_secs(self.config.book_snapshot_timeout_secs),
+            &tasks,
         );
 
         Ok(())
@@ -918,20 +1330,8 @@ impl DataClient for BybitDataClient {
             .context("no WebSocket client for product type")?
             .clone();
 
-        // SPOT ticker channel doesn't include bid/ask, use orderbook depth=1
-        if product_type == BybitProductType::Spot {
-            let depth = 1;
-            self.quote_depths.insert(instrument_id, depth);
-
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_orderbook(instrument_id, depth)
-                        .await
-                        .context("orderbook subscription for quotes")
-                },
-                "quote subscription (spot orderbook)",
-            );
-        } else {
+        if product_type == BybitProductType::Option {
+            self.last_quotes.remove(&instrument_id);
             let mut should_subscribe = false;
             self.ticker_subs.rcu(|m| {
                 let entry = m.entry(instrument_id).or_default();
@@ -949,6 +1349,41 @@ impl DataClient for BybitDataClient {
                     "quote subscription",
                 );
             }
+        } else {
+            if self.quote_subs.contains(&instrument_id) {
+                return Ok(());
+            }
+
+            self.quote_subs.insert(instrument_id);
+            let quote_subs = Arc::clone(&self.quote_subs);
+
+            self.spawn_ws(
+                async move {
+                    if let Err(e) = ws
+                        .subscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                        .await
+                    {
+                        // A stale entry, or a leftover reference that a retry would ride, lets a
+                        // later unsubscribe drop the depth-1 book's topic, and an unsubscribe that
+                        // removed the entry first already released the reference.
+                        let mut removed = false;
+                        quote_subs.rcu(|subs| removed = subs.remove(&instrument_id));
+
+                        if removed
+                            && let Err(e) = ws
+                                .unsubscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                                .await
+                        {
+                            log::warn!("Failed to unsubscribe after quote subscription error: {e}");
+                        }
+
+                        return Err(e).context("orderbook subscription for quotes");
+                    }
+
+                    Ok(())
+                },
+                "quote subscription (orderbook)",
+            );
         }
         Ok(())
     }
@@ -989,7 +1424,10 @@ impl DataClient for BybitDataClient {
 
         let guard = self.instruments.load();
         if let Some(instrument) = guard.get(&instrument_id)
-            && !matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+            && !matches!(
+                instrument,
+                InstrumentAny::CryptoPerpetual(_) | InstrumentAny::PerpetualContract(_)
+            )
         {
             anyhow::bail!("Funding rates only available for perpetuals, not {instrument_id}");
         }
@@ -1116,30 +1554,59 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        let data_type = cmd.data_type.type_name();
+        if data_type != "BybitLiquidation" {
+            log::warn!("Unsupported custom data unsubscription: {data_type}");
+            return Ok(());
+        }
+
+        let instrument_id = liquidation_instrument_id(&cmd.data_type, self.venue())?;
+
+        let Some(subscription) = self
+            .liquidation_subs
+            .get_cloned(&instrument_id)
+            .filter(|subscribed| **subscribed == cmd.data_type)
+        else {
+            return Ok(());
+        };
+
+        let product_type = liquidation_product_type(instrument_id)?;
+
+        let ws = self
+            .get_ws_client_for_product(product_type)
+            .context("no WebSocket client for product type")?
+            .clone();
+
+        // A failed subscribe may have removed the entry and released its reference already
+        if !remove_owned_liquidation_sub(&self.liquidation_subs, instrument_id, &subscription) {
+            return Ok(());
+        }
+
+        self.spawn_ws(
+            async move {
+                ws.unsubscribe_liquidations(instrument_id)
+                    .await
+                    .context("liquidations unsubscribe")
+            },
+            "liquidation unsubscribe",
+        );
+
+        Ok(())
+    }
+
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        let depth = self
-            .book_depths
-            .load()
-            .get(&instrument_id)
-            .copied()
-            .unwrap_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH);
+        let Some(depth) = self.book_depths.load().get(&instrument_id).copied() else {
+            return Ok(());
+        };
+
         self.book_depths.remove(&instrument_id);
+        self.book_sync.remove(instrument_id);
 
         let product_type = self
             .get_product_type_for_instrument(instrument_id)
             .unwrap_or(BybitProductType::Linear);
-
-        // Check if spot quote subscription is using the same depth
-        let quote_using_same_depth = self
-            .quote_depths
-            .load()
-            .get(&instrument_id)
-            .is_some_and(|&d| d == depth);
-
-        if quote_using_same_depth {
-            return Ok(());
-        }
 
         let ws = self
             .get_ws_client_for_product(product_type)
@@ -1168,33 +1635,8 @@ impl DataClient for BybitDataClient {
             .context("no WebSocket client for product type")?
             .clone();
 
-        if product_type == BybitProductType::Spot {
-            let depth = self
-                .quote_depths
-                .load()
-                .get(&instrument_id)
-                .copied()
-                .unwrap_or(1);
-            self.quote_depths.remove(&instrument_id);
-
-            // Check if book deltas subscription is using the same depth
-            let book_using_same_depth = self
-                .book_depths
-                .load()
-                .get(&instrument_id)
-                .is_some_and(|&d| d == depth);
-
-            if !book_using_same_depth {
-                self.spawn_ws(
-                    async move {
-                        ws.unsubscribe_orderbook(instrument_id, depth)
-                            .await
-                            .context("orderbook unsubscribe for quotes")
-                    },
-                    "quote unsubscribe (spot orderbook)",
-                );
-            }
-        } else {
+        if product_type == BybitProductType::Option {
+            self.last_quotes.remove(&instrument_id);
             let mut should_unsubscribe = false;
             self.ticker_subs.rcu(|m| {
                 if let Some(entry) = m.get_mut(&instrument_id) {
@@ -1220,6 +1662,21 @@ impl DataClient for BybitDataClient {
                     "quote unsubscribe",
                 );
             }
+        } else {
+            if !self.quote_subs.contains(&instrument_id) {
+                return Ok(());
+            }
+
+            self.quote_subs.remove(&instrument_id);
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                        .await
+                        .context("orderbook unsubscribe for quotes")
+                },
+                "quote unsubscribe (orderbook)",
+            );
         }
         Ok(())
     }
@@ -1543,7 +2000,7 @@ impl DataClient for BybitDataClient {
             self.config.product_types.clone()
         };
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let mut all_instruments = Vec::new();
 
             for product_type in product_types {
@@ -1597,7 +2054,7 @@ impl DataClient for BybitDataClient {
             .unwrap_or(BybitProductType::Linear);
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str()).to_string();
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_instruments(product_type, Some(raw_symbol), None)
                 .await
@@ -1646,7 +2103,7 @@ impl DataClient for BybitDataClient {
         let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
             .unwrap_or(BybitProductType::Linear);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_orderbook_snapshot(product_type, instrument_id, depth)
                 .await
@@ -1698,7 +2155,7 @@ impl DataClient for BybitDataClient {
         let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
             .unwrap_or(BybitProductType::Linear);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_trades(product_type, instrument_id, limit)
                 .await
@@ -1729,6 +2186,7 @@ impl DataClient for BybitDataClient {
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         let http = self.http_client.clone();
+        let bars_timestamp_on_close = self.config.bars_timestamp_on_close;
         let sender = self.data_sender.clone();
         let bar_type = request.bar_type;
         let start = request.start;
@@ -1745,9 +2203,16 @@ impl DataClient for BybitDataClient {
         let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
             .unwrap_or(BybitProductType::Linear);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
-                .request_bars(product_type, bar_type, start, end, limit, true)
+                .request_bars(
+                    product_type,
+                    bar_type,
+                    start,
+                    end,
+                    limit,
+                    bars_timestamp_on_close,
+                )
                 .await
                 .context("failed to request bars from Bybit")
             {
@@ -1795,7 +2260,7 @@ impl DataClient for BybitDataClient {
             anyhow::bail!("Funding rates not available for {product_type} instruments");
         }
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_funding_rates(product_type, instrument_id, start, end, limit)
                 .await
@@ -1824,123 +2289,64 @@ impl DataClient for BybitDataClient {
         Ok(())
     }
 
-    fn request_forward_prices(&self, request: RequestForwardPrices) -> anyhow::Result<()> {
-        let underlying = request.underlying.to_string();
+    fn request_option_chain_reference_price(
+        &self,
+        request: RequestOptionChainReferencePrice,
+    ) -> anyhow::Result<()> {
+        let series_id = request.series_id;
         let instrument_id = request.instrument_id;
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;
-        let client_id = self.client_id();
+        let client_id = request.client_id.unwrap_or(self.client_id());
         let params = request.params;
         let clock = self.clock;
-        let venue = *BYBIT_VENUE;
 
-        get_runtime().spawn(async move {
-            let result = if let Some(inst_id) = instrument_id {
-                // Single-instrument path: fetch ticker for one symbol
-                let raw_symbol = extract_raw_symbol(inst_id.symbol.as_str()).to_string();
-                log::debug!(
-                    "Requesting forward price for {underlying} (single instrument: {raw_symbol})"
-                );
-
-                let params = crate::http::query::BybitTickersParams {
-                    category: BybitProductType::Option,
-                    symbol: Some(raw_symbol.clone()),
-                    base_coin: None,
-                    exp_date: None,
-                };
-
-                match http_client.request_option_tickers_raw_with_params(&params).await {
-                    Ok(tickers) => {
-                        let ts = clock.get_time_ns();
-                        let forward_prices: Vec<ForwardPrice> = tickers
-                            .into_iter()
-                            .filter_map(|t| {
-                                let up: Decimal = t.underlying_price.parse().ok()?;
-                                if up.is_zero() {
-                                    return None;
-                                }
-                                Some(ForwardPrice::new(inst_id, up, None, ts, ts))
-                            })
-                            .collect();
-
-                        log::debug!(
-                            "Fetched {} forward price for {underlying} (single instrument: {raw_symbol})",
-                            forward_prices.len(),
-                        );
-                        Ok((forward_prices, ts))
+        self.spawn_command(async move {
+            let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str()).to_string();
+            let query = crate::http::query::BybitTickersParams {
+                category: BybitProductType::Option,
+                symbol: Some(raw_symbol),
+                base_coin: None,
+                exp_date: None,
+            };
+            let price = match http_client.request_option_tickers_raw_with_params(&query).await {
+                Ok(tickers) => tickers.into_iter().find_map(|ticker| {
+                    let decimal = ticker.underlying_price.parse::<Decimal>().ok()?;
+                    if decimal <= Decimal::ZERO {
+                        return None;
                     }
-                    Err(e) => Err(e),
-                }
-            } else {
-                // Bulk path: fetch all option tickers
-                log::debug!("Requesting option forward prices for base_coin={underlying} (bulk)");
 
-                match http_client.request_option_tickers_raw(&underlying).await {
-                    Ok(tickers) => {
-                        let ts = clock.get_time_ns();
-
-                        // Deduplicate: all options at the same expiry share the same
-                        // forward price. Extract expiry prefix (e.g. "BTC-28FEB26" from
-                        // "BTC-28FEB26-65000-C") and keep only one entry per expiry.
-                        let mut seen_expiries = std::collections::HashSet::new();
-                        let forward_prices: Vec<ForwardPrice> = tickers
-                            .into_iter()
-                            .filter_map(|t| {
-                                let up: Decimal = t.underlying_price.parse().ok()?;
-                                if up.is_zero() {
-                                    return None;
-                                }
-                                let parts: Vec<&str> = t.symbol.splitn(3, '-').collect();
-                                let expiry_key = if parts.len() >= 2 {
-                                    format!("{}-{}", parts[0], parts[1])
-                                } else {
-                                    t.symbol.to_string()
-                                };
-
-                                if !seen_expiries.insert(expiry_key) {
-                                    return None;
-                                }
-                                Some(ForwardPrice::new(
-                                    BybitSymbol::new(format!("{}-OPTION", t.symbol))
-                                        .map(|s| s.to_instrument_id())
-                                        .ok()?,
-                                    up,
-                                    None,
-                                    ts,
-                                    ts,
-                                ))
-                            })
-                            .collect();
-
-                        log::debug!(
-                            "Fetched {} forward prices (per-expiry) for {underlying}",
-                            forward_prices.len(),
-                        );
-                        Ok((forward_prices, ts))
+                    match Price::from_decimal(decimal) {
+                        Ok(price) => Some(price),
+                        Err(e) => {
+                            log::warn!(
+                                "Invalid Bybit option-chain reference price for {instrument_id}: {e}"
+                            );
+                            None
+                        }
                     }
-                    Err(e) => Err(e),
+                }),
+                Err(e) => {
+                    log::error!(
+                        "Option-chain reference price request failed for {series_id}: {e:?}"
+                    );
+                    None
                 }
             };
+            let response = DataResponse::OptionChainReferencePrice(
+                OptionChainReferencePriceResponse::new(
+                    request_id,
+                    client_id,
+                    series_id,
+                    price,
+                    clock.get_time_ns(),
+                    params,
+                ),
+            );
 
-            match result {
-                Ok((forward_prices, ts)) => {
-                    let response = DataResponse::ForwardPrices(ForwardPricesResponse::new(
-                        request_id,
-                        client_id,
-                        venue,
-                        forward_prices,
-                        ts,
-                        params,
-                    ));
-
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send forward prices response: {e}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Forward prices request failed for {underlying}: {e:?}");
-                }
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send option-chain reference price response: {e}");
             }
         });
 
@@ -1949,15 +2355,40 @@ impl DataClient for BybitDataClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
+#[path = "../benches"]
+pub(crate) mod tests {
+    // These routines are exercised by Criterion, not the unit-test harness
+    #[allow(dead_code)]
+    #[path = "quotes/mod.rs"]
+    pub(crate) mod benchmarks;
+
+    use std::{sync::Arc, time::Duration};
 
     use ahash::{AHashMap, AHashSet};
-    use nautilus_common::messages::DataEvent;
-    use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
+    use dashmap::DashMap;
+    use nautilus_common::{
+        clients::DataClient,
+        live::{dst::time::Instant, runner::set_data_event_sender},
+        messages::{
+            DataEvent,
+            data::{
+                SubscribeBookDeltas, SubscribeCustomData, SubscribeFundingRates, SubscribeQuotes,
+                UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes,
+            },
+        },
+        testing::wait_until_async,
+    };
+    use nautilus_core::{
+        AtomicMap, AtomicSet, Params, UUID4, UnixNanos,
+        time::{AtomicTime, get_atomic_clock_realtime},
+    };
+    use nautilus_live::{
+        book::snapshot::SnapshotGate,
+        task::{TaskGroup, TaskSpawner},
+    };
     use nautilus_model::{
-        data::{BarType, Data, QuoteTick},
-        enums::AggressorSide,
+        data::{BarType, CustomData, Data, DataType, MarkPriceUpdate, QuoteTick},
+        enums::{AggressorSide, BookAction, BookType, PositionSide},
         identifiers::InstrumentId,
         instruments::{Instrument, InstrumentAny},
         types::{Price, Quantity},
@@ -1965,43 +2396,58 @@ mod tests {
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::handle_ws_message;
+    use super::{
+        BybitDataClient, handle_orderbook_deltas, handle_ws_message, remove_owned_liquidation_sub,
+        validate_orderbook_depth,
+    };
     use crate::{
+        book::{BookSequenceOutcome, sync::BookSyncTracker},
         common::{
-            enums::BybitProductType,
+            consts::BYBIT_CLIENT_ID,
+            enums::{BybitProductType, BybitSymbolType},
             parse::{parse_linear_instrument, parse_option_instrument},
+            rate_limit::BYBIT_OPTION_SUBSCRIPTION_LIMIT,
             testing::load_test_json,
         },
-        http::models::{
-            BybitFeeRate, BybitInstrumentLinearResponse, BybitInstrumentOptionResponse,
-        },
-        websocket::messages::{
-            BybitWsMessage, BybitWsOrderbookDepthMsg, BybitWsTickerLinearMsg,
-            BybitWsTickerOptionMsg, BybitWsTradeMsg,
+        config::BybitDataClientConfig,
+        data_types::BybitLiquidation,
+        http::models::{BybitInstrumentLinearResponse, BybitInstrumentOptionResponse},
+        websocket::{
+            client::BybitWebSocketClient,
+            messages::{
+                BybitWsKlineMsg, BybitWsLiquidationMsg, BybitWsMessage, BybitWsOrderbookDepthMsg,
+                BybitWsTickerLinearMsg, BybitWsTickerOptionMsg, BybitWsTradeMsg,
+            },
         },
     };
-
-    fn sample_fee_rate(
-        symbol: &str,
-        taker: &str,
-        maker: &str,
-        base_coin: Option<&str>,
-    ) -> BybitFeeRate {
-        BybitFeeRate {
-            symbol: Ustr::from(symbol),
-            taker_fee_rate: taker.to_string(),
-            maker_fee_rate: maker.to_string(),
-            base_coin: base_coin.map(Ustr::from),
-        }
-    }
 
     fn linear_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments_linear.json");
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
-        let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
-        parse_linear_instrument(instrument, &fee_rate, ts, ts).unwrap()
+        parse_linear_instrument(instrument, ts, ts).unwrap()
+    }
+
+    fn tradfi_linear_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_linear.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.symbol_type = Some(BybitSymbolType::Stock);
+        let ts = UnixNanos::new(1_700_000_000_000_000_000);
+        parse_linear_instrument(&instrument, ts, ts).unwrap()
+    }
+
+    fn linear_instruments() -> Vec<InstrumentAny> {
+        let json = load_test_json("http_get_instruments_linear.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let ts = UnixNanos::new(1_700_000_000_000_000_000);
+        response
+            .result
+            .list
+            .iter()
+            .map(|instrument| parse_linear_instrument(instrument, ts, ts).unwrap())
+            .collect()
     }
 
     fn option_instrument() -> InstrumentAny {
@@ -2009,7 +2455,7 @@ mod tests {
         let response: BybitInstrumentOptionResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
-        parse_option_instrument(instrument, None, ts, ts).unwrap()
+        parse_option_instrument(instrument, ts, ts).unwrap()
     }
 
     fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {
@@ -2024,7 +2470,7 @@ mod tests {
     fn empty_subs() -> (
         Arc<AtomicSet<InstrumentId>>,
         Arc<AtomicMap<InstrumentId, AHashSet<&'static str>>>,
-        Arc<AtomicMap<InstrumentId, u32>>,
+        Arc<AtomicSet<InstrumentId>>,
         Arc<AtomicMap<InstrumentId, u32>>,
         Arc<AtomicSet<InstrumentId>>,
         Arc<AtomicMap<String, BarType>>,
@@ -2032,21 +2478,445 @@ mod tests {
         (
             Arc::new(AtomicSet::new()),
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::new(AtomicSet::new()),
             Arc::new(AtomicMap::new()),
             Arc::new(AtomicSet::new()),
             Arc::new(AtomicMap::new()),
         )
     }
 
+    fn book_context() -> (BookSyncTracker, BybitWebSocketClient, TaskSpawner) {
+        let tasks = TaskGroup::new().spawner().unwrap();
+        let ws_client = BybitWebSocketClient::new_public(None, 20);
+        (BookSyncTracker::default(), ws_client, tasks)
+    }
+
+    fn liquidation_data_type(instrument_id: InstrumentId, identifier: Option<&str>) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        );
+
+        DataType::new(
+            "BybitLiquidation",
+            Some(metadata),
+            identifier.map(ToString::to_string),
+        )
+    }
+
+    fn subscribe_custom_data(data_type: DataType) -> SubscribeCustomData {
+        SubscribeCustomData::new(
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            data_type,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    }
+
+    fn unsubscribe_custom_data(data_type: DataType) -> UnsubscribeCustomData {
+        UnsubscribeCustomData::new(
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            data_type,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    }
+
+    fn handle_liquidation_message(
+        msg: BybitWsLiquidationMsg,
+        instruments: &AHashMap<Ustr, InstrumentAny>,
+        liquidation_subs: &Arc<AtomicMap<InstrumentId, Arc<DataType>>>,
+        ts_init: UnixNanos,
+    ) -> Vec<CustomData> {
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
+            empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
+
+        let mut funding_cache = AHashMap::new();
+        let clock = AtomicTime::new(false, ts_init);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        handle_ws_message(
+            &BybitWsMessage::Liquidation(msg),
+            &tx.into(),
+            instruments,
+            Some(BybitProductType::Linear),
+            &trade_subs,
+            &ticker_subs,
+            &quote_subs,
+            &book_depths,
+            &book_sync,
+            &ws_client,
+            &greeks_subs,
+            liquidation_subs,
+            &bar_types,
+            true,
+            &DashMap::new(),
+            &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
+            &clock,
+        );
+
+        let mut events = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                DataEvent::Data(Data::Custom(custom)) => events.push(custom),
+                other => panic!("Expected custom data event, found {other:?}"),
+            }
+        }
+
+        events
+    }
+
+    fn as_liquidation(custom: &CustomData) -> &BybitLiquidation {
+        custom
+            .data
+            .as_any()
+            .downcast_ref::<BybitLiquidation>()
+            .expect("expected BybitLiquidation")
+    }
+
+    #[tokio::test]
+    async fn test_failed_book_subscription_releases_registration() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let config = BybitDataClientConfig {
+            product_types: vec![BybitProductType::Option],
+            ..Default::default()
+        };
+        let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+        let ws = client.ws_clients[0].clone();
+        let topics = (0..BYBIT_OPTION_SUBSCRIPTION_LIMIT)
+            .map(|index| format!("tickers.OPTION-{index}"))
+            .collect();
+
+        // The disconnected command channel rejects the send after registering these topics
+        ws.subscribe(topics).await.unwrap_err();
+        let instrument_id = InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT");
+        let expected_error = format!(
+            "Client error: Option WebSocket subscription limit is {BYBIT_OPTION_SUBSCRIPTION_LIMIT} arguments per connection, requested {}",
+            BYBIT_OPTION_SUBSCRIPTION_LIMIT + 1,
+        );
+        assert_eq!(
+            ws.subscribe_orderbook(instrument_id, 50)
+                .await
+                .unwrap_err()
+                .to_string(),
+            expected_error,
+        );
+        client
+            .instruments
+            .insert(instrument_id, option_instrument());
+        let command = SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        );
+
+        for _ in 0..2 {
+            client.subscribe_book_deltas(command.clone()).unwrap();
+            wait_until_async(
+                || async { !client.book_depths.contains_key(&instrument_id) },
+                Duration::from_secs(2),
+            )
+            .await;
+            assert!(!client.book_depths.contains_key(&instrument_id));
+            assert_eq!(
+                ws.subscribe_orderbook(instrument_id, 50)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                expected_error,
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_failed_book_subscription_releases_transport_reference() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client =
+            BybitDataClient::new(*BYBIT_CLIENT_ID, BybitDataClientConfig::default()).unwrap();
+        let ws = client.ws_clients[0].clone();
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        client
+            .subscribe_book_deltas(SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(*BYBIT_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                false,
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_until_async(
+            || async { !client.book_depths.contains_key(&instrument_id) },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let error = ws.subscribe_orderbook(instrument_id, 50).await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "WebSocket send error: Failed to send subscribe command: channel closed",
+        );
+        assert!(!client.book_depths.contains_key(&instrument_id));
+    }
+
+    #[tokio::test]
+    async fn test_failed_liquidation_subscription_releases_registration() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client =
+            BybitDataClient::new(*BYBIT_CLIENT_ID, BybitDataClientConfig::default()).unwrap();
+        let ws = client.ws_clients[0].clone();
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let command = subscribe_custom_data(liquidation_data_type(instrument_id, None));
+
+        // The disconnected command channel rejects each send, so a retry must subscribe again
+        for _ in 0..2 {
+            client.subscribe(command.clone()).unwrap();
+            wait_until_async(
+                || async { !client.liquidation_subs.contains_key(&instrument_id) },
+                Duration::from_secs(2),
+            )
+            .await;
+        }
+
+        let error = ws.subscribe_liquidations(instrument_id).await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "WebSocket send error: Failed to send subscribe command: channel closed",
+        );
+        assert!(!client.liquidation_subs.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_failed_quote_subscription_releases_registration() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client =
+            BybitDataClient::new(*BYBIT_CLIENT_ID, BybitDataClientConfig::default()).unwrap();
+        let ws = client.ws_clients[0].clone();
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let command = SubscribeQuotes::new(
+            instrument_id,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        // The disconnected command channel rejects each send, so a retry must subscribe again
+        for _ in 0..2 {
+            client.subscribe_quotes(command.clone()).unwrap();
+            wait_until_async(
+                || async { !client.quote_subs.contains(&instrument_id) },
+                Duration::from_secs(2),
+            )
+            .await;
+        }
+
+        let error = ws.subscribe_orderbook(instrument_id, 1).await.unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "WebSocket send error: Failed to send subscribe command: channel closed",
+        );
+        assert!(!client.quote_subs.contains(&instrument_id));
+    }
+
+    #[rstest]
+    fn test_liquidation_subscription_keeps_first_data_type() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client =
+            BybitDataClient::new(*BYBIT_CLIENT_ID, BybitDataClientConfig::default()).unwrap();
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let data_type = liquidation_data_type(instrument_id, None);
+        let other_data_type = liquidation_data_type(instrument_id, Some("other"));
+        let subscription = Arc::new(data_type.clone());
+        client
+            .liquidation_subs
+            .insert(instrument_id, Arc::clone(&subscription));
+
+        let error = client
+            .subscribe(subscribe_custom_data(other_data_type.clone()))
+            .unwrap_err();
+        client
+            .unsubscribe(&unsubscribe_custom_data(other_data_type))
+            .unwrap();
+        client
+            .subscribe(subscribe_custom_data(data_type.clone()))
+            .unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Already subscribed to liquidations for BTCUSDT-LINEAR.BYBIT as {}",
+                data_type.topic()
+            ),
+        );
+        assert!(
+            client
+                .liquidation_subs
+                .get_cloned(&instrument_id)
+                .is_some_and(|current| Arc::ptr_eq(&current, &subscription))
+        );
+    }
+
+    #[rstest]
+    fn test_remove_owned_liquidation_sub_removes_own_entry() {
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let owned = Arc::new(liquidation_data_type(instrument_id, None));
+        let subs = AtomicMap::new();
+        subs.insert(instrument_id, Arc::clone(&owned));
+
+        let removed = remove_owned_liquidation_sub(&subs, instrument_id, &owned);
+
+        assert!(removed);
+        assert!(subs.is_empty());
+    }
+
+    #[rstest]
+    fn test_remove_owned_liquidation_sub_skips_entry_removed_by_unsubscribe() {
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let owned = Arc::new(liquidation_data_type(instrument_id, None));
+        let subs = AtomicMap::new();
+
+        let removed = remove_owned_liquidation_sub(&subs, instrument_id, &owned);
+
+        assert!(!removed);
+        assert!(subs.is_empty());
+    }
+
+    #[rstest]
+    #[case::identical_data_type(None)]
+    #[case::other_data_type(Some("other"))]
+    fn test_remove_owned_liquidation_sub_keeps_later_subscription(
+        #[case] identifier: Option<&str>,
+    ) {
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let owned = Arc::new(liquidation_data_type(instrument_id, None));
+        let later = Arc::new(liquidation_data_type(instrument_id, identifier));
+        let subs = AtomicMap::new();
+        subs.insert(instrument_id, Arc::clone(&later));
+
+        let removed = remove_owned_liquidation_sub(&subs, instrument_id, &owned);
+
+        assert!(!removed);
+        assert_eq!(subs.len(), 1);
+        assert!(
+            subs.get_cloned(&instrument_id)
+                .is_some_and(|current| Arc::ptr_eq(&current, &later))
+        );
+    }
+
+    #[rstest]
+    fn test_validate_orderbook_depth_accepts_1000() {
+        assert!(validate_orderbook_depth(1000).is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_orderbook_depth_rejects_500() {
+        let e = validate_orderbook_depth(500).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "invalid depth 500; valid values are [1, 50, 200, 1000]"
+        );
+    }
+
+    #[rstest]
+    #[case::open(false, true, Some(1_672_324_800_000_000_000))]
+    #[case::close(true, true, Some(1_672_325_100_000_000_000))]
+    #[case::unconfirmed_open(false, false, None)]
+    #[case::unconfirmed_close(true, false, None)]
+    fn test_handle_kline_bar_timestamp(
+        #[case] on_close: bool,
+        #[case] confirmed: bool,
+        #[case] expected: Option<u64>,
+    ) {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
+            empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
+        let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-5-MINUTE-LAST-EXTERNAL");
+        bar_types.insert("kline.5.BTCUSDT".to_string(), bar_type);
+        let mut msg: BybitWsKlineMsg =
+            serde_json::from_str(&load_test_json("ws_kline.json")).unwrap();
+        msg.data[0].confirm = confirmed;
+
+        let mut funding_cache = AHashMap::new();
+        let clock = get_atomic_clock_realtime();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        handle_ws_message(
+            &BybitWsMessage::Kline(msg),
+            &tx.into(),
+            &instruments,
+            Some(BybitProductType::Linear),
+            &trade_subs,
+            &ticker_subs,
+            &quote_subs,
+            &book_depths,
+            &book_sync,
+            &ws_client,
+            &greeks_subs,
+            &Arc::new(AtomicMap::new()),
+            &bar_types,
+            on_close,
+            &DashMap::new(),
+            &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
+            clock,
+        );
+
+        if let Some(expected) = expected {
+            let DataEvent::Data(Data::Bar(bar)) = rx.try_recv().unwrap() else {
+                panic!("Expected bar event");
+            };
+            assert_eq!(bar.bar_type, bar_type);
+            assert_eq!(bar.ts_event, UnixNanos::from(expected));
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
     #[rstest]
     fn test_handle_trade_message_emits_trade_tick() {
         let instrument = linear_instrument();
         let instruments = build_instruments(std::slice::from_ref(&instrument));
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
         trade_subs.insert(instrument.id());
-        let mut quote_cache = AHashMap::new();
+
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2058,17 +2928,23 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2078,7 +2954,7 @@ mod tests {
                 assert_eq!(tick.instrument_id, instrument.id());
                 assert_eq!(tick.price, instrument.make_price(27451.00));
                 assert_eq!(tick.size, instrument.make_qty(0.010, None));
-                assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+                assert_eq!(tick.aggressor_side, AggressorSide::Buy);
             }
             other => panic!("Expected Trade data event, found {other:?}"),
         }
@@ -2087,9 +2963,10 @@ mod tests {
     #[rstest]
     fn test_handle_trade_message_unknown_symbol_no_event() {
         let instruments = AHashMap::new();
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
-        let mut quote_cache = AHashMap::new();
+        let (book_sync, ws_client, tasks) = book_context();
+
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2101,17 +2978,23 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2119,56 +3002,445 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_orderbook_message_emits_deltas_and_quote() {
+    #[case::metadata_only(None)]
+    #[case::with_identifier(Some("bybit-liquidations"))]
+    fn test_handle_liquidation_message_emits_subscribed_data_type(
+        #[case] identifier: Option<&str>,
+    ) {
         let instrument = linear_instrument();
         let instrument_id = instrument.id();
         let instruments = build_instruments(&[instrument]);
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let data_type = liquidation_data_type(instrument_id, identifier);
+        let liquidation_subs = Arc::new(AtomicMap::new());
+        liquidation_subs.insert(instrument_id, Arc::new(data_type.clone()));
+        let ts_init = UnixNanos::new(1_739_502_303_500_000_000);
+        let msg: BybitWsLiquidationMsg =
+            serde_json::from_str(&load_test_json("ws_all_liquidation.json")).unwrap();
+
+        let events = handle_liquidation_message(msg, &instruments, &liquidation_subs, ts_init);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].data_type, data_type);
+        assert_eq!(events[0].data_type.topic(), data_type.topic());
+        assert_eq!(events[0].data_type.identifier(), identifier);
+        assert_eq!(events[1].data_type, data_type);
+        assert_eq!(
+            as_liquidation(&events[0]),
+            &BybitLiquidation::new(
+                instrument_id,
+                PositionSide::Long,
+                Price::from("96250.5"),
+                Quantity::from("0.015"),
+                UnixNanos::new(1_739_502_302_929_000_000),
+                ts_init,
+            ),
+        );
+        assert_eq!(
+            as_liquidation(&events[1]),
+            &BybitLiquidation::new(
+                instrument_id,
+                PositionSide::Short,
+                Price::from("97410.0"),
+                Quantity::from("1.250"),
+                UnixNanos::new(1_739_502_303_011_000_000),
+                ts_init,
+            ),
+        );
+    }
+
+    #[rstest]
+    #[case::unsubscribed_instrument("ETHUSDT")]
+    #[case::uncached_symbol("SOLUSDT")]
+    fn test_handle_liquidation_message_skips_element(#[case] skipped_symbol: &str) {
+        let instruments = linear_instruments();
+        let instrument_id = instruments[0].id();
+        let instruments = build_instruments(&instruments);
+        let data_type = liquidation_data_type(instrument_id, None);
+        let liquidation_subs = Arc::new(AtomicMap::new());
+        liquidation_subs.insert(instrument_id, Arc::new(data_type.clone()));
+        let ts_init = UnixNanos::new(1_739_502_303_500_000_000);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_all_liquidation.json")).unwrap();
+        value["data"][1]["s"] = serde_json::json!(skipped_symbol);
+        let msg: BybitWsLiquidationMsg = serde_json::from_value(value).unwrap();
+
+        let events = handle_liquidation_message(msg, &instruments, &liquidation_subs, ts_init);
+
+        assert_eq!(instruments.len(), 2);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data_type, data_type);
+        assert_eq!(
+            as_liquidation(&events[0]),
+            &BybitLiquidation::new(
+                instrument_id,
+                PositionSide::Long,
+                Price::from("96250.5"),
+                Quantity::from("0.015"),
+                UnixNanos::new(1_739_502_302_929_000_000),
+                ts_init,
+            ),
+        );
+    }
+
+    #[rstest]
+    fn test_handle_liquidation_message_skips_invalid_element() {
+        let instrument = linear_instrument();
+        let instrument_id = instrument.id();
+        let instruments = build_instruments(&[instrument]);
+        let data_type = liquidation_data_type(instrument_id, None);
+        let liquidation_subs = Arc::new(AtomicMap::new());
+        liquidation_subs.insert(instrument_id, Arc::new(data_type.clone()));
+        let ts_init = UnixNanos::new(1_739_502_303_500_000_000);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_all_liquidation.json")).unwrap();
+        value["data"][0]["S"] = serde_json::json!("");
+        let msg: BybitWsLiquidationMsg = serde_json::from_value(value).unwrap();
+
+        let events = handle_liquidation_message(msg, &instruments, &liquidation_subs, ts_init);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data_type, data_type);
+        assert_eq!(
+            as_liquidation(&events[0]),
+            &BybitLiquidation::new(
+                instrument_id,
+                PositionSide::Short,
+                Price::from("97410.0"),
+                Quantity::from("1.250"),
+                UnixNanos::new(1_739_502_303_011_000_000),
+                ts_init,
+            ),
+        );
+    }
+
+    #[rstest]
+    fn test_handle_liquidation_message_without_subscription_no_event() {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(&[instrument]);
+        let liquidation_subs = Arc::new(AtomicMap::new());
+        let msg: BybitWsLiquidationMsg =
+            serde_json::from_str(&load_test_json("ws_all_liquidation.json")).unwrap();
+
+        let events = handle_liquidation_message(
+            msg,
+            &instruments,
+            &liquidation_subs,
+            UnixNanos::new(1_739_502_303_500_000_000),
+        );
+
+        assert!(events.is_empty());
+    }
+
+    #[rstest]
+    #[case::shared_depth_one("orderbook.1.BTCUSDT", 1, "snapshot", true, true)]
+    #[case::depth_one_with_deeper_book("orderbook.1.BTCUSDT", 50, "snapshot", false, true)]
+    #[case::deeper_snapshot("orderbook.50.BTCUSDT", 50, "snapshot", true, false)]
+    #[case::deeper_deletion("orderbook.50.BTCUSDT", 50, "delta", true, false)]
+    #[case::unsubscribed_depth("orderbook.200.BTCUSDT", 50, "delta", false, false)]
+    #[case::invalid_topic("orderbook.invalid.BTCUSDT", 1, "snapshot", false, false)]
+    #[case::wrong_symbol("orderbook.1.ETHUSDT", 1, "snapshot", false, false)]
+    fn test_handle_orderbook_routes_by_depth(
+        #[case] topic: &str,
+        #[case] book_depth: u32,
+        #[case] msg_type: &str,
+        #[case] expect_book: bool,
+        #[case] expect_quote: bool,
+    ) {
+        let instrument = linear_instrument();
+        let instrument_id = instrument.id();
+        let instruments = build_instruments(&[instrument]);
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
+        book_depths.insert(instrument_id, book_depth);
+        book_sync.record_subscription(instrument_id, Instant::now(), SnapshotGate::default());
 
-        book_depths.insert(instrument_id, 1);
-        quote_depths.insert(instrument_id, 1);
+        // The delta fixture follows the snapshot fixture's update ID
+        let synced = book_sync.validate(instrument_id, true, 123_456_789, Instant::now());
+        assert_eq!(synced, BookSequenceOutcome::Accept);
+        quote_subs.insert(instrument_id);
 
-        let mut quote_cache = AHashMap::new();
         let mut funding_cache = AHashMap::new();
-        let clock = get_atomic_clock_realtime();
-
+        let ts_init = UnixNanos::new(1_709_891_680_000_000_000);
+        let clock = AtomicTime::new(false, ts_init);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let json = load_test_json("ws_orderbook_snapshot.json");
-        let msg: BybitWsOrderbookDepthMsg = serde_json::from_str(&json).unwrap();
-        let ws_msg = BybitWsMessage::Orderbook(msg);
+        let fixture = if msg_type == "snapshot" {
+            "ws_orderbook_snapshot.json"
+        } else {
+            "ws_orderbook_delta.json"
+        };
+        let mut msg: BybitWsOrderbookDepthMsg =
+            serde_json::from_str(&load_test_json(fixture)).unwrap();
+        msg.topic = topic.into();
 
         handle_ws_message(
-            &ws_msg,
-            &tx,
+            &BybitWsMessage::Orderbook(msg),
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
-            clock,
+            Duration::ZERO,
+            &tasks,
+            &clock,
         );
 
-        let event1 = rx.try_recv().unwrap();
-        assert!(matches!(event1, DataEvent::Data(Data::Deltas(_))));
+        if expect_book {
+            let DataEvent::Data(Data::BookDeltas(deltas)) = rx.try_recv().unwrap() else {
+                panic!("Expected book deltas");
+            };
+            assert_eq!(deltas.instrument_id, instrument_id);
+            assert_eq!(
+                deltas.deltas[0].action == BookAction::Clear,
+                msg_type == "snapshot"
+            );
 
-        let event2 = rx.try_recv().unwrap();
-        assert!(matches!(event2, DataEvent::Data(Data::Quote(_))));
+            if msg_type == "delta" {
+                assert_eq!(deltas.deltas.len(), 2);
+                assert_eq!(deltas.deltas[1].action, BookAction::Delete);
+                assert_eq!(deltas.deltas[1].order.size, Quantity::from("0.000"));
+            }
+        }
+
+        if expect_quote {
+            let expected = QuoteTick::new(
+                instrument_id,
+                Price::from("27450.00"),
+                Price::from("27451.00"),
+                Quantity::from("0.500"),
+                Quantity::from("0.750"),
+                UnixNanos::new(1_709_891_679_000_000_000),
+                ts_init,
+            );
+            let DataEvent::Data(Data::Quote(quote)) = rx.try_recv().unwrap() else {
+                panic!("Expected quote");
+            };
+            assert_eq!(quote, expected);
+        }
+
+        rx.try_recv().unwrap_err();
+    }
+
+    fn orderbook_msg(msg_type: &str, update_id: i64, levels: bool) -> BybitWsOrderbookDepthMsg {
+        let fixture = if msg_type == "snapshot" {
+            "ws_orderbook_snapshot.json"
+        } else {
+            "ws_orderbook_delta.json"
+        };
+
+        let mut msg: BybitWsOrderbookDepthMsg =
+            serde_json::from_str(&load_test_json(fixture)).unwrap();
+        msg.topic = "orderbook.50.BTCUSDT".into();
+        msg.data.u = update_id;
+
+        if !levels {
+            msg.data.b.clear();
+            msg.data.a.clear();
+        }
+
+        msg
+    }
+
+    #[rstest]
+    fn test_handle_orderbook_delta_without_levels_advances_book() {
+        let instrument = linear_instrument();
+        let instrument_id = instrument.id();
+        let (_, _, _, book_depths, _, _) = empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
+        book_depths.insert(instrument_id, 50);
+        book_sync.record_subscription(instrument_id, Instant::now(), SnapshotGate::default());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = tx.into();
+        let ts_init = UnixNanos::new(1);
+
+        for msg in [
+            orderbook_msg("snapshot", 100, true),
+            orderbook_msg("delta", 101, false),
+            orderbook_msg("delta", 102, true),
+        ] {
+            handle_orderbook_deltas(
+                &msg,
+                &instrument,
+                &sender,
+                &book_depths,
+                &book_sync,
+                &ws_client,
+                Duration::ZERO,
+                &tasks,
+                ts_init,
+            );
+        }
+
+        let mut emitted = Vec::new();
+
+        while let Ok(DataEvent::Data(Data::BookDeltas(deltas))) = rx.try_recv() {
+            emitted.push(deltas.deltas[0].action);
+        }
+
+        assert_eq!(emitted, [BookAction::Clear, BookAction::Update]);
+    }
+
+    #[rstest]
+    #[case::gap(102, "27450.00")]
+    #[case::malformed_level(101, "not-a-price")]
+    #[case::negative_update_id(-1, "27450.00")]
+    #[tokio::test]
+    async fn test_handle_orderbook_fault_suppresses_output_and_claims_recovery(
+        #[case] update_id: i64,
+        #[case] bid_price: &str,
+    ) {
+        let instrument = linear_instrument();
+        let instrument_id = instrument.id();
+        let (_, _, _, book_depths, _, _) = empty_subs();
+        let book_sync = BookSyncTracker::default();
+        let ws_client = BybitWebSocketClient::new_public(None, 20);
+        let tasks = TaskGroup::new();
+        let spawner = tasks.spawner().unwrap();
+        book_depths.insert(instrument_id, 50);
+        book_sync.record_subscription(instrument_id, Instant::now(), SnapshotGate::default());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = tx.into();
+        let mut fault = orderbook_msg("delta", update_id, true);
+        fault.data.b[0][0] = bid_price.to_string();
+
+        for msg in [orderbook_msg("snapshot", 100, true), fault] {
+            handle_orderbook_deltas(
+                &msg,
+                &instrument,
+                &sender,
+                &book_depths,
+                &book_sync,
+                &ws_client,
+                Duration::from_secs(1),
+                &spawner,
+                UnixNanos::new(1),
+            );
+        }
+
+        let DataEvent::Data(Data::BookDeltas(snapshot)) = rx.try_recv().unwrap() else {
+            panic!("Expected book snapshot");
+        };
+
+        assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+        rx.try_recv().unwrap_err();
+        assert!(book_sync.claim_recovery(instrument_id).is_none());
+        tasks.begin_shutdown();
+    }
+
+    #[tokio::test]
+    async fn test_handle_reconnected_resyncs_books_of_reconnected_socket() {
+        let instrument = linear_instrument();
+        let instrument_id = instrument.id();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
+            empty_subs();
+        let book_sync = BookSyncTracker::default();
+        let ws_client = BybitWebSocketClient::new_public(None, 20);
+        let tasks = TaskGroup::new();
+        let spawner = tasks.spawner().unwrap();
+        book_depths.insert(instrument_id, 50);
+        book_sync.record_subscription(instrument_id, Instant::now(), SnapshotGate::default());
+        let synced = book_sync.validate(instrument_id, true, 100, Instant::now());
+        assert_eq!(synced, BookSequenceOutcome::Accept);
+
+        let mut funding_cache = AHashMap::new();
+        let clock = get_atomic_clock_realtime();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = tx.into();
+        let snapshot_timeout = Duration::from_secs(10);
+
+        // The update follows the book's position, so only the reconnect can suppress it
+        for message in [
+            BybitWsMessage::Reconnected,
+            BybitWsMessage::Orderbook(orderbook_msg("delta", 101, true)),
+        ] {
+            handle_ws_message(
+                &message,
+                &sender,
+                &instruments,
+                Some(BybitProductType::Linear),
+                &trade_subs,
+                &ticker_subs,
+                &quote_subs,
+                &book_depths,
+                &book_sync,
+                &ws_client,
+                &greeks_subs,
+                &Arc::new(AtomicMap::new()),
+                &bar_types,
+                true,
+                &DashMap::new(),
+                &mut funding_cache,
+                snapshot_timeout,
+                &spawner,
+                clock,
+            );
+        }
+
+        let deadline = Instant::now() + snapshot_timeout;
+        let expired = book_sync.take_expired_snapshots(BybitProductType::Linear, deadline);
+
+        rx.try_recv().unwrap_err();
+        assert_eq!(expired.len(), 1);
+        assert_eq!(expired[0].instrument_id, instrument_id);
+        tasks.begin_shutdown();
+    }
+
+    #[rstest]
+    #[case::unsubscribe(false)]
+    #[case::reset(true)]
+    #[tokio::test]
+    async fn test_book_removal_cancels_running_recovery(#[case] reset: bool) {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client =
+            BybitDataClient::new(*BYBIT_CLIENT_ID, BybitDataClientConfig::default()).unwrap();
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        client.book_depths.insert(instrument_id, 50);
+        client.book_sync.record_subscription(
+            instrument_id,
+            Instant::now(),
+            SnapshotGate::default(),
+        );
+        let recovery = client.book_sync.claim_recovery(instrument_id).unwrap();
+
+        if reset {
+            client.reset().unwrap();
+        } else {
+            let command = UnsubscribeBookDeltas::new(
+                instrument_id,
+                Some(*BYBIT_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            );
+            client.unsubscribe_book_deltas(&command).unwrap();
+        }
+
+        assert!(recovery.cancellation.is_cancelled());
+        assert!(!client.book_depths.contains_key(&instrument_id));
     }
 
     #[rstest]
     fn test_handle_orderbook_message_no_sub_no_event() {
         let instrument = linear_instrument();
         let instruments = build_instruments(&[instrument]);
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
-        let mut quote_cache = AHashMap::new();
+        let (book_sync, ws_client, tasks) = book_context();
+
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2180,17 +3452,23 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2198,18 +3476,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_ticker_linear_emits_quote() {
+    fn test_handle_ticker_linear_does_not_emit_quote() {
         let instrument = linear_instrument();
         let instrument_id = instrument.id();
         let instruments = build_instruments(&[instrument]);
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
 
         let mut subs = AHashSet::new();
         subs.insert("quotes");
         ticker_subs.insert(instrument_id, subs);
 
-        let mut quote_cache = AHashMap::new();
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2221,38 +3499,43 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
-        let event = rx.try_recv().unwrap();
-        assert!(matches!(event, DataEvent::Data(Data::Quote(_))));
-        assert!(quote_cache.contains_key(&instrument_id));
+        rx.try_recv().unwrap_err();
     }
 
     #[rstest]
-    fn test_handle_ticker_linear_funding_dedup() {
-        let instrument = linear_instrument();
+    #[case::crypto_perpetual(linear_instrument())]
+    #[case::perpetual_contract(tradfi_linear_instrument())]
+    fn test_handle_ticker_linear_funding_dedup(#[case] instrument: InstrumentAny) {
         let instrument_id = instrument.id();
         let instruments = build_instruments(&[instrument]);
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
 
         let mut subs = AHashSet::new();
         subs.insert("funding");
         ticker_subs.insert(instrument_id, subs);
 
-        let mut quote_cache = AHashMap::new();
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2264,17 +3547,23 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.clone().into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2285,17 +3574,23 @@ mod tests {
         let ws_msg2 = BybitWsMessage::TickerLinear(msg);
         handle_ws_message(
             &ws_msg2,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2303,19 +3598,52 @@ mod tests {
     }
 
     #[rstest]
+    #[case::crypto_perpetual(linear_instrument())]
+    #[case::perpetual_contract(tradfi_linear_instrument())]
+    #[tokio::test]
+    async fn test_subscribe_funding_rates_accepts_perpetuals(#[case] instrument: InstrumentAny) {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client = BybitDataClient::new(
+            *BYBIT_CLIENT_ID,
+            BybitDataClientConfig {
+                product_types: vec![BybitProductType::Linear],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let instrument_id = instrument.id();
+        client.instruments.insert(instrument_id, instrument);
+
+        let command = SubscribeFundingRates::new(
+            instrument_id,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.subscribe_funding_rates(command).unwrap();
+
+        let subs = client.ticker_subs.get_cloned(&instrument_id).unwrap();
+        assert!(subs.contains("funding"));
+    }
+
+    #[rstest]
     fn test_handle_ticker_linear_mark_and_index_prices() {
         let instrument = linear_instrument();
         let instrument_id = instrument.id();
         let instruments = build_instruments(&[instrument]);
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
 
         let mut subs = AHashSet::new();
         subs.insert("mark_prices");
         subs.insert("index_prices");
         ticker_subs.insert(instrument_id, subs);
 
-        let mut quote_cache = AHashMap::new();
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2327,48 +3655,58 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
         let event1 = rx.try_recv().unwrap();
-        assert!(matches!(event1, DataEvent::Data(Data::MarkPriceUpdate(_))));
+        assert!(matches!(event1, DataEvent::Data(Data::MarkPrice(_))));
 
         let event2 = rx.try_recv().unwrap();
-        assert!(matches!(event2, DataEvent::Data(Data::IndexPriceUpdate(_))));
+        assert!(matches!(event2, DataEvent::Data(Data::IndexPrice(_))));
     }
 
     #[rstest]
-    fn test_handle_reconnected_clears_caches() {
+    #[case::option(BybitProductType::Option, true)]
+    #[case::linear(BybitProductType::Linear, false)]
+    fn test_handle_reconnected_clears_caches(
+        #[case] product_type: BybitProductType,
+        #[case] clear_option_quotes: bool,
+    ) {
         let instruments = AHashMap::new();
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
-        let mut quote_cache = AHashMap::new();
+        let (book_sync, ws_client, tasks) = book_context();
+
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
         let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
-        quote_cache.insert(
+
+        let option_quote = QuoteTick::new(
             instrument_id,
-            QuoteTick::new(
-                instrument_id,
-                Price::from("100.00"),
-                Price::from("101.00"),
-                Quantity::from("1.0"),
-                Quantity::from("1.0"),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            ),
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Quantity::from("1.0"),
+            Quantity::from("1.0"),
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
         funding_cache.insert(
             Ustr::from("BTCUSDT"),
@@ -2379,26 +3717,42 @@ mod tests {
             ),
         );
 
+        let last_quotes = DashMap::new();
+        last_quotes.insert(instrument_id, option_quote);
+
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
         handle_ws_message(
             &BybitWsMessage::Reconnected,
-            &tx,
+            &tx.into(),
             &instruments,
-            None,
+            Some(product_type),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &last_quotes,
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
-        assert!(quote_cache.is_empty());
         assert!(funding_cache.is_empty());
+        assert_eq!(
+            last_quotes.get(&instrument_id).map(|quote| *quote),
+            if clear_option_quotes {
+                None
+            } else {
+                Some(option_quote)
+            },
+        );
     }
 
     #[rstest]
@@ -2413,11 +3767,12 @@ mod tests {
         let mut instruments = AHashMap::new();
         instruments.insert(ticker_key, instrument);
 
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
+
+        let (book_sync, ws_client, tasks) = book_context();
         greeks_subs.insert(instrument_id);
 
-        let mut quote_cache = AHashMap::new();
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2429,17 +3784,23 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Option),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2448,11 +3809,293 @@ mod tests {
     }
 
     #[rstest]
+    #[case::bid_price("9.5", "10", "2", "5")]
+    #[case::ask_price("9", "11", "2", "5")]
+    #[case::bid_size("9", "10", "3", "5")]
+    #[case::ask_size("9", "10", "2", "6")]
+    fn test_handle_ticker_option_quote_dedup(
+        #[case] bid_price: &str,
+        #[case] ask_price: &str,
+        #[case] bid_size: &str,
+        #[case] ask_size: &str,
+    ) {
+        // Key the option instrument by the fixture ticker symbol with OPTION suffix
+        let instrument = option_instrument();
+        let instrument_id = instrument.id();
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC-6JAN23-17500-C-OPTION"), instrument.clone());
+
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
+            empty_subs();
+        let (book_sync, ws_client, tasks) = book_context();
+
+        let mut subs = AHashSet::new();
+        subs.insert("quotes");
+        subs.insert("mark_prices");
+        ticker_subs.insert(instrument_id, subs);
+
+        let last_quotes = DashMap::new();
+        let mut funding_cache = AHashMap::new();
+        let ts1 = UnixNanos::new(1_672_917_511_100_000_000);
+        let ts2 = UnixNanos::new(1_672_917_511_200_000_000);
+        let ts3 = UnixNanos::new(1_672_917_511_300_000_000);
+        let ts4 = UnixNanos::new(1_672_917_511_400_000_000);
+        let clock = AtomicTime::new(false, ts1);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let json = load_test_json("ws_ticker_option.json");
+        let mut msg: BybitWsTickerOptionMsg = serde_json::from_str(&json).unwrap();
+
+        msg.data.bid_price = "9".to_string();
+        msg.data.bid_size = "2".to_string();
+        msg.data.ask_size = "5".to_string();
+        msg.data.mark_price = "7.8".to_string();
+
+        // The second ticker repeats the top of book; the third changes one field
+        let mut unchanged = msg.clone();
+        unchanged.ts += 100;
+        let mut changed = msg.clone();
+        changed.ts += 200;
+        changed.data.bid_price = bid_price.to_string();
+        changed.data.ask_price = ask_price.to_string();
+        changed.data.bid_size = bid_size.to_string();
+        changed.data.ask_size = ask_size.to_string();
+        changed.data.mark_price = "8.2".to_string();
+        let mut repeated = changed.clone();
+        repeated.ts += 100;
+
+        for (ts_init, msg) in [
+            (ts1, msg),
+            (ts2, unchanged),
+            (ts3, changed),
+            (ts4, repeated),
+        ] {
+            clock.set_time(ts_init);
+            handle_ws_message(
+                &BybitWsMessage::TickerOption(msg),
+                &tx.clone().into(),
+                &instruments,
+                Some(BybitProductType::Option),
+                &trade_subs,
+                &ticker_subs,
+                &quote_subs,
+                &book_depths,
+                &book_sync,
+                &ws_client,
+                &greeks_subs,
+                &Arc::new(AtomicMap::new()),
+                &bar_types,
+                true,
+                &last_quotes,
+                &mut funding_cache,
+                Duration::ZERO,
+                &tasks,
+                &clock,
+            );
+        }
+
+        let mut quotes = Vec::new();
+        let mut mark_prices = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                DataEvent::Data(Data::Quote(quote)) => quotes.push(quote),
+                DataEvent::Data(Data::MarkPrice(mark)) => mark_prices.push(mark),
+                other => panic!("Unexpected event: {other:?}"),
+            }
+        }
+
+        let price = |value: &str| {
+            Price::from_decimal_dp(value.parse().unwrap(), instrument.price_precision()).unwrap()
+        };
+
+        let size = |value: &str| {
+            Quantity::from_decimal_dp(value.parse().unwrap(), instrument.size_precision()).unwrap()
+        };
+
+        let initial = QuoteTick::new(
+            instrument_id,
+            price("9"),
+            price("10"),
+            size("2"),
+            size("5"),
+            UnixNanos::new(1_672_917_511_074_000_000),
+            ts1,
+        );
+
+        let changed = QuoteTick::new(
+            instrument_id,
+            price(bid_price),
+            price(ask_price),
+            size(bid_size),
+            size(ask_size),
+            UnixNanos::new(1_672_917_511_274_000_000),
+            ts3,
+        );
+
+        let expected_marks = [
+            ("7.8", 1_672_917_511_074_000_000, ts1),
+            ("7.8", 1_672_917_511_174_000_000, ts2),
+            ("8.2", 1_672_917_511_274_000_000, ts3),
+            ("8.2", 1_672_917_511_374_000_000, ts4),
+        ]
+        .map(|(value, ts_event, ts_init)| {
+            MarkPriceUpdate::new(
+                instrument_id,
+                price(value),
+                UnixNanos::new(ts_event),
+                ts_init,
+            )
+        });
+
+        assert_eq!(quotes, vec![initial, changed]);
+        assert_eq!(mark_prices, expected_marks);
+    }
+
+    #[rstest]
+    #[case::resubscribe(false, false)]
+    #[case::resubscribe_after_late_quote(false, true)]
+    #[case::reconnect(true, false)]
+    #[tokio::test]
+    async fn test_option_quote_subscription_emits_unchanged_initial_quote(
+        #[case] reconnect: bool,
+        #[case] late_quote: bool,
+    ) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let mut client = BybitDataClient::new(
+            *BYBIT_CLIENT_ID,
+            BybitDataClientConfig {
+                product_types: vec![BybitProductType::Option],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let instrument = option_instrument();
+        let instrument_id = instrument.id();
+        client.instruments.insert(instrument_id, instrument.clone());
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let ts1 = UnixNanos::new(1_700_000_000_000_000_000);
+        let ts2 = UnixNanos::new(1_700_000_000_100_000_000);
+        let ts3 = UnixNanos::new(1_700_000_000_200_000_000);
+        let clock = AtomicTime::new(false, ts1);
+        let mut msg: BybitWsTickerOptionMsg =
+            serde_json::from_str(&load_test_json("ws_ticker_option.json")).unwrap();
+        msg.data.symbol = instrument.raw_symbol().inner();
+        msg.data.bid_price = "9".to_string();
+        msg.data.ask_price = "10".to_string();
+        msg.data.bid_size = "2".to_string();
+        msg.data.ask_size = "5".to_string();
+
+        let initial = QuoteTick::new(
+            instrument_id,
+            Price::from("9.0"),
+            Price::from("10.0"),
+            Quantity::from("2"),
+            Quantity::from("5"),
+            UnixNanos::new(1_672_917_511_074_000_000),
+            ts1,
+        );
+
+        let subscribe = || {
+            SubscribeQuotes::new(
+                instrument_id,
+                Some(*BYBIT_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        };
+
+        let handle = |client: &BybitDataClient, message: &BybitWsMessage| {
+            let ws = client
+                .get_ws_client_for_product(BybitProductType::Option)
+                .unwrap();
+            handle_ws_message(
+                message,
+                &client.data_sender,
+                &instruments,
+                Some(BybitProductType::Option),
+                &client.trade_subs,
+                &client.ticker_subs,
+                &client.quote_subs,
+                &client.book_depths,
+                &client.book_sync,
+                ws,
+                &client.option_greeks_subs,
+                &client.liquidation_subs,
+                ws.bar_types_cache(),
+                true,
+                &client.last_quotes,
+                &mut AHashMap::new(),
+                Duration::ZERO,
+                &client.command_tasks.spawner().unwrap(),
+                &clock,
+            );
+        };
+
+        client.subscribe_quotes(subscribe()).unwrap();
+        handle(&client, &BybitWsMessage::TickerOption(msg.clone()));
+        if reconnect {
+            handle(&client, &BybitWsMessage::Reconnected);
+        } else {
+            client
+                .unsubscribe_quotes(&UnsubscribeQuotes::new(
+                    instrument_id,
+                    Some(*BYBIT_CLIENT_ID),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            clock.set_time(ts2);
+            msg.ts += 100;
+            handle(&client, &BybitWsMessage::TickerOption(msg.clone()));
+            if late_quote {
+                client.last_quotes.insert(instrument_id, initial);
+            }
+
+            client.subscribe_quotes(subscribe()).unwrap();
+        }
+
+        clock.set_time(ts3);
+        msg.ts = 1_672_917_511_274;
+        handle(&client, &BybitWsMessage::TickerOption(msg));
+        let mut quotes = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                DataEvent::Data(Data::Quote(quote)) => quotes.push(quote),
+                other => panic!("Unexpected event: {other:?}"),
+            }
+        }
+
+        assert_eq!(
+            quotes,
+            vec![
+                initial,
+                QuoteTick {
+                    ts_event: UnixNanos::new(1_672_917_511_274_000_000),
+                    ts_init: ts3,
+                    ..initial
+                }
+            ]
+        );
+    }
+
+    #[rstest]
     fn test_handle_execution_message_ignored_by_data() {
         let instruments = AHashMap::new();
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
-        let mut quote_cache = AHashMap::new();
+        let (book_sync, ws_client, tasks) = book_context();
+
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
 
@@ -2465,17 +4108,23 @@ mod tests {
 
         handle_ws_message(
             &ws_msg,
-            &tx,
+            &tx.into(),
             &instruments,
             None,
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2489,10 +4138,12 @@ mod tests {
         let mut map = AHashMap::new();
         map.insert(instrument.id().symbol.inner(), instrument.clone());
 
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
+
+        let (book_sync, ws_client, tasks) = book_context();
         trade_subs.insert(instrument.id());
-        let mut quote_cache = AHashMap::new();
+
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2503,17 +4154,23 @@ mod tests {
         // With None product_type, raw symbol "BTCUSDT" does not match "BTCUSDT-LINEAR"
         handle_ws_message(
             &BybitWsMessage::Trade(msg.clone()),
-            &tx,
+            &tx.clone().into(),
             &map,
             None,
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
         rx.try_recv().unwrap_err();
@@ -2521,17 +4178,23 @@ mod tests {
         // With product_type=Linear, "BTCUSDT" -> "BTCUSDT-LINEAR" matches
         handle_ws_message(
             &BybitWsMessage::Trade(msg),
-            &tx,
+            &tx.into(),
             &map,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
 
@@ -2543,9 +4206,10 @@ mod tests {
     fn test_handle_trade_filters_by_subscription() {
         let instrument = linear_instrument();
         let instruments = build_instruments(std::slice::from_ref(&instrument));
-        let (trade_subs, ticker_subs, quote_depths, book_depths, greeks_subs, bar_types) =
+        let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
             empty_subs();
-        let mut quote_cache = AHashMap::new();
+        let (book_sync, ws_client, tasks) = book_context();
+
         let mut funding_cache = AHashMap::new();
         let clock = get_atomic_clock_realtime();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2556,17 +4220,23 @@ mod tests {
         // Without subscription, trade should be filtered out
         handle_ws_message(
             &BybitWsMessage::Trade(msg.clone()),
-            &tx,
+            &tx.clone().into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
         rx.try_recv().unwrap_err();
@@ -2575,17 +4245,23 @@ mod tests {
         trade_subs.insert(instrument.id());
         handle_ws_message(
             &BybitWsMessage::Trade(msg),
-            &tx,
+            &tx.into(),
             &instruments,
             Some(BybitProductType::Linear),
             &trade_subs,
             &ticker_subs,
-            &quote_depths,
+            &quote_subs,
             &book_depths,
+            &book_sync,
+            &ws_client,
             &greeks_subs,
+            &Arc::new(AtomicMap::new()),
             &bar_types,
-            &mut quote_cache,
+            true,
+            &DashMap::new(),
             &mut funding_cache,
+            Duration::ZERO,
+            &tasks,
             clock,
         );
         let event = rx.try_recv().unwrap();

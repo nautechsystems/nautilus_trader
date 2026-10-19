@@ -19,7 +19,7 @@
 //! [`bon::Builder`], and exposes a `build()` method that funnels through the production
 //! constructor so any invariant checks still run on the constructed value.
 //!
-//! Specs are gated behind the `stubs` feature and must not be referenced from production code.
+//! Specs are gated behind the `test-support` feature and must not be referenced from production code.
 
 pub mod accepted;
 pub mod cancel_rejected;

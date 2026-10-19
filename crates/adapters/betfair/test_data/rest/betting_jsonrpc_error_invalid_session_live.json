@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32099,
+    "message": "ANGX-0003",
+    "data": {
+      "APINGException": {
+        "requestUUID": "SANITIZED",
+        "errorCode": "INVALID_SESSION_INFORMATION",
+        "errorDetails": ""
+      },
+      "exceptionname": "APINGException"
+    }
+  },
+  "id": 1
+}

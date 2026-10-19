@@ -27,7 +27,10 @@ use pyo3::{
     types::{PyString, PyTuple},
 };
 
-use crate::identifier_for_python;
+use crate::{
+    identifier_for_python,
+    identifiers::{InstrumentId, new_generic_spread_id, parse_generic_spread_id_legs},
+};
 
 identifier_for_python!(crate::identifiers::ActorId);
 identifier_for_python!(crate::identifiers::AccountId);
@@ -41,3 +44,46 @@ identifier_for_python!(crate::identifiers::StrategyId);
 identifier_for_python!(crate::identifiers::TraderId);
 identifier_for_python!(crate::identifiers::Venue);
 identifier_for_python!(crate::identifiers::VenueOrderId);
+
+/// Creates a generic spread instrument ID from `(instrument_id, ratio)` legs.
+///
+/// Sorts the legs by symbol and joins them with `GENERIC_SPREAD_ID_SEPARATOR`, formatting a
+/// positive ratio as `(ratio)symbol` and a negative ratio as `((ratio))symbol`. For example,
+/// `MSFT.NASDAQ` with ratio 1 and `AAPL.NASDAQ` with ratio -2 produce
+/// `((2))AAPL___(1)MSFT.NASDAQ`.
+///
+/// A leg symbol that contains the separator or ends with `_` produces an ID that does not parse
+/// back into the same legs.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Fewer than two legs are given.
+/// - A ratio is zero or `i64::MIN`.
+/// - The legs have different venues.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
+#[pyo3(name = "new_generic_spread_id")]
+#[expect(clippy::needless_pass_by_value)]
+pub fn py_new_generic_spread_id(
+    instrument_ratios: Vec<(InstrumentId, i64)>,
+) -> PyResult<InstrumentId> {
+    new_generic_spread_id(&instrument_ratios).map_err(to_pyvalue_err)
+}
+
+/// Parses a generic spread instrument ID into `(instrument_id, ratio)` legs.
+///
+/// Returns the legs in the order they appear in the symbol, with a negative ratio for each
+/// `((ratio))symbol` leg.
+///
+/// # Errors
+///
+/// Returns an error if `instrument_id` is not in the format `new_generic_spread_id` produces.
+#[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
+#[pyo3(name = "generic_spread_id_to_list")]
+pub fn py_generic_spread_id_to_list(
+    instrument_id: InstrumentId,
+) -> PyResult<Vec<(InstrumentId, i64)>> {
+    parse_generic_spread_id_legs(&instrument_id).map_err(to_pyvalue_err)
+}

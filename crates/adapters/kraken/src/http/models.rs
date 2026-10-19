@@ -22,13 +22,15 @@
 // Re-exports
 pub use super::{
     futures::models::{
-        CancelledOrder, FuturesBatchOrderResponse, FuturesCancelAllOrdersResponse,
-        FuturesCancelAllStatus, FuturesCancelOrderResponse, FuturesCancelStatus, FuturesCandle,
-        FuturesCandlesResponse, FuturesEditOrderResponse, FuturesEditStatus, FuturesFill,
-        FuturesFillsResponse, FuturesInstrument, FuturesInstrumentsResponse, FuturesMarginLevel,
-        FuturesOpenOrder, FuturesOpenOrdersResponse, FuturesOpenPositionsResponse,
-        FuturesOrderEvent, FuturesOrderEventsResponse, FuturesPosition, FuturesPublicExecution,
-        FuturesPublicExecutionElement, FuturesPublicExecutionEvent, FuturesPublicExecutionWrapper,
+        CancelledOrder, FuturesBatchOrderResponse, FuturesCachedOrder,
+        FuturesCancelAllOrdersResponse, FuturesCancelAllStatus, FuturesCancelOrderResponse,
+        FuturesCancelStatus, FuturesCandle, FuturesCandlesResponse, FuturesEditOrderResponse,
+        FuturesEditStatus, FuturesFill, FuturesFillsResponse, FuturesInstrument,
+        FuturesInstrumentsResponse, FuturesMarginLevel, FuturesOpenOrder,
+        FuturesOpenOrdersResponse, FuturesOpenPositionsResponse, FuturesOrderEvent,
+        FuturesOrderEventsResponse, FuturesOrderStatusDetails, FuturesOrdersStatusResponse,
+        FuturesPosition, FuturesPublicExecution, FuturesPublicExecutionElement,
+        FuturesPublicExecutionEvent, FuturesPublicExecutionWrapper,
         FuturesPublicExecutionsResponse, FuturesPublicOrder, FuturesSendOrderResponse,
         FuturesSendStatus, FuturesTicker, FuturesTickersResponse,
     },

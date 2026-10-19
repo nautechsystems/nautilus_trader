@@ -13,10 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod emitter;
-pub mod manager;
+//! Execution state, reconciliation decisions, and adapter-facing dispatch support.
+//!
+//! [`manager`] owns cached execution reconciliation and its activity and retry state.
+//! Internal reconciliation operations build and validate reports and collect targeted reports.
+//! [`context`], [`failure`], [`reports`], and [`emitter`] provide the shared adapter interfaces.
+//! The manager coordinates individual reconciliation operations; the live node schedules them.
 
-pub(crate) mod recency;
+pub mod config;
+pub mod context;
+pub mod emitter;
+pub mod failure;
+pub mod manager;
+pub mod reports;
+pub mod submission;
 
 #[cfg(feature = "node")]
 pub(crate) mod client;
+
+mod recency;
+mod reconciliation;

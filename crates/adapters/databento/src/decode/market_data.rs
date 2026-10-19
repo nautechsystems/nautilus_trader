@@ -13,14 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{ffi::c_char, num::NonZeroUsize};
+use core::fmt::NumBuffer;
+use std::{collections::VecDeque, ffi::c_char, num::NonZeroUsize};
 
+use ahash::AHashMap;
 use databento::dbn;
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, DEPTH10_LEN, Data, InstrumentStatus,
-        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{AggregationSource, BarAggregation, FromU16, MarketStatusAction, OrderSide, PriceType},
     identifiers::{InstrumentId, TradeId},
@@ -54,10 +56,10 @@ const BAR_SPEC_1D: BarSpecification = BarSpecification {
     price_type: PriceType::Last,
 };
 
-pub(super) const BAR_CLOSE_ADJUSTMENT_1S: u64 = NANOSECONDS_IN_SECOND;
-pub(super) const BAR_CLOSE_ADJUSTMENT_1M: u64 = NANOSECONDS_IN_SECOND * 60;
-pub(super) const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
-pub(super) const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
+pub(super) const BAR_CLOSE_ADJUSTMENT_1S: DurationNanos = DurationNanos::from_secs(1);
+pub(super) const BAR_CLOSE_ADJUSTMENT_1M: DurationNanos = DurationNanos::from_mins(1);
+pub(super) const BAR_CLOSE_ADJUSTMENT_1H: DurationNanos = DurationNanos::from_hours(1);
+pub(super) const BAR_CLOSE_ADJUSTMENT_1D: DurationNanos = DurationNanos::from_days(1);
 
 // FNV-1a 64-bit constants (see http://www.isthe.com/chongo/tech/comp/fnv/).
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -156,7 +158,7 @@ pub fn decode_mbo_msg(
             let price = decode_price_or_undef(msg.price, price_precision);
             let size = decode_quantity(msg.size as u64);
             let aggressor_side = parse_aggressor_side(msg.side);
-            let trade_id = TradeId::new(itoa::Buffer::new().format(msg.sequence));
+            let trade_id = TradeId::new(msg.sequence.format_into(&mut NumBuffer::new()));
             let ts_event = msg.ts_recv.into();
             let ts_init = ts_init.unwrap_or(ts_event);
 
@@ -194,17 +196,113 @@ pub fn decode_mbo_msg(
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
+    // A replayed snapshot can carry source packet sequences in non-monotonic order,
+    // so it must not advance the book's incremental high-water mark.
+    let sequence = if msg.flags.is_snapshot() {
+        0
+    } else {
+        msg.sequence
+    };
+
     let delta = OrderBookDelta::new(
         instrument_id,
         action,
         order,
         msg.flags.raw(),
-        msg.sequence.into(),
+        sequence.into(),
         ts_event,
         ts_init,
     );
 
     Ok((Some(delta), None))
+}
+
+#[derive(Debug)]
+struct QueuedMboDelta {
+    delta: OrderBookDelta,
+    ready: bool,
+}
+
+// TODO: Consider consolidating this boundary framing with the live client while keeping
+// source-order queuing specific to historical data.
+/// Preserves source order while retaining each instrument's unresolved tail until its raw
+/// `F_LAST` boundary can be attached.
+#[derive(Debug, Default)]
+pub(crate) struct MboDeltaBuffer {
+    queue: VecDeque<QueuedMboDelta>,
+    tail: Option<(InstrumentId, u64)>,
+    tails: AHashMap<InstrumentId, u64>,
+    head: u64,
+    next: u64,
+}
+
+impl MboDeltaBuffer {
+    pub(crate) fn push(
+        &mut self,
+        msg: &dbn::MboMsg,
+        instrument_id: InstrumentId,
+        delta: Option<OrderBookDelta>,
+    ) {
+        if let Some(delta) = delta {
+            self.release(instrument_id, 0);
+
+            let index = self.next;
+            self.next = self.next.checked_add(1).expect("MBO delta index overflow");
+            let ready = msg.flags.is_last();
+            self.queue.push_back(QueuedMboDelta { delta, ready });
+
+            if !ready
+                && let Some((tail_instrument_id, tail)) = self.tail.replace((instrument_id, index))
+            {
+                self.tails.insert(tail_instrument_id, tail);
+            }
+        } else if msg.flags.is_last() {
+            self.release(instrument_id, dbn::flags::LAST);
+        }
+    }
+
+    pub(crate) fn pop_ready(&mut self) -> Option<OrderBookDelta> {
+        if !self.queue.front().is_some_and(|queued| queued.ready) {
+            return None;
+        }
+
+        self.head = self.head.checked_add(1).expect("MBO delta index overflow");
+        self.queue.pop_front().map(|queued| queued.delta)
+    }
+
+    pub(crate) fn finish(&mut self) {
+        self.tail = None;
+        self.tails.clear();
+
+        for queued in &mut self.queue {
+            queued.ready = true;
+        }
+    }
+
+    fn release(&mut self, instrument_id: InstrumentId, flags: u8) {
+        let tail = match self.tail {
+            Some((tail_instrument_id, tail)) if tail_instrument_id == instrument_id => {
+                self.tail = None;
+                tail
+            }
+            _ => {
+                let Some(tail) = self.tails.remove(&instrument_id) else {
+                    return;
+                };
+                tail
+            }
+        };
+        let offset = tail
+            .checked_sub(self.head)
+            .and_then(|offset| usize::try_from(offset).ok())
+            .expect("MBO delta tail must be queued");
+        let queued = self
+            .queue
+            .get_mut(offset)
+            .expect("MBO delta tail must be queued");
+        queued.delta.flags |= flags;
+        queued.ready = true;
+    }
 }
 
 /// Decodes a Databento Trade message into a `TradeTick`.
@@ -226,7 +324,7 @@ pub fn decode_trade_msg(
         decode_price_or_undef(msg.price, price_precision),
         decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+        TradeId::new(msg.sequence.format_into(&mut NumBuffer::new())),
         ts_event,
         ts_init,
     );
@@ -271,7 +369,7 @@ pub fn decode_tbbo_msg(
         decode_price_or_undef(msg.price, price_precision),
         decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+        TradeId::new(msg.sequence.format_into(&mut NumBuffer::new())),
         ts_event,
         ts_init,
     );
@@ -317,7 +415,7 @@ pub fn decode_mbp1_msg(
             decode_price_or_undef(msg.price, price_precision),
             decode_quantity(msg.size as u64),
             parse_aggressor_side(msg.side),
-            TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+            TradeId::new(msg.sequence.format_into(&mut NumBuffer::new())),
             ts_event,
             ts_init,
         ))
@@ -362,17 +460,19 @@ pub fn decode_bbo_msg(
     Ok(Some(quote))
 }
 
-/// Decodes a Databento MBP10 (Market by Price 10 levels) message into an `OrderBookDepth10`.
+/// Decodes a Databento MBP10 (Market by Price 10 levels) message into an `OrderBookDepth`.
 ///
-/// # Errors
-///
-/// This function does not currently return an error; the result type matches the common decode API.
+/// This function does not return an error; the result type matches the common decode API.
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "this decoder constructs the depth without fallible operations"
+)]
 pub fn decode_mbp10_msg(
     msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
-) -> anyhow::Result<OrderBookDepth10> {
+) -> anyhow::Result<OrderBookDepth> {
     let mut bids = [BookOrder::default(); DEPTH10_LEN];
     let mut asks = [BookOrder::default(); DEPTH10_LEN];
     let mut bid_counts = [0u32; DEPTH10_LEN];
@@ -406,7 +506,7 @@ pub fn decode_mbp10_msg(
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    let depth = OrderBookDepth10::new(
+    let depth = OrderBookDepth::new(
         instrument_id,
         bids,
         asks,
@@ -580,7 +680,7 @@ pub fn decode_bar_type(
 /// # Errors
 ///
 /// Returns an error if `rtype` is not a supported bar aggregation.
-pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNanos> {
+pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<DurationNanos> {
     let adjustment = match msg.hd.rtype {
         32 => {
             // ohlcv-1s
@@ -604,7 +704,7 @@ pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNan
         ),
     };
 
-    Ok(adjustment.into())
+    Ok(adjustment)
 }
 
 /// # Errors
@@ -697,7 +797,7 @@ pub fn decode_record(
         )?;
 
         match result {
-            (Some(delta), None) => (Some(Data::Delta(delta)), None),
+            (Some(delta), None) => (Some(Data::BookDelta(delta)), None),
             (None, Some(trade)) => (Some(Data::Trade(trade)), None),
             (None, None) => (None, None),
             _ => anyhow::bail!("Invalid `MboMsg` parsing combination"),

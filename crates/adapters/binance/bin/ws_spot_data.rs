@@ -30,6 +30,7 @@
 //! - `BINANCE_API_SECRET`: Ed25519 private key in PEM format (required)
 
 use futures_util::StreamExt;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_binance::{
     common::{
         credential::resolve_credentials,
@@ -208,11 +209,15 @@ fn decode_and_display_sbe(data: &[u8]) -> anyhow::Result<()> {
                 let price = mantissa_to_f64(trade.price_mantissa, event.price_exponent);
                 let qty = mantissa_to_f64(trade.qty_mantissa, event.qty_exponent);
                 let side = if trade.is_buyer_maker { "SELL" } else { "BUY" };
-                let ts = chrono::DateTime::from_timestamp_micros(event.transact_time_us)
-                    .map_or_else(
-                        || "?".to_string(),
-                        |dt| dt.format("%H:%M:%S%.6f").to_string(),
-                    );
+                let ts = Timestamp::from_microsecond(event.transact_time_us).map_or_else(
+                    |_| "?".to_string(),
+                    |dt| {
+                        Offset::UTC
+                            .to_datetime(dt)
+                            .strftime("%H:%M:%S%.6f")
+                            .to_string()
+                    },
+                );
 
                 log::info!(
                     "Trade (raw SBE): symbol={}, side={side}, price={price:.2}, qty={qty:.6}, id={}, time={ts}",
@@ -226,9 +231,14 @@ fn decode_and_display_sbe(data: &[u8]) -> anyhow::Result<()> {
             let ask = mantissa_to_f64(event.ask_price_mantissa, event.price_exponent);
             let bid_size = mantissa_to_f64(event.bid_qty_mantissa, event.qty_exponent);
             let ask_size = mantissa_to_f64(event.ask_qty_mantissa, event.qty_exponent);
-            let ts = chrono::DateTime::from_timestamp_micros(event.event_time_us).map_or_else(
-                || "?".to_string(),
-                |dt| dt.format("%H:%M:%S%.6f").to_string(),
+            let ts = Timestamp::from_microsecond(event.event_time_us).map_or_else(
+                |_| "?".to_string(),
+                |dt| {
+                    Offset::UTC
+                        .to_datetime(dt)
+                        .strftime("%H:%M:%S%.6f")
+                        .to_string()
+                },
             );
 
             log::info!(

@@ -32,27 +32,29 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 | `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`             | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `CryptoFuture` has asset class `Cryptocurrency` and instrument class `Future`.
-- Linear contracts typically set `is_inverse=False` and settle in the quote currency.
-- Inverse contracts set `is_inverse=True` and typically settle in the underlying currency.
-- Quanto contracts settle in a third currency that differs from both underlying and quote.
+- Prices can be zero or negative, except for inverse futures.
 - Use `CryptoPerpetual` for crypto derivatives with no expiration.
+
+**Settlement style**: the currency set determines the settlement style.
+
+- **Linear**: typically sets `is_inverse=False` and settles in the quote currency.
+- **Inverse**: sets `is_inverse=True` and typically settles in the underlying currency.
+- **Quanto**: settles in a third currency that differs from both underlying and quote.
 
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
@@ -60,8 +62,8 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 
-let activation = Utc.with_ymd_and_hms(2024, 1, 8, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2024, 3, 29, 0, 0, 0).unwrap();
+let activation: Timestamp = "2024-01-08T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2024-03-29T00:00:00Z".parse().unwrap();
 
 let btcusdt_future = CryptoFuture::builder()
     .instrument_id(InstrumentId::from("BTCUSDT-240329.BINANCE"))
@@ -70,8 +72,8 @@ let btcusdt_future = CryptoFuture::builder()
     .quote_currency(Currency::from("USDT"))
     .settlement_currency(Currency::from("USDT"))
     .is_inverse(false)
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(2)
     .size_precision(6)
     .price_increment(Price::from("0.01"))
@@ -126,9 +128,8 @@ btcusdt_future = CryptoFuture(
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoFuture` instruments include:
+**Adapters that create or consume `CryptoFuture` instruments include**:
 
-- [BitMEX](../../integrations/bitmex.md) for inverse and linear dated futures.
 - [Bybit](../../integrations/bybit.md) for crypto futures markets.
 - [Deribit](../../integrations/deribit.md) for dated crypto futures.
 - [OKX](../../integrations/okx.md) for dated crypto futures.

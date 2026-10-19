@@ -20,7 +20,8 @@
       "contract_mark_price": "Average price on AX at London 4pm",
       "contract_size": "1 Euro per contract",
       "price_quotation": "U.S. dollars per Euro",
-      "price_bands": "+/- 10% from prior Contract Mark Price"
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "additional_product_specs": {}
     },
     {
       "symbol": "XAU-PERP",
@@ -44,7 +45,8 @@
       "contract_mark_price": "Average price on ArchitectX at London 4pm",
       "contract_size": "1 ounce per contract",
       "price_quotation": "U.S. dollars per ounce",
-      "price_bands": "+/- 10% from prior Contract Mark Price"
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "additional_product_specs": {}
     },
     {
       "symbol": "NVDA-PERP",
@@ -66,7 +68,8 @@
       "contract_mark_price": "Average price on ArchitectX at 4pm New York Time",
       "contract_size": "1 share per contract",
       "price_quotation": "U.S. dollars per share",
-      "price_bands": "+/- 10% from prior Contract Mark Price"
+      "price_bands": "+/- 10% from prior Contract Mark Price",
+      "additional_product_specs": {}
     }
   ]
 }

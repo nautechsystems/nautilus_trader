@@ -82,6 +82,7 @@ pub fn calculate_fixed_risk_position_size(
         .checked_div(exchange_rate)
         .and_then(|value| value.checked_div(risk_points))
         .and_then(|value| value.checked_div(instrument.price_increment().as_decimal()))
+        .and_then(|value| value.checked_div(instrument.multiplier().as_decimal()))
         .ok_or_else(position_size_overflow)?;
 
     if let Some(hard_limit) = hard_limit {
@@ -159,7 +160,9 @@ fn position_size_overflow() -> CorrectnessError {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        identifiers::Symbol, instruments::stubs::default_fx_ccy, types::Currency,
+        identifiers::Symbol,
+        instruments::stubs::{default_fx_ccy, futures_contract_es},
+        types::Currency,
     };
     use rstest::*;
     use rust_decimal_macros::dec;
@@ -171,6 +174,15 @@ mod tests {
     #[fixture]
     fn instrument_gbpusd() -> InstrumentAny {
         InstrumentAny::CurrencyPair(default_fx_ccy(Symbol::from_str_unchecked("GBP/USD"), None))
+    }
+
+    #[fixture]
+    fn instrument_futures_with_multiplier() -> InstrumentAny {
+        // A futures contract whose multiplier scales the per-unit dollar risk,
+        // as it does for position P&L (e.g. ES, CL, NG).
+        let mut instrument = futures_contract_es(None, None);
+        instrument.multiplier = Quantity::from(1000);
+        InstrumentAny::FuturesContract(instrument)
     }
 
     #[fixture]
@@ -269,6 +281,33 @@ mod tests {
         .unwrap();
 
         assert_eq!(result, Quantity::from("1000000.0"));
+    }
+
+    #[rstest]
+    fn test_calculate_accounts_for_instrument_multiplier(
+        instrument_futures_with_multiplier: InstrumentAny,
+    ) {
+        // Multiplier = 1000: a $1.00 stop risks $1,000/contract, so $10,000 of
+        // risk targets 10 contracts.
+        let equity = Money::new(1_000_000.0, Currency::USD());
+        let entry = Price::new(100.00, instrument_futures_with_multiplier.price_precision());
+        let stop_loss = Price::new(99.00, instrument_futures_with_multiplier.price_precision());
+
+        let result = calculate_fixed_risk_position_size(
+            &instrument_futures_with_multiplier,
+            entry,
+            stop_loss,
+            equity,
+            Decimal::new(1, 2), // 1%
+            Decimal::ZERO,
+            EXCHANGE_RATE,
+            None,
+            Decimal::from(1),
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(result.as_decimal(), dec!(10));
     }
 
     #[rstest]

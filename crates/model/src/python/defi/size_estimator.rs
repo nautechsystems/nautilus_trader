@@ -88,10 +88,7 @@ impl SizeForImpactResult {
         self.within_tolerance(tolerance_bps)
     }
 
-    /// Get the convergence quality as a percentage.
-    ///
-    /// # Returns
-    /// Accuracy percentage (100.0 = perfect match, lower = less accurate)
+    /// Returns the convergence quality as a percentage, where 100.0 is a perfect match.
     #[pyo3(name = "accuracy_percent")]
     fn py_accuracy_percent(&self) -> f64 {
         self.accuracy_percent()

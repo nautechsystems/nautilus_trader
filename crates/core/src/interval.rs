@@ -1,0 +1,71 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Closed interval types shared across request planning and persistence coverage.
+
+/// A closed nanosecond interval, inclusive at both ends.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ClosedInterval {
+    /// Inclusive start in nanoseconds since the Unix epoch.
+    pub start: u64,
+    /// Inclusive end in nanoseconds since the Unix epoch.
+    pub end: u64,
+}
+
+impl ClosedInterval {
+    /// Creates a closed interval if `start <= end`.
+    #[must_use]
+    pub const fn new(start: u64, end: u64) -> Option<Self> {
+        if start <= end {
+            Some(Self { start, end })
+        } else {
+            None
+        }
+    }
+}
+
+impl From<ClosedInterval> for (u64, u64) {
+    fn from(interval: ClosedInterval) -> Self {
+        (interval.start, interval.end)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(0, 0, true)]
+    #[case(0, 1, true)]
+    #[case(2, 1, false)]
+    fn test_new_validates_order(#[case] start: u64, #[case] end: u64, #[case] expected: bool) {
+        assert_eq!(ClosedInterval::new(start, end).is_some(), expected);
+    }
+
+    #[rstest]
+    fn test_new_stores_bounds() {
+        let interval = ClosedInterval::new(3, 7).unwrap();
+        assert_eq!((interval.start, interval.end), (3, 7));
+    }
+
+    #[rstest]
+    fn test_into_tuple() {
+        let interval = ClosedInterval::new(3, 7).unwrap();
+        let pair: (u64, u64) = interval.into();
+        assert_eq!(pair, (3, 7));
+    }
+}

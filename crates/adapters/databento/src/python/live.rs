@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     identifiers::InstrumentId,
-    python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
+    python::{data::data_to_pyobject, instruments::instrument_any_to_pyobject},
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
 
@@ -40,10 +40,11 @@ impl DatabentoLiveClient {
             log::trace!("Received message: {msg:?}");
 
             match msg {
-                DatabentoMessage::Data(data) => Python::attach(|py| {
-                    let py_obj = data_to_pycapsule(py, data);
+                DatabentoMessage::Data(data) => Python::attach(|py| -> PyResult<()> {
+                    let py_obj = data_to_pyobject(py, data)?;
                     call_python(py, &callback, py_obj);
-                }),
+                    Ok(())
+                })?,
                 DatabentoMessage::Instrument(data) => {
                     Python::attach(|py| match instrument_any_to_pyobject(py, *data) {
                         Ok(py_obj) => call_python(py, &callback, py_obj),
@@ -201,15 +202,8 @@ impl DatabentoLiveClient {
                 feed_handler.run(),
             );
 
-            if let Err(e) = proc_handle {
-                log::error!("Message processor error: {e}");
-                return Err(e);
-            }
-
-            if let Err(e) = feed_handle {
-                log::error!("Feed handler error: {e}");
-                return Err(to_pyruntime_err(e));
-            }
+            proc_handle?;
+            feed_handle.map_err(to_pyruntime_err)?;
 
             log::debug!("Live client completed");
             Ok(())

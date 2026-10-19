@@ -30,7 +30,7 @@ use ustr::Ustr;
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -193,10 +193,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("")] // Empty string
-    #[case("   ")] // Whitespace only
-    fn test_symbol_with_invalid_values(#[case] input: &str) {
-        assert!(Symbol::new_checked(input).is_err());
+    fn test_symbol_new_checked_rejects_whitespace_only() {
+        assert!(Symbol::new_checked("   ").is_err());
     }
 
     #[rstest]

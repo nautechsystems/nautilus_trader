@@ -22,6 +22,7 @@
 
 pub mod analyzer;
 pub mod snapshot;
+pub mod statistic;
 pub mod statistics;
 
 use pyo3::{prelude::*, pymodule};
@@ -32,7 +33,7 @@ use pyo3::{prelude::*, pymodule};
 ///
 /// # Errors
 ///
-/// Returns a Python exception if adding any class fails.
+/// Returns an error if adding any class fails.
 #[pymodule]
 pub fn analysis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::analyzer::PortfolioAnalyzer>()?;

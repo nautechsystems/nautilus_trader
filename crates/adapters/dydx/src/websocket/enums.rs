@@ -15,7 +15,7 @@
 
 //! Enums for dYdX WebSocket operations, channels, and message types.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, Display, EnumString, FromRepr};
@@ -233,7 +233,7 @@ pub enum DydxWsOutputMessage {
     /// Subaccount channel data (orders, fills).
     SubaccountsChannelData(Box<DydxWsSubaccountsChannelData>),
     /// Block height update from chain.
-    BlockHeight { height: u64, time: DateTime<Utc> },
+    BlockHeight { height: u64, time: Timestamp },
     /// Error from the venue or handler.
     Error(DydxWebSocketError),
     /// Reconnection notification carrying the reconnected connection's subscription topics.

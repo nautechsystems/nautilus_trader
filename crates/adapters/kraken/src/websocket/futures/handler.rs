@@ -23,6 +23,7 @@ use std::{
     },
 };
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
@@ -45,9 +46,9 @@ use crate::common::consts::KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION;
 pub enum FuturesHandlerCommand {
     SetClient(WebSocketClient),
     Disconnect,
-    Subscribe { payload: String },
-    Unsubscribe { payload: String },
-    RequestChallenge { payload: String },
+    Subscribe { payload: SecretString },
+    Unsubscribe { payload: SecretString },
+    RequestChallenge { payload: SecretString },
 }
 
 /// WebSocket message handler for Kraken Futures.
@@ -112,14 +113,14 @@ impl FuturesFeedHandler {
                         FuturesHandlerCommand::Subscribe { payload }
                         | FuturesHandlerCommand::Unsubscribe { payload } => {
                             if let Some(ref client) = self.inner
-                                && let Err(e) = client.send_text(payload, Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice())).await
+                                && let Err(e) = client.send_text(payload.expose_secret().to_owned(), Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice())).await
                             {
                                 log::error!("Failed to send text: {e}");
                             }
                         }
                         FuturesHandlerCommand::RequestChallenge { payload } => {
                             if let Some(ref client) = self.inner
-                                && let Err(e) = client.send_text(payload, None).await
+                                && let Err(e) = client.send_text(payload.expose_secret().to_owned(), None).await
                             {
                                 log::error!("Failed to send text: {e}");
                             }
@@ -432,6 +433,7 @@ impl FuturesFeedHandler {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -444,6 +446,18 @@ mod tests {
         let subscriptions = SubscriptionState::new(':');
 
         FuturesFeedHandler::new(signal, cmd_rx, raw_rx, subscriptions)
+    }
+
+    #[rstest]
+    fn test_command_debug_redacts_payload() {
+        let command = FuturesHandlerCommand::RequestChallenge {
+            payload: SecretString::from("private-challenge-payload"),
+        };
+
+        assert_eq!(
+            format!("{command:?}"),
+            format!("RequestChallenge {{ payload: {REDACTED} }}")
+        );
     }
 
     #[rstest]

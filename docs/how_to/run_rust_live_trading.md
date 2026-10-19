@@ -4,8 +4,8 @@ The `LiveNode` connects to real venues and data sources through adapter clients.
 walks through a complete live trading setup using OKX as an example.
 
 For the node lifecycle, see [Live trading](../concepts/live.md). For command outcomes, see
-[Execution](../concepts/execution.md#command-outcomes). For state recovery, see
-[Execution reconciliation](../concepts/reconciliation.md). For project setup and feature flags,
+[Execution policies](../concepts/execution/policies.md#command-outcomes). For state recovery, see
+[Execution reconciliation](../concepts/execution/reconciliation.md). For project setup and feature flags,
 see the [Rust](../concepts/rust.md#project-setup) concept guide.
 
 ## Dependencies
@@ -15,11 +15,11 @@ Add the live crate, your venue adapter, and supporting crates to
 
 ```toml
 [dependencies]
-nautilus-common = "0.60"
-nautilus-live = "0.60"
-nautilus-model = "0.60"
-nautilus-okx = "0.60"
-nautilus-trading = { version = "0.60", features = ["examples"] }
+nautilus-common = "0.66"
+nautilus-live = "0.66"
+nautilus-model = "0.66"
+nautilus-okx = "0.66"
+nautilus-trading = { version = "0.66", features = ["examples"] }
 
 anyhow = "1"
 dotenvy = "0.15"
@@ -39,7 +39,7 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_okx::{
     common::enums::OKXInstrumentType,
-    config::{OKXDataClientConfig, OKXExecClientConfig},
+    config::{OKXDataClientConfig, OKXExecutionClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
 
@@ -50,8 +50,7 @@ let data_config = OKXDataClientConfig::builder()
     .instrument_types(vec![OKXInstrumentType::Swap])
     .build();
 
-let exec_config = OKXExecClientConfig::builder()
-    .trader_id(trader_id)
+let exec_config = OKXExecutionClientConfig::builder()
     .account_id(account_id)
     .instrument_types(vec![OKXInstrumentType::Swap])
     .build();
@@ -82,7 +81,7 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
 :::warning
 This example disables reconciliation for simplicity. In production, remove
 `.with_reconciliation(false)` so the engine aligns cached state with the
-venue on startup. See [Execution reconciliation](../concepts/reconciliation.md).
+venue on startup. See [Execution reconciliation](../concepts/execution/reconciliation.md).
 :::
 
 ## Add strategies and run
@@ -159,7 +158,6 @@ testers:
 | Architect AX        | `crates/adapters/architect_ax/examples/`        |
 | Betfair             | `crates/adapters/betfair/examples/`             |
 | Binance             | `crates/adapters/binance/examples/`             |
-| BitMEX              | `crates/adapters/bitmex/examples/`              |
 | Blockchain          | `crates/adapters/blockchain/examples/`          |
 | Bybit               | `crates/adapters/bybit/examples/`               |
 | Coinbase            | `crates/adapters/coinbase/examples/`            |

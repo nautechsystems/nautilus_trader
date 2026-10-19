@@ -71,6 +71,10 @@ pub(crate) enum ExpressionError {
     InputCountMismatch { expected: usize, actual: usize },
     #[error("Expression requires {depth} stack slots, maximum is {max}")]
     StackOverflow { depth: usize, max: usize },
+    #[error(
+        "Expression nesting depth {depth} exceeds maximum {max} (the top-level expression counts as one level)"
+    )]
+    ExpressionDepthExceeded { depth: usize, max: usize },
     #[error("Expression defines {count} local variables, maximum is {max}")]
     TooManyLocals { count: usize, max: usize },
     #[error("Expression result is empty")]

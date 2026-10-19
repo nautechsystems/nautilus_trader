@@ -20,17 +20,14 @@
 //! 2. Finds the nearest expiry
 //! 3. Builds an `OptionSeriesId` for that expiry
 //! 4. Subscribes to an option chain with `STRIKES_ABOVE` strikes above and `STRIKES_BELOW` below ATM
-//! 5. Uses `ForwardPrice` (auto-resolved default) - the exchange-provided forward
-//!    price embedded in every option ticker update, eliminating spot-forward basis error
+//! 5. Uses the exchange-provided option reference price as the ATM source
 //! 6. Logs received `OptionChainSlice` snapshots in the `on_option_chain` handler
 //!
 //! Edit the constants below to change the underlying, strike range, snapshot interval, and node name.
 //!
 //! Run with: `cargo run --example bybit-option-chain --package nautilus-bybit --features examples`
 //!
-//! Credentials are read from the environment when set:
-//! - `BYBIT_API_KEY`.
-//! - `BYBIT_API_SECRET`.
+//! The data client uses public market data endpoints, so no API credentials are needed.
 
 use std::fmt::Debug;
 
@@ -132,7 +129,7 @@ impl DataActor for OptionChainTester {
         // Prefer USDT-settled (Bybit BTC options default); fall back to any available settlement
         let settlement_currency = options
             .iter()
-            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement.as_str() == "USDT")
+            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement == "USDT")
             .map_or_else(
                 || {
                     options
@@ -154,7 +151,7 @@ impl DataActor for OptionChainTester {
         );
 
         // Build OptionSeriesId for the nearest expiry
-        let series_id = OptionSeriesId::new(
+        let series_id = OptionSeriesId::new_derived(
             venue,
             underlying_filter,
             settlement_currency,
@@ -259,8 +256,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = *BYBIT_CLIENT_ID;
 
     let bybit_config = BybitDataClientConfig {
-        api_key: None,    // Will use 'BYBIT_API_KEY' env var
-        api_secret: None, // Will use 'BYBIT_API_SECRET' env var
+        api_key: None,
+        api_secret: None,
         product_types: vec![BybitProductType::Option],
         ..Default::default()
     };

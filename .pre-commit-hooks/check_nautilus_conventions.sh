@@ -6,6 +6,7 @@
 # 3. std::fmt conventions: import Debug/Display (use as `impl Debug`/`impl Display`),
 #    but fully qualify std::fmt::Formatter and std::fmt::Result (do not import them)
 # 4. debug_struct should always use stringify! macro for its value
+# 5. Deprecated Atomic::fetch_update is banned (renamed to try_update upstream)
 #
 # Use '// nautilus-import-ok' comment to allow specific exceptions
 
@@ -31,16 +32,16 @@ echo "Checking for fully qualified Nautilus types..."
 # Exclude nautilus_macros: proc-macros generate code for other crates; fully qualified paths required
 output=$(rg -n -B 5 \
   --no-heading \
-  --glob '!crates/persistence/macros/**' \
+  --glob '!crates/macros/**' \
   'nautilus_[a-z_]+(?:::[a-z_]+)+::[A-Z][A-Za-z0-9_]+' \
-  crates tests examples \
+  crates examples \
   --type rust \
   2> /dev/null || true)
 
 VIOLATIONS=0
 
 if [[ -z "$output" ]]; then
-  echo "✓ Nautilus import conventions are valid"
+  echo "Nautilus import conventions are valid"
 else
   seen_violations="" # Track unique violations (POSIX compatible, no associative arrays)
 
@@ -124,7 +125,7 @@ else
     echo
     echo "Add '// nautilus-import-ok' comment to allow specific exceptions"
   else
-    echo "✓ Nautilus import conventions are valid"
+    echo "Nautilus import conventions are valid"
   fi
 
 fi # end of if [[ -z "$output" ]]
@@ -155,7 +156,7 @@ if [[ -n "$banner_output" ]]; then
   echo "Use module structure, impl blocks, or doc comments instead"
   echo "See: docs/developer_guide/rust.md#box-style-banner-comments"
 else
-  echo "✓ No box-style banner comments found"
+  echo "No box-style banner comments found"
 fi
 
 # Check for std::fmt convention violations
@@ -282,7 +283,7 @@ if [ $FMT_VIOLATIONS -gt 0 ]; then
   echo "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result"
   echo "  - Use stringify! with debug_struct: f.debug_struct(stringify!(MyType))"
 else
-  echo "✓ std::fmt conventions are valid"
+  echo "std::fmt conventions are valid"
 fi
 
 # Check for ", got" phrasing in error messages
@@ -290,8 +291,8 @@ echo "Checking for ', got' phrasing..."
 
 # Search for ", got" followed by space, punctuation, or end-of-line
 got_output=$(rg -n ', got[[:space:][:punct:]]|, got$' \
-  crates tests examples nautilus_trader \
-  --type rust --type py --type cython \
+  crates python examples \
+  --type rust --type py \
   --glob '!docs/**' \
   2> /dev/null || true)
 
@@ -309,7 +310,7 @@ if [[ -n "$got_output" ]]; then
   echo "  See: docs/developer_guide/coding_standards.md#terminology-and-phrasing"
 else
   GOT_VIOLATIONS=0
-  echo "✓ No ', got' phrasing found"
+  echo "No ', got' phrasing found"
 fi
 
 # Check for fully qualified macro calls
@@ -318,7 +319,7 @@ echo "Checking for fully qualified macro calls..."
 MACRO_VIOLATIONS=0
 macro_output=$(rg -n --no-heading \
   'nautilus_(common|trading)::(nautilus_actor|nautilus_strategy)!' \
-  crates tests examples \
+  crates examples \
   --type rust \
   2> /dev/null || true)
 
@@ -350,7 +351,7 @@ if [[ -n "$macro_output" ]]; then
     echo "'use nautilus_trading::nautilus_strategy;' and call the macro unqualified"
   fi
 else
-  echo "✓ No fully qualified macro calls found"
+  echo "No fully qualified macro calls found"
 fi
 
 # Check that the exposed Python submodule set is unchanged
@@ -366,9 +367,9 @@ architect_ax nautilus_architect_ax::python::architect_ax
 backtest nautilus_backtest::python::backtest
 betfair nautilus_betfair::python::betfair
 binance nautilus_binance::python::binance
-bitmex nautilus_bitmex::python::bitmex
 blockchain nautilus_blockchain::python::blockchain
 bybit nautilus_bybit::python::bybit
+coinapi nautilus_coinapi::python::coinapi
 coinbase nautilus_coinbase::python::coinbase
 common nautilus_common::python::common
 core nautilus_core::python::core
@@ -468,17 +469,44 @@ if [ -f "$PYO3_LIB" ]; then
     echo "register its class into an existing submodule instead. If the change is intended,"
     echo "update EXPECTED_PYO3_MODULES in this script."
   else
-    echo "✓ Python submodule registrations are unchanged"
+    echo "Python submodule registrations are unchanged"
   fi
 else
-  echo "✓ Python submodule registrations skipped ($PYO3_LIB not found)"
+  echo "Python submodule registrations skipped ($PYO3_LIB not found)"
+fi
+
+# Check for deprecated Atomic::fetch_update (renamed to try_update upstream)
+echo "Checking for deprecated fetch_update usage..."
+
+FETCH_UPDATE_VIOLATIONS=0
+fetch_update_output=$(rg -n --no-heading '\.fetch_update\b' crates examples --type rust 2> /dev/null | grep -v ':[0-9]*:[[:space:]]*//' || true)
+
+if [[ -n "$fetch_update_output" ]]; then
+  echo
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^([^:]+):([0-9]+):(.*)$ ]]; then
+      file="${BASH_REMATCH[1]}"
+      line_num="${BASH_REMATCH[2]}"
+      line_content="${BASH_REMATCH[3]}"
+      echo -e "${RED}Error:${NC} Use try_update instead of deprecated fetch_update in $file:$line_num"
+      echo "  ${line_content:0:100}"
+      FETCH_UPDATE_VIOLATIONS=$((FETCH_UPDATE_VIOLATIONS + 1))
+    fi
+  done <<< "$fetch_update_output"
+
+  echo
+  echo -e "${RED}Found $FETCH_UPDATE_VIOLATIONS deprecated fetch_update violation(s)${NC}"
+  echo
+  echo -e "${YELLOW}To fix:${NC} Replace .fetch_update( with .try_update( (drop-in rename)"
+else
+  echo "No deprecated fetch_update usage found"
 fi
 
 # Exit with error if any violations found
-if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ] || [ $MACRO_VIOLATIONS -gt 0 ] || [ $MODULE_VIOLATIONS -gt 0 ]; then
+if [ $VIOLATIONS -gt 0 ] || [ $BANNER_VIOLATIONS -gt 0 ] || [ $FMT_VIOLATIONS -gt 0 ] || [ "$GOT_VIOLATIONS" -gt 0 ] || [ $MACRO_VIOLATIONS -gt 0 ] || [ $MODULE_VIOLATIONS -gt 0 ] || [ $FETCH_UPDATE_VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 
 echo
-echo "✓ All Nautilus conventions are valid"
+echo "All Nautilus conventions are valid"
 exit 0

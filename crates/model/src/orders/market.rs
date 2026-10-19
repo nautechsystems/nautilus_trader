@@ -45,7 +45,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -112,7 +112,7 @@ impl MarketOrder {
             None,
             None,
             None,
-            Some(TriggerType::NoTrigger),
+            None,
             None,
             None,
             None,
@@ -374,6 +374,10 @@ impl Order for MarketOrder {
         self.voided_qty
     }
 
+    fn non_reopened_voided_qty(&self) -> Quantity {
+        self.non_reopened_voided_qty
+    }
+
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
     }
@@ -435,8 +439,7 @@ impl Order for MarketOrder {
         if let Some(protection_price) = event.protection_price {
             self.protection_price = Some(protection_price);
         }
-        self.quantity = event.quantity;
-        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
+        self.core.apply_updated_quantity(event.quantity);
     }
 
     fn events(&self) -> Vec<&OrderEventAny> {

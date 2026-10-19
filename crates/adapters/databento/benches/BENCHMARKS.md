@@ -63,7 +63,7 @@ The benches use the same compressed fixtures as the Databento tests and seed
 ## Large MBO fixture diagnostics (`data.rs`)
 
 The larger MBO diagnostics use
-`tests/test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst`, a committed
+`test_data/databento/esh4-glbx-mdp3-20231225.mbo.dbn.zst`, a committed
 997 KB DBN fixture with 68,792 raw MBO records and 65,819 decoded deltas. They
 exercise sustained decode and loader behavior without depending on local-only
 data files.
@@ -99,7 +99,7 @@ They are not external Databento service latency claims.
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these to
-localise where time goes when a loader bench regresses.
+localize where time goes when a loader bench regresses.
 
 `record_decode` measures already-decoded Databento records converted into
 Nautilus domain values.

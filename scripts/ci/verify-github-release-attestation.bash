@@ -35,8 +35,9 @@ for i in $(seq 1 "$verify_attempts"); do
   if gh release verify "$TAG_NAME" --repo "$GITHUB_REPOSITORY"; then
     echo "Verified immutable GitHub release attestation for $TAG_NAME."
     exit 0
+  else
+    status=$?
   fi
-  status=$?
 
   echo "gh release verify failed (exit=${status}), retry (${i}/${verify_attempts})" >&2
   sleep $((2 ** i))

@@ -22,29 +22,35 @@ use std::{
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
+use nautilus_core::correctness::{CorrectnessError, CorrectnessResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accounts::{Account, base::BaseAccount},
-    enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
+    accounts::{
+        Account,
+        base::{self, BaseAccount},
+    },
+    enums::{InstrumentClass, OrderSide},
     events::{AccountState, OrderFilled},
-    identifiers::{AccountId, InstrumentId},
+    identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{AccountBalance, Currency, Money, Price, Quantity, money::MoneyRaw},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
+/// Represents a betting account that stakes on sports betting markets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct BettingAccount {
+    /// The account state shared by every account type.
     pub base: BaseAccount,
     /// Per-(instrument, currency) locked balances (transient, not persisted).
     #[serde(skip, default)]
@@ -61,35 +67,41 @@ impl BettingAccount {
         }
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            base: self.base.clone_without_events(),
+            balances_locked: self.balances_locked.clone(),
+        }
+    }
+
     /// Updates the locked balance for the given instrument and currency.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `locked` is negative.
-    pub fn update_balance_locked(&mut self, instrument_id: InstrumentId, locked: Money) {
-        assert!(locked.raw >= 0, "locked balance was negative: {locked}");
-        let currency = locked.currency;
-        self.balances_locked
-            .insert((instrument_id, currency), locked);
-        self.recalculate_balance(currency);
+    /// Returns an error if `locked` is negative, its precision differs from the balance
+    /// precision, or the reservations cannot produce a valid balance. The balance and
+    /// reservations are left unchanged when an error is returned.
+    pub fn update_balance_locked(
+        &mut self,
+        instrument_id: InstrumentId,
+        locked: Money,
+    ) -> anyhow::Result<()> {
+        base::update_balance_locked(
+            &mut self.base.balances,
+            &mut self.balances_locked,
+            instrument_id,
+            locked,
+        )
     }
 
     /// Clears all locked balances for the given instrument ID.
     pub fn clear_balance_locked(&mut self, instrument_id: InstrumentId) {
-        let currencies_to_recalc: Vec<Currency> = self
-            .balances_locked
-            .keys()
-            .filter(|(id, _)| *id == instrument_id)
-            .map(|(_, currency)| *currency)
-            .collect();
-
-        for currency in &currencies_to_recalc {
-            self.balances_locked.remove(&(instrument_id, *currency));
-        }
-
-        for currency in currencies_to_recalc {
-            self.recalculate_balance(currency);
-        }
+        base::clear_balance_locked(
+            &mut self.base.balances,
+            &mut self.balances_locked,
+            instrument_id,
+        );
     }
 
     /// Updates the account balances, rejecting negative totals.
@@ -99,7 +111,7 @@ impl BettingAccount {
     /// Returns an error if any balance has a negative total.
     pub fn update_balances(&mut self, balances: &[AccountBalance]) -> anyhow::Result<()> {
         for balance in balances {
-            if balance.total.raw < 0 {
+            if balance.total.is_negative() {
                 anyhow::bail!(
                     "Betting account balance would become negative: {} {} ({})",
                     balance.total.as_decimal(),
@@ -122,72 +134,44 @@ impl BettingAccount {
     /// For `Sell` (back) the impact is the negative stake (quantity).
     /// For `Buy` (lay) the impact is the negative liability (quantity * (price - 1)).
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `order_side` is `NoOrderSide`, or if the impact cannot be represented in the
-    /// quote currency.
-    #[must_use]
+    /// Returns an error if the impact cannot be represented in the quote currency.
     pub fn balance_impact(
         &self,
         instrument: &InstrumentAny,
         quantity: Quantity,
         price: Price,
         order_side: OrderSide,
-    ) -> Money {
+    ) -> CorrectnessResult<Money> {
         let currency = instrument.quote_currency();
         let impact = match order_side {
             OrderSide::Sell => -quantity.as_decimal(),
-            OrderSide::Buy => -(quantity.as_decimal() * (price.as_decimal() - Decimal::ONE)),
-            OrderSide::NoOrderSide => panic!("invalid `OrderSide`, was {order_side}"),
+            OrderSide::Buy => {
+                let liability = quantity
+                    .as_decimal()
+                    .checked_mul(price.as_decimal() - Decimal::ONE)
+                    .ok_or_else(|| CorrectnessError::PredicateViolation {
+                        message: format!(
+                            "Betting liability for quantity {quantity} at price {price} exceeds `Decimal` range"
+                        ),
+                    })?;
+
+                -liability
+            }
         };
-        Money::from_decimal(impact, currency).expect("invalid betting balance impact")
+
+        Money::from_decimal(impact, currency)
     }
 
     /// Recalculates the account balance for the specified currency based on per-instrument locks.
     pub fn recalculate_balance(&mut self, currency: Currency) {
-        let current_balance = if let Some(balance) = self.balances.get(&currency) {
-            *balance
-        } else {
-            log::debug!("Cannot recalculate balance when no current balance for {currency}");
-            return;
-        };
-
-        let total_locked_raw: MoneyRaw = self
-            .balances_locked
-            .values()
-            .filter(|locked| locked.currency == currency)
-            .map(|locked| locked.raw)
-            .fold(0, |acc, raw| acc.saturating_add(raw));
-
-        let total_raw = current_balance.total.raw;
-        let (locked_raw, free_raw) = if total_locked_raw > total_raw && total_raw >= 0 {
-            (total_raw, 0)
-        } else {
-            (total_locked_raw, total_raw - total_locked_raw)
-        };
-
-        let new_balance = AccountBalance::new(
-            current_balance.total,
-            Money::from_raw(locked_raw, currency),
-            Money::from_raw(free_raw, currency),
-        );
-
-        self.balances.insert(currency, new_balance);
+        base::recalculate_balance(&mut self.base.balances, &self.balances_locked, currency);
     }
 }
 
 impl Account for BettingAccount {
-    fn id(&self) -> AccountId {
-        self.id
-    }
-
-    fn account_type(&self) -> AccountType {
-        self.account_type
-    }
-
-    fn base_currency(&self) -> Option<Currency> {
-        self.base_currency
-    }
+    impl_account_base_members!();
 
     fn is_cash_account(&self) -> bool {
         true
@@ -197,65 +181,11 @@ impl Account for BettingAccount {
         false
     }
 
-    fn calculated_account_state(&self) -> bool {
-        self.calculate_account_state
-    }
-
-    fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
-        self.base_balance_total(currency)
-    }
-
-    fn balances_total(&self) -> IndexMap<Currency, Money> {
-        self.base_balances_total()
-    }
-
-    fn balance_free(&self, currency: Option<Currency>) -> Option<Money> {
-        self.base_balance_free(currency)
-    }
-
-    fn balances_free(&self) -> IndexMap<Currency, Money> {
-        self.base_balances_free()
-    }
-
-    fn balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
-        self.base_balance_locked(currency)
-    }
-
-    fn balances_locked(&self) -> IndexMap<Currency, Money> {
-        self.base_balances_locked()
-    }
-
-    fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
-        self.base_balance(currency)
-    }
-
-    fn last_event(&self) -> Option<AccountState> {
-        self.base_last_event()
-    }
-
-    fn events(&self) -> Vec<AccountState> {
-        self.events.clone()
-    }
-
-    fn event_count(&self) -> usize {
-        self.events.len()
-    }
-
-    fn currencies(&self) -> Vec<Currency> {
-        self.balances.keys().copied().collect()
-    }
-
-    fn starting_balances(&self) -> IndexMap<Currency, Money> {
-        self.balances_starting.clone()
-    }
-
-    fn balances(&self) -> IndexMap<Currency, AccountBalance> {
-        self.balances.clone()
-    }
-
     fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
+        self.check_event_account_id(&event)?;
+
         for balance in &event.balances {
-            if balance.total.raw < 0 {
+            if balance.total.is_negative() {
                 anyhow::bail!(
                     "Cannot apply betting account state: balance would be negative {} {} ({})",
                     balance.total.as_decimal(),
@@ -273,12 +203,8 @@ impl Account for BettingAccount {
         Ok(())
     }
 
-    fn purge_account_events(&mut self, ts_now: nautilus_core::UnixNanos, lookback_secs: u64) {
-        self.base.base_purge_account_events(ts_now, lookback_secs);
-    }
-
     fn calculate_balance_locked(
-        &mut self,
+        &self,
         instrument: &InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
@@ -297,9 +223,6 @@ impl Account for BettingAccount {
         let locked = match side {
             OrderSide::Sell => quantity.as_decimal(),
             OrderSide::Buy => quantity.as_decimal() * (price.as_decimal() - Decimal::ONE),
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid `OrderSide` in `calculate_balance_locked`: {side}")
-            }
         };
 
         Ok(Money::from_decimal(locked, instrument.quote_currency())?)
@@ -323,13 +246,11 @@ impl Account for BettingAccount {
         let mut fill_qty = fill.last_qty;
 
         if let Some(position) = position.as_ref()
-            && position.quantity.raw != 0
+            && position.quantity.non_zero()
             && position.entry != fill.order_side
         {
-            fill_qty = Quantity::from_raw(
-                fill.last_qty.raw.min(position.quantity.raw),
-                fill.last_qty.precision,
-            );
+            fill_qty = fill.last_qty.min(position.quantity);
+            fill_qty.precision = fill.last_qty.precision;
         }
 
         let quote_pnl = Money::from_decimal(
@@ -356,29 +277,9 @@ impl Account for BettingAccount {
                 }
                 pnls.insert(quote_currency, quote_pnl);
             }
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid `OrderSide` in calculate_pnls: {}", fill.order_side)
-            }
         }
 
         Ok(pnls.into_values().collect())
-    }
-
-    fn calculate_commission(
-        &self,
-        instrument: &InstrumentAny,
-        last_qty: Quantity,
-        last_px: Price,
-        liquidity_side: LiquiditySide,
-        use_quote_for_inverse: Option<bool>,
-    ) -> anyhow::Result<Money> {
-        self.base_calculate_commission(
-            instrument,
-            last_qty,
-            last_px,
-            liquidity_side,
-            use_quote_for_inverse,
-        )
     }
 }
 
@@ -423,17 +324,39 @@ impl Display for BettingAccount {
 mod tests {
     use indexmap::IndexMap;
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         accounts::{Account, BettingAccount, stubs::*},
-        enums::{AccountType, LiquiditySide, OrderSide},
+        enums::{AccountType, CurrencyType, LiquiditySide, OrderSide},
         events::{AccountState, account::stubs::*},
-        identifiers::AccountId,
+        fees::MakerTakerFeeRates,
+        identifiers::{AccountId, InstrumentId},
         instruments::{Instrument, stubs::betting},
         orders::stubs::TestOrderEventStubs,
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
+
+    #[rstest]
+    fn test_account_type_predicates(betting_account: BettingAccount) {
+        assert!(betting_account.is_unleveraged());
+        assert!(Account::is_cash_account(&betting_account));
+        assert!(!Account::is_margin_account(&betting_account));
+    }
+
+    #[rstest]
+    fn test_equality_compares_account_ids(betting_account_state: AccountState) {
+        let account = BettingAccount::new(betting_account_state.clone(), true);
+        let same = BettingAccount::new(betting_account_state.clone(), true);
+        let mut other_state = betting_account_state;
+        other_state.account_id = AccountId::from("OTHER-001");
+        let other = BettingAccount::new(other_state, true);
+
+        assert_eq!(account, same);
+        assert_ne!(account, other);
+    }
 
     #[rstest]
     fn test_display(betting_account: BettingAccount) {
@@ -516,7 +439,7 @@ mod tests {
     #[case(OrderSide::Buy, "2.00", "10", "10 GBP")]
     #[case(OrderSide::Buy, "10.00", "10", "90 GBP")]
     fn test_calculate_balance_locked(
-        mut betting_account: BettingAccount,
+        betting_account: BettingAccount,
         betting: crate::instruments::BettingInstrument,
         #[case] side: OrderSide,
         #[case] price: &str,
@@ -566,6 +489,57 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, vec![Money::from("-80 GBP")]);
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_does_not_clamp_when_fill_extends_position(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let order1 = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(betting.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .build();
+        let betting_any = betting.clone().into_any();
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &betting_any,
+            None,
+            None,
+            Some(Price::from("0.5")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let order2 = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(betting.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("200"))
+            .build();
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &betting_any,
+            None,
+            None,
+            Some(Price::from("0.8")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        );
+
+        let position = Position::new(&betting_any, fill1.into());
+        let fill2_owned: crate::events::OrderFilled = fill2.into();
+        let result = betting_account
+            .calculate_pnls(&betting_any, &fill2_owned, Some(position))
+            .unwrap();
+
+        assert_eq!(result, vec![Money::from("-160 GBP")]);
     }
 
     #[rstest]
@@ -629,6 +603,7 @@ mod tests {
             Quantity::from("1"),
             Price::from("1"),
             LiquiditySide::NoLiquiditySide,
+            MakerTakerFeeRates::zero(),
             None,
         );
         assert!(
@@ -652,14 +627,60 @@ mod tests {
         #[case] quantity: &str,
         #[case] expected: &str,
     ) {
-        let impact = betting_account.balance_impact(
-            &betting.into_any(),
-            Quantity::from(quantity),
-            Price::from(price),
-            side,
-        );
+        let impact = betting_account
+            .balance_impact(
+                &betting.into_any(),
+                Quantity::from(quantity),
+                Price::from(price),
+                side,
+            )
+            .unwrap();
 
         assert_eq!(impact, Money::from(expected));
+    }
+
+    #[rstest]
+    fn test_balance_impact_rejects_unrepresentable_liability(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let currency = betting.quote_currency();
+        let expected = Money::from_decimal(dec!(-99_999_000_000_000), currency).unwrap_err();
+
+        let error = betting_account
+            .balance_impact(
+                &betting.into_any(),
+                Quantity::from("1000000000"),
+                Price::from("100000"),
+                OrderSide::Buy,
+            )
+            .unwrap_err();
+
+        assert_eq!(error.to_string(), expected.to_string());
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(crate::types::price::PRICE_ERROR)]
+    #[case(crate::types::price::PRICE_UNDEF)]
+    fn test_balance_impact_rejects_liability_overflow(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+        #[case] raw: crate::types::price::PriceRaw,
+    ) {
+        let quantity = Quantity::from("10000000");
+        let price = Price::from_raw(raw, 0);
+
+        let error = betting_account
+            .balance_impact(&betting.into_any(), quantity, price, OrderSide::Buy)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Betting liability for quantity {quantity} at price {price} exceeds `Decimal` range"
+            )
+        );
     }
 
     #[rstest]
@@ -706,12 +727,46 @@ mod tests {
         let instrument_id =
             crate::identifiers::InstrumentId::from("BETFAIR-1.2345678-12345678-0.0.NONE");
 
-        betting_account.update_balance_locked(instrument_id, Money::from("1500 GBP"));
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("1500 GBP"))
+            .unwrap();
 
         let balance = betting_account.balance(Some(Currency::GBP())).unwrap();
         assert_eq!(balance.locked, Money::from("1000 GBP"));
         assert_eq!(balance.free, Money::from("0 GBP"));
         assert_eq!(balance.total, Money::from("1000 GBP"));
+    }
+
+    #[rstest]
+    fn test_update_balance_locked_precision_mismatch_preserves_state(
+        mut betting_account: BettingAccount,
+    ) {
+        let instrument_id = InstrumentId::from("BETFAIR-1.2345678-12345678-0.0.NONE");
+        let gbp = Currency::GBP();
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("100 GBP"))
+            .unwrap();
+        let balance_before = *betting_account.balance(Some(gbp)).unwrap();
+        let locks_before = betting_account.balances_locked.clone();
+        let mismatched_gbp = Currency::new(
+            "GBP",
+            gbp.precision + 1,
+            826,
+            "Pound Sterling",
+            CurrencyType::Fiat,
+        );
+        let locked = Money::from_decimal(Decimal::from(50), mismatched_gbp).unwrap();
+
+        let error = betting_account
+            .update_balance_locked(instrument_id, locked)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot update GBP reservation: precision 3 differed from balance precision 2"
+        );
+        assert_eq!(betting_account.balance(Some(gbp)), Some(&balance_before));
+        assert_eq!(betting_account.balances_locked, locks_before);
     }
 
     #[rstest]
@@ -749,7 +804,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_balance_locked_rejects_non_betting_instrument(
-        mut betting_account: BettingAccount,
+        betting_account: BettingAccount,
     ) {
         let audusd = crate::instruments::stubs::audusd_sim();
         let result = betting_account.calculate_balance_locked(
@@ -762,5 +817,55 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("sports betting"));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_rejects_use_quote_for_inverse(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let result = betting_account.calculate_balance_locked(
+            &betting.into_any(),
+            OrderSide::Buy,
+            Quantity::from("100"),
+            Price::from("1.5"),
+            Some(true),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "`use_quote_for_inverse` is not applicable for betting accounts"
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_rejects_non_betting_instrument(betting_account: BettingAccount) {
+        let audusd = crate::instruments::stubs::audusd_sim();
+        let audusd_any = audusd.into_any();
+        let order = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(audusd_any.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .build();
+        let fill: crate::events::OrderFilled = TestOrderEventStubs::filled(
+            &order,
+            &audusd_any,
+            None,
+            None,
+            Some(Price::from("0.8")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        )
+        .into();
+
+        let result = betting_account.calculate_pnls(&audusd_any, &fill, None);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "BettingAccount requires a sports betting instrument"
+        );
     }
 }

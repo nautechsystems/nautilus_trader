@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! URL resolution helpers for Binance API endpoints.
+//! Environment-aware Binance API endpoint URLs.
 
 use super::{
     consts::{
@@ -250,7 +250,7 @@ fn is_usdm_ws_host(base_url: &str) -> bool {
 
 /// Returns a routed USD-M Futures WebSocket URL derived from an override.
 ///
-/// Binance now routes USD-M Futures live traffic by category. This helper
+/// Binance now routes USD-M Futures live traffic by category. This function
 /// accepts either a root override (for example `wss://fstream.binance.com`) or
 /// a routed/transport-specific override such as `/market`, `/public/ws`, or
 /// `/private/stream`, then rebuilds the URL for the requested route.
@@ -346,9 +346,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_http_url_usdm_testnet() {
-        let url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Testnet);
-        assert_eq!(url, "https://demo-fapi.binance.com");
+    fn test_urls_usdm_testnet() {
+        let http_url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Testnet);
+        let ws_url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Testnet);
+
+        assert_eq!(http_url, "https://testnet.binancefuture.com");
+        assert_eq!(ws_url, "wss://fstream.binancefuture.com/ws");
     }
 
     #[rstest]
@@ -358,9 +361,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_http_url_usdm_demo() {
-        let url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Demo);
-        assert_eq!(url, "https://demo-fapi.binance.com");
+    fn test_urls_usdm_demo() {
+        let http_url = get_http_base_url(BinanceProductType::UsdM, BinanceEnvironment::Demo);
+        let ws_url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Demo);
+
+        assert_eq!(http_url, "https://demo-fapi.binance.com");
+        assert_eq!(ws_url, "wss://demo-fstream.binance.com/ws");
     }
 
     #[rstest]
@@ -397,18 +403,6 @@ mod tests {
     fn test_ws_url_usdm_live() {
         let url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Live);
         assert_eq!(url, "wss://fstream.binance.com/market/ws");
-    }
-
-    #[rstest]
-    fn test_ws_url_usdm_testnet() {
-        let url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Testnet);
-        assert_eq!(url, "wss://fstream.binancefuture.com/ws");
-    }
-
-    #[rstest]
-    fn test_ws_url_usdm_demo() {
-        let url = get_ws_base_url(BinanceProductType::UsdM, BinanceEnvironment::Demo);
-        assert_eq!(url, "wss://demo-fstream.binance.com/ws");
     }
 
     #[rstest]

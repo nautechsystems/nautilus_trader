@@ -31,7 +31,10 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{
+        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
     events::OrderEventAny,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
@@ -44,7 +47,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-use super::{ids::*, orders::*, positions::*, types::*};
+use super::{ids::*, orders::*, positions::*, tests::venue_position_snapshot, types::*};
 
 fn instrument() -> InstrumentAny {
     InstrumentAny::CurrencyPair(audusd_sim())
@@ -83,11 +86,8 @@ fn order_side_strategy() -> impl Strategy<Value = OrderSide> {
     prop_oneof![Just(OrderSide::Buy), Just(OrderSide::Sell)]
 }
 
-fn position_side_strategy() -> impl Strategy<Value = PositionSideSpecified> {
-    prop_oneof![
-        Just(PositionSideSpecified::Long),
-        Just(PositionSideSpecified::Short),
-    ]
+fn position_side_strategy() -> impl Strategy<Value = PositionSide> {
+    prop_oneof![Just(PositionSide::Long), Just(PositionSide::Short),]
 }
 
 fn qty_decimal() -> impl Strategy<Value = Decimal> {
@@ -243,7 +243,12 @@ proptest! {
         px in (1i64..=100_000i64).prop_map(|v| Decimal::new(v, 2)),
     ) {
         let value = qty.abs() * px;
-        prop_assert!(check_position_match(qty, value, qty, px, dec!(0.0001)));
+        prop_assert!(check_position_match(
+            qty,
+            value,
+            &venue_position_snapshot(qty, px),
+            dec!(0.0001)
+        ));
     }
 
     #[rstest]
@@ -253,7 +258,12 @@ proptest! {
         px in px_decimal(),
     ) {
         prop_assume!(qty1 != qty2);
-        prop_assert!(!check_position_match(qty1, qty1.abs() * px, qty2, px, dec!(0.0001)));
+        prop_assert!(!check_position_match(
+            qty1,
+            qty1.abs() * px,
+            &venue_position_snapshot(qty2, px),
+            dec!(0.0001)
+        ));
     }
 
     #[rstest]
@@ -261,7 +271,7 @@ proptest! {
         qty in (1i64..=1_000i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
-        let result = calculate_reconciliation_price(qty, Some(px), qty, Some(px));
+        let result = calculate_reconciliation_price(qty, Some(px), qty, Some(px), AvgPxReconciliation::Match, None);
         prop_assert_eq!(result, None);
     }
 
@@ -275,6 +285,8 @@ proptest! {
             None,
             target_qty,
             Some(target_px),
+            AvgPxReconciliation::Match,
+            None,
         );
         prop_assert_eq!(result, Some(target_px));
     }
@@ -284,7 +296,7 @@ proptest! {
         qty in (1i64..=1_000i64).prop_map(Decimal::from),
         px in px_decimal(),
     ) {
-        let result = calculate_reconciliation_price(qty, Some(px), Decimal::ZERO, None);
+        let result = calculate_reconciliation_price(qty, Some(px), Decimal::ZERO, None, AvgPxReconciliation::Match, None);
         prop_assert_eq!(result, Some(px));
     }
 
@@ -301,6 +313,8 @@ proptest! {
             Some(current_px),
             target_qty,
             Some(target_px),
+            AvgPxReconciliation::Match,
+            None,
         );
 
         if let Some(px) = recon_px {
@@ -352,7 +366,13 @@ proptest! {
         qty in qty_decimal(),
         px in px_decimal(),
     ) {
-        let venue = VenuePositionSnapshot { side, qty, avg_px: px };
+        let venue = VenuePositionSnapshot {
+            side,
+            qty,
+            avg_px: px,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
+        };
         let result = adjust_fills_for_partial_window(&[], &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
     }
@@ -360,9 +380,11 @@ proptest! {
     #[rstest]
     fn prop_adjust_fills_flat_venue_is_no_adjustment(fills in fill_sequence_strategy(0, 10)) {
         let venue = VenuePositionSnapshot {
-            side: PositionSideSpecified::Long,
+            side: PositionSide::Long,
             qty: Decimal::ZERO,
             avg_px: Decimal::ZERO,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
         };
         let result = adjust_fills_for_partial_window(&fills, &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
@@ -388,9 +410,11 @@ proptest! {
         let sim_avg = sim_value / sim_qty;
 
         let venue = VenuePositionSnapshot {
-            side: PositionSideSpecified::Long,
+            side: PositionSide::Long,
             qty: sim_qty,
             avg_px: sim_avg,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
         };
         let result = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
         prop_assert_eq!(result, FillAdjustmentResult::NoAdjustment);
@@ -433,9 +457,11 @@ proptest! {
         let target_avg = target_value / target_qty;
 
         let venue = VenuePositionSnapshot {
-            side: PositionSideSpecified::Long,
+            side: PositionSide::Long,
             qty: target_qty,
             avg_px: target_avg,
+            avg_px_reconciliation: AvgPxReconciliation::Match,
+            avg_px_precision: None,
         };
 
         let adjustment = adjust_fills_for_partial_window(&snapshots, &venue, dec!(0.0001));
@@ -472,6 +498,8 @@ proptest! {
             Some(current_px),
             target_qty,
             Some(target_px),
+            AvgPxReconciliation::Match,
+            None,
         );
         prop_assert_eq!(recon_px, Some(target_px));
 
@@ -594,7 +622,7 @@ fn status_report_for(
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         status,
@@ -938,6 +966,7 @@ proptest! {
             ts_last,
         );
         prop_assert_eq!(a, b);
+        prop_assert!(is_inferred_reconciliation_trade_id_format(&a));
     }
 
     #[rstest]
@@ -1122,4 +1151,55 @@ proptest! {
             events,
         );
     }
+
+    #[rstest]
+    fn prop_inferred_fill_price_and_liquidity_matches_emitted_fill(
+        order_qty in 10u64..=1_000u64,
+        fill_qty in 1u64..=9u64,
+        avg_px_units in 1u64..=100_000u64,
+    ) {
+        let inst = instrument();
+        let account_id = AccountId::from("SIM-001");
+        let voi = VenueOrderId::from("V-001");
+
+        let mut order = build_market_order(&inst, order_qty);
+        submit_accept(&mut order, account_id, voi);
+
+        let mut report = status_report_for(
+            order.client_order_id(),
+            voi,
+            inst.id(),
+            Quantity::from(order_qty),
+            Quantity::from(fill_qty),
+            OrderStatus::PartiallyFilled,
+        );
+        report.avg_px = Some(Decimal::from(avg_px_units) / dec!(10000));
+
+        let resolved = inferred_fill_price_and_liquidity(&order, &report, &inst);
+        prop_assert!(resolved.is_some());
+        let (last_px, liquidity_side) = resolved.unwrap();
+
+        // A market order is always taker liquidity, and the price carries instrument precision
+        prop_assert_eq!(liquidity_side, LiquiditySide::Taker);
+        prop_assert_eq!(last_px.precision, inst.price_precision());
+
+        let event = create_inferred_fill_for_qty(
+            &order,
+            &report,
+            &account_id,
+            &inst,
+            Quantity::from(fill_qty),
+            UnixNanos::default(),
+            None,
+        );
+        prop_assert!(event.is_some());
+        match event.unwrap() {
+            OrderEventAny::Filled(filled) => {
+                prop_assert_eq!(filled.last_px, last_px);
+                prop_assert_eq!(filled.liquidity_side, liquidity_side);
+            }
+            other => prop_assert!(false, "expected Filled, was {:?}", other),
+        }
+    }
+
 }

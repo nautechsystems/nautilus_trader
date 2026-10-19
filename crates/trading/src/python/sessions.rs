@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::python::common::EnumIterator;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
@@ -85,15 +85,19 @@ impl ForexSession {
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.trading")]
 #[pyo3(name = "fx_local_from_utc")]
-pub fn py_fx_local_from_utc(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<String> {
-    Ok(fx_local_from_utc(session, time_now).to_rfc3339())
+pub fn py_fx_local_from_utc(session: ForexSession, time_now: Timestamp) -> PyResult<String> {
+    let local = fx_local_from_utc(session, time_now);
+    Ok(local
+        .timestamp()
+        .display_with_offset(local.offset())
+        .to_string())
 }
 
 /// Returns the next session start time in UTC.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.trading")]
 #[pyo3(name = "fx_next_start")]
-pub fn py_fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
+pub fn py_fx_next_start(session: ForexSession, time_now: Timestamp) -> PyResult<Timestamp> {
     Ok(fx_next_start(session, time_now))
 }
 
@@ -101,7 +105,7 @@ pub fn py_fx_next_start(session: ForexSession, time_now: DateTime<Utc>) -> PyRes
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.trading")]
 #[pyo3(name = "fx_next_end")]
-pub fn py_fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
+pub fn py_fx_next_end(session: ForexSession, time_now: Timestamp) -> PyResult<Timestamp> {
     Ok(fx_next_end(session, time_now))
 }
 
@@ -109,7 +113,7 @@ pub fn py_fx_next_end(session: ForexSession, time_now: DateTime<Utc>) -> PyResul
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.trading")]
 #[pyo3(name = "fx_prev_start")]
-pub fn py_fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
+pub fn py_fx_prev_start(session: ForexSession, time_now: Timestamp) -> PyResult<Timestamp> {
     Ok(fx_prev_start(session, time_now))
 }
 
@@ -117,6 +121,6 @@ pub fn py_fx_prev_start(session: ForexSession, time_now: DateTime<Utc>) -> PyRes
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.trading")]
 #[pyo3(name = "fx_prev_end")]
-pub fn py_fx_prev_end(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<DateTime<Utc>> {
+pub fn py_fx_prev_end(session: ForexSession, time_now: Timestamp) -> PyResult<Timestamp> {
     Ok(fx_prev_end(session, time_now))
 }

@@ -16,7 +16,9 @@
 use indexmap::IndexMap;
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{
+        IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err, to_pyruntime_err, to_pyvalue_err,
+    },
 };
 use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
@@ -25,17 +27,18 @@ use crate::{
     accounts::{Account, MarginAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
+    fees::MakerTakerFeeRates,
     identifiers::{AccountId, InstrumentId},
     instruments::InstrumentAny,
     position::Position,
-    python::instruments::pyobject_to_instrument_any,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    python::{account::resolve_balance_currency, instruments::pyobject_to_instrument_any},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarginAccount {
-    /// Creates a new `MarginAccount` instance.
+    /// Represents a margin account that can hold leveraged positions.
     #[new]
     fn py_new(event: AccountState, calculate_account_state: bool) -> Self {
         Self::new(event, calculate_account_state)
@@ -97,8 +100,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance_total")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
-        Account::balance_total(self, currency)
+    fn py_balance_total(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance_total(self, Some(currency)))
     }
 
     #[pyo3(name = "balances_total")]
@@ -108,8 +112,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance_free")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
-        Account::balance_free(self, currency)
+    fn py_balance_free(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance_free(self, Some(currency)))
     }
 
     #[pyo3(name = "balances_free")]
@@ -119,8 +124,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance_locked")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
-        Account::balance_locked(self, currency)
+    fn py_balance_locked(&self, currency: Option<Currency>) -> PyResult<Option<Money>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance_locked(self, Some(currency)))
     }
 
     #[pyo3(name = "balances_locked")]
@@ -130,8 +136,9 @@ impl MarginAccount {
 
     #[pyo3(name = "balance")]
     #[pyo3(signature = (currency=None))]
-    fn py_balance(&self, currency: Option<Currency>) -> Option<AccountBalance> {
-        Account::balance(self, currency).copied()
+    fn py_balance(&self, currency: Option<Currency>) -> PyResult<Option<AccountBalance>> {
+        let currency = resolve_balance_currency(currency, self.base_currency)?;
+        Ok(Account::balance(self, Some(currency)).copied())
     }
 
     #[pyo3(name = "balances")]
@@ -172,7 +179,7 @@ impl MarginAccount {
     #[pyo3(name = "calculate_balance_locked")]
     #[pyo3(signature = (instrument, side, quantity, price, use_quote_for_inverse=None))]
     fn py_calculate_balance_locked(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         side: OrderSide,
         quantity: Quantity,
@@ -193,13 +200,16 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "calculate_commission")]
-    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, use_quote_for_inverse=None))]
+    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, maker_rate, taker_rate, use_quote_for_inverse=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_calculate_commission(
         &self,
         instrument: Py<PyAny>,
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
+        maker_rate: Decimal,
+        taker_rate: Decimal,
         use_quote_for_inverse: Option<bool>,
         py: Python,
     ) -> PyResult<Money> {
@@ -207,12 +217,14 @@ impl MarginAccount {
             return Err(to_pyvalue_err("Invalid liquidity side"));
         }
         let instrument = pyobject_to_instrument_any(py, instrument)?;
+        let fee_rates = MakerTakerFeeRates::new(maker_rate, taker_rate);
         Account::calculate_commission(
             self,
             &instrument,
             last_qty,
             last_px,
             liquidity_side,
+            fee_rates,
             use_quote_for_inverse,
         )
         .map_err(to_pyvalue_err)
@@ -246,8 +258,9 @@ impl MarginAccount {
 
     /// Sets the default leverage for the account.
     #[pyo3(name = "set_default_leverage")]
-    fn py_set_default_leverage(&mut self, default_leverage: Decimal) {
-        self.set_default_leverage(default_leverage);
+    fn py_set_default_leverage(&mut self, default_leverage: Decimal) -> PyResult<()> {
+        self.try_set_default_leverage(default_leverage)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     #[pyo3(name = "leverages")]
@@ -266,8 +279,9 @@ impl MarginAccount {
 
     /// Sets the leverage for a specific instrument.
     #[pyo3(name = "set_leverage")]
-    fn py_set_leverage(&mut self, instrument_id: InstrumentId, leverage: Decimal) {
-        self.set_leverage(instrument_id, leverage);
+    fn py_set_leverage(&mut self, instrument_id: InstrumentId, leverage: Decimal) -> PyResult<()> {
+        self.try_set_leverage(instrument_id, leverage)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     #[pyo3(name = "is_unleveraged")]
@@ -275,22 +289,74 @@ impl MarginAccount {
         self.is_unleveraged(instrument_id)
     }
 
+    /// Returns the margin balance for the specified instrument.
+    #[pyo3(name = "margin")]
+    fn py_margin(&self, instrument_id: InstrumentId) -> Option<MarginBalance> {
+        self.margin(&instrument_id)
+    }
+
+    #[pyo3(name = "margins")]
+    fn py_margins(&self) -> IndexMap<InstrumentId, MarginBalance> {
+        self.margins.clone()
+    }
+
     #[pyo3(name = "initial_margins")]
-    fn py_initial_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let initial_margins = PyDict::new(py);
-        for (key, &value) in &self.initial_margins() {
-            initial_margins.set_item(key.into_py_any(py)?, value.into_py_any(py)?)?;
-        }
-        initial_margins.into_py_any(py)
+    fn py_initial_margins(&self) -> IndexMap<InstrumentId, Money> {
+        self.initial_margins()
     }
 
     #[pyo3(name = "maintenance_margins")]
-    fn py_maintenance_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let maintenance_margins = PyDict::new(py);
-        for (key, &value) in &self.maintenance_margins() {
-            maintenance_margins.set_item(key.into_py_any(py)?, value.into_py_any(py)?)?;
-        }
-        maintenance_margins.into_py_any(py)
+    fn py_maintenance_margins(&self) -> IndexMap<InstrumentId, Money> {
+        self.maintenance_margins()
+    }
+
+    /// Returns the account-wide margin balance for the specified collateral currency.
+    #[pyo3(name = "account_margin")]
+    fn py_account_margin(&self, currency: Currency) -> Option<MarginBalance> {
+        self.account_margin(&currency)
+    }
+
+    #[pyo3(name = "account_margins")]
+    fn py_account_margins(&self) -> IndexMap<Currency, MarginBalance> {
+        self.account_margins.clone()
+    }
+
+    /// Returns the account-wide initial margin for the specified collateral currency.
+    #[pyo3(name = "account_initial_margin")]
+    fn py_account_initial_margin(&self, currency: Currency) -> Option<Money> {
+        self.account_initial_margin(&currency)
+    }
+
+    /// Returns all account-wide initial margins keyed by currency.
+    #[pyo3(name = "account_initial_margins")]
+    fn py_account_initial_margins(&self) -> IndexMap<Currency, Money> {
+        self.account_initial_margins()
+    }
+
+    /// Returns the account-wide maintenance margin for the specified collateral currency.
+    #[pyo3(name = "account_maintenance_margin")]
+    fn py_account_maintenance_margin(&self, currency: Currency) -> Option<Money> {
+        self.account_maintenance_margin(&currency)
+    }
+
+    /// Returns all account-wide maintenance margins keyed by currency.
+    #[pyo3(name = "account_maintenance_margins")]
+    fn py_account_maintenance_margins(&self) -> IndexMap<Currency, Money> {
+        self.account_maintenance_margins()
+    }
+
+    /// Returns the total initial margin reserved in the specified currency,
+    /// summing per-instrument and account-wide entries.
+    #[pyo3(name = "total_initial_margin")]
+    fn py_total_initial_margin(&self, currency: Currency) -> Money {
+        self.total_initial_margin(currency)
+    }
+
+    /// Returns the total maintenance margin reserved in the specified currency,
+    /// summing per-instrument and account-wide entries.
+    #[pyo3(name = "total_maintenance_margin")]
+    fn py_total_maintenance_margin(&self, currency: Currency) -> Money {
+        self.total_maintenance_margin(currency)
     }
 
     /// Updates the initial margin for the specified instrument.
@@ -332,7 +398,7 @@ impl MarginAccount {
     /// Returns an error if leverage is not positive, or if the result cannot be represented
     /// as `Money`.
     pub fn py_calculate_initial_margin(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         quantity: Quantity,
         price: Price,
@@ -408,7 +474,7 @@ impl MarginAccount {
     #[pyo3(name = "calculate_maintenance_margin")]
     #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_maintenance_margin(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         quantity: Quantity,
         price: Price,

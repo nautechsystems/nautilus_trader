@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use core::fmt::NumBuffer;
 use std::{
     cell::RefCell,
     fmt::{Debug, Write},
     rc::Rc,
 };
 
-use chrono::{DateTime, Datelike, Timelike};
-use itoa::Buffer;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_model::identifiers::{OrderListId, StrategyId, TraderId};
 
 use crate::clock::Clock;
@@ -38,7 +38,7 @@ pub struct OrderListIdGenerator {
     buf: String,
     fixed_prefix_len: usize,
     epoch_second: u64,
-    count_buf: Buffer,
+    count_buf: NumBuffer<usize>,
 }
 
 impl Debug for OrderListIdGenerator {
@@ -82,7 +82,7 @@ impl OrderListIdGenerator {
             buf,
             fixed_prefix_len: 0,
             epoch_second: u64::MAX,
-            count_buf: Buffer::new(),
+            count_buf: NumBuffer::new(),
         }
     }
 
@@ -105,7 +105,8 @@ impl OrderListIdGenerator {
         self.count += 1;
 
         self.buf.truncate(self.fixed_prefix_len);
-        self.buf.push_str(self.count_buf.format(self.count));
+        self.buf
+            .push_str(self.count.format_into(&mut self.count_buf));
 
         OrderListId::from(self.buf.as_str())
     }
@@ -140,8 +141,12 @@ fn fixed_prefix_capacity(trader_tag: &str, strategy_tag: &str) -> usize {
 }
 
 fn write_fixed_prefix(buf: &mut String, trader_tag: &str, strategy_tag: &str, epoch_second: u64) {
-    let now_utc = DateTime::from_timestamp_millis((epoch_second * 1_000) as i64)
-        .expect("Milliseconds timestamp should be within valid range");
+    let now_utc = Offset::UTC.to_datetime(
+        Timestamp::from_second(
+            i64::try_from(epoch_second).expect("seconds timestamp should fit i64"),
+        )
+        .expect("seconds timestamp should be within valid range"),
+    );
 
     buf.clear();
 
@@ -169,10 +174,10 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{clock::TestClock, generators::order_list_id::OrderListIdGenerator};
+    use crate::{clock::VirtualClock, generators::order_list_id::OrderListIdGenerator};
 
     fn get_order_list_id_generator(initial_count: Option<usize>) -> OrderListIdGenerator {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         OrderListIdGenerator::new(
             TraderId::test_default(),
             StrategyId::test_default(),
@@ -239,7 +244,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_refreshes_persistent_fixed_prefix_when_second_changes() {
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let mut generator = OrderListIdGenerator::new(
             TraderId::test_default(),
             StrategyId::test_default(),

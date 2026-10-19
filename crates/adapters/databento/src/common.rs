@@ -17,10 +17,13 @@
 
 use std::{fmt::Debug, fs, path::Path, sync::LazyLock};
 
-use databento::historical::DateTimeRange;
+use databento::{dbn, historical::DateTimeRange};
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, string::secret::REDACTED};
-use nautilus_model::identifiers::{ClientId, Venue};
+use nautilus_model::{
+    enums::BarAggregation,
+    identifiers::{ClientId, Venue},
+};
 use time::OffsetDateTime;
 use ustr::Ustr;
 use zeroize::ZeroizeOnDrop;
@@ -87,10 +90,11 @@ impl Credential {
 
     /// Returns the API key associated with this credential.
     ///
-    /// # Panics
-    ///
-    /// This method should never panic as the API key is always valid UTF-8,
-    /// having been created from a String.
+    /// The API key is always valid UTF-8 because it is created from a `String`.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "the API key is created from a UTF-8 String"
+    )]
     #[must_use]
     pub fn api_key(&self) -> &str {
         std::str::from_utf8(&self.api_key).expect("API key is valid UTF-8")
@@ -114,6 +118,21 @@ pub fn get_date_time_range(start: UnixNanos, end: UnixNanos) -> anyhow::Result<D
         OffsetDateTime::from_unix_timestamp_nanos(i128::from(start.as_u64()))?,
         OffsetDateTime::from_unix_timestamp_nanos(i128::from(end.as_u64()))?,
     )))
+}
+
+/// Returns the Databento OHLCV schema for a bar aggregation.
+///
+/// # Errors
+///
+/// Returns an error if Databento has no OHLCV schema for `aggregation`.
+pub fn ohlcv_schema_from_aggregation(aggregation: BarAggregation) -> anyhow::Result<dbn::Schema> {
+    match aggregation {
+        BarAggregation::Second => Ok(dbn::Schema::Ohlcv1S),
+        BarAggregation::Minute => Ok(dbn::Schema::Ohlcv1M),
+        BarAggregation::Hour => Ok(dbn::Schema::Ohlcv1H),
+        BarAggregation::Day => Ok(dbn::Schema::Ohlcv1D),
+        _ => anyhow::bail!("Unsupported bar aggregation for Databento OHLCV: {aggregation:?}"),
+    }
 }
 
 #[cfg(test)]

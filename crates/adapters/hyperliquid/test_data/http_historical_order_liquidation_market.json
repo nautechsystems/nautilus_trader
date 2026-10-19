@@ -1,0 +1,16 @@
+{
+  "order": {
+    "coin": "BTC",
+    "side": "B",
+    "limitPx": "60000.0",
+    "sz": "0.0",
+    "oid": 42,
+    "timestamp": 1724361546645,
+    "origSz": "0.001",
+    "tif": "LiquidationMarket",
+    "cloid": null,
+    "reduceOnly": true
+  },
+  "status": "filled",
+  "statusTimestamp": 1724361546645
+}

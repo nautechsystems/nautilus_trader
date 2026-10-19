@@ -32,8 +32,9 @@ const GAP_HASH_DOMAIN: &[u8] = b"nautilus-event-store/gap/v1";
 pub enum DataClass {
     /// Order-book delta stream.
     BookDeltas,
-    /// Level-10 order-book snapshot stream.
-    BookDepth10,
+    /// Order-book depth snapshot stream.
+    #[serde(alias = "BookDepth10")]
+    BookDepth,
     /// Quote (level-1 bid/ask) stream.
     Quote,
     /// Trade (last sale) stream.
@@ -48,7 +49,21 @@ impl DataClass {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::BookDeltas => "BookDeltas",
-            Self::BookDepth10 => "BookDepth10",
+            Self::BookDepth => "BookDepth",
+            Self::Quote => "Quote",
+            Self::Trade => "Trade",
+            Self::Bar => "Bar",
+        }
+    }
+
+    /// Returns the stable token hashed into [`compute_dict_hash`].
+    ///
+    /// The depth token predates the canonical rename; keeping it fixed means hashes recorded by
+    /// pre-rename builds keep verifying.
+    const fn persisted_hash_token(self) -> &'static str {
+        match self {
+            Self::BookDeltas => "BookDeltas",
+            Self::BookDepth => "BookDepth10",
             Self::Quote => "Quote",
             Self::Trade => "Trade",
             Self::Bar => "Bar",
@@ -68,7 +83,8 @@ impl std::str::FromStr for DataClass {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "BookDeltas" => Ok(Self::BookDeltas),
-            "BookDepth10" => Ok(Self::BookDepth10),
+            // Legacy spelling written by markers recorded before the canonical rename
+            "BookDepth" | "BookDepth10" => Ok(Self::BookDepth),
             "Quote" => Ok(Self::Quote),
             "Trade" => Ok(Self::Trade),
             "Bar" => Ok(Self::Bar),
@@ -210,7 +226,7 @@ pub fn compute_dict_hash(entry: &StreamDictEntry) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(DICT_HASH_DOMAIN);
     hasher.update(&entry.slot.to_be_bytes());
-    let class = entry.data_cls.as_str().as_bytes();
+    let class = entry.data_cls.persisted_hash_token().as_bytes();
     hasher.update(&(class.len() as u64).to_be_bytes());
     hasher.update(class);
     let identifier = entry.identifier.as_bytes();
@@ -243,6 +259,7 @@ mod tests {
     use std::{fmt::Write, str::FromStr};
 
     use rstest::rstest;
+    use serde::Deserialize;
 
     use super::*;
 
@@ -250,7 +267,7 @@ mod tests {
     fn data_class_roundtrips_to_str() {
         let variants = [
             (DataClass::BookDeltas, "BookDeltas"),
-            (DataClass::BookDepth10, "BookDepth10"),
+            (DataClass::BookDepth, "BookDepth"),
             (DataClass::Quote, "Quote"),
             (DataClass::Trade, "Trade"),
             (DataClass::Bar, "Bar"),
@@ -427,13 +444,61 @@ mod tests {
     #[case::quote_lowercase("quote")]
     #[case::empty("")]
     #[case::trailing_s("Quotes")]
-    #[case::partial("BookDepth")]
+    #[case::partial("BookDep")]
     fn data_class_from_str_rejects_unknown(#[case] input: &str) {
         let err = DataClass::from_str(input).unwrap_err();
 
         assert!(
             err.contains(input),
             "error should name the rejected input, was `{err}`"
+        );
+    }
+
+    #[rstest]
+    fn dict_hash_for_depth_class_uses_pre_rename_token() {
+        let entry = StreamDictEntry {
+            slot: 7,
+            data_cls: DataClass::BookDepth,
+            identifier: "BTCUSDT-PERP.BINANCE".to_string(),
+        };
+
+        // Pinned so the hashed class token cannot drift from what pre-rename
+        // builds recorded; see `DataClass::persisted_hash_token`.
+        assert_eq!(
+            compute_dict_hash(&entry),
+            [
+                0x9c, 0x2e, 0x1e, 0xd8, 0x46, 0xe0, 0xa5, 0x24, 0xea, 0x3d, 0xb2, 0x49, 0x48, 0xbf,
+                0x66, 0xf7, 0x00, 0x8b, 0x91, 0x21, 0x4a, 0x60, 0x9d, 0x75, 0xca, 0x07, 0x0c, 0x1e,
+                0xbf, 0xe2, 0xa7, 0x79,
+            ]
+        );
+    }
+
+    #[rstest]
+    fn data_class_from_str_accepts_legacy_depth10_spelling() {
+        assert_eq!(
+            DataClass::from_str("BookDepth10").unwrap(),
+            DataClass::BookDepth
+        );
+        assert_eq!(
+            DataClass::from_str("BookDepth").unwrap(),
+            DataClass::BookDepth
+        );
+    }
+
+    #[rstest]
+    fn data_class_serde_accepts_legacy_depth10_spelling() {
+        let legacy =
+            serde::de::value::StrDeserializer::<serde::de::value::Error>::new("BookDepth10");
+        assert_eq!(
+            DataClass::deserialize(legacy).unwrap(),
+            DataClass::BookDepth
+        );
+        let canonical =
+            serde::de::value::StrDeserializer::<serde::de::value::Error>::new("BookDepth");
+        assert_eq!(
+            DataClass::deserialize(canonical).unwrap(),
+            DataClass::BookDepth
         );
     }
 

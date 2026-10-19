@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers account, condition, and routing enumerations.
+
 use std::fmt::Display;
 
 /// Interactive Brokers order origin values.
@@ -20,7 +22,7 @@ use std::fmt::Display;
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -52,7 +54,10 @@ impl From<i32> for IbOrderOrigin {
         match value {
             0 => Self::Customer,
             1 => Self::Firm,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB order origin code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -75,7 +80,7 @@ impl IbOrderOrigin {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -110,7 +115,10 @@ impl From<i32> for IbShortSaleSlot {
             0 => Self::None,
             1 => Self::Broker,
             2 => Self::ThirdParty,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB short-sale slot code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -133,7 +141,7 @@ impl IbShortSaleSlot {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -165,7 +173,10 @@ impl From<i32> for IbVolatilityType {
         match value {
             1 => Self::Daily,
             2 => Self::Annual,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB volatility type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -188,7 +199,7 @@ impl IbVolatilityType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -220,7 +231,10 @@ impl From<i32> for IbReferencePriceType {
         match value {
             1 => Self::AverageOfNbbo,
             2 => Self::Nbbo,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB reference price type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -243,7 +257,7 @@ impl IbReferencePriceType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -278,7 +292,10 @@ impl From<i32> for IbAuctionStrategy {
             1 => Self::Match,
             2 => Self::Improvement,
             3 => Self::Transparent,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB auction strategy code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -289,19 +306,12 @@ impl Display for IbAuctionStrategy {
     }
 }
 
-impl IbAuctionStrategy {
-    #[must_use]
-    pub fn ibapi_auction_strategy(self) -> ibapi::orders::AuctionStrategy {
-        ibapi::orders::AuctionStrategy::from(self.as_i32())
-    }
-}
-
 /// Interactive Brokers option exercise action values.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -333,7 +343,10 @@ impl From<i32> for IbExerciseAction {
         match value {
             1 => Self::Exercise,
             2 => Self::Lapse,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB exercise action code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -359,7 +372,7 @@ impl IbExerciseAction {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -391,7 +404,10 @@ impl From<i32> for IbArticleType {
         match value {
             0 => Self::Text,
             1 => Self::Binary,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB article type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -414,7 +430,7 @@ impl IbArticleType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -449,7 +465,10 @@ impl From<i32> for IbAuctionType {
             1 => Self::Opening,
             2 => Self::Closing,
             4 => Self::Volatility,
-            _ => Self::default(),
+            _ => {
+                tracing::warn!("Unknown IB auction type code {value}; using the default");
+                Self::default()
+            }
         }
     }
 }
@@ -464,7 +483,7 @@ impl Display for IbAuctionType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -514,7 +533,7 @@ impl Display for IbRule80A {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -550,7 +569,7 @@ impl Display for IbOrderOpenClose {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -590,7 +609,7 @@ impl Display for IbTwapStrategyType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -630,7 +649,7 @@ impl Display for IbRiskAversion {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -666,7 +685,7 @@ impl Display for IbLegAction {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -704,7 +723,7 @@ impl Display for IbFundDistributionPolicyIndicator {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )
@@ -755,7 +774,7 @@ impl Display for IbFundAssetType {
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
+        module = "nautilus_trader.adapters.interactive_brokers",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE"
     )

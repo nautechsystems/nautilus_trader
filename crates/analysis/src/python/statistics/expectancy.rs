@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 
 #[allow(unused_imports)] // Used in template pattern for returns conversion
 use nautilus_core::UnixNanos;
+use nautilus_model::position::Position;
 use pyo3::prelude::*;
 
 use crate::{statistic::PortfolioStatistic, statistics::expectancy::Expectancy};
@@ -66,7 +67,7 @@ impl Expectancy {
     }
 
     #[pyo3(name = "calculate_from_positions")]
-    fn py_calculate_from_positions(&mut self, _positions: Vec<Py<PyAny>>) -> Option<f64> {
+    fn py_calculate_from_positions(&mut self, _positions: Vec<Position>) -> Option<f64> {
         None
     }
 }

@@ -40,6 +40,7 @@ use std::{
 
 use bytes::Bytes;
 use futures::stream::Stream;
+use jiff::{Timestamp, tz::Offset};
 use nautilus_common::{
     enums::SerializationEncoding,
     live::get_runtime,
@@ -60,7 +61,10 @@ use serde::{Deserialize, Serialize};
 use streams::StreamReadOptions;
 use ustr::Ustr;
 
-use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
+use super::{
+    REDIS_MINID, REDIS_XTRIM, await_handle,
+    stream_fields::{PAYLOAD_KIND_FIELD, PAYLOAD_KIND_TYPED, bus_message_fields},
+};
 use crate::redis::{RedisConnectionConfig, create_redis_connection, get_stream_key};
 
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
@@ -74,14 +78,18 @@ type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
 /// Configuration for a Redis-backed message bus backing.
 ///
 /// Redis 6.2 or higher is required for correct operation.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.infrastructure", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -195,6 +203,22 @@ impl RedisConnectionConfig for RedisMessageBusConfig {
     }
 }
 
+impl MessageBusBackingFactory for RedisMessageBusConfig {
+    fn create(
+        &self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: MessageBusConfig,
+    ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
+        Ok(Box::new(RedisMessageBusBacking::new(
+            trader_id,
+            instance_id,
+            config,
+            self.clone(),
+        )?))
+    }
+}
+
 /// Factory for constructing Redis message bus backings.
 #[derive(Debug, Clone)]
 pub struct RedisMessageBusFactory {
@@ -216,12 +240,7 @@ impl MessageBusBackingFactory for RedisMessageBusFactory {
         instance_id: UUID4,
         config: MessageBusConfig,
     ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
-        Ok(Box::new(RedisMessageBusBacking::new(
-            trader_id,
-            instance_id,
-            config,
-            self.config.clone(),
-        )?))
+        self.config.create(trader_id, instance_id, config)
     }
 }
 
@@ -285,7 +304,7 @@ impl RedisMessageBusBacking {
         let (stream_rx, stream_handle) = if external_streams.is_empty() {
             (None, None)
         } else {
-            let stream_signal_clone = stream_signal.clone();
+            let stream_signal_clone = Arc::clone(&stream_signal);
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
                 Some(stream_rx),
@@ -307,7 +326,7 @@ impl RedisMessageBusBacking {
         // Create heartbeat task
         let heartbeat_signal = Arc::new(AtomicBool::new(false));
         let heartbeat_handle = if let Some(heartbeat_interval_secs) = heartbeat_interval_secs {
-            let signal = heartbeat_signal.clone();
+            let signal = Arc::clone(&heartbeat_signal);
             let pub_tx_clone = pub_tx.clone();
 
             Some(get_runtime().spawn(async move {
@@ -541,12 +560,7 @@ async fn drain_buffer(
 
     for msg in buffer.drain(..) {
         let encoding = msg.encoding.to_string();
-        let items: Vec<(&str, &[u8])> = vec![
-            ("topic", msg.topic.as_ref()),
-            ("type", msg.payload_type.as_str().as_bytes()),
-            ("payload", msg.payload.as_ref()),
-            ("encoding", encoding.as_bytes()),
-        ];
+        let items = bus_message_fields(&msg, &encoding);
         let stream_key = if stream_per_topic {
             format!("{stream_key}:{}", msg.topic)
         } else {
@@ -558,10 +572,10 @@ async fn drain_buffer(
                 &stream_key,
                 streams::StreamMaxlen::Approx(maxlen),
                 "*",
-                &items,
+                items.as_slice(),
             );
         } else {
-            pipe.xadd(&stream_key, "*", &items);
+            pipe.xadd(&stream_key, "*", items.as_slice());
         }
 
         if autotrim_duration.is_none() {
@@ -800,7 +814,8 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     }
 
     let mut topic: Option<String> = None;
-    let mut payload_type = BusPayloadType::Custom(Ustr::default());
+    let mut type_name: Option<String> = None;
+    let mut typed_payload = false;
     let mut encoding = SerializationEncoding::default();
     let mut payload: Option<Bytes> = None;
 
@@ -823,9 +838,22 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
                 let redis::Value::BulkString(bytes) = &pair[1] else {
                     anyhow::bail!("Invalid type format: {stream_msg:?}");
                 };
-                let type_name = std::str::from_utf8(bytes)
-                    .map_err(|e| anyhow::anyhow!("Error parsing type: {e}"))?;
-                payload_type = BusPayloadType::from_name(type_name);
+                type_name = Some(
+                    String::from_utf8(bytes.clone())
+                        .map_err(|e| anyhow::anyhow!("Error parsing type: {e}"))?,
+                );
+            }
+            key if key == PAYLOAD_KIND_FIELD.as_bytes() => {
+                let redis::Value::BulkString(bytes) = &pair[1] else {
+                    anyhow::bail!("Invalid payload kind format: {stream_msg:?}");
+                };
+                let value = std::str::from_utf8(bytes)
+                    .map_err(|e| anyhow::anyhow!("Error parsing payload kind: {e}"))?;
+                anyhow::ensure!(
+                    value == PAYLOAD_KIND_TYPED,
+                    "Unknown payload kind '{value}'"
+                );
+                typed_payload = true;
             }
             b"encoding" => {
                 let redis::Value::BulkString(bytes) = &pair[1] else {
@@ -852,6 +880,15 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     };
     let Some(payload) = payload else {
         anyhow::bail!("Stream message missing payload: {stream_msg:?}");
+    };
+    let payload_type = match type_name {
+        Some(type_name) if typed_payload => BusPayloadType::from_typed_name(&type_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown typed payload '{type_name}'"))?,
+        Some(type_name) => BusPayloadType::from_name(&type_name),
+        None if typed_payload => {
+            anyhow::bail!("Typed stream message missing type: {stream_msg:?}")
+        }
+        None => BusPayloadType::Custom(Ustr::default()),
     };
 
     Ok(BusMessage::with_str_topic(
@@ -901,7 +938,12 @@ async fn run_heartbeat(
 }
 
 fn create_heartbeat_msg() -> BusMessage {
-    let payload = Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes());
+    let payload = Bytes::from(
+        Timestamp::now()
+            .display_with_offset(Offset::UTC)
+            .to_string()
+            .into_bytes(),
+    );
     BusMessage::with_str_topic(
         HEARTBEAT_TOPIC,
         BusPayloadType::Custom(Ustr::default()),
@@ -979,6 +1021,59 @@ mod tests {
     }
 
     #[rstest]
+    fn test_bus_message_fields_distinguish_custom_and_typed_names() {
+        let custom = BusMessage::with_str_topic(
+            "external.test",
+            BusPayloadType::Custom(Ustr::from("TradingCommand")),
+            Bytes::from_static(b"custom"),
+            SerializationEncoding::Json,
+        );
+        let typed = BusMessage::with_str_topic(
+            "external.test",
+            BusPayloadType::TradingCommand,
+            Bytes::from_static(b"typed"),
+            SerializationEncoding::Json,
+        );
+
+        let custom_fields = bus_message_fields(&custom, "json");
+        let typed_fields = bus_message_fields(&typed, "json");
+        let custom_fields = custom_fields.as_slice();
+        let typed_fields = typed_fields.as_slice();
+
+        assert_eq!(custom_fields.len(), 4);
+        assert_eq!(typed_fields.len(), 5);
+        assert_eq!(
+            custom_fields
+                .iter()
+                .find(|(key, _)| *key == "type")
+                .expect("custom fields must include type")
+                .1,
+            b"TradingCommand"
+        );
+        assert_eq!(
+            typed_fields
+                .iter()
+                .find(|(key, _)| *key == "type")
+                .expect("typed fields must include type")
+                .1,
+            b"TradingCommand"
+        );
+        assert!(
+            custom_fields
+                .iter()
+                .all(|(key, _)| *key != PAYLOAD_KIND_FIELD)
+        );
+        assert_eq!(
+            typed_fields
+                .iter()
+                .find(|(key, _)| *key == PAYLOAD_KIND_FIELD)
+                .expect("typed fields must include payload kind")
+                .1,
+            PAYLOAD_KIND_TYPED.as_bytes()
+        );
+    }
+
+    #[rstest]
     fn test_decode_bus_message_valid() {
         let stream_msg = Value::Array(vec![
             Value::BulkString(b"topic".to_vec()),
@@ -1019,12 +1114,36 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decode_bus_message_unknown_type_is_custom() {
+    fn test_decode_bus_message_reads_chrono_heartbeat() {
+        let heartbeat =
+            include_str!("../../test_data/redis_msgbus_heartbeat_chrono.txt").trim_end();
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(HEARTBEAT_TOPIC.as_bytes().to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(heartbeat.as_bytes().to_vec()),
+        ]);
+
+        let msg = decode_bus_message(&stream_msg).unwrap();
+        let timestamp = std::str::from_utf8(&msg.payload)
+            .unwrap()
+            .parse::<Timestamp>()
+            .unwrap();
+
+        assert_eq!(msg.topic, HEARTBEAT_TOPIC);
+        assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
+        assert_eq!(msg.payload.as_ref(), heartbeat.as_bytes());
+        assert_eq!(timestamp.as_nanosecond(), 1_785_805_323_456_789_000);
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_typed_name_without_kind_is_custom() {
         let stream_msg = Value::Array(vec![
             Value::BulkString(b"topic".to_vec()),
             Value::BulkString(b"topic1".to_vec()),
             Value::BulkString(b"type".to_vec()),
-            Value::BulkString(b"UnknownPayload".to_vec()),
+            Value::BulkString(b"TradingCommand".to_vec()),
             Value::BulkString(b"payload".to_vec()),
             Value::BulkString(b"data1".to_vec()),
         ]);
@@ -1034,9 +1153,91 @@ mod tests {
         let msg = result.unwrap();
         assert_eq!(
             msg.payload_type,
-            BusPayloadType::Custom(Ustr::from("UnknownPayload"))
+            BusPayloadType::Custom(Ustr::from("TradingCommand"))
         );
         assert_eq!(msg.encoding, SerializationEncoding::Json);
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_typed_kind_resolves_fixed_type() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"external.test".to_vec()),
+            Value::BulkString(b"type".to_vec()),
+            Value::BulkString(b"TradingCommand".to_vec()),
+            Value::BulkString(PAYLOAD_KIND_FIELD.as_bytes().to_vec()),
+            Value::BulkString(PAYLOAD_KIND_TYPED.as_bytes().to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let msg = decode_bus_message(&stream_msg).expect("typed message must decode");
+
+        assert_eq!(msg.topic, "external.test");
+        assert_eq!(msg.payload_type, BusPayloadType::TradingCommand);
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
+        assert_eq!(msg.payload, Bytes::from_static(b"data1"));
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_rejects_invalid_typed_metadata() {
+        let unknown_kind = stream_message_with_typed_metadata(
+            Some("TradingCommand"),
+            Value::BulkString(b"unknown".to_vec()),
+        );
+        let missing_type = stream_message_with_typed_metadata(
+            None,
+            Value::BulkString(PAYLOAD_KIND_TYPED.as_bytes().to_vec()),
+        );
+        let unknown_type = stream_message_with_typed_metadata(
+            Some("UnknownPayload"),
+            Value::BulkString(PAYLOAD_KIND_TYPED.as_bytes().to_vec()),
+        );
+        let invalid_kind =
+            stream_message_with_typed_metadata(Some("TradingCommand"), Value::Int(42));
+        let cases = [
+            (&unknown_kind, "Unknown payload kind 'unknown'".to_string()),
+            (
+                &missing_type,
+                format!("Typed stream message missing type: {missing_type:?}"),
+            ),
+            (
+                &unknown_type,
+                "Unknown typed payload 'UnknownPayload'".to_string(),
+            ),
+            (
+                &invalid_kind,
+                format!("Invalid payload kind format: {invalid_kind:?}"),
+            ),
+        ];
+
+        for (stream_msg, expected) in cases {
+            let error =
+                decode_bus_message(stream_msg).expect_err("invalid typed metadata must not decode");
+
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    fn stream_message_with_typed_metadata(type_name: Option<&str>, payload_kind: Value) -> Value {
+        let mut fields = vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"external.test".to_vec()),
+        ];
+
+        if let Some(type_name) = type_name {
+            fields.extend([
+                Value::BulkString(b"type".to_vec()),
+                Value::BulkString(type_name.as_bytes().to_vec()),
+            ]);
+        }
+        fields.extend([
+            Value::BulkString(PAYLOAD_KIND_FIELD.as_bytes().to_vec()),
+            payload_kind,
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+        Value::Array(fields)
     }
 
     #[rstest]
@@ -1228,7 +1429,7 @@ mod tests {
     #[tokio::test]
     async fn test_wait_for_retry_delay_returns_false_when_signaled() {
         let stream_signal = Arc::new(AtomicBool::new(true));
-        let signal = stream_signal.clone();
+        let signal = Arc::clone(&stream_signal);
         let fut = async move { wait_for_retry_delay(Duration::from_secs(30), &signal).await };
 
         let handle = tokio::spawn(fut);
@@ -1282,6 +1483,8 @@ mod tests {
 mod serial_tests {
     use std::{sync::mpsc, thread};
 
+    #[cfg(feature = "python")]
+    use nautilus_common::python::msgbus::get_global_msgbus_factory_registry;
     use nautilus_common::{
         enums::Environment,
         msgbus::{self, TypedHandler},
@@ -1289,9 +1492,11 @@ mod serial_tests {
     };
     use nautilus_live::{
         builder::LiveNodeBuilder,
-        config::{LiveExecEngineConfig, LiveNodeConfig},
+        config::{LiveExecutionEngineConfig, LiveNodeConfig},
     };
     use nautilus_model::data::{QuoteTick, TradeTick};
+    #[cfg(feature = "python")]
+    use pyo3::{Py, Python, types::PyModule};
     use redis::aio::ConnectionManager;
     use rstest::*;
 
@@ -1307,6 +1512,25 @@ mod serial_tests {
         create_redis_connection(MSGBUS_STREAM, &config)
             .await
             .expect("A running Redis service is required for this test")
+    }
+
+    fn redis_msgbus_factory(config: RedisMessageBusConfig) -> Box<dyn MessageBusBackingFactory> {
+        #[cfg(feature = "python")]
+        {
+            Python::initialize();
+            Python::attach(|py| {
+                let module = PyModule::new(py, "infrastructure").unwrap();
+                crate::python::infrastructure(py, &module).unwrap();
+                let factory = Py::new(py, config).unwrap().into_any();
+
+                get_global_msgbus_factory_registry()
+                    .extract(py, factory)
+                    .unwrap()
+            })
+        }
+
+        #[cfg(not(feature = "python"))]
+        Box::new(config)
     }
 
     #[rstest]
@@ -1325,7 +1549,7 @@ mod serial_tests {
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         // Start the message streaming task
         let handle = tokio::spawn(async move {
@@ -1365,7 +1589,7 @@ mod serial_tests {
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         // Use a message ID in the future, as streaming begins
         // around the timestamp the task is spawned.
@@ -1417,7 +1641,7 @@ mod serial_tests {
         let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         // Use a message ID in the future, as streaming begins
         // around the timestamp the task is spawned.
@@ -1469,7 +1693,7 @@ mod serial_tests {
         let stream_key = format!("test:stream:no-backlog:{suffix}");
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let _: () = con
             .xadd(
@@ -1524,7 +1748,7 @@ mod serial_tests {
         let stream_key = format!("test:stream:malformed:{suffix}");
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let clock = get_atomic_clock_realtime();
         let base_id = clock.get_time_ms() + 1_000_000;
@@ -1610,7 +1834,7 @@ mod serial_tests {
             ..Default::default()
         };
         let stream_signal = Arc::new(AtomicBool::new(true));
-        let signal = stream_signal.clone();
+        let signal = Arc::clone(&stream_signal);
         let handle = tokio::spawn(async move { connect_stream_connection(&config, &signal).await });
 
         wait_until_async(|| async { handle.is_finished() }, Duration::from_secs(1)).await;
@@ -1619,8 +1843,13 @@ mod serial_tests {
     }
 
     #[rstest]
+    #[case::market_data(BusPayloadType::QuoteTick)]
+    #[case::typed(BusPayloadType::TradingCommand)]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_publish_messages(#[future] redis_connection: ConnectionManager) {
+    async fn test_publish_messages(
+        #[future] redis_connection: ConnectionManager,
+        #[case] payload_type: BusPayloadType,
+    ) {
         let mut con = redis_connection.await;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
@@ -1649,7 +1878,7 @@ mod serial_tests {
         // Send a test message
         let msg = BusMessage::with_str_topic(
             "test_topic",
-            BusPayloadType::QuoteTick,
+            payload_type,
             Bytes::from("test_payload"),
             SerializationEncoding::Json,
         );
@@ -1677,7 +1906,7 @@ mod serial_tests {
         let stream_msg_array = &stream_msgs[0].values().next().unwrap();
         let decoded_message = decode_bus_message(stream_msg_array).unwrap();
         assert_eq!(decoded_message.topic, "test_topic");
-        assert_eq!(decoded_message.payload_type, BusPayloadType::QuoteTick);
+        assert_eq!(decoded_message.payload_type, payload_type);
         assert_eq!(decoded_message.encoding, SerializationEncoding::Json);
         assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
 
@@ -1765,6 +1994,8 @@ mod serial_tests {
         };
         let quote = QuoteTick::default();
         let trade = TradeTick::default();
+        let ready_topic = "test.quotes.ready";
+        let (built_tx, built_rx) = mpsc::channel::<()>();
         let (ready_tx, ready_rx) = mpsc::channel::<()>();
         let (quote_tx, quote_rx) = mpsc::channel::<QuoteTick>();
         let (trade_tx, trade_rx) = mpsc::channel::<TradeTick>();
@@ -1782,7 +2013,7 @@ mod serial_tests {
                         environment: Environment::Sandbox,
                         trader_id: TraderId::from("NODEB-001"),
                         msgbus: Some(node_b_msgbus),
-                        exec_engine: LiveExecEngineConfig {
+                        exec_engine: LiveExecutionEngineConfig {
                             reconciliation: false,
                             ..Default::default()
                         },
@@ -1792,9 +2023,7 @@ mod serial_tests {
                         ..Default::default()
                     };
                     let mut node = LiveNodeBuilder::from_config(config)?
-                        .with_external_msgbus_factory(Box::new(RedisMessageBusFactory::new(
-                            redis_config,
-                        )))
+                        .with_external_msgbus_factory(redis_msgbus_factory(redis_config))
                         .build()?;
                     let handle = node.handle();
                     let quote_handler = TypedHandler::from({
@@ -1809,36 +2038,18 @@ mod serial_tests {
                         let _ = trade_tx.send(*trade);
                     });
 
+                    let ready_handler = TypedHandler::from(move |_: &QuoteTick| {
+                        let _ = ready_tx.send(());
+                    });
+
+                    msgbus::subscribe_quotes(ready_topic.into(), ready_handler, None);
                     msgbus::subscribe_quotes("data.quotes.*".into(), quote_handler, None);
                     msgbus::subscribe_trades("data.trades.*".into(), trade_handler, None);
                     msgbus::get_message_bus()
                         .borrow_mut()
                         .add_streaming_type(BusPayloadType::QuoteTick);
-                    let result = tokio::time::timeout(Duration::from_secs(10), async {
-                        let run = node.run();
-                        tokio::pin!(run);
-
-                        let announce_ready = async {
-                            for _ in 0..100 {
-                                if handle.is_running() {
-                                    ready_tx.send(())?;
-                                    return Ok(());
-                                }
-                                tokio::time::sleep(Duration::from_millis(10)).await;
-                            }
-
-                            anyhow::bail!("node B did not reach running state")
-                        };
-
-                        tokio::select! {
-                            result = &mut run => result,
-                            ready = announce_ready => {
-                                ready?;
-                                run.await
-                            }
-                        }
-                    })
-                    .await;
+                    built_tx.send(())?;
+                    let result = tokio::time::timeout(Duration::from_secs(10), node.run()).await;
                     msgbus::get_message_bus().borrow_mut().dispose();
 
                     match result {
@@ -1850,9 +2061,9 @@ mod serial_tests {
             }
         });
 
-        ready_rx
+        built_rx
             .recv_timeout(Duration::from_secs(5))
-            .expect("node B should start Redis ingress");
+            .expect("node B should build and register subscriptions");
 
         let node_a = thread::spawn(move || -> anyhow::Result<()> {
             let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -1866,7 +2077,7 @@ mod serial_tests {
                     trader_id: trader_a,
                     instance_id: Some(instance_a),
                     msgbus: Some(node_a_msgbus),
-                    exec_engine: LiveExecEngineConfig {
+                    exec_engine: LiveExecutionEngineConfig {
                         reconciliation: false,
                         ..Default::default()
                     },
@@ -1876,10 +2087,23 @@ mod serial_tests {
                     ..Default::default()
                 };
                 let _node = LiveNodeBuilder::from_config(config)?
-                    .with_external_msgbus_factory(Box::new(RedisMessageBusFactory::new(
-                        redis_config,
-                    )))
+                    .with_external_msgbus_factory(Box::new(redis_config))
                     .build()?;
+
+                // A running node does not guarantee its Redis reader has set its initial cursor
+                wait_until_async(
+                    || {
+                        let ready = ready_rx.try_recv().is_ok();
+
+                        if !ready {
+                            msgbus::publish_quote(ready_topic.into(), &quote);
+                        }
+
+                        async move { ready }
+                    },
+                    Duration::from_secs(5),
+                )
+                .await;
 
                 msgbus::publish_trade("data.trades.TEST".into(), &trade);
                 msgbus::publish_quote("data.quotes.TEST".into(), &quote);
@@ -1920,7 +2144,7 @@ mod serial_tests {
         let stream_key2 = format!("test:stream:{suffix}:2");
         let external_streams = vec![stream_key1.clone(), stream_key2.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let clock = get_atomic_clock_realtime();
         let base_id = clock.get_time_ms() + 1_000_000;
@@ -1988,7 +2212,7 @@ mod serial_tests {
             stream_key3.clone(),
         ];
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let stream_signal_clone = stream_signal.clone();
+        let stream_signal_clone = Arc::clone(&stream_signal);
 
         let clock = get_atomic_clock_realtime();
         let base_id = clock.get_time_ms() + 1_000_000;
@@ -2075,7 +2299,7 @@ mod serial_tests {
         let signal = Arc::new(AtomicBool::new(false));
 
         // Start the heartbeat task with a short interval
-        let handle = tokio::spawn(run_heartbeat(1, signal.clone(), tx));
+        let handle = tokio::spawn(run_heartbeat(1, Arc::clone(&signal), tx));
 
         let heartbeat = receive_unbounded_bus_message(&mut rx, Duration::from_secs(2)).await;
 

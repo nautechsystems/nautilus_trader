@@ -12,7 +12,7 @@ can supply bars, or NautilusTrader can aggregate them from quote ticks, trade ti
 | `high`     | `Price`     | `Price`     | Required         | Highest price in the bar interval.               |
 | `low`      | `Price`     | `Price`     | Required         | Lowest price in the bar interval.                |
 | `close`    | `Price`     | `Price`     | Required         | Last price in the bar interval.                  |
-| `volume`   | `Quantity`  | `Quantity`  | Required         | Traded volume or tick‑volume proxy.              |
+| `volume`   | `Quantity`  | `Quantity`  | Required         | Traded volume or tick-volume proxy.              |
 | `ts_event` | `UnixNanos` | `int`       | Required         | Bar event timestamp in nanoseconds.              |
 | `ts_init`  | `UnixNanos` | `int`       | Required         | Initialization timestamp in nanoseconds.         |
 
@@ -22,6 +22,12 @@ can supply bars, or NautilusTrader can aggregate them from quote ticks, trade ti
 - `low` must be less than or equal to `open` and `close`.
 - `bar_type` determines whether a bar is internal or external.
 - Composite bar types use `@` syntax to identify the source bar type.
+
+:::warning[Bar timestamps for execution simulation]
+For execution simulation, `ts_init` must represent the close of the bar interval, which prevents
+the complete bar from becoming visible before it formed. See
+[bar timestamp convention](../backtesting/bar-execution.md#bar-timestamp-convention).
+:::
 
 ## Example
 

@@ -28,11 +28,17 @@ use crate::defi::{
     },
 };
 
+/// Sentinel used when a profiler checkpoint represents the complete state of a block.
+pub const BLOCK_SCOPED_SNAPSHOT_INDEX: u32 = i32::MAX as u32;
+
 /// Represents the precise position of an event within a blockchain.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockPosition {
     /// The block number (height) in the blockchain where the event occurred.
     pub number: u64,
+    /// The hash of the block observed when this position was ingested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the transaction containing the event.
     pub transaction_hash: String,
     /// The index position of the transaction within the block (0-based).
@@ -47,10 +53,18 @@ impl BlockPosition {
     pub fn new(number: u64, transaction_hash: String, index: u32, log_index: u32) -> Self {
         Self {
             number,
+            block_hash: None,
             transaction_hash,
             transaction_index: index,
             log_index,
         }
+    }
+
+    /// Attaches the block hash observed with this position.
+    #[must_use]
+    pub fn with_block_hash(mut self, block_hash: Option<String>) -> Self {
+        self.block_hash = block_hash;
+        self
     }
 }
 
@@ -59,7 +73,7 @@ impl BlockPosition {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -206,13 +220,45 @@ impl Display for Block {
 #[cfg(test)]
 mod tests {
     use alloy_primitives::U256;
-    use chrono::{TimeZone, Utc};
+    use jiff::{Timestamp, civil::Date, tz::Offset};
     use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
-    use super::Block;
+    use super::{Block, BlockPosition};
     use crate::defi::{Blockchain, chain::chains, rpc::RpcNodeWssResponse};
+
+    fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
+        Offset::UTC
+            .to_timestamp(
+                Date::new(year, month, day)
+                    .unwrap()
+                    .at(hour, minute, second, 0),
+            )
+            .unwrap()
+    }
+
+    #[rstest]
+    fn test_block_position_deserializes_legacy_shape_without_block_hash() {
+        let position: BlockPosition = serde_json::from_value(serde_json::json!({
+            "number": 42,
+            "transaction_hash": "0xabc",
+            "transaction_index": 3,
+            "log_index": 7
+        }))
+        .unwrap();
+
+        assert_eq!(position, BlockPosition::new(42, "0xabc".to_string(), 3, 7));
+        assert_eq!(
+            serde_json::to_value(position).unwrap(),
+            serde_json::json!({
+                "number": 42,
+                "transaction_hash": "0xabc",
+                "transaction_index": 3,
+                "log_index": 7
+            })
+        );
+    }
 
     #[fixture]
     fn eth_rpc_block_response() -> String {
@@ -390,7 +436,7 @@ mod tests {
         // Timestamp of block is on Apr-18-2025 06:44:11 AM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 18, 6, 44, 11).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 18, 6, 44, 11))
         );
         assert_eq!(block.gas_used, 14_563_593);
         assert_eq!(block.gas_limit, 35_894_433);
@@ -426,7 +472,7 @@ mod tests {
         // Timestamp of block is on Apr-18-2025 01:17:09 PM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 18, 13, 17, 9).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 18, 13, 17, 9))
         );
         assert_eq!(block.gas_used, 19_336_980);
         assert_eq!(block.gas_limit, 30_000_000);
@@ -461,7 +507,7 @@ mod tests {
         // Timestamp of block is on Apr 19 2025 13:16:43 PM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 19, 13, 16, 43).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 19, 13, 16, 43))
         );
         assert_eq!(block.gas_used, 91_213_350);
         assert_eq!(block.gas_limit, 120_000_000);
@@ -497,7 +543,7 @@ mod tests {
         // Timestamp of block is on Apr-19-2025 13:32:54 PM +UTC
         assert_eq!(
             block.timestamp,
-            UnixNanos::from(Utc.with_ymd_and_hms(2025, 4, 19, 13, 32, 54).unwrap())
+            UnixNanos::from(utc_timestamp(2025, 4, 19, 13, 32, 54))
         );
         assert_eq!(block.gas_used, 97012);
         assert_eq!(block.gas_limit, 1_125_899_906_842_624);
@@ -508,7 +554,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_block_builder_helpers() {
+    fn test_block_builder_optional_fields() {
         let block = Block::new(
             "0xabc".into(),
             "0xdef".into(),

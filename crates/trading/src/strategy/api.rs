@@ -628,34 +628,53 @@ impl<'a> PortfolioApi<'a> {
         self.portfolio.borrow().is_initialized()
     }
 
-    /// Returns the locked balances for the given venue.
+    /// Returns the locked balances for the `account_id`, or for the account issued under `venue`
+    /// when no account ID is given.
     ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn balances_locked(&self, venue: &Venue) -> IndexMap<Currency, Money> {
-        self.portfolio.borrow().balances_locked(venue)
+    pub fn balances_locked(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<Currency, Money> {
+        self.portfolio.borrow().balances_locked(venue, account_id)
     }
 
-    /// Returns the initial margin requirements for the given venue.
+    /// Returns the initial margin requirements for the `account_id`, or for the account issued
+    /// under `venue` when no account ID is given.
     ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn margins_init(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.portfolio.borrow().margins_init(venue)
+    pub fn instrument_initial_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        self.portfolio
+            .borrow()
+            .instrument_initial_margins(venue, account_id)
     }
 
-    /// Returns the maintenance margin requirements for the given venue.
+    /// Returns the maintenance margin requirements for the `account_id`, or for the account
+    /// issued under `venue` when no account ID is given.
     ///
     /// # Panics
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn margins_maint(&self, venue: &Venue) -> IndexMap<InstrumentId, Money> {
-        self.portfolio.borrow().margins_maint(venue)
+    pub fn instrument_maintenance_margins(
+        &self,
+        venue: &Venue,
+        account_id: Option<&AccountId>,
+    ) -> IndexMap<InstrumentId, Money> {
+        self.portfolio
+            .borrow()
+            .instrument_maintenance_margins(venue, account_id)
     }
 
     /// Returns the unrealized PnLs for all positions at the given venue.
@@ -668,10 +687,10 @@ impl<'a> PortfolioApi<'a> {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> IndexMap<Currency, Money> {
+    ) -> Option<IndexMap<Currency, Money>> {
         self.portfolio
             .borrow_mut()
-            .unrealized_pnls(venue, account_id)
+            .unrealized_pnls(venue, account_id, None)
     }
 
     /// Returns the realized PnLs for all positions at the given venue.
@@ -684,8 +703,10 @@ impl<'a> PortfolioApi<'a> {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> IndexMap<Currency, Money> {
-        self.portfolio.borrow_mut().realized_pnls(venue, account_id)
+    ) -> Option<IndexMap<Currency, Money>> {
+        self.portfolio
+            .borrow_mut()
+            .realized_pnls(venue, account_id, None)
     }
 
     /// Returns net exposures by currency for the given venue.
@@ -699,7 +720,9 @@ impl<'a> PortfolioApi<'a> {
         venue: &Venue,
         account_id: Option<&AccountId>,
     ) -> Option<IndexMap<Currency, Money>> {
-        self.portfolio.borrow().net_exposures(venue, account_id)
+        self.portfolio
+            .borrow()
+            .net_exposures(venue, account_id, None)
     }
 
     /// Returns the unrealized PnL for the given instrument ID.
@@ -723,9 +746,12 @@ impl<'a> PortfolioApi<'a> {
         instrument_id: &InstrumentId,
         account_id: Option<&AccountId>,
     ) -> Option<Money> {
-        self.portfolio
-            .borrow_mut()
-            .unrealized_pnl_for_account(instrument_id, account_id)
+        self.portfolio.borrow_mut().unrealized_pnl_for_account(
+            instrument_id,
+            None,
+            account_id,
+            None,
+        )
     }
 
     /// Returns the realized PnL for the given instrument ID.
@@ -751,7 +777,7 @@ impl<'a> PortfolioApi<'a> {
     ) -> Option<Money> {
         self.portfolio
             .borrow_mut()
-            .realized_pnl_for_account(instrument_id, account_id)
+            .realized_pnl_for_account(instrument_id, account_id, None)
     }
 
     /// Returns the total PnL for the given instrument ID.
@@ -777,7 +803,7 @@ impl<'a> PortfolioApi<'a> {
     ) -> Option<Money> {
         self.portfolio
             .borrow_mut()
-            .total_pnl_for_account(instrument_id, account_id)
+            .total_pnl_for_account(instrument_id, None, account_id, None)
     }
 
     /// Returns the total PnLs for the given venue.
@@ -790,8 +816,10 @@ impl<'a> PortfolioApi<'a> {
         &self,
         venue: &Venue,
         account_id: Option<&AccountId>,
-    ) -> IndexMap<Currency, Money> {
-        self.portfolio.borrow_mut().total_pnls(venue, account_id)
+    ) -> Option<IndexMap<Currency, Money>> {
+        self.portfolio
+            .borrow_mut()
+            .total_pnls(venue, account_id, None)
     }
 
     /// Returns the per-currency mark-to-market value of open positions at the given venue.
@@ -859,7 +887,9 @@ impl<'a> PortfolioApi<'a> {
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
     pub fn missing_price_instruments(&self, venue: &Venue) -> Vec<InstrumentId> {
-        self.portfolio.borrow().missing_price_instruments(venue)
+        self.portfolio
+            .borrow()
+            .missing_price_instruments(venue, None)
     }
 
     /// Returns the net exposure for the given instrument ID.
@@ -875,7 +905,7 @@ impl<'a> PortfolioApi<'a> {
     ) -> Option<Money> {
         self.portfolio
             .borrow()
-            .net_exposure(instrument_id, account_id)
+            .net_exposure(instrument_id, None, account_id, None)
     }
 
     /// Returns the net position for the given instrument ID.
@@ -914,8 +944,8 @@ impl<'a> PortfolioApi<'a> {
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn is_flat(&self, instrument_id: &InstrumentId) -> bool {
-        self.portfolio.borrow().is_flat(instrument_id)
+    pub fn is_net_flat(&self, instrument_id: &InstrumentId) -> bool {
+        self.portfolio.borrow().is_net_flat(instrument_id)
     }
 
     /// Returns whether every net position is flat.
@@ -924,8 +954,8 @@ impl<'a> PortfolioApi<'a> {
     ///
     /// Panics if the portfolio is already mutably borrowed.
     #[must_use]
-    pub fn is_completely_flat(&self) -> bool {
-        self.portfolio.borrow().is_completely_flat()
+    pub fn is_completely_net_flat(&self) -> bool {
+        self.portfolio.borrow().is_completely_net_flat()
     }
 
     /// Returns realized PnLs recorded during portfolio event processing.
@@ -945,11 +975,14 @@ impl<'a> PortfolioApi<'a> {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock, factories::OrderFactory};
+    use nautilus_common::{cache::Cache, clock::VirtualClock, factories::OrderFactory};
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderType},
+        enums::{AccountType, OrderSide, OrderType},
+        events::AccountState,
         identifiers::{AccountId, InstrumentId, StrategyId, TraderId, Venue},
         orders::Order,
+        types::{AccountBalance, MarginBalance},
     };
     use rstest::rstest;
 
@@ -959,7 +992,7 @@ mod tests {
     fn test_order_api_creates_market_order() {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("S-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let order_factory = RefCell::new(OrderFactory::new(
             trader_id,
             strategy_id,
@@ -997,7 +1030,7 @@ mod tests {
     fn test_order_api_creates_bracket_orders() {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("S-001");
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let order_factory = RefCell::new(OrderFactory::new(
             trader_id,
             strategy_id,
@@ -1045,7 +1078,7 @@ mod tests {
     #[rstest]
     fn test_portfolio_api_empty_reads_return_empty_values() {
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let portfolio = RefCell::new(Portfolio::new(clock, cache, None));
         let api = PortfolioApi::new(&portfolio);
         let venue = Venue::from("SIM");
@@ -1053,11 +1086,11 @@ mod tests {
         let instrument_id = InstrumentId::from("AUD/USD.SIM");
 
         assert!(!api.is_initialized());
-        assert!(api.balances_locked(&venue).is_empty());
-        assert!(api.margins_init(&venue).is_empty());
-        assert!(api.margins_maint(&venue).is_empty());
-        assert!(api.unrealized_pnls(&venue, None).is_empty());
-        assert!(api.realized_pnls(&venue, None).is_empty());
+        assert!(api.balances_locked(&venue, None).is_empty());
+        assert!(api.instrument_initial_margins(&venue, None).is_empty());
+        assert!(api.instrument_maintenance_margins(&venue, None).is_empty());
+        assert_eq!(api.unrealized_pnls(&venue, None), Some(IndexMap::new()));
+        assert_eq!(api.realized_pnls(&venue, None), Some(IndexMap::new()));
         assert_eq!(api.net_exposures(&venue, None), None);
         assert_eq!(api.unrealized_pnl(&instrument_id), None);
         assert_eq!(
@@ -1074,7 +1107,7 @@ mod tests {
             api.total_pnl_for_account(&instrument_id, Some(&account_id)),
             None
         );
-        assert!(api.total_pnls(&venue, None).is_empty());
+        assert_eq!(api.total_pnls(&venue, None), Some(IndexMap::new()));
         assert!(api.mark_values(&venue, None).is_empty());
         assert!(api.equity(&venue, None).is_empty());
         assert_eq!(api.build_snapshot(&account_id), None);
@@ -1084,10 +1117,69 @@ mod tests {
         assert_eq!(api.net_position(&instrument_id), Decimal::ZERO);
         assert!(!api.is_net_long(&instrument_id));
         assert!(!api.is_net_short(&instrument_id));
-        assert!(api.is_flat(&instrument_id));
-        assert!(api.is_completely_flat());
+        assert!(api.is_net_flat(&instrument_id));
+        assert!(api.is_completely_net_flat());
         assert!(api.recorded_realized_pnls().is_empty());
 
         let _statistics = api.statistics();
+    }
+
+    #[rstest]
+    fn test_portfolio_api_account_queries_select_account_id() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let portfolio = RefCell::new(Portfolio::new(clock, cache, None));
+        let venue = Venue::from("SIM");
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let total = Money::from("1000 USD");
+
+        for (account_id, locked, initial, maintenance) in [
+            ("SIM-001", "100 USD", "30 USD", "15 USD"),
+            ("SIM-002", "250 USD", "70 USD", "35 USD"),
+        ] {
+            let account_id = AccountId::from(account_id);
+            let locked = Money::from(locked);
+            let initial = Money::from(initial);
+            let maintenance = Money::from(maintenance);
+            let balance = AccountBalance::new(total, locked, total - locked);
+            let margin = MarginBalance::new(initial, maintenance, Some(instrument_id));
+            let event_id = UUID4::new();
+
+            let state = AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![balance],
+                vec![margin],
+                true,
+                event_id,
+                UnixNanos::default(),
+                UnixNanos::default(),
+                None,
+            );
+            portfolio.borrow_mut().update_account(&state);
+        }
+
+        let api = PortfolioApi::new(&portfolio);
+        let account_id = AccountId::from("SIM-002");
+        let expected_locked = Money::from("250 USD");
+        let expected_initial = Money::from("70 USD");
+        let expected_maintenance = Money::from("35 USD");
+
+        let balances_locked = api.balances_locked(&venue, Some(&account_id));
+        let initial_margins = api.instrument_initial_margins(&venue, Some(&account_id));
+        let maintenance_margins = api.instrument_maintenance_margins(&venue, Some(&account_id));
+
+        assert_eq!(
+            balances_locked,
+            IndexMap::from([(Currency::USD(), expected_locked)])
+        );
+        assert_eq!(
+            initial_margins,
+            IndexMap::from([(instrument_id, expected_initial)])
+        );
+        assert_eq!(
+            maintenance_margins,
+            IndexMap::from([(instrument_id, expected_maintenance)])
+        );
     }
 }

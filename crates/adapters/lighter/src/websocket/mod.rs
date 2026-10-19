@@ -24,6 +24,9 @@ pub mod parse;
 pub(crate) mod account_state;
 pub(crate) mod dispatch;
 
+pub(crate) const DATA_STREAMS_ENDPOINT: &str = "lighter-data-streams";
+pub(crate) const USER_STREAMS_ENDPOINT: &str = "lighter-user-streams";
+
 pub use client::LighterWebSocketClient;
 pub use error::LighterWsError;
 pub use messages::{

@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-testkit"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -32,7 +31,6 @@ datasets = [
   "dep:nautilus-serialization",
   "dep:parquet",
   "dep:rand",
-  "dep:reqwest",
   "dep:serde_json",
 ]
 testers = [
@@ -41,7 +39,7 @@ testers = [
   "dep:async-trait",
   "dep:bon",
   "dep:bytes",
-  "dep:chrono",
+  "dep:jiff",
   "dep:indexmap",
   "dep:log",
   "dep:nautilus-model",
@@ -81,12 +79,17 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"], optional = true }
+nautilus-model = { workspace = true, features = [
+  "test-support",
+], optional = true }
 nautilus-network = { workspace = true, optional = true }
 nautilus-serialization = { workspace = true, features = [
   "arrow",
 ], optional = true }
 nautilus-trading = { workspace = true, optional = true }
+
+parking_lot = { workspace = true }
+tokio = { workspace = true }
 
 ahash = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
@@ -94,24 +97,22 @@ async-trait = { workspace = true, optional = true }
 aws-lc-rs = { workspace = true, optional = true }
 bon = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
 indexmap = { workspace = true, optional = true }
 itchy = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 parquet = { workspace = true, features = ["zstd"], optional = true }
 rand = { workspace = true, optional = true }
-reqwest = { workspace = true, features = ["blocking"], optional = true }
 rust_decimal = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-tokio = { workspace = true }
 ustr = { workspace = true, optional = true }
 
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-portfolio = { workspace = true }
 
 arrow = { workspace = true }
@@ -124,14 +125,14 @@ serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
-[[test]]
-name = "common"
+[[bin]]
+name = "prepare-test-data"
+path = "bin/prepare_test_data.rs"
 required-features = ["datasets"]
+test = false
+doc = false
 
 [[test]]
-name = "large_data"
-required-features = ["datasets"]
-
-[[test]]
-name = "orderbook_integration"
+name = "integration"
+path = "tests/integration/main.rs"
 required-features = ["datasets"]

@@ -126,7 +126,7 @@ impl FeedHandler {
     ) -> Result<(), DydxWsError> {
         let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(|k| k.to_vec());
         self.retry_manager
-            .execute_with_retry(
+            .invocation(
                 "websocket_send",
                 || {
                     let payload = payload.clone();
@@ -139,17 +139,20 @@ impl FeedHandler {
                     }
                 },
                 should_retry_dydx_error,
-                create_dydx_timeout_error,
+                |e| create_dydx_timeout_error(e.to_string()),
             )
+            .execute()
             .await
     }
 
     /// Main processing loop for the handler.
     ///
-    /// # Panics
-    ///
-    /// This method will not panic. The `expect` call on `iter.next()` is safe
-    /// because we explicitly check that `msgs` is not empty before calling it.
+    /// Message extraction cannot panic because the message buffer and decoded message vector are
+    /// checked for emptiness first.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "message buffers are checked for emptiness before extraction"
+    )]
     pub async fn run(&mut self) {
         log::debug!("WebSocket handler started");
 
@@ -205,6 +208,7 @@ impl FeedHandler {
             Message::Text(txt) => {
                 if txt == RECONNECTED {
                     self.clear_state();
+                    self.subscriptions.reset_after_reconnect();
 
                     if let Err(e) = self.replay_subscriptions().await {
                         log::error!("Failed to replay subscriptions after reconnect: {e}");
@@ -678,6 +682,10 @@ impl FeedHandler {
     }
 
     fn topic_from_msg(&self, channel: &DydxWsChannel, id: &Option<String>) -> String {
+        if matches!(channel, DydxWsChannel::BlockHeight) {
+            return channel.as_ref().to_string();
+        }
+
         match id {
             Some(id) => format!(
                 "{}{}{}",
@@ -761,6 +769,7 @@ impl FeedHandler {
             DydxWsMessage::Error(err) => Ok(vec![DydxWsOutputMessage::Error(err)]),
             DydxWsMessage::Reconnected => {
                 self.clear_state();
+                self.subscriptions.reset_after_reconnect();
 
                 if let Err(e) = self.replay_subscriptions().await {
                     log::error!("Failed to replay subscriptions after reconnect message: {e}");

@@ -33,9 +33,11 @@ pub(crate) struct DefiCache {
 impl Cache {
     /// Adds a `Pool` to the cache.
     ///
-    /// # Errors
-    ///
-    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
+    /// This function does not return errors; the result type matches the other add methods.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "this method only inserts into the in-memory cache"
+    )]
     pub fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
         log::debug!("Adding `Pool` {}", pool.instrument_id);
 
@@ -45,9 +47,11 @@ impl Cache {
 
     /// Adds a `PoolProfiler` to the cache.
     ///
-    /// # Errors
-    ///
-    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
+    /// This function does not return errors; the result type matches the other add methods.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "this method only inserts into the in-memory cache"
+    )]
     pub fn add_pool_profiler(&mut self, pool_profiler: PoolProfiler) -> anyhow::Result<()> {
         let instrument_id = pool_profiler.pool.instrument_id;
         log::debug!("Adding `PoolProfiler` {instrument_id}");

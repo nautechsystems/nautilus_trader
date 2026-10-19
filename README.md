@@ -1,10 +1,10 @@
 # <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader-logo.png" alt="NautilusTrader" width="500">
 
-[![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
+[![rustc](https://img.shields.io/crates/msrv/nautilus-core?color=ea7233&logo=rust&label=rustc)](https://crates.io/crates/nautilus-core)
+[![crates.io](https://img.shields.io/crates/v/nautilus-core?logo=rust)](https://crates.io/crates/nautilus-core)
 [![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
 ![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
-![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://img.shields.io/pepy/dt/nautilus-trader?color=blue)](https://pepy.tech/projects/nautilus-trader)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.97.1 | 3.12-3.14 |
-| `Linux (ARM64)`    | 1.97.1 | 3.12-3.14 |
-| `macOS (ARM64)`    | 1.97.1 | 3.12-3.14 |
-| `Windows (x86_64)` | 1.97.1 | 3.12-3.14 |
+| `Linux (x86_64)`   | 1.99.0 | 3.13-3.14 |
+| `Linux (ARM64)`    | 1.99.0 | 3.13-3.14 |
+| `macOS (ARM64)`    | 1.99.0 | 3.13-3.14 |
+| `Windows (x86_64)` | 1.99.0 | 3.13-3.14 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -38,10 +38,10 @@ This separation provides the performance and safety of a compiled trading engine
 the flexibility of Python for system composition and strategy development.
 Trading systems can also be written entirely in Rust for mission-critical workloads.
 
-The same execution semantics and deterministic time model operate in both research and
-live systems. Strategies deploy from research to production with no code changes,
-providing research-to-live parity and reducing the divergence that typically introduces
-deployment risk.
+The same strategy and execution-algorithm code can run across backtest and live systems, reducing
+deployment divergence. Live execution still introduces venue, transport, timing, persistence,
+external-activity, and reconciliation behavior that a simulation may not reproduce. See
+[Backtest and live differences](docs/concepts/live.md#backtest-and-live-differences).
 
 NautilusTrader is asset-class-agnostic. Any venue with a REST API or WebSocket feed can be
 integrated through modular adapters. Current integrations span crypto exchanges (CEX and
@@ -51,7 +51,7 @@ DEX), traditional markets (FX, equities, futures, options), and betting exchange
 
 ## Features
 
-- **Fast**: Rust core with the [mimalloc](https://github.com/microsoft/mimalloc) allocator and asynchronous networking using [tokio](https://crates.io/crates/tokio).
+- **Fast**: Rust core with the [mimalloc](https://crates.io/crates/mimalloc) allocator and asynchronous networking using [tokio](https://crates.io/crates/tokio).
 - **Reliable**: Type- and thread-safety backed by Rust, with optional Redis-backed state persistence.
 - **Portable**: Runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters integrate any REST API or WebSocket feed.
@@ -83,8 +83,9 @@ semantics, and time model operate across both environments, allowing strategies 
 from research to production without reimplementation.
 
 Python bindings are provided via [PyO3](https://pyo3.rs) for the Rust-native v2 runtime.
-The legacy Cython v1 core remains supported during the v2 release-candidate phase.
-No Rust toolchain is required at install time.
+During the v2 transition, v1 receives only critical security backports on the `develop_v1` branch.
+See the [v2 migration guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/MIGRATION_V2.md) for migration steps and compatibility details.
+No Rust toolchain is required to install prebuilt wheels.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
@@ -101,30 +102,37 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 NautilusTrader is modularly designed to work with *adapters*, enabling connectivity to trading venues
 and data providers by translating their raw APIs into a unified interface and normalized domain model.
 
-The following integrations are currently supported; see [docs/integrations/](https://nautilustrader.io/docs/latest/integrations/) for details:
+The following integrations are available or planned; see [docs/integrations/](https://nautilustrader.io/docs/latest/integrations/) for details:
 
-| Name                                                      | ID                    | Type                    | Status                                               | Docs                                       |
-| :-------------------------------------------------------- | :-------------------- | :---------------------- | :--------------------------------------------------- | :----------------------------------------- |
-| [AX Exchange](https://architect.exchange)                 | `AX`                  | Perpetuals Exchange     | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/architect_ax.md) |
-| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/betfair.md)      |
-| [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/binance.md)      |
-| [BitMEX](https://www.bitmex.com)                          | `BITMEX`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/bitmex.md)       |
-| [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/bybit.md)        |
-| [Coinbase](https://coinbase.com)                          | `COINBASE`            | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/coinbase.md)     |
-| [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/databento.md)    |
-| [Deribit](https://www.deribit.com)                        | `DERIBIT`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/deribit.md)      |
-| [Derive](https://www.derive.xyz)                          | `DERIVE`              | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/derive.md)       |
-| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/dydx.md)         |
-| [Hyperliquid](https://hyperliquid.xyz)                    | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/hyperliquid.md)  |
-| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/ib.md)           |
-| [Kraken](https://kraken.com)                              | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/kraken.md)       |
-| [Lighter](https://lighter.xyz)                            | `LIGHTER`             | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/lighter.md)      |
-| [OKX](https://okx.com)                                    | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/okx.md)          |
-| [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/polymarket.md)   |
-| [Tardis](https://tardis.dev)                              | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/tardis.md)       |
+| Name                                                       | ID                    | Type                    | Status                                                  | Docs                                              |
+| :--------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------ |
+| [AX Exchange](https://architect.exchange)                  | `AX`                  | Derivatives Exchange    | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/architect_ax.md)        |
+| [Betfair](https://betfair.com)                             | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/betfair.md)             |
+| [Binance](https://binance.com)                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/binance.md)             |
+| [Blockchain](docs/integrations/blockchain.md)              | `BLOCKCHAIN`          | DeFi Data Provider      | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/blockchain.md)          |
+| [Bybit](https://www.bybit.com)                             | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/bybit.md)               |
+| [CoinAPI](https://www.coinapi.io/?ref=nautilus)            | `COINAPI`             | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](docs/integrations/coinapi.md)             |
+| [Coinbase](https://coinbase.com)                           | `COINBASE`            | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/coinbase.md)            |
+| [Databento](https://databento.com)                         | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/databento.md)           |
+| [Deribit](https://www.deribit.com)                         | `DERIBIT`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/deribit.md)             |
+| [Derive](https://www.derive.xyz)                           | `DERIVE`              | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/derive.md)              |
+| [dYdX](https://dydx.trade)                                 | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/dydx.md)                |
+| [FinFeed](https://www.finfeedapi.com/?ref=nautilus)        | `FINFEED`             | Data Provider           | ![status](https://img.shields.io/badge/building-orange) | -                                                 |
+| [Hyperliquid](https://hyperliquid.xyz)                     | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/hyperliquid.md)         |
+| [Interactive Brokers](https://www.interactivebrokers.com)  | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/interactive_brokers.md) |
+| [Kalshi](https://kalshi.com)                               | `KALSHI`              | Prediction Market (CEX) | ![status](https://img.shields.io/badge/building-orange) | -                                                 |
+| [Kraken](https://kraken.com)                               | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/kraken.md)              |
+| [Lighter](https://lighter.xyz)                             | `LIGHTER`             | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/lighter.md)             |
+| [Lighter on Robinhood](https://robinhoodchain.lighter.xyz) | `LIGHTER_ROBINHOOD`   | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/lighter.md)             |
+| [OKX](https://okx.com)                                     | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/okx.md)                 |
+| [Polymarket](https://polymarket.com)                       | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/polymarket.md)          |
+| [Tardis](https://tardis.dev)                               | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green)    | [Guide](docs/integrations/tardis.md)              |
 
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
+
+For Lighter on Robinhood, `LIGHTER_ROBINHOOD` is the venue and explicit client ID to register. The
+shared Lighter factory keeps `LIGHTER` as its compatibility default.
 
 ### Status
 
@@ -137,62 +145,62 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/) docu
 
 ## Roadmap
 
-The [Roadmap](/ROADMAP.md) outlines NautilusTrader's strategic direction.
-Current priorities include completing the Rust-native core, improving documentation, and enhancing code ergonomics.
+The [Roadmap](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md) outlines NautilusTrader's strategic direction.
+Current priorities include stabilizing the Rust-native core, improving documentation, and enhancing code ergonomics.
 
 The open-source project focuses on single-node backtesting and live trading for individual and small-team quantitative traders.
 UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of scope to maintain focus on the core engine and ecosystem sustainability.
+Additional external integrations (such as databases, cloud services, and monitoring tools) are also out of scope
+unless explicitly listed in the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#open-source-scope).
 
-New integration proposals should start with an RFC issue to discuss suitability before submitting a PR.
-See [Community-contributed integrations](/ROADMAP.md#community-contributed-integrations) for guidelines.
+New integration proposals within the open-source scope should start with an RFC issue to discuss suitability before submitting a PR.
+See [Community-contributed integrations](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#community-contributed-integrations) for guidelines.
 
 ## Security
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nautechsystems/nautilus_trader/badge)](https://scorecard.dev/viewer/?uri=github.com/nautechsystems/nautilus_trader)
 
-Security is a priority for the NautilusTrader project, and we value the work of those who help
-identify and resolve vulnerabilities. We apply layered controls across the development and release
-lifecycle, with signed releases, continuous vulnerability management, and transparent development
-practices:
+Security is a priority for the NautilusTrader project. We apply security controls across dependency selection,
+development, builds, and releases.
 
-- **Source and review controls**: CODEOWNERS gate critical infrastructure, dependency manifests, and
-  lock files; protected branches require signed commits and passing CI; release tags are immutable;
-  and Rust dependencies are sourced only from crates.io.
-- **Dependency intake**: lock files pin every dependency with cryptographic checksums, third-party
-  Python packages install from wheels only, new dependency and tooling versions observe a
-  publication cooldown before adoption, cargo-vet audits Rust provenance, and license checks enforce
-  LGPL-3.0-or-later compatibility.
-- **Scanning and fuzzing**: Gitleaks secret screening and Zizmor Actions auditing run pre-commit;
-  CodeQL runs on PRs to `master` and pushes to `nightly`; cargo-audit, cargo-deny, cargo-vet,
-  OSV Scanner, and pip-audit run on audit-relevant PRs and daily schedules; cargo-fuzz targets cover
-  selected adapter and signing surfaces.
-- **Build and release integrity**: GitHub Actions are pinned to commit SHAs, CI runners are hardened
-  with egress allow-listing, Python artifacts carry SLSA build provenance, container images are
-  Sigstore-signed with attested SPDX SBOMs, and PyPI and crates.io publishing uses OIDC Trusted
-  Publishing gated to a protected `release` environment that never runs pull request or fork code.
-- **Runtime cryptography**: TLS and most runtime cryptography use
-  [aws-lc-rs](https://github.com/aws/aws-lc-rs), the Rust binding for AWS-LC, with Ed25519 signing
-  via [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek).
+- Rust dependencies come only from crates.io; lock files pin dependencies with cryptographic checksums.
+- New dependency and tooling versions observe a publication cooldown before adoption.
+- Third-party Python packages install from wheels only.
+- `cargo-vet` audits Rust dependency provenance.
+- `cargo-deny` enforces a license allow list compatible with `LGPL-3.0-only`.
+- TLS and most runtime cryptography use AWS-LC through Rust's [aws-lc-rs](https://github.com/aws/aws-lc-rs).
+- Ed25519 signing uses [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek).
+- Gitleaks screens for secrets and Zizmor audits GitHub Actions at pre-commit.
+- CODEOWNERS require review of critical infrastructure, dependency manifests, and lock files.
+- Protected branches require signed commits and passing CI.
+- CodeQL runs on release PRs to `master` and pushes to `nightly`.
+- Audit-relevant PRs and daily audits run `cargo-audit`, `cargo-deny`, and `cargo-vet`.
+- OSV Scanner and `pip-audit` also run on audit-relevant PRs and daily.
+- `cargo-fuzz` targets cover selected adapter and signing surfaces.
+- GitHub Actions are pinned to commit SHAs; hardened CI runners restrict network egress to an allow list.
+- Python artifacts carry SLSA build provenance.
+- Container images are Sigstore-signed with attested SPDX SBOMs.
+- PyPI and crates.io use OIDC Trusted Publishing through a protected `release` environment.
+- The `release` environment never runs PR or fork code.
+- Release tags are immutable.
 
-The OpenSSF Scorecard badge above is one automated repository-health signal; it complements manual
-review, CI hardening, and security audits rather than replacing them.
+OpenSSF Scorecard provides an automated repository-health signal alongside manual review, CI hardening, and security audits.
 
 ### Reporting a vulnerability
 
-Report privately through
-[GitHub Security Advisories](https://github.com/nautechsystems/nautilus_trader/security/advisories/new),
-or email <security@nautechsystems.io> (PGP key available on request). We acknowledge reports within
-48 hours and patch critical vulnerabilities within 30 days.
+Report privately through [GitHub Security Advisories](https://github.com/nautechsystems/nautilus_trader/security/advisories/new)
+or email <security@nautechsystems.io> (PGP key available on request).
 
-A careful vulnerability report takes real time and effort. We appreciate that, and unless you prefer
-to remain anonymous, we credit reporters in the relevant security advisory and release notes.
+- We acknowledge reports within 48 hours and patch critical vulnerabilities within 30 days.
+- We thank and credit reporters in the relevant advisory and release notes unless they prefer anonymity.
 
-The [Security Policy](SECURITY.md) details scope, coordinated disclosure, and step-by-step release
-verification. The [Release Security Architecture](docs/developer_guide/release_security.md)
-describes the release supply chain end-to-end. For the full policies, see the
-[Responsible Disclosure](https://nautilustrader.io/security/responsible-disclosure/) and
-[Supply Chain Security](https://nautilustrader.io/security/supply-chain/) policies; CI/CD security is
-documented in [.github/OVERVIEW.md](.github/OVERVIEW.md#security).
+See the following for details:
+
+- [Security Policy](SECURITY.md): scope, coordinated disclosure, and step-by-step release verification.
+- [Security Architecture](docs/developer_guide/security.md): the release supply chain from build to publication.
+- [Responsible Disclosure](https://nautilustrader.io/security/responsible-disclosure/): full disclosure policy.
+- [Supply Chain Security](https://nautilustrader.io/security/supply-chain/): full supply chain policy.
+- [CI/CD security](.github/OVERVIEW.md#security): GitHub Actions security controls.
 
 ## Versioning and releases
 
@@ -228,9 +236,7 @@ which differ in their internal bit-width and maximum decimal precision.
 
 > [!NOTE]
 >
-> By default, the official Python wheels ship in high-precision (128-bit) mode on Linux and macOS.
-> On Windows, only standard-precision (64-bit) Python wheels are available because MSVC's C/C++ frontend
-> does not support `__int128`, preventing the Cython/FFI layer from handling 128-bit integers.
+> By default, the official Python wheels ship in high-precision (128-bit) mode on all supported platforms.
 >
 > For pure Rust crates, high-precision works on all platforms (including Windows) since Rust handles
 > `i128`/`u128` via software emulation. The default is standard-precision unless you explicitly enable
@@ -242,7 +248,7 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ```toml
 [dependencies]
-nautilus_model = { version = "*", features = ["high-precision"] }
+nautilus-model = { version = "*", features = ["high-precision"] }
 ```
 
 ## Installation
@@ -262,13 +268,8 @@ We recommend using the latest supported version of Python and installing [nautil
 
 ### From PyPI
 
-To install the latest binary wheel (or sdist package) from PyPI using Python's pip package manager:
-
-```bash
-pip install -U nautilus_trader
-```
-
-To test the v2 release-candidate wheels from PyPI:
+This repository and the [documentation](https://nautilustrader.io/docs/latest) cover v2. To install
+the v2 release-candidate wheels from PyPI using Python's pip package manager:
 
 ```bash
 pip install -U nautilus_trader --pre
@@ -278,14 +279,21 @@ The v2 release-candidate wheels use `2.0.0rcN` versions and are intended for com
 before the final `2.0.0` release. We do not recommend using release candidates in production
 environments, such as live trading controlling real capital.
 
-Install optional dependencies as 'extras' for specific integrations (e.g., `betfair`, `docker`,
-`ib`, `polymarket`, `visualization`):
+The `--pre` flag is required until `2.0.0` is released. Without it, pip installs the latest stable
+v1 wheel, whose Python API differs from the v2 documentation:
 
 ```bash
-pip install -U "nautilus_trader[docker,ib]"
+# Installs the latest stable v1 wheel, which cannot run the v2 documentation
+pip install -U nautilus_trader
 ```
 
-See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#extras) for the full list of available extras.
+Install optional dependencies for interactive tearsheets and charts with the `visualization` extra:
+
+```bash
+pip install -U "nautilus_trader[visualization]" --pre
+```
+
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#extras) for details.
 
 ### From the Nautech Systems package index
 
@@ -294,7 +302,10 @@ This enables users to install either the latest stable release or pre-release ve
 
 #### Stable wheels
 
-Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
+Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard
+versioning. As on PyPI, the latest stable release is still on the 1.x line, whose Python API differs
+from these v2 docs. This index also hosts development wheels, so `--pre` allows those versions too.
+To install a specific 2.x release candidate, pin its version (`nautilus_trader==2.0.0rcN`).
 
 To install the latest stable release:
 
@@ -304,29 +315,27 @@ pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/si
 
 > [!TIP]
 >
-> Use `--extra-index-url` instead of `--index-url` if you want pip to fall back to PyPI automatically.
+> Use `--extra-index-url` instead of `--index-url` to search both PyPI and the Nautech Systems package index.
+> Pip selects the best matching version across both indexes without giving either index priority.
 
 #### Development wheels
 
-The main package index publishes v1 development wheels from both the `nightly` and `develop`
+The main package index publishes v2 development wheels from both the `nightly` and `develop`
 branches, allowing users to test features and fixes ahead of stable releases.
 
 This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
-- `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
-- `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
+- `develop` wheels use the version suffix `.devYYYYMMDD+run`.
+- `nightly` wheels use `.devYYYYMMDD` when the base version is already a pre-release, and
+  `aYYYYMMDD` otherwise.
 
-| Platform           | v1 Nightly | v1 Develop |
-| :----------------- | :--------- | :--------- |
-| `Linux (x86_64)`   | ✓          | ✓          |
-| `Linux (ARM64)`    | ✓          | -          |
-| `macOS (ARM64)`    | ✓          | -          |
-| `Windows (x86_64)` | ✓          | -          |
-
-**Note**: The nightly merge publishes v1 and v2 wheels for all listed platforms, while `develop`
-publishes Linux x86_64 wheels only. Outside those publication builds, cross-platform nightly
-validation is v2-only; the scheduled nightly test workflow does not repeat the v1 platform matrix.
+| Platform           | Develop | Nightly |
+| :----------------- | :------ | :------ |
+| `Linux (x86_64)`   | ✓       | ✓       |
+| `Linux (ARM64)`    | -       | ✓       |
+| `macOS (ARM64)`    | -       | ✓       |
+| `Windows (x86_64)` | -       | ✓       |
 
 > [!WARNING]
 >
@@ -342,12 +351,6 @@ To install the latest available pre-release (including development wheels):
 pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
 ```
 
-To install a specific development wheel (e.g., `1.221.0a20251026` for October 26, 2025):
-
-```bash
-pip install nautilus_trader==1.221.0a20251026 --index-url=https://packages.nautechsystems.io/simple
-```
-
 #### Available versions
 
 You can view all available versions of `nautilus_trader` on the [package index](https://packages.nautechsystems.io/simple/nautilus-trader/index.html).
@@ -358,19 +361,20 @@ To programmatically fetch and list available versions:
 curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | sed -n 's/.*<a href="\([^"]*\)".*/\1/p' | awk -F'#' '{print $1}' | sort
 ```
 
-> [!NOTE]
+> [!IMPORTANT]
 >
 > On Linux, confirm your glibc version with `ldd --version` and ensure it reports **2.35** or newer before installing binary wheels.
 
 #### Branch updates
 
-- `develop` branch wheels (`.dev`): Build and publish continuously with every merged commit.
-- `nightly` branch wheels (`a`): Build and publish daily when we automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
+- `develop` branch wheels (`.devYYYYMMDD+run`): Build and publish continuously with every merged commit.
+- `nightly` branch wheels (`.devYYYYMMDD` or `aYYYYMMDD`): Build and publish daily when we
+  automatically merge the `develop` branch at **14:00 UTC** (if there are changes).
 
 #### Retention policies
 
-- `develop` branch wheels (`.dev`): We retain only the most recent wheel build.
-- `nightly` branch wheels (`a`): We retain only the 30 most recent wheel builds.
+- `develop` branch wheels: We retain only the most recent wheel build.
+- `nightly` branch wheels: We retain only the 30 most recent publication dates per platform.
 
 #### Verifying build provenance
 
@@ -386,7 +390,7 @@ NautilusTrader GitHub Actions workflow and has not been tampered with since.
 
 For step-by-step verification commands, see [Verifying releases](SECURITY.md#verifying-releases) in `SECURITY.md`.
 
-> [!NOTE]
+> [!IMPORTANT]
 >
 > Verification requires the [GitHub CLI](https://cli.github.com/) (`gh`) for Python artifacts
 > and [cosign](https://github.com/sigstore/cosign) for Docker images.
@@ -458,24 +462,32 @@ It's possible to install from source using pip if you first install the build de
         irm https://astral.sh/uv/install.ps1 | iex
         ```
 
-5. Clone the source with `git`, and install from the project's root directory:
+5. Clone the source with `git`, then sync its dependencies from the project root:
 
     ```bash
     git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
     cd nautilus_trader
-    uv sync --all-extras
+    make sync
     ```
 
 > [!NOTE]
 >
 > The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 
-6. Set environment variables for PyO3 compilation (Linux and macOS only). Run these commands from
-   the repository root after `uv sync`:
+6. Use the uv project environment.
+
+    The uv project environment lives at `python/.venv`, beside `python/pyproject.toml`. Run direct uv
+    project commands from `python/` or pass `--project python` from the repository root.
+
+    For PyO3 compilation on Linux and macOS, run these commands from the repository root after
+    `make sync` in Bash or Zsh. For Fish commands, see the developer guide's
+    [environment setup](docs/developer_guide/environment_setup.md#4-configure-environment-variables).
+    Set `PYO3_PYTHON` in each shell to this checkout's `python/.venv/bin/python`; replace any saved
+    export that still points to the root `.venv/bin/python`.
 
     ```bash
     # Set the Python executable path for PyO3
-    export PYO3_PYTHON="$PWD/.venv/bin/python"
+    export PYO3_PYTHON="$PWD/python/.venv/bin/python"
 
     # Linux only: Set the library path for the uv-managed Python runtime
     PYTHON_LIB_DIR="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
@@ -492,6 +504,12 @@ It's possible to install from source using pip if you first install the build de
 > The `PYTHONHOME` variable is required when running `make cargo-test` with a `uv`-installed Python.
 > Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 
+7. Build and install NautilusTrader in release mode:
+
+    ```bash
+    make build
+    ```
+
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
 ## Redis
@@ -506,20 +524,20 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 - `make install`: Installs in `release` build mode with all dependency groups and extras.
 - `make install-debug`: Same as `make install` but with `debug` build mode.
-- `make install-deps`: Installs Python dependencies without building the package.
-- `make build`: Runs the build script in `release` build mode (default).
-- `make build-debug`: Runs the build script in `debug` build mode.
-- `make build-wheel`: Runs uv build with a wheel format in `release` mode.
-- `make build-wheel-debug`: Runs uv build with a wheel format in `debug` mode.
+- `make sync`: Installs Python dependencies without building the package.
+- `make build`: Builds and installs the package in `release` mode (default).
+- `make build-debug`: Builds and installs the package in `debug` mode.
+- `make build-wheel`: Builds a wheel in `release` mode.
 - `make cargo-test`: Runs all Rust crate tests using `cargo-nextest`.
 - `make clean`: Deletes build artifacts, caches, and build directories.
 - `make distclean`: **CAUTION** Removes all artifacts not in the git index when run with
   `FORCE=1`. This includes source files which have not been `git add`ed.
-- `make docs`: Builds the documentation HTML using Sphinx.
+- `make docs`: Builds the Python documentation with Sphinx and the Rust documentation with Cargo.
 - `make pre-commit`: Runs the pre-commit checks over all files.
-- `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).
+- `make ruff`: Runs Ruff over all files using `python/pyproject.toml` (with autofix).
 - `make pytest`: Runs all tests with `pytest`.
-- `make test-performance`: Runs performance tests with [codspeed](https://codspeed.io).
+- `make cargo-ci-benches`: Builds the Rust benchmarks used by CI.
+- `make cargo-codspeed-build`: Builds the Rust benchmark subset used for CodSpeed comparisons.
 
 > [!TIP]
 >
@@ -531,13 +549,12 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 ## Examples
 
-Indicators and strategies can be developed in Python, Cython, or Rust. For performance and
+Indicators and strategies can be developed in Python or Rust. For performance and
 latency-sensitive applications, we recommend Rust. Below are some examples:
 
-- [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
-- [indicator](/nautilus_trader/indicators/) implementations written in Cython.
-- [strategy](/nautilus_trader/examples/strategies/) examples written in Python.
-- [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
+- [indicator](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/indicators/src/) implementations exposed through PyO3.
+- [backtest](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/) examples using a `BacktestEngine` directly.
+- [EMA crossover backtest](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/backtest/examples/engine_ema_cross.rs) example written in Rust.
 
 ## Docker
 
@@ -576,18 +593,23 @@ http://127.0.0.1:8888/lab
 
 ## Development
 
-We aim to provide the most pleasant developer experience possible for this hybrid codebase of Rust, Python, and Cython.
+We aim to provide the most pleasant developer experience possible for this hybrid Rust and Python codebase.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/) for helpful information.
+
+[Nautilus Engineering](https://github.com/nautechsystems/nautilus_engineering) maintains the
+engineering standards, lint configuration, pre-commit definitions, tool pins, and repository
+checks shared across Nautilus projects. This repository vendors selected files at the revision
+recorded in `.nautilus-engineering.lock`; project-specific policy and CI wiring remain local.
 
 > [!TIP]
 >
-> Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
+> Run `make build-debug` to compile after Rust changes for the most efficient development workflow.
 
-After changes to v2 PyO3 bindings, stub annotations, or wrapped Rust docs, regenerate the
+After changes to PyO3 bindings, stub annotations, or wrapped Rust docs, regenerate the
 generated Python artifacts from the repository root:
 
 ```bash
-make py-stubs-v2
+make py-stubs
 ```
 
 Commit the generated `.pyi` files and PyO3 wrapper doc comments changed by this target. See
@@ -597,7 +619,8 @@ Commit the generated `.pyi` files and PyO3 wrapper doc comments changed by this 
 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader.
 Its key benefit is isolating each test in its own process, ensuring test reliability
-by avoiding interference.
+by avoiding interference. See the [Rust testing guidance](docs/developer_guide/testing.md#rust-tests)
+for details about full-suite support and the limits of plain `cargo test`.
 
 You can install cargo-nextest by running:
 
@@ -611,12 +634,12 @@ cargo install cargo-nextest
 
 ## Contributing
 
-Thank you for considering contributing to NautilusTrader! We welcome any and all help to improve
-the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues)
-on GitHub to discuss it with the team. This helps to ensure that your contribution will be
-well-aligned with the goals of the project and avoids duplication of effort.
+Thank you for considering a contribution to NautilusTrader. We welcome high-quality work that
+improves the project. Before starting a substantial change, open an
+[issue](https://github.com/nautechsystems/nautilus_trader/issues) to discuss the problem and approach
+with the team. Small, self-contained fixes do not require prior agreement.
 
-Before getting started, be sure to review the [open-source scope](/ROADMAP.md#open-source-scope) outlined in the project's roadmap to understand what's in and out of scope.
+Before getting started, be sure to review the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#open-source-scope) outlined in the project's roadmap to understand what's in and out of scope.
 
 Once you're ready to start working on your contribution, make sure to follow the guidelines
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA)
@@ -633,6 +656,12 @@ Thank you again for your interest in NautilusTrader! We look forward to reviewin
 Join our community of users and contributors on [Discord](https://discord.gg/NautilusTrader) to chat
 and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
 developer looking to contribute or just want to learn more about the platform, all are welcome on our Discord server.
+
+Features and integrations excluded by the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#out-of-scope)
+are also out of scope for discussion across official NautilusTrader channels, including GitHub and Discord.
+This includes "Show & Tell" posts about downstream implementations, even when no contribution is offered
+and no support or upstream inclusion is requested. Correctness and performance reports about the core trading engine
+remain welcome. Keep those reports focused on the core behavior.
 
 > [!WARNING]
 >

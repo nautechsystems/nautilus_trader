@@ -1,0 +1,18 @@
+# Betfair uses catalogue terminology in its API and corresponding local names
+# Typos uses the nearest config; this policy is independent of the root config
+[default]
+locale = "en-us"
+
+[default.extend-words]
+catalogue = "catalogue"
+catalogues = "catalogues"
+cancelled = "cancelled"
+cancelling = "cancelling"
+totalled = "totalled"
+signalled = "signalled"
+queueing = "queueing"
+canceller = "canceller"
+ot = "ot" # Betfair order-type field
+
+[files]
+extend-exclude = ["test_data/"]

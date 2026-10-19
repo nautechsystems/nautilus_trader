@@ -25,22 +25,159 @@ mod common;
 
 use std::hint::black_box;
 
+use ahash::AHashMap;
 use common::{fixtures, instrument_cache, instrument_precisions, yes_instrument};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_core::UnixNanos;
-use nautilus_model::{enums::LiquiditySide, instruments::Instrument, types::Currency};
+use nautilus_model::{
+    data::OrderBookDeltas,
+    enums::LiquiditySide,
+    identifiers::InstrumentId,
+    instruments::Instrument,
+    types::{Currency, Price, Quantity},
+};
 use nautilus_polymarket::{
+    common::enums::PolymarketOrderSide,
     execution::parse::{build_maker_fill_report, parse_fill_report, parse_order_status_report},
     http::models::{PolymarketOpenOrder, PolymarketTradeReport},
     websocket::{
-        messages::MarketWsMessage,
+        messages::{MarketWsMessage, PolymarketQuote, PolymarketQuotes},
         parse::{
-            parse_book_deltas, parse_book_snapshot, parse_quote_from_price_change,
-            parse_quote_from_snapshot, parse_timestamp_ms, parse_trade_tick,
+            parse_book_deltas, parse_book_snapshot, parse_quote_from_best_bid_ask,
+            parse_quote_from_price_change, parse_quote_from_snapshot, parse_timestamp_ms,
+            parse_trade_tick,
         },
     },
 };
 use rust_decimal_macros::dec;
+use ustr::Ustr;
+
+#[derive(Clone, Copy)]
+struct BookDeltaMeta {
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+}
+
+fn price_change_batch() -> (PolymarketQuotes, AHashMap<Ustr, BookDeltaMeta>) {
+    let asset_a = Ustr::from("0xTOKEN-A");
+    let asset_b = Ustr::from("0xTOKEN-B");
+    let instrument_a = InstrumentId::from("A.POLYMARKET");
+    let instrument_b = InstrumentId::from("B.POLYMARKET");
+    let price_changes = [
+        (asset_a, "0.007", PolymarketOrderSide::Buy, "20"),
+        (asset_b, "0.997", PolymarketOrderSide::Buy, "20"),
+        (asset_a, "0.005", PolymarketOrderSide::Sell, "0"),
+        (asset_b, "0.995", PolymarketOrderSide::Sell, "0"),
+        (asset_a, "0.009", PolymarketOrderSide::Sell, "30"),
+        (asset_b, "0.999", PolymarketOrderSide::Sell, "30"),
+    ]
+    .into_iter()
+    .map(|(asset_id, price, side, size)| PolymarketQuote {
+        asset_id,
+        price: price.to_string(),
+        side,
+        size: size.to_string(),
+        hash: String::new(),
+        best_bid: None,
+        best_ask: None,
+    })
+    .collect();
+    let metadata = AHashMap::from_iter([
+        (
+            asset_a,
+            BookDeltaMeta {
+                instrument_id: instrument_a,
+                price_precision: 3,
+                size_precision: 2,
+            },
+        ),
+        (
+            asset_b,
+            BookDeltaMeta {
+                instrument_id: instrument_b,
+                price_precision: 3,
+                size_precision: 2,
+            },
+        ),
+    ]);
+
+    (
+        PolymarketQuotes {
+            market: Ustr::from("0xMARKET"),
+            price_changes,
+            timestamp: "1700000003000".to_string(),
+        },
+        metadata,
+    )
+}
+
+fn dispatch_book_deltas(
+    quotes: &PolymarketQuotes,
+    metadata: &AHashMap<Ustr, BookDeltaMeta>,
+    ts_init: UnixNanos,
+) -> Vec<OrderBookDeltas> {
+    let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
+    let mut resolved = Vec::with_capacity(quotes.price_changes.len());
+    let mut groups: Vec<(BookDeltaMeta, Vec<&PolymarketQuote>)> = Vec::new();
+    let mut group_indices = AHashMap::with_capacity(quotes.price_changes.len());
+
+    for change in &quotes.price_changes {
+        let meta = *metadata.get(&change.asset_id).unwrap();
+        let group_index = match group_indices.get(&meta.instrument_id) {
+            Some(index) => *index,
+            None => {
+                let index = groups.len();
+                groups.push((meta, Vec::new()));
+                group_indices.insert(meta.instrument_id, index);
+                index
+            }
+        };
+        groups[group_index].1.push(change);
+        resolved.push((group_index, meta, change));
+    }
+
+    let mut batches = Vec::with_capacity(groups.len());
+    for (group_index, meta, _change) in resolved {
+        let changes = std::mem::take(&mut groups[group_index].1);
+        if changes.is_empty() {
+            continue;
+        }
+
+        let parsed = parse_book_deltas(
+            &changes,
+            meta.instrument_id,
+            meta.price_precision,
+            meta.size_precision,
+            ts_event,
+            ts_init,
+        )
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+        batches.push(OrderBookDeltas::new(meta.instrument_id, parsed));
+    }
+
+    batches
+}
+
+fn bench_price_change_dispatch(c: &mut Criterion) {
+    let (quotes, metadata) = price_change_batch();
+    let ts_init = UnixNanos::default();
+
+    let mut group = c.benchmark_group("dispatch");
+    group.throughput(Throughput::Elements(quotes.price_changes.len() as u64));
+    group.bench_function("price_change_interleaved", |b| {
+        b.iter(|| {
+            black_box(dispatch_book_deltas(
+                black_box(&quotes),
+                black_box(&metadata),
+                ts_init,
+            ));
+        });
+    });
+    group.finish();
+}
 
 fn bench_book_deltas(c: &mut Criterion) {
     let instruments = instrument_cache();
@@ -57,8 +194,20 @@ fn bench_book_deltas(c: &mut Criterion) {
             };
             let asset_id = quotes.price_changes[0].asset_id;
             let instrument = instruments.get(&asset_id).unwrap();
-            let deltas =
-                parse_book_deltas(&quotes, instrument.id(), px_prec, sz_prec, ts_init).unwrap();
+            let changes = [&quotes.price_changes[0]];
+            let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
+            let parsed = parse_book_deltas(
+                &changes,
+                instrument.id(),
+                px_prec,
+                sz_prec,
+                ts_event,
+                ts_init,
+            )
+            .into_iter()
+            .collect::<anyhow::Result<Vec<_>>>()
+            .unwrap();
+            let deltas = OrderBookDeltas::new(instrument.id(), parsed);
             black_box(deltas);
         });
     });
@@ -151,6 +300,42 @@ fn bench_quote_from_price_change(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_quote_from_best_bid_ask(c: &mut Criterion) {
+    let instruments = instrument_cache();
+    let (px_prec, sz_prec) = instrument_precisions();
+    let ts_init = UnixNanos::default();
+    let bid_top = Some((Price::from("0.50"), Quantity::from("200.0")));
+    let ask_top = Some((Price::from("0.51"), Quantity::from("150.0")));
+
+    let mut group = c.benchmark_group("inbound_pipeline");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("quote_from_best_bid_ask", |b| {
+        b.iter(|| {
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_BEST_BID_ASK)).unwrap();
+            let MarketWsMessage::BestBidAsk(bba) = msg else {
+                unreachable!()
+            };
+            let instrument = instruments.get(&bba.asset_id).unwrap();
+            let ts_event = parse_timestamp_ms(&bba.timestamp).unwrap();
+            let quote = parse_quote_from_best_bid_ask(
+                &bba,
+                instrument.id(),
+                px_prec,
+                sz_prec,
+                instrument.price_increment(),
+                true,
+                bid_top,
+                ask_top,
+                ts_event,
+                ts_init,
+            )
+            .unwrap();
+            black_box(quote);
+        });
+    });
+    group.finish();
+}
+
 fn bench_trades(c: &mut Criterion) {
     let instruments = instrument_cache();
     let (px_prec, sz_prec) = instrument_precisions();
@@ -197,7 +382,8 @@ fn bench_order_event(c: &mut Criterion) {
                 px_prec,
                 sz_prec,
                 ts_init,
-            );
+            )
+            .unwrap();
             black_box(report);
         });
     });
@@ -212,7 +398,7 @@ fn bench_order_fill(c: &mut Criterion) {
     let account_id = common::account_id();
     let currency = Currency::pUSD();
     let taker_fee = dec!(0.03);
-    let fee_exponent = 2.0;
+    let fee_exponent = dec!(2);
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
@@ -232,7 +418,8 @@ fn bench_order_fill(c: &mut Criterion) {
                 taker_fee,
                 fee_exponent,
                 ts_init,
-            );
+            )
+            .expect("benchmark fixture commission is representable");
             black_box(report);
         });
     });
@@ -271,6 +458,7 @@ fn bench_order_fill_maker(c: &mut Criterion) {
                         ts_init,
                         ts_init,
                     )
+                    .expect("benchmark fixture commission is representable")
                 })
                 .collect();
             black_box(reports);
@@ -281,10 +469,12 @@ fn bench_order_fill_maker(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    bench_price_change_dispatch,
     bench_book_deltas,
     bench_book_snapshot,
     bench_quote_from_snapshot,
     bench_quote_from_price_change,
+    bench_quote_from_best_bid_ask,
     bench_trades,
     bench_order_event,
     bench_order_fill,

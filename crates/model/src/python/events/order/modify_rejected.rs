@@ -80,6 +80,12 @@ impl OrderModifyRejected {
         self.to_string()
     }
 
+    #[getter]
+    #[pyo3(name = "causation_id")]
+    fn py_causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
@@ -125,7 +131,7 @@ impl OrderModifyRejected {
     #[getter]
     #[pyo3(name = "reason")]
     fn py_reason(&self) -> String {
-        self.reason.as_str().to_string()
+        self.reason.to_string()
     }
 
     #[getter]

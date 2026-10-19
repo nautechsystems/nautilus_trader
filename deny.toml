@@ -15,16 +15,17 @@ feature-depth = 1
 # Security Advisories
 # =============================================================================
 [advisories]
+unused-ignored-advisory = "deny"
 # Ignored advisories (use sparingly - document the reason)
 ignore = [
   # paste unmaintained, transitive via alloy
   # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
   { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },
 
-  # rustls-pemfile unmaintained, transitive via nautilus-network and various TLS deps.
-  # Migration target is rustls-pki-types; not a vulnerability.
-  # TODO: Monitor upstream TLS deps for migration
-  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
+  # unsafe-libyaml is build-only via dydx-proto -> tonic-buf-build -> serde_yaml,
+  # YAML parsing runs only when V4_PROTO_REBUILD requests protobuf regeneration.
+  # No fixed release exists; remove this exception when upstream replaces the parser
+  { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml unmaintained, build-only via dydx-proto, parsing requires V4_PROTO_REBUILD" },
 
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
@@ -40,22 +41,20 @@ ignore = [
   { id = "RUSTSEC-2025-0141", reason = "bincode unmaintained, transitive via madsim and hypersync-client (not a vulnerability)" },
 
   # capnp unsound APIs in constant::Reader and StructSchema, transitive via hypersync-client.
-  # Fix requires upstream update to capnp >= 0.24.0. Low risk: internal schema handling only.
-  # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for capnp update
+  # Generated code supplies static schema metadata; no remote schema input path is known.
   { id = "RUSTSEC-2025-0143", reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix" },
 
   # quick-xml duplicate-attribute check DoS, transitive via object_store 0.13.2.
-  # object_store has no release that depends on quick-xml >= 0.41.0.
-  # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
-  { id = "RUSTSEC-2026-0194", reason = "quick-xml DoS via object_store 0.13.2; no fixed object_store release" },
+  # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
+  { id = "RUSTSEC-2026-0194", reason = "quick-xml DoS via DataFusion-aligned object_store 0.13.2" },
 
   # quick-xml NsReader namespace-allocation DoS, transitive via object_store 0.13.2.
-  # object_store has no release that depends on quick-xml >= 0.41.0.
-  # TODO: Remove when the DataFusion-aligned object_store release depends on quick-xml >= 0.41.0
-  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via object_store 0.13.2; no fixed object_store release" },
+  # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
+  { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2" },
 
-  # NOTE: cargo-audit also flags RUSTSEC-2024-0388 (derivative), which cargo-deny
-  # does not surface; it is listed only in .cargo/audit.toml.
+  # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
+  # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
+  # osv-scanner.toml.
 ]
 
 # =============================================================================
@@ -79,7 +78,7 @@ allow = [
   "Unicode-DFS-2016",
   "Unicode-3.0",
   "0BSD",
-  "LGPL-3.0-or-later",
+  "LGPL-3.0-only",
   "Unlicense",
   "bzip2-1.0.6",
 ]
@@ -94,7 +93,7 @@ confidence-threshold = 0.8
 name = "implied-vol"
 version = "*"
 expression = "MIT"
-license-files = [{ path = "LICENSE", hash = 0xb0803f0e }]
+license-files = [{ path = "LICENSE", hash = 0x526ab6d5 }]
 
 # dydx-proto uses "LicenseRef-dYdX-Custom" but is effectively MIT licensed.
 # The dYdX custom license is a permissive license compatible with MIT terms.
@@ -138,104 +137,97 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2026-07-15
+# Each entry covers only the older versions, so a new duplicate still fails.
+# Last reviewed: 2026-09-29
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
-  { crate = "block-buffer" },
-  { crate = "const-oid" },
-  { crate = "crypto-common" },
-  { crate = "digest" },
-  { crate = "hmac" },
-  { crate = "md-5" },
-  { crate = "sha1" },
-  { crate = "sha2" },
+  { crate = "block-buffer:<0.12" },
+  { crate = "const-oid:<0.10" },
+  { crate = "crypto-common:<0.2" },
+  { crate = "digest:<0.11" },
+  { crate = "hmac:<0.13" },
+  { crate = "md-5:<0.11" },
+  { crate = "sha1:<0.11" },
+  { crate = "sha2:<0.11" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
-  { crate = "getrandom" },
-  { crate = "r-efi" },
-  { crate = "rand" },
-  { crate = "rand_chacha" },
-  { crate = "rand_core" },
+  { crate = "getrandom:<0.4" },
+  { crate = "r-efi:<6" },
+  { crate = "rand:<0.10" },
+  { crate = "rand_chacha:<0.9" },
+  { crate = "rand_core:<0.10" },
 
-  # Proc-macro helpers - transitive via derive macros in various crates
-  { crate = "darling" },
-  { crate = "darling_core" },
-  { crate = "darling_macro" },
-  { crate = "derive_more" },
-  { crate = "derive_more-impl" },
+  # Proc-macro support crates - transitive via derive macros in various crates
+  { crate = "darling:<0.24" },
+  { crate = "darling_core:<0.24" },
+  { crate = "darling_macro:<0.24" },
+  { crate = "derive_more:<2" },
+  { crate = "derive_more-impl:<2" },
 
   # syn 1 and strsim 0.10 - transitive via madsim -> darling 0.14 (dev-only simulator)
-  { crate = "syn" },
-  { crate = "strsim" },
+  { crate = "syn:<3" },
+  { crate = "strsim:<0.11" },
 
   # Enum derive macros - strum 0.27 (alloy, hypersync) vs 0.28 (nautilus)
-  { crate = "strum" },
-  { crate = "strum_macros" },
+  { crate = "strum:<0.28" },
+  { crate = "strum_macros:<0.28" },
 
   # Case conversion - version fragmentation via derive_more
-  { crate = "convert_case" },
+  { crate = "convert_case:<0.10" },
 
-  # Arrow/Parquet ecosystem - hypersync pins arrow 57, nautilus uses arrow 58
-  { crate = "lz4_flex" },
-  { crate = "arrow" },
-  { crate = "arrow-arith" },
-  { crate = "arrow-array" },
-  { crate = "arrow-buffer" },
-  { crate = "arrow-cast" },
-  { crate = "arrow-csv" },
-  { crate = "arrow-data" },
-  { crate = "arrow-ipc" },
-  { crate = "arrow-json" },
-  { crate = "arrow-ord" },
-  { crate = "arrow-row" },
-  { crate = "arrow-schema" },
-  { crate = "arrow-select" },
-  { crate = "arrow-string" },
-  { crate = "parquet" },
+  # Arrow/Parquet compatibility facades - hypersync requires the 57.x package IDs
+  { crate = "arrow:<59" },
+  { crate = "parquet:<59" },
 
   # Common utility crates with version fragmentation across ecosystem
-  { crate = "hashbrown" },
-  { crate = "itertools" },
-  { crate = "foldhash" },
-  { crate = "petgraph" },
-  { crate = "socket2" },
+  # base64 0.23 is used directly; upstream dependencies still require 0.22
+  { crate = "base64:<0.23" },
+  { crate = "hashbrown:<0.17" },
+  { crate = "itertools:<0.15" },
+  { crate = "foldhash:<0.2" },
+  { crate = "num-bigint:<0.5" },
+  { crate = "petgraph:<0.8" },
 
   # Signature traits - v2 via cosmrs/tendermint, v3 via ed25519-dalek
-  { crate = "ed25519" },
-  { crate = "signature" },
+  { crate = "ed25519:<3" },
+  { crate = "signature:<3" },
 
   # Perfect hash function crates - transitive
-  { crate = "phf" },
-  { crate = "phf_shared" },
+  { crate = "phf:<0.14" },
+  { crate = "phf_shared:<0.14" },
 
   # Error handling - thiserror 1.x vs 2.x transition in progress
-  { crate = "thiserror" },
-  { crate = "thiserror-impl" },
+  { crate = "thiserror:<2" },
+  { crate = "thiserror-impl:<2" },
 
   # CPU feature detection - cpufeatures 0.2 vs 0.3 (const-hex vs chacha20/rand)
-  { crate = "cpufeatures" },
+  { crate = "cpufeatures:<0.3" },
 
   # HTTP client - reqwest 0.12 vs 0.13 transition (databento, hypersync, object_store on 0.12)
-  { crate = "reqwest" },
-  { crate = "wasm-streams" },
+  { crate = "reqwest:<0.13" },
+  { crate = "wasm-streams:<0.5" },
+
+  # Reqwest requires tower-http 0.6; the direct HTTP transport uses 0.7
+  { crate = "tower-http:<0.7" },
 
   # Protobuf runtime - dYdX/cosmos/tonic use 0.13, ibapi uses 0.14
-  { crate = "prost" },
-  { crate = "prost-derive" },
+  { crate = "prost:<0.14" },
+  { crate = "prost-derive:<0.14" },
 
-  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
-  { crate = "capnp" },
-
-  # TOML parser - cbindgen requires 0.9.x, pyo3-stub-gen requires 1.0.x
-  { crate = "toml" },
-  { crate = "toml_datetime" },
-  { crate = "winnow" },
+  # TOML parser - cbindgen requires 0.9.x; the workspace and pyo3-stub-gen use 1.x
+  { crate = "toml:<1" },
+  { crate = "toml_datetime:<1" },
+  { crate = "winnow:<1" },
 
   # TLS roots - version fragmentation in TLS ecosystem
-  { crate = "webpki-roots" },
+  { crate = "webpki-roots:<1" },
 
   # Windows platform crates - notoriously fragmented across Windows SDK versions
-  { crate = "windows-sys" },
+  { crate = "windows-sys:<0.61" },
+
+  # Arrow and Parquet retain zstd 0.13 while compression-codecs and Databento use 0.14
+  { crate = "zstd:=0.13.3" },
+  { crate = "zstd-safe:=7.3.0" },
 ]
 
 skip-tree = []

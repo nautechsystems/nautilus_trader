@@ -93,8 +93,13 @@ release_verification_validate_positive_integer \
   PYPI_ATTESTATION_VERIFY_MAX_RETRY_DELAY_SECONDS \
   "$pypi_attestation_verify_max_retry_delay_seconds"
 
-work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
+if [[ -n "${RELEASE_VERIFICATION_DIAGNOSTICS_DIR:-}" ]]; then
+  mkdir -p "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR"
+  work_dir="$(mktemp -d "${RELEASE_VERIFICATION_DIAGNOSTICS_DIR}/registries.XXXXXX")"
+else
+  work_dir="$(mktemp -d)"
+  trap 'rm -rf "$work_dir"' EXIT
+fi
 manual_crate_exceptions_file="${work_dir}/manual-crate-publish-exceptions.txt"
 manual_crate_exceptions_used_file="${work_dir}/manual-crate-publish-exceptions-used.txt"
 
@@ -115,7 +120,16 @@ curl_to_file() {
 }
 
 sha256_file() {
-  sha256sum "$1" | awk '{print $1}'
+  local path=$1
+
+  if command -v sha256sum > /dev/null; then
+    sha256sum "$path" | awk '{ print $1 }'
+  elif command -v shasum > /dev/null; then
+    shasum -a 256 "$path" | awk '{ print $1 }'
+  else
+    echo "::error::sha256sum or shasum not found."
+    exit 1
+  fi
 }
 
 load_manual_crate_publish_exceptions() {
@@ -370,7 +384,8 @@ verify_pypi_attestation() {
 }
 
 sparse_index_path() {
-  local crate_name=${1,,}
+  local crate_name
+  crate_name=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
   local crate_name_length=${#crate_name}
 
   case "$crate_name_length" in

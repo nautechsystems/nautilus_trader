@@ -16,7 +16,6 @@
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
-    str::FromStr,
 };
 
 use nautilus_core::{
@@ -34,62 +33,9 @@ use pyo3::{IntoPyObjectExt, prelude::*, pyclass::CompareOp, types::PyDict};
 use ustr::Ustr;
 
 use crate::{
-    data::status::InstrumentStatus,
-    enums::{FromU16, MarketStatusAction},
-    identifiers::InstrumentId,
+    data::status::InstrumentStatus, enums::MarketStatusAction, identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
 };
-
-impl InstrumentStatus {
-    /// Creates a new [`InstrumentStatus`] from a Python object.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if extracting any attribute or converting types fails.
-    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        // Fast path: avoid property getters that trigger enum type deadlocks
-        if let Ok(status) = obj.cast::<Self>() {
-            return Ok(*status.borrow());
-        }
-
-        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id =
-            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
-
-        let action_obj: Bound<'_, PyAny> = obj.getattr("action")?.extract()?;
-        let action_u16: u16 = action_obj.getattr("value")?.extract()?;
-        let action = MarketStatusAction::from_u16(action_u16)
-            .ok_or_else(|| to_pyvalue_err(format!("Invalid action value: {action_u16}")))?;
-
-        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
-        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
-
-        let reason_str: Option<String> = obj.getattr("reason")?.extract()?;
-        let reason = reason_str.map(|reason_str| Ustr::from(&reason_str));
-
-        let trading_event_str: Option<String> = obj.getattr("trading_event")?.extract()?;
-        let trading_event =
-            trading_event_str.map(|trading_event_str| Ustr::from(&trading_event_str));
-
-        let is_trading: Option<bool> = obj.getattr("is_trading")?.extract()?;
-        let is_quoting: Option<bool> = obj.getattr("is_quoting")?.extract()?;
-        let is_short_sell_restricted: Option<bool> =
-            obj.getattr("is_short_sell_restricted")?.extract()?;
-
-        Ok(Self::new(
-            instrument_id,
-            action,
-            ts_event.into(),
-            ts_init.into(),
-            reason,
-            trading_event,
-            is_trading,
-            is_quoting,
-            is_short_sell_restricted,
-        ))
-    }
-}
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -258,10 +204,7 @@ impl InstrumentStatus {
 
 #[cfg(test)]
 mod tests {
-    use pyo3::{
-        IntoPyObjectExt, Python,
-        types::{PyAnyMethods, PyDict, PyDictMethods},
-    };
+    use pyo3::Python;
     use rstest::rstest;
 
     use crate::data::{status::InstrumentStatus, stubs::stub_instrument_status};
@@ -283,55 +226,6 @@ mod tests {
             let dict = stub_instrument_status.py_to_dict(py).unwrap();
             let parsed = InstrumentStatus::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, stub_instrument_status);
-        });
-    }
-
-    #[rstest]
-    fn test_from_pyobject(stub_instrument_status: InstrumentStatus) {
-        Python::initialize();
-        Python::attach(|py| {
-            let status_pyobject = stub_instrument_status.into_py_any(py).unwrap();
-            let parsed_status = InstrumentStatus::from_pyobject(status_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_status, stub_instrument_status);
-        });
-    }
-
-    #[rstest]
-    fn test_from_pyobject_rejects_invalid_action() {
-        Python::initialize();
-        Python::attach(|py| {
-            let namespace = py
-                .import("types")
-                .unwrap()
-                .getattr("SimpleNamespace")
-                .unwrap();
-
-            let instrument_id_kwargs = PyDict::new(py);
-            instrument_id_kwargs.set_item("value", "AAPL.XNAS").unwrap();
-            let instrument_id = namespace.call((), Some(&instrument_id_kwargs)).unwrap();
-
-            let action_kwargs = PyDict::new(py);
-            action_kwargs.set_item("value", u16::MAX).unwrap();
-            let action = namespace.call((), Some(&action_kwargs)).unwrap();
-
-            let status_kwargs = PyDict::new(py);
-            status_kwargs
-                .set_item("instrument_id", instrument_id)
-                .unwrap();
-            status_kwargs.set_item("action", action).unwrap();
-            status_kwargs.set_item("ts_event", 1_u64).unwrap();
-            status_kwargs.set_item("ts_init", 2_u64).unwrap();
-            status_kwargs.set_item("reason", py.None()).unwrap();
-            status_kwargs.set_item("trading_event", py.None()).unwrap();
-            status_kwargs.set_item("is_trading", py.None()).unwrap();
-            status_kwargs.set_item("is_quoting", py.None()).unwrap();
-            status_kwargs
-                .set_item("is_short_sell_restricted", py.None())
-                .unwrap();
-            let status = namespace.call((), Some(&status_kwargs)).unwrap();
-
-            let err = InstrumentStatus::from_pyobject(&status).unwrap_err();
-            assert!(err.to_string().contains("Invalid action value: 65535"));
         });
     }
 }

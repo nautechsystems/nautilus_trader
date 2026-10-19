@@ -1,0 +1,17 @@
+{
+  "error": [],
+  "result": {
+    "ZUSD": {
+      "balance": "200000.00",
+      "hold_trade": "1500.00"
+    },
+    "XXBT": {
+      "balance": "0.5",
+      "hold_trade": "0.1"
+    },
+    "ETH": {
+      "balance": "2.0",
+      "hold_trade": "0"
+    }
+  }
+}

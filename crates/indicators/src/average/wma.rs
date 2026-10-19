@@ -13,25 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::VecDeque, fmt::Display};
 
-use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
-use crate::indicator::{Indicator, MovingAverage};
-
-const MAX_PERIOD: usize = 8_192;
+use crate::{
+    indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
+};
 
 /// An indicator which calculates a weighted moving average across a rolling window.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -49,7 +49,7 @@ pub struct WeightedMovingAverage {
     /// Whether the indicator is initialized.
     pub initialized: bool,
     /// Inputs
-    pub inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    pub inputs: VecDeque<f64>,
 }
 
 impl Display for WeightedMovingAverage {
@@ -59,44 +59,69 @@ impl Display for WeightedMovingAverage {
 }
 
 impl WeightedMovingAverage {
+    /// Creates a linearly weighted moving average, from oldest weight one to newest weight `period`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is zero or exceeds the supported indicator period limit.
+    #[must_use]
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
+        Self::new_checked(period, price_type).expect(FAILED)
+    }
+
+    /// Creates a linearly weighted moving average with validated period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` is zero or exceeds the supported indicator period limit.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
+        Self::check_period(period)?;
+        let weights = (1..=period).map(|weight| weight as f64).collect();
+        Self::with_weights_checked(period, weights, price_type)
+    }
+
     /// Creates a new [`WeightedMovingAverage`] instance.
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period` is zero.
     /// - `weights.len()` does not equal `period`.
     /// - `weights` sum is effectively zero.
     #[must_use]
-    pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
-        Self::new_checked(period, weights, price_type).expect(FAILED)
+    pub fn with_weights(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
+        Self::with_weights_checked(period, weights, price_type).expect(FAILED)
     }
 
     /// Creates a new [`WeightedMovingAverage`] instance with the given period and weights.
     ///
     /// # Errors
     ///
-    /// Returns an error if **any** of the validation rules fails:
-    /// - `period` must be **positive**.
-    /// - `weights` must be **exactly** `period` elements long.
-    /// - `weights` must contain at least one non-zero value (∑wᵢ > ε).
-    pub fn new_checked(
+    /// Returns an error if:
+    /// - `period` is not **positive** or exceeds `MAX_PERIOD`.
+    /// - `weights` does not contain **exactly** `period` elements.
+    /// - Any weight is not finite.
+    /// - The sum of `weights` is not finite or does not exceed `f64::EPSILON`.
+    pub fn with_weights_checked(
         period: usize,
         weights: Vec<f64>,
         price_type: Option<PriceType>,
     ) -> anyhow::Result<Self> {
         const EPS: f64 = f64::EPSILON;
-
-        check_predicate_true(period > 0, "`period` must be positive")?;
-
+        Self::check_period(period)?;
         check_predicate_true(
             period == weights.len(),
             "`period` must equal `weights.len()`",
         )?;
 
+        check_predicate_true(
+            weights.iter().all(|weight| weight.is_finite()),
+            "`weights` must be finite",
+        )?;
+
         let weight_sum: f64 = weights.iter().copied().sum();
         check_predicate_true(
-            weight_sum > EPS,
+            weight_sum.is_finite() && weight_sum > EPS,
             "`weights` sum must be positive and > f64::EPSILON",
         )?;
 
@@ -105,9 +130,19 @@ impl WeightedMovingAverage {
             weights,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
-            inputs: ArrayDeque::new(),
+            inputs: VecDeque::with_capacity(period),
             initialized: false,
         })
+    }
+
+    pub(crate) fn check_period(period: usize) -> anyhow::Result<()> {
+        check_predicate_true(period > 0, "`period` must be positive")?;
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("`period` cannot exceed {MAX_PERIOD}"),
+        )?;
+
+        Ok(())
     }
 
     fn weighted_average(&self) -> f64 {
@@ -168,27 +203,51 @@ impl MovingAverage for WeightedMovingAverage {
     }
 
     fn update_raw(&mut self, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+
         if self.inputs.len() == self.period.min(MAX_PERIOD) {
             self.inputs.pop_front();
         }
-        let _ = self.inputs.push_back(value);
+        self.inputs.push_back(value);
 
-        self.value = self.weighted_average();
         self.initialized = self.count() >= self.period;
+        if self.initialized {
+            self.value = self.weighted_average();
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use arraydeque::{ArrayDeque, Wrapping};
     use rstest::rstest;
 
     use crate::{
         average::wma::WeightedMovingAverage,
         indicator::{Indicator, MovingAverage},
         stubs::*,
+        testing::assert_approx_equal,
     };
+
+    #[rstest]
+    #[case(4, 2.0)]
+    #[case(6, 4.0)]
+    fn sliding_window_keeps_the_latest_samples(#[case] count: usize, #[case] expected: f64) {
+        let mut wma = WeightedMovingAverage::with_weights(3, vec![1.0; 3], None);
+        for index in 0..count {
+            wma.update_raw(index as f64);
+        }
+        assert_eq!(
+            wma.inputs.iter().copied().collect::<Vec<_>>(),
+            (count - 3..count)
+                .map(|value| value as f64)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(wma.value, expected);
+        assert!(wma.initialized);
+    }
 
     #[rstest]
     fn test_wma_initialized(indicator_wma_10: WeightedMovingAverage) {
@@ -205,18 +264,18 @@ mod tests {
     #[rstest]
     #[should_panic]
     fn test_different_weights_len_and_period_error() {
-        let _ = WeightedMovingAverage::new(10, vec![0.5, 0.5, 0.5], None);
+        let _ = WeightedMovingAverage::with_weights(10, vec![0.5, 0.5, 0.5], None);
     }
 
     #[rstest]
     fn test_value_with_one_input(mut indicator_wma_10: WeightedMovingAverage) {
         indicator_wma_10.update_raw(1.0);
-        assert_eq!(indicator_wma_10.value, 1.0);
+        assert_eq!(indicator_wma_10.value, 0.0);
     }
 
     #[rstest]
     fn test_value_with_two_inputs_equal_weights() {
-        let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
+        let mut wma = WeightedMovingAverage::with_weights(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         assert_eq!(wma.value, 1.5);
@@ -224,7 +283,7 @@ mod tests {
 
     #[rstest]
     fn test_value_with_four_inputs_equal_weights() {
-        let mut wma = WeightedMovingAverage::new(4, vec![0.25, 0.25, 0.25, 0.25], None);
+        let mut wma = WeightedMovingAverage::with_weights(4, vec![0.25, 0.25, 0.25, 0.25], None);
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         wma.update_raw(3.0);
@@ -236,8 +295,7 @@ mod tests {
     fn test_value_with_two_inputs(mut indicator_wma_10: WeightedMovingAverage) {
         indicator_wma_10.update_raw(1.0);
         indicator_wma_10.update_raw(2.0);
-        let result = 2.0f64.mul_add(1.0, 1.0 * 0.9) / 1.9;
-        assert_eq!(indicator_wma_10.value, result);
+        assert_eq!(indicator_wma_10.value, 0.0);
     }
 
     #[rstest]
@@ -245,8 +303,7 @@ mod tests {
         indicator_wma_10.update_raw(1.0);
         indicator_wma_10.update_raw(2.0);
         indicator_wma_10.update_raw(3.0);
-        let result = 1.0f64.mul_add(0.8, 3.0f64.mul_add(1.0, 2.0 * 0.9)) / (1.0 + 0.9 + 0.8);
-        assert_eq!(indicator_wma_10.value, result);
+        assert_eq!(indicator_wma_10.value, 0.0);
     }
 
     #[rstest]
@@ -262,7 +319,7 @@ mod tests {
         for i in 1..=11 {
             indicator_wma_10.update_raw(f64::from(i));
         }
-        assert_eq!(indicator_wma_10.value(), 8.000_000_000_000_002);
+        assert_approx_equal(indicator_wma_10.value(), 8.0);
     }
 
     #[rstest]
@@ -278,24 +335,24 @@ mod tests {
     #[rstest]
     #[should_panic]
     fn new_panics_on_zero_period() {
-        let _ = WeightedMovingAverage::new(0, vec![1.0], None);
+        let _ = WeightedMovingAverage::with_weights(0, vec![1.0], None);
     }
 
     #[rstest]
     fn new_checked_err_on_zero_period() {
-        let res = WeightedMovingAverage::new_checked(0, vec![1.0], None);
+        let res = WeightedMovingAverage::with_weights_checked(0, vec![1.0], None);
         assert!(res.is_err());
     }
 
     #[rstest]
     #[should_panic]
     fn new_panics_on_zero_weight_sum() {
-        let _ = WeightedMovingAverage::new(3, vec![0.0, 0.0, 0.0], None);
+        let _ = WeightedMovingAverage::with_weights(3, vec![0.0, 0.0, 0.0], None);
     }
 
     #[rstest]
     fn new_checked_err_on_zero_weight_sum() {
-        let res = WeightedMovingAverage::new_checked(3, vec![0.0, 0.0, 0.0], None);
+        let res = WeightedMovingAverage::with_weights_checked(3, vec![0.0, 0.0, 0.0], None);
         assert!(res.is_err());
     }
 
@@ -303,14 +360,14 @@ mod tests {
     #[should_panic]
     fn new_panics_when_weight_sum_below_epsilon() {
         let tiny = f64::EPSILON / 10.0;
-        let _ = WeightedMovingAverage::new(3, vec![tiny; 3], None);
+        let _ = WeightedMovingAverage::with_weights(3, vec![tiny; 3], None);
     }
 
     #[rstest]
     fn initialized_flag_transitions() {
         let period = 3;
         let weights = vec![1.0, 2.0, 3.0];
-        let mut wma = WeightedMovingAverage::new(period, weights, None);
+        let mut wma = WeightedMovingAverage::with_weights(period, weights, None);
 
         assert!(!wma.initialized());
 
@@ -324,7 +381,7 @@ mod tests {
 
     #[rstest]
     fn count_matches_inputs_and_has_inputs() {
-        let mut wma = WeightedMovingAverage::new(4, vec![0.25; 4], None);
+        let mut wma = WeightedMovingAverage::with_weights(4, vec![0.25; 4], None);
 
         assert_eq!(wma.count(), 0);
         assert!(!wma.has_inputs());
@@ -337,7 +394,7 @@ mod tests {
 
     #[rstest]
     fn reset_restores_pristine_state() {
-        let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
+        let mut wma = WeightedMovingAverage::with_weights(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         assert!(wma.initialized());
@@ -352,7 +409,7 @@ mod tests {
 
     #[rstest]
     fn weighted_average_with_non_uniform_weights() {
-        let mut wma = WeightedMovingAverage::new(3, vec![1.0, 2.0, 3.0], None);
+        let mut wma = WeightedMovingAverage::with_weights(3, vec![1.0, 2.0, 3.0], None);
         wma.update_raw(10.0);
         wma.update_raw(20.0);
         wma.update_raw(30.0);
@@ -378,7 +435,7 @@ mod tests {
     fn test_negative_weights_positive_sum() {
         let period = 3;
         let weights = vec![-1.0, 2.0, 2.0];
-        let mut wma = WeightedMovingAverage::new(period, weights, None);
+        let mut wma = WeightedMovingAverage::with_weights(period, weights, None);
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         wma.update_raw(3.0);
@@ -389,57 +446,61 @@ mod tests {
     }
 
     #[rstest]
-    fn test_nan_input_propagates() {
-        let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
+    fn test_nan_input_is_ignored() {
+        let mut wma = WeightedMovingAverage::with_weights(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
         wma.update_raw(f64::NAN);
-
-        assert!(wma.value().is_nan());
+        assert_eq!(wma.value(), 0.0);
+        assert_eq!(wma.count(), 1);
+        assert!(!wma.initialized());
+        wma.update_raw(3.0);
+        assert_eq!(wma.value(), 2.0);
+        assert!(wma.initialized());
     }
 
     #[rstest]
     #[should_panic]
     fn new_panics_when_weight_sum_equals_epsilon() {
         let eps_third = f64::EPSILON / 3.0;
-        let _ = WeightedMovingAverage::new(3, vec![eps_third; 3], None);
+        let _ = WeightedMovingAverage::with_weights(3, vec![eps_third; 3], None);
     }
 
     #[rstest]
     fn new_checked_err_when_weight_sum_equals_epsilon() {
         let eps_third = f64::EPSILON / 3.0;
-        let res = WeightedMovingAverage::new_checked(3, vec![eps_third; 3], None);
+        let res = WeightedMovingAverage::with_weights_checked(3, vec![eps_third; 3], None);
         assert!(res.is_err());
     }
 
     #[rstest]
     fn new_checked_err_when_weight_sum_below_epsilon() {
         let w = f64::EPSILON * 0.9;
-        let res = WeightedMovingAverage::new_checked(1, vec![w], None);
+        let res = WeightedMovingAverage::with_weights_checked(1, vec![w], None);
         assert!(res.is_err());
     }
 
     #[rstest]
     fn new_ok_when_weight_sum_above_epsilon() {
         let w = f64::EPSILON * 1.1;
-        let res = WeightedMovingAverage::new_checked(1, vec![w], None);
+        let res = WeightedMovingAverage::with_weights_checked(1, vec![w], None);
         assert!(res.is_ok());
     }
 
     #[rstest]
     #[should_panic]
     fn new_panics_on_cancelled_weights_sum() {
-        let _ = WeightedMovingAverage::new(3, vec![1.0, -1.0, 0.0], None);
+        let _ = WeightedMovingAverage::with_weights(3, vec![1.0, -1.0, 0.0], None);
     }
 
     #[rstest]
     fn new_checked_err_on_cancelled_weights_sum() {
-        let res = WeightedMovingAverage::new_checked(3, vec![1.0, -1.0, 0.0], None);
+        let res = WeightedMovingAverage::with_weights_checked(3, vec![1.0, -1.0, 0.0], None);
         assert!(res.is_err());
     }
 
     #[rstest]
     fn single_period_returns_latest_input() {
-        let mut wma = WeightedMovingAverage::new(1, vec![1.0], None);
+        let mut wma = WeightedMovingAverage::with_weights(1, vec![1.0], None);
 
         for i in 0..5 {
             let v = f64::from(i);
@@ -450,7 +511,7 @@ mod tests {
 
     #[rstest]
     fn value_with_sparse_weights() {
-        let mut wma = WeightedMovingAverage::new(3, vec![0.0, 1.0, 0.0], None);
+        let mut wma = WeightedMovingAverage::with_weights(3, vec![0.0, 1.0, 0.0], None);
         wma.update_raw(10.0);
         wma.update_raw(20.0);
         wma.update_raw(30.0);
@@ -459,34 +520,32 @@ mod tests {
 
     #[rstest]
     fn warm_up_len1() {
-        let mut wma = WeightedMovingAverage::new(4, vec![1.0, 2.0, 3.0, 4.0], None);
+        let mut wma = WeightedMovingAverage::with_weights(4, vec![1.0, 2.0, 3.0, 4.0], None);
         wma.update_raw(42.0);
-        assert_eq!(wma.value(), 42.0);
+        assert_eq!(wma.value(), 0.0);
     }
 
     #[rstest]
     fn warm_up_len2() {
-        let mut wma = WeightedMovingAverage::new(4, vec![1.0, 2.0, 3.0, 4.0], None);
+        let mut wma = WeightedMovingAverage::with_weights(4, vec![1.0, 2.0, 3.0, 4.0], None);
         wma.update_raw(10.0);
         wma.update_raw(20.0);
-        let expected = 20.0f64.mul_add(4.0, 10.0 * 3.0) / (4.0 + 3.0);
-        assert_eq!(wma.value(), expected);
+        assert_eq!(wma.value(), 0.0);
     }
 
     #[rstest]
     fn warm_up_len3() {
-        let mut wma = WeightedMovingAverage::new(4, vec![1.0, 2.0, 3.0, 4.0], None);
+        let mut wma = WeightedMovingAverage::with_weights(4, vec![1.0, 2.0, 3.0, 4.0], None);
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         wma.update_raw(3.0);
-        let expected = 1.0f64.mul_add(2.0, 3.0f64.mul_add(4.0, 2.0 * 3.0)) / (4.0 + 3.0 + 2.0);
-        assert_eq!(wma.value(), expected);
+        assert_eq!(wma.value(), 0.0);
     }
 
     #[rstest]
     fn input_window_contains_latest_period() {
         let period = 3;
-        let mut wma = WeightedMovingAverage::new(period, vec![1.0; period], None);
+        let mut wma = WeightedMovingAverage::with_weights(period, vec![1.0; period], None);
         let vals = [1.0, 2.0, 3.0, 4.0];
         for v in vals {
             wma.update_raw(v);
@@ -497,7 +556,7 @@ mod tests {
 
     #[rstest]
     fn window_slides_correctly() {
-        let mut wma = WeightedMovingAverage::new(2, vec![1.0; 2], None);
+        let mut wma = WeightedMovingAverage::with_weights(2, vec![1.0; 2], None);
         wma.update_raw(1.0);
         assert_eq!(wma.inputs.iter().copied().collect::<Vec<_>>(), vec![1.0]);
         wma.update_raw(2.0);
@@ -515,7 +574,7 @@ mod tests {
     #[rstest]
     fn window_len_constant_after_many_updates() {
         let period = 5;
-        let mut wma = WeightedMovingAverage::new(period, vec![1.0; period], None);
+        let mut wma = WeightedMovingAverage::with_weights(period, vec![1.0; period], None);
         for i in 0..100 {
             wma.update_raw(i as f64);
             assert_eq!(wma.inputs.len(), period.min(i + 1));
@@ -523,63 +582,41 @@ mod tests {
     }
 
     #[rstest]
-    fn arraydeque_wraps_when_full() {
-        const CAP: usize = 3;
-        let mut buf: ArrayDeque<usize, CAP, Wrapping> = ArrayDeque::new();
-        for i in 0..=CAP {
-            let _ = buf.push_back(i);
-        }
-        assert_eq!(buf.len(), CAP);
-        assert_eq!(buf.front().copied(), Some(1));
-        assert_eq!(buf.back().copied(), Some(3));
-    }
-
-    #[rstest]
-    fn arraydeque_sliding_window_with_pop() {
-        const CAP: usize = 3;
-        let mut buf: ArrayDeque<usize, CAP, Wrapping> = ArrayDeque::new();
-        for i in 0..10 {
-            if buf.len() == CAP {
-                buf.pop_front();
-            }
-            let _ = buf.push_back(i);
-            assert!(buf.len() <= CAP);
-        }
-        assert_eq!(buf.len(), CAP);
-    }
-
-    #[rstest]
-    fn new_ok_with_infinite_weight() {
-        let res = WeightedMovingAverage::new_checked(2, vec![f64::INFINITY, 1.0], None);
-        assert!(res.is_ok());
+    fn new_rejects_infinite_weight() {
+        let res = WeightedMovingAverage::with_weights_checked(2, vec![f64::INFINITY, 1.0], None);
+        assert!(res.is_err());
     }
 
     #[rstest]
     #[should_panic]
     fn new_panics_on_nan_weight() {
-        let _ = WeightedMovingAverage::new(2, vec![f64::NAN, 1.0], None);
+        let _ = WeightedMovingAverage::with_weights(2, vec![f64::NAN, 1.0], None);
     }
 
     #[rstest]
     #[should_panic]
     fn new_panics_on_empty_weights() {
-        let _ = WeightedMovingAverage::new(1, Vec::new(), None);
+        let _ = WeightedMovingAverage::with_weights(1, Vec::new(), None);
     }
 
     #[rstest]
-    fn inf_input_propagates() {
-        let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
+    fn inf_input_is_ignored() {
+        let mut wma = WeightedMovingAverage::with_weights(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
         wma.update_raw(f64::INFINITY);
-        assert!(wma.value().is_infinite());
+        assert_eq!(wma.value(), 0.0);
+        assert_eq!(wma.count(), 1);
+        assert!(!wma.initialized());
+        wma.update_raw(3.0);
+        assert_eq!(wma.value(), 2.0);
+        assert!(wma.initialized());
     }
 
     #[rstest]
     fn warm_up_with_front_zero_weights() {
-        let mut wma = WeightedMovingAverage::new(4, vec![0.0, 0.0, 1.0, 1.0], None);
+        let mut wma = WeightedMovingAverage::with_weights(4, vec![0.0, 0.0, 1.0, 1.0], None);
         wma.update_raw(10.0);
         wma.update_raw(20.0);
-        let expected = 20.0f64.mul_add(1.0, 10.0 * 1.0) / 2.0;
-        assert_eq!(wma.value(), expected);
+        assert_eq!(wma.value(), 0.0);
     }
 }

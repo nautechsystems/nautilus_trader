@@ -15,7 +15,8 @@
 
 use std::{collections::BTreeMap, fmt::Debug};
 
-use nautilus_model::{orders::Order, position::Position};
+use nautilus_core::DurationNanos;
+use nautilus_model::position::Position;
 
 use crate::Returns;
 
@@ -24,8 +25,13 @@ const IMPL_ERR: &str = "is not implemented for";
 /// Trait for portfolio performance statistics that can be calculated from different data sources.
 ///
 /// This trait provides a flexible framework for implementing various financial performance
-/// metrics that can operate on returns, realized PnLs, orders, or positions data.
+/// metrics that can operate on returns, realized PnLs, or positions data.
 /// Each statistic implementation should override the relevant calculation methods.
+///
+/// The analyzer calls `calculate_from_returns`, `calculate_from_realized_pnls`, and
+/// `calculate_from_positions` on every registered statistic, and their defaults panic, so an
+/// implementation must override all three and return `None` for a category it does not support.
+/// `calculate_from_returns_with_benchmark` defaults to `None` and is optional.
 #[allow(unused_variables)]
 pub trait PortfolioStatistic: Debug {
     type Item;
@@ -52,16 +58,6 @@ pub trait PortfolioStatistic: Debug {
             "`calculate_from_realized_pnls` {IMPL_ERR} `{}`",
             self.name()
         );
-    }
-
-    /// Calculates the statistic from order data.
-    ///
-    /// # Panics
-    ///
-    /// Panics if this method is not implemented for the specific statistic.
-    #[allow(dead_code)]
-    fn calculate_from_orders(&self, orders: Vec<Box<dyn Order>>) -> Option<Self::Item> {
-        panic!("`calculate_from_orders` {IMPL_ERR} `{}`", self.name());
     }
 
     /// Calculates the statistic from position data.
@@ -124,12 +120,11 @@ pub trait PortfolioStatistic: Debug {
     /// bin value is identical to the input value, so callers that already operate on
     /// daily returns observe no behavior change.
     fn downsample_to_daily_bins(&self, returns: &Returns) -> Returns {
-        let nanos_per_day = 86_400_000_000_000; // Number of nanoseconds in a day
+        let day = DurationNanos::from_days(1);
         let mut daily_bins = BTreeMap::new();
 
         for (&timestamp, &value) in returns {
-            // Calculate the start of the day in nanoseconds for the given timestamp
-            let day_start = timestamp - (timestamp.as_u64() % nanos_per_day);
+            let day_start = timestamp.floor(day);
 
             // Geometrically compound returns within each day
             let entry = daily_bins.entry(day_start).or_insert(0.0_f64);

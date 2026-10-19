@@ -1,17 +1,6 @@
 [package]
 name = "nautilus-serialization"
-readme = "README.md"
-build = "build.rs"
-include = [
-  "src/**/*",
-  "schemas/**/*",
-  "generated/**/*",
-  "tests/**/*",
-  "benches/**/*",
-  "build.rs",
-  "Cargo.toml",
-  "README.md",
-]
+include = ["src/**/*", "tests/**/*", "benches/**/*", "Cargo.toml", "README.md"]
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -33,9 +22,8 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-arrow = ["dep:arrow", "nautilus-model/arrow"]
-capnp = ["dep:capnp", "dep:capnpc", "dep:walkdir"]
-display = ["arrow"]
+arrow = ["dep:arrow", "dep:nautilus-macros", "nautilus-model/arrow"]
+arrow-display = ["arrow"]
 sbe = []
 extension-module = [
   "nautilus-core/extension-module",
@@ -51,20 +39,15 @@ python = [
 ]
 high-precision = ["nautilus-model/high-precision"]
 
-[package.metadata.cargo-machete]
-ignored = [
-  "capnpc", # Used by build.rs when the `capnp` feature is enabled
-  "walkdir", # Used by build.rs when the `capnp` feature is enabled
-]
-
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["arrow", "capnp", "display", "high-precision", "sbe"]
+features = ["arrow", "arrow-display", "high-precision", "sbe"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-macros = { workspace = true, optional = true }
+nautilus-model = { workspace = true }
 
 anyhow = { workspace = true }
 indexmap = { workspace = true }
@@ -74,27 +57,17 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-uuid = { workspace = true }
 
 arrow = { workspace = true, optional = true }
-capnp = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-model = { workspace = true, features = ["test-support"] }
+
 criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 rstest = { workspace = true }
-
-[build-dependencies]
-capnpc = { workspace = true, optional = true }
-walkdir = { workspace = true, optional = true }
-
-[[bench]]
-name = "capnp_serialization"
-path = "benches/capnp_serialization.rs"
-harness = false
-required-features = ["capnp"]
 
 [[bench]]
 name = "serialization_comparison"
@@ -107,8 +80,7 @@ path = "benches/sbe_decoding.rs"
 harness = false
 required-features = ["sbe"]
 
-[[bench]]
-name = "market_data_capnp_vs_sbe"
-path = "benches/market_data_capnp_vs_sbe.rs"
-harness = false
-required-features = ["capnp", "sbe"]
+[[test]]
+name = "arrow_custom_data_macro"
+path = "tests/arrow_custom_data_macro.rs"
+required-features = ["arrow"]

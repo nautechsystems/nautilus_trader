@@ -20,22 +20,25 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, RwLock,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
-use arc_swap::ArcSwapOption;
-use chrono::{DateTime, NaiveDate, Utc};
+use http::Method;
+use jiff::{Timestamp, civil::Date};
 use nautilus_core::{
-    AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
+    AtomicMap, AtomicTime, UUID4, nanos::UnixNanos, string::secret::SecretString,
     time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BookOrder, FundingRateUpdate, TradeTick},
-    enums::{BookType, OrderSide, OrderType, TimeInForce},
+    enums::{BookType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
+    fees::MakerTakerFeeRates,
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     orderbook::OrderBook,
@@ -43,33 +46,34 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    http::HttpClient,
+    http::{HttpClient, HttpRedirectPolicy, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
+    retry::{RetryConfig, RetryError, RetryManager},
 };
-use reqwest::{Method, header::USER_AGENT};
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    error::AxHttpError,
+    error::{AxErrorResponse, AxHttpError},
     models::{
         AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse, AxBookResponse,
         AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle, AxCandleResponse,
         AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxFundingSlotsResponse,
         AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
-        AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse, AxPlaceOrderResponse,
-        AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse,
-        AxRiskSnapshotResponse, AxTicker, AxTickerResponse, AxTickersResponse, AxTradesResponse,
-        AxTransactionsResponse, AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest,
-        PlaceOrderRequest, PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
+        AxOpenOrdersResponse, AxOrderDetail, AxOrderRejectReason, AxOrderStatusQueryResponse,
+        AxOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
+        AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse, AxRiskSnapshotResponse,
+        AxTicker, AxTickerResponse, AxTickersResponse, AxTradesResponse, AxTransactionsResponse,
+        AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
+        PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate, parse_instrument,
-        parse_order_detail_status_report, parse_order_status_report, parse_position_status_report,
-        parse_trade_tick,
+        parse_order_detail_status_report, parse_order_status, parse_order_status_report,
+        parse_position_status_report, parse_trade_tick, update_order_report_timestamps,
     },
     query::{
         GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
@@ -102,7 +106,7 @@ pub struct AxRawHttpClient {
     orders_base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
-    session_token: RwLock<Option<String>>,
+    session_token: RwLock<Option<SecretString>>,
     retry_manager: RetryManager<AxHttpError>,
     cancellation_token: RwLock<CancellationToken>,
 }
@@ -116,7 +120,7 @@ impl Default for AxRawHttpClient {
 
 impl Debug for AxRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let has_session_token = self.session_token.read().is_ok_and(|guard| guard.is_some());
+        let has_session_token = self.session_token.read().is_some();
         f.debug_struct(stringify!(AxRawHttpClient))
             .field("base_url", &self.base_url)
             .field("orders_base_url", &self.orders_base_url)
@@ -142,36 +146,18 @@ impl AxRawHttpClient {
     }
 
     /// Cancel all pending HTTP requests.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .read()
-            .expect("Lock poisoned")
-            .cancel();
+        self.cancellation_token.read().cancel();
     }
 
     /// Replaces the cancelled token so new requests can proceed after reconnect.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn reset_cancellation_token(&self) {
-        *self.cancellation_token.write().expect("Lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.write() = CancellationToken::new();
     }
 
     /// Get a clone of the current cancellation token.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .read()
-            .expect("Lock poisoned")
-            .clone()
+        self.cancellation_token.read().clone()
     }
 
     /// Creates a new [`AxRawHttpClient`] using the default Ax HTTP URL.
@@ -204,15 +190,17 @@ impl AxRawHttpClient {
         Ok(Self {
             base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
             orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*AX_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
+            client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*AX_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: None,
             session_token: RwLock::new(None),
             retry_manager,
@@ -253,15 +241,17 @@ impl AxRawHttpClient {
         Ok(Self {
             base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
             orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*AX_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
+            client: HttpClient::builder()
+                .redirect_policy(HttpRedirectPolicy::Reject)
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*AX_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: Some(Credential::new(api_key, api_secret)),
             session_token: RwLock::new(None),
             retry_manager,
@@ -272,24 +262,15 @@ impl AxRawHttpClient {
     /// Sets the session token for authenticated requests.
     ///
     /// The session token is obtained through the login flow and used for bearer token authentication.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal lock is poisoned (indicates a panic in another thread).
-    pub fn set_session_token(&self, token: String) {
-        // Lock poisoning indicates a panic in another thread, which is fatal
-        *self.session_token.write().expect("Lock poisoned") = Some(token);
-    }
-
-    pub(crate) fn has_session_token(&self) -> bool {
-        self.session_token.read().is_ok_and(|guard| guard.is_some())
+    pub fn set_session_token(&self, token: SecretString) {
+        *self.session_token.write() = Some(token);
     }
 
     fn default_headers() -> HashMap<String, String> {
-        HashMap::from([
-            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-            ("Accept".to_string(), "application/json".to_string()),
-        ])
+        let mut headers: HashMap<String, String> =
+            create_standard_nautilus_headers().into_iter().collect();
+        headers.insert("Accept".to_string(), "application/json".to_string());
+        headers
     }
 
     fn rate_limiter_quotas() -> Vec<(String, Quota)> {
@@ -304,14 +285,13 @@ impl AxRawHttpClient {
     }
 
     fn auth_headers(&self) -> Result<HashMap<String, String>, AxHttpError> {
-        // Lock poisoning indicates a panic in another thread, which is fatal
-        let guard = self.session_token.read().expect("Lock poisoned");
+        let guard = self.session_token.read();
         let session_token = guard.as_ref().ok_or(AxHttpError::MissingSessionToken)?;
 
         let mut headers = HashMap::new();
         headers.insert(
             "Authorization".to_string(),
-            format!("Bearer {session_token}"),
+            format!("Bearer {}", session_token.expose_secret()),
         );
 
         Ok(headers)
@@ -416,28 +396,21 @@ impl AxRawHttpClient {
         let is_idempotent = matches!(method, Method::GET | Method::HEAD | Method::OPTIONS);
         let should_retry = |error: &AxHttpError| -> bool { is_idempotent && error.is_retryable() };
 
-        let create_error = |msg: String| -> AxHttpError {
-            if msg == "canceled" {
-                AxHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
-            } else {
-                AxHttpError::NetworkError(msg)
+        let create_error = |error: RetryError| -> AxHttpError {
+            match error {
+                RetryError::Canceled => {
+                    AxHttpError::Canceled("Adapter disconnecting or shutting down".to_string())
+                }
+                error => AxHttpError::NetworkError(error.to_string()),
             }
         };
 
-        let cancel_token = self
-            .cancellation_token
-            .read()
-            .expect("Lock poisoned")
-            .clone();
+        let cancel_token = self.cancellation_token.read().clone();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint.as_str(),
-                operation,
-                should_retry,
-                create_error,
-                &cancel_token,
-            )
+            .invocation(endpoint.as_str(), operation, should_retry, create_error)
+            .cancellation_token(&cancel_token)
+            .execute()
             .await
     }
 
@@ -597,9 +570,9 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are available from either source
-    /// - The HTTP request fails
-    /// - The credentials are invalid
+    /// - No credentials are available from either source.
+    /// - The HTTP request fails.
+    /// - The credentials are invalid.
     pub async fn authenticate_auto(
         &self,
         expiration_seconds: i32,
@@ -608,17 +581,27 @@ impl AxRawHttpClient {
             .resolve_credentials()
             .ok_or(AxHttpError::MissingCredentials)?;
 
-        self.authenticate(&api_key, &api_secret, expiration_seconds)
-            .await
+        self.authenticate(
+            api_key.expose_secret(),
+            api_secret.expose_secret(),
+            expiration_seconds,
+        )
+        .await
     }
 
-    fn resolve_credentials(&self) -> Option<(String, String)> {
+    fn resolve_credentials(&self) -> Option<(SecretString, SecretString)> {
         if let Some(cred) = &self.credential {
-            return Some((cred.api_key().to_string(), cred.api_secret().to_string()));
+            return Some((
+                SecretString::from(cred.api_key()),
+                SecretString::from(cred.api_secret()),
+            ));
         }
 
         let cred = Credential::resolve(None, None)?;
-        Some((cred.api_key().to_string(), cred.api_secret().to_string()))
+        Some((
+            SecretString::from(cred.api_key()),
+            SecretString::from(cred.api_secret()),
+        ))
     }
 
     /// Places a new order.
@@ -979,7 +962,7 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_transactions(
         &self,
-        transaction_types: Vec<String>,
+        transaction_types: Vec<Ustr>,
         start_timestamp_ns: i64,
         end_timestamp_ns: i64,
     ) -> Result<AxTransactionsResponse, AxHttpError> {
@@ -1148,10 +1131,7 @@ impl AxRawHttpClient {
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
-        from_py_object
-    )
+    pyo3::pyclass(module = "nautilus_trader.adapters.architect_ax", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -1160,9 +1140,9 @@ impl AxRawHttpClient {
 pub struct AxHttpClient {
     pub(crate) inner: Arc<AxRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    pub(crate) account_fee_rates: Arc<AtomicMap<Option<Ustr>, MakerTakerFeeRates>>,
     clock: &'static AtomicTime,
     cache_initialized: Arc<AtomicBool>,
-    account_fees: Arc<ArcSwapOption<(Decimal, Decimal)>>,
 }
 
 impl Clone for AxHttpClient {
@@ -1170,9 +1150,9 @@ impl Clone for AxHttpClient {
         Self {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
-            cache_initialized: self.cache_initialized.clone(),
+            account_fee_rates: self.account_fee_rates.clone(),
             clock: self.clock,
-            account_fees: self.account_fees.clone(),
+            cache_initialized: self.cache_initialized.clone(),
         }
     }
 }
@@ -1210,9 +1190,9 @@ impl AxHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
-            cache_initialized: Arc::new(AtomicBool::new(false)),
+            account_fee_rates: Arc::new(AtomicMap::new()),
             clock: get_atomic_clock_realtime(),
-            account_fees: Arc::new(ArcSwapOption::empty()),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -1246,9 +1226,9 @@ impl AxHttpClient {
                 proxy_url,
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
-            cache_initialized: Arc::new(AtomicBool::new(false)),
+            account_fee_rates: Arc::new(AtomicMap::new()),
             clock: get_atomic_clock_realtime(),
-            account_fees: Arc::new(ArcSwapOption::empty()),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -1277,7 +1257,7 @@ impl AxHttpClient {
     /// Sets the session token for authenticated requests.
     ///
     /// The session token is obtained through the login flow and used for bearer token authentication.
-    pub fn set_session_token(&self, token: String) {
+    pub fn set_session_token(&self, token: SecretString) {
         self.inner.set_session_token(token);
     }
 
@@ -1337,13 +1317,14 @@ impl AxHttpClient {
         api_key: &str,
         api_secret: &str,
         expiration_seconds: i32,
-    ) -> Result<String, AxHttpError> {
+    ) -> Result<SecretString, AxHttpError> {
         let resp = self
             .inner
             .authenticate(api_key, api_secret, expiration_seconds)
             .await?;
-        self.inner.set_session_token(resp.token.clone());
-        Ok(resp.token)
+        let token = resp.into_token();
+        self.inner.set_session_token(token.clone());
+        Ok(token)
     }
 
     /// Authenticates using stored credentials or environment variables.
@@ -1359,13 +1340,17 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are available from either source
-    /// - The HTTP request fails
-    /// - The credentials are invalid
-    pub async fn authenticate_auto(&self, expiration_seconds: i32) -> Result<String, AxHttpError> {
+    /// - No credentials are available from either source.
+    /// - The HTTP request fails.
+    /// - The credentials are invalid.
+    pub async fn authenticate_auto(
+        &self,
+        expiration_seconds: i32,
+    ) -> Result<SecretString, AxHttpError> {
         let resp = self.inner.authenticate_auto(expiration_seconds).await?;
-        self.inner.set_session_token(resp.token.clone());
-        Ok(resp.token)
+        let token = resp.into_token();
+        self.inner.set_session_token(token.clone());
+        Ok(token)
     }
 
     /// Gets an instrument from the cache by symbol.
@@ -1376,9 +1361,10 @@ impl AxHttpClient {
     /// Resolves the maker and taker fee rates for the account behind the current credentials.
     ///
     /// AX reports fee rates per account rather than per user, and returns the accounts the
-    /// credentials can act on. The first entry is used, which is the account AX resolves when a
-    /// request carries no explicit selector. The rates are retained so later instrument requests,
-    /// including the periodic refresh, keep reporting them.
+    /// credentials can act on. The first entry's rates are returned and serve as the default
+    /// for fill payloads without an account identifier. Each successful call replaces the
+    /// cached rates for every listed account that supplies both maker and taker rates.
+    /// Instruments do not carry these rates.
     ///
     /// Requires an authenticated client.
     ///
@@ -1401,7 +1387,7 @@ impl AxHttpClient {
 
         if whoami.accounts.len() > 1 {
             log::warn!(
-                "AX credentials cover {} accounts, using fee rates from {}",
+                "AX credentials cover {} accounts, using {} as the fallback for fills without an account ID",
                 whoami.accounts.len(),
                 account.id,
             );
@@ -1412,31 +1398,32 @@ impl AxHttpClient {
         };
 
         let fees = (maker_fee, taker_fee);
-        self.account_fees.store(Some(Arc::new(fees)));
+        let mut rates = AHashMap::new();
+        rates.insert(None, MakerTakerFeeRates::new(maker_fee, taker_fee));
+
+        for account in &whoami.accounts {
+            if let (Some(maker), Some(taker)) = (account.maker_fee, account.taker_fee) {
+                rates.insert(Some(account.id), MakerTakerFeeRates::new(maker, taker));
+            }
+        }
+
+        self.account_fee_rates.store(rates);
 
         Ok(fees)
     }
 
     /// Requests all instruments from Ax.
     ///
-    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
-    /// rates have been resolved.
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
-    pub async fn request_instruments(
-        &self,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> anyhow::Result<Vec<InstrumentAny>> {
+    pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let resp = self
             .inner
             .get_instruments()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let (maker_fee, taker_fee) = self.resolve_fees(maker_fee, taker_fee);
         let ts_init = self.generate_ts_init();
 
         let mut instruments: Vec<InstrumentAny> = Vec::new();
@@ -1447,12 +1434,12 @@ impl AxHttpClient {
             }
 
             // Skip test instruments (not real tradable products)
-            if inst.symbol.as_str().starts_with("TEST") {
+            if inst.symbol.starts_with("TEST") {
                 log::debug!("Skipping test instrument: {}", inst.symbol);
                 continue;
             }
 
-            match parse_instrument(inst, maker_fee, taker_fee, ts_init, ts_init) {
+            match parse_instrument(inst, ts_init, ts_init) {
                 Ok(instrument) => instruments.push(instrument),
                 Err(e) => {
                     log::warn!("Failed to parse instrument {}: {e}", inst.symbol);
@@ -1465,56 +1452,19 @@ impl AxHttpClient {
 
     /// Requests a single instrument from Ax by symbol.
     ///
-    /// Fee rates fall back to the rates last resolved from `GET /whoami`, and to zero when no
-    /// rates have been resolved.
-    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or instrument parsing fails.
-    pub async fn request_instrument(
-        &self,
-        symbol: Ustr,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> anyhow::Result<InstrumentAny> {
+    pub async fn request_instrument(&self, symbol: Ustr) -> anyhow::Result<InstrumentAny> {
         let resp = self
             .inner
             .get_instrument(symbol)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let (maker_fee, taker_fee) = self.resolve_fees(maker_fee, taker_fee);
         let ts_init = self.generate_ts_init();
 
-        parse_instrument(&resp, maker_fee, taker_fee, ts_init, ts_init)
-    }
-
-    fn resolve_fees(
-        &self,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-    ) -> (Decimal, Decimal) {
-        let resolved = self.account_fees.load();
-
-        let Some(&(resolved_maker, resolved_taker)) = resolved.as_deref() else {
-            // Either rate missing becomes zero, so warn on a partial argument too
-            if (maker_fee.is_none() || taker_fee.is_none()) && self.inner.has_session_token() {
-                log::warn!(
-                    "Building instruments with zero fees: authenticated but account fee rates \
-                     were never resolved"
-                );
-            }
-
-            return (
-                maker_fee.unwrap_or(Decimal::ZERO),
-                taker_fee.unwrap_or(Decimal::ZERO),
-            );
-        };
-
-        (
-            maker_fee.unwrap_or(resolved_maker),
-            taker_fee.unwrap_or(resolved_taker),
-        )
+        parse_instrument(&resp, ts_init, ts_init)
     }
 
     /// Requests an order book snapshot from Ax and builds a Nautilus [`OrderBook`].
@@ -1649,17 +1599,19 @@ impl AxHttpClient {
     pub async fn request_bars(
         &self,
         symbol: Ustr,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
         width: AxCandleWidth,
     ) -> anyhow::Result<Vec<Bar>> {
         let instrument = self
             .get_instrument(&symbol)
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found in cache"))?;
 
-        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let start_ns = start
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
+            .unwrap_or(0);
         let end_ns = end
-            .and_then(|dt| dt.timestamp_nanos_opt())
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
             .unwrap_or_else(|| self.generate_ts_init().as_i64());
         let resp = self
             .inner
@@ -1693,15 +1645,17 @@ impl AxHttpClient {
     pub async fn request_funding_rates(
         &self,
         instrument_id: InstrumentId,
-        start: Option<DateTime<Utc>>,
-        end: Option<DateTime<Utc>>,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
     ) -> Result<Vec<FundingRateUpdate>, AxHttpError> {
         const PAGE_SIZE: i32 = 100;
 
         let symbol = instrument_id.symbol.inner();
-        let start_ns = start.and_then(|dt| dt.timestamp_nanos_opt()).unwrap_or(0);
+        let start_ns = start
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
+            .unwrap_or(0);
         let end_ns = end
-            .and_then(|dt| dt.timestamp_nanos_opt())
+            .and_then(|dt| i64::try_from(dt.as_nanosecond()).ok())
             .unwrap_or_else(|| self.generate_ts_init().as_i64());
         let mut params = GetFundingRatesParams::new(symbol, start_ns, end_ns);
         params.limit = Some(PAGE_SIZE);
@@ -1847,13 +1801,13 @@ impl AxHttpClient {
     pub async fn request_funding_slots(
         &self,
         instrument_id: InstrumentId,
-        date: Option<NaiveDate>,
+        date: Option<Date>,
     ) -> Result<AxFundingSlotsResponse, AxHttpError> {
         let symbol = instrument_id.symbol.inner();
         let mut params = GetFundingSlotsParams::new(symbol);
 
         if let Some(date) = date {
-            params.date = Some(date.format("%Y-%m-%d").to_string());
+            params.date = Some(date.strftime("%Y-%m-%d").to_string());
         }
 
         self.inner.get_funding_slots(&params).await
@@ -1868,14 +1822,38 @@ impl AxHttpClient {
         &self,
         account_id: AccountId,
     ) -> anyhow::Result<AccountState> {
-        let response = self
-            .inner
-            .get_balances()
-            .await
-            .map_err(|e| anyhow::anyhow!(e))?;
+        // Time-bound the snapshot so a hung /risk-snapshot cannot stall connect
+        const RISK_SNAPSHOT_TIMEOUT_SECS: u64 = 10;
+
+        let (balances, risk) = tokio::join!(
+            self.inner.get_balances(),
+            tokio::time::timeout(
+                Duration::from_secs(RISK_SNAPSHOT_TIMEOUT_SECS),
+                self.inner.get_risk_snapshot(),
+            ),
+        );
+
+        let response = balances.map_err(|e| anyhow::anyhow!(e))?;
+
+        let risk = match risk {
+            Ok(Ok(snapshot)) => Some(snapshot.risk_snapshot),
+            Ok(Err(e)) => {
+                log::warn!(
+                    "AX risk snapshot unavailable, account state reports zero locked margin: {e}"
+                );
+                None
+            }
+            Err(_) => {
+                log::warn!(
+                    "AX risk snapshot timed out after {RISK_SNAPSHOT_TIMEOUT_SECS}s, \
+                     account state reports zero locked margin"
+                );
+                None
+            }
+        };
 
         let ts_init = self.generate_ts_init();
-        parse_account_state(&response, account_id, ts_init, ts_init)
+        parse_account_state(&response, risk.as_ref(), account_id, ts_init, ts_init)
     }
 
     /// Checks the initial margin requirement for a proposed order.
@@ -1900,12 +1878,15 @@ impl AxHttpClient {
     ///
     /// The caller must supply `order_side`, `order_type`, and `time_in_force`
     /// because the endpoint does not return these fields.
+    /// Canceled, expired, and rejected orders with no remaining quantity use `/orders`
+    /// to recover their original quantity.
     ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Neither `venue_order_id` nor `client_order_id` is provided.
     /// - The HTTP request fails.
+    /// - The original quantity is unavailable in order history.
     #[expect(clippy::too_many_arguments)]
     pub async fn request_order_status(
         &self,
@@ -1913,7 +1894,7 @@ impl AxHttpClient {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
-        order_side: OrderSide,
+        order_side: Option<OrderSide>,
         order_type: OrderType,
         time_in_force: TimeInForce,
     ) -> anyhow::Result<OrderStatusReport> {
@@ -1933,16 +1914,47 @@ impl AxHttpClient {
             .map_or(0, |i| i.size_precision());
 
         let voi = VenueOrderId::new(&detail.order_id);
-        let order_status = detail.state.into();
+        let order_status = parse_order_status(detail.state, time_in_force)?;
         let filled = detail.filled_quantity.unwrap_or(0);
         let remaining = detail.remaining_quantity.unwrap_or(0);
-        let quantity = Quantity::new((filled + remaining) as f64, size_precision);
-        let filled_qty = Quantity::new(filled as f64, size_precision);
+
+        let total = if remaining == 0
+            && matches!(
+                order_status,
+                OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected
+            ) {
+            let response = self
+                .inner
+                .get_orders(&GetOrdersParams {
+                    order_id: Some(detail.order_id.clone()),
+                    limit: Some(1),
+                    ..Default::default()
+                })
+                .await?;
+
+            let order = response
+                .orders
+                .iter()
+                .find(|order| order.oid == detail.order_id)
+                .with_context(|| {
+                    format!(
+                        "AX order {} original quantity unavailable in history",
+                        detail.order_id
+                    )
+                })?;
+
+            Decimal::from(order.q)
+        } else {
+            Decimal::from(filled) + Decimal::from(remaining)
+        };
+
+        let quantity = Quantity::from_decimal_dp(total, size_precision)?;
+        let filled_qty = Quantity::from_decimal_dp(Decimal::from(filled), size_precision)?;
         let ts_init = self.generate_ts_init();
 
         let resolved_coid = client_order_id.or_else(|| detail.clord_id.map(cid_to_client_order_id));
 
-        Ok(OrderStatusReport::new(
+        let mut report = OrderStatusReport::new(
             account_id,
             instrument_id,
             resolved_coid,
@@ -1957,7 +1969,78 @@ impl AxHttpClient {
             ts_init,
             ts_init,
             Some(UUID4::new()),
-        ))
+        );
+
+        if let Some(reason) =
+            AxOrderRejectReason::reason_str(detail.reject_reason, detail.reject_message.as_deref())
+        {
+            report = report.with_cancel_reason(reason);
+        }
+
+        Ok(report)
+    }
+
+    pub(crate) async fn request_order_report<F>(
+        &self,
+        account_id: AccountId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Option<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
+        let response = if let Some(order_id) = venue_order_id {
+            self.inner.get_order_status_by_id(order_id.as_str()).await
+        } else if let Some(client_order_id) = client_order_id {
+            let cid = client_order_id_to_cid(&client_order_id);
+            self.inner.get_order_status_by_cid(cid).await
+        } else {
+            anyhow::bail!("Either venue_order_id or client_order_id must be provided")
+        };
+
+        let status = match response {
+            Ok(response) => response.status,
+            Err(AxHttpError::UnexpectedStatus { status: 404, body })
+                if serde_json::from_str::<AxErrorResponse>(&body).is_ok_and(|response| {
+                    response.error.as_deref() == Some("no matching orders")
+                }) =>
+            {
+                return Ok(None);
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        let params = GetOrdersParams {
+            order_id: Some(status.order_id.clone()),
+            ..Default::default()
+        };
+
+        let orders = self.request_order_details(params).await?;
+        let order = orders
+            .iter()
+            .find(|order| order.oid == status.order_id)
+            .context("AX order status exists but its complete history record is unavailable")?;
+        let instrument = self.resolve_report_instrument(order.s).await?;
+        let ts_init = self.generate_ts_init();
+        let mut report = parse_order_detail_status_report(
+            order,
+            account_id,
+            &instrument,
+            ts_init,
+            cid_resolver.as_ref(),
+        )?;
+
+        if let Some(client_order_id) = client_order_id {
+            report.client_order_id = Some(client_order_id);
+        }
+
+        if report.order_status.is_closed() && !report.filled_qty.is_zero() {
+            let fills = self.request_fill_reports(account_id, None, None).await?;
+            update_order_report_timestamps(std::slice::from_mut(&mut report), &fills);
+        }
+
+        Ok(Some(report))
     }
 
     /// Requests open orders from Ax and parses them to Nautilus [`OrderStatusReport`].
@@ -1972,10 +2055,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - An order's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Order parsing failures are skipped with a warning.
+    /// - An order cannot be mapped to a complete status report.
     pub async fn request_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2085,18 +2165,15 @@ impl AxHttpClient {
         for order in &orders {
             let instrument = self.resolve_report_instrument(order.s).await?;
 
-            match parse_order_status_report(
+            let report = parse_order_status_report(
                 order,
                 account_id,
                 &instrument,
                 ts_init,
                 cid_resolver.as_ref(),
-            ) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse order {}: {e}", order.oid);
-                }
-            }
+            )
+            .with_context(|| format!("failed to parse AX order {}", order.oid))?;
+            reports.push(report);
         }
 
         Ok(reports)
@@ -2105,7 +2182,11 @@ impl AxHttpClient {
     /// Requests historical orders from Ax and parses them to Nautilus
     /// [`OrderStatusReport`].
     ///
-    /// Missing instruments are requested from Ax and cached before parsing order details.
+    /// Closed orders with fills trigger a `/fills` request in the same window to set
+    /// a lower bound for `ts_last`. The fill window is capped at seven days; without
+    /// a matching fill, creation time remains because `/orders` has no terminal timestamp.
+    ///
+    /// Missing instruments are requested from Ax and cached before parsing orders or fills.
     ///
     /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
     /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
@@ -2114,11 +2195,8 @@ impl AxHttpClient {
     ///
     /// Returns an error if:
     /// - The HTTP request or pagination contract fails.
-    /// - An order's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Order parsing failures are skipped with a warning.
+    /// - An order or fill's instrument cannot be fetched or parsed.
+    /// - An order or fill cannot be mapped to a complete report.
     pub async fn request_historical_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2129,17 +2207,69 @@ impl AxHttpClient {
     where
         F: Fn(u64) -> Option<ClientOrderId>,
     {
-        const PAGE_SIZE: i32 = 100;
+        let mut reports = self
+            .request_order_history(account_id, start, end, cid_resolver)
+            .await?;
 
-        let mut params = GetOrdersParams {
+        if reports
+            .iter()
+            .any(|report| report.order_status.is_closed() && !report.filled_qty.is_zero())
+        {
+            let fills = self.request_fill_reports(account_id, start, end).await?;
+            update_order_report_timestamps(&mut reports, &fills);
+        }
+
+        Ok(reports)
+    }
+
+    pub(crate) async fn request_order_history<F>(
+        &self,
+        account_id: AccountId,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
+        let params = GetOrdersParams {
             start_timestamp_ns: start.map(|timestamp| timestamp.as_i64()),
             end_timestamp_ns: end.map(|timestamp| timestamp.as_i64()),
-            limit: Some(PAGE_SIZE),
             ..Default::default()
         };
+
+        let orders = self.request_order_details(params).await?;
+
+        let ts_init = self.generate_ts_init();
+        let mut reports = Vec::with_capacity(orders.len());
+
+        for order in &orders {
+            let instrument = self.resolve_report_instrument(order.s).await?;
+
+            let report = parse_order_detail_status_report(
+                order,
+                account_id,
+                &instrument,
+                ts_init,
+                cid_resolver.as_ref(),
+            )
+            .with_context(|| format!("failed to parse AX order {}", order.oid))?;
+            reports.push(report);
+        }
+
+        Ok(reports)
+    }
+
+    async fn request_order_details(
+        &self,
+        mut params: GetOrdersParams,
+    ) -> anyhow::Result<Vec<AxOrderDetail>> {
+        const PAGE_SIZE: i32 = 100;
+        params.limit = Some(PAGE_SIZE);
         let mut orders = Vec::new();
         let mut seen_cursors = HashSet::new();
         let mut seen_order_ids = HashSet::new();
+        let mut expected_total = None;
 
         loop {
             let response = self
@@ -2147,6 +2277,39 @@ impl AxHttpClient {
                 .get_orders(&params)
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
+
+            let page_len = response.orders.len();
+            anyhow::ensure!(
+                page_len <= PAGE_SIZE as usize,
+                "AX orders page length {page_len} exceeds requested limit {PAGE_SIZE}"
+            );
+
+            if let Some(limit) = response.limit {
+                anyhow::ensure!(
+                    (0..=PAGE_SIZE).contains(&limit),
+                    "AX orders applied limit must be between 0 and {PAGE_SIZE}, was {limit}"
+                );
+                anyhow::ensure!(
+                    page_len <= limit as usize,
+                    "AX orders page length {page_len} exceeds applied limit {limit}"
+                );
+            }
+
+            if let Some(total_count) = response.total_count {
+                anyhow::ensure!(
+                    total_count >= 0,
+                    "AX orders total_count must be non-negative, was {total_count}"
+                );
+
+                if let Some(expected) = expected_total {
+                    anyhow::ensure!(
+                        total_count == expected,
+                        "AX orders total_count changed during pagination: expected {expected}, was {total_count}"
+                    );
+                } else {
+                    expected_total = Some(total_count);
+                }
+            }
 
             for order in response.orders {
                 anyhow::ensure!(
@@ -2157,8 +2320,24 @@ impl AxHttpClient {
                 orders.push(order);
             }
 
+            if let Some(total_count) = expected_total {
+                anyhow::ensure!(
+                    orders.len() as i64 <= total_count,
+                    "AX orders pagination returned more unique rows ({}) than total_count {total_count}",
+                    orders.len()
+                );
+            }
+
             match response.next_cursor {
                 Some(next_cursor) => {
+                    anyhow::ensure!(
+                        !next_cursor.is_empty(),
+                        "AX orders returned an empty next_cursor"
+                    );
+                    anyhow::ensure!(
+                        page_len > 0,
+                        "AX orders returned an empty page with a next_cursor"
+                    );
                     anyhow::ensure!(
                         seen_cursors.insert(next_cursor.clone()),
                         "AX orders pagination repeated cursor {next_cursor:?}"
@@ -2169,27 +2348,15 @@ impl AxHttpClient {
             }
         }
 
-        let ts_init = self.generate_ts_init();
-        let mut reports = Vec::with_capacity(orders.len());
-
-        for order in &orders {
-            let instrument = self.resolve_report_instrument(order.s).await?;
-
-            match parse_order_detail_status_report(
-                order,
-                account_id,
-                &instrument,
-                ts_init,
-                cid_resolver.as_ref(),
-            ) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse order {}: {e}", order.oid);
-                }
-            }
+        if let Some(total_count) = expected_total {
+            anyhow::ensure!(
+                orders.len() as i64 == total_count,
+                "AX orders pagination returned {} unique rows, expected {total_count}",
+                orders.len()
+            );
         }
 
-        Ok(reports)
+        Ok(orders)
     }
 
     /// Requests fills from Ax and parses them to Nautilus [`FillReport`].
@@ -2333,10 +2500,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - A position's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Position parsing failures are skipped with a warning.
+    /// - A position cannot be parsed.
     pub async fn request_position_reports(
         &self,
         account_id: AccountId,
@@ -2351,19 +2515,14 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(response.positions.len());
 
         for position in &response.positions {
-            // Skip flat positions (zero quantity)
-            if position.signed_quantity == 0 {
-                continue;
-            }
-
             let instrument = self.resolve_report_instrument(position.symbol).await?;
 
-            match parse_position_status_report(position, account_id, &instrument, ts_init) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse position for {}: {e}", position.symbol);
-                }
-            }
+            let report = parse_position_status_report(position, account_id, &instrument, ts_init)
+                .with_context(|| {
+                format!("failed to parse AX position for {}", position.symbol)
+            })?;
+
+            reports.push(report);
         }
 
         Ok(reports)
@@ -2374,12 +2533,9 @@ impl AxHttpClient {
             return Ok(instrument);
         }
 
-        let instrument = self
-            .request_instrument(symbol, None, None)
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to resolve AX instrument {symbol} via GET /instrument: {e}")
-            })?;
+        let instrument = self.request_instrument(symbol).await.map_err(|e| {
+            anyhow::anyhow!("Failed to resolve AX instrument {symbol} via GET /instrument: {e}")
+        })?;
         self.cache_instrument(instrument.clone());
         Ok(instrument)
     }
@@ -2393,5 +2549,301 @@ impl AxHttpClient {
         let request = CancelAllOrdersRequest::new().with_symbol(instrument_id.symbol.inner());
         self.inner.cancel_all_orders(&request).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::enums::AvgPxReconciliation;
+    use nautilus_testkit::http::assert_http_redirect_rejected;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires AX sandbox credentials and closed order history"]
+    async fn test_live_authoritative_reconciliation_sandbox() {
+        let environment = crate::common::enums::AxEnvironment::Sandbox;
+        let client = AxHttpClient::new(
+            Some(environment.http_url().to_string()),
+            Some(environment.orders_url().to_string()),
+            30,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap();
+        client.authenticate_auto(300).await.unwrap();
+        let account_id = AccountId::from("AX-001");
+
+        let response = client
+            .inner
+            .get_orders(&GetOrdersParams {
+                limit: Some(100),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let order = response
+            .orders
+            .iter()
+            .find(|order| {
+                matches!(
+                    order.o,
+                    crate::common::enums::AxOrderStatus::Filled
+                        | crate::common::enums::AxOrderStatus::Canceled
+                        | crate::common::enums::AxOrderStatus::Expired
+                )
+            })
+            .expect("sandbox closed history");
+
+        let report = client
+            .request_order_report(
+                account_id,
+                None,
+                Some(VenueOrderId::new(&order.oid)),
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(report.venue_order_id.as_str(), order.oid);
+        assert!(report.order_status.is_closed());
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+
+        if let Some(cid) = order.cid {
+            let status = client.inner.get_order_status_by_cid(cid).await.unwrap();
+            assert_eq!(status.status.order_id, order.oid);
+        }
+
+        let missing_client = client
+            .request_order_report(
+                account_id,
+                Some(ClientOrderId::new("O-RECON-NONEXISTENT-PROBE")),
+                None,
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap();
+        assert!(missing_client.is_none());
+        let missing = client
+            .request_order_report(
+                account_id,
+                None,
+                Some(VenueOrderId::new("O-00000000000000000000000000")),
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap();
+        assert!(missing.is_none());
+        let positions = client.request_position_reports(account_id).await.unwrap();
+        for position in positions {
+            assert_eq!(
+                position.avg_px_open_reconciliation,
+                AvgPxReconciliation::OpeningOnly
+            );
+            assert_eq!(position.avg_px_open_precision, None);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AX sandbox credentials and a partially filled expired IOC in history"]
+    async fn test_live_closed_order_timestamps_sandbox() {
+        let environment = crate::common::enums::AxEnvironment::Sandbox;
+        let client = AxHttpClient::new(
+            Some(environment.http_url().to_string()),
+            Some(environment.orders_url().to_string()),
+            30,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap();
+        client.authenticate_auto(300).await.unwrap();
+
+        let response = client
+            .inner
+            .get_orders(&GetOrdersParams {
+                order_state: Some(crate::common::enums::AxOrderStatus::Expired),
+                limit: Some(100),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let order = response
+            .orders
+            .iter()
+            .find(|order| {
+                order.xq > 0
+                    && order.xq < order.q
+                    && order.tif == crate::common::enums::AxTimeInForce::Ioc
+            })
+            .expect("sandbox history contains a partially filled expired IOC");
+
+        let mut params = vec![("order_id", order.oid.as_str())];
+        if let Some(aid) = &order.aid {
+            params.push(("aid", aid.as_str()));
+        }
+
+        let fills: AxFillsResponse = client
+            .inner
+            .send_request_to_url(
+                environment.orders_url(),
+                Method::GET,
+                "/order-fills",
+                Some(&params),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let ts_last_fill = fills
+            .fills
+            .iter()
+            .map(|fill| u64::try_from(fill.timestamp.as_nanosecond()).unwrap())
+            .max()
+            .map(UnixNanos::from)
+            .expect("sandbox order has fills");
+        let created = ax_timestamp_stn_to_unix_nanos(order.ts, order.tn).unwrap();
+        let start = UnixNanos::from(created.as_u64() - 1_000_000_000);
+        let end = UnixNanos::from(created.as_u64() + 60_000_000_000);
+        assert!(ts_last_fill > created);
+        assert!(ts_last_fill < end);
+        let reports = client
+            .request_historical_order_status_reports(
+                AccountId::from("AX-001"),
+                Some(start),
+                Some(end),
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap();
+        let report = reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == order.oid)
+            .expect("sandbox order report");
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.ts_accepted, created);
+        assert_eq!(report.ts_last, ts_last_fill);
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+        assert_eq!(report.filled_qty.as_decimal(), Decimal::from(order.xq));
+        println!(
+            "AX sandbox partial IOC timestamps passed, fill delay ns={}",
+            ts_last_fill.as_u64() - created.as_u64()
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_account_fees_caches_accounts_and_replaces_rates() {
+        let mut whoami: AxWhoAmI =
+            serde_json::from_str(include_str!("../../test_data/http_get_whoami.json")).unwrap();
+        let mut secondary = whoami.accounts[0].clone();
+        secondary.id = Ustr::from("secondary");
+        secondary.maker_fee = Some(Decimal::new(-1, 4));
+        secondary.taker_fee = Some(Decimal::new(8, 4));
+        whoami.accounts.push(secondary);
+        let mut incomplete = whoami.accounts[0].clone();
+        incomplete.id = Ustr::from("incomplete");
+        incomplete.taker_fee = None;
+        whoami.accounts.push(incomplete);
+        let response = Arc::new(tokio::sync::Mutex::new(whoami));
+        let state = response.clone();
+        let app = axum::Router::new().route(
+            "/whoami",
+            axum::routing::get(move || {
+                let state = state.clone();
+                async move { axum::Json(state.lock().await.clone()) }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client =
+            AxHttpClient::new(Some(format!("http://{addr}")), None, 3, 0, 1, 1, None).unwrap();
+        client.set_session_token("test_session_token".into());
+        let cloned = client.clone();
+
+        let original = client.request_account_fees().await.unwrap();
+        let original_rates = cloned.account_fee_rates.load();
+        let default_id = response.lock().await.accounts[0].id;
+        let expected = AHashMap::from_iter([
+            (
+                None,
+                MakerTakerFeeRates::new(Decimal::new(2, 4), Decimal::new(25, 4)),
+            ),
+            (
+                Some(default_id),
+                MakerTakerFeeRates::new(Decimal::new(2, 4), Decimal::new(25, 4)),
+            ),
+            (
+                Some(Ustr::from("secondary")),
+                MakerTakerFeeRates::new(Decimal::new(-1, 4), Decimal::new(8, 4)),
+            ),
+        ]);
+        {
+            let mut response = response.lock().await;
+            response.accounts.truncate(1);
+            response.accounts[0].maker_fee = Some(Decimal::ZERO);
+            response.accounts[0].taker_fee = Some(Decimal::new(3, 3));
+        }
+
+        let refreshed = cloned.request_account_fees().await.unwrap();
+        let refreshed_rates = client.account_fee_rates.load();
+        let expected_refreshed = AHashMap::from_iter([
+            (
+                None,
+                MakerTakerFeeRates::new(Decimal::ZERO, Decimal::new(3, 3)),
+            ),
+            (
+                Some(default_id),
+                MakerTakerFeeRates::new(Decimal::ZERO, Decimal::new(3, 3)),
+            ),
+        ]);
+
+        assert_eq!(original, (Decimal::new(2, 4), Decimal::new(25, 4)));
+        assert_eq!(**original_rates, expected);
+        assert_eq!(refreshed, (Decimal::ZERO, Decimal::new(3, 3)));
+        assert_eq!(**refreshed_rates, expected_refreshed);
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::credentials(true)]
+    #[case::session_token(false)]
+    #[tokio::test]
+    async fn test_authenticated_client_rejects_redirects(#[case] credentials: bool) {
+        let client = if credentials {
+            AxRawHttpClient::with_credentials(
+                "key".into(),
+                "secret".into(),
+                None,
+                None,
+                3,
+                0,
+                1,
+                1,
+                None,
+            )
+            .unwrap()
+        } else {
+            AxRawHttpClient::new(None, None, 3, 0, 1, 1, None).unwrap()
+        }
+        .client;
+        assert_http_redirect_rejected(|url| async move {
+            client
+                .get(url, None, None, Some(3), None)
+                .await
+                .unwrap()
+                .status
+                .as_u16()
+        })
+        .await;
     }
 }

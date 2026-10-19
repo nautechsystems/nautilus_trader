@@ -167,9 +167,9 @@ pub fn get_sqrt_ratio_at_tick(tick: i32) -> U160 {
 /// `get_sqrt_ratio_at_tick`.
 ///
 /// # Panics
-/// Panics if the sqrt price is outside the valid range:
-/// - `sqrt_price_x96 < MIN_SQRT_RATIO` (too small)
-/// - `sqrt_price_x96 >= MAX_SQRT_RATIO` (too large)
+/// Panics if:
+/// - `sqrt_price_x96 < MIN_SQRT_RATIO` (too small).
+/// - `sqrt_price_x96 >= MAX_SQRT_RATIO` (too large).
 ///
 /// Valid range is approximately from tick `-887272` to `+887272`.
 #[must_use]

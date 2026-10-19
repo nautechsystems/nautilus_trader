@@ -21,7 +21,7 @@
 
 use std::hint::black_box;
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_lighter::signing::curve::{Point, Scalar};
 
 mod common;
@@ -59,17 +59,23 @@ fn bench_make_window_affine(c: &mut Criterion) {
 fn bench_scalar_mul_var_time(c: &mut Criterion) {
     let g = Point::GENERATOR;
     let s = fixed_k();
-    c.bench_function("Point::scalar_mul (var-time)", |b| {
-        b.iter(|| black_box(g).scalar_mul(black_box(s)));
+    let mut group = c.benchmark_group("curve");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("Point::scalar_mul (var-time)", |b| {
+        b.iter(|| black_box(black_box(g).scalar_mul(black_box(s))));
     });
+    group.finish();
 }
 
 fn bench_scalar_mul_ct(c: &mut Criterion) {
     let g = Point::GENERATOR;
     let s = fixed_k();
-    c.bench_function("Point::scalar_mul_ct", |b| {
-        b.iter(|| black_box(g).scalar_mul_ct(black_box(s)));
+    let mut group = c.benchmark_group("curve");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("Point::scalar_mul_ct", |b| {
+        b.iter(|| black_box(black_box(g).scalar_mul_ct(black_box(s))));
     });
+    group.finish();
 }
 
 fn bench_decode(c: &mut Criterion) {
@@ -92,9 +98,12 @@ fn bench_scalar_mul_arbitrary_base(c: &mut Criterion) {
     // optimizes away.
     let base = Point::GENERATOR.scalar_mul(Scalar::from_limbs([7, 0, 0, 0, 0]));
     let s = fixed_k();
-    c.bench_function("Point::scalar_mul (non-generator)", |b| {
-        b.iter(|| black_box(base).scalar_mul(black_box(s)));
+    let mut group = c.benchmark_group("curve");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("Point::scalar_mul (non-generator)", |b| {
+        b.iter(|| black_box(black_box(base).scalar_mul(black_box(s))));
     });
+    group.finish();
 }
 
 criterion_group!(

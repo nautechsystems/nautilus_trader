@@ -17,54 +17,27 @@ use std::{cmp, fmt::Display, time::Duration};
 
 use super::{StateStore, clock, nanos::Nanos, quota::Quota};
 
-/// Information about the rate-limiting state used to reach a decision.
+/// Rate-limiting parameters captured for a rejected decision.
+///
+/// `t` is one cell's weight in time, `tau` is the burst capacity in time, and `tat` is the
+/// theoretical arrival time used to calculate the next admissible request.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct StateSnapshot {
-    /// The "weight" of a single packet in units of time.
     t: Nanos,
-    /// The "burst capacity" of the bucket.
     tau: Nanos,
-    /// The time at which the measurement was taken.
-    pub(crate) time_of_measurement: Nanos,
-    /// The next time a cell is expected to arrive
     pub(crate) tat: Nanos,
 }
 
 impl StateSnapshot {
     /// Creates a new [`StateSnapshot`] instance.
     #[inline]
-    pub(crate) const fn new(t: Nanos, tau: Nanos, time_of_measurement: Nanos, tat: Nanos) -> Self {
-        Self {
-            t,
-            tau,
-            time_of_measurement,
-            tat,
-        }
+    pub(crate) const fn new(t: Nanos, tau: Nanos, tat: Nanos) -> Self {
+        Self { t, tau, tat }
     }
 
     /// Returns the quota used to make the rate limiting decision.
     pub(crate) fn quota(&self) -> Quota {
         Quota::from_gcra_parameters(self.t, self.tau)
-    }
-
-    /// Returns the number of cells that can be let through in
-    /// addition to a (possible) positive outcome.
-    ///
-    /// If this state snapshot is based on a negative rate limiting
-    /// outcome, this method returns 0.
-    #[allow(dead_code)]
-    pub(crate) fn remaining_burst_capacity(&self) -> u32 {
-        let t = self.t.as_u64();
-        if t == 0 {
-            return 0;
-        }
-
-        let t0 = self.time_of_measurement + self.t;
-
-        (cmp::min(
-            (t0 + self.tau).saturating_sub(self.tat).as_u64(),
-            self.tau.as_u64(),
-        ) / t) as u32
     }
 }
 
@@ -79,7 +52,7 @@ pub struct NotUntil<P: clock::Reference> {
 }
 
 impl<P: clock::Reference> NotUntil<P> {
-    /// Create a `NotUntil` as a negative rate-limiting result.
+    /// Creates a `NotUntil` as a negative rate-limiting result.
     #[inline]
     pub(crate) const fn new(state: StateSnapshot, start: P) -> Self {
         Self { state, start }
@@ -102,8 +75,7 @@ impl<P: clock::Reference> NotUntil<P> {
     /// `wait_time_from` returns a zero `Duration`.
     #[inline]
     pub fn wait_time_from(&self, from: P) -> Duration {
-        let earliest = self.earliest_possible();
-        earliest.duration_since(earliest.min(from)).into()
+        self.earliest_possible().duration_since(from).into()
     }
 
     /// Returns the rate limiting [`Quota`] used to reach the decision.
@@ -119,12 +91,10 @@ impl<P: clock::Reference> Display for NotUntil<P> {
     }
 }
 
+// GCRA parameters: `t` is one cell's weight in time, and `tau` is burst capacity in time
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Gcra {
-    /// The "weight" of a single packet in units of time.
     t: Nanos,
-
-    /// The "burst capacity" of the bucket.
     tau: Nanos,
 }
 
@@ -159,21 +129,69 @@ impl Gcra {
         state: &S,
         t0: P,
     ) -> Result<(), NotUntil<P>> {
+        state.measure_and_replace(key, |tat| self.test(start, tat, t0).map(|next| ((), next)))
+    }
+
+    /// Tests a single cell and returns its next state without updating the state store.
+    pub(crate) fn test<P: clock::Reference>(
+        &self,
+        start: P,
+        tat: Option<Nanos>,
+        t0: P,
+    ) -> Result<Nanos, NotUntil<P>> {
         let t0 = t0.duration_since(start);
-        let tau = self.tau;
-        let t = self.t;
-        state.measure_and_replace(key, |tat| {
-            let tat = tat.unwrap_or_else(|| self.starting_state(t0));
-            let earliest_time = tat.saturating_sub(tau);
-            if t0 < earliest_time {
-                Err(NotUntil::new(
-                    StateSnapshot::new(self.t, self.tau, earliest_time, earliest_time),
-                    start,
-                ))
-            } else {
-                let next = cmp::max(tat, t0) + t;
-                Ok(((), next))
-            }
-        })
+        let tat = tat.unwrap_or_else(|| self.starting_state(t0));
+        let earliest_time = tat.saturating_sub(self.tau);
+
+        if t0 < earliest_time {
+            Err(NotUntil::new(
+                StateSnapshot::new(self.t, self.tau, earliest_time),
+                start,
+            ))
+        } else {
+            Ok(cmp::max(tat, self.starting_state(t0)) + self.t)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::{fixture, rstest};
+
+    use super::*;
+
+    #[rstest]
+    fn rejection_preserves_quota_and_deadline(rejection: NotUntil<Nanos>) {
+        let quota = rejection.quota();
+
+        assert_eq!(rejection.earliest_possible(), Nanos::new(135));
+        assert_eq!(quota.replenish_interval(), Duration::from_nanos(7));
+        assert_eq!(quota.burst_size().get(), 3);
+        assert_eq!(quota.burst_size_replenished_in(), Duration::from_nanos(21));
+        assert_eq!(rejection.to_string(), "rate-limited until Nanos(135ns)");
+    }
+
+    #[rstest]
+    #[case(100, 35)]
+    #[case(134, 1)]
+    #[case(135, 0)]
+    #[case(136, 0)]
+    fn rejection_wait_saturates_at_deadline(
+        rejection: NotUntil<Nanos>,
+        #[case] now: u64,
+        #[case] wait: u64,
+    ) {
+        assert_eq!(
+            rejection.wait_time_from(Nanos::new(now)),
+            Duration::from_nanos(wait)
+        );
+    }
+
+    #[fixture]
+    fn rejection() -> NotUntil<Nanos> {
+        NotUntil::new(
+            StateSnapshot::new(Nanos::new(7), Nanos::new(21), Nanos::new(35)),
+            Nanos::new(100),
+        )
     }
 }

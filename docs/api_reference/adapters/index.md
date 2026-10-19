@@ -14,7 +14,6 @@
    architect_ax.md
    betfair.md
    binance.md
-   bitmex.md
    bybit.md
    databento.md
    deribit.md

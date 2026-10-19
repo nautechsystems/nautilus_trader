@@ -13,33 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    sync::Arc,
+};
 
 use arrow::{
     array::{
         Array, ArrayRef, BooleanArray, BooleanBuilder, Float64Array, Float64Builder, StringBuilder,
-        UInt64Array, UInt64Builder,
+        StringDictionaryBuilder, TimestampNanosecondArray, UInt64Array, UInt64Builder,
     },
-    datatypes::{DataType, Field, Schema},
+    datatypes::{DataType, Field, Int8Type, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Number, Value};
 
-use super::{EncodingError, StringColumnRef, extract_column, extract_column_string};
+use super::{
+    EncodingError, KEY_IDENTIFIER, KEY_TYPE_NAME, StringColumnRef, enum_dictionary_data_type,
+    extract_column, extract_column_string, identifier_array_from_display, json_string_field,
+    metadata_with_type_name,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JsonFieldEncoding {
     Utf8,
     Utf8Json,
-    /// Exact decimal written as `Utf8`, read back from `Utf8`, `Utf8View`, or `Float64`.
-    ///
-    /// The `Float64` case is what lets catalog files written before a field moved from `f64` to
-    /// `Decimal` keep decoding: `Decimal`'s `Deserialize` accepts both a JSON string and a JSON
-    /// number, so no version discriminator is needed.
-    DecimalStr,
+    EnumDictionary,
     UInt64,
+    Timestamp,
     Float64,
     Boolean,
 }
@@ -71,10 +75,10 @@ impl JsonFieldSpec {
     }
 
     #[must_use]
-    pub const fn decimal_str(name: &'static str, nullable: bool) -> Self {
+    pub const fn enum_dictionary(name: &'static str, nullable: bool) -> Self {
         Self {
             name,
-            encoding: JsonFieldEncoding::DecimalStr,
+            encoding: JsonFieldEncoding::EnumDictionary,
             nullable,
         }
     }
@@ -84,6 +88,15 @@ impl JsonFieldSpec {
         Self {
             name,
             encoding: JsonFieldEncoding::UInt64,
+            nullable,
+        }
+    }
+
+    #[must_use]
+    pub const fn timestamp(name: &'static str, nullable: bool) -> Self {
+        Self {
+            name,
+            encoding: JsonFieldEncoding::Timestamp,
             nullable,
         }
     }
@@ -108,21 +121,25 @@ impl JsonFieldSpec {
 
     fn field(self) -> Field {
         let data_type = match self.encoding {
-            JsonFieldEncoding::Utf8
-            | JsonFieldEncoding::Utf8Json
-            | JsonFieldEncoding::DecimalStr => DataType::Utf8,
+            JsonFieldEncoding::Utf8 | JsonFieldEncoding::Utf8Json => DataType::Utf8,
+            JsonFieldEncoding::EnumDictionary => enum_dictionary_data_type(),
             JsonFieldEncoding::UInt64 => DataType::UInt64,
+            JsonFieldEncoding::Timestamp => super::timestamp_data_type(),
             JsonFieldEncoding::Float64 => DataType::Float64,
             JsonFieldEncoding::Boolean => DataType::Boolean,
         };
 
-        Field::new(self.name, data_type, self.nullable)
+        if self.encoding == JsonFieldEncoding::Utf8Json {
+            json_string_field(self.name, self.nullable)
+        } else {
+            Field::new(self.name, data_type, self.nullable)
+        }
     }
 }
 
 #[must_use]
 pub fn metadata_for_type(type_name: &'static str) -> HashMap<String, String> {
-    HashMap::from([("type".to_string(), type_name.to_string())])
+    metadata_with_type_name(type_name, None)
 }
 
 #[must_use]
@@ -131,17 +148,25 @@ pub fn schema_for_type(
     metadata: Option<HashMap<String, String>>,
     fields: &[JsonFieldSpec],
 ) -> Schema {
-    let mut merged = metadata.unwrap_or_default();
-    merged.insert("type".to_string(), type_name.to_string());
-
     Schema::new_with_metadata(
         fields
             .iter()
             .copied()
             .map(JsonFieldSpec::field)
             .collect::<Vec<_>>(),
-        merged,
+        metadata_with_type_name(type_name, metadata),
     )
+}
+
+#[must_use]
+pub fn schema_for_type_with_identifier(
+    type_name: &'static str,
+    metadata: Option<HashMap<String, String>>,
+    fields: &[JsonFieldSpec],
+) -> Schema {
+    let mut fields = fields.to_vec();
+    fields.push(JsonFieldSpec::utf8(KEY_IDENTIFIER, true));
+    schema_for_type(type_name, metadata, &fields)
 }
 
 /// Encodes typed records into an Arrow record batch with the supplied schema metadata.
@@ -150,12 +175,18 @@ pub fn schema_for_type(
 ///
 /// Returns an error if JSON serialization fails or if a field cannot be encoded into
 /// the requested Arrow column type.
-pub fn encode_batch<T: Serialize>(
+pub fn encode_batch<'a, T: Serialize + 'a>(
     type_name: &'static str,
     metadata: &HashMap<String, String>,
-    data: &[T],
+    data: impl IntoIterator<Item = &'a T>,
     fields: &[JsonFieldSpec],
 ) -> Result<RecordBatch, ArrowError> {
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(invalid_argument(format!(
+            "Duplicate field specification `{name}`"
+        )));
+    }
+
     let rows = serialize_rows(data)?;
     let arrays: Result<Vec<ArrayRef>, ArrowError> = fields
         .iter()
@@ -166,6 +197,60 @@ pub fn encode_batch<T: Serialize>(
     RecordBatch::try_new(
         Arc::new(schema_for_type(type_name, Some(metadata.clone()), fields)),
         arrays?,
+    )
+}
+
+/// Encodes typed records with the catalog row identifier column.
+///
+/// # Errors
+///
+/// Returns an error if the number of identifiers differs from the number of data
+/// rows or if any field cannot be encoded into the requested Arrow column type.
+pub fn encode_batch_with_identifier<'a, T, D, I>(
+    type_name: &'static str,
+    metadata: &HashMap<String, String>,
+    data: D,
+    fields: &[JsonFieldSpec],
+    identifiers: impl IntoIterator<Item = I>,
+) -> Result<RecordBatch, ArrowError>
+where
+    T: Serialize + 'a,
+    D: IntoIterator<Item = &'a T>,
+    D::IntoIter: ExactSizeIterator,
+    I: Display,
+{
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(invalid_argument(format!(
+            "Duplicate field specification `{name}`"
+        )));
+    }
+
+    let data = data.into_iter();
+    let data_len = data.len();
+    let identifier_array = identifier_array_from_display(identifiers);
+    if identifier_array.len() != data_len {
+        return Err(invalid_argument(format!(
+            "identifier values length {} does not match data length {}",
+            identifier_array.len(),
+            data_len
+        )));
+    }
+
+    let rows = serialize_rows(data)?;
+    let mut arrays = fields
+        .iter()
+        .copied()
+        .map(|field| encode_column(field, &rows))
+        .collect::<Result<Vec<ArrayRef>, ArrowError>>()?;
+    arrays.push(Arc::new(identifier_array));
+
+    RecordBatch::try_new(
+        Arc::new(schema_for_type_with_identifier(
+            type_name,
+            Some(metadata.clone()),
+            fields,
+        )),
+        arrays,
     )
 }
 
@@ -181,16 +266,53 @@ pub fn decode_batch<T: DeserializeOwned>(
     fields: &[JsonFieldSpec],
     fallback_type_name: Option<&'static str>,
 ) -> Result<Vec<T>, EncodingError> {
+    decode_batch_with_metadata_fields(metadata, record_batch, fields, &[], fallback_type_name)
+}
+
+/// Decodes typed records whose `metadata_fields` are stored once in schema metadata rather
+/// than as columns.
+///
+/// # Errors
+///
+/// Returns an error if a metadata field is absent, or for any reason [`decode_batch`] fails.
+pub fn decode_batch_with_metadata_fields<T: DeserializeOwned>(
+    metadata: &HashMap<String, String>,
+    record_batch: &RecordBatch,
+    fields: &[JsonFieldSpec],
+    metadata_fields: &[&'static str],
+    fallback_type_name: Option<&'static str>,
+) -> Result<Vec<T>, EncodingError> {
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(EncodingError::ParseError(
+            name,
+            "duplicate field specification".to_string(),
+        ));
+    }
+
+    let schema = record_batch.schema();
     let columns: Result<Vec<_>, EncodingError> = fields
         .iter()
         .enumerate()
-        .map(|(index, field)| decode_column_ref(record_batch.columns(), *field, index))
+        .map(|(expected_index, field)| {
+            let index = column_index(&schema, field.name, expected_index)?;
+            decode_column_ref(record_batch.columns(), *field, index)
+        })
         .collect();
     let columns = columns?;
 
+    let metadata_values = metadata_fields
+        .iter()
+        .map(|&name| {
+            metadata
+                .get(name)
+                .map(|value| (name, Value::String(value.clone())))
+                .ok_or(EncodingError::MissingMetadata(name))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
     let mut decoded = Vec::with_capacity(record_batch.num_rows());
     let type_name = metadata
-        .get("type")
+        .get(KEY_TYPE_NAME)
         .cloned()
         .or_else(|| fallback_type_name.map(str::to_string));
 
@@ -198,6 +320,10 @@ pub fn decode_batch<T: DeserializeOwned>(
         let mut value = Map::new();
         if let Some(type_name) = &type_name {
             value.insert("type".to_string(), Value::String(type_name.clone()));
+        }
+
+        for (name, metadata_value) in &metadata_values {
+            value.insert((*name).to_string(), metadata_value.clone());
         }
 
         for column in &columns {
@@ -216,8 +342,40 @@ pub fn decode_batch<T: DeserializeOwned>(
     Ok(decoded)
 }
 
-fn serialize_rows<T: Serialize>(data: &[T]) -> Result<Vec<Map<String, Value>>, ArrowError> {
-    data.iter()
+fn duplicate_field_name(fields: &[JsonFieldSpec]) -> Option<&'static str> {
+    let mut names = HashSet::with_capacity(fields.len());
+    fields
+        .iter()
+        .find_map(|field| (!names.insert(field.name)).then_some(field.name))
+}
+
+fn column_index(
+    schema: &Schema,
+    name: &'static str,
+    expected_index: usize,
+) -> Result<usize, EncodingError> {
+    let mut matches = schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| field.name() == name);
+    let Some((index, _)) = matches.next() else {
+        return Err(EncodingError::MissingColumn(name, expected_index));
+    };
+
+    if matches.next().is_some() {
+        return Err(EncodingError::ParseError(
+            name,
+            "duplicate column name".to_string(),
+        ));
+    }
+    Ok(index)
+}
+
+fn serialize_rows<'a, T: Serialize + 'a>(
+    data: impl IntoIterator<Item = &'a T>,
+) -> Result<Vec<Map<String, Value>>, ArrowError> {
+    data.into_iter()
         .map(|item| match serde_json::to_value(item) {
             Ok(Value::Object(map)) => Ok(map),
             Ok(_) => Err(invalid_argument(
@@ -233,9 +391,11 @@ fn encode_column(
     rows: &[Map<String, Value>],
 ) -> Result<ArrayRef, ArrowError> {
     match field.encoding {
-        JsonFieldEncoding::Utf8 | JsonFieldEncoding::DecimalStr => encode_utf8_column(field, rows),
+        JsonFieldEncoding::Utf8 => encode_utf8_column(field, rows),
         JsonFieldEncoding::Utf8Json => encode_utf8_json_column(field, rows),
+        JsonFieldEncoding::EnumDictionary => encode_enum_dictionary_column(field, rows),
         JsonFieldEncoding::UInt64 => encode_u64_column(field, rows),
+        JsonFieldEncoding::Timestamp => encode_timestamp_column(field, rows),
         JsonFieldEncoding::Float64 => encode_f64_column(field, rows),
         JsonFieldEncoding::Boolean => encode_bool_column(field, rows),
     }
@@ -275,6 +435,24 @@ fn encode_utf8_json_column(
     Ok(Arc::new(builder.finish()))
 }
 
+fn encode_enum_dictionary_column(
+    field: JsonFieldSpec,
+    rows: &[Map<String, Value>],
+) -> Result<ArrayRef, ArrowError> {
+    let mut builder = StringDictionaryBuilder::<Int8Type>::new();
+
+    for row in rows {
+        match require_value(field, row.get(field.name))? {
+            Some(value) => {
+                builder.append(value_to_string(value)?)?;
+            }
+            None => builder.append_null(),
+        }
+    }
+
+    Ok(Arc::new(builder.finish()))
+}
+
 fn encode_u64_column(
     field: JsonFieldSpec,
     rows: &[Map<String, Value>],
@@ -289,6 +467,21 @@ fn encode_u64_column(
     }
 
     Ok(Arc::new(builder.finish()))
+}
+
+fn encode_timestamp_column(
+    field: JsonFieldSpec,
+    rows: &[Map<String, Value>],
+) -> Result<ArrayRef, ArrowError> {
+    let values = rows
+        .iter()
+        .map(|row| {
+            require_value(field, row.get(field.name))?
+                .map(parse_u64)
+                .transpose()
+        })
+        .collect::<Result<Vec<_>, ArrowError>>()?;
+    Ok(Arc::new(super::optional_timestamp_array(values)?))
 }
 
 fn encode_f64_column(
@@ -397,13 +590,13 @@ enum ColumnRef<'a> {
         name: &'static str,
         values: StringColumnRef<'a>,
     },
-    DecimalStr {
-        name: &'static str,
-        values: DecimalColumnRef<'a>,
-    },
     UInt64 {
         name: &'static str,
         values: &'a UInt64Array,
+    },
+    Timestamp {
+        name: &'static str,
+        values: &'a TimestampNanosecondArray,
     },
     Float64 {
         name: &'static str,
@@ -420,8 +613,8 @@ impl ColumnRef<'_> {
         match self {
             Self::Utf8 { name, .. }
             | Self::Utf8Json { name, .. }
-            | Self::DecimalStr { name, .. }
             | Self::UInt64 { name, .. }
+            | Self::Timestamp { name, .. }
             | Self::Float64 { name, .. }
             | Self::Boolean { name, .. } => name,
         }
@@ -439,15 +632,22 @@ impl ColumnRef<'_> {
                     })
                 }
             }
-            Self::DecimalStr { values, .. } => match values {
-                DecimalColumnRef::Str(values) => Ok(string_to_json(values, row)),
-                DecimalColumnRef::Float64(values) => f64_to_json(self.name(), values, row),
-            },
             Self::UInt64 { values, .. } => {
                 if values.is_null(row) {
                     Ok(Value::Null)
                 } else {
                     Ok(Value::Number(Number::from(values.value(row))))
+                }
+            }
+            Self::Timestamp { values, .. } => {
+                if values.is_null(row) {
+                    Ok(Value::Null)
+                } else {
+                    Ok(Value::Number(Number::from(super::decode_timestamp(
+                        values,
+                        self.name(),
+                        row,
+                    )?)))
                 }
             }
             Self::Float64 { values, .. } => f64_to_json(self.name(), values, row),
@@ -468,7 +668,7 @@ fn decode_column_ref(
     index: usize,
 ) -> Result<ColumnRef<'_>, EncodingError> {
     match field.encoding {
-        JsonFieldEncoding::Utf8 => Ok(ColumnRef::Utf8 {
+        JsonFieldEncoding::Utf8 | JsonFieldEncoding::EnumDictionary => Ok(ColumnRef::Utf8 {
             name: field.name,
             values: extract_column_string(columns, field.name, index)?,
         }),
@@ -476,13 +676,18 @@ fn decode_column_ref(
             name: field.name,
             values: extract_column_string(columns, field.name, index)?,
         }),
-        JsonFieldEncoding::DecimalStr => Ok(ColumnRef::DecimalStr {
-            name: field.name,
-            values: extract_column_decimal(columns, field.name, index)?,
-        }),
         JsonFieldEncoding::UInt64 => Ok(ColumnRef::UInt64 {
             name: field.name,
             values: extract_column::<UInt64Array>(columns, field.name, index, DataType::UInt64)?,
+        }),
+        JsonFieldEncoding::Timestamp => Ok(ColumnRef::Timestamp {
+            name: field.name,
+            values: extract_column::<TimestampNanosecondArray>(
+                columns,
+                field.name,
+                index,
+                super::timestamp_data_type(),
+            )?,
         }),
         JsonFieldEncoding::Float64 => Ok(ColumnRef::Float64 {
             name: field.name,
@@ -493,27 +698,6 @@ fn decode_column_ref(
             values: extract_column::<BooleanArray>(columns, field.name, index, DataType::Boolean)?,
         }),
     }
-}
-
-// Reference to a decimal column, either the current `Utf8`/`Utf8View` form or the `Float64`
-// form written before the field became exact.
-enum DecimalColumnRef<'a> {
-    Str(StringColumnRef<'a>),
-    Float64(&'a Float64Array),
-}
-
-fn extract_column_decimal<'a>(
-    columns: &'a [ArrayRef],
-    column_key: &'static str,
-    column_index: usize,
-) -> Result<DecimalColumnRef<'a>, EncodingError> {
-    extract_column_string(columns, column_key, column_index)
-        .map(DecimalColumnRef::Str)
-        .or_else(|e| {
-            extract_column::<Float64Array>(columns, column_key, column_index, DataType::Float64)
-                .map(DecimalColumnRef::Float64)
-                .map_err(|_| e)
-        })
 }
 
 fn string_to_json(values: &StringColumnRef<'_>, row: usize) -> Value {
@@ -539,12 +723,265 @@ fn f64_to_json(
 }
 
 fn values_is_null(values: &StringColumnRef<'_>, row: usize) -> bool {
-    match values {
-        StringColumnRef::Utf8(values) => values.is_null(row),
-        StringColumnRef::Utf8View(values) => values.is_null(row),
-    }
+    values.is_null(row)
 }
 
 fn invalid_argument(message: String) -> ArrowError {
     ArrowError::InvalidArgumentError(message)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use serde::Deserialize;
+
+    use super::*;
+
+    const FIELDS: [JsonFieldSpec; 2] = [
+        JsonFieldSpec::u64("left", false),
+        JsonFieldSpec::u64("right", false),
+    ];
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Record {
+        left: u64,
+        right: u64,
+    }
+
+    #[rstest]
+    fn decode_batch_matches_columns_by_name() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &FIELDS).unwrap();
+        let reordered = batch.project(&[1, 0]).unwrap();
+
+        let decoded = decode_batch::<Record>(&metadata, &reordered, &FIELDS, None).unwrap();
+
+        assert_eq!(decoded, rows);
+    }
+
+    #[rstest]
+    fn encode_batch_rejects_duplicate_field_specs() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let duplicate = [FIELDS[0], FIELDS[0]];
+
+        let error = encode_batch("Record", &HashMap::new(), &rows, &duplicate).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Duplicate field specification `left`"));
+    }
+
+    #[rstest]
+    fn encode_batch_with_identifier_rejects_duplicate_field_specs() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let duplicate = [FIELDS[0], FIELDS[0]];
+
+        let error = encode_batch_with_identifier(
+            "Record",
+            &HashMap::new(),
+            &rows,
+            &duplicate,
+            ["record-1"],
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Duplicate field specification `left`"));
+    }
+
+    #[rstest]
+    fn decode_batch_rejects_duplicate_field_specs() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &FIELDS).unwrap();
+        let duplicate = [FIELDS[0], FIELDS[0]];
+
+        let error = decode_batch::<Record>(&metadata, &batch, &duplicate, None).unwrap_err();
+
+        assert!(matches!(error, EncodingError::ParseError("left", message)
+            if message == "duplicate field specification"));
+    }
+
+    #[rstest]
+    fn decode_batch_rejects_duplicate_column_names() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &FIELDS).unwrap();
+        let duplicate = batch.project(&[0, 0, 1]).unwrap();
+
+        let error = decode_batch::<Record>(&metadata, &duplicate, &FIELDS, None).unwrap_err();
+
+        assert!(matches!(error, EncodingError::ParseError("left", message)
+            if message == "duplicate column name"));
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(Value::Null))]
+    fn encode_batch_rejects_missing_required_value(#[case] value: Option<Value>) {
+        let rows = [value
+            .into_iter()
+            .map(|value| ("left".to_string(), value))
+            .collect::<Map<_, _>>()];
+        let error = encode_batch("Record", &HashMap::new(), &rows, &FIELDS[..1]).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Missing required field `left`"));
+    }
+
+    #[rstest]
+    fn encode_batch_rejects_non_object() {
+        let error = encode_batch("Record", &HashMap::new(), &[17_u64], &FIELDS).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message)
+            if message == "Expected serialized value to be a JSON object"));
+    }
+
+    #[rstest]
+    #[case(Value::from(-1), "Expected u64, found `-1`")]
+    #[case(Value::from(true), "Expected u64-compatible value, found `true`")]
+    #[case(
+        Value::from("18446744073709551616"),
+        "Failed to parse u64 from `18446744073709551616`: number too large to fit in target type"
+    )]
+    fn encode_batch_rejects_invalid_u64(#[case] value: Value, #[case] expected: &str) {
+        let rows = [Map::from_iter([("left".to_string(), value)])];
+        let error = encode_batch("Record", &HashMap::new(), &rows, &FIELDS[..1]).unwrap_err();
+
+        assert!(matches!(error, ArrowError::InvalidArgumentError(message) if message == expected));
+    }
+
+    #[rstest]
+    fn encode_decode_string_values_and_nulls() {
+        let fields = [
+            JsonFieldSpec::u64("count", true),
+            JsonFieldSpec::f64("ratio", true),
+            JsonFieldSpec::boolean("active", true),
+        ];
+        let rows = [
+            Map::from_iter([
+                ("count".to_string(), Value::from(u64::MAX.to_string())),
+                ("ratio".to_string(), Value::from("-1.25")),
+                ("active".to_string(), Value::from("false")),
+            ]),
+            Map::new(),
+        ];
+        let metadata = HashMap::new();
+        let batch = encode_batch("Record", &metadata, &rows, &fields).unwrap();
+        let decoded = decode_batch::<Map<String, Value>>(&metadata, &batch, &fields, None).unwrap();
+
+        assert_eq!(
+            decoded,
+            vec![
+                Map::from_iter([
+                    ("count".to_string(), Value::from(u64::MAX)),
+                    ("ratio".to_string(), Value::from(-1.25)),
+                    ("active".to_string(), Value::from(false)),
+                ]),
+                Map::from_iter([
+                    ("count".to_string(), Value::Null),
+                    ("ratio".to_string(), Value::Null),
+                    ("active".to_string(), Value::Null),
+                ])
+            ]
+        );
+    }
+
+    #[rstest]
+    fn encode_decode_enum_dictionary_with_metadata_fields() {
+        let fields = [JsonFieldSpec::enum_dictionary("side", true)];
+        let rows = [
+            Map::from_iter([("side".to_string(), Value::from("BUY"))]),
+            Map::new(),
+            Map::from_iter([("side".to_string(), Value::from("BUY"))]),
+        ];
+        let metadata = HashMap::from([("venue".to_string(), "SIM".to_string())]);
+        let batch = encode_batch("Record", &metadata, &rows, &fields).unwrap();
+        let schema = batch.schema();
+        let decoded = decode_batch_with_metadata_fields::<Map<String, Value>>(
+            schema.metadata(),
+            &batch,
+            &fields,
+            &["venue"],
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(schema.field(0).data_type(), &enum_dictionary_data_type());
+        assert_eq!(schema.metadata()[KEY_TYPE_NAME], "Record");
+        assert_eq!(
+            decoded,
+            vec![
+                Map::from_iter([
+                    ("type".to_string(), Value::from("Record")),
+                    ("venue".to_string(), Value::from("SIM")),
+                    ("side".to_string(), Value::from("BUY")),
+                ]),
+                Map::from_iter([
+                    ("type".to_string(), Value::from("Record")),
+                    ("venue".to_string(), Value::from("SIM")),
+                    ("side".to_string(), Value::Null),
+                ]),
+                Map::from_iter([
+                    ("type".to_string(), Value::from("Record")),
+                    ("venue".to_string(), Value::from("SIM")),
+                    ("side".to_string(), Value::from("BUY")),
+                ]),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn decode_batch_with_metadata_fields_rejects_missing_metadata() {
+        let rows = [Record {
+            left: 11,
+            right: 29,
+        }];
+
+        let batch = encode_batch("Record", &HashMap::new(), &rows, &FIELDS).unwrap();
+
+        let error = decode_batch_with_metadata_fields::<Record>(
+            &HashMap::new(),
+            &batch,
+            &FIELDS,
+            &["venue"],
+            None,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, EncodingError::MissingMetadata("venue")));
+    }
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(f64::NEG_INFINITY)]
+    fn decode_batch_rejects_nonfinite_float(#[case] value: f64) {
+        let fields = [JsonFieldSpec::f64("ratio", false)];
+        let batch = RecordBatch::try_new(
+            Arc::new(schema_for_type("Record", None, &fields)),
+            vec![Arc::new(Float64Array::from(vec![1.25, value]))],
+        )
+        .unwrap();
+        let error =
+            decode_batch::<Map<String, Value>>(&HashMap::new(), &batch, &fields, None).unwrap_err();
+
+        assert!(matches!(error, EncodingError::ParseError("ratio", message)
+            if message == "row 1: invalid f64 value"));
+    }
 }

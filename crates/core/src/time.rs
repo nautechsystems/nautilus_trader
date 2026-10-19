@@ -42,7 +42,7 @@ use std::{
 };
 
 use crate::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
 };
 
@@ -105,7 +105,7 @@ pub fn duration_since_unix_epoch() -> Duration {
 /// `tokio::time::Instant` which is monotonic and carries no epoch).
 #[inline(always)]
 #[must_use]
-fn wall_clock_now() -> SystemTime {
+pub fn wall_clock_now() -> SystemTime {
     #[cfg(not(all(feature = "simulation", madsim)))]
     {
         SystemTime::now()
@@ -260,7 +260,7 @@ impl AtomicTime {
         );
     }
 
-    /// Increments the current (static-mode) time by `delta` nanoseconds and returns the updated value.
+    /// Increments the current static-mode time by `delta` and returns the updated value.
     ///
     /// Internally this uses [`AtomicU64::try_update`] with [`Ordering::AcqRel`] to ensure the increment is
     /// atomic and visible to readers using `Acquire` loads.
@@ -277,7 +277,7 @@ impl AtomicTime {
     /// This is intentional: mode switching is a setup-time operation and should not
     /// occur concurrently with time operations. Callers must ensure mode switches are
     /// complete before resuming time operations.
-    pub fn increment_time(&self, delta: u64) -> anyhow::Result<UnixNanos> {
+    pub fn increment_time(&self, delta: DurationNanos) -> anyhow::Result<UnixNanos> {
         anyhow::ensure!(
             !self.realtime.load(Ordering::SeqCst),
             "Cannot increment time while clock is in realtime mode"
@@ -287,7 +287,7 @@ impl AtomicTime {
             match self
                 .timestamp_ns
                 .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                    current.checked_add(delta)
+                    current.checked_add(delta.as_u64())
                 }) {
                 Ok(prev) => prev,
                 Err(_) => anyhow::bail!("Cannot increment time beyond u64::MAX"),
@@ -298,7 +298,7 @@ impl AtomicTime {
             "Invariant: clock must remain in static mode across `increment_time`"
         );
 
-        Ok(UnixNanos::from(previous + delta))
+        Ok(UnixNanos::from(previous) + delta)
     }
 
     /// Retrieves and updates the current "real-time" clock, returning a strictly increasing
@@ -413,6 +413,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
+    use crate::DurationNanos;
 
     #[rstest]
     fn test_global_clocks_initialization() {
@@ -454,7 +455,7 @@ mod tests {
     #[rstest]
     fn test_increment_time_returns_error_in_realtime_mode() {
         let clock = AtomicTime::new(true, UnixNanos::default());
-        let result = clock.increment_time(1);
+        let result = clock.increment_time(DurationNanos::new(1));
         assert!(result.is_err());
         assert!(
             result
@@ -555,10 +556,10 @@ mod tests {
         // Start in static mode
         let time = AtomicTime::new(false, UnixNanos::from(0));
 
-        let updated_time = time.increment_time(500).unwrap();
+        let updated_time = time.increment_time(DurationNanos::new(500)).unwrap();
         assert_eq!(updated_time.as_u64(), 500);
 
-        let updated_time = time.increment_time(1_000).unwrap();
+        let updated_time = time.increment_time(DurationNanos::new(1_000)).unwrap();
         assert_eq!(updated_time.as_u64(), 1_500);
     }
 
@@ -566,7 +567,7 @@ mod tests {
     fn test_increment_time_overflow_errors() {
         let time = AtomicTime::new(false, UnixNanos::from(u64::MAX - 5));
 
-        let err = time.increment_time(10).unwrap_err();
+        let err = time.increment_time(DurationNanos::new(10)).unwrap_err();
         assert_eq!(err.to_string(), "Cannot increment time beyond u64::MAX");
     }
 
@@ -576,8 +577,8 @@ mod tests {
         let clock = AtomicTime::new(true, UnixNanos::default());
         clock.make_static();
         let before = clock.get_time_ns();
-        let after = clock.increment_time(1_000).unwrap();
-        assert_eq!(after, before + 1_000_u64);
+        let after = clock.increment_time(DurationNanos::new(1_000)).unwrap();
+        assert_eq!(after, before + DurationNanos::new(1_000));
         assert_eq!(clock.get_time_ns(), after);
     }
 
@@ -712,6 +713,16 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(
+        clippy::float_cmp,
+        reason = "1e18 ns and 1e9 s are exactly representable, the division is exact"
+    )]
+    fn test_get_time_static_mode_returns_exact_seconds() {
+        let time = AtomicTime::new(false, UnixNanos::from(1_000_000_000_000_000_000));
+        assert_eq!(time.get_time(), 1_000_000_000.0);
+    }
+
+    #[rstest]
     fn test_acquire_release_contract_static_mode() {
         // This test explicitly proves the Acquire/Release memory ordering contract:
         // - Writer thread uses set_time() which does Release store (see AtomicTime::set_time)
@@ -812,7 +823,9 @@ mod tests {
         let writer = std::thread::spawn(move || {
             for i in 1..=1_000u64 {
                 writer_aux.store(i, Ordering::Relaxed);
-                let _ = writer_clock.increment_time(1000).unwrap();
+                let _ = writer_clock
+                    .increment_time(DurationNanos::new(1000))
+                    .unwrap();
                 std::thread::yield_now();
             }
             writer_done.store(true, Ordering::Release);
@@ -881,7 +894,7 @@ mod tests {
     #[madsim::test]
     async fn test_wall_clock_advances_with_virtual_time() {
         let before = nanos_since_unix_epoch();
-        madsim::time::sleep(std::time::Duration::from_secs(60)).await;
+        madsim::time::sleep(std::time::Duration::from_mins(1)).await;
         let after = nanos_since_unix_epoch();
 
         let elapsed_ns = after.saturating_sub(before);

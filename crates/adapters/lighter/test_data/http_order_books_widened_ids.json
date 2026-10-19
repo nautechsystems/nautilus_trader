@@ -1,0 +1,43 @@
+{
+  "code": 200,
+  "order_books": [
+    {
+      "symbol": "ETH",
+      "market_id": 4095,
+      "market_type": "perp",
+      "base_asset_id": 0,
+      "quote_asset_id": 0,
+      "status": "active",
+      "taker_fee": "0.0000",
+      "is_taker_fee_enabled": true,
+      "maker_fee": "0.0000",
+      "is_maker_fee_enabled": true,
+      "liquidation_fee": "1.0000",
+      "min_base_amount": "0.0050",
+      "min_quote_amount": "10.000000",
+      "order_quote_limit": "281474976.710655",
+      "supported_size_decimals": 4,
+      "supported_price_decimals": 2,
+      "supported_quote_decimals": 6
+    },
+    {
+      "symbol": "FUTURE/USDC",
+      "market_id": 50000,
+      "market_type": "spot",
+      "base_asset_id": 1,
+      "quote_asset_id": 3,
+      "status": "active",
+      "taker_fee": "0.0000",
+      "is_taker_fee_enabled": true,
+      "maker_fee": "0.0000",
+      "is_maker_fee_enabled": true,
+      "liquidation_fee": "0.0000",
+      "min_base_amount": "0.0050",
+      "min_quote_amount": "10.000000",
+      "order_quote_limit": "2500000.000000",
+      "supported_size_decimals": 4,
+      "supported_price_decimals": 2,
+      "supported_quote_decimals": 6
+    }
+  ]
+}

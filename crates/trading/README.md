@@ -1,7 +1,7 @@
 # nautilus-trading
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-trading)](https://docs.rs/nautilus-trading/latest/nautilus-trading/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-trading)](https://docs.rs/nautilus-trading/latest/nautilus_trading/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-trading.svg)](https://crates.io/crates/nautilus-trading)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -24,11 +24,13 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `examples`: Enables example strategies (e.g. `EmaCross`) for backtesting and demos.
 - `defi`: Enables DeFi (Decentralized Finance) support.
-- `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `examples`: Enables example strategies such as `EmaCross` for backtesting and demos.
 - `extension-module`: Builds as a Python extension module.
+- `high-precision`: Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation
 

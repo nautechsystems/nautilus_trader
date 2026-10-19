@@ -24,6 +24,7 @@
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
+use nautilus_model::identifiers::TraderId;
 
 use crate::{
     cache::{Cache, CacheView},
@@ -76,16 +77,18 @@ pub trait ExecutionClientFactory: Debug {
     /// Create a new execution client instance.
     ///
     /// Execution clients receive a read-only cache view so venue adapters can query platform state
-    /// during construction without mutating the cache.
+    /// during construction without mutating the cache. The trader ID and clock come from the owning node.
     ///
     /// # Errors
     ///
     /// Returns an error if client creation fails.
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
+        clock: Rc<RefCell<dyn Clock>>,
     ) -> anyhow::Result<Box<dyn ExecutionClient>>;
 
     /// Returns the name of this factory.
@@ -107,6 +110,7 @@ pub trait SimulatedExecutionClientFactory: Debug {
     /// Returns an error if client creation fails.
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,
@@ -277,6 +281,30 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct MockExecutionClientFactory;
+
+    impl ExecutionClientFactory for MockExecutionClientFactory {
+        fn create(
+            &self,
+            _trader_id: TraderId,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
+        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            Err(anyhow::anyhow!("Mock factory - not implemented"))
+        }
+
+        fn name(&self) -> &'static str {
+            "mock-exec"
+        }
+
+        fn config_type(&self) -> &'static str {
+            "MockConfig"
+        }
+    }
+
     #[rstest]
     fn test_data_client_factory_registry() {
         let mut registry = DataClientFactoryRegistry::new();
@@ -293,25 +321,83 @@ mod tests {
         assert!(registry.get("mock").is_some());
 
         let factory2 = Box::new(MockDataClientFactory);
-        let result = registry.register("mock".to_string(), factory2);
-        assert!(result.is_err());
+        let error = registry.register("mock".to_string(), factory2).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Data client factory 'mock' is already registered"
+        );
+        assert_eq!(
+            registry.names().len(),
+            1,
+            "rejected registration must not be stored"
+        );
     }
 
     #[rstest]
-    fn test_empty_data_client_factory_registry() {
-        let registry = DataClientFactoryRegistry::new();
+    fn test_execution_client_factory_registry() {
+        let mut registry = ExecutionClientFactoryRegistry::new();
 
         assert!(registry.names().is_empty());
-        assert!(!registry.contains("mock"));
-        assert!(registry.get("mock").is_none());
+        assert!(!registry.contains("mock-exec"));
+        assert!(registry.get("mock-exec").is_none());
+
+        registry
+            .register(
+                "mock-exec".to_string(),
+                Box::new(MockExecutionClientFactory),
+            )
+            .unwrap();
+
+        assert_eq!(registry.names(), vec![&"mock-exec".to_string()]);
+        assert!(registry.contains("mock-exec"));
+        assert_eq!(registry.get("mock-exec").unwrap().name(), "mock-exec");
+        assert_eq!(
+            registry.get("mock-exec").unwrap().config_type(),
+            "MockConfig"
+        );
+
+        let error = registry
+            .register(
+                "mock-exec".to_string(),
+                Box::new(MockExecutionClientFactory),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Execution client factory 'mock-exec' is already registered"
+        );
+        assert_eq!(
+            registry.names().len(),
+            1,
+            "rejected registration must not be stored"
+        );
     }
 
     #[rstest]
-    fn test_empty_execution_client_factory_registry() {
-        let registry = ExecutionClientFactoryRegistry::new();
+    fn test_registries_do_not_match_unregistered_names() {
+        let mut data_registry = DataClientFactoryRegistry::new();
+        let mut execution_registry = ExecutionClientFactoryRegistry::new();
 
-        assert!(registry.names().is_empty());
-        assert!(!registry.contains("mock"));
-        assert!(registry.get("mock").is_none());
+        data_registry
+            .register("mock".to_string(), Box::new(MockDataClientFactory))
+            .unwrap();
+        execution_registry
+            .register(
+                "mock-exec".to_string(),
+                Box::new(MockExecutionClientFactory),
+            )
+            .unwrap();
+
+        assert!(!data_registry.contains("mock-exec"));
+        assert!(data_registry.get("mock-exec").is_none());
+        assert!(!execution_registry.contains("mock"));
+        assert!(execution_registry.get("mock").is_none());
+    }
+
+    #[rstest]
+    fn test_default_registries_are_empty() {
+        assert!(DataClientFactoryRegistry::default().names().is_empty());
+        assert!(ExecutionClientFactoryRegistry::default().names().is_empty());
     }
 }

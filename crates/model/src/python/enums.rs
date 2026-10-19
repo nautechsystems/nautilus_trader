@@ -22,12 +22,13 @@ use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
 use crate::{
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BarIntervalType,
-        BetSide, BookAction, BookType, ContingencyType, ContinuousFutureAdjustmentType,
-        CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
-        MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        OtoTriggerMode, PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce,
-        TradingState, TrailingOffsetType, TriggerType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, AvgPxReconciliation,
+        BarAggregation, BarIntervalType, BetSide, BookAction, BookType, ContingencyType,
+        ContinuousFutureAdjustmentType, CurrencyType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind,
+        OptionSideFilter, OrderSide, OrderStatus, OrderType, OtoTriggerMode,
+        PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
+        TrailingOffsetType, TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -254,6 +255,50 @@ impl AssetClass {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl AvgPxReconciliation {
+    /// How position reconciliation may use a venue-reported average entry price.
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InstrumentClass {
     /// The instrument class.
     #[new]
@@ -303,6 +348,10 @@ impl InstrumentClass {
     }
 
     /// Returns whether this instrument class allows negative prices.
+    ///
+    /// Futures allow negative prices, which occur as real settlement prices (e.g. WTI crude
+    /// oil in April 2020) and in back-adjusted continuous price series. Inverse instruments
+    /// whose notional divides by price still require a positive price.
     #[pyo3(name = "allows_negative_price")]
     #[must_use]
     pub const fn py_allows_negative_price(&self) -> bool {
@@ -319,7 +368,7 @@ impl InstrumentClass {
         self.parent_suffix()
     }
 
-    /// Returns the `InstrumentClass` for the parent-symbol suffix, if recognised.
+    /// Returns the `InstrumentClass` for the parent-symbol suffix, if recognized.
     ///
     /// Matches strict uppercase forms only. Both Databento-style abbreviations
     /// (`FUT`, `OPT`) and long forms (`FUTURE`, `OPTION`) are accepted.
@@ -378,8 +427,44 @@ impl BarAggregation {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BarIntervalType {
+    /// The interval type for bar aggregation.
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
     const fn __hash__(&self) -> isize {
         *self as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
 }
 
@@ -483,16 +568,30 @@ impl BookAction {
     }
 }
 
-#[pymethods]
+// The stub macro must run first so it records the compatibility class attribute
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl ContingencyType {
     /// The order contingency type which specifies the behavior of linked orders.
     ///
     /// [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
+    ///
+    /// Python retains `NO_CONTINGENCY` as a compatibility alias for `None`. The alias is not an enum
+    /// variant and may be removed in a future version.
     #[new]
-    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
+    }
+
+    /// Compatibility alias for the removed `NO_CONTINGENCY` variant.
+    ///
+    /// This alias returns `None` and may be removed in a future version.
+    #[classattr]
+    #[pyo3(name = "NO_CONTINGENCY")]
+    #[allow(clippy::use_self)]
+    const fn py_no_contingency() -> Option<ContingencyType> {
+        None
     }
 
     const fn __hash__(&self) -> isize {
@@ -522,10 +621,14 @@ impl ContingencyType {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+        if tokenized == "NO_CONTINGENCY" {
+            Ok(None)
+        } else {
+            Self::from_str(&tokenized).map(Some).map_err(to_pyvalue_err)
+        }
     }
 }
 
@@ -909,6 +1012,50 @@ impl OptionKind {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl OptionSideFilter {
+    /// Selects which option kinds an option chain carries at each strike position.
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl GreeksConvention {
     /// The numeraire convention for option greeks published by a venue.
     ///
@@ -1005,14 +1152,28 @@ impl OtoTriggerMode {
     }
 }
 
-#[pymethods]
+// The stub macro must run first so it records the compatibility class attribute
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl OrderSide {
-    /// The order side for a specific order, or action related to orders.
+    /// The order side (BUY or SELL).
+    ///
+    /// Python retains `NO_ORDER_SIDE` as a compatibility alias for `None`. The alias is not an enum
+    /// variant and may be removed in a future version.
     #[new]
-    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
+    }
+
+    /// Compatibility alias for the removed `NO_ORDER_SIDE` variant.
+    ///
+    /// This alias returns `None` and may be removed in a future version.
+    #[classattr]
+    #[pyo3(name = "NO_ORDER_SIDE")]
+    #[allow(clippy::use_self)]
+    const fn py_no_order_side() -> Option<OrderSide> {
+        None
     }
 
     const fn __hash__(&self) -> isize {
@@ -1042,10 +1203,14 @@ impl OrderSide {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+        if tokenized == "NO_ORDER_SIDE" {
+            Ok(None)
+        } else {
+            Self::from_str(&tokenized).map(Some).map_err(to_pyvalue_err)
+        }
     }
 }
 
@@ -1157,14 +1322,28 @@ impl OrderType {
     }
 }
 
-#[pymethods]
+// The stub macro must run first so it records the compatibility class attribute
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl PositionSide {
-    /// The market side for a specific position, or action related to positions.
+    /// The position side (FLAT, LONG, or SHORT).
+    ///
+    /// Python retains `NO_POSITION_SIDE` as a compatibility alias for `None`. The alias is not an enum
+    /// variant and may be removed in a future version.
     #[new]
-    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
+    }
+
+    /// Compatibility alias for the removed `NO_POSITION_SIDE` variant.
+    ///
+    /// This alias returns `None` and may be removed in a future version.
+    #[classattr]
+    #[pyo3(name = "NO_POSITION_SIDE")]
+    #[allow(clippy::use_self)]
+    const fn py_no_position_side() -> Option<PositionSide> {
+        None
     }
 
     const fn __hash__(&self) -> isize {
@@ -1194,10 +1373,14 @@ impl PositionSide {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+        if tokenized == "NO_POSITION_SIDE" {
+            Ok(None)
+        } else {
+            Self::from_str(&tokenized).map(Some).map_err(to_pyvalue_err)
+        }
     }
 }
 
@@ -1346,14 +1529,28 @@ impl TimeInForce {
     }
 }
 
-#[pymethods]
+// The stub macro must run first so it records the compatibility class attribute
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl TrailingOffsetType {
     /// The trailing offset type for an order type which specifies a trailing stop/trigger or limit price.
+    ///
+    /// Python retains `NO_TRAILING_OFFSET` as a compatibility alias for `None`. The alias is not an enum
+    /// variant and may be removed in a future version.
     #[new]
-    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
+    }
+
+    /// Compatibility alias for the removed `NO_TRAILING_OFFSET` variant.
+    ///
+    /// This alias returns `None` and may be removed in a future version.
+    #[classattr]
+    #[pyo3(name = "NO_TRAILING_OFFSET")]
+    #[allow(clippy::use_self)]
+    const fn py_no_trailing_offset() -> Option<TrailingOffsetType> {
+        None
     }
 
     const fn __hash__(&self) -> isize {
@@ -1383,21 +1580,39 @@ impl TrailingOffsetType {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+        if tokenized == "NO_TRAILING_OFFSET" {
+            Ok(None)
+        } else {
+            Self::from_str(&tokenized).map(Some).map_err(to_pyvalue_err)
+        }
     }
 }
 
-#[pymethods]
+// The stub macro must run first so it records the compatibility class attribute
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl TriggerType {
     /// The trigger type for the stop/trigger price of an order.
+    ///
+    /// Python retains `NO_TRIGGER` as a compatibility alias for `None`. The alias is not an enum variant
+    /// and may be removed in a future version.
     #[new]
-    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
+    }
+
+    /// Compatibility alias for the removed `NO_TRIGGER` variant.
+    ///
+    /// This alias returns `None` and may be removed in a future version.
+    #[classattr]
+    #[pyo3(name = "NO_TRIGGER")]
+    #[allow(clippy::use_self)]
+    const fn py_no_trigger() -> Option<TriggerType> {
+        None
     }
 
     const fn __hash__(&self) -> isize {
@@ -1427,10 +1642,14 @@ impl TriggerType {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+        if tokenized == "NO_TRIGGER" {
+            Ok(None)
+        } else {
+            Self::from_str(&tokenized).map(Some).map_err(to_pyvalue_err)
+        }
     }
 }
 

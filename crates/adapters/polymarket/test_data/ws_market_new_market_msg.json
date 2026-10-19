@@ -1,38 +1,44 @@
 {
-  "event_type": "new_market",
-  "id": "1031769",
-  "question": "Will NVIDIA (NVDA) close above $240 end of January?",
-  "market": "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1",
-  "slug": "nvda-above-240-on-january-30-2026",
-  "description": "This market will resolve to \"Yes\" if the official closing price for NVIDIA (NVDA) on the final trading day of January 2026 is higher than the listed price. Otherwise, this market will resolve to \"No\".",
+  "id": "market-001",
+  "question": "Map 1 Rounds Handicap: Sangal (-6.5) vs zeste (+6.5)",
+  "market": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "slug": "sanitized-new-market",
+  "description": "This market refers to the Counter-Strike match between Sangal and zeste in the Esports World Cup Open Qualifier Group 16, initially scheduled for August 8 at 5:00AM ET. This market is decided solely by the round score of Map 1 of this match, and is independent of which team wins Map 1 or the overall match.\n\nThis market will resolve to \"Sangal\" if Sangal wins Map 1 by 7 or more rounds, including any overtime (i.e. Sangal's round total on Map 1 exceeds zeste's by 7 or more). Otherwise, this market will resolve to \"zeste\".\n\nMap 1 must be played to completion, with a final round score determined by rounds actually played, for this market to resolve to a team. If Map 1 is completed in this way, the market resolves on that round score regardless of how the remainder of the match concludes (including any later forfeit, disqualification, walkover, or default). If Map 1 is not played at all, is not played to completion, or is decided by forfeit, disqualification, walkover, or default rather than by rounds played to a conclusion, this market will resolve 50-50. If the match is canceled, or is delayed beyond 7 days from the scheduled date without Map 1 being completed, this market will resolve 50-50.\n\nThe resolution source for this market will be official information from https://hltv.org. However, if https://hltv.org has not published final results within 2 hours after the event's conclusion, a consensus of credible reporting may be used instead, including video evidence.",
   "assets_ids": [
-    "76043073756653678226373981964075571318267289248134717369284518995922789326425",
-    "31690934263385727664202099278545688007799199447969475608906331829650099442770"
+    "10000000000000000000000000000000000000000000000000000000000000000000000000001",
+    "10000000000000000000000000000000000000000000000000000000000000000000000000002"
   ],
   "outcomes": [
-    "Yes",
-    "No"
+    "Sangal",
+    "zeste"
   ],
   "event_message": {
-    "id": "125819",
-    "ticker": "nvda-above-in-january-2026",
-    "slug": "nvda-above-in-january-2026",
-    "title": "Will NVIDIA (NVDA) close above ___ end of January?",
-    "description": "This market will resolve to \"Yes\" if the official closing price for NVIDIA (NVDA) on the final trading day of January 2026 is higher than the listed price. Otherwise, this market will resolve to \"No\"."
+    "id": "event-001",
+    "ticker": "sanitized-event",
+    "slug": "sanitized-event",
+    "title": "Counter-Strike: Sangal vs zeste (BO3) - Esports World Cup Open Qualifier Group 16",
+    "description": "This market refers to the Counter-Strike Elimination match between Sangal and zeste in the Esports World Cup Open Qualifier Group 16, initially scheduled for August 8 at 5:00AM ET.\n\nThis market will resolve to \"Sangal\" if Sangal win the match against zeste.\n\nThis market will resolve to \"zeste\" if zeste win the match against Sangal.\n\nIf the match is canceled (not played at all), ends in a tie, or is delayed beyond 7 days from the scheduled date without a winner determined, this market will resolve to 50-50. \n\nIf the match begins but is not completed, and one team wins due to the opponent's forfeiture, disqualification, or walkover, this market will resolve to the team who wins. \n\nIf the match ends in a forfeit, disqualification, or walkover (team withdraws before the start and the other wins automatically), this market will resolve to 50-50. \n\nThe resolution source for this market will be official information from https://hltv.org. However, if https://hltv.org has not published final results within 2 hours after the event’s conclusion, a consensus of credible reporting may be used instead including video evidence.\n\nIn cases where a team’s listed name includes minor discrepancies from the resolution source, this market will resolve based on the underlying real-world match rather than exact name matching. Recognizable abbreviations, alternate or erroneous spellings, sponsor tags, affiliate or academy designations, regional identifiers, and minor formatting differences will be treated as referring to the same team, provided the intended team can be clearly and uniquely identified within the relevant competition. If a listed team name has no reasonable connection to any participating team, or if it matches or could reasonably refer to another team in the same competition such that the intended team cannot be unambiguously determined, this market will resolve 50-50."
   },
-  "timestamp": "1766790415550",
-  "tags": [
-    "stocks"
-  ],
-  "condition_id": "0x311d0c4b6671ab54af4970c06fcf58662516f5168997bdda209ec3db5aa6b0c1",
-  "active": true,
+  "timestamp": "1786179115414",
+  "event_type": "new_market",
+  "tags": [],
+  "condition_id": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "active": false,
   "clob_token_ids": [
-    "76043073756653678226373981964075571318267289248134717369284518995922789326425",
-    "31690934263385727664202099278545688007799199447969475608906331829650099442770"
+    "10000000000000000000000000000000000000000000000000000000000000000000000000001",
+    "10000000000000000000000000000000000000000000000000000000000000000000000000002"
   ],
-  "sports_market_type": "",
-  "line": "",
-  "game_start_time": "",
+  "sports_market_type": "round_handicap_game_1",
+  "line": "-6.5",
+  "game_start_time": "2026-08-08 09:00:00+00",
   "order_price_min_tick_size": "0.01",
-  "group_item_title": "NVDA above $240"
+  "group_item_title": "Map 1 Rounds Handicap: Sangal (-6.5) vs zeste (+6.5)",
+  "taker_base_fee": "1000",
+  "fees_enabled": true,
+  "fee_schedule": {
+    "exponent": "1",
+    "rate": "0.05",
+    "taker_only": true,
+    "rebate_rate": "0.15"
+  }
 }

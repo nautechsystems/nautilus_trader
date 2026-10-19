@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -79,10 +79,6 @@ pub struct CryptoFuture {
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
-    /// The fee rate for liquidity makers as a percentage of order value.
-    pub maker_fee: Decimal,
-    /// The fee rate for liquidity takers as a percentage of order value.
-    pub taker_fee: Decimal,
     /// The maximum allowable order quantity.
     pub max_quantity: Option<Quantity>,
     /// The minimum allowable order quantity.
@@ -107,17 +103,8 @@ pub struct CryptoFuture {
 
 #[bon::bon]
 impl CryptoFuture {
-    /// Creates a new [`CryptoFuture`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
@@ -140,8 +127,6 @@ impl CryptoFuture {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -188,8 +173,6 @@ impl CryptoFuture {
             lot_size: lot_size.unwrap_or(Quantity::from(1)),
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
-            maker_fee: maker_fee.unwrap_or_default(),
-            taker_fee: taker_fee.unwrap_or_default(),
             max_quantity,
             min_quantity,
             max_notional,
@@ -203,85 +186,14 @@ impl CryptoFuture {
         })
     }
 
-    /// Creates a new [`CryptoFuture`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any parameter is invalid (see `new_checked`).
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        underlying: Currency,
-        quote_currency: Currency,
-        settlement_currency: Currency,
-        is_inverse: bool,
-        activation_ns: UnixNanos,
-        expiration_ns: UnixNanos,
-        price_precision: u8,
-        size_precision: u8,
-        price_increment: Price,
-        size_increment: Quantity,
-        multiplier: Option<Quantity>,
-        lot_size: Option<Quantity>,
-        max_quantity: Option<Quantity>,
-        min_quantity: Option<Quantity>,
-        max_notional: Option<Money>,
-        min_notional: Option<Money>,
-        max_price: Option<Price>,
-        min_price: Option<Price>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            underlying,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`CryptoFuture`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`CryptoFuture::new_checked`], which the builder calls so the same
-    /// correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`CryptoFuture::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,
@@ -306,8 +218,6 @@ impl CryptoFuture {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -336,8 +246,6 @@ impl CryptoFuture {
             min_price,
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
             tick_scheme,
             info,
             ts_event,
@@ -361,9 +269,6 @@ impl Hash for CryptoFuture {
 }
 
 impl Instrument for CryptoFuture {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::CryptoFuture(self)
     }
@@ -456,6 +361,14 @@ impl Instrument for CryptoFuture {
         self.min_price
     }
 
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
+    }
+
     fn ts_event(&self) -> UnixNanos {
         self.ts_event
     }
@@ -470,14 +383,6 @@ impl Instrument for CryptoFuture {
 
     fn margin_maint(&self) -> Decimal {
         self.margin_maint
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
     }
 
     fn strike_price(&self) -> Option<Price> {
@@ -566,8 +471,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -606,8 +509,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -619,7 +520,7 @@ mod tests {
     fn test_serialization_roundtrip(crypto_future_btcusdt: CryptoFuture) {
         let json = serde_json::to_string(&crypto_future_btcusdt).unwrap();
         let deserialized: CryptoFuture = serde_json::from_str(&json).unwrap();
-        assert_eq!(crypto_future_btcusdt, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]
@@ -647,8 +548,6 @@ mod tests {
             Some(Price::from("0.01")),
             Some(dec!(0.01)),
             Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
             None,
             None,
             10.into(),
@@ -679,8 +578,6 @@ mod tests {
             .min_price(Price::from("0.01"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(10.into())
             .ts_init(20.into())
             .build()

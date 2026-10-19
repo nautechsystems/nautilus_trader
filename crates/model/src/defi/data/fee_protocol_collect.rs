@@ -32,7 +32,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -49,6 +49,9 @@ pub struct PoolFeeProtocolCollect {
     pub pool_identifier: PoolIdentifier,
     /// The blockchain block number where the protocol-fee withdrawal occurred.
     pub block: u64,
+    /// The hash of the block observed when this withdrawal was ingested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the blockchain transaction containing the protocol-fee withdrawal.
     pub transaction_hash: String,
     /// The index position of the transaction within the block.
@@ -95,6 +98,7 @@ impl PoolFeeProtocolCollect {
             instrument_id,
             pool_identifier,
             block,
+            block_hash: None,
             transaction_hash,
             transaction_index,
             log_index,

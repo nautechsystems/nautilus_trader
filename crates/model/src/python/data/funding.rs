@@ -329,39 +329,6 @@ impl FundingRateUpdate {
     }
 }
 
-impl FundingRateUpdate {
-    /// Creates a new [`FundingRateUpdate`] from a Python object.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `PyErr` if extracting any attribute or converting types fails.
-    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id =
-            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
-
-        let rate: Decimal = obj.getattr("rate")?.extract()?;
-        let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
-        let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
-
-        let interval: Option<u16> = obj.getattr("interval").ok().and_then(|x| x.extract().ok());
-        let next_funding_ns: Option<u64> = obj
-            .getattr("next_funding_ns")
-            .ok()
-            .and_then(|x| x.extract().ok());
-
-        Ok(Self::new(
-            instrument_id,
-            rate,
-            interval,
-            next_funding_ns.map(UnixNanos::from),
-            UnixNanos::from(ts_event),
-            UnixNanos::from(ts_init),
-        ))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;

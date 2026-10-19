@@ -1,7 +1,7 @@
 # Get Started with Lighter
 
-Lighter is available through the v2 Rust engine. You can use it from a pure Rust project, or from
-Python v2 through PyO3 bindings that expose the same Rust data and execution clients to a Python
+Lighter is available through the Rust engine. You can use it from a pure Rust project, or from
+Python through PyO3 bindings that expose the same Rust data and execution clients to a Python
 `LiveNode`.
 
 The shortest path is to start with public data. Once data subscriptions work, add execution
@@ -12,19 +12,21 @@ credentials and then add a strategy that can submit orders.
 | Path        | Use when                                            | First step                                 |
 | :---------- | :-------------------------------------------------- | :----------------------------------------- |
 | Pure Rust   | You want a compiled app with no Python runtime.     | Copy the Rust quickstart.                  |
-| Python v2   | You want Python scripts on the Rust engine.         | Run the Python v2 data tester.             |
+| Python      | You want Python scripts on the Rust engine.         | Run the Python data tester.                |
 | RWA example | You want Databento signal data and Lighter trading. | Read the composite market making tutorial. |
 
 Start from these files:
 
 - Rust quickstart: `examples/quickstarts/lighter-rust-data-client/`.
-- Python v2 data tester: `python/examples/lighter/data_tester.py`.
+- Python data tester: `examples/live/lighter/data_tester.py`.
 - RWA tutorial: [Composite market making tutorial][lighter-rwa-composite-mm].
 
-The Rust and Python v2 paths both use these pieces:
+The Rust and Python paths both use these pieces:
 
-- `LighterDataClientConfig` selects mainnet or testnet and optional transport settings.
-- `LighterExecClientConfig` adds trader/account IDs and resolves credentials.
+- `LighterDataClientConfig` selects the Lighter or Robinhood deployment, mainnet or testnet, an
+  optional custom venue, and optional transport settings.
+- `LighterExecutionClientConfig` adds the account ID and resolves credentials. Its account issuer
+  must match the resolved venue.
 - `LighterDataClientFactory` and `LighterExecutionClientFactory` register clients with `LiveNode`.
 - `DataTester` and `ExecTester` provide smoke-test actors before you write a custom strategy.
 
@@ -61,8 +63,7 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
 After the data path works, add an execution client to the builder before calling `.build()`:
 
 ```rust
-let exec_config = LighterExecClientConfig::builder()
-    .trader_id(trader_id)
+let exec_config = LighterExecutionClientConfig::builder()
     .account_id(account_id)
     .environment(LighterEnvironment::Testnet)
     .build();
@@ -82,37 +83,41 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .build()?;
 ```
 
-For execution, set the matching environment variables before connecting:
+For execution, follow the
+[account and API key setup](../integrations/lighter.md#account-and-api-key-setup), then set the
+matching environment variables before connecting:
 
 ```bash
 export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-export LIGHTER_TESTNET_API_KEY_INDEX="0"
+export LIGHTER_TESTNET_API_KEY_INDEX="4"
 export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 ```
 
-Use `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET` for mainnet.
+The deployment and environment select the credential namespace:
 
-## Python v2 starter
+| Deployment | Environment | Credential prefix             |
+| ---------- | ----------- | ----------------------------- |
+| Lighter    | Mainnet     | `LIGHTER_*`                   |
+| Lighter    | Testnet     | `LIGHTER_TESTNET_*`           |
+| Robinhood  | Mainnet     | `LIGHTER_ROBINHOOD_*`         |
+| Robinhood  | Testnet     | `LIGHTER_ROBINHOOD_TESTNET_*` |
 
-Python v2 uses the Rust engine through PyO3. Install a Python v2 development wheel outside a source
-checkout, or build the v2 package from source before running these examples. See
-[Python v2 installation][python-v2-install].
+Each namespace supplies `ACCOUNT_INDEX`, `API_KEY_INDEX`, and `API_SECRET`.
 
-From a source checkout with Python v2 installed:
+## Python starter
+
+Python uses the Rust engine through PyO3. Install a Python development wheel outside a source
+checkout, or build the package from source before running these examples. See
+[Python installation][python-install].
+
+From the repository root with Python installed:
 
 ```bash
-cd python
-.venv/bin/python examples/lighter/data_tester.py --lighter-environment testnet
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
 ```
 
-That command builds the node and exits. Pass `--run` to connect:
-
-```bash
-.venv/bin/python examples/lighter/data_tester.py \
-    --lighter-environment testnet \
-    --instrument BTC-PERP.LIGHTER \
-    --run
-```
+The script connects to Lighter Testnet immediately and starts streaming. The deployment,
+environment, and instrument are module-level constants at the top of the file.
 
 The Python script mirrors the Rust setup:
 
@@ -122,22 +127,24 @@ builder = LiveNode.builder(
     TraderId.from_str("TESTER-001"),
     Environment.LIVE,
 ).add_data_client(
-    None,
+    VENUE,
     LighterDataClientFactory(),
-    LighterDataClientConfig(environment=LighterEnvironment.TESTNET),
+    LighterDataClientConfig(
+        environment=LighterEnvironment.TESTNET,
+        deployment=LighterDeployment.LIGHTER,
+    ),
 )
 ```
 
 Use the execution tester only after the data tester works:
 
 ```bash
-.venv/bin/python examples/lighter/exec_tester.py \
-    --lighter-environment testnet \
-    --instrument DOGE-PERP.LIGHTER
+uv run --project python --no-sync python examples/live/lighter/exec_tester.py
 ```
 
-Like the data tester, that command builds the node and exits. Pass `--run` to connect in dry-run
-mode, then add `--live-orders` to submit real orders.
+The execution tester also connects immediately, and it places real orders by default
+(`dry_run=False`, with a warning at the top of the module). The default environment is testnet;
+set `LIGHTER_DEPLOYMENT` and `LIGHTER_ENVIRONMENT` to select the target deployment and environment.
 
 ## Move to a strategy
 
@@ -145,22 +152,24 @@ The starter paths prove client wiring, subscriptions, and credential lookup. The
 replace the tester with a strategy:
 
 - Use [Write a Strategy (Rust)](write_rust_strategy.md) for a pure Rust strategy.
-- Use `python/examples/lighter/nvda_composite_mm.py` for Python v2 node wiring with the built-in
+- Use `examples/live/lighter/nvda_composite_mm.py` for Python node wiring with the built-in
   Rust `CompositeMarketMaker` strategy.
 - Use [Composite market making on Lighter RWA][lighter-rwa-composite-mm] when you need the full
   Databento signal setup.
 
 :::warning
-Rust execution examples can submit live orders when you set `DRY_RUN` to `false`. Python execution
-examples can submit live orders when you pass `--run --live-orders`. Start on testnet or use the
-smallest accepted size, and confirm the instrument, environment, account index, API key index, and
-private key before you run.
+The Rust execution example ships with `DRY_RUN = false` and can submit live orders as soon as you
+run it. Set `DRY_RUN` to `true` to connect without order submission. Python execution examples also
+submit live orders as soon as you run them. Start on testnet or use the smallest accepted size, and
+confirm the instrument, deployment, environment, account index, API key index, and private key
+before you run.
 :::
 
 For emergency cleanup, `cargo run --bin lighter-flatten -p nautilus-lighter` cancels open orders
-and closes positions for the configured Lighter account. Review it before use because it scans the
-account, can take several minutes under the standard 60 req/min quota, and affects more than one
-strategy or market when the account has broader exposure.
+and closes positions for the selected deployment account. Stop other account writers and review
+[Emergency account cleanup](../integrations/lighter.md#emergency-account-cleanup) before use. The
+tool submits one account-wide cancellation and one position-close pass. It does not reconcile until
+the account is flat.
 
 [lighter-rwa-composite-mm]: ../tutorials/lighter_rwa_composite_mm.md
-[python-v2-install]: ../getting_started/installation.md#python-v2-branch-development-wheels
+[python-install]: ../getting_started/installation.md#development-wheels

@@ -417,12 +417,9 @@ impl OKXVipLevel {
     /// - API rate limits.
     /// - Access to advanced order book channels (L2/L3 depth).
     ///
-    /// Higher VIP levels (VIP4+) get access to:
-    /// - "books50-l2-tbt" channel (50 depth, 10ms updates).
-    /// - "bbo-tbt" channel (1 depth, 10ms updates).
-    ///
-    /// VIP5+ get access to:
+    /// VIP4 and above get access to:
     /// - "books-l2-tbt" channel (400 depth, 10ms updates).
+    /// - "books50-l2-tbt" channel (50 depth, 10ms updates).
     #[new]
     fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
         let t = Self::type_object(py);

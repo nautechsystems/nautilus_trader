@@ -43,14 +43,14 @@ pub enum Message {
 }
 
 impl Message {
-    /// Construct a text message from any string-like value.
+    /// Constructs a text message from any string-like value.
     #[inline]
     #[must_use]
     pub fn text(s: impl Into<String>) -> Self {
         Self::Text(Bytes::from(s.into()))
     }
 
-    /// Borrow a text message as `&str` if the payload is valid UTF-8.
+    /// Borrows a text message as `&str` if the payload is valid UTF-8.
     ///
     /// Validates on each call; for hot paths where the producer is trusted,
     /// callers can read the bytes directly via [`Self::as_bytes`] and feed
@@ -64,21 +64,21 @@ impl Message {
         }
     }
 
-    /// Construct a binary message.
+    /// Constructs a binary message.
     #[inline]
     #[must_use]
     pub fn binary(data: impl Into<Bytes>) -> Self {
         Self::Binary(data.into())
     }
 
-    /// Construct a ping message.
+    /// Constructs a ping message.
     #[inline]
     #[must_use]
     pub fn ping(data: impl Into<Bytes>) -> Self {
         Self::Ping(data.into())
     }
 
-    /// Construct a pong message.
+    /// Constructs a pong message.
     #[inline]
     #[must_use]
     pub fn pong(data: impl Into<Bytes>) -> Self {
@@ -129,7 +129,7 @@ impl Message {
 
     /// Returns the message payload as a byte slice.
     ///
-    /// For close frames, returns the reason payload as bytes.
+    /// For close frames, returns an empty slice.
     #[inline]
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
@@ -210,7 +210,7 @@ impl CloseFrame {
     /// Internal server error (1011).
     pub const INTERNAL_ERROR: u16 = 1011;
 
-    /// Construct a close frame.
+    /// Constructs a close frame.
     #[inline]
     #[must_use]
     pub fn new(code: u16, reason: impl Into<String>) -> Self {
@@ -271,6 +271,12 @@ mod tests {
     }
 
     #[rstest]
+    fn as_bytes_close_returns_empty() {
+        let msg = Message::Close(Some(CloseFrame::new(1000, "bye")));
+        assert_eq!(msg.as_bytes(), b"");
+    }
+
+    #[rstest]
     fn as_text_returns_str_for_valid_utf8() {
         let msg = Message::text("café");
         assert_eq!(msg.as_text(), Some("café"));
@@ -287,5 +293,48 @@ mod tests {
         assert!(Message::binary(vec![1u8]).as_text().is_none());
         assert!(Message::ping(Bytes::new()).as_text().is_none());
         assert!(Message::Close(None).as_text().is_none());
+    }
+
+    #[rstest]
+    #[case(Message::text("text-17"), [true, false, false, false, false])]
+    #[case(Message::binary(b"binary-29".as_slice()), [false, true, false, false, false])]
+    #[case(Message::ping(b"ping-31".as_slice()), [false, false, true, false, false])]
+    #[case(Message::pong(b"pong-43".as_slice()), [false, false, false, true, false])]
+    #[case(Message::Close(None), [false, false, false, false, true])]
+    fn predicates_distinguish_variants(#[case] message: Message, #[case] expected: [bool; 5]) {
+        assert_eq!(
+            [
+                message.is_text(),
+                message.is_binary(),
+                message.is_ping(),
+                message.is_pong(),
+                message.is_close()
+            ],
+            expected
+        );
+    }
+
+    #[rstest]
+    fn text_conversions_preserve_payload() {
+        assert_eq!(
+            Message::from("borrowed-17"),
+            Message::Text(Bytes::from_static(b"borrowed-17"))
+        );
+        assert_eq!(
+            Message::from(String::from("owned-29")),
+            Message::Text(Bytes::from_static(b"owned-29"))
+        );
+    }
+
+    #[rstest]
+    fn binary_conversions_preserve_payload() {
+        assert_eq!(
+            Message::from(vec![0, 17, 255]),
+            Message::Binary(Bytes::from_static(&[0, 17, 255]))
+        );
+        assert_eq!(
+            Message::from(Bytes::from_static(&[128, 29])),
+            Message::Binary(Bytes::from_static(&[128, 29]))
+        );
     }
 }

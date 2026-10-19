@@ -13,14 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core logger lifecycle, filtering, event formatting, and dispatch.
+
 use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
+    io::{self, Write as _},
     sync::{
-        Mutex, OnceLock, PoisonError,
+        OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc::SendError,
     },
+};
+#[cfg(not(all(feature = "simulation", madsim)))]
+use std::{
+    sync::mpsc::{RecvTimeoutError, TryRecvError},
+    time::{Duration, Instant},
 };
 
 use ahash::AHashMap;
@@ -36,6 +44,7 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
 };
 use nautilus_model::identifiers::TraderId;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 use smallvec::SmallVec;
 use ustr::Ustr;
@@ -51,6 +60,15 @@ use crate::{
 
 #[cfg(not(all(feature = "simulation", madsim)))]
 const LOGGING: &str = "logging";
+
+// Bounds how long lines sit in the file buffer before reaching the OS (flush only, no fsync)
+#[cfg(not(all(feature = "simulation", madsim)))]
+const FILE_FLUSH_INTERVAL: Duration = Duration::from_millis(100);
+
+// Queued events between flush deadline checks, amortizing the clock read under a backlog
+#[cfg(not(all(feature = "simulation", madsim)))]
+const FILE_FLUSH_CHECK_EVENTS: u32 = 256;
+
 const KV_COLOR: &str = "color";
 const KV_COMPONENT: &str = "component";
 const LOG_FIELDS_INLINE_CAP: usize = 0;
@@ -72,28 +90,6 @@ const REPEATED_USTR_CACHE_CAP: usize = 8;
 thread_local! {
     static REPEATED_USTR_CACHE: RefCell<RepeatedUstrCache> =
         const { RefCell::new(RepeatedUstrCache::new()) };
-}
-
-#[derive(Clone, Copy)]
-struct RepeatedUstrCacheEntry {
-    ptr: usize,
-    len: usize,
-    value: Ustr,
-}
-
-#[derive(Clone, Copy)]
-struct RepeatedUstrCache {
-    entries: [Option<RepeatedUstrCacheEntry>; REPEATED_USTR_CACHE_CAP],
-    next: usize,
-}
-
-impl RepeatedUstrCache {
-    const fn new() -> Self {
-        Self {
-            entries: [None; REPEATED_USTR_CACHE_CAP],
-            next: 0,
-        }
-    }
 }
 
 /// Storage for structured log fields.
@@ -157,9 +153,7 @@ impl ShutdownOnError {
     }
 
     fn arm(&self, enabled: bool) {
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.take();
-        }
+        self.pending.lock().take();
         self.triggered.store(false, Ordering::Release);
         self.armed.store(enabled, Ordering::Release);
     }
@@ -168,9 +162,7 @@ impl ShutdownOnError {
         self.armed.store(false, Ordering::Release);
         self.triggered.store(false, Ordering::Release);
 
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.take();
-        }
+        self.pending.lock().take();
     }
 
     fn maybe_record_trigger<F>(
@@ -186,9 +178,7 @@ impl ShutdownOnError {
             return;
         }
 
-        let Ok(mut pending) = self.pending.lock() else {
-            return;
-        };
+        let mut pending = self.pending.lock();
 
         if self
             .triggered
@@ -210,10 +200,7 @@ impl ShutdownOnError {
             return None;
         }
 
-        self.pending
-            .lock()
-            .ok()
-            .and_then(|mut pending| pending.take())
+        self.pending.lock().take()
     }
 
     fn try_drain_trigger<F>(&self, drain: F) -> bool
@@ -224,9 +211,7 @@ impl ShutdownOnError {
             return false;
         }
 
-        let Ok(mut pending) = self.pending.lock() else {
-            return false;
-        };
+        let mut pending = self.pending.lock();
 
         let Some(trigger) = pending.as_ref() else {
             return false;
@@ -588,7 +573,7 @@ fn has_duplicate_json_field(fields: &LogFields) -> bool {
         if fields
             .iter()
             .take(idx)
-            .any(|(prev, _)| !is_reserved_json_key(prev.as_str()) && prev.as_str() == key)
+            .any(|(prev, _)| !is_reserved_json_key(prev.as_str()) && prev == key)
         {
             return true;
         }
@@ -650,7 +635,7 @@ fn intern_repeated(value: &str) -> Ustr {
         // Targets and components are usually repeated static strings; the content check keeps
         // dynamic RecordBuilder targets correct if an allocator reuses the same pointer.
         for entry in cache_state.entries.iter().flatten() {
-            if entry.ptr == ptr && entry.len == len && entry.value.as_str() == value {
+            if entry.ptr == ptr && entry.len == len && entry.value == value {
                 return entry.value;
             }
         }
@@ -667,6 +652,28 @@ fn intern_repeated(value: &str) -> Ustr {
     })
 }
 
+#[derive(Clone, Copy)]
+struct RepeatedUstrCacheEntry {
+    ptr: usize,
+    len: usize,
+    value: Ustr,
+}
+
+#[derive(Clone, Copy)]
+struct RepeatedUstrCache {
+    entries: [Option<RepeatedUstrCacheEntry>; REPEATED_USTR_CACHE_CAP],
+    next: usize,
+}
+
+impl RepeatedUstrCache {
+    const fn new() -> Self {
+        Self {
+            entries: [None; REPEATED_USTR_CACHE_CAP],
+            next: 0,
+        }
+    }
+}
+
 fn intern_component_value(value: &log::kv::Value<'_>) -> Ustr {
     match value.to_borrowed_str() {
         Some(component) => intern_repeated(component),
@@ -674,14 +681,9 @@ fn intern_component_value(value: &log::kv::Value<'_>) -> Ustr {
     }
 }
 
+#[derive(Default)]
 struct ComponentProbe {
     component: Option<Ustr>,
-}
-
-impl ComponentProbe {
-    const fn new() -> Self {
-        Self { component: None }
-    }
 }
 
 impl<'kvs> log::kv::VisitSource<'kvs> for ComponentProbe {
@@ -697,18 +699,10 @@ impl<'kvs> log::kv::VisitSource<'kvs> for ComponentProbe {
     }
 }
 
+#[derive(Default)]
 struct PayloadCollector {
     color: Option<LogColor>,
     fields: LogFields,
-}
-
-impl PayloadCollector {
-    fn new() -> Self {
-        Self {
-            color: None,
-            fields: SmallVec::new(),
-        }
-    }
 }
 
 impl<'kvs> log::kv::VisitSource<'kvs> for PayloadCollector {
@@ -731,20 +725,11 @@ impl<'kvs> log::kv::VisitSource<'kvs> for PayloadCollector {
     }
 }
 
+#[derive(Default)]
 struct FieldCollector {
     color: Option<LogColor>,
     component: Option<Ustr>,
     fields: LogFields,
-}
-
-impl FieldCollector {
-    fn new() -> Self {
-        Self {
-            color: None,
-            component: None,
-            fields: SmallVec::new(),
-        }
-    }
 }
 
 impl<'kvs> log::kv::VisitSource<'kvs> for FieldCollector {
@@ -785,7 +770,7 @@ impl Log for Logger {
 
         if LOGGING_BYPASSED.load(Ordering::Relaxed) {
             if level == Level::Error {
-                record_shutdown_on_error(record, level);
+                record_shutdown_on_error(record);
             }
             return;
         }
@@ -794,7 +779,7 @@ impl Log for Logger {
             if let Some(filter_policy) = &self.filter_policy {
                 // Probe only the component before filtering. Filtered error logs still need
                 // enough payload to trigger shutdown-on-error.
-                let mut probe = ComponentProbe::new();
+                let mut probe = ComponentProbe::default();
                 let _ = record.key_values().visit(&mut probe);
                 let component = probe
                     .component
@@ -813,7 +798,7 @@ impl Log for Logger {
                 }
 
                 let timestamp = current_log_timestamp();
-                let mut collector = PayloadCollector::new();
+                let mut collector = PayloadCollector::default();
                 let _ = record.key_values().visit(&mut collector);
                 let color = collector.color.unwrap_or_else(|| level.into());
 
@@ -838,7 +823,7 @@ impl Log for Logger {
 
             // With no component/module filters configured, keep the producer path to one KV visit.
             let timestamp = current_log_timestamp();
-            let mut collector = FieldCollector::new();
+            let mut collector = FieldCollector::default();
             let _ = record.key_values().visit(&mut collector);
             let color = collector.color.unwrap_or_else(|| level.into());
             let component = collector
@@ -871,21 +856,24 @@ impl Log for Logger {
         }
 
         if let Err(e) = self.tx.send(LogEvent::Flush) {
-            eprintln!("Error sending flush log event: {e}");
+            let _ = writeln!(io::stderr(), "Error sending flush log event: {e}");
         }
     }
 }
 
-fn record_shutdown_on_error(record: &log::Record, level: Level) {
-    let mut probe = ComponentProbe::new();
+fn record_shutdown_on_error(record: &log::Record) {
+    let mut probe = ComponentProbe::default();
     let _ = record.key_values().visit(&mut probe);
     let component = probe
         .component
         .unwrap_or_else(|| intern_repeated(record.metadata().target()));
 
-    shutdown_on_error().maybe_record_trigger(level, current_log_timestamp(), component, || {
-        format!("{}", record.args())
-    });
+    shutdown_on_error().maybe_record_trigger(
+        record.level(),
+        current_log_timestamp(),
+        component,
+        || format!("{}", record.args()),
+    );
 }
 
 impl Logger {
@@ -907,7 +895,10 @@ impl Logger {
 
     fn send_log_line(&self, line: LogLine) {
         if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
-            eprintln!("Error sending log event (receiver closed): {line}");
+            let _ = writeln!(
+                io::stderr(),
+                "Error sending log event (receiver closed): {line}"
+            );
         }
     }
 
@@ -930,16 +921,17 @@ impl Logger {
     /// # Errors
     ///
     /// Returns an error if the logger fails to register or initialize the background thread.
-    #[expect(clippy::needless_pass_by_value)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        expect(clippy::needless_pass_by_value)
+    )]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
         config: LoggerConfig,
         file_config: FileWriterConfig,
     ) -> anyhow::Result<LogGuard> {
-        let mut lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut lifecycle = LOGGER_LIFECYCLE.lock();
 
         match *lifecycle {
             LoggerLifecycle::Running => {
@@ -955,6 +947,21 @@ impl Logger {
             LoggerLifecycle::Uninitialized => {}
         }
 
+        // Open the log file before spawning the thread so an unusable path fails init
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        let file_writer_opt = if config.fileout_level == LevelFilter::Off {
+            None
+        } else {
+            Some(FileWriter::new(
+                trader_id.to_string(),
+                instance_id.to_string(),
+                file_config.clone(),
+                config.fileout_level,
+                config.clear_log_file,
+                config.fileout_sync_on_flush,
+            )?)
+        };
+
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
         let filter_policy = FilterPolicy::from_config(&config);
 
@@ -963,23 +970,15 @@ impl Logger {
             .name(LOGGING.to_string())
             .spawn({
                 let config = config.clone();
-                let file_config = file_config.clone();
                 move || {
-                    Self::handle_messages(
-                        trader_id.to_string(),
-                        instance_id.to_string(),
-                        config,
-                        file_config,
-                        rx,
-                    );
+                    Self::handle_messages(trader_id.to_string(), config, file_writer_opt, rx);
                 }
             })?;
 
-        let logger_tx = tx.clone();
         let logger = Self {
             config: config.clone(),
             filter_policy,
-            tx: logger_tx,
+            tx: tx.clone(),
         };
 
         if let Err(e) = set_boxed_logger(Box::new(logger)) {
@@ -995,11 +994,7 @@ impl Logger {
         }
 
         #[cfg(all(test, not(all(feature = "simulation", madsim))))]
-        if let Some(hook) = INIT_PUBLISH_HOOK
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+        if let Some(hook) = INIT_PUBLISH_HOOK.lock().take() {
             let _ = hook.reached.send(());
             let _ = hook.resume.recv();
         }
@@ -1033,7 +1028,7 @@ impl Logger {
         #[cfg(not(all(feature = "simulation", madsim)))]
         {
             // Store the handle globally
-            let mut handle_guard = LOGGER_HANDLE.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut handle_guard = LOGGER_HANDLE.lock();
             debug_assert!(
                 handle_guard.is_none(),
                 "LOGGER_HANDLE already set - re-initialization not supported"
@@ -1070,14 +1065,13 @@ impl Logger {
     #[expect(clippy::needless_pass_by_value)]
     fn handle_messages(
         trader_id: String,
-        instance_id: String,
         config: LoggerConfig,
-        file_config: FileWriterConfig,
+        mut file_writer_opt: Option<FileWriter>,
         rx: std::sync::mpsc::Receiver<LogEvent>,
     ) {
         let LoggerConfig {
             stdout_level,
-            fileout_level,
+            fileout_level: _,
             component_level: _,
             module_level: _,
             log_components_only: _,
@@ -1086,8 +1080,8 @@ impl Logger {
             use_tracing: _,
             bypass_logging: _,
             file_config: _,
-            clear_log_file,
-            fileout_sync_on_flush,
+            clear_log_file: _,
+            fileout_sync_on_flush: _,
             buffered_stdout,
         } = config;
 
@@ -1096,20 +1090,6 @@ impl Logger {
         // Set up std I/O buffers
         let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored, buffered_stdout);
         let mut stderr_writer = StderrWriter::new(is_colored);
-
-        // Conditionally create file writer based on fileout_level
-        let mut file_writer_opt = if fileout_level == LevelFilter::Off {
-            None
-        } else {
-            FileWriter::new(
-                trader_id,
-                instance_id,
-                file_config,
-                fileout_level,
-                clear_log_file,
-                fileout_sync_on_flush,
-            )
-        };
 
         let process_event = |event: LogEvent,
                              stdout_writer: &mut StdoutWriter,
@@ -1171,8 +1151,22 @@ impl Logger {
             }
         };
 
+        let mut file_flush_due = Instant::now() + FILE_FLUSH_INTERVAL; // dst-ok
+        let mut queued_since_check = 0;
+
         // Continue to receive and handle log events until channel is hung up
-        while let Ok(event) = rx.recv() {
+        loop {
+            let event = match Self::recv_event(
+                &rx,
+                &mut file_writer_opt,
+                &mut file_flush_due,
+                &mut queued_since_check,
+            ) {
+                Ok(event) => event,
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => break,
+            };
+
             match event {
                 LogEvent::Log(_) | LogEvent::Flush | LogEvent::Sync(_) => process_event(
                     event,
@@ -1214,6 +1208,53 @@ impl Logger {
                     break;
                 }
             }
+        }
+    }
+
+    // Checks the flush deadline once per batch of queued events or when the queue is empty, so
+    // console-only traffic cannot starve the file flush and a busy thread avoids per-event clock reads
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    fn recv_event(
+        rx: &std::sync::mpsc::Receiver<LogEvent>,
+        file_writer_opt: &mut Option<FileWriter>,
+        file_flush_due: &mut Instant,
+        queued_since_check: &mut u32,
+    ) -> Result<LogEvent, RecvTimeoutError> {
+        let queued = match rx.try_recv() {
+            Ok(event) => Some(event),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => return Err(RecvTimeoutError::Disconnected),
+        };
+
+        let Some(file_writer) = file_writer_opt else {
+            return match queued {
+                Some(event) => Ok(event),
+                None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            };
+        };
+
+        let queued = match queued {
+            Some(event) if *queued_since_check + 1 < FILE_FLUSH_CHECK_EVENTS => {
+                *queued_since_check += 1;
+                return Ok(event);
+            }
+            queued => queued,
+        };
+
+        *queued_since_check = 0;
+        let now = Instant::now(); // dst-ok
+
+        if now >= *file_flush_due {
+            if let Err(e) = file_writer.flush_buffer() {
+                let _ = writeln!(io::stderr(), "Error flushing log file: {e:?}");
+            }
+
+            *file_flush_due = now + FILE_FLUSH_INTERVAL;
+        }
+
+        match queued {
+            Some(event) => Ok(event),
+            None => rx.recv_timeout(file_flush_due.saturating_duration_since(now)),
         }
     }
 }
@@ -1265,13 +1306,9 @@ fn should_filter_log_inner(
     }
 
     // Module filter takes precedence over component filter
-    if let Some(filter_level) = module_filter.or(component_filter)
-        && line_level > filter_level
-    {
-        return true;
-    }
-
-    false
+    module_filter
+        .or(component_filter)
+        .is_some_and(|filter_level| line_level > filter_level)
 }
 
 /// Gracefully shuts down the logging subsystem.
@@ -1283,9 +1320,7 @@ fn should_filter_log_inner(
 ///
 /// Safe to call multiple times. Thread join is skipped if called from the logging thread.
 pub(crate) fn shutdown_graceful() {
-    let mut lifecycle = LOGGER_LIFECYCLE
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    let mut lifecycle = LOGGER_LIFECYCLE.lock();
 
     if *lifecycle == LoggerLifecycle::Terminated {
         return;
@@ -1301,8 +1336,7 @@ pub(crate) fn shutdown_graceful() {
         let _ = tx.send(LogEvent::Close);
     }
 
-    if let Ok(mut handle_guard) = LOGGER_HANDLE.lock()
-        && let Some(handle) = handle_guard.take()
+    if let Some(handle) = LOGGER_HANDLE.lock().take()
         && handle.thread().id() != std::thread::current().id()
     {
         let _ = handle.join();
@@ -1312,11 +1346,9 @@ pub(crate) fn shutdown_graceful() {
     *lifecycle = LoggerLifecycle::Terminated;
 }
 
+/// Returns whether the process-global logger is running.
 pub(crate) fn is_running() -> bool {
-    *LOGGER_LIFECYCLE
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        == LoggerLifecycle::Running
+    *LOGGER_LIFECYCLE.lock() == LoggerLifecycle::Running
 }
 
 /// Flushes and syncs file logs to disk through the logging thread.
@@ -1329,14 +1361,12 @@ pub(crate) fn is_running() -> bool {
 pub fn sync_to_disk() -> anyhow::Result<()> {
     #[cfg(all(feature = "simulation", madsim))]
     {
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(all(feature = "simulation", madsim)))]
     {
-        let lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let lifecycle = LOGGER_LIFECYCLE.lock();
 
         if *lifecycle != LoggerLifecycle::Running {
             return Ok(());
@@ -1361,6 +1391,7 @@ fn sync_sender_to_disk(tx: &std::sync::mpsc::Sender<LogEvent>) -> anyhow::Result
         .map_err(|e| anyhow::anyhow!("failed to receive logging sync acknowledgement: {e}"))?
 }
 
+/// Logs a message with the given level, color, and component.
 pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, message: T) {
     let color = Value::from(color as u8);
 
@@ -1410,10 +1441,7 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
 /// # Limits
 ///
 /// The system supports a maximum of 255 concurrent `LogGuard` instances.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
+#[cfg_attr(feature = "python", pyo3::pyclass(module = "nautilus_trader.common"))]
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
@@ -1431,9 +1459,7 @@ impl LogGuard {
     /// count would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
-        let lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let lifecycle = LOGGER_LIFECYCLE.lock();
 
         Self::new_from_lifecycle(&lifecycle)
     }
@@ -1449,11 +1475,8 @@ impl LogGuard {
     #[cfg(all(test, not(all(feature = "simulation", madsim))))]
     fn try_new_for_test() -> TestGuardAcquire {
         match LOGGER_LIFECYCLE.try_lock() {
-            Ok(lifecycle) => TestGuardAcquire::Acquired(Self::new_from_lifecycle(&lifecycle)),
-            Err(std::sync::TryLockError::WouldBlock) => TestGuardAcquire::LifecycleBusy,
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                TestGuardAcquire::Acquired(Self::new_from_lifecycle(&poisoned.into_inner()))
-            }
+            Some(lifecycle) => TestGuardAcquire::Acquired(Self::new_from_lifecycle(&lifecycle)),
+            None => TestGuardAcquire::LifecycleBusy,
         }
     }
 
@@ -1485,9 +1508,7 @@ impl Drop for LogGuard {
     /// Sends `Flush` if other guards remain active. The last guard synchronously flushes and syncs
     /// file output while leaving the process-global logging thread running.
     fn drop(&mut self) {
-        let lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let lifecycle = LOGGER_LIFECYCLE.lock();
         let previous_count = LOGGING_GUARDS_ACTIVE
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
                 assert!(count != 0, "LogGuard reference count underflow");
@@ -1505,7 +1526,10 @@ impl Drop for LogGuard {
         #[cfg(not(all(feature = "simulation", madsim)))]
         if previous_count == 1 {
             if let Err(e) = sync_sender_to_disk(&self.tx) {
-                eprintln!("Error syncing logs after dropping the last LogGuard: {e}");
+                let _ = writeln!(
+                    io::stderr(),
+                    "Error syncing logs after dropping the last LogGuard: {e}"
+                );
             }
         } else {
             // Other LogGuards are still active, just flush our logs
@@ -1849,7 +1873,7 @@ mod tests {
         assert_eq!(parsed["venue"], "OKX");
     }
 
-    /// Helper to convert module level map to sorted vec (descending by path length)
+    /// Converts the module-level map to a vector sorted by descending path length.
     fn sorted_module_filters(map: AHashMap<Ustr, LevelFilter>) -> Vec<(Ustr, LevelFilter)> {
         let mut v: Vec<_> = map.into_iter().collect();
         v.sort_by_key(|b| std::cmp::Reverse(b.0.len()));
@@ -2339,6 +2363,160 @@ mod tests {
             assert!(log_contents.contains("sync me"));
 
             drop(log_guard);
+        }
+
+        #[rstest]
+        fn test_logging_to_file_flushes_without_sync() {
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-FLUSH"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("Failed to initialize logger");
+
+            log::info!(component = "RiskEngine"; "flushed on interval");
+
+            // No sync or guard drop: the line must reach the file through the interval flush
+            wait_until(
+                || {
+                    std::fs::read_dir(&temp_dir)
+                        .expect("Failed to read directory")
+                        .filter_map(Result::ok)
+                        .filter(|entry| entry.path().is_file())
+                        .any(|entry| {
+                            std::fs::read_to_string(entry.path())
+                                .is_ok_and(|contents| contents.contains("flushed on interval"))
+                        })
+                },
+                Duration::from_secs(3),
+            );
+
+            drop(log_guard);
+        }
+
+        #[rstest]
+        fn test_init_returns_error_when_log_directory_is_unusable() {
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let blocking_file = temp_dir.path().join("not_a_directory");
+            std::fs::write(&blocking_file, "").expect("Failed to create blocking file");
+
+            let error = Logger::init_with_config(
+                TraderId::from("TRADER-FAIL"),
+                UUID4::new(),
+                config.clone(),
+                FileWriterConfig {
+                    directory: Some(blocking_file.to_str().unwrap().to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect_err("init must fail when the log directory cannot be created");
+
+            assert_eq!(
+                error.to_string(),
+                format!("failed to create log directory {}", blocking_file.display())
+            );
+            assert!(!logging_is_initialized());
+
+            // A failed init leaves the lifecycle open for a corrected retry
+            let log_guard = Logger::init_with_config(
+                TraderId::from("TRADER-FAIL"),
+                UUID4::new(),
+                config,
+                FileWriterConfig {
+                    directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect("init with a usable directory must succeed after a failed attempt");
+
+            assert!(logging_is_initialized());
+
+            drop(log_guard);
+        }
+
+        #[rstest]
+        fn test_recv_event_flushes_file_after_a_batch_of_queued_events() {
+            let temp_dir = tempdir().expect("Failed to create temporary directory");
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+            let file_writer = FileWriter::new(
+                "TRADER-001".to_string(),
+                "instance-123".to_string(),
+                file_config,
+                LevelFilter::Info,
+                false,
+                false,
+            )
+            .expect("Failed to create file writer");
+            let mut file_writer_opt = Some(file_writer);
+            let (tx, rx) = std::sync::mpsc::channel();
+
+            // Console-only traffic: queued events that never fill the file buffer
+            for _ in 0..=FILE_FLUSH_CHECK_EVENTS {
+                tx.send(LogEvent::Flush).unwrap();
+            }
+            file_writer_opt
+                .as_mut()
+                .unwrap()
+                .write("pending file line\n");
+            let mut file_flush_due = Instant::now();
+            let mut queued_since_check = 0;
+            let log_contents = || {
+                let entry = std::fs::read_dir(&temp_dir)
+                    .unwrap()
+                    .next()
+                    .unwrap()
+                    .unwrap();
+                std::fs::read_to_string(entry.path()).unwrap()
+            };
+
+            for _ in 1..FILE_FLUSH_CHECK_EVENTS {
+                Logger::recv_event(
+                    &rx,
+                    &mut file_writer_opt,
+                    &mut file_flush_due,
+                    &mut queued_since_check,
+                )
+                .unwrap();
+            }
+            let contents_before_check = log_contents();
+            Logger::recv_event(
+                &rx,
+                &mut file_writer_opt,
+                &mut file_flush_due,
+                &mut queued_since_check,
+            )
+            .unwrap();
+
+            assert_eq!(contents_before_check, "");
+            assert_eq!(log_contents(), "pending file line\n");
+            assert_eq!(queued_since_check, 0);
+            assert!(
+                rx.try_recv().is_ok(),
+                "the flush must happen while events are still queued"
+            );
         }
 
         #[rstest]
@@ -2891,9 +3069,7 @@ mod tests {
 
             let (publish_reached_tx, publish_reached_rx) = std::sync::mpsc::channel();
             let (publish_resume_tx, publish_resume_rx) = std::sync::mpsc::channel();
-            *INIT_PUBLISH_HOOK
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = Some(InitPublishHook {
+            *INIT_PUBLISH_HOOK.lock() = Some(InitPublishHook {
                 reached: publish_reached_tx,
                 resume: publish_resume_rx,
             });
@@ -3050,6 +3226,84 @@ mod tests {
                 "Logging has been shut down and cannot be re-initialized"
             );
         }
+
+        #[cfg(unix)]
+        #[rstest]
+        fn test_logging_survives_closed_stderr_pipe() {
+            use std::{process::Stdio, time::Duration};
+
+            use crate::testing::wait_until;
+
+            const MARKER: &str = "closed-stderr";
+
+            if !in_lifecycle_child(MARKER) {
+                // Close the read end of the child's stderr pipe so its ERROR writes fail with EPIPE
+                let mut child =
+                    Command::new(std::env::current_exe().expect("test executable must exist"))
+                        .arg("test_logging_survives_closed_stderr_pipe")
+                        .arg("--nocapture")
+                        .arg("--test-threads=1")
+                        .env(LIFECYCLE_CHILD_ENV, MARKER)
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .expect("lifecycle child process must start");
+                drop(child.stderr.take());
+                let output = child
+                    .wait_with_output()
+                    .expect("lifecycle child process must finish");
+
+                assert!(
+                    output.status.success(),
+                    "lifecycle child failed with {}\nstdout:\n{}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout),
+                );
+                return;
+            }
+
+            wait_until(
+                || io::stderr().write_all(b"\n").is_err(),
+                Duration::from_secs(5),
+            );
+
+            let temp_dir = tempdir().expect("temporary directory must be created");
+
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let guard = Logger::init_with_config(
+                TraderId::from("TRADER-STDERR"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("initialization must succeed");
+            log::error!(component = "StderrTest"; "error with closed stderr");
+            log::info!(component = "StderrTest"; "info after stderr failure");
+            logging_sync_to_disk().expect("logging thread must survive a closed stderr");
+
+            let log_path = std::fs::read_dir(&temp_dir)
+                .expect("log directory must be readable")
+                .filter_map(Result::ok)
+                .find(|entry| entry.path().is_file())
+                .expect("logger must create a log file")
+                .path();
+            let contents = std::fs::read_to_string(log_path).expect("log file must be readable");
+            assert!(contents.contains("error with closed stderr"));
+            assert!(contents.contains("info after stderr failure"));
+
+            drop(guard);
+            logging_shutdown();
+        }
     }
 
     #[cfg(all(feature = "simulation", madsim))]
@@ -3085,10 +3339,7 @@ mod tests {
                 "bypass must be forced under cfg(madsim) even when config disables it"
             );
             assert!(
-                LOGGER_HANDLE
-                    .lock()
-                    .expect("LOGGER_HANDLE mutex should not be poisoned")
-                    .is_none(),
+                LOGGER_HANDLE.lock().is_none(),
                 "writer thread must not be spawned under cfg(madsim)"
             );
         }

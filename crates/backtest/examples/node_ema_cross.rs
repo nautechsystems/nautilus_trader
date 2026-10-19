@@ -24,19 +24,24 @@
 //!
 //! Run with: `cargo run -p nautilus-backtest --features examples,streaming --example node-ema-cross`
 
+#[cfg(feature = "mimalloc")]
+mod allocator;
+
 use nautilus_backtest::{
-    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
+    config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig},
     node::BacktestNode,
 };
+use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
-    data::QuoteTick,
+    data::{NautilusDataType, QuoteTick},
     enums::{AccountType, BookType, OmsType},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
 use nautilus_trading::examples::strategies::EmaCross;
+use rust_decimal_macros::dec;
 use tempfile::TempDir;
 use ustr::Ustr;
 
@@ -96,6 +101,9 @@ fn generate_quotes(instrument_id: InstrumentId) -> Vec<QuoteTick> {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "mimalloc")]
+    allocator::register();
+
     // Write synthetic data to a temporary parquet catalog
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
     let instrument_id = instrument.id();
@@ -117,6 +125,10 @@ fn main() -> anyhow::Result<()> {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![STARTING_BALANCE.to_string()])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::new(
+            dec!(0.00002),
+            dec!(0.00002),
+        )))
         .build()?;
 
     let data_config = BacktestDataConfig::builder()

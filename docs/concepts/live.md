@@ -1,14 +1,71 @@
 # Live Trading
 
-NautilusTrader deploys backtested strategies to live markets with no code changes.
-The same actors, strategies, and execution algorithms run against both the backtest
-engine and a live trading node.
+The same strategy and execution-algorithm code can run across backtest and live environments. Live
+execution also introduces venue, transport, timing, persistence, external-activity, and
+reconciliation behavior that a simulation may not reproduce.
 
 :::warning
-**Live trading involves real financial risk. Before deploying to production, understand
+**Live trading involves real financial risk.** Before deploying to production, understand
 system configuration, node operations, execution reconciliation, and the differences
-between backtesting and live trading.**
+between backtesting and live trading.
 :::
+
+## Backtest and live differences
+
+Backtests advance a controlled clock from historical data and execute orders on simulated venues.
+A live node shares strategy and execution-algorithm code with a backtest, but coordinates with
+systems outside the process boundary.
+
+- **Venue**: Venue rules and adapter capabilities determine which order types, instructions, and
+  events are available. See [Adapters](adapters.md).
+- **Transport**: A network failure can leave an order command outcome unknown. See
+  [Command outcomes](execution/policies.md#command-outcomes).
+- **Timing**: Independent inputs can interleave, and the runner does not define one global FIFO
+  order. See [Dispatch priority](#dispatch-priority-and-overload-behavior).
+- **Persistence**: Built-in cache backends process writes independently of venue transport, and
+  event-store capture does not gate dispatch on durable commit. See
+  [Persistence before transport](execution/policies.md#persistence-before-transport).
+- **External activity**: Venue reports can include orders created outside the node. See
+  [External order creation](execution/reconciliation.md#external-order-creation).
+- **Reconciliation**: Startup and runtime checks align retained local state with venue reports. See
+  [Execution reconciliation](execution/reconciliation.md).
+
+## Execution client routing
+
+A live node can register independently named execution clients for the same venue. A command's
+`client_id` selects a registered client directly. Venue and default routes select a client when
+neither the command's `client_id` nor account-based routing resolves one.
+
+:::warning[Account isolation]
+Registering multiple clients for a venue does not provide end-to-end account isolation for positions and order
+management across same-venue accounts. Pre-trade risk checks use the account of the client that will run each
+command. See [Account selection](execution/index.md#account-selection).
+:::
+
+### Order routing
+
+Configure venue and default routes through each client's `RoutingConfig`:
+
+- `venues` assigns the listed venues to that client. These explicit routes take precedence over
+  automatic venue routes and the default client.
+- `default=True` selects the fallback client when no venue route applies.
+
+The only client registered for a venue automatically routes that venue unless another client
+explicitly routes it. Multiple clients for the same venue require an explicit venue route or a
+default client, even when strategies supply a `client_id` for each command. Duplicate client IDs,
+conflicting venue routes, and multiple defaults fail during node construction.
+
+### Instrument updates
+
+Instrument updates reach each client whose own venue matches, plus the client routed to that venue, if any.
+Each matching client receives the update once. Receiving an instrument update does not select that client as
+the recipient of order commands.
+
+### Direct Rust callers
+
+`ExecutionEngine::register_client` registers a client without assigning routing. Call
+`register_venue_routing` or `set_default_client` afterward to configure venue or fallback routing.
+Alternatively, `register_default_client` registers a client and makes it the default.
 
 ## Live node lifecycle
 
@@ -34,6 +91,147 @@ Live node lifecycle: instruments and execution state are prepared before strateg
 Cache restoration runs when a backing database is attached and cache loading is enabled. Connection,
 reconciliation, or trader startup failures abort startup and follow the coordinated cleanup path.
 
+### Submission recovery at shutdown
+
+Rust `LiveNode::stop`, `run`, and `run_with_mode`, and Python `run_async()` use the same submission recovery
+boundary:
+
+1. During `delay_post_stop`, the node continues processing venue evidence and native managed-exit timers
+   without starting new reconciliation queries.
+1. At the end of that window, any retained submission without a native outcome or venue confirmation makes
+   shutdown return an error. The error lists the unresolved client order IDs.
+1. Clients disconnect and the kernel stops even when recovery is incomplete.
+
+Evidence drained after this boundary cannot change the recorded shutdown result.
+
+This applies to `RetainUnresolved` and to clients which require submission retention, including submissions
+whose recovery budget has not yet exhausted. Polymarket requires retention automatically, so its callers can
+receive this error without selecting an opt-in policy. The default `ResolveLocally` policy stays unchanged for
+clients which do not require retention.
+
+Submission acknowledgement ends submission recovery. It does not prove that an accepted order's cancel or
+update completed, or that positions are flat. Managed exit keeps its existing attempt budget, and this result
+does not extend cleanup beyond `delay_post_stop` or implement recovery across restarts. See
+[submission recovery](execution/reconciliation.md#submission-recovery) for identity and query-budget rules.
+
+## Hosted event loops
+
+Use `run_async()` from Python to run a node on an event loop you already own. For example, an ASGI server can
+serve a dashboard beside the node. Use `run()` when the node should own the calling thread and signal
+handling.
+
+This lifecycle sketch leaves node configuration and request serving to the application:
+
+```python
+import asyncio
+
+from nautilus_trader.live import LiveNode
+from nautilus_trader.live import LiveNodeHandle
+
+
+async def wait_until_running(
+    handle: LiveNodeHandle,
+    task: asyncio.Task[None],
+) -> None:
+    while not handle.is_running:
+        if task.done():
+            await task
+            raise RuntimeError("LiveNode stopped during startup")
+        await asyncio.sleep(0.01)
+
+
+async def serve_with_node(node: LiveNode) -> None:
+    cache, portfolio, handle = node.cache, node.portfolio, node.handle()
+    run_task: asyncio.Task[None] | None = None
+    service_task: asyncio.Task[None] | None = None
+    try:
+        run_task = asyncio.create_task(node.run_async())
+        await wait_until_running(handle, run_task)
+
+        service_task = asyncio.create_task(serve_requests(cache, portfolio, handle))
+        done, _ = await asyncio.wait(
+            (run_task, service_task),
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if run_task in done:
+            await run_task
+            raise RuntimeError("LiveNode stopped while the service was running")
+        await service_task
+    finally:
+        if service_task is not None and not service_task.done():
+            service_task.cancel()
+            await asyncio.gather(service_task, return_exceptions=True)
+        try:
+            if run_task is not None:
+                handle.stop()
+                await run_task
+        finally:
+            node.dispose()
+```
+
+Both entry points run the same lifecycle, so a hosted node performs the same startup ordering,
+maintenance, reconciliation, and shutdown as an owned one. The mode decides only who owns signal
+handling: a hosted node installs no handlers, leaving `SIGINT` and `SIGTERM` to the host.
+
+### Access and shutdown
+
+`run_async()` returns a coroutine and lends the node to it for the run's duration:
+
+- Capture `cache`, `portfolio`, and `handle()` **before starting**. Each stays usable while the node
+  runs, whereas reading state through the node itself raises until the run returns it.
+- `handle()` works throughout, since it is how a host stops the node. `is_running` also answers
+  throughout because it reads the same handle.
+- Call `dispose()` **after the run task finishes** to release the node's resources. Calling it during the run
+  returns without doing anything. It does not defer disposal.
+
+`LiveNodeHandle` is safe to call from any thread, including a signal handler. `stop()` requests a
+graceful shutdown and returns immediately, so the awaiting task resolves only once shutdown
+finishes. Cancelling that task requests the same shutdown, waits for it, then re-raises the
+cancellation, which keeps `asyncio.timeout` and task groups behaving as their callers expect.
+
+The shared [submission recovery shutdown contract](#submission-recovery-at-shutdown) applies to
+hosted nodes. If an awaiting Python task is cancelled, cancellation still propagates after teardown,
+with any shutdown error preserved as the cancellation exception's cause.
+
+### Host integration and limits
+
+Compatibility is tested with the default asyncio loop and uvloop. An ASGI lifespan managed by Uvicorn can
+apply the same ownership pattern without transferring signal handling to the node.
+
+Before an ASGI lifespan reports startup complete, wait until the handle reports `Running` while checking
+whether the run task has failed. Keep supervising the task after startup, and treat unexpected completion as a
+service failure.
+
+While the node is running, it yields to the host loop periodically, so a burst of events cannot starve the
+host's own callbacks. Startup and shutdown drain their queues without yielding. Thus, a large instrument load
+or a shutdown backlog can hold the loop for the length of that drain.
+
+:::warning[One LiveNode per process]
+Run one concurrent `LiveNode` per process. The runner binds its channel senders and message bus into
+thread-local storage, and other runtime state is process-wide. `run_async()` also rejects a second
+hosted node on the same event loop. Run additional nodes in separate processes.
+
+Building another `LiveNode` on the same thread raises an error while the first node exists or is being built.
+In Python, `node.build(...)` is a static constructor and attempts to create another node.
+
+Calling `dispose()` alone does not release this construction guard. Before building a replacement, drop the
+existing node or release all references to it in Python:
+
+- With a single Python reference, call `del node` first: `node = LiveNode.build(...)` attempts construction
+  while the old node still exists.
+- Exceptions and unfinished coroutines can keep the node. Release those references too.
+- If an unreachable reference cycle keeps it, run `gc.collect()` before rebuilding.
+
+When an ASGI application lifespan constructs the node, run that application with one worker. Do not
+use hot reload for live trading because it restarts the worker and its node. Scale HTTP request
+handling with processes that do not construct a trading node.
+:::
+
+A node configured with a cache database backing is rejected on a host loop. Those backings wait for
+their worker task by blocking the calling thread, which stalls the host loop rather than slowing it.
+Native-only nodes can use `run()` for database backing. Custom Python clients drive asyncio in
+both launch modes, so neither supports cache database backing.
+
 ## Configuration
 
 For how config structs handle defaults, `T` vs `Option<T>` semantics, and
@@ -46,14 +244,20 @@ wiring, see the
 ## Execution reconciliation
 
 For how submit, modify, and cancel commands resolve, see
-[Command outcomes](execution.md#command-outcomes).
+[Command outcomes](execution/policies.md#command-outcomes).
 
 At startup, reconciliation aligns cached order and position state with venue reports before trader
-components start. Continuous checks can then monitor in‑flight orders, open orders, positions, and
+components start. Continuous checks can then monitor in-flight orders, open orders, positions, and
 own order books while the node runs.
 
-See [Execution reconciliation](reconciliation.md) for configuration, recovery procedures,
+An adapter can declare bounded historical reports. Startup reconciliation applies their fill economics only
+when the report set and retained state prove a coherent position transition. Incomplete or ambiguous history
+can still recover exact order state without changing positions or portfolio economics.
+
+See [Execution reconciliation](execution/reconciliation.md) for configuration, recovery procedures,
 runtime checks, scenarios, and invariants.
+For runtime protection against stale snapshots and the distinction from genuine corrections and explicit fill-void events,
+see [Snapshot freshness and fill corrections](execution/reconciliation.md#snapshot-freshness-and-fill-corrections).
 
 ## Rust live runner metrics
 
@@ -114,43 +318,269 @@ tokio::spawn(async move {
 node.run().await?;
 ```
 
+### Snapshot scope and interpretation
+
 The snapshot covers `LiveNode::run` channel dispatch after startup, including residual dispatch
-during the shutdown grace period. `dispatch_busy_ns` covers the five dispatch branches;
-`maintenance_busy_ns` and `external_msgbus_busy_ns` cover non-dispatch loop work. The snapshot does
-not include startup buffering, startup flushes, or the final post-loop drain. Queue depths are point
-samples from the maintenance tick while the node is running, and can be stale during shutdown grace.
-Snapshots are lock-free and may not be a consistent cross-field view; derive rates from successive
-snapshots with saturating deltas. Counters reset when `LiveNode::run` enters steady state.
+during the shutdown grace period. It does **not** include startup buffering, startup flushes, or the
+final post-loop drain.
+
+- `dispatch_busy_ns` covers the five dispatch branches. `maintenance_busy_ns` and
+  `external_msgbus_busy_ns` cover non-dispatch loop work.
+- Queue depths are point samples from the maintenance tick while the node is running, and can be
+  stale during shutdown grace.
+- Snapshots are lock-free and may not be a consistent cross-field view. Derive rates from successive
+  snapshots with **saturating deltas**.
+- Counters reset when `LiveNode::run` enters steady state.
+
+## Dispatch priority and overload behavior
+
+The live runner's seven internal message channels are separate and unbounded. When several message
+channels are ready together, the runner polls in this order:
+
+1. Time and system work.
+1. Execution events.
+1. Execution commands.
+1. External message-bus ingress.
+1. Data events.
+1. Data commands.
+
+Events precede commands within the execution and data channel pairs.
+
+This polling order keeps a market-data backlog from taking priority over ready execution traffic. It does not
+define **one global FIFO order** across channels, adapters, or venues.
+
+Each selected branch runs to completion before the runner polls again, so a slow handler delays each channel.
+The runner yields to the host event loop periodically, but yielding does not change channel priority or
+shorten a slow handler.
+
+:::warning[Unbounded queues]
+Runner channels do not apply producer backpressure, coalesce messages, shed market data, or impose a maximum
+queue depth. Sustained input above dispatch capacity thus increases queue depth, latency, and memory use. The
+runner does not automatically throttle a feed, halt trading, or shut down when a threshold is crossed.
+:::
+
+Use runner metrics and queue-state events to detect this pressure. The thresholds are operational
+signals, not service-time guarantees. The application must decide how to alert, reduce input, halt
+new exposure, or stop the node when pressure persists.
+
+## Queue pressure monitoring
+
+`LiveNode` converts runner queue samples into typed state transitions when
+`LiveNodeConfig.queue_monitor` is set. The monitor is **disabled by default** and publishes no
+queue-state events while the field is unset.
+
+### Configure thresholds
+
+The following example sets the thresholds applied to each monitored runner channel:
+
+```rust tab="Rust"
+use nautilus_live::config::{LiveNodeConfig, QueueMonitorConfig};
+
+let config = LiveNodeConfig {
+    queue_monitor: Some(
+        QueueMonitorConfig::builder()
+            .queue_depth_trigger(1_000)
+            .queue_depth_clear(500)
+            .mean_dispatch_ns_trigger(250_000)
+            .mean_dispatch_ns_clear(150_000)
+            .build(),
+    ),
+    ..Default::default()
+};
+```
+
+```python tab="Python"
+from nautilus_trader.live import LiveNodeConfig
+from nautilus_trader.live import QueueMonitorConfig
+
+config = LiveNodeConfig(
+    queue_monitor=QueueMonitorConfig(
+        queue_depth_trigger=1_000,
+        queue_depth_clear=500,
+        mean_dispatch_ns_trigger=250_000,
+        mean_dispatch_ns_clear=150_000,
+    ),
+)
+```
+
+The four values apply to each monitored runner channel:
+
+- `time_events`
+- `exec_events`
+- `exec_commands`
+- `data_events`
+- `data_commands`
+
+Each clear threshold must be **lower than its trigger threshold**. Configuration validation rejects
+equal or inverted thresholds.
+
+### State transitions
+
+The live runner evaluates the monitor on its 100 ms maintenance tick, after sampling current queue
+depths. Queue depth is a point-in-time value. Mean dispatch time uses the messages and dispatch busy
+time accumulated since the previous metrics snapshot.
+
+| Condition    | Measure                                               | `Triggered`                                    | `Cleared`                                    |
+| ------------ | ----------------------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `Backlogged` | Point-in-time queue depth.                            | `queue_depth >= queue_depth_trigger`           | `queue_depth <= queue_depth_clear`           |
+| `Slow`       | Per-channel mean dispatch time for the sample window. | `mean_dispatch_ns >= mean_dispatch_ns_trigger` | `mean_dispatch_ns <= mean_dispatch_ns_clear` |
+
+Each channel tracks `Backlogged` and `Slow` independently:
+
+- A value between the clear and trigger thresholds keeps the prior state, so it does not publish another
+  event.
+- If both conditions cross on one tick, the node publishes two events. Each condition clears
+  independently.
+- A sample window with no dispatches does not evaluate `Slow`. The condition keeps its prior state until a
+  window contains a dispatch.
+
+### Typed delivery
+
+Each transition publishes a fresh `QueueStateChanged` value on
+`events.system.QueueStateChanged.<channel>`, where `<channel>` is the Rust variant name, such as
+`DataEvents` for Python `SystemChannel.DATA_EVENTS`. The event identifies the configured trader,
+runner channel, condition, and transition state. It also records the queue depth and mean dispatch
+time at the crossing, a fresh event ID, and event timestamps.
+
+Actors subscribe with `subscribe_queue_state(...)` and receive events through
+`on_queue_state(...)`. The Python API exposes `SystemChannel`, `QueueCondition`, `QueueState`, and
+`QueueStateChanged` from `nautilus_trader.common`. Publication stays on the in-process typed message
+bus, and the event has no wire representation for external message-bus streaming. See
+[Queue pressure state](actors.md#queue-pressure-state) for actor examples.
+
+## Socket transport state
+
+### Publication and routing
+
+Actors can observe transport availability for adapters that opt into socket state reporting. `LiveNode`
+publishes `SocketStateChanged` on `events.system.SocketStateChanged.<client_id>.<endpoint>` with the trader
+ID, client ID, optional venue, stable endpoint label, state, fresh event ID, and event timestamps. The
+endpoint label identifies one logical adapter transport without exposing its URL.
+
+`LiveNode` sets both timestamps from the kernel clock when it handles the transport's neutral state
+notification. Adapters send the notification through the runner's system-event channel, separately from market
+data. The internal channel is not part of queue-pressure monitoring.
+
+The client ID and endpoint components percent-encode bytes other than ASCII letters, digits, `-`, and `_`.
+Thus, dots and wildcard characters in labels cannot change topic matching. Use `subscribe_socket_state`
+filters to select a client, endpoint, or both without constructing topic names.
+
+### State semantics
+
+| Transport event or condition        | Publication                                            |
+| ----------------------------------- | ------------------------------------------------------ |
+| TCP or WebSocket becomes available. | `Connected`.                                           |
+| Active transport is lost.           | `Disconnected`.                                        |
+| Connection or retry attempt fails.  | No event.                                              |
+| Deliberate shutdown.                | No disconnect event.                                   |
+| Reconnect attempts are exhausted.   | No additional event after the reported transport loss. |
+
+`Connected` reports **transport availability**. It does not mean that authentication, subscription
+replay, or adapter recovery has completed.
+
+:::warning
+Socket state is operational evidence, not an execution-command outcome. A disconnect by itself does not
+reject, cancel, or resolve an in-flight command. Stream updates, queries, or reconciliation provide that
+evidence under the [command outcome policy](execution/policies.md#command-outcomes).
+:::
+
+### Dead-peer detection
+
+A connection can stop delivering without closing. A NAT or load balancer drops it with no `FIN` and no `RST`.
+Thus, writes keep succeeding into the send buffer and nothing surfaces the loss.
+
+#### Heartbeat timeout
+
+Handler-mode WebSocket and raw TCP clients reconnect on heartbeat timeout. With a configured heartbeat, the
+default timeout is **three heartbeat intervals**. An explicit `heartbeat_timeout_secs` overrides that window.
+WebSocket clients reset it on any inbound frame. Raw TCP clients reset it when bytes arrive.
+
+The client expects the peer to answer heartbeats, so a transport with no heartbeat gets no default window. An
+explicit timeout can still enable detection without a heartbeat.
+
+For WebSocket clients, that window counts all frames, so a keepalive reply refreshes it and a quiet
+market does not trip it.
+
+#### Feed idle timeout
+
+An adapter can set a separate idle timeout to detect a feed that stopped flowing while the transport stays
+healthy. Only Text and Binary frames refresh this timeout. That second window suits a venue which pushes data
+on a known cadence. Where the venue answers the keepalive with a text payload, its reply refreshes the idle
+timeout exactly like real data does. Thus, this window is meaningful only when it sits below the heartbeat
+interval.
+
+### Adapter and actor integration
+
+Adapter integrations construct a `SocketStateSink` and set it through the network client's `state_sink`
+builder option. Publication requires the `LiveNode` runner. The standalone `AsyncRunner` does not publish
+these events.
+
+Actors subscribe with `subscribe_socket_state(...)` and receive events through `on_socket_state(...)`. The
+Python API exposes `SocketState` and `SocketStateChanged` from `nautilus_trader.common`. Delivery stays on the
+typed in-process bus. External message-bus streaming and wire formats do not expose these events.
+
+### Endpoint reconnect commands
+
+An actor or strategy can call `reconnect_socket(client_id, endpoint)` with an endpoint label from a
+state event. The runner routes the typed command through the kernel and the engine that owns the
+registered endpoint. The engine invokes only that transport's reconnect handle. It does not call
+the containing `DataClient` or `ExecutionClient` disconnect and connect lifecycle.
+
+:::note
+The API is **fire-and-observe**. A successful return means the command passed local validation and was
+queued. It does not acknowledge kernel acceptance or completed recovery.
+:::
+
+An accepted request emits `SocketStateChanged` for the selected endpoint:
+
+1. `SocketState.DISCONNECTED` as the transport enters reconnect mode.
+1. `SocketState.CONNECTED` after transport recovery.
+
+The transport's normal reconnect controller preserves its authentication, subscription replay, and
+adapter recovery behavior.
+
+The kernel logs unknown clients, unsupported clients, unknown or ambiguous endpoints, duplicate
+requests, disconnecting transports, and closed transports. These rejections emit no socket state
+change and do not affect another endpoint. Endpoint labels use identifier characters only and never
+contain raw URLs.
 
 ## Shutdown on error
 
-Set `LiveNodeConfig.shutdown_on_error=True` so that a Rust error log requests a live node
-shutdown. The Rust logger records the first `log::error!` emitted after the kernel
-starts, including error logs from other threads, and the kernel publishes a `ShutdownSystem`
-command when the live event loop next checks for shutdown.
+Set `LiveNodeConfig.shutdown_on_error=True` so that a Rust error log requests a live node shutdown. The Rust
+logger records the first `log::error!` emitted after the kernel starts, including error logs from other
+threads. The kernel publishes a `ShutdownSystem` command when the live event loop next checks for shutdown.
 
 The shutdown request follows the normal live node stop path. The node stops the trader,
 awaits the post-stop delay, disconnects clients, and stops the engines. It does not abort
 the process.
 
 ```python
-from nautilus_trader.live import LiveNodeConfig
+from nautilus_trader.config import LiveNodeConfig
 
 config = LiveNodeConfig(shutdown_on_error=True)
 ```
 
-Error logs suppressed by component filters or logging bypass mode still request shutdown.
-The trigger is cleared and re-armed when a new kernel run starts, so a process can restart
-a node without reinitializing the logging system. The per-engine
-`graceful_shutdown_on_error` option has been removed; configure shutdown-on-error at the
-node/kernel level instead. Shutdown-on-error observes Rust `log` records, not Python
-`logging.error(...)` calls.
+The trigger follows these rules:
+
+- Error logs suppressed by component filters or logging bypass mode still request shutdown.
+- A new kernel run clears and re-arms the trigger, so a process can restart a node without
+  reinitializing the logging system.
+- Shutdown-on-error observes **Rust `log` records**, not Python `logging.error(...)` calls.
+
+:::note
+The per-engine `graceful_shutdown_on_error` option has been removed. Configure shutdown-on-error at
+the node/kernel level instead.
+:::
 
 ## Related guides
 
-- [Execution reconciliation](reconciliation.md) - State recovery and runtime consistency checks.
+- [Execution reconciliation](execution/reconciliation.md) - State recovery and runtime consistency checks.
+- [Execution policies](execution/policies.md) - Command delivery, persistence, and recovery
+  boundaries.
+- [Python](python.md) - Python ownership, runtime, and public API boundaries.
 - [Configure a live trading node](../how_to/configure_live_trading.md) - Node and engine configuration.
 - [Run live trading with Rust](../how_to/run_rust_live_trading.md) - Rust node setup and venue connection.
 - [Adapters](adapters.md) - Venue connectivity.
-- [Execution](execution.md) - Command outcomes and order execution.
+- [Execution](execution/) - Command outcomes and order execution.
+- [Message bus](message_bus.md) - Typed in-process publish and subscribe behavior.
 - [Backtesting](backtesting/) - Testing strategies before deployment.

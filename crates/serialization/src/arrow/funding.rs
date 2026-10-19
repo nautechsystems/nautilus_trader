@@ -19,36 +19,44 @@ use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::data::{Data, FundingRateUpdate};
 
 use super::{
-    ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeFromRecordBatch, EncodeToRecordBatch,
+    EncodingError, KEY_INSTRUMENT_ID,
+    json::{
+        JsonFieldSpec, decode_batch_with_metadata_fields, encode_batch_with_identifier,
+        metadata_for_type, schema_for_type_with_identifier,
+    },
 };
 
 const FUNDING_RATE_UPDATE_FIELDS: &[JsonFieldSpec] = &[
-    JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("rate", false),
     JsonFieldSpec::u64("interval", true),
-    JsonFieldSpec::u64("next_funding_ns", true),
-    JsonFieldSpec::u64("ts_event", false),
-    JsonFieldSpec::u64("ts_init", false),
+    JsonFieldSpec::timestamp("next_funding_ns", true),
+    JsonFieldSpec::timestamp("ts_event", false),
+    JsonFieldSpec::timestamp("ts_init", false),
 ];
 
 impl ArrowSchemaProvider for FundingRateUpdate {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        schema_for_type("FundingRateUpdate", metadata, FUNDING_RATE_UPDATE_FIELDS)
+        schema_for_type_with_identifier("FundingRateUpdate", metadata, FUNDING_RATE_UPDATE_FIELDS)
     }
 }
 
 impl EncodeToRecordBatch for FundingRateUpdate {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        encode_batch(
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
+        encode_batch_with_identifier(
             "FundingRateUpdate",
             metadata,
-            data,
+            data.iter().map(std::borrow::Borrow::borrow),
             FUNDING_RATE_UPDATE_FIELDS,
+            data.iter()
+                .map(std::borrow::Borrow::borrow)
+                .map(|update| update.instrument_id),
         )
     }
 
@@ -62,15 +70,16 @@ impl EncodeToRecordBatch for FundingRateUpdate {
     }
 }
 
-impl DecodeTypedFromRecordBatch for FundingRateUpdate {
-    fn decode_typed_batch(
+impl DecodeFromRecordBatch for FundingRateUpdate {
+    fn decode_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        decode_batch(
+        decode_batch_with_metadata_fields(
             metadata,
             &record_batch,
             FUNDING_RATE_UPDATE_FIELDS,
+            &[KEY_INSTRUMENT_ID],
             Some("FundingRateUpdate"),
         )
     }
@@ -81,7 +90,7 @@ impl DecodeDataFromRecordBatch for FundingRateUpdate {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Data>, EncodingError> {
-        let updates = Self::decode_typed_batch(metadata, record_batch)?;
+        let updates = Self::decode_batch(metadata, record_batch)?;
         Ok(updates.into_iter().map(Data::from).collect())
     }
 }
@@ -90,6 +99,7 @@ impl DecodeDataFromRecordBatch for FundingRateUpdate {
 mod tests {
     use std::str::FromStr;
 
+    use arrow::array::StringArray;
     use nautilus_core::UnixNanos;
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
@@ -109,8 +119,30 @@ mod tests {
         );
         let metadata = update.metadata();
         let batch = FundingRateUpdate::encode_batch(&metadata, &[update]).unwrap();
-        let decoded =
-            FundingRateUpdate::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let identifiers = batch
+            .column_by_name("identifier")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(FundingRateUpdate::get_fields()["rate"], "Utf8");
+        assert_eq!(
+            batch.schema().field_with_name("rate").unwrap().data_type(),
+            &arrow::datatypes::DataType::Utf8
+        );
+        assert_eq!(identifiers.value(0), "BTCUSDT-PERP.BINANCE");
+        assert!(batch.schema().field_with_name("instrument_id").is_err());
+        assert_eq!(
+            batch.schema().metadata(),
+            &HashMap::from([
+                ("type_name".to_string(), "FundingRateUpdate".to_string()),
+                (
+                    KEY_INSTRUMENT_ID.to_string(),
+                    "BTCUSDT-PERP.BINANCE".to_string()
+                ),
+            ])
+        );
+        let decoded = FundingRateUpdate::decode_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded, vec![update]);
     }
@@ -127,8 +159,7 @@ mod tests {
         );
         let metadata = update.metadata();
         let batch = FundingRateUpdate::encode_batch(&metadata, &[update]).unwrap();
-        let decoded =
-            FundingRateUpdate::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+        let decoded = FundingRateUpdate::decode_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded, vec![update]);
         assert!(decoded[0].interval.is_none());

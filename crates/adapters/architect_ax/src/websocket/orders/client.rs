@@ -17,8 +17,9 @@
 
 use std::{
     fmt::Debug,
+    num::NonZeroU32,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering},
     },
     time::Duration,
@@ -26,12 +27,16 @@ use std::{
 
 use arc_swap::ArcSwap;
 use dashmap::{DashMap, mapref::entry::Entry};
-use nautilus_common::{cache::InstrumentLookupError, live::get_runtime};
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap,
-    consts::NAUTILUS_USER_AGENT,
     nanos::UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
+};
+use nautilus_live::{
+    SocketControl,
+    task::{SharedTaskSlot, TaskJoinOutcome},
 };
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
@@ -40,14 +45,16 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    backoff::ExponentialBackoff,
-    http::USER_AGENT,
+    ConnectionUrl,
+    http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, ReconnectHeaders, TransportBackend, WebSocketClient,
-        WebSocketConfig, channel_message_handler,
+        AuthTracker, InitialConnectRetryPolicy, PingHandler, ReconnectHeaders, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::Mutex;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::handler::{AxOrdersWsFeedHandler, HandlerCommand, WsOrderInfo};
@@ -122,14 +129,16 @@ impl From<&'static str> for AxOrdersWsClientError {
 /// and monitoring order status via WebSocket.
 pub struct AxOrdersWebSocketClient {
     clock: &'static AtomicTime,
-    url: String,
+    url: ConnectionUrl,
     heartbeat: Option<u64>,
     reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxOrdersWsMessage>>>,
     signal: Arc<AtomicBool>,
-    task_handle: Option<tokio::task::JoinHandle<()>>,
+    cancellation_token: Arc<ArcSwap<CancellationToken>>,
+    task_handle: Arc<SharedTaskSlot<()>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     auth_tracker: AuthTracker,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     caches: OrdersCaches,
@@ -137,7 +146,8 @@ pub struct AxOrdersWebSocketClient {
     account_id: AccountId,
     trader_id: TraderId,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for AxOrdersWebSocketClient {
@@ -161,7 +171,9 @@ impl Clone for AxOrdersWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None, // Each clone gets its own receiver
             signal: Arc::clone(&self.signal),
-            task_handle: None,
+            cancellation_token: Arc::clone(&self.cancellation_token),
+            task_handle: Arc::clone(&self.task_handle),
+            connect_lock: Arc::clone(&self.connect_lock),
             auth_tracker: self.auth_tracker.clone(),
             instruments_cache: Arc::clone(&self.instruments_cache),
             caches: self.caches.clone(),
@@ -170,11 +182,22 @@ impl Clone for AxOrdersWebSocketClient {
             trader_id: self.trader_id,
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
+            socket_control: self.socket_control.clone(),
         }
     }
 }
 
 impl AxOrdersWebSocketClient {
+    fn initial_connect_retry_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: NonZeroU32::new(5).expect("initial connect attempts must be non-zero"),
+            delay_initial: Duration::from_millis(500),
+            delay_max: Duration::from_secs(5),
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+        }
+    }
+
     /// Creates a new Ax orders WebSocket client.
     #[must_use]
     pub fn new(
@@ -192,14 +215,16 @@ impl AxOrdersWebSocketClient {
 
         Self {
             clock: get_atomic_clock_realtime(),
-            url,
+            url: url.into(),
             heartbeat: Some(heartbeat),
             reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
-            task_handle: None,
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             auth_tracker: AuthTracker::default(),
             instruments_cache: Arc::new(AtomicMap::new()),
             caches: OrdersCaches::default(),
@@ -207,8 +232,16 @@ impl AxOrdersWebSocketClient {
             account_id,
             trader_id,
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
+            socket_control: None,
         }
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     fn generate_ts_init(&self) -> UnixNanos {
@@ -218,7 +251,7 @@ impl AxOrdersWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns the account ID.
@@ -273,12 +306,7 @@ impl AxOrdersWebSocketClient {
     pub fn update_auth_token(&self, token: &str) -> AxOrdersWsResult<()> {
         let value = format!("Bearer {token}");
 
-        if let Some(headers) = self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-        {
+        if let Some(headers) = self.reconnect_headers.lock().as_ref() {
             headers
                 .update("Authorization", &value)
                 .map_err(|e| AxOrdersWsClientError::Transport(e.to_string()))?;
@@ -385,10 +413,40 @@ impl AxOrdersWebSocketClient {
     ///
     /// Returns an error if the connection cannot be established.
     pub async fn connect(&mut self, bearer_token: &str) -> AxOrdersWsResult<()> {
-        const MAX_RETRIES: u32 = 5;
-        const CONNECTION_TIMEOUT_SECS: u64 = 10;
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+
+        if !self.task_handle.is_empty() && !self.task_handle.is_finished() {
+            return Err(AxOrdersWsClientError::ClientError(
+                "WebSocket handler is already running".to_string(),
+            ));
+        }
+
+        if let Some(outcome) = self
+            .task_handle
+            .finish(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    return Err(AxOrdersWsClientError::ClientError(format!(
+                        "Previous WebSocket handler failed: {error}"
+                    )));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    return Err(AxOrdersWsClientError::ClientError(
+                        "Previous WebSocket handler did not stop within shutdown bounds"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
 
         self.signal.store(false, Ordering::Release);
+        let cancellation_token = CancellationToken::new();
+        self.cancellation_token
+            .store(Arc::new(cancellation_token.clone()));
 
         let (raw_handler, raw_rx) = channel_message_handler();
 
@@ -397,114 +455,73 @@ impl AxOrdersWebSocketClient {
             // Handler responds to pings internally via select! loop
         });
 
+        let mut headers = create_standard_nautilus_headers();
+        headers.push((
+            "Authorization".to_string(),
+            format!("Bearer {bearer_token}"),
+        ));
+
         let config = WebSocketConfig {
-            url: self.url.clone(),
-            headers: vec![
-                (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
-                (
-                    "Authorization".to_string(),
-                    format!("Bearer {bearer_token}"),
-                ),
-            ],
-            heartbeat: self.heartbeat,
-            heartbeat_msg: None, // Ax server sends heartbeats
-            reconnect_timeout_ms: Some(5_000),
+            url: self.url.expose().to_owned(),
+            headers,
+            heartbeat_interval_secs: self.heartbeat,
+            heartbeat_payload: None, // Ax server sends heartbeats
+            connect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
+            writer_capacity: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|url| url.expose_secret().to_owned()),
+            max_message_size_bytes: None,
+            max_frame_size_bytes: None,
         };
 
-        // Retry initial connection with exponential backoff
-        let mut backoff = ExponentialBackoff::new(
-            Duration::from_millis(500),
-            Duration::from_millis(5000),
-            2.0,
-            250,
-            false,
-        )
-        .map_err(|e| AxOrdersWsClientError::Transport(e.to_string()))?;
-
-        let mut last_error: String;
-        let mut attempt = 0;
-
-        let client = loop {
-            attempt += 1;
-
-            match tokio::time::timeout(
-                Duration::from_secs(CONNECTION_TIMEOUT_SECS),
-                WebSocketClient::connect(
-                    config.clone(),
-                    Some(raw_handler.clone()),
-                    Some(ping_handler.clone()),
-                    None,
-                    vec![],
-                    None,
-                ),
-            )
+        let client = WebSocketClient::builder()
+            .config(config.clone())
+            .message_handler(raw_handler.clone())
+            .ping_handler(ping_handler.clone())
+            .initial_connect_retry_policy(Self::initial_connect_retry_policy())
+            .cancellation_token(cancellation_token)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
             .await
-            {
-                Ok(Ok(client)) => {
-                    if attempt > 1 {
-                        log::debug!("WebSocket connection established after {attempt} attempts");
-                    }
-                    break client;
-                }
-                Ok(Err(e)) => {
-                    last_error = e.to_string();
-                    log::warn!(
-                        "WebSocket connection attempt failed: attempt={attempt}, max_retries={MAX_RETRIES}, url={}, error={last_error}",
-                        self.url
-                    );
-                }
-                Err(_) => {
-                    last_error = format!("Connection timeout after {CONNECTION_TIMEOUT_SECS}s");
-                    log::warn!(
-                        "WebSocket connection attempt timed out: attempt={attempt}, max_retries={MAX_RETRIES}, url={}",
-                        self.url
-                    );
-                }
-            }
+            .map_err(|e| {
+                AxOrdersWsClientError::Transport(format!(
+                    "WebSocket connection failed: {}: {}",
+                    self.url.origin(),
+                    e.redacted_message()
+                ))
+            })?;
 
-            if attempt >= MAX_RETRIES {
-                return Err(AxOrdersWsClientError::Transport(format!(
-                    "Failed to connect to {} after {MAX_RETRIES} attempts: {}",
-                    self.url,
-                    if last_error.is_empty() {
-                        "unknown error"
-                    } else {
-                        &last_error
-                    }
-                )));
-            }
-
-            let delay = backoff.next_duration();
-            log::debug!(
-                "Retrying in {delay:?} (attempt {}/{MAX_RETRIES})",
-                attempt + 1
-            );
-            tokio::time::sleep(delay).await;
-        };
-
-        self.connection_mode.store(client.connection_mode_atomic());
-        *self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.reconnect_headers());
+        let connection_mode = client.connection_mode_atomic();
+        let reconnect_handle = client.reconnect_handle();
+        *self.reconnect_headers.lock() = Some(client.reconnect_headers());
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<AxOrdersWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        *self.cmd_tx.write().await = cmd_tx.clone();
+        cmd_tx
+            .send(HandlerCommand::SetClient(client))
+            .map_err(|e| AxOrdersWsClientError::ChannelError(e.to_string()))?;
 
-        self.send_cmd(HandlerCommand::SetClient(client)).await?;
+        cmd_tx
+            .send(HandlerCommand::SessionAuthenticated)
+            .map_err(|e| AxOrdersWsClientError::ChannelError(e.to_string()))?;
 
-        self.send_cmd(HandlerCommand::SessionAuthenticated).await?;
+        {
+            let mut command_sender = self.cmd_tx.write().await;
+            *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
+        }
 
         let signal = Arc::clone(&self.signal);
         let auth_tracker = self.auth_tracker.clone();
@@ -512,7 +529,7 @@ impl AxOrdersWebSocketClient {
         let venue_to_client_order_id = Arc::clone(&self.caches.venue_to_client_id);
         let cid_to_client_order_id = Arc::clone(&self.caches.cid_to_client_order_id);
 
-        let stream_handle = get_runtime().spawn(async move {
+        if let Err(e) = self.task_handle.spawn(async move {
             let mut handler = AxOrdersWsFeedHandler::new(
                 signal.clone(),
                 cmd_rx,
@@ -535,9 +552,16 @@ impl AxOrdersWebSocketClient {
             }
 
             log::debug!("Handler loop exited");
-        });
+        }) {
+            self.out_rx = None;
+            return Err(AxOrdersWsClientError::Transport(format!(
+                "Failed to start WebSocket handler task: {e}"
+            )));
+        }
 
-        self.task_handle = Some(stream_handle);
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         Ok(())
     }
@@ -574,7 +598,7 @@ impl AxOrdersWebSocketClient {
             )
         })?;
 
-        let ax_side = AxOrderSide::try_from(order_side)?;
+        let ax_side = AxOrderSide::from(order_side);
 
         let qty_contracts = quantity_to_contracts(quantity)
             .map_err(|e| AxOrdersWsClientError::ClientError(e.to_string()))?;
@@ -700,6 +724,11 @@ impl AxOrdersWebSocketClient {
         }
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.cancellation_token.load().cancel();
+        self.signal.store(true, Ordering::Release);
+    }
+
     /// Disconnects the WebSocket connection gracefully.
     pub async fn disconnect(&self) {
         log::debug!("Disconnecting WebSocket");
@@ -707,31 +736,40 @@ impl AxOrdersWebSocketClient {
     }
 
     /// Closes the WebSocket connection and cleans up resources.
-    pub async fn close(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task fails or does not stop after abort.
+    pub async fn close(&mut self) -> anyhow::Result<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
         log::debug!("Closing WebSocket client");
 
         // Send disconnect first to allow graceful cleanup before signal
+        self.cancellation_token.load().cancel();
         let _ = self.send_cmd(HandlerCommand::Disconnect).await;
         tokio::time::sleep(Duration::from_millis(50)).await;
         self.signal.store(true, Ordering::Release);
 
-        if let Some(handle) = self.task_handle.take() {
-            const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
-            let abort_handle = handle.abort_handle();
+        let outcome = self
+            .task_handle
+            .finish(Duration::from_secs(2), Duration::from_secs(2))
+            .await;
+        *self.reconnect_headers.lock() = None;
 
-            match tokio::time::timeout(CLOSE_TIMEOUT, handle).await {
-                Ok(Ok(())) => log::debug!("Handler task completed gracefully"),
-                Ok(Err(e)) => log::warn!("Handler task panicked: {e}"),
-                Err(_) => {
-                    log::warn!("Handler task did not complete within timeout, aborting");
-                    abort_handle.abort();
-                }
-            }
+        if let Some(control) = &self.socket_control {
+            control.deregister();
         }
-        *self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+
+        match outcome {
+            None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => Ok(()),
+            Some(TaskJoinOutcome::Failed(error)) => Err(anyhow::anyhow!(
+                "Architect AX orders WebSocket handler failed: {error}"
+            )),
+            Some(TaskJoinOutcome::Incomplete) => Err(anyhow::anyhow!(
+                "Architect AX orders WebSocket handler did not stop after abort"
+            )),
+        }
     }
 
     async fn send_cmd(&self, cmd: HandlerCommand) -> AxOrdersWsResult<()> {
@@ -739,6 +777,20 @@ impl AxOrdersWebSocketClient {
         guard
             .send(cmd)
             .map_err(|e| AxOrdersWsClientError::ChannelError(e.to_string()))
+    }
+}
+
+impl Drop for AxOrdersWebSocketClient {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.task_handle) == 1 && !self.task_handle.is_empty() {
+            self.cancellation_token.load().cancel();
+            self.signal.store(true, Ordering::Release);
+            self.task_handle.abort();
+
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+        }
     }
 }
 
@@ -763,9 +815,115 @@ fn reserve_cid_mapping(
 mod tests {
     use std::sync::Arc;
 
+    use futures_util::StreamExt;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+
+        let mut ws_client = AxOrdersWebSocketClient::new(
+            url,
+            AccountId::from("AX-001"),
+            TraderId::from("TRADER-001"),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let observer = ws_client.clone();
+        let command = HandlerCommand::GetOpenOrders { request_id: 72 };
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect("startup-token"),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.close().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "rid": 72,
+                "t": "o"
+            })
+        );
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = AxOrdersWebSocketClient::new(
+            url.to_string(),
+            AccountId::from("AX-001"),
+            TraderId::from("TRADER-001"),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
+
+    #[tokio::test]
+    async fn test_drop_aborts_handler_task() {
+        let client = AxOrdersWebSocketClient::new(
+            "wss://example.com/orders/ws".to_string(),
+            AccountId::from("AX-001"),
+            TraderId::from("TRADER-001"),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            started_tx.send(()).expect("started receiver");
+            std::future::pending::<()>().await;
+        });
+        let abort_handle = handle.abort_handle();
+        client.task_handle.insert(handle);
+        started_rx.await.expect("handler task started");
+
+        drop(client);
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !abort_handle.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("handler task aborted");
+    }
 
     #[rstest]
     fn test_reserve_cid_mapping_rejects_collision() {

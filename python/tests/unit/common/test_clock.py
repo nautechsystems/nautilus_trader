@@ -12,15 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test clock behavior.
+"""
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from nautilus_trader.common import Clock
 
 
-def test_clock_requires_callback_for_timers():
+def test_clock_requires_callback_for_timers() -> None:
+    """
+    Test clock requires callback for timers.
+    """
     clock = Clock.new_test()
 
     with pytest.raises(ValueError, match="No callbacks provided"):
@@ -30,7 +37,10 @@ def test_clock_requires_callback_for_timers():
         clock.set_time_alert_ns("alert", 10)
 
 
-def test_clock_datetime_surface_with_default_handler():
+def test_clock_datetime_surface_with_default_handler() -> None:
+    """
+    Test clock datetime surface with default handler.
+    """
     clock = Clock.new_test()
     received = []
 
@@ -74,7 +84,10 @@ def test_clock_datetime_surface_with_default_handler():
     assert clock.timer_count() == 0
 
 
-def test_clock_set_time_updates_test_clock_timestamp():
+def test_clock_set_time_updates_test_clock_timestamp() -> None:
+    """
+    Test clock set time updates test clock timestamp.
+    """
     clock = Clock.new_test()
 
     clock.set_time(1_700_000_000_000_000_000)
@@ -82,7 +95,10 @@ def test_clock_set_time_updates_test_clock_timestamp():
     assert clock.timestamp_ns() == 1_700_000_000_000_000_000
 
 
-def test_clock_ns_surface_with_explicit_callbacks():
+def test_clock_ns_surface_with_explicit_callbacks() -> None:
+    """
+    Test clock ns surface with explicit callbacks.
+    """
     clock = Clock.new_test()
     received = []
 
@@ -114,7 +130,10 @@ def test_clock_ns_surface_with_explicit_callbacks():
     assert clock.timer_count() == 0
 
 
-def test_clock_cancel_default_handler():
+def test_clock_cancel_default_handler() -> None:
+    """
+    Test clock cancel default handler.
+    """
     clock = Clock.new_test()
     clock.register_default_handler(lambda _: None)
 
@@ -132,7 +151,10 @@ def test_clock_cancel_default_handler():
         clock.set_time_alert_ns("alert_after_cancel", 10)
 
 
-def test_clock_cancel_callbacks_clears_named_handlers():
+def test_clock_cancel_callbacks_clears_named_handlers() -> None:
+    """
+    Test clock cancel callbacks clears named handlers.
+    """
     clock = Clock.new_test()
 
     clock.set_time_alert_ns("alert_ns", 10, callback=lambda _: None)
@@ -155,15 +177,24 @@ def test_clock_cancel_callbacks_clears_named_handlers():
         clock.set_timer_ns("timer_ns", 1_000)
 
 
-def test_clock_cancel_default_handler_releases_handler_object():
+def test_clock_cancel_default_handler_releases_handler_object() -> None:
+    """
+    Test clock cancel default handler releases handler object.
+    """
     # Regression for the BacktestEngine actor leak: the clock must release its
     # `Py<PyAny>` to break the actor <- bound method <- clock cycle. Keep clocks
     # alive through the assertion so a no-op cancel cannot pass via clock drop.
     import gc
 
     class Holder:
-        def handler(self, _event):
-            pass
+        """
+        Collect holder tests.
+        """
+
+        def handler(self, _event: object) -> None:
+            """
+            Handle the callback.
+            """
 
     baseline = sum(1 for o in gc.get_objects() if isinstance(o, Holder))
     clocks = []
@@ -184,7 +215,10 @@ def test_clock_cancel_default_handler_releases_handler_object():
     gc.collect()
 
 
-def test_clock_cancel_default_handler_is_idempotent():
+def test_clock_cancel_default_handler_is_idempotent() -> None:
+    """
+    Test clock cancel default handler is idempotent.
+    """
     clock = Clock.new_test()
 
     # No handler registered: cancel must be a no-op rather than panic
@@ -199,14 +233,20 @@ def test_clock_cancel_default_handler_is_idempotent():
         clock.set_timer_ns("timer", 1_000)
 
 
-def test_clock_cancel_callbacks_is_idempotent():
+def test_clock_cancel_callbacks_is_idempotent() -> None:
+    """
+    Test clock cancel callbacks is idempotent.
+    """
     clock = Clock.new_test()
 
     clock.cancel_callbacks()  # Empty registry, no-op
     clock.cancel_callbacks()
 
 
-def test_clock_cancel_callbacks_does_not_clear_default_handler():
+def test_clock_cancel_callbacks_does_not_clear_default_handler() -> None:
+    """
+    Test clock cancel callbacks does not clear default handler.
+    """
     clock = Clock.new_test()
     clock.register_default_handler(lambda _: None)
     clock.set_time_alert_ns("alert", 10, callback=lambda _: None)
@@ -217,7 +257,10 @@ def test_clock_cancel_callbacks_does_not_clear_default_handler():
     clock.set_timer_ns("timer_after_clear", 1_000, start_time_ns=0, stop_time_ns=5_000)
 
 
-def test_clock_cancel_default_handler_does_not_clear_named_callbacks():
+def test_clock_cancel_default_handler_does_not_clear_named_callbacks() -> None:
+    """
+    Test clock cancel default handler does not clear named callbacks.
+    """
     clock = Clock.new_test()
     clock.register_default_handler(lambda _: None)
     clock.set_time_alert_ns("alert", 10, callback=lambda _: None)
@@ -228,3 +271,66 @@ def test_clock_cancel_default_handler_does_not_clear_named_callbacks():
     # a callback succeeds (the clock falls back to the existing named callback)
     clock.cancel_timer("alert")
     clock.set_time_alert_ns("alert", 20, allow_past=False)
+
+
+@pytest.mark.parametrize(
+    ("interval", "start_time", "expected_next_time"),
+    [
+        (
+            "1d",
+            dt.datetime(2026, 10, 31, 9, 30, tzinfo=ZoneInfo("America/New_York")),
+            dt.datetime(2026, 11, 1, 14, 30, tzinfo=dt.UTC),
+        ),
+        (
+            "P1M",
+            dt.datetime(2026, 1, 31, tzinfo=dt.UTC),
+            dt.datetime(2026, 2, 28, tzinfo=dt.UTC),
+        ),
+    ],
+)
+def test_clock_set_timer_zoned_steps_in_start_time_zone(
+    interval: str,
+    start_time: dt.datetime,
+    expected_next_time: dt.datetime,
+) -> None:
+    """
+    Test clock set timer zoned steps in start time zone.
+    """
+    clock = Clock.new_test()
+
+    clock.set_timer_zoned(
+        "zoned",
+        interval,
+        start_time,
+        callback=lambda _: None,
+        allow_past=False,
+    )
+
+    expected_next_time_ns = int(expected_next_time.timestamp()) * 1_000_000_000
+    assert clock.timer_names() == ["zoned"]
+    assert clock.next_time_ns("zoned") == expected_next_time_ns
+
+
+@pytest.mark.parametrize(
+    ("interval", "start_time", "error", "match"),
+    [
+        ("1d", dt.datetime(2026, 10, 31, 9, 30), TypeError, "non-None tzinfo"),  # noqa: DTZ001
+        ("one day", dt.datetime(2026, 10, 31, tzinfo=dt.UTC), ValueError, "duration format"),
+        ("-1d", dt.datetime(2026, 10, 31, tzinfo=dt.UTC), ValueError, "must be positive"),
+    ],
+)
+def test_clock_set_timer_zoned_rejects_invalid_inputs(
+    interval: str,
+    start_time: dt.datetime,
+    error: type[Exception],
+    match: str,
+) -> None:
+    """
+    Test clock set timer zoned rejects invalid inputs.
+    """
+    clock = Clock.new_test()
+
+    with pytest.raises(error, match=match):
+        clock.set_timer_zoned("zoned", interval, start_time, callback=lambda _: None)
+
+    assert clock.timer_count() == 0

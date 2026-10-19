@@ -15,27 +15,22 @@
 
 //! HTTP types including status codes, methods, and responses.
 
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash, time::Duration};
 
 use bytes::Bytes;
-use http::{StatusCode, status::InvalidStatusCode};
-use reqwest::Method;
+use http::{Method, StatusCode, status::InvalidStatusCode};
+use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
 
-/// Represents a HTTP status code.
+/// An HTTP status code.
 ///
-/// Wraps [`http::StatusCode`] to expose a Python-compatible type and reuse
-/// its validation and convenience methods.
+/// Wraps [`http::StatusCode`] to reuse its validation and convenience methods.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
-)]
 pub struct HttpStatus {
     inner: StatusCode,
 }
 
 impl HttpStatus {
-    /// Create a new [`HttpStatus`] instance from a given [`StatusCode`].
+    /// Creates an [`HttpStatus`] from a [`StatusCode`].
     #[must_use]
     pub const fn new(code: StatusCode) -> Self {
         Self { inner: code }
@@ -106,21 +101,8 @@ impl TryFrom<u16> for HttpStatus {
     }
 }
 
-/// Represents the HTTP methods supported by the `HttpClient`.
+/// An HTTP method supported by [`super::HttpClient`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.network",
-        from_py_object
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
-)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -141,19 +123,8 @@ impl From<HttpMethod> for Method {
     }
 }
 
-/// Represents the response from an HTTP request.
-///
-/// This struct encapsulates the status, headers, and body of an HTTP response,
-/// providing easy access to the key components of the response.
+/// The status, selected headers, and raw body returned by an HTTP request.
 #[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.network")
-)]
 pub struct HttpResponse {
     /// The HTTP status code.
     pub status: HttpStatus,
@@ -161,4 +132,80 @@ pub struct HttpResponse {
     pub headers: HashMap<String, String>,
     /// The raw response body.
     pub body: Bytes,
+}
+
+/// Parses a `Retry-After` delay in seconds or an HTTP date relative to `now`.
+///
+/// Returns zero for a past date and `None` for an invalid value.
+#[must_use]
+pub fn parse_retry_after(value: &str, now: Timestamp) -> Option<Duration> {
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+
+    let retry_at = DateTimeParser::new().parse_timestamp(value).ok()?;
+    let delay = retry_at.duration_since(now);
+    if delay.is_negative() {
+        Some(Duration::ZERO)
+    } else {
+        Some(delay.unsigned_abs())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(100, [true, false, false, false, false])]
+    #[case(199, [true, false, false, false, false])]
+    #[case(200, [false, true, false, false, false])]
+    #[case(299, [false, true, false, false, false])]
+    #[case(300, [false, false, true, false, false])]
+    #[case(399, [false, false, true, false, false])]
+    #[case(400, [false, false, false, true, false])]
+    #[case(499, [false, false, false, true, false])]
+    #[case(500, [false, false, false, false, true])]
+    #[case(599, [false, false, false, false, true])]
+    #[case(600, [false; 5])]
+    #[case(999, [false; 5])]
+    fn status_classifies_boundaries(#[case] code: u16, #[case] expected: [bool; 5]) {
+        let status = HttpStatus::try_from(code).unwrap();
+
+        assert_eq!(status.as_u16(), code);
+        assert_eq!(status.as_str(), code.to_string());
+        assert_eq!(
+            [
+                status.is_informational(),
+                status.is_success(),
+                status.is_redirection(),
+                status.is_client_error(),
+                status.is_server_error()
+            ],
+            expected,
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(99)]
+    #[case(1000)]
+    #[case(u16::MAX)]
+    fn status_rejects_invalid_code(#[case] code: u16) {
+        let error = HttpStatus::try_from(code).unwrap_err();
+
+        assert_eq!(error.to_string(), "invalid status code");
+    }
+
+    #[rstest]
+    #[case(HttpMethod::GET, Method::GET)]
+    #[case(HttpMethod::POST, Method::POST)]
+    #[case(HttpMethod::PUT, Method::PUT)]
+    #[case(HttpMethod::DELETE, Method::DELETE)]
+    #[case(HttpMethod::PATCH, Method::PATCH)]
+    fn method_conversion_preserves_verb(#[case] input: HttpMethod, #[case] expected: Method) {
+        assert_eq!(Method::from(input), expected);
+    }
 }

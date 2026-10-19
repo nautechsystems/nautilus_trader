@@ -1,20 +1,23 @@
 """
 Render the Derive delta-neutral options tutorial panels.
 
-Usage:
+The runner reads its settings from constants in
+``crates/adapters/derive/examples/node_delta_neutral.rs``. Before the capture, set
+``DERIVE_ENVIRONMENT`` to ``DeriveEnvironment::Mainnet`` and ``HEDGE_ENABLED`` to
+``false``, and revert them afterwards. Then, after building NautilusTrader from
+source, run these commands from the repository root:
 
-    set -gx DERIVE_ENVIRONMENT mainnet
-    set -gx DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED false
+    make sync
     timeout 45 cargo run --example derive-delta-neutral --package nautilus-derive --features examples \
         > /tmp/derive_dn.log 2>&1
 
-    uv sync --extra visualization
-    set -gx DN_LOG /tmp/derive_dn.log
-    python3 docs/tutorials/assets/delta_neutral_options_derive/render_panels.py
+    export DN_LOG=/tmp/derive_dn.log
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/delta_neutral_options_derive/render_panels.py
 
 The default example has ``enter_strangle: false`` so a clean account
-places no option entry orders. Set ``DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED=false``
-for a no-order smoke run. The renderer parses the log for the selected
+places no option entry orders, and ``HEDGE_ENABLED = false`` makes the run submit
+no hedge orders. The renderer parses the log for the selected
 call / put strikes, then draws four illustrative panels explaining the
 strategy mechanics: a short-strangle payoff curve, a delta-drift
 simulation, the rehedge threshold visualization, and the strike picker.
@@ -66,7 +69,7 @@ def parse_log(path: Path) -> dict:
 
     if not path.exists():
         return out
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = SELECTED_CALL.search(line)
         if m:
@@ -163,12 +166,12 @@ def panel_b_delta_drift(call_k: float, put_k: float, underlying: float) -> go.Fi
     moves = np.linspace(-0.05, 0.05, 200)
     spot = underlying * (1.0 + moves)
 
-    def call_delta_bs(s, k):
+    def call_delta_bs(s, k) -> object:
         # Toy approximation: monotonic delta from -0 to 1 around the strike.
         z = (s - k) / (underlying * 0.05)
         return 0.5 * (1.0 + np.tanh(z))
 
-    def put_delta_bs(s, k):
+    def put_delta_bs(s, k) -> object:
         z = (k - s) / (underlying * 0.05)
         return -0.5 * (1.0 + np.tanh(z))
 

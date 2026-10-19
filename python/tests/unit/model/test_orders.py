@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test orders behavior.
+"""
 
 from decimal import Decimal
 
@@ -57,7 +60,10 @@ from nautilus_trader.model import TriggerType
 from nautilus_trader.model import VenueOrderId
 
 
-def test_market_order_construction():
+def test_market_order_construction() -> None:
+    """
+    Test market order construction.
+    """
     order = MarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -70,7 +76,7 @@ def test_market_order_construction():
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert order.trader_id == TraderId("TRADER-001")
@@ -102,7 +108,10 @@ def test_market_order_construction():
         ),
     ],
 )
-def test_direct_market_order_rejects_invalid_metadata(metadata, expected):
+def test_direct_market_order_rejects_invalid_metadata(metadata: object, expected: object) -> None:
+    """
+    Test direct market order rejects invalid metadata.
+    """
     with pytest.raises(ValueError, match=expected):
         _market_order(**metadata)
 
@@ -127,7 +136,13 @@ def test_direct_market_order_rejects_invalid_metadata(metadata, expected):
         ),
     ],
 )
-def test_direct_order_initialized_rejects_invalid_metadata(metadata, expected):
+def test_direct_order_initialized_rejects_invalid_metadata(
+    metadata: object,
+    expected: object,
+) -> None:
+    """
+    Test direct order initialized rejects invalid metadata.
+    """
     with pytest.raises(ValueError, match=expected):
         _order_initialized(**metadata)
 
@@ -151,7 +166,13 @@ def test_direct_order_initialized_rejects_invalid_metadata(metadata, expected):
         ),
     ],
 )
-def test_market_order_reconstruction_rejects_invalid_metadata(metadata, expected):
+def test_market_order_reconstruction_rejects_invalid_metadata(
+    metadata: object,
+    expected: object,
+) -> None:
+    """
+    Test market order reconstruction rejects invalid metadata.
+    """
     values = _order_initialized().to_dict()
     values.update(metadata)
     event = OrderInitialized.from_dict(values)
@@ -160,7 +181,10 @@ def test_market_order_reconstruction_rejects_invalid_metadata(metadata, expected
         MarketOrder.create(event)
 
 
-def test_market_order_str_and_repr():
+def test_market_order_str_and_repr() -> None:
+    """
+    Test market order str and repr.
+    """
     order = MarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -173,14 +197,17 @@ def test_market_order_str_and_repr():
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert "BUY" in str(order)
     assert "MarketOrder" in repr(order)
 
 
-def test_market_order_to_dict():
+def test_market_order_to_dict() -> None:
+    """
+    Test market order to dict.
+    """
     order = MarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -193,7 +220,7 @@ def test_market_order_to_dict():
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     d = order.to_dict()
@@ -204,17 +231,26 @@ def test_market_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_market_order_opposite_side():
+def test_market_order_opposite_side() -> None:
+    """
+    Test market order opposite side.
+    """
     assert MarketOrder.opposite_side(OrderSide.BUY) == OrderSide.SELL
     assert MarketOrder.opposite_side(OrderSide.SELL) == OrderSide.BUY
 
 
-def test_market_order_closing_side():
+def test_market_order_closing_side() -> None:
+    """
+    Test market order closing side.
+    """
     assert MarketOrder.closing_side(PositionSide.LONG) == OrderSide.SELL
     assert MarketOrder.closing_side(PositionSide.SHORT) == OrderSide.BUY
 
 
-def test_limit_order_construction():
+def test_limit_order_construction() -> None:
+    """
+    Test limit order construction.
+    """
     order = LimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -231,7 +267,7 @@ def test_limit_order_construction():
         ts_init=0,
         expire_time=0,
         display_qty=None,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert order.trader_id == TraderId("TRADER-001")
@@ -245,7 +281,10 @@ def test_limit_order_construction():
     assert order.order_type == OrderType.LIMIT
 
 
-def test_limit_order_str_and_repr():
+def test_limit_order_str_and_repr() -> None:
+    """
+    Test limit order str and repr.
+    """
     order = LimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -262,14 +301,17 @@ def test_limit_order_str_and_repr():
         ts_init=0,
         expire_time=0,
         display_qty=None,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert "SELL" in str(order)
     assert "LimitOrder" in repr(order)
 
 
-def test_limit_order_to_dict():
+def test_limit_order_to_dict() -> None:
+    """
+    Test limit order to dict.
+    """
     order = LimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -286,7 +328,7 @@ def test_limit_order_to_dict():
         ts_init=0,
         expire_time=0,
         display_qty=None,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     d = order.to_dict()
@@ -297,7 +339,10 @@ def test_limit_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_stop_market_order_construction():
+def test_stop_market_order_construction() -> None:
+    """
+    Test stop market order construction.
+    """
     order = StopMarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -323,7 +368,10 @@ def test_stop_market_order_construction():
     assert order.order_type == OrderType.STOP_MARKET
 
 
-def test_stop_market_order_str_and_repr():
+def test_stop_market_order_str_and_repr() -> None:
+    """
+    Test stop market order str and repr.
+    """
     order = StopMarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -344,7 +392,10 @@ def test_stop_market_order_str_and_repr():
     assert "StopMarketOrder" in repr(order)
 
 
-def test_stop_market_order_to_dict():
+def test_stop_market_order_to_dict() -> None:
+    """
+    Test stop market order to dict.
+    """
     order = StopMarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -371,7 +422,10 @@ def test_stop_market_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_stop_limit_order_construction():
+def test_stop_limit_order_construction() -> None:
+    """
+    Test stop limit order construction.
+    """
     order = StopLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -400,7 +454,10 @@ def test_stop_limit_order_construction():
     assert order.order_type == OrderType.STOP_LIMIT
 
 
-def test_stop_limit_order_str_and_repr():
+def test_stop_limit_order_str_and_repr() -> None:
+    """
+    Test stop limit order str and repr.
+    """
     order = StopLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -423,7 +480,10 @@ def test_stop_limit_order_str_and_repr():
     assert "StopLimitOrder" in repr(order)
 
 
-def test_stop_limit_order_to_dict():
+def test_stop_limit_order_to_dict() -> None:
+    """
+    Test stop limit order to dict.
+    """
     order = StopLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -452,7 +512,10 @@ def test_stop_limit_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_market_if_touched_order_construction():
+def test_market_if_touched_order_construction() -> None:
+    """
+    Test market if touched order construction.
+    """
     order = MarketIfTouchedOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -478,7 +541,10 @@ def test_market_if_touched_order_construction():
     assert order.order_type == OrderType.MARKET_IF_TOUCHED
 
 
-def test_market_if_touched_order_str_and_repr():
+def test_market_if_touched_order_str_and_repr() -> None:
+    """
+    Test market if touched order str and repr.
+    """
     order = MarketIfTouchedOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -499,7 +565,10 @@ def test_market_if_touched_order_str_and_repr():
     assert "MarketIfTouchedOrder" in repr(order)
 
 
-def test_market_if_touched_order_to_dict():
+def test_market_if_touched_order_to_dict() -> None:
+    """
+    Test market if touched order to dict.
+    """
     order = MarketIfTouchedOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -525,7 +594,10 @@ def test_market_if_touched_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_limit_if_touched_order_construction():
+def test_limit_if_touched_order_construction() -> None:
+    """
+    Test limit if touched order construction.
+    """
     order = LimitIfTouchedOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -554,7 +626,10 @@ def test_limit_if_touched_order_construction():
     assert order.order_type == OrderType.LIMIT_IF_TOUCHED
 
 
-def test_limit_if_touched_order_str_and_repr():
+def test_limit_if_touched_order_str_and_repr() -> None:
+    """
+    Test limit if touched order str and repr.
+    """
     order = LimitIfTouchedOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -577,7 +652,10 @@ def test_limit_if_touched_order_str_and_repr():
     assert "LimitIfTouchedOrder" in repr(order)
 
 
-def test_limit_if_touched_order_to_dict():
+def test_limit_if_touched_order_to_dict() -> None:
+    """
+    Test limit if touched order to dict.
+    """
     order = LimitIfTouchedOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -606,7 +684,10 @@ def test_limit_if_touched_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_market_to_limit_order_construction():
+def test_market_to_limit_order_construction() -> None:
+    """
+    Test market to limit order construction.
+    """
     order = MarketToLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -630,7 +711,10 @@ def test_market_to_limit_order_construction():
     assert order.order_type == OrderType.MARKET_TO_LIMIT
 
 
-def test_market_to_limit_order_str_and_repr():
+def test_market_to_limit_order_str_and_repr() -> None:
+    """
+    Test market to limit order str and repr.
+    """
     order = MarketToLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -650,7 +734,10 @@ def test_market_to_limit_order_str_and_repr():
     assert "MarketToLimitOrder" in repr(order)
 
 
-def test_market_to_limit_order_to_dict():
+def test_market_to_limit_order_to_dict() -> None:
+    """
+    Test market to limit order to dict.
+    """
     order = MarketToLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -675,7 +762,10 @@ def test_market_to_limit_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_trailing_stop_market_order_construction():
+def test_trailing_stop_market_order_construction() -> None:
+    """
+    Test trailing stop market order construction.
+    """
     order = TrailingStopMarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -705,7 +795,10 @@ def test_trailing_stop_market_order_construction():
     assert order.order_type == OrderType.TRAILING_STOP_MARKET
 
 
-def test_trailing_stop_market_order_str_and_repr():
+def test_trailing_stop_market_order_str_and_repr() -> None:
+    """
+    Test trailing stop market order str and repr.
+    """
     order = TrailingStopMarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -728,7 +821,10 @@ def test_trailing_stop_market_order_str_and_repr():
     assert "TrailingStopMarketOrder" in repr(order)
 
 
-def test_trailing_stop_market_order_to_dict():
+def test_trailing_stop_market_order_to_dict() -> None:
+    """
+    Test trailing stop market order to dict.
+    """
     order = TrailingStopMarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -757,7 +853,10 @@ def test_trailing_stop_market_order_to_dict():
     assert d["status"] == "INITIALIZED"
 
 
-def test_trailing_stop_limit_order_construction():
+def test_trailing_stop_limit_order_construction() -> None:
+    """
+    Test trailing stop limit order construction.
+    """
     order = TrailingStopLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -792,7 +891,10 @@ def test_trailing_stop_limit_order_construction():
     assert order.order_type == OrderType.TRAILING_STOP_LIMIT
 
 
-def test_trailing_stop_limit_order_str_and_repr():
+def test_trailing_stop_limit_order_str_and_repr() -> None:
+    """
+    Test trailing stop limit order str and repr.
+    """
     order = TrailingStopLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -818,7 +920,10 @@ def test_trailing_stop_limit_order_str_and_repr():
     assert "TrailingStopLimitOrder" in repr(order)
 
 
-def test_trailing_stop_limit_order_to_dict():
+def test_trailing_stop_limit_order_to_dict() -> None:
+    """
+    Test trailing stop limit order to dict.
+    """
     order = TrailingStopLimitOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -859,7 +964,10 @@ def test_trailing_stop_limit_order_to_dict():
         (OrderSide.SELL, OrderSide.BUY),
     ],
 )
-def test_opposite_side(side, expected):
+def test_opposite_side(side: object, expected: object) -> None:
+    """
+    Test opposite side.
+    """
     assert MarketOrder.opposite_side(side) == expected
 
 
@@ -870,7 +978,10 @@ def test_opposite_side(side, expected):
         (PositionSide.SHORT, OrderSide.BUY),
     ],
 )
-def test_closing_side(position_side, expected):
+def test_closing_side(position_side: object, expected: object) -> None:
+    """
+    Test closing side.
+    """
     assert MarketOrder.closing_side(position_side) == expected
 
 
@@ -880,7 +991,12 @@ AUDUSD_SIM = InstrumentId.from_str("AUD/USD.SIM")
 ACCOUNT_ID = AccountId("SIM-000")
 
 
-def _market_order(side=OrderSide.BUY, qty=100_000, client_order_id="O-001", **metadata):
+def _market_order(
+    side: object = OrderSide.BUY,
+    qty: object = 100_000,
+    client_order_id: ClientOrderId = "O-001",
+    **metadata: object,
+) -> object:
     values = {
         "trader_id": TRADER_ID,
         "strategy_id": STRATEGY_ID,
@@ -898,7 +1014,7 @@ def _market_order(side=OrderSide.BUY, qty=100_000, client_order_id="O-001", **me
     return MarketOrder(**values)
 
 
-def _order_initialized(**metadata):
+def _order_initialized(**metadata: object) -> object:
     values = {
         "trader_id": TRADER_ID,
         "strategy_id": STRATEGY_ID,
@@ -915,13 +1031,13 @@ def _order_initialized(**metadata):
         "event_id": UUID4(),
         "ts_event": 0,
         "ts_init": 0,
-        "contingency_type": ContingencyType.NO_CONTINGENCY,
+        "contingency_type": None,
     }
     values.update(metadata)
     return OrderInitialized(**values)
 
 
-def _limit_order(client_order_id="O-002"):
+def _limit_order(client_order_id: ClientOrderId = "O-002") -> object:
     return LimitOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -941,7 +1057,7 @@ def _limit_order(client_order_id="O-002"):
     )
 
 
-def _stop_market_order(client_order_id="O-003"):
+def _stop_market_order(client_order_id: ClientOrderId = "O-003") -> object:
     return StopMarketOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -959,7 +1075,7 @@ def _stop_market_order(client_order_id="O-003"):
     )
 
 
-def _stop_limit_order(client_order_id="O-004"):
+def _stop_limit_order(client_order_id: ClientOrderId = "O-004") -> object:
     return StopLimitOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -979,7 +1095,7 @@ def _stop_limit_order(client_order_id="O-004"):
     )
 
 
-def _market_if_touched_order(client_order_id="O-005"):
+def _market_if_touched_order(client_order_id: ClientOrderId = "O-005") -> object:
     return MarketIfTouchedOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -997,7 +1113,7 @@ def _market_if_touched_order(client_order_id="O-005"):
     )
 
 
-def _limit_if_touched_order(client_order_id="O-006"):
+def _limit_if_touched_order(client_order_id: ClientOrderId = "O-006") -> object:
     return LimitIfTouchedOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1017,7 +1133,7 @@ def _limit_if_touched_order(client_order_id="O-006"):
     )
 
 
-def _market_to_limit_order(client_order_id="O-007"):
+def _market_to_limit_order(client_order_id: ClientOrderId = "O-007") -> object:
     return MarketToLimitOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1034,7 +1150,7 @@ def _market_to_limit_order(client_order_id="O-007"):
     )
 
 
-def _trailing_stop_market_order(client_order_id="O-008"):
+def _trailing_stop_market_order(client_order_id: ClientOrderId = "O-008") -> object:
     return TrailingStopMarketOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1054,7 +1170,7 @@ def _trailing_stop_market_order(client_order_id="O-008"):
     )
 
 
-def _trailing_stop_limit_order(client_order_id="O-009"):
+def _trailing_stop_limit_order(client_order_id: ClientOrderId = "O-009") -> object:
     return TrailingStopLimitOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -1118,7 +1234,14 @@ ORDER_FACTORIES = [
         ),
     ],
 )
-def test_order_from_dict_rejects_invalid_metadata(order_factory, metadata, expected):
+def test_order_from_dict_rejects_invalid_metadata(
+    order_factory: object,
+    metadata: object,
+    expected: object,
+) -> None:
+    """
+    Test order from dict rejects invalid metadata.
+    """
     order = order_factory()
     values = order.to_dict()
     values.update(metadata)
@@ -1128,7 +1251,10 @@ def test_order_from_dict_rejects_invalid_metadata(order_factory, metadata, expec
 
 
 @pytest.mark.parametrize("order_factory", ORDER_FACTORIES)
-def test_order_inspection_properties_are_consistent(order_factory):
+def test_order_inspection_properties_are_consistent(order_factory: object) -> None:
+    """
+    Test order inspection properties are consistent.
+    """
     order = order_factory()
 
     assert order.avg_px is None
@@ -1175,7 +1301,10 @@ def test_order_inspection_properties_are_consistent(order_factory):
         _trailing_stop_limit_order,
     ],
 )
-def test_trigger_order_inspection_properties_are_consistent(order_factory):
+def test_trigger_order_inspection_properties_are_consistent(order_factory: object) -> None:
+    """
+    Test trigger order inspection properties are consistent.
+    """
     order = order_factory()
 
     assert order.is_triggered is False
@@ -1186,7 +1315,10 @@ def test_trigger_order_inspection_properties_are_consistent(order_factory):
     "order_factory",
     [_trailing_stop_market_order, _trailing_stop_limit_order],
 )
-def test_trailing_order_activation_property_is_consistent(order_factory):
+def test_trailing_order_activation_property_is_consistent(order_factory: object) -> None:
+    """
+    Test trailing order activation property is consistent.
+    """
     order = order_factory()
 
     assert order.is_activated is False
@@ -1196,14 +1328,20 @@ def test_trailing_order_activation_property_is_consistent(order_factory):
     "order_factory",
     ORDER_FACTORIES,
 )
-def test_apply_rejects_unsupported_event(order_factory):
+def test_apply_rejects_unsupported_event(order_factory: object) -> None:
+    """
+    Test apply rejects unsupported event.
+    """
     order = order_factory()
 
     with pytest.raises(ValueError, match="OrderEventAny"):
         order.apply(object())
 
 
-def test_apply_submitted():
+def test_apply_submitted() -> None:
+    """
+    Test apply submitted.
+    """
     order = _market_order()
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -1223,7 +1361,10 @@ def test_apply_submitted():
     assert len(order.events()) == 2
 
 
-def test_apply_accepted():
+def test_apply_accepted() -> None:
+    """
+    Test apply accepted.
+    """
     order = _market_order()
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -1255,7 +1396,10 @@ def test_apply_accepted():
     assert len(order.events()) == 3
 
 
-def test_apply_denied():
+def test_apply_denied() -> None:
+    """
+    Test apply denied.
+    """
     order = _market_order()
     denied = OrderDenied(
         trader_id=TRADER_ID,
@@ -1273,7 +1417,10 @@ def test_apply_denied():
     assert order.status == OrderStatus.DENIED
 
 
-def test_apply_rejected():
+def test_apply_rejected() -> None:
+    """
+    Test apply rejected.
+    """
     order = _market_order()
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -1304,7 +1451,10 @@ def test_apply_rejected():
     assert order.status == OrderStatus.REJECTED
 
 
-def test_apply_canceled():
+def test_apply_canceled() -> None:
+    """
+    Test apply canceled.
+    """
     order = _market_order()
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -1348,7 +1498,10 @@ def test_apply_canceled():
     assert order.status == OrderStatus.CANCELED
 
 
-def test_apply_filled():
+def test_apply_filled() -> None:
+    """
+    Test apply filled.
+    """
     order = _market_order()
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -1412,7 +1565,10 @@ def test_apply_filled():
     assert order.ts_closed == 3
 
 
-def test_apply_partial_fill():
+def test_apply_partial_fill() -> None:
+    """
+    Test apply partial fill.
+    """
     order = _market_order()
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -1463,7 +1619,10 @@ def test_apply_partial_fill():
     assert order.status == OrderStatus.PARTIALLY_FILLED
 
 
-def test_would_reduce_only():
+def test_would_reduce_only() -> None:
+    """
+    Test would reduce only.
+    """
     order = _market_order(side=OrderSide.SELL, qty=50_000)
 
     assert order.would_reduce_only(PositionSide.LONG, Quantity.from_int(100_000))
@@ -1471,7 +1630,10 @@ def test_would_reduce_only():
     assert not order.would_reduce_only(PositionSide.FLAT, Quantity.from_int(0))
 
 
-def test_signed_decimal_qty():
+def test_signed_decimal_qty() -> None:
+    """
+    Test signed decimal qty.
+    """
     buy_order = _market_order(side=OrderSide.BUY, qty=100_000)
     sell_order = _market_order(side=OrderSide.SELL, qty=100_000)
 
@@ -1479,7 +1641,10 @@ def test_signed_decimal_qty():
     assert sell_order.signed_decimal_qty() == Decimal(-100000)
 
 
-def test_order_to_dict_from_dict_roundtrip():
+def test_order_to_dict_from_dict_roundtrip() -> None:
+    """
+    Test order to dict from dict roundtrip.
+    """
     order = _market_order()
 
     d = order.to_dict()

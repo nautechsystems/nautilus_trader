@@ -30,12 +30,9 @@ use crate::{
         consts::{KRAKEN, KRAKEN_CLIENT_ID, KRAKEN_VENUE},
         enums::{KrakenEnvironment, KrakenProductType},
     },
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
     http::{KrakenFuturesHttpClient, KrakenSpotHttpClient},
-    websocket::{
-        futures::client::KrakenFuturesWebSocketClient, spot_v2::client::KrakenSpotWebSocketClient,
-    },
 };
 
 pub mod config;
@@ -43,8 +40,6 @@ pub mod enums;
 pub mod factories;
 pub mod http_futures;
 pub mod http_spot;
-pub mod websocket_futures;
-pub mod websocket_spot;
 
 /// Determines the product type from a Kraken symbol.
 ///
@@ -106,10 +101,10 @@ fn extract_kraken_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<KrakenExecClientConfig>(py) {
+    match config.extract::<KrakenExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract KrakenExecClientConfig: {e}"
+            "Failed to extract KrakenExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -123,11 +118,9 @@ pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenProductType>()?;
     m.add_class::<KrakenSpotHttpClient>()?;
     m.add_class::<KrakenFuturesHttpClient>()?;
-    m.add_class::<KrakenSpotWebSocketClient>()?;
-    m.add_class::<KrakenFuturesWebSocketClient>()?;
     m.add_class::<KrakenDataClientConfig>()?;
-    m.add_class::<KrakenExecClientConfig>()?;
     m.add_class::<KrakenDataClientFactory>()?;
+    m.add_class::<KrakenExecutionClientConfig>()?;
     m.add_class::<KrakenExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_kraken_product_type_from_symbol, m)?)?;
 
@@ -159,7 +152,7 @@ pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "KrakenExecClientConfig".to_string(),
+        "KrakenExecutionClientConfig".to_string(),
         extract_kraken_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

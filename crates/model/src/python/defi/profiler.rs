@@ -198,8 +198,11 @@ impl PoolProfiler {
 
     /// Calculates the liquidity utilization rate for the pool.
     ///
-    /// The utilization rate measures what percentage of total deployed liquidity
+    /// The utilization rate measures what fraction of total deployed liquidity
     /// is currently active (in-range and earning fees) at the current price tick.
+    /// Returns zero when no position liquidity is tracked, otherwise truncates to six decimal places.
+    /// Partial-history replay can produce values above one when active liquidity includes positions
+    /// whose mint events were not replayed.
     #[pyo3(name = "liquidity_utilization_rate")]
     fn py_liquidity_utilization_rate(&self) -> f64 {
         self.liquidity_utilization_rate()
@@ -208,7 +211,7 @@ impl PoolProfiler {
     /// Simulates an exact input swap (know input amount, calculate output amount).
     ///
     /// # Errors
-    /// Returns error if pool is not initialized, input is zero, or price limit is invalid
+    /// Returns an error if pool is not initialized, input is zero, or price limit is invalid.
     #[pyo3(name = "swap_exact_in")]
     fn py_swap_exact_in(
         &self,
@@ -229,8 +232,8 @@ impl PoolProfiler {
     /// Simulates an exact output swap (know output amount, calculate required input amount).
     ///
     /// # Errors
-    /// Returns error if pool is not initialized, output is zero, price limit is invalid,
-    /// or insufficient liquidity exists to fulfill the exact output amount
+    /// Returns an error if pool is not initialized, output is zero, price limit is invalid, or
+    /// insufficient liquidity exists to fulfill the exact output amount.
     #[pyo3(name = "swap_exact_out")]
     fn py_swap_exact_out(
         &self,
@@ -258,10 +261,10 @@ impl PoolProfiler {
     /// The maximum trade size (U256) that produces the target slippage
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Impact is zero or exceeds 100% (10000 bps)
-    /// - Pool is not initialized
-    /// - Swap simulations fail
+    /// Returns an error if:
+    /// - Impact is zero or exceeds 100% (10000 bps).
+    /// - Pool is not initialized.
+    /// - Swap simulations fail.
     #[pyo3(name = "size_for_impact_bps")]
     fn py_size_for_impact_bps(&self, impact_bps: u32, zero_for_one: bool) -> PyResult<String> {
         self.size_for_impact_bps(impact_bps, zero_for_one)
@@ -278,10 +281,10 @@ impl PoolProfiler {
     /// Detailed result with size and search diagnostics
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Impact is zero or exceeds 100% (10000 bps)
-    /// - Pool is not initialized
-    /// - Swap simulations fail
+    /// Returns an error if:
+    /// - Impact is zero or exceeds 100% (10000 bps).
+    /// - Pool is not initialized.
+    /// - Swap simulations fail.
     #[pyo3(name = "size_for_impact_bps_detailed")]
     fn py_size_for_impact_bps_detailed(
         &self,
@@ -341,14 +344,14 @@ mod tests {
             "Collect",
         ));
         let token0 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("0000000000000000000000000000000000000001"),
             "USD Coin".to_string(),
             "USDC".to_string(),
             6,
         );
         let token1 = Token::new(
-            chain.clone(),
+            Arc::clone(&chain),
             address!("0000000000000000000000000000000000000002"),
             "Wrapped Ether".to_string(),
             "WETH".to_string(),

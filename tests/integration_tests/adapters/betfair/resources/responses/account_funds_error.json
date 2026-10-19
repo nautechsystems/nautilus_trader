@@ -1,8 +1,0 @@
-{
-  "jsonrpc": "2.0",
-  "error": {
-    "code": -32602,
-    "message": "DSC-0018"
-  },
-  "id": 1
-}

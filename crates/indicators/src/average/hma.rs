@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
@@ -23,6 +24,7 @@ use nautilus_model::{
 use crate::{
     average::wma::WeightedMovingAverage,
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
 /// An indicator which calculates a Hull Moving Average (HMA) across a rolling
@@ -32,7 +34,7 @@ use crate::{
 #[derive(Debug)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+    pyo3::pyclass(module = "nautilus_trader.indicators")
 )]
 #[cfg_attr(
     feature = "python",
@@ -93,38 +95,45 @@ impl Indicator for HullMovingAverage {
     }
 }
 
-fn get_weights(size: usize) -> Vec<f64> {
-    let mut w: Vec<f64> = (1..=size).map(|x| x as f64).collect();
-    let divisor: f64 = w.iter().sum();
-    for v in &mut w {
-        *v /= divisor;
-    }
-    w
-}
-
 impl HullMovingAverage {
     /// Creates a new [`HullMovingAverage`] instance.
     ///
     /// # Panics
     ///
     /// Panics if `period` is not a positive integer (> 0).
+    /// Window periods must not exceed the shared indicator period limit.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        assert!(
+        Self::new_checked(period, price_type).expect(FAILED)
+    }
+
+    /// Creates a new [`HullMovingAverage`] instance with a validated period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` is zero or exceeds `MAX_PERIOD`.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("window periods cannot exceed {MAX_PERIOD}"),
+        )?;
+
+        check_predicate_true(
             period > 0,
-            "HullMovingAverage: period must be > 0 (received {period})"
-        );
+            &format!("HullMovingAverage: period must be > 0 (received {period})"),
+        )?;
 
         let half = usize::max(1, period / 2);
+        // Hull and TradingView truncate sqrt(period) for the smoothing length
         let root = usize::max(1, (period as f64).sqrt() as usize);
 
         let pt = price_type.unwrap_or(PriceType::Last);
 
-        let ma1 = WeightedMovingAverage::new(half, get_weights(half), Some(pt));
-        let ma2 = WeightedMovingAverage::new(period, get_weights(period), Some(pt));
-        let ma3 = WeightedMovingAverage::new(root, get_weights(root), Some(pt));
+        let ma1 = WeightedMovingAverage::new(half, Some(pt));
+        let ma2 = WeightedMovingAverage::new(period, Some(pt));
+        let ma3 = WeightedMovingAverage::new(root, Some(pt));
 
-        Self {
+        Ok(Self {
             period,
             price_type: pt,
             value: 0.0,
@@ -134,7 +143,7 @@ impl HullMovingAverage {
             ma1,
             ma2,
             ma3,
-        }
+        })
     }
 }
 
@@ -148,21 +157,20 @@ impl MovingAverage for HullMovingAverage {
     }
 
     fn update_raw(&mut self, value: f64) {
-        if !self.has_inputs {
-            self.has_inputs = true;
-            self.value = value;
+        if !value.is_finite() {
+            return;
         }
-
+        self.has_inputs = true;
         self.ma1.update_raw(value);
         self.ma2.update_raw(value);
-        self.ma3
-            .update_raw(2.0f64.mul_add(self.ma1.value, -self.ma2.value));
-
-        self.value = self.ma3.value;
         self.count += 1;
 
-        if !self.initialized && self.count >= self.period {
-            self.initialized = true;
+        if self.ma1.initialized && self.ma2.initialized {
+            self.ma3.update_raw(2.0 * self.ma1.value - self.ma2.value);
+            self.initialized = self.ma3.initialized;
+            if self.initialized {
+                self.value = self.ma3.value;
+            }
         }
     }
 }
@@ -192,18 +200,19 @@ mod tests {
 
     #[rstest]
     fn test_initialized_with_required_input(mut indicator_hma_10: HullMovingAverage) {
-        for i in 1..10 {
+        // Composite warmup for period 10 is 10 + floor(sqrt(10)) - 1 = 12 inputs
+        for i in 1..=11 {
             indicator_hma_10.update_raw(f64::from(i));
+            assert!(!indicator_hma_10.initialized);
         }
-        assert!(!indicator_hma_10.initialized);
-        indicator_hma_10.update_raw(10.0);
+        indicator_hma_10.update_raw(12.0);
         assert!(indicator_hma_10.initialized);
     }
 
     #[rstest]
     fn test_value_with_one_input(mut indicator_hma_10: HullMovingAverage) {
         indicator_hma_10.update_raw(1.0);
-        assert_eq!(indicator_hma_10.value, 1.0);
+        assert_eq!(indicator_hma_10.value, 0.0);
     }
 
     #[rstest]
@@ -211,7 +220,7 @@ mod tests {
         indicator_hma_10.update_raw(1.0);
         indicator_hma_10.update_raw(2.0);
         indicator_hma_10.update_raw(3.0);
-        assert_eq!(indicator_hma_10.value, 1.824_561_403_508_772);
+        assert_eq!(indicator_hma_10.value, 0.0);
     }
 
     #[rstest]
@@ -227,19 +236,19 @@ mod tests {
         indicator_hma_10.update_raw(1.00020);
         indicator_hma_10.update_raw(1.00010);
         indicator_hma_10.update_raw(1.00000);
-        assert_eq!(indicator_hma_10.value, 1.000_140_392_817_059_8);
+        assert_eq!(indicator_hma_10.value, 0.0);
     }
 
     #[rstest]
     fn test_handle_quote_tick(mut indicator_hma_10: HullMovingAverage, stub_quote: QuoteTick) {
         indicator_hma_10.handle_quote(&stub_quote).unwrap();
-        assert_eq!(indicator_hma_10.value, 1501.0);
+        assert_eq!(indicator_hma_10.value, 0.0);
     }
 
     #[rstest]
     fn test_handle_trade_tick(mut indicator_hma_10: HullMovingAverage, stub_trade: TradeTick) {
         indicator_hma_10.handle_trade(&stub_trade);
-        assert_eq!(indicator_hma_10.value, 1500.0);
+        assert_eq!(indicator_hma_10.value, 0.0);
     }
 
     #[rstest]
@@ -248,7 +257,7 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_hma_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_hma_10.value, 1522.0);
+        assert_eq!(indicator_hma_10.value, 0.0);
         assert!(indicator_hma_10.has_inputs);
         assert!(!indicator_hma_10.initialized);
     }
@@ -257,10 +266,10 @@ mod tests {
     fn test_reset(mut indicator_hma_10: HullMovingAverage) {
         indicator_hma_10.update_raw(1.0);
         assert_eq!(indicator_hma_10.count, 1);
-        assert_eq!(indicator_hma_10.value, 1.0);
-        assert_eq!(indicator_hma_10.ma1.value, 1.0);
-        assert_eq!(indicator_hma_10.ma2.value, 1.0);
-        assert_eq!(indicator_hma_10.ma3.value, 1.0);
+        assert_eq!(indicator_hma_10.value, 0.0);
+        assert_eq!(indicator_hma_10.ma1.value, 0.0);
+        assert_eq!(indicator_hma_10.ma2.value, 0.0);
+        assert_eq!(indicator_hma_10.ma3.value, 0.0);
         indicator_hma_10.reset();
         assert_eq!(indicator_hma_10.value, 0.0);
         assert_eq!(indicator_hma_10.count, 0);
@@ -281,7 +290,7 @@ mod tests {
     #[case(1)]
     #[case(5)]
     #[case(128)]
-    #[case(10_000)]
+    #[case(8_192)]
     fn test_new_with_positive_period_constructs(#[case] period: usize) {
         let hma = HullMovingAverage::new(period, None);
         assert_eq!(hma.period, period);
@@ -325,7 +334,7 @@ mod tests {
                 "HMA(1) should equal last price {price}, was {}",
                 hma.value()
             );
-            assert!(hma.initialized(), "HMA(1) must initialise immediately");
+            assert!(hma.initialized(), "HMA(1) must initialize immediately");
         }
     }
 
@@ -338,7 +347,7 @@ mod tests {
         for _ in 0..(period * 4) {
             hma.update_raw(constant);
             assert!(
-                (hma.value() - constant).abs() < 1e-12,
+                (hma.value() - if hma.initialized() { constant } else { 0.0 }).abs() < 1e-12,
                 "Expected {constant}, was {}",
                 hma.value()
             );
@@ -361,21 +370,23 @@ mod tests {
     }
 
     #[rstest]
-    #[case(2)]
-    #[case(17)]
-    #[case(128)]
-    fn initialized_boundary(#[case] period: usize) {
+    #[case(2, 2)]
+    #[case(14, 16)]
+    #[case(17, 20)]
+    #[case(21, 24)]
+    #[case(128, 138)]
+    fn initialized_boundary(#[case] period: usize, #[case] warmup: usize) {
         let mut hma = HullMovingAverage::new(period, None);
 
-        for i in 0..(period - 1) {
+        for i in 0..(warmup - 1) {
             hma.update_raw(i as f64);
-            assert!(!hma.initialized(), "HMA wrongly initialised at count {i}");
+            assert!(!hma.initialized(), "HMA wrongly initialized at count {i}");
         }
 
         hma.update_raw(0.0);
         assert!(
             hma.initialized(),
-            "HMA should initialise at exactly {period} ticks"
+            "HMA should initialize at exactly {warmup} ticks"
         );
     }
 

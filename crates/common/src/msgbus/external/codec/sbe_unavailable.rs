@@ -18,7 +18,7 @@ use std::any::Any;
 use bytes::Bytes;
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
-    OrderBookDepth10, QuoteTick, TradeTick,
+    OrderBookDepth, QuoteTick, TradeTick,
 };
 
 use super::PayloadCodecError;
@@ -33,7 +33,7 @@ macro_rules! define_deserializer {
 }
 
 define_deserializer!(deserialize_order_book_deltas, OrderBookDeltas);
-define_deserializer!(deserialize_order_book_depth10, OrderBookDepth10);
+define_deserializer!(deserialize_order_book_depth, OrderBookDepth);
 define_deserializer!(deserialize_quote, QuoteTick);
 define_deserializer!(deserialize_trade, TradeTick);
 define_deserializer!(deserialize_bar, Bar);

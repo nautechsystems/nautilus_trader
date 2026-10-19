@@ -57,7 +57,88 @@ impl HasTsInit for ExecutionMassStatus {
     }
 }
 
-crate::impl_catalog_path_prefix!(FillReport, "fill_report");
-crate::impl_catalog_path_prefix!(OrderStatusReport, "order_status_report");
-crate::impl_catalog_path_prefix!(PositionStatusReport, "position_status_report");
-crate::impl_catalog_path_prefix!(ExecutionMassStatus, "execution_mass_status");
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{
+        enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+        identifiers::{AccountId, ClientId, InstrumentId, TradeId, Venue, VenueOrderId},
+        types::{Currency, Money, Price, Quantity},
+    };
+
+    #[rstest]
+    fn test_fill_report_ts_init() {
+        let report = FillReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            VenueOrderId::from("1"),
+            TradeId::from("1"),
+            OrderSide::Buy,
+            Quantity::from("100"),
+            Price::from("0.80000"),
+            Money::new(5.0, Currency::USD()),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+        );
+
+        assert_eq!(report.ts_init(), UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    fn test_order_status_report_ts_init() {
+        let report = OrderStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            None,
+            VenueOrderId::from("1"),
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("100"),
+            Quantity::from("0"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::from(3_000_000_000),
+            None,
+        );
+
+        assert_eq!(report.ts_init(), UnixNanos::from(3_000_000_000));
+    }
+
+    #[rstest]
+    fn test_position_status_report_ts_init() {
+        let report = PositionStatusReport::new(
+            AccountId::from("SIM-001"),
+            InstrumentId::from("AUDUSD.SIM"),
+            PositionSide::Long,
+            Quantity::from("100"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+            None,
+            None,
+            None,
+        );
+
+        assert_eq!(report.ts_init(), UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    fn test_execution_mass_status_ts_init() {
+        let report = ExecutionMassStatus::new(
+            ClientId::from("IB"),
+            AccountId::from("IB-DU123456"),
+            Venue::from("NASDAQ"),
+            UnixNanos::from(4_000_000_000),
+            None,
+        );
+
+        assert_eq!(report.ts_init(), UnixNanos::from(4_000_000_000));
+    }
+}

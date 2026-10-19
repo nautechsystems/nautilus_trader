@@ -16,6 +16,7 @@ the funding interval and next funding timestamp when the venue publishes them.
 
 ## Behavior
 
+- Funding rates are cached by instrument when received.
 - Equality and hashing use instrument ID, rate, interval, and next funding time.
 - Funding rates are reference data and do not imply a payment was applied.
 - Use `interval` and `next_funding_ns` only when the venue publishes them.

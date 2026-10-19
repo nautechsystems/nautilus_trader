@@ -1,1 +1,0 @@
-CurrencyPair(id=BTCUSDT.BINANCE, raw_symbol=BTCUSDT, asset_class=CRYPTOCURRENCY, instrument_class=SPOT, quote_currency=USDT, is_inverse=False, price_precision=2, price_increment=0.01, size_precision=6, size_increment=0.000001, multiplier=1, lot_size=None, margin_init=0, margin_maint=0, maker_fee=0.001, taker_fee=0.001, info=None)

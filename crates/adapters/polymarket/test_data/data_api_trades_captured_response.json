@@ -1,0 +1,73 @@
+{
+  "data": [
+    {
+      "proxy_wallet": "0x1111111111111111111111111111111111111111",
+      "side": "SELL",
+      "token_id": "10000000000000000000000000000000000000000000000000000000000000000000000000001",
+      "condition_id": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 92.59,
+      "price": 0.7,
+      "timestamp": 1786179735,
+      "title": "LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group",
+      "slug": "sanitized-market",
+      "icon": "https://example.com/sanitized-market.png",
+      "event_slug": "sanitized-event",
+      "outcome": "T1",
+      "outcome_index": 0,
+      "name": "Sanitized trader",
+      "pseudonym": "sanitized-trader",
+      "bio": "Sanitized profile",
+      "profile_image": "https://example.com/sanitized-profile.png",
+      "profile_image_optimized": "https://example.com/sanitized-profile-optimized.png",
+      "transaction_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "proxy_wallet": "0x1111111111111111111111111111111111111111",
+      "side": "BUY",
+      "token_id": "10000000000000000000000000000000000000000000000000000000000000000000000000001",
+      "condition_id": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 1.464786,
+      "price": 0.709999959,
+      "timestamp": 1786179730,
+      "title": "LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group",
+      "slug": "sanitized-market",
+      "icon": "https://example.com/sanitized-market.png",
+      "event_slug": "sanitized-event",
+      "outcome": "T1",
+      "outcome_index": 0,
+      "name": "Sanitized trader",
+      "pseudonym": "sanitized-trader",
+      "bio": "Sanitized profile",
+      "profile_image": "https://example.com/sanitized-profile.png",
+      "profile_image_optimized": "https://example.com/sanitized-profile-optimized.png",
+      "transaction_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "proxy_wallet": "0x1111111111111111111111111111111111111111",
+      "side": "BUY",
+      "token_id": "10000000000000000000000000000000000000000000000000000000000000000000000000002",
+      "condition_id": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 244,
+      "price": 0.2972581967,
+      "timestamp": 1786179726,
+      "title": "LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group",
+      "slug": "sanitized-market",
+      "icon": "https://example.com/sanitized-market.png",
+      "event_slug": "sanitized-event",
+      "outcome": "Hanwha Life Esports",
+      "outcome_index": 1,
+      "name": "Sanitized trader",
+      "pseudonym": "sanitized-trader",
+      "bio": "Sanitized profile",
+      "profile_image": "https://example.com/sanitized-profile.png",
+      "profile_image_optimized": "https://example.com/sanitized-profile-optimized.png",
+      "transaction_hash": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "pagination": {
+    "limit": 500,
+    "offset": 0,
+    "has_more": false,
+    "next_cursor": null
+  }
+}

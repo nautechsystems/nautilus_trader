@@ -27,7 +27,7 @@ use alloy_primitives::Address;
 ///
 /// # Errors
 ///
-/// This function returns an error if:
+/// Returns an error if:
 /// - The address does not start with the `0x` prefix.
 /// - The address has invalid length (must be 42 characters including `0x`).
 /// - The address contains invalid hexadecimal characters.

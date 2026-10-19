@@ -37,7 +37,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_polymarket::{
     common::{
         credential::{Credential, EvmPrivateKey},
-        enums::{PolymarketOrderSide, PolymarketOrderType, SignatureType},
+        enums::{PolymarketOrderSide, PolymarketOrderType, PolymarketSignatureType},
     },
     execution::{
         order_builder::PolymarketOrderBuilder,
@@ -67,7 +67,7 @@ fn order_builder() -> PolymarketOrderBuilder {
         signer,
         MAKER_ADDRESS.to_string(),
         MAKER_ADDRESS.to_string(),
-        SignatureType::Eoa,
+        PolymarketSignatureType::Eoa,
     )
 }
 
@@ -157,7 +157,7 @@ fn bench_submit_market(c: &mut Criterion) {
                 dec!(50),
                 result.crossing_price,
                 dec!(0.03),
-                2.0,
+                dec!(2),
                 dec!(0),
             )
             .unwrap();

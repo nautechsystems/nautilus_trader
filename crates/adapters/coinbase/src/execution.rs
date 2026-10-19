@@ -19,7 +19,7 @@ use std::{
     collections::VecDeque,
     future::Future,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -28,22 +28,27 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
         GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
         GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UnixNanos,
+    DurationNanos, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
+    enums::{AccountType, LiquiditySide, OmsType, OrderStatus, OrderType, TriggerType},
+    events::OrderDeniedReason,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, Venue,
         VenueOrderId,
@@ -54,8 +59,8 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
@@ -64,7 +69,7 @@ use crate::{
         credential::CoinbaseCredential,
         enums::{CoinbaseProductType, CoinbaseWsChannel},
     },
-    config::CoinbaseExecClientConfig,
+    config::CoinbaseExecutionClientConfig,
     http::{
         client::CoinbaseHttpClient,
         error::Error as CoinbaseHttpError,
@@ -95,6 +100,1855 @@ const CUMULATIVE_STATE_CAPACITY: usize = 10_000;
 // Coinbase spot account is ready as soon as the REST account state lands, but
 // the engine registers it asynchronously; wait up to 30s for that to happen.
 const ACCOUNT_REGISTERED_TIMEOUT_SECS: f64 = 30.0;
+
+/// Live execution client for Coinbase Advanced Trade.
+#[derive(Debug)]
+pub struct CoinbaseExecutionClient {
+    core: ExecutionClientCore,
+    clock: &'static AtomicTime,
+    config: CoinbaseExecutionClientConfig,
+    emitter: ExecutionEventEmitter,
+    http_client: CoinbaseHttpClient,
+    ws_user: CoinbaseWebSocketClient,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
+    instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
+    fill_dedup: Arc<Mutex<FillDedup>>,
+    cumulative_state: Arc<Mutex<CumulativeStateMap>>,
+    order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
+    // Caches REST-derived metadata for orders this client did not submit
+    // (keyed by `venue_order_id`). Populated lazily when the user-channel
+    // handler encounters an unknown order whose `OrderStatusReport` would
+    // otherwise lack `price` / `trigger_price` / `trigger_type` and panic
+    // the engine's reconstruction path. Separate from `order_contexts`
+    // because external orders may carry a `client_order_id` we never set.
+    external_order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
+}
+
+impl CoinbaseExecutionClient {
+    /// Creates a new [`CoinbaseExecutionClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials cannot be resolved or the underlying
+    /// HTTP / WebSocket client cannot be constructed.
+    pub fn new(
+        core: ExecutionClientCore,
+        config: CoinbaseExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
+        let credential = CoinbaseCredential::resolve(
+            config.api_key.as_ref().map(|value| value.expose_secret()),
+            config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret()),
+        )
+        .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Coinbase credentials not available; set COINBASE_API_KEY and COINBASE_API_SECRET or pass them in the config"
+                    )
+                })?;
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+
+        let retry_config = RetryConfig {
+            max_retries: config.max_retries,
+            initial_delay_ms: config.retry_delay_initial_ms,
+            max_delay_ms: config.retry_delay_max_ms,
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+            operation_timeout_ms: Some(60_000),
+            immediate_first: false,
+            max_elapsed_ms: Some(180_000),
+        };
+
+        let http_client = CoinbaseHttpClient::with_credentials(
+            credential.clone(),
+            config.environment,
+            config.http_timeout_secs,
+            proxy_url.clone(),
+            Some(retry_config),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create Coinbase HTTP client: {e}"))?;
+
+        if let Some(ref url) = config.base_url_rest {
+            http_client.set_base_url(url.clone());
+        }
+
+        let ws_url = config.ws_url();
+        let ws_user = CoinbaseWebSocketClient::with_credential(
+            &ws_url,
+            credential,
+            config.transport_backend,
+            proxy_url,
+        )
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*COINBASE_VENUE),
+            "coinbase-user-streams",
+        ));
+
+        let clock = get_atomic_clock_realtime();
+        let emitter = ExecutionEventEmitter::new(
+            clock,
+            core.trader_id,
+            core.account_id,
+            core.account_type,
+            None,
+        );
+
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
+        Ok(Self {
+            core,
+            clock,
+            config,
+            emitter,
+            http_client,
+            ws_user,
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
+            instruments_cache: Arc::new(AHashMap::new()),
+            fill_dedup: Arc::new(Mutex::new(FillDedup::new(FILL_DEDUP_CAPACITY))),
+            cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
+                CUMULATIVE_STATE_CAPACITY,
+            ))),
+            order_contexts: Arc::new(Mutex::new(AHashMap::new())),
+            external_order_contexts: Arc::new(Mutex::new(AHashMap::new())),
+        })
+    }
+
+    fn spawn_task<F>(&self, description: &'static str, fut: F)
+    where
+        F: Future<Output = anyhow::Result<()>> + Send + 'static,
+    {
+        let future = async move {
+            if let Err(e) = fut.await {
+                log::warn!("{description} failed: {e:?}");
+            }
+        };
+
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Coinbase {description} after shutdown began: {e}");
+        }
+    }
+
+    fn abort_pending_tasks(&self) {
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_user.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Coinbase execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Coinbase session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        if let Err(e) = self.ws_user.disconnect().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+        self.core.set_disconnected();
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
+    }
+
+    // Returns true when the exec client was created with a Margin account,
+    // indicating it should handle CFM-backed derivatives traffic.
+    fn is_margin(&self) -> bool {
+        self.core.account_type == AccountType::Margin
+    }
+
+    // Returns true when the instrument resides in the connect-time bootstrap
+    // cache. For the Cash (spot) factory this gates spot-only traffic; for the
+    // Margin factory the cache contains CFM perp + future products.
+    fn is_instrument_cached(&self, instrument_id: &InstrumentId) -> bool {
+        self.instruments_cache
+            .contains_key(instrument_id.symbol.as_str())
+    }
+
+    async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
+        let account_id = self.core.account_id;
+
+        if self.core.cache().account(&account_id).is_some() {
+            log::info!("Account {account_id} registered");
+            return Ok(());
+        }
+
+        let start = Instant::now();
+        let timeout = Duration::from_secs_f64(timeout_secs);
+        let interval = Duration::from_millis(10);
+
+        loop {
+            tokio::time::sleep(interval).await;
+
+            if self.core.cache().account(&account_id).is_some() {
+                log::info!("Account {account_id} registered");
+                return Ok(());
+            }
+
+            if start.elapsed() >= timeout {
+                anyhow::bail!(
+                    "Timeout waiting for account {account_id} to be registered after {timeout_secs}s"
+                );
+            }
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl ExecutionClient for CoinbaseExecutionClient {
+    fn is_connected(&self) -> bool {
+        self.core.is_connected()
+    }
+
+    fn client_id(&self) -> ClientId {
+        self.core.client_id
+    }
+
+    fn account_id(&self) -> AccountId {
+        self.core.account_id
+    }
+
+    fn venue(&self) -> Venue {
+        *COINBASE_VENUE
+    }
+
+    fn oms_type(&self) -> OmsType {
+        self.core.oms_type
+    }
+
+    fn get_account(&self) -> Option<AccountAny> {
+        self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
+        {
+            return Ok(());
+        }
+
+        if !self.pending_tasks.is_open() {
+            self.await_pending_tasks().await?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Coinbase task generation: {e}"))?;
+        }
+
+        if !self.session_tasks.is_open() || !self.session_tasks.is_empty() {
+            self.abort_session_tasks();
+            self.ws_user
+                .disconnect()
+                .await
+                .context("failed to close stale Coinbase user WebSocket")?;
+            self.await_session_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Coinbase session generation: {e}"))?;
+        }
+        let ws_user = self.ws_user.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                ws_user.begin_shutdown();
+            });
+
+        // If the underlying WS is still alive from a prior stop() that did not
+        // explicitly disconnect, tear it down before reconnecting. The
+        // in-handler signal path can race with the Disconnect command, leaving
+        // the inner connection_mode stale even after disconnect().await, so
+        // we rebuild the client outright to guarantee clean cmd_tx/out_rx
+        // pairs and a fresh signal.
+        if self.ws_user.is_active() || self.ws_user.is_reconnecting() {
+            log::debug!("Tearing down stale user WS before reconnect");
+            self.ws_user
+                .disconnect()
+                .await
+                .context("failed to close stale Coinbase user WebSocket")?;
+            let credential = CoinbaseCredential::resolve(
+                self.config
+                    .api_key
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+                self.config
+                    .api_secret
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+            )
+            .ok_or_else(|| anyhow::anyhow!("Coinbase credentials unavailable for WS reset"))?;
+            self.ws_user = CoinbaseWebSocketClient::with_credential(
+                &self.config.ws_url(),
+                credential,
+                self.config.transport_backend,
+                self.config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
+            );
+        }
+
+        if self.core.instruments_initialized() {
+            // Instruments were loaded externally; still propagate the cached
+            // set to the WS client on reconnect scenarios.
+            let cached: Vec<InstrumentAny> = self.instruments_cache.values().cloned().collect();
+            if !cached.is_empty() {
+                self.ws_user.initialize_instruments(cached).await;
+            }
+        } else {
+            // The Cash (spot) factory loads only spot products; the Margin
+            // (derivatives) factory loads the futures universe so CFM perps
+            // and dated futures can be reconciled. Mixing the two through a
+            // single client is intentionally unsupported, so each factory
+            // picks one branch.
+            let instruments = if self.is_margin() {
+                self.http_client
+                    .request_instruments(Some(CoinbaseProductType::Future))
+                    .await
+                    .context("failed to load Coinbase futures instruments")?
+            } else {
+                self.http_client
+                    .request_instruments(Some(CoinbaseProductType::Spot))
+                    .await
+                    .context("failed to load Coinbase instruments")?
+            };
+
+            let product_kind = if self.is_margin() { "futures" } else { "spot" };
+
+            if instruments.is_empty() {
+                log::warn!("Coinbase instrument bootstrap returned no {product_kind} instruments");
+            } else {
+                log::debug!(
+                    "Coinbase exec client loaded {} {product_kind} instruments",
+                    instruments.len()
+                );
+            }
+
+            let mut map: AHashMap<String, InstrumentAny> =
+                AHashMap::with_capacity(instruments.len());
+            for inst in &instruments {
+                map.insert(inst.id().symbol.as_str().to_string(), inst.clone());
+            }
+            self.instruments_cache = Arc::new(map);
+
+            // Propagate to the WS client so the feed handler can resolve
+            // user-channel product IDs to cached instruments.
+            self.ws_user.initialize_instruments(instruments).await;
+
+            self.core.set_instruments_initialized();
+        }
+
+        let session_result = async {
+            self.ws_user.set_account_id(self.core.account_id).await;
+            self.ws_user.connect().await?;
+
+            // Subscribe to the user channel (product-agnostic). User channel with
+            // an empty product list returns events for all products.
+            self.ws_user
+                .subscribe(CoinbaseWsChannel::User, &[])
+                .await
+                .context("failed to subscribe to Coinbase user channel")?;
+
+            if self.is_margin() {
+                self.ws_user
+                    .subscribe(CoinbaseWsChannel::FuturesBalanceSummary, &[])
+                    .await
+                    .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
+            }
+
+            if let Some(mut rx) = self.ws_user.take_out_rx() {
+                let fill_dedup = Arc::clone(&self.fill_dedup);
+                let cumulative_state = Arc::clone(&self.cumulative_state);
+                let order_contexts = Arc::clone(&self.order_contexts);
+                let external_order_contexts = Arc::clone(&self.external_order_contexts);
+                let emitter = self.emitter.clone();
+                let http_client = self.http_client.clone();
+                let account_id = self.core.account_id;
+                let clock = self.clock;
+                let is_margin = self.is_margin();
+
+                self.session_tasks.spawn(async move {
+                while let Some(message) = rx.recv().await {
+                    match message {
+                        NautilusWsMessage::UserOrder(carrier) => {
+                            handle_user_order_update(
+                                *carrier,
+                                &emitter,
+                                &fill_dedup,
+                                &cumulative_state,
+                                &order_contexts,
+                                &external_order_contexts,
+                                &http_client,
+                                account_id,
+                            )
+                            .await;
+                        }
+                        NautilusWsMessage::FuturesBalanceSummary(summary) => {
+                            let ts = clock.get_time_ns();
+                            match parse_ws_cfm_account_state(&summary, account_id, ts, ts) {
+                                Ok(state) => emitter.send_account_state(state),
+                                Err(e) => log::warn!(
+                                    "Failed to parse futures_balance_summary into AccountState: {e}"
+                                ),
+                            }
+                        }
+                        NautilusWsMessage::Reconnected => {
+                            log::info!("Coinbase user WebSocket reconnected");
+                            // Re-fetch account state so any balance change
+                            // during the disconnect window is picked up. The
+                            // margin flavor targets the CFM summary so the
+                            // account type matches the registered Margin
+                            // account.
+                            let refresh = if is_margin {
+                                http_client.request_cfm_account_state(account_id).await
+                            } else {
+                                http_client.request_account_state(account_id).await
+                            };
+
+                            match refresh {
+                                Ok(state) => emitter.send_account_state(state),
+                                Err(e) => {
+                                    log::warn!("Failed to refresh account state on reconnect: {e}");
+                                }
+                            }
+                        }
+                        NautilusWsMessage::Error(err) => {
+                            log::warn!("Coinbase user WebSocket error: {err}");
+                        }
+                        _ => {}
+                    }
+                }
+            })?;
+            }
+
+            let account_state = if self.is_margin() {
+                self.http_client
+                    .request_cfm_account_state(self.core.account_id)
+                    .await
+                    .context("failed to request Coinbase CFM account state")?
+            } else {
+                self.http_client
+                    .request_account_state(self.core.account_id)
+                    .await
+                    .context("failed to request Coinbase account state")?
+            };
+
+            if !account_state.balances.is_empty() {
+                log::debug!(
+                    "Received account state with {} balance(s)",
+                    account_state.balances.len()
+                );
+            }
+            self.emitter.send_account_state(account_state);
+
+            self.await_account_registered(ACCOUNT_REGISTERED_TIMEOUT_SECS)
+                .await?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Coinbase execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
+
+        self.core.set_connected();
+        setup_guard.disarm();
+        log::info!("Connected: client_id={}", self.core.client_id);
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.teardown_partial_connect().await?;
+        log::info!("Disconnected: client_id={}", self.core.client_id);
+        Ok(())
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        if self.core.is_started() {
+            return Ok(());
+        }
+
+        let sender = get_exec_event_sender();
+        self.emitter.set_sender(sender);
+        self.core.set_started();
+
+        log::info!(
+            "Started: client_id={}, account_id={}, account_type={:?}, environment={:?}",
+            self.core.client_id,
+            self.core.account_id,
+            self.core.account_type,
+            self.config.environment,
+        );
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        if self.core.is_stopped() {
+            return Ok(());
+        }
+
+        self.core.set_stopped();
+        self.core.set_disconnected();
+
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+        log::info!("Stopped: client_id={}", self.core.client_id);
+        Ok(())
+    }
+
+    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let emitter = self.emitter.clone();
+        let is_margin = self.is_margin();
+
+        self.spawn_task("query_account", async move {
+            let account_state = if is_margin {
+                http_client
+                    .request_cfm_account_state(account_id)
+                    .await
+                    .context("failed to request Coinbase CFM account state")?
+            } else {
+                http_client
+                    .request_account_state(account_id)
+                    .await
+                    .context("failed to request Coinbase account state")?
+            };
+            emitter.send_account_state(account_state);
+            Ok(())
+        });
+        Ok(())
+    }
+
+    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let emitter = self.emitter.clone();
+        let client_order_id = Some(cmd.client_order_id);
+        let venue_order_id = cmd.venue_order_id;
+
+        self.spawn_task("query_order", async move {
+            match http_client
+                .request_order_status_report(account_id, client_order_id, venue_order_id)
+                .await
+            {
+                Ok(report) => emitter.send_order_status_report(report),
+                Err(e) => log::warn!("Failed to query order: {e}"),
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn generate_account_state(
+        &self,
+        balances: Vec<AccountBalance>,
+        margins: Vec<MarginBalance>,
+        reported: bool,
+        ts_event: UnixNanos,
+        info: Option<Params>,
+    ) -> anyhow::Result<()> {
+        self.emitter
+            .emit_account_state(balances, margins, reported, ts_event, info);
+        Ok(())
+    }
+
+    async fn generate_order_status_report(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let report = self
+            .http_client
+            .request_order_status_report(
+                self.core.account_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+            )
+            .await
+            .ok();
+
+        // Filter reports to instruments this client bootstrapped. A Cash
+        // client drops derivatives reports (and vice-versa) so mixed activity
+        // on the same venue account does not poison the engine state
+        // associated with either exec client.
+        Ok(report.filter(|r| self.is_instrument_cached(&r.instrument_id)))
+    }
+
+    async fn generate_order_status_reports(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let start = cmd.start.map(|ts| ts.to_datetime_utc());
+        let end = cmd.end.map(|ts| ts.to_datetime_utc());
+
+        let mut reports = self
+            .http_client
+            .request_order_status_reports(
+                self.core.account_id,
+                cmd.instrument_id,
+                cmd.open_only,
+                start,
+                end,
+                None,
+            )
+            .await?;
+
+        let before = reports.len();
+        reports.retain(|r| self.is_instrument_cached(&r.instrument_id));
+        if reports.len() != before {
+            let scope = if self.is_margin() {
+                "non-futures"
+            } else {
+                "non-spot"
+            };
+            log::debug!("Filtered {} {scope} order reports", before - reports.len());
+        }
+        Ok(reports)
+    }
+
+    async fn generate_fill_reports(
+        &self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        let start = cmd.start.map(|ts| ts.to_datetime_utc());
+        let end = cmd.end.map(|ts| ts.to_datetime_utc());
+
+        let mut reports = self
+            .http_client
+            .request_fill_reports(
+                self.core.account_id,
+                cmd.instrument_id,
+                cmd.venue_order_id,
+                start,
+                end,
+                None,
+            )
+            .await?;
+
+        let before = reports.len();
+        reports.retain(|r| self.is_instrument_cached(&r.instrument_id));
+        if reports.len() != before {
+            let scope = if self.is_margin() {
+                "non-futures"
+            } else {
+                "non-spot"
+            };
+            log::debug!("Filtered {} {scope} fill reports", before - reports.len());
+        }
+        Ok(reports)
+    }
+
+    async fn generate_position_status_reports(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        // Coinbase spot has no positions.
+        if !self.is_margin() {
+            return Ok(Vec::new());
+        }
+
+        // Errors propagate (matching `generate_order_status_reports` /
+        // `generate_fill_reports`) so `generate_mass_status` and the live
+        // manager's reconciliation path see venue failures rather than
+        // receive a silently-empty report set.
+        if let Some(instrument_id) = cmd.instrument_id {
+            let report = self
+                .http_client
+                .request_position_status_report(self.core.account_id, instrument_id)
+                .await
+                .with_context(|| format!("failed to request CFM position for {instrument_id}"))?;
+            Ok(report.map(|r| vec![r]).unwrap_or_default())
+        } else {
+            self.http_client
+                .request_position_status_reports(self.core.account_id)
+                .await
+                .context("failed to request CFM positions")
+        }
+    }
+
+    async fn generate_mass_status(
+        &self,
+        lookback_mins: Option<u64>,
+    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+        log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
+
+        let ts_now = self.clock.get_time_ns();
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
+
+        let order_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .open_only(false)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let fill_cmd = GenerateFillReportsBuilder::default()
+            .ts_init(ts_now)
+            .start(start)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let position_cmd = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(ts_now)
+            .build()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
+            self.generate_order_status_reports(&order_cmd),
+            self.generate_fill_reports(fill_cmd),
+            self.generate_position_status_reports(&position_cmd),
+        )?;
+
+        log::info!("Received {} OrderStatusReports", order_reports.len());
+        log::info!("Received {} FillReports", fill_reports.len());
+        log::info!("Received {} PositionReports", position_reports.len());
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            *COINBASE_VENUE,
+            ts_now,
+            None,
+        );
+
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
+
+        Ok(Some(mass_status))
+    }
+
+    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
+        if order.is_closed() {
+            log::warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
+
+        if let Err(reason) = validate_order(&order, &self.instruments_cache) {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
+            return Ok(());
+        }
+
+        let instrument_id = order.instrument_id();
+
+        // The user channel does not need a product-wide alias registration:
+        // `order_contexts` (keyed by `client_order_id`) records the
+        // submitted `product_id` and `handle_user_order_update` rewrites the
+        // report's instrument id from there. A product-wide map would
+        // misroute external or canonical-side orders that share the same
+        // wire `product_id`.
+
+        log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
+        self.emitter.emit_order_submitted(&order);
+
+        let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+        let order_contexts = Arc::clone(&self.order_contexts);
+        let clock = self.clock;
+        let strategy_id = order.strategy_id();
+        let client_order_id = order.client_order_id();
+        let side = order.order_side();
+        let order_type = order.order_type();
+        let quantity = order.quantity();
+        let time_in_force = order.time_in_force();
+        let price = order.price();
+        let trigger_price = order.trigger_price();
+        let trigger_type = order.trigger_type();
+        let expire_time = order.expire_time();
+        let post_only = order.is_post_only();
+        let is_quote_quantity = order.is_quote_quantity();
+        let reduce_only = order.is_reduce_only();
+
+        // Cache limit/trigger metadata under `client_order_id` synchronously
+        // before the spawn so user-channel updates that race the REST submit
+        // response can still patch their reports. Coinbase's user channel does
+        // not echo `price`, `stop_price`, `trigger_type`, or whether the order
+        // is `post_only`, so without this the engine reconciler would clear
+        // the local price and synthesized fills would lack `LiquiditySide`.
+        {
+            let mut map = self.order_contexts.lock();
+            map.insert(
+                client_order_id.to_string(),
+                OrderContext {
+                    price,
+                    trigger_price,
+                    trigger_type,
+                    post_only,
+                    submitted_product_id: Some(instrument_id.symbol.inner()),
+                },
+            );
+        }
+        let (leverage, margin_type) = if self.core.account_type == AccountType::Margin {
+            (
+                self.config.default_leverage,
+                self.config.default_margin_type,
+            )
+        } else {
+            (None, None)
+        };
+        let retail_portfolio_id = self.config.retail_portfolio_id.clone();
+
+        self.spawn_task("submit_order", async move {
+            let result = http_client
+                .submit_order(
+                    client_order_id,
+                    instrument_id,
+                    side,
+                    order_type,
+                    quantity,
+                    time_in_force,
+                    price,
+                    trigger_price,
+                    expire_time,
+                    post_only,
+                    is_quote_quantity,
+                    leverage,
+                    margin_type,
+                    reduce_only,
+                    retail_portfolio_id,
+                )
+                .await;
+
+            match result {
+                Ok(response) => {
+                    if response.success {
+                        let venue_id = response
+                            .success_response
+                            .as_ref()
+                            .map(|s| s.order_id.clone())
+                            .unwrap_or(response.order_id);
+
+                        if venue_id.is_empty() {
+                            log::warn!(
+                                "Submit succeeded but no order_id returned for {client_order_id}"
+                            );
+                        } else {
+                            let venue_order_id = VenueOrderId::new(&venue_id);
+                            let ts_event = clock.get_time_ns();
+                            emitter.emit_order_accepted(&order, venue_order_id, ts_event);
+                        }
+                    } else {
+                        let reason = response.error_response.as_ref().map_or_else(
+                            || response.failure_reason.clone(),
+                            |e| format!("{}: {}", e.error, e.message),
+                        );
+                        // `INVALID_LIMIT_PRICE_POST_ONLY` is Coinbase's reject
+                        // code when a `post_only` order would have crossed
+                        // the spread by the time it reached the matching
+                        // engine. Mark the rejection so strategies can react
+                        // (typically: re-quote at the new TOB).
+                        let due_post_only = reason.contains("INVALID_LIMIT_PRICE_POST_ONLY")
+                            || response.error_response.as_ref().is_some_and(|e| {
+                                e.preview_failure_reason == "PREVIEW_INVALID_LIMIT_PRICE_POSTONLY"
+                                    || e.new_order_failure_reason == "INVALID_LIMIT_PRICE_POST_ONLY"
+                            });
+                        // Order never made it to the venue: drop the cached
+                        // metadata so the map does not grow unbounded with
+                        // dead entries.
+                        order_contexts.lock().remove(client_order_id.as_str());
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            &format!("submit-order-rejected: {reason}"),
+                            ts_event,
+                            due_post_only,
+                        );
+                    }
+                }
+                Err(e) => {
+                    handle_coinbase_submit_failure(
+                        &e,
+                        &order_contexts,
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        clock.get_time_ns(),
+                    );
+                    return Err(e.context("submit order failed"));
+                }
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+        let denied = OrderDeniedReason::UnsupportedOrderList {
+            detail: "order lists are not supported by Coinbase Advanced Trade".to_string(),
+        }
+        .to_string();
+
+        for order in &orders {
+            self.emitter.emit_order_denied(order, &denied);
+        }
+
+        Ok(())
+    }
+
+    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
+        let ts_event = self.clock.get_time_ns();
+
+        let Some(venue_order_id) = cmd.venue_order_id else {
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                None,
+                "modify-order requires venue_order_id",
+                ts_event,
+            );
+            return Ok(());
+        };
+
+        if cmd.price.is_none() && cmd.quantity.is_none() && cmd.trigger_price.is_none() {
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                Some(venue_order_id),
+                "modify-order requires price, quantity, or trigger_price",
+                ts_event,
+            );
+            return Ok(());
+        }
+
+        // Coinbase's `/orders/edit` requires both `price` and `size` to be
+        // present in the request even when only one is changing; omitting
+        // `size` is interpreted as 0 and rejected with `INVALID_EDITED_SIZE` /
+        // `CANNOT_EDIT_TO_BELOW_FILLED_SIZE`. Auto-fill missing fields from
+        // the cached order so strategies can call `modify_order(price=...)`
+        // without having to look up the current quantity themselves.
+        let (auto_price, auto_quantity) = {
+            let cache = self.core.cache();
+            let cached = cache.order(&cmd.client_order_id);
+            let cached_price = cached.as_ref().and_then(|o| o.price());
+            let cached_qty = cached.as_ref().map(|o| o.quantity());
+            (cmd.price.or(cached_price), cmd.quantity.or(cached_qty))
+        };
+
+        let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+        let order_contexts = Arc::clone(&self.order_contexts);
+        let clock = self.clock;
+        let strategy_id = cmd.strategy_id;
+        let instrument_id = cmd.instrument_id;
+        let client_order_id = cmd.client_order_id;
+        let price = auto_price;
+        let quantity = auto_quantity;
+        let trigger_price = cmd.trigger_price;
+
+        self.spawn_task("modify_order", async move {
+            let result = http_client
+                .modify_order(venue_order_id, price, quantity, trigger_price)
+                .await;
+
+            match result {
+                Ok(resp) => {
+                    if resp.success {
+                        // Refresh the submit-time metadata cache so subsequent
+                        // user-channel updates patch with the new price /
+                        // trigger_price (Coinbase user channel does not echo
+                        // these fields, so a stale cache would let the
+                        // reconciler revert the local order to the pre-edit
+                        // values).
+                        let mut map = order_contexts.lock();
+                        if let Some(meta) = map.get_mut(client_order_id.as_str()) {
+                            if price.is_some() {
+                                meta.price = price;
+                            }
+
+                            if trigger_price.is_some() {
+                                meta.trigger_price = trigger_price;
+                            }
+                        }
+                    } else {
+                        let reason = resp
+                            .errors
+                            .iter()
+                            .map(|e| {
+                                if e.edit_failure_reason.is_empty() {
+                                    e.preview_failure_reason.clone()
+                                } else {
+                                    e.edit_failure_reason.clone()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &format!("modify-order-rejected: {reason}"),
+                            ts_event,
+                        );
+                    }
+                }
+                Err(e) => {
+                    if is_coinbase_ambiguous_command_failure(&e) {
+                        log::warn!(
+                            "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {e}"
+                        );
+                    } else {
+                        log::warn!(
+                            "Modify command failed without venue-declared outcome for {client_order_id}: {e}"
+                        );
+                    }
+                    return Err(e.context("modify order failed"));
+                }
+            }
+
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        let Some(venue_order_id) = cmd.venue_order_id else {
+            log::warn!(
+                "Cancel command failed local validation for {}: venue_order_id required",
+                cmd.client_order_id
+            );
+            return Ok(());
+        };
+
+        let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let strategy_id = cmd.strategy_id;
+        let instrument_id = cmd.instrument_id;
+        let client_order_id = cmd.client_order_id;
+
+        self.spawn_task("cancel_order", async move {
+            match http_client.cancel_orders(&[venue_order_id]).await {
+                Ok(resp) => {
+                    if let Some(result) = resp.results.first()
+                        && !result.success
+                    {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_cancel_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &format!("cancel-order-rejected: {}", result.failure_reason),
+                            ts_event,
+                        );
+                    }
+                }
+                Err(e) => {
+                    if is_coinbase_ambiguous_command_failure(&e) {
+                        log::warn!(
+                            "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
+                        );
+                    } else {
+                        log::warn!(
+                            "Cancel command failed without venue-declared outcome for {client_order_id}: {e}"
+                        );
+                    }
+                    return Err(e.context("cancel order failed"));
+                }
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        let http_client = self.http_client.clone();
+        let account_id = self.core.account_id;
+        let instrument_id = cmd.instrument_id;
+        let side_filter = cmd.order_side;
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let strategy_id = cmd.strategy_id;
+
+        self.spawn_task("cancel_all_orders", async move {
+            // Coinbase's `order_status=OPEN` filter excludes PENDING / QUEUED
+            // orders that were submitted very recently and are still cancelable.
+            // Fetch all reports and filter to any open status locally so a cancel-
+            // all issued right after submission does not leave working orders behind.
+            let reports = http_client
+                .request_order_status_reports(
+                    account_id,
+                    Some(instrument_id),
+                    false,
+                    None,
+                    None,
+                    None,
+                )
+                .await
+                .context("failed to list orders for cancel_all")?;
+
+            // Filter to statuses that are safe to cancel and to the requested
+            // side since Coinbase's batch-cancel endpoint has no side parameter.
+            //
+            // Coinbase's `PENDING` / `QUEUED` / `OPEN` all map to `Accepted`
+            // and are cancelable. We can't use `OrderStatus::is_open()` because
+            // it includes `PendingCancel`, and re-cancelling a `CANCEL_QUEUED`
+            // order risks `CancelRejected` flipping the order back to its prior
+            // working status.
+            let filtered: Vec<(Option<ClientOrderId>, VenueOrderId)> = reports
+                .into_iter()
+                .filter(|r| {
+                    matches!(
+                        r.order_status,
+                        OrderStatus::Accepted
+                            | OrderStatus::Triggered
+                            | OrderStatus::PendingUpdate
+                            | OrderStatus::PartiallyFilled
+                    )
+                })
+                .filter(|r| side_filter.is_none_or(|side| r.order_side == side.into()))
+                .map(|r| (r.client_order_id, r.venue_order_id))
+                .collect();
+
+            if filtered.is_empty() {
+                return Ok(());
+            }
+
+            for chunk in filtered.chunks(BATCH_CANCEL_CHUNK) {
+                let venue_ids: Vec<VenueOrderId> = chunk.iter().map(|(_, v)| *v).collect();
+                match http_client.cancel_orders(&venue_ids).await {
+                    Ok(resp) => {
+                        for result in &resp.results {
+                            if result.success {
+                                continue;
+                            }
+                            let matching = chunk
+                                .iter()
+                                .find(|(_, vid)| vid.as_str() == result.order_id);
+                            if let Some((cid_opt, vid)) = matching
+                                && let Some(cid) = cid_opt
+                            {
+                                let ts_event = clock.get_time_ns();
+                                emitter.emit_order_cancel_rejected_event(
+                                    strategy_id,
+                                    instrument_id,
+                                    *cid,
+                                    Some(*vid),
+                                    &format!("cancel-all-rejected: {}", result.failure_reason),
+                                    ts_event,
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if is_coinbase_ambiguous_command_failure(&e) {
+                            log::warn!(
+                                "Ambiguous cancel-all failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
+                                chunk.len()
+                            );
+                        } else {
+                            log::warn!(
+                                "Cancel-all command failed without venue-declared outcome for {} orders on {instrument_id}: {e}",
+                                chunk.len()
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
+        if cmd.cancels.is_empty() {
+            return Ok(());
+        }
+
+        let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        // Preserve each child cancel's identity for per-order venue failures.
+        let entries: Vec<(
+            StrategyId,
+            InstrumentId,
+            ClientOrderId,
+            Option<VenueOrderId>,
+        )> = cmd
+            .cancels
+            .iter()
+            .map(|c| {
+                (
+                    c.strategy_id,
+                    c.instrument_id,
+                    c.client_order_id,
+                    c.venue_order_id,
+                )
+            })
+            .collect();
+
+        self.spawn_task("batch_cancel_orders", async move {
+            let venue_order_ids: Vec<VenueOrderId> =
+                entries.iter().filter_map(|(_, _, _, v)| *v).collect();
+
+            for (_, _, cid, vid_opt) in &entries {
+                if vid_opt.is_none() {
+                    log::warn!(
+                        "Batch cancel command failed local validation for {cid}: venue_order_id required"
+                    );
+                }
+            }
+
+            for chunk in venue_order_ids.chunks(BATCH_CANCEL_CHUNK) {
+                match http_client.cancel_orders(chunk).await {
+                    Ok(resp) => {
+                        for result in &resp.results {
+                            if !result.success {
+                                let vid = VenueOrderId::new(&result.order_id);
+                                let matching = entries
+                                    .iter()
+                                    .find(|(_, _, _, v)| {
+                                        v.is_some_and(|id| id.as_str() == result.order_id)
+                                    });
+
+                                if let Some((strategy_id, instrument_id, cid, _)) = matching {
+                                    let ts_event = clock.get_time_ns();
+                                    emitter.emit_order_cancel_rejected_event(
+                                        *strategy_id,
+                                        *instrument_id,
+                                        *cid,
+                                        Some(vid),
+                                        &format!(
+                                            "batch-cancel-rejected: {}",
+                                            result.failure_reason
+                                        ),
+                                        ts_event,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        if is_coinbase_ambiguous_command_failure(&e) {
+                            log::warn!(
+                                "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
+                                chunk.len()
+                            );
+                        } else {
+                            log::warn!(
+                                "Batch cancel command failed without venue-declared outcome for {} orders: {e}",
+                                chunk.len()
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+}
+
+fn validate_order(
+    order: &impl Order,
+    instruments_cache: &AHashMap<String, InstrumentAny>,
+) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    let instrument_id = order.instrument_id();
+    if !instruments_cache.contains_key(instrument_id.symbol.as_str()) {
+        return Err(OrderDeniedReason::InstrumentNotFound { instrument_id });
+    }
+
+    Ok(())
+}
+
+fn handle_coinbase_submit_failure(
+    err: &anyhow::Error,
+    order_contexts: &Mutex<AHashMap<String, OrderContext>>,
+    emitter: &ExecutionEventEmitter,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    ts_event: UnixNanos,
+) {
+    if is_coinbase_local_submit_failure(err) {
+        order_contexts.lock().remove(client_order_id.as_str());
+        emitter.emit_order_rejected_event(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            &format!("submit-order-error: {err}"),
+            ts_event,
+            false,
+        );
+    } else if is_coinbase_explicit_submit_rejection(err) {
+        order_contexts.lock().remove(client_order_id.as_str());
+        emitter.emit_order_rejected_event(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            &format!("submit-order-rejected: {err}"),
+            ts_event,
+            false,
+        );
+    } else if is_coinbase_ambiguous_submit_failure(err) {
+        log::warn!(
+            "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {err}"
+        );
+    } else {
+        order_contexts.lock().remove(client_order_id.as_str());
+        log::warn!(
+            "Submit command failed without venue-declared outcome for {client_order_id}: {err}"
+        );
+    }
+}
+
+fn is_coinbase_local_submit_failure(err: &anyhow::Error) -> bool {
+    match coinbase_http_error(err) {
+        None => true,
+        Some(CoinbaseHttpError::Auth(message)) => !message.starts_with("HTTP "),
+        _ => false,
+    }
+}
+
+fn is_coinbase_explicit_submit_rejection(err: &anyhow::Error) -> bool {
+    match coinbase_http_error(err) {
+        Some(CoinbaseHttpError::Auth(message) | CoinbaseHttpError::BadRequest(message)) => {
+            message.starts_with("HTTP ")
+        }
+        _ => false,
+    }
+}
+
+fn is_coinbase_ambiguous_submit_failure(err: &anyhow::Error) -> bool {
+    matches!(
+        coinbase_http_error(err),
+        Some(CoinbaseHttpError::RateLimit { .. })
+    ) || is_coinbase_ambiguous_command_failure(err)
+}
+
+fn is_coinbase_ambiguous_command_failure(err: &anyhow::Error) -> bool {
+    matches!(
+        coinbase_http_error(err),
+        Some(
+            CoinbaseHttpError::Transport(_)
+                | CoinbaseHttpError::Serde(_)
+                | CoinbaseHttpError::Exchange(_)
+                | CoinbaseHttpError::Timeout
+                | CoinbaseHttpError::Decode(_)
+        )
+    ) || matches!(
+        coinbase_http_error(err),
+        Some(CoinbaseHttpError::Http { status, .. }) if *status >= 500
+    )
+}
+
+fn coinbase_http_error(err: &anyhow::Error) -> Option<&CoinbaseHttpError> {
+    err.chain()
+        .find_map(|cause| cause.downcast_ref::<CoinbaseHttpError>())
+}
+
+// Processes a single user-channel order update: emits the status report,
+// synthesizes a FillReport from the cumulative delta, and deduplicates
+// replayed fills by (venue_order_id, trade_id).
+#[allow(clippy::too_many_arguments)]
+async fn handle_user_order_update(
+    carrier: UserOrderUpdate,
+    emitter: &ExecutionEventEmitter,
+    fill_dedup: &Arc<Mutex<FillDedup>>,
+    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
+    order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    external_order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    http_client: &CoinbaseHttpClient,
+    account_id: AccountId,
+) {
+    // Coinbase's user channel does not echo `price`, `stop_price`,
+    // `trigger_type`, or `post_only`. Resolve an `OrderContext` (cached
+    // from `submit_order` for orders this client placed, or fetched from
+    // REST and cached for external orders) so the report can be patched
+    // before reaching the engine reconciler.
+    let context = resolve_order_context(
+        &carrier.update,
+        carrier.report.order_type,
+        carrier.report.price.is_none(),
+        order_contexts,
+        external_order_contexts,
+        http_client,
+        account_id,
+    )
+    .await;
+
+    let is_terminal = carrier.update.status.is_terminal();
+    let client_order_id = carrier.update.client_order_id.clone();
+    let venue_order_id = carrier.update.order_id.clone();
+
+    process_user_order_update(
+        carrier,
+        context,
+        emitter,
+        fill_dedup,
+        cumulative_state,
+        Some(http_client),
+    );
+
+    // Drop submit-time / enrichment metadata once the order reaches a
+    // terminal state so long-running clients do not accumulate one entry
+    // per order. Mirrors the cumulative-state cleanup in
+    // `process_user_order_update`.
+    if is_terminal {
+        if !client_order_id.is_empty() {
+            order_contexts.lock().remove(&client_order_id);
+        }
+        external_order_contexts.lock().remove(&venue_order_id);
+    }
+}
+
+// Sync portion of the user-channel update handler. Split from
+// `handle_user_order_update` so tests can drive it without a tokio runtime;
+// the only async dependency is REST enrichment in `resolve_order_context`.
+fn process_user_order_update(
+    carrier: UserOrderUpdate,
+    context: Option<OrderContext>,
+    emitter: &ExecutionEventEmitter,
+    fill_dedup: &Arc<Mutex<FillDedup>>,
+    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
+    http_client: Option<&CoinbaseHttpClient>,
+) {
+    let UserOrderUpdate {
+        mut report,
+        update,
+        mut instrument,
+        is_snapshot,
+        ts_event,
+        ts_init,
+    } = carrier;
+
+    let mut fill_liquidity_side = LiquiditySide::NoLiquiditySide;
+    let have_order_contexts = context.is_some();
+    let mut publish_instrument_id: Option<InstrumentId> = None;
+
+    if let Some(meta) = context {
+        if report.price.is_none() && meta.price.is_some() {
+            report.price = meta.price;
+        }
+
+        if report.trigger_price.is_none() && meta.trigger_price.is_some() {
+            report.trigger_price = meta.trigger_price;
+        }
+
+        if report.trigger_type.is_none() && meta.trigger_type.is_some() {
+            report.trigger_type = meta.trigger_type;
+        }
+
+        if meta.post_only {
+            // `post_only` orders are guaranteed `Maker`. Non-post-only
+            // orders cannot be classified from the user channel alone so
+            // they keep `NoLiquiditySide` until the fill is reconciled
+            // against the REST `/orders/historical/fills` endpoint.
+            fill_liquidity_side = LiquiditySide::Maker;
+            // The user channel does not echo `post_only`, so propagate the
+            // cached flag to the OSR to preserve maker-only semantics for
+            // any downstream order reconstruction.
+            report.post_only = true;
+        }
+
+        if let Some(submitted) = meta.submitted_product_id
+            && submitted != update.product_id
+        {
+            let submitted_id = InstrumentId::new(Symbol::new(submitted), *COINBASE_VENUE);
+            report.instrument_id = submitted_id;
+            publish_instrument_id = Some(submitted_id);
+            // Replace the carrier's instrument with the submitted-side one
+            // (looked up from the http client's bootstrapped cache) so the
+            // FillReport's commission currency, price/size precision, and
+            // any other instrument-derived field reflect the actual order's
+            // instrument rather than the canonical wire alias.
+            if let Some(http) = http_client
+                && let Some(submitted_instrument) = http.instruments().get_cloned(&submitted_id)
+            {
+                instrument = submitted_instrument;
+            }
+        }
+    }
+
+    let size_precision = instrument.size_precision();
+
+    let cumulative_qty = if update.cumulative_quantity.is_empty() {
+        Quantity::zero(size_precision)
+    } else {
+        match parse_quantity(&update.cumulative_quantity, size_precision) {
+            Ok(q) => q,
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse cumulative_quantity for order {}: {e}",
+                    update.order_id
+                );
+                return;
+            }
+        }
+    };
+
+    let cumulative_fees = if update.total_fees.is_empty() {
+        Decimal::ZERO
+    } else {
+        match Decimal::from_str(&update.total_fees) {
+            Ok(d) => d,
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse total_fees for order {}: {e}",
+                    update.order_id
+                );
+                return;
+            }
+        }
+    };
+
+    let cumulative_avg = if update.avg_price.is_empty() {
+        Decimal::ZERO
+    } else {
+        match Decimal::from_str(&update.avg_price) {
+            Ok(d) => d,
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse avg_price for order {}: {e}",
+                    update.order_id
+                );
+                return;
+            }
+        }
+    };
+    let order_id = update.order_id.clone();
+
+    let is_terminal = update.status.is_terminal();
+
+    // Snapshot previous state under lock; update immediately to avoid races
+    // between concurrent handler tasks for the same order.
+    let (delta_qty, delta_fees, last_fill_price_decimal, restored_quantity) = {
+        let mut state = cumulative_state.lock();
+        let entry = state.entry_or_default(&order_id);
+        let prev_qty = entry
+            .filled_qty
+            .unwrap_or_else(|| Quantity::zero(size_precision));
+        let prev_fees = entry.total_fees;
+        let prev_avg = entry.avg_price;
+
+        // Track the max-observed total quantity. The freshly-built report has
+        // quantity = cum+leaves which is correct for working orders; on
+        // terminal events Coinbase zeroes leaves_quantity, so we use the
+        // stored max instead.
+        let observed_quantity = report.quantity;
+        let stored_quantity = match entry.quantity {
+            Some(q) if q >= observed_quantity => q,
+            _ => observed_quantity,
+        };
+        entry.quantity = Some(stored_quantity);
+
+        // Snapshots restate the cumulative state of pre-existing open orders.
+        // Treat them as the new baseline (so subsequent updates compute correct
+        // deltas) but never synthesize a fill from them.
+        if is_snapshot {
+            entry.filled_qty = Some(cumulative_qty);
+            entry.total_fees = cumulative_fees;
+            entry.avg_price = cumulative_avg;
+
+            if is_terminal {
+                state.remove(&order_id);
+            }
+            (
+                Quantity::zero(size_precision),
+                Decimal::ZERO,
+                Decimal::ZERO,
+                stored_quantity,
+            )
+        } else {
+            let delta_qty = if cumulative_qty > prev_qty {
+                cumulative_qty - prev_qty
+            } else {
+                Quantity::zero(size_precision)
+            };
+            let delta_fees = cumulative_fees - prev_fees;
+
+            // Derive per-fill price from the cumulative notional delta:
+            //   last_px = (avg_now * qty_now - avg_prev * qty_prev) / delta_qty
+            // Falls back to the cumulative avg on the first fill (where
+            // delta_qty equals qty_now and prev_notional is zero).
+            let last_fill_price_decimal = if delta_qty.is_positive() {
+                let now_notional = cumulative_avg * cumulative_qty.as_decimal();
+                let prev_notional = prev_avg * prev_qty.as_decimal();
+                let delta_notional = now_notional - prev_notional;
+                let delta_qty_dec = delta_qty.as_decimal();
+                if delta_qty_dec.is_zero() {
+                    cumulative_avg
+                } else {
+                    delta_notional / delta_qty_dec
+                }
+            } else {
+                Decimal::ZERO
+            };
+
+            entry.filled_qty = Some(cumulative_qty);
+            entry.total_fees = cumulative_fees;
+            entry.avg_price = cumulative_avg;
+
+            if is_terminal {
+                state.remove(&order_id);
+            }
+
+            (
+                delta_qty,
+                delta_fees,
+                last_fill_price_decimal,
+                stored_quantity,
+            )
+        }
+    };
+
+    // Restore the original order quantity on terminal events when the venue's
+    // zeroed leaves_quantity would otherwise collapse the report to filled_qty.
+    if is_terminal && report.quantity < restored_quantity {
+        report.quantity = restored_quantity;
+    }
+
+    // Emit the synthesized FillReport before the OrderStatusReport when there
+    // is one. The engine's reconciler treats an OrderStatusReport with status
+    // `Filled` / `PartiallyFilled` as authoritative for `filled_qty` and will
+    // *infer* a synthetic fill when the local order is behind the report. If
+    // the OrderStatusReport landed first, that inferred fill would race ours
+    // and ours would then be rejected as an overfill.
+    let synthesized_fill = if delta_qty.is_positive()
+        && last_fill_price_decimal.is_sign_positive()
+        && !last_fill_price_decimal.is_zero()
+    {
+        let price_precision = instrument.price_precision();
+        match Price::from_decimal_dp(last_fill_price_decimal, price_precision) {
+            Ok(last_px) => {
+                // Coinbase's user channel reports cumulative state and does
+                // not assign a per-fill trade id, so we synthesize one.
+                // `TradeId` is a 36-char stack string; a full venue UUID
+                // (36 chars) plus the cumulative_qty would overflow. Use the
+                // first 8 chars of the venue UUID (already random hex) as a
+                // stable per-order discriminator.
+                let order_id_short = &update.order_id[..update.order_id.len().min(8)];
+                let trade_id = TradeId::new(format!("{order_id_short}-{cumulative_qty}"));
+                let trade_id_str = trade_id.as_str().to_string();
+
+                let is_new = {
+                    let mut dedup = fill_dedup.lock();
+                    dedup.insert((update.order_id.clone(), trade_id_str))
+                };
+
+                if is_new {
+                    let commission_currency = instrument.quote_currency();
+                    match Money::from_decimal(delta_fees, commission_currency) {
+                        Ok(commission) => match parse_ws_user_event_to_fill_report(
+                            &update,
+                            delta_qty,
+                            last_px,
+                            commission,
+                            trade_id,
+                            &instrument,
+                            emitter.account_id(),
+                            fill_liquidity_side,
+                            ts_event,
+                            ts_init,
+                        ) {
+                            Ok(report) => Some(report),
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to parse fill for order {}: {e}",
+                                    update.order_id
+                                );
+                                None
+                            }
+                        },
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to build commission Money for order {}: {e}",
+                                update.order_id
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    log::debug!(
+                        "Dropping duplicate fill venue_order_id={}, trade_id={}",
+                        update.order_id,
+                        trade_id,
+                    );
+                    None
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to build Price from derived last_fill={last_fill_price_decimal} at precision {price_precision} for order {}: {e}",
+                    update.order_id
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(mut fill_report) = synthesized_fill {
+        if let Some(id) = publish_instrument_id {
+            fill_report.instrument_id = id;
+        }
+        emitter.send_fill_report(fill_report);
+    }
+
+    // OSR emission policy:
+    // - For order types that carry a price (LIMIT / STOP_LIMIT) or trigger
+    //   (STOP_MARKET / *_IF_TOUCHED), the report must include the relevant
+    //   field before reaching the engine reconciler; otherwise the order
+    //   reconstruction path panics with a missing-field error. Patching
+    //   above pulls these from the OrderContext when one is available, but
+    //   if enrichment was needed and unavailable (REST fetch failed for an
+    //   external order) the report is still missing the field and is unsafe
+    //   to emit.
+    // - Snapshots emit only when we have submit-time metadata; the
+    //   user-channel snapshot omits these fields entirely. With metadata,
+    //   the report has been patched above and is safe to emit (this
+    //   preserves reconnect-time partial-fill recovery for orders submitted
+    //   by this process). For unknown orders, the REST mass-status path
+    //   called from `LiveNode` startup is the canonical source.
+    let report_safe_for_type = match report.order_type {
+        OrderType::Limit | OrderType::LimitIfTouched => report.price.is_some(),
+        OrderType::StopLimit => report.price.is_some() && report.trigger_price.is_some(),
+        OrderType::StopMarket | OrderType::MarketIfTouched => report.trigger_price.is_some(),
+        _ => true,
+    };
+    let should_emit = (!is_snapshot || have_order_contexts) && report_safe_for_type;
+    if should_emit {
+        emitter.send_order_status_report(*report);
+    } else if !report_safe_for_type {
+        log::warn!(
+            "Suppressed unsafe OrderStatusReport for {} {}: missing price/trigger after enrichment",
+            report.order_type,
+            update.order_id,
+        );
+    }
+}
+
+// Returns the submit-time / enriched metadata for `update`, fetching from
+// REST and populating the enrichment cache the first time an external order
+// is seen. `order_contexts` (keyed by `client_order_id`) covers orders this
+// client placed; `external_order_contexts` (keyed by venue `order_id`) covers
+// external orders whose `OrderStatusReport` would otherwise be unsafe to
+// reconstruct (LIMIT / STOP_LIMIT with `price = None`).
+async fn resolve_order_context(
+    update: &WsOrderUpdate,
+    order_type: OrderType,
+    report_price_missing: bool,
+    order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    external_order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
+    http_client: &CoinbaseHttpClient,
+    account_id: AccountId,
+) -> Option<OrderContext> {
+    if !update.client_order_id.is_empty() {
+        let map = order_contexts.lock();
+        if let Some(meta) = map.get(&update.client_order_id) {
+            return Some(meta.clone());
+        }
+    }
+
+    if let Some(meta) = external_order_contexts.lock().get(&update.order_id) {
+        return Some(meta.clone());
+    }
+
+    let needs_enrichment = report_price_missing
+        && matches!(
+            order_type,
+            OrderType::Limit
+                | OrderType::StopLimit
+                | OrderType::LimitIfTouched
+                | OrderType::StopMarket
+                | OrderType::MarketIfTouched
+        );
+
+    if !needs_enrichment {
+        return None;
+    }
+
+    let venue_order_id = VenueOrderId::new(update.order_id.as_str());
+    match http_client
+        .request_order_status_report(account_id, None, Some(venue_order_id))
+        .await
+    {
+        Ok(rest_report) => {
+            let post_only_from_rest = matches!(order_type, OrderType::Limit | OrderType::StopLimit)
+                && rest_report.post_only;
+            let meta = OrderContext {
+                price: rest_report.price,
+                trigger_price: rest_report.trigger_price,
+                trigger_type: rest_report.trigger_type,
+                post_only: post_only_from_rest,
+                submitted_product_id: None,
+            };
+            external_order_contexts
+                .lock()
+                .insert(update.order_id.clone(), meta.clone());
+            Some(meta)
+        }
+        Err(e) => {
+            log::warn!(
+                "Failed to enrich external order {} via REST: {e}",
+                update.order_id
+            );
+            None
+        }
+    }
+}
 
 #[derive(Debug)]
 struct FillDedup {
@@ -267,1744 +2121,12 @@ impl CumulativeStateMap {
     }
 }
 
-/// Live execution client for Coinbase Advanced Trade.
-#[derive(Debug)]
-pub struct CoinbaseExecutionClient {
-    core: ExecutionClientCore,
-    clock: &'static AtomicTime,
-    config: CoinbaseExecClientConfig,
-    emitter: ExecutionEventEmitter,
-    http_client: CoinbaseHttpClient,
-    ws_user: CoinbaseWebSocketClient,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
-    instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
-    fill_dedup: Arc<Mutex<FillDedup>>,
-    cumulative_state: Arc<Mutex<CumulativeStateMap>>,
-    order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
-    // Caches REST-derived metadata for orders this client did not submit
-    // (keyed by `venue_order_id`). Populated lazily when the user-channel
-    // handler encounters an unknown order whose `OrderStatusReport` would
-    // otherwise lack `price` / `trigger_price` / `trigger_type` and panic
-    // the engine's reconstruction path. Separate from `order_contexts`
-    // because external orders may carry a `client_order_id` we never set.
-    external_order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
-}
-
-impl CoinbaseExecutionClient {
-    /// Creates a new [`CoinbaseExecutionClient`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if credentials cannot be resolved or the underlying
-    /// HTTP / WebSocket client cannot be constructed.
-    pub fn new(
-        core: ExecutionClientCore,
-        config: CoinbaseExecClientConfig,
-    ) -> anyhow::Result<Self> {
-        let credential =
-            CoinbaseCredential::resolve(config.api_key.as_deref(), config.api_secret.as_deref())
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Coinbase credentials not available; set COINBASE_API_KEY and COINBASE_API_SECRET or pass them in the config"
-                    )
-                })?;
-
-        let retry_config = RetryConfig {
-            max_retries: config.max_retries,
-            initial_delay_ms: config.retry_delay_initial_ms,
-            max_delay_ms: config.retry_delay_max_ms,
-            backoff_factor: 2.0,
-            jitter_ms: 250,
-            operation_timeout_ms: Some(60_000),
-            immediate_first: false,
-            max_elapsed_ms: Some(180_000),
-        };
-
-        let http_client = CoinbaseHttpClient::with_credentials(
-            credential.clone(),
-            config.environment,
-            config.http_timeout_secs,
-            config.proxy_url.clone(),
-            Some(retry_config),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to create Coinbase HTTP client: {e}"))?;
-
-        if let Some(ref url) = config.base_url_rest {
-            http_client.set_base_url(url.clone());
-        }
-
-        let ws_url = config.ws_url();
-        let ws_user = CoinbaseWebSocketClient::with_credential(
-            &ws_url,
-            credential,
-            config.transport_backend,
-            config.proxy_url.clone(),
-        );
-
-        let clock = get_atomic_clock_realtime();
-        let emitter = ExecutionEventEmitter::new(
-            clock,
-            core.trader_id,
-            core.account_id,
-            core.account_type,
-            None,
-        );
-
-        Ok(Self {
-            core,
-            clock,
-            config,
-            emitter,
-            http_client,
-            ws_user,
-            ws_stream_handle: None,
-            pending_tasks: TaskHandles::default(),
-            instruments_cache: Arc::new(AHashMap::new()),
-            fill_dedup: Arc::new(Mutex::new(FillDedup::new(FILL_DEDUP_CAPACITY))),
-            cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-                CUMULATIVE_STATE_CAPACITY,
-            ))),
-            order_contexts: Arc::new(Mutex::new(AHashMap::new())),
-            external_order_contexts: Arc::new(Mutex::new(AHashMap::new())),
-        })
-    }
-
-    fn spawn_task<F>(&self, description: &'static str, fut: F)
-    where
-        F: Future<Output = anyhow::Result<()>> + Send + 'static,
-    {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
-            if let Err(e) = fut.await {
-                log::warn!("{description} failed: {e:?}");
-            }
-        });
-
-        self.pending_tasks.push(handle);
-    }
-
-    fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
-    }
-
-    // Returns true when the exec client was created with a Margin account,
-    // indicating it should handle CFM-backed derivatives traffic.
-    fn is_margin(&self) -> bool {
-        self.core.account_type == AccountType::Margin
-    }
-
-    // Returns true when the instrument resides in the connect-time bootstrap
-    // cache. For the Cash (spot) factory this gates spot-only traffic; for the
-    // Margin factory the cache contains CFM perp + future products.
-    fn is_instrument_cached(&self, instrument_id: &InstrumentId) -> bool {
-        self.instruments_cache
-            .contains_key(instrument_id.symbol.as_str())
-    }
-
-    // Polls the cache until the account is registered or the timeout is hit.
-    async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
-        let account_id = self.core.account_id;
-
-        if self.core.cache().account(&account_id).is_some() {
-            log::info!("Account {account_id} registered");
-            return Ok(());
-        }
-
-        let start = Instant::now();
-        let timeout = Duration::from_secs_f64(timeout_secs);
-        let interval = Duration::from_millis(10);
-
-        loop {
-            tokio::time::sleep(interval).await;
-
-            if self.core.cache().account(&account_id).is_some() {
-                log::info!("Account {account_id} registered");
-                return Ok(());
-            }
-
-            if start.elapsed() >= timeout {
-                anyhow::bail!(
-                    "Timeout waiting for account {account_id} to be registered after {timeout_secs}s"
-                );
-            }
-        }
-    }
-}
-
-// Converts a UnixNanos to a UTC chrono::DateTime; returns an error when the
-// nanosecond value is out of range.
-fn unix_nanos_to_utc(ts: UnixNanos) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
-    let secs = (ts.as_u64() / 1_000_000_000) as i64;
-    let nanos = (ts.as_u64() % 1_000_000_000) as u32;
-    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, nanos)
-        .ok_or_else(|| anyhow::anyhow!("UnixNanos {ts} is out of range for chrono::DateTime"))
-}
-
-#[async_trait(?Send)]
-impl ExecutionClient for CoinbaseExecutionClient {
-    fn is_connected(&self) -> bool {
-        self.core.is_connected()
-    }
-
-    fn client_id(&self) -> ClientId {
-        self.core.client_id
-    }
-
-    fn account_id(&self) -> AccountId {
-        self.core.account_id
-    }
-
-    fn venue(&self) -> Venue {
-        *COINBASE_VENUE
-    }
-
-    fn oms_type(&self) -> OmsType {
-        self.core.oms_type
-    }
-
-    fn get_account(&self) -> Option<AccountAny> {
-        self.core.cache().account_owned(&self.core.account_id)
-    }
-
-    async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
-            return Ok(());
-        }
-
-        // If the underlying WS is still alive from a prior stop() that did not
-        // explicitly disconnect, tear it down before reconnecting. The
-        // in-handler signal path can race with the Disconnect command, leaving
-        // the inner connection_mode stale even after disconnect().await, so
-        // we rebuild the client outright to guarantee clean cmd_tx/out_rx
-        // pairs and a fresh signal.
-        if self.ws_user.is_active() || self.ws_user.is_reconnecting() {
-            log::debug!("Tearing down stale user WS before reconnect");
-            self.ws_user.disconnect().await;
-            // Abort any prior consumer task; the rebuilt ws_user gets a fresh
-            // out_rx so the previous task is otherwise leaked.
-            if let Some(handle) = self.ws_stream_handle.take() {
-                handle.abort();
-            }
-            let credential = CoinbaseCredential::resolve(
-                self.config.api_key.as_deref(),
-                self.config.api_secret.as_deref(),
-            )
-            .ok_or_else(|| anyhow::anyhow!("Coinbase credentials unavailable for WS reset"))?;
-            self.ws_user = CoinbaseWebSocketClient::with_credential(
-                &self.config.ws_url(),
-                credential,
-                self.config.transport_backend,
-                self.config.proxy_url.clone(),
-            );
-        }
-
-        if self.core.instruments_initialized() {
-            // Instruments were loaded externally; still propagate the cached
-            // set to the WS client on reconnect scenarios.
-            let cached: Vec<InstrumentAny> = self.instruments_cache.values().cloned().collect();
-            if !cached.is_empty() {
-                self.ws_user.initialize_instruments(cached).await;
-            }
-        } else {
-            // The Cash (spot) factory loads only spot products; the Margin
-            // (derivatives) factory loads the futures universe so CFM perps
-            // and dated futures can be reconciled. Mixing the two through a
-            // single client is intentionally unsupported, so each factory
-            // picks one branch.
-            let instruments = if self.is_margin() {
-                self.http_client
-                    .request_instruments(Some(CoinbaseProductType::Future))
-                    .await
-                    .context("failed to load Coinbase futures instruments")?
-            } else {
-                self.http_client
-                    .request_instruments(Some(CoinbaseProductType::Spot))
-                    .await
-                    .context("failed to load Coinbase instruments")?
-            };
-
-            let product_kind = if self.is_margin() { "futures" } else { "spot" };
-
-            if instruments.is_empty() {
-                log::warn!("Coinbase instrument bootstrap returned no {product_kind} instruments");
-            } else {
-                log::debug!(
-                    "Coinbase exec client loaded {} {product_kind} instruments",
-                    instruments.len()
-                );
-            }
-
-            let mut map: AHashMap<String, InstrumentAny> =
-                AHashMap::with_capacity(instruments.len());
-            for inst in &instruments {
-                map.insert(inst.id().symbol.as_str().to_string(), inst.clone());
-            }
-            self.instruments_cache = Arc::new(map);
-
-            // Propagate to the WS client so the feed handler can resolve
-            // user-channel product IDs to cached instruments.
-            self.ws_user.initialize_instruments(instruments).await;
-
-            self.core.set_instruments_initialized();
-        }
-
-        self.ws_user.set_account_id(self.core.account_id).await;
-        self.ws_user.connect().await?;
-
-        // Subscribe to the user channel (product-agnostic). User channel with
-        // an empty product list returns events for all products.
-        self.ws_user
-            .subscribe(CoinbaseWsChannel::User, &[])
-            .await
-            .context("failed to subscribe to Coinbase user channel")?;
-
-        if self.is_margin() {
-            self.ws_user
-                .subscribe(CoinbaseWsChannel::FuturesBalanceSummary, &[])
-                .await
-                .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
-        }
-
-        if let Some(mut rx) = self.ws_user.take_out_rx() {
-            let fill_dedup = Arc::clone(&self.fill_dedup);
-            let cumulative_state = Arc::clone(&self.cumulative_state);
-            let order_contexts = Arc::clone(&self.order_contexts);
-            let external_order_contexts = Arc::clone(&self.external_order_contexts);
-            let emitter = self.emitter.clone();
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-            let clock = self.clock;
-            let is_margin = self.is_margin();
-
-            let handle = get_runtime().spawn(async move {
-                while let Some(message) = rx.recv().await {
-                    match message {
-                        NautilusWsMessage::UserOrder(carrier) => {
-                            handle_user_order_update(
-                                *carrier,
-                                &emitter,
-                                &fill_dedup,
-                                &cumulative_state,
-                                &order_contexts,
-                                &external_order_contexts,
-                                &http_client,
-                                account_id,
-                            )
-                            .await;
-                        }
-                        NautilusWsMessage::FuturesBalanceSummary(summary) => {
-                            let ts = clock.get_time_ns();
-                            match parse_ws_cfm_account_state(&summary, account_id, ts, ts) {
-                                Ok(state) => emitter.send_account_state(state),
-                                Err(e) => log::warn!(
-                                    "Failed to parse futures_balance_summary into AccountState: {e}"
-                                ),
-                            }
-                        }
-                        NautilusWsMessage::Reconnected => {
-                            log::info!("Coinbase user WebSocket reconnected");
-                            // Re-fetch account state so any balance change
-                            // during the disconnect window is picked up. The
-                            // margin flavor targets the CFM summary so the
-                            // account type matches the registered Margin
-                            // account.
-                            let refresh = if is_margin {
-                                http_client.request_cfm_account_state(account_id).await
-                            } else {
-                                http_client.request_account_state(account_id).await
-                            };
-
-                            match refresh {
-                                Ok(state) => emitter.send_account_state(state),
-                                Err(e) => {
-                                    log::warn!("Failed to refresh account state on reconnect: {e}");
-                                }
-                            }
-                        }
-                        NautilusWsMessage::Error(err) => {
-                            log::warn!("Coinbase user WebSocket error: {err}");
-                        }
-                        _ => {}
-                    }
-                }
-            });
-            self.ws_stream_handle = Some(handle);
-        }
-
-        let account_state = if self.is_margin() {
-            self.http_client
-                .request_cfm_account_state(self.core.account_id)
-                .await
-                .context("failed to request Coinbase CFM account state")?
-        } else {
-            self.http_client
-                .request_account_state(self.core.account_id)
-                .await
-                .context("failed to request Coinbase account state")?
-        };
-
-        if !account_state.balances.is_empty() {
-            log::debug!(
-                "Received account state with {} balance(s)",
-                account_state.balances.len()
-            );
-        }
-        self.emitter.send_account_state(account_state);
-
-        self.await_account_registered(ACCOUNT_REGISTERED_TIMEOUT_SECS)
-            .await?;
-
-        self.core.set_connected();
-        log::info!("Connected: client_id={}", self.core.client_id);
-        Ok(())
-    }
-
-    async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.abort_pending_tasks();
-        self.ws_user.disconnect().await;
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        self.core.set_disconnected();
-        log::info!("Disconnected: client_id={}", self.core.client_id);
-        Ok(())
-    }
-
-    fn start(&mut self) -> anyhow::Result<()> {
-        if self.core.is_started() {
-            return Ok(());
-        }
-
-        let sender = get_exec_event_sender();
-        self.emitter.set_sender(sender);
-        self.core.set_started();
-
-        log::info!(
-            "Started: client_id={}, account_id={}, account_type={:?}, environment={:?}",
-            self.core.client_id,
-            self.core.account_id,
-            self.core.account_type,
-            self.config.environment,
-        );
-        Ok(())
-    }
-
-    fn stop(&mut self) -> anyhow::Result<()> {
-        if self.core.is_stopped() {
-            return Ok(());
-        }
-
-        self.core.set_stopped();
-        self.core.set_disconnected();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-        self.abort_pending_tasks();
-        log::info!("Stopped: client_id={}", self.core.client_id);
-        Ok(())
-    }
-
-    fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
-        let account_id = self.core.account_id;
-        let emitter = self.emitter.clone();
-        let is_margin = self.is_margin();
-
-        self.spawn_task("query_account", async move {
-            let account_state = if is_margin {
-                http_client
-                    .request_cfm_account_state(account_id)
-                    .await
-                    .context("failed to request Coinbase CFM account state")?
-            } else {
-                http_client
-                    .request_account_state(account_id)
-                    .await
-                    .context("failed to request Coinbase account state")?
-            };
-            emitter.send_account_state(account_state);
-            Ok(())
-        });
-        Ok(())
-    }
-
-    fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
-        let account_id = self.core.account_id;
-        let emitter = self.emitter.clone();
-        let client_order_id = Some(cmd.client_order_id);
-        let venue_order_id = cmd.venue_order_id;
-
-        self.spawn_task("query_order", async move {
-            match http_client
-                .request_order_status_report(account_id, client_order_id, venue_order_id)
-                .await
-            {
-                Ok(report) => emitter.send_order_status_report(report),
-                Err(e) => log::warn!("Failed to query order: {e}"),
-            }
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn generate_account_state(
-        &self,
-        balances: Vec<AccountBalance>,
-        margins: Vec<MarginBalance>,
-        reported: bool,
-        ts_event: UnixNanos,
-    ) -> anyhow::Result<()> {
-        self.emitter
-            .emit_account_state(balances, margins, reported, ts_event);
-        Ok(())
-    }
-
-    async fn generate_order_status_report(
-        &self,
-        cmd: &GenerateOrderStatusReport,
-    ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let report = self
-            .http_client
-            .request_order_status_report(
-                self.core.account_id,
-                cmd.client_order_id,
-                cmd.venue_order_id,
-            )
-            .await
-            .ok();
-
-        // Filter reports to instruments this client bootstrapped. A Cash
-        // client drops derivatives reports (and vice-versa) so mixed activity
-        // on the same venue account does not poison the engine state
-        // associated with either exec client.
-        Ok(report.filter(|r| self.is_instrument_cached(&r.instrument_id)))
-    }
-
-    async fn generate_order_status_reports(
-        &self,
-        cmd: &GenerateOrderStatusReports,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc).transpose()?;
-        let end = cmd.end.map(unix_nanos_to_utc).transpose()?;
-
-        let mut reports = self
-            .http_client
-            .request_order_status_reports(
-                self.core.account_id,
-                cmd.instrument_id,
-                cmd.open_only,
-                start,
-                end,
-                None,
-            )
-            .await?;
-
-        let before = reports.len();
-        reports.retain(|r| self.is_instrument_cached(&r.instrument_id));
-        if reports.len() != before {
-            let scope = if self.is_margin() {
-                "non-futures"
-            } else {
-                "non-spot"
-            };
-            log::debug!("Filtered {} {scope} order reports", before - reports.len());
-        }
-        Ok(reports)
-    }
-
-    async fn generate_fill_reports(
-        &self,
-        cmd: GenerateFillReports,
-    ) -> anyhow::Result<Vec<FillReport>> {
-        let start = cmd.start.map(unix_nanos_to_utc).transpose()?;
-        let end = cmd.end.map(unix_nanos_to_utc).transpose()?;
-
-        let mut reports = self
-            .http_client
-            .request_fill_reports(
-                self.core.account_id,
-                cmd.instrument_id,
-                cmd.venue_order_id,
-                start,
-                end,
-                None,
-            )
-            .await?;
-
-        let before = reports.len();
-        reports.retain(|r| self.is_instrument_cached(&r.instrument_id));
-        if reports.len() != before {
-            let scope = if self.is_margin() {
-                "non-futures"
-            } else {
-                "non-spot"
-            };
-            log::debug!("Filtered {} {scope} fill reports", before - reports.len());
-        }
-        Ok(reports)
-    }
-
-    async fn generate_position_status_reports(
-        &self,
-        cmd: &GeneratePositionStatusReports,
-    ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        // Coinbase spot has no positions.
-        if !self.is_margin() {
-            return Ok(Vec::new());
-        }
-
-        // Errors propagate (matching `generate_order_status_reports` /
-        // `generate_fill_reports`) so `generate_mass_status` and the live
-        // manager's reconciliation path see venue failures rather than
-        // receive a silently-empty report set.
-        if let Some(instrument_id) = cmd.instrument_id {
-            let report = self
-                .http_client
-                .request_position_status_report(self.core.account_id, instrument_id)
-                .await
-                .with_context(|| format!("failed to request CFM position for {instrument_id}"))?;
-            Ok(report.map(|r| vec![r]).unwrap_or_default())
-        } else {
-            self.http_client
-                .request_position_status_reports(self.core.account_id)
-                .await
-                .context("failed to request CFM positions")
-        }
-    }
-
-    async fn generate_mass_status(
-        &self,
-        lookback_mins: Option<u64>,
-    ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
-
-        let ts_now = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
-
-        let order_cmd = GenerateOrderStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .open_only(false)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let fill_cmd = GenerateFillReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let position_cmd = GeneratePositionStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
-            self.generate_position_status_reports(&position_cmd),
-        )?;
-
-        log::info!("Received {} OrderStatusReports", order_reports.len());
-        log::info!("Received {} FillReports", fill_reports.len());
-        log::info!("Received {} PositionReports", position_reports.len());
-
-        let mut mass_status = ExecutionMassStatus::new(
-            self.core.client_id,
-            self.core.account_id,
-            *COINBASE_VENUE,
-            ts_now,
-            None,
-        );
-
-        mass_status.add_order_reports(order_reports);
-        mass_status.add_fill_reports(fill_reports);
-        mass_status.add_position_reports(position_reports);
-
-        Ok(Some(mass_status))
-    }
-
-    fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
-        if order.is_closed() {
-            log::warn!("Cannot submit closed order {}", order.client_order_id());
-            return Ok(());
-        }
-
-        // The connect-time bootstrap caches only the product family this
-        // client was configured for (Cash -> spot, Margin -> futures). An
-        // instrument outside that family is either not loaded yet or lives on
-        // the other venue scope, so deny instead of forwarding to the venue
-        // where the account type cannot reconcile the order's state.
-        let instrument_id = order.instrument_id();
-        let symbol_key = instrument_id.symbol.as_str();
-        if !self.instruments_cache.contains_key(symbol_key) {
-            let scope = if self.is_margin() {
-                "a Coinbase futures / perpetual product"
-            } else {
-                "a Coinbase spot product"
-            };
-            self.emitter.emit_order_denied(
-                &order,
-                &format!(
-                    "Instrument {} is not {scope} in this client's bootstrap cache",
-                    order.instrument_id()
-                ),
-            );
-            return Ok(());
-        }
-
-        // The user channel does not need a product-wide alias registration:
-        // `order_contexts` (keyed by `client_order_id`) records the
-        // submitted `product_id` and `handle_user_order_update` rewrites the
-        // report's instrument id from there. A product-wide map would
-        // misroute external or canonical-side orders that share the same
-        // wire `product_id`.
-
-        log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-        self.emitter.emit_order_submitted(&order);
-
-        let http_client = self.http_client.clone();
-        let emitter = self.emitter.clone();
-        let order_contexts = Arc::clone(&self.order_contexts);
-        let clock = self.clock;
-        let strategy_id = order.strategy_id();
-        let client_order_id = order.client_order_id();
-        let side = order.order_side();
-        let order_type = order.order_type();
-        let quantity = order.quantity();
-        let time_in_force = order.time_in_force();
-        let price = order.price();
-        let trigger_price = order.trigger_price();
-        let trigger_type = order.trigger_type();
-        let expire_time = order.expire_time();
-        let post_only = order.is_post_only();
-        let is_quote_quantity = order.is_quote_quantity();
-        let reduce_only = order.is_reduce_only();
-
-        // Cache limit/trigger metadata under `client_order_id` synchronously
-        // before the spawn so user-channel updates that race the REST submit
-        // response can still patch their reports. Coinbase's user channel does
-        // not echo `price`, `stop_price`, `trigger_type`, or whether the order
-        // is `post_only`, so without this the engine reconciler would clear
-        // the local price and synthesized fills would lack `LiquiditySide`.
-        {
-            let mut map = self.order_contexts.lock().expect(MUTEX_POISONED);
-            map.insert(
-                client_order_id.to_string(),
-                OrderContext {
-                    price,
-                    trigger_price,
-                    trigger_type,
-                    post_only,
-                    submitted_product_id: Some(instrument_id.symbol.inner()),
-                },
-            );
-        }
-        let (leverage, margin_type) = if self.core.account_type == AccountType::Margin {
-            (
-                self.config.default_leverage,
-                self.config.default_margin_type,
-            )
-        } else {
-            (None, None)
-        };
-        let retail_portfolio_id = self.config.retail_portfolio_id.clone();
-
-        self.spawn_task("submit_order", async move {
-            let result = http_client
-                .submit_order(
-                    client_order_id,
-                    instrument_id,
-                    side,
-                    order_type,
-                    quantity,
-                    time_in_force,
-                    price,
-                    trigger_price,
-                    expire_time,
-                    post_only,
-                    is_quote_quantity,
-                    leverage,
-                    margin_type,
-                    reduce_only,
-                    retail_portfolio_id,
-                )
-                .await;
-
-            match result {
-                Ok(response) => {
-                    if response.success {
-                        let venue_id = response
-                            .success_response
-                            .as_ref()
-                            .map(|s| s.order_id.clone())
-                            .unwrap_or(response.order_id);
-
-                        if venue_id.is_empty() {
-                            log::warn!(
-                                "Submit succeeded but no order_id returned for {client_order_id}"
-                            );
-                        } else {
-                            let venue_order_id = VenueOrderId::new(&venue_id);
-                            let ts_event = clock.get_time_ns();
-                            emitter.emit_order_accepted(&order, venue_order_id, ts_event);
-                        }
-                    } else {
-                        let reason = response.error_response.as_ref().map_or_else(
-                            || response.failure_reason.clone(),
-                            |e| format!("{}: {}", e.error, e.message),
-                        );
-                        // `INVALID_LIMIT_PRICE_POST_ONLY` is Coinbase's reject
-                        // code when a `post_only` order would have crossed
-                        // the spread by the time it reached the matching
-                        // engine. Mark the rejection so strategies can react
-                        // (typically: re-quote at the new TOB).
-                        let due_post_only = reason.contains("INVALID_LIMIT_PRICE_POST_ONLY")
-                            || response.error_response.as_ref().is_some_and(|e| {
-                                e.preview_failure_reason == "PREVIEW_INVALID_LIMIT_PRICE_POSTONLY"
-                                    || e.new_order_failure_reason == "INVALID_LIMIT_PRICE_POST_ONLY"
-                            });
-                        // Order never made it to the venue: drop the cached
-                        // metadata so the map does not grow unbounded with
-                        // dead entries.
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            &format!("submit-order-rejected: {reason}"),
-                            ts_event,
-                            due_post_only,
-                        );
-                    }
-                }
-                Err(e) => {
-                    if is_coinbase_local_submit_failure(&e) {
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            &format!("submit-order-error: {e}"),
-                            ts_event,
-                            false,
-                        );
-                    } else if is_coinbase_explicit_submit_rejection(&e) {
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            &format!("submit-order-rejected: {e}"),
-                            ts_event,
-                            false,
-                        );
-                    } else if is_coinbase_ambiguous_command_failure(&e) {
-                        log::warn!(
-                            "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
-                        );
-                    } else {
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
-                        log::warn!(
-                            "Submit command failed without venue-declared outcome for {client_order_id}: {e}"
-                        );
-                    }
-                    return Err(e.context("submit order failed"));
-                }
-            }
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        let ts_event = self.clock.get_time_ns();
-
-        let Some(venue_order_id) = cmd.venue_order_id else {
-            self.emitter.emit_order_modify_rejected_event(
-                cmd.strategy_id,
-                cmd.instrument_id,
-                cmd.client_order_id,
-                None,
-                "modify-order requires venue_order_id",
-                ts_event,
-            );
-            return Ok(());
-        };
-
-        if cmd.price.is_none() && cmd.quantity.is_none() && cmd.trigger_price.is_none() {
-            self.emitter.emit_order_modify_rejected_event(
-                cmd.strategy_id,
-                cmd.instrument_id,
-                cmd.client_order_id,
-                Some(venue_order_id),
-                "modify-order requires price, quantity, or trigger_price",
-                ts_event,
-            );
-            return Ok(());
-        }
-
-        // Coinbase's `/orders/edit` requires both `price` and `size` to be
-        // present in the request even when only one is changing; omitting
-        // `size` is interpreted as 0 and rejected with `INVALID_EDITED_SIZE` /
-        // `CANNOT_EDIT_TO_BELOW_FILLED_SIZE`. Auto-fill missing fields from
-        // the cached order so strategies can call `modify_order(price=...)`
-        // without having to look up the current quantity themselves.
-        let (auto_price, auto_quantity) = {
-            let cache = self.core.cache();
-            let cached = cache.order(&cmd.client_order_id);
-            let cached_price = cached.as_ref().and_then(|o| o.price());
-            let cached_qty = cached.as_ref().map(|o| o.quantity());
-            (cmd.price.or(cached_price), cmd.quantity.or(cached_qty))
-        };
-
-        let http_client = self.http_client.clone();
-        let emitter = self.emitter.clone();
-        let order_contexts = Arc::clone(&self.order_contexts);
-        let clock = self.clock;
-        let strategy_id = cmd.strategy_id;
-        let instrument_id = cmd.instrument_id;
-        let client_order_id = cmd.client_order_id;
-        let price = auto_price;
-        let quantity = auto_quantity;
-        let trigger_price = cmd.trigger_price;
-
-        self.spawn_task("modify_order", async move {
-            let result = http_client
-                .modify_order(venue_order_id, price, quantity, trigger_price)
-                .await;
-
-            match result {
-                Ok(resp) => {
-                    if resp.success {
-                        // Refresh the submit-time metadata cache so subsequent
-                        // user-channel updates patch with the new price /
-                        // trigger_price (Coinbase user channel does not echo
-                        // these fields, so a stale cache would let the
-                        // reconciler revert the local order to the pre-edit
-                        // values).
-                        let mut map = order_contexts.lock().expect(MUTEX_POISONED);
-                        if let Some(meta) = map.get_mut(client_order_id.as_str()) {
-                            if price.is_some() {
-                                meta.price = price;
-                            }
-
-                            if trigger_price.is_some() {
-                                meta.trigger_price = trigger_price;
-                            }
-                        }
-                    } else {
-                        let reason = resp
-                            .errors
-                            .iter()
-                            .map(|e| {
-                                if e.edit_failure_reason.is_empty() {
-                                    e.preview_failure_reason.clone()
-                                } else {
-                                    e.edit_failure_reason.clone()
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_modify_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            Some(venue_order_id),
-                            &format!("modify-order-rejected: {reason}"),
-                            ts_event,
-                        );
-                    }
-                }
-                Err(e) => {
-                    if is_coinbase_ambiguous_command_failure(&e) {
-                        log::warn!(
-                            "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {e}"
-                        );
-                    } else {
-                        log::warn!(
-                            "Modify command failed without venue-declared outcome for {client_order_id}: {e}"
-                        );
-                    }
-                    return Err(e.context("modify order failed"));
-                }
-            }
-
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        let Some(venue_order_id) = cmd.venue_order_id else {
-            log::warn!(
-                "Cancel command failed local validation for {}: venue_order_id required",
-                cmd.client_order_id
-            );
-            return Ok(());
-        };
-
-        let http_client = self.http_client.clone();
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-        let strategy_id = cmd.strategy_id;
-        let instrument_id = cmd.instrument_id;
-        let client_order_id = cmd.client_order_id;
-
-        self.spawn_task("cancel_order", async move {
-            match http_client.cancel_orders(&[venue_order_id]).await {
-                Ok(resp) => {
-                    if let Some(result) = resp.results.first()
-                        && !result.success
-                    {
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_cancel_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            Some(venue_order_id),
-                            &format!("cancel-order-rejected: {}", result.failure_reason),
-                            ts_event,
-                        );
-                    }
-                }
-                Err(e) => {
-                    if is_coinbase_ambiguous_command_failure(&e) {
-                        log::warn!(
-                            "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
-                        );
-                    } else {
-                        log::warn!(
-                            "Cancel command failed without venue-declared outcome for {client_order_id}: {e}"
-                        );
-                    }
-                    return Err(e.context("cancel order failed"));
-                }
-            }
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
-        let account_id = self.core.account_id;
-        let instrument_id = cmd.instrument_id;
-        let side_filter = cmd.order_side;
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-        let strategy_id = cmd.strategy_id;
-
-        self.spawn_task("cancel_all_orders", async move {
-            // Coinbase's `order_status=OPEN` filter excludes PENDING / QUEUED
-            // orders that were submitted very recently and are still cancelable.
-            // Fetch all reports and filter to any open status locally so a cancel-
-            // all issued right after submission does not leave working orders behind.
-            let reports = http_client
-                .request_order_status_reports(
-                    account_id,
-                    Some(instrument_id),
-                    false,
-                    None,
-                    None,
-                    None,
-                )
-                .await
-                .context("failed to list orders for cancel_all")?;
-
-            // Filter to statuses that are safe to cancel and to the requested
-            // side since Coinbase's batch-cancel endpoint has no side parameter.
-            //
-            // Coinbase's `PENDING` / `QUEUED` / `OPEN` all map to `Accepted`
-            // and are cancelable. We can't use `OrderStatus::is_open()` because
-            // it includes `PendingCancel`, and re-cancelling a `CANCEL_QUEUED`
-            // order risks `CancelRejected` flipping the order back to its prior
-            // working status.
-            let filtered: Vec<(Option<ClientOrderId>, VenueOrderId)> = reports
-                .into_iter()
-                .filter(|r| {
-                    matches!(
-                        r.order_status,
-                        OrderStatus::Accepted
-                            | OrderStatus::Triggered
-                            | OrderStatus::PendingUpdate
-                            | OrderStatus::PartiallyFilled
-                    )
-                })
-                .filter(|r| side_filter == OrderSide::NoOrderSide || r.order_side == side_filter)
-                .map(|r| (r.client_order_id, r.venue_order_id))
-                .collect();
-
-            if filtered.is_empty() {
-                return Ok(());
-            }
-
-            for chunk in filtered.chunks(BATCH_CANCEL_CHUNK) {
-                let venue_ids: Vec<VenueOrderId> = chunk.iter().map(|(_, v)| *v).collect();
-                match http_client.cancel_orders(&venue_ids).await {
-                    Ok(resp) => {
-                        for result in &resp.results {
-                            if result.success {
-                                continue;
-                            }
-                            let matching = chunk
-                                .iter()
-                                .find(|(_, vid)| vid.as_str() == result.order_id);
-                            if let Some((cid_opt, vid)) = matching
-                                && let Some(cid) = cid_opt
-                            {
-                                let ts_event = clock.get_time_ns();
-                                emitter.emit_order_cancel_rejected_event(
-                                    strategy_id,
-                                    instrument_id,
-                                    *cid,
-                                    Some(*vid),
-                                    &format!("cancel-all-rejected: {}", result.failure_reason),
-                                    ts_event,
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if is_coinbase_ambiguous_command_failure(&e) {
-                            log::warn!(
-                                "Ambiguous cancel-all failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
-                                chunk.len()
-                            );
-                        } else {
-                            log::warn!(
-                                "Cancel-all command failed without venue-declared outcome for {} orders on {instrument_id}: {e}",
-                                chunk.len()
-                            );
-                        }
-                    }
-                }
-            }
-            Ok(())
-        });
-
-        Ok(())
-    }
-
-    fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        if cmd.cancels.is_empty() {
-            return Ok(());
-        }
-
-        let http_client = self.http_client.clone();
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-        // Preserve each child cancel's identity for per-order venue failures.
-        let entries: Vec<(
-            StrategyId,
-            InstrumentId,
-            ClientOrderId,
-            Option<VenueOrderId>,
-        )> = cmd
-            .cancels
-            .iter()
-            .map(|c| {
-                (
-                    c.strategy_id,
-                    c.instrument_id,
-                    c.client_order_id,
-                    c.venue_order_id,
-                )
-            })
-            .collect();
-
-        self.spawn_task("batch_cancel_orders", async move {
-            let venue_order_ids: Vec<VenueOrderId> =
-                entries.iter().filter_map(|(_, _, _, v)| *v).collect();
-
-            for (_, _, cid, vid_opt) in &entries {
-                if vid_opt.is_none() {
-                    log::warn!(
-                        "Batch cancel command failed local validation for {cid}: venue_order_id required"
-                    );
-                }
-            }
-
-            for chunk in venue_order_ids.chunks(BATCH_CANCEL_CHUNK) {
-                match http_client.cancel_orders(chunk).await {
-                    Ok(resp) => {
-                        for result in &resp.results {
-                            if !result.success {
-                                let vid = VenueOrderId::new(&result.order_id);
-                                let matching = entries
-                                    .iter()
-                                    .find(|(_, _, _, v)| {
-                                        v.is_some_and(|id| id.as_str() == result.order_id)
-                                    });
-
-                                if let Some((strategy_id, instrument_id, cid, _)) = matching {
-                                    let ts_event = clock.get_time_ns();
-                                    emitter.emit_order_cancel_rejected_event(
-                                        *strategy_id,
-                                        *instrument_id,
-                                        *cid,
-                                        Some(vid),
-                                        &format!(
-                                            "batch-cancel-rejected: {}",
-                                            result.failure_reason
-                                        ),
-                                        ts_event,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if is_coinbase_ambiguous_command_failure(&e) {
-                            log::warn!(
-                                "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
-                                chunk.len()
-                            );
-                        } else {
-                            log::warn!(
-                                "Batch cancel command failed without venue-declared outcome for {} orders: {e}",
-                                chunk.len()
-                            );
-                        }
-                    }
-                }
-            }
-            Ok(())
-        });
-
-        Ok(())
-    }
-}
-
-fn is_coinbase_local_submit_failure(err: &anyhow::Error) -> bool {
-    match coinbase_http_error(err) {
-        None => true,
-        Some(CoinbaseHttpError::Auth(message)) => !message.starts_with("HTTP "),
-        _ => false,
-    }
-}
-
-fn is_coinbase_explicit_submit_rejection(err: &anyhow::Error) -> bool {
-    match coinbase_http_error(err) {
-        Some(CoinbaseHttpError::Auth(message) | CoinbaseHttpError::BadRequest(message)) => {
-            message.starts_with("HTTP ")
-        }
-        Some(CoinbaseHttpError::RateLimit { .. }) => true,
-        _ => false,
-    }
-}
-
-fn is_coinbase_ambiguous_command_failure(err: &anyhow::Error) -> bool {
-    matches!(
-        coinbase_http_error(err),
-        Some(
-            CoinbaseHttpError::Transport(_)
-                | CoinbaseHttpError::Serde(_)
-                | CoinbaseHttpError::Exchange(_)
-                | CoinbaseHttpError::Timeout
-                | CoinbaseHttpError::Decode(_)
-        )
-    ) || matches!(
-        coinbase_http_error(err),
-        Some(CoinbaseHttpError::Http { status, .. }) if *status >= 500
-    )
-}
-
-fn coinbase_http_error(err: &anyhow::Error) -> Option<&CoinbaseHttpError> {
-    err.chain()
-        .find_map(|cause| cause.downcast_ref::<CoinbaseHttpError>())
-}
-
-// Processes a single user-channel order update: emits the status report,
-// synthesizes a FillReport from the cumulative delta, and deduplicates
-// replayed fills by (venue_order_id, trade_id).
-#[allow(clippy::too_many_arguments)]
-async fn handle_user_order_update(
-    carrier: UserOrderUpdate,
-    emitter: &ExecutionEventEmitter,
-    fill_dedup: &Arc<Mutex<FillDedup>>,
-    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
-    order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
-    external_order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
-    http_client: &CoinbaseHttpClient,
-    account_id: AccountId,
-) {
-    // Coinbase's user channel does not echo `price`, `stop_price`,
-    // `trigger_type`, or `post_only`. Resolve an `OrderContext` (cached
-    // from `submit_order` for orders this client placed, or fetched from
-    // REST and cached for external orders) so the report can be patched
-    // before reaching the engine reconciler.
-    let context = resolve_order_context(
-        &carrier.update,
-        carrier.report.order_type,
-        carrier.report.price.is_none(),
-        order_contexts,
-        external_order_contexts,
-        http_client,
-        account_id,
-    )
-    .await;
-
-    let is_terminal = carrier.update.status.is_terminal();
-    let client_order_id = carrier.update.client_order_id.clone();
-    let venue_order_id = carrier.update.order_id.clone();
-
-    process_user_order_update(
-        carrier,
-        context,
-        emitter,
-        fill_dedup,
-        cumulative_state,
-        Some(http_client),
-    );
-
-    // Drop submit-time / enrichment metadata once the order reaches a
-    // terminal state so long-running clients do not accumulate one entry
-    // per order. Mirrors the cumulative-state cleanup in
-    // `process_user_order_update`.
-    if is_terminal {
-        if !client_order_id.is_empty() {
-            order_contexts
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
-        }
-        external_order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(&venue_order_id);
-    }
-}
-
-// Sync portion of the user-channel update handler. Split from
-// `handle_user_order_update` so tests can drive it without a tokio runtime;
-// the only async dependency is REST enrichment in `resolve_order_context`.
-fn process_user_order_update(
-    carrier: UserOrderUpdate,
-    context: Option<OrderContext>,
-    emitter: &ExecutionEventEmitter,
-    fill_dedup: &Arc<Mutex<FillDedup>>,
-    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
-    http_client: Option<&CoinbaseHttpClient>,
-) {
-    let UserOrderUpdate {
-        mut report,
-        update,
-        mut instrument,
-        is_snapshot,
-        ts_event,
-        ts_init,
-    } = carrier;
-
-    let mut fill_liquidity_side = LiquiditySide::NoLiquiditySide;
-    let have_order_contexts = context.is_some();
-    let mut publish_instrument_id: Option<InstrumentId> = None;
-
-    if let Some(meta) = context {
-        if report.price.is_none() && meta.price.is_some() {
-            report.price = meta.price;
-        }
-
-        if report.trigger_price.is_none() && meta.trigger_price.is_some() {
-            report.trigger_price = meta.trigger_price;
-        }
-
-        if report.trigger_type.is_none() && meta.trigger_type.is_some() {
-            report.trigger_type = meta.trigger_type;
-        }
-
-        if meta.post_only {
-            // `post_only` orders are guaranteed `Maker`. Non-post-only
-            // orders cannot be classified from the user channel alone so
-            // they keep `NoLiquiditySide` until the fill is reconciled
-            // against the REST `/orders/historical/fills` endpoint.
-            fill_liquidity_side = LiquiditySide::Maker;
-            // The user channel does not echo `post_only`, so propagate the
-            // cached flag to the OSR to preserve maker-only semantics for
-            // any downstream order reconstruction.
-            report.post_only = true;
-        }
-
-        if let Some(submitted) = meta.submitted_product_id
-            && submitted != update.product_id
-        {
-            let submitted_id = InstrumentId::new(Symbol::new(submitted), *COINBASE_VENUE);
-            report.instrument_id = submitted_id;
-            publish_instrument_id = Some(submitted_id);
-            // Replace the carrier's instrument with the submitted-side one
-            // (looked up from the http client's bootstrapped cache) so the
-            // FillReport's commission currency, price/size precision, and
-            // any other instrument-derived field reflect the actual order's
-            // instrument rather than the canonical wire alias.
-            if let Some(http) = http_client
-                && let Some(submitted_instrument) = http.instruments().get_cloned(&submitted_id)
-            {
-                instrument = submitted_instrument;
-            }
-        }
-    }
-
-    let size_precision = instrument.size_precision();
-
-    let cumulative_qty = if update.cumulative_quantity.is_empty() {
-        Quantity::zero(size_precision)
-    } else {
-        match parse_quantity(&update.cumulative_quantity, size_precision) {
-            Ok(q) => q,
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse cumulative_quantity for order {}: {e}",
-                    update.order_id
-                );
-                return;
-            }
-        }
-    };
-
-    let cumulative_fees = if update.total_fees.is_empty() {
-        Decimal::ZERO
-    } else {
-        match Decimal::from_str(&update.total_fees) {
-            Ok(d) => d,
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse total_fees for order {}: {e}",
-                    update.order_id
-                );
-                return;
-            }
-        }
-    };
-
-    let cumulative_avg = if update.avg_price.is_empty() {
-        Decimal::ZERO
-    } else {
-        match Decimal::from_str(&update.avg_price) {
-            Ok(d) => d,
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse avg_price for order {}: {e}",
-                    update.order_id
-                );
-                return;
-            }
-        }
-    };
-    let order_id = update.order_id.clone();
-
-    let is_terminal = update.status.is_terminal();
-
-    // Snapshot previous state under lock; update immediately to avoid races
-    // between concurrent handler tasks for the same order.
-    let (delta_qty, delta_fees, last_fill_price_decimal, restored_quantity) = {
-        let mut state = cumulative_state.lock().expect(MUTEX_POISONED);
-        let entry = state.entry_or_default(&order_id);
-        let prev_qty = entry
-            .filled_qty
-            .unwrap_or_else(|| Quantity::zero(size_precision));
-        let prev_fees = entry.total_fees;
-        let prev_avg = entry.avg_price;
-
-        // Track the max-observed total quantity. The freshly-built report has
-        // quantity = cum+leaves which is correct for working orders; on
-        // terminal events Coinbase zeroes leaves_quantity, so we use the
-        // stored max instead.
-        let observed_quantity = report.quantity;
-        let stored_quantity = match entry.quantity {
-            Some(q) if q >= observed_quantity => q,
-            _ => observed_quantity,
-        };
-        entry.quantity = Some(stored_quantity);
-
-        // Snapshots restate the cumulative state of pre-existing open orders.
-        // Treat them as the new baseline (so subsequent updates compute correct
-        // deltas) but never synthesize a fill from them.
-        if is_snapshot {
-            entry.filled_qty = Some(cumulative_qty);
-            entry.total_fees = cumulative_fees;
-            entry.avg_price = cumulative_avg;
-
-            if is_terminal {
-                state.remove(&order_id);
-            }
-            (
-                Quantity::zero(size_precision),
-                Decimal::ZERO,
-                Decimal::ZERO,
-                stored_quantity,
-            )
-        } else {
-            let delta_qty = if cumulative_qty > prev_qty {
-                cumulative_qty - prev_qty
-            } else {
-                Quantity::zero(size_precision)
-            };
-            let delta_fees = cumulative_fees - prev_fees;
-
-            // Derive per-fill price from the cumulative notional delta:
-            //   last_px = (avg_now * qty_now - avg_prev * qty_prev) / delta_qty
-            // Falls back to the cumulative avg on the first fill (where
-            // delta_qty equals qty_now and prev_notional is zero).
-            let last_fill_price_decimal = if delta_qty.is_positive() {
-                let now_notional = cumulative_avg * cumulative_qty.as_decimal();
-                let prev_notional = prev_avg * prev_qty.as_decimal();
-                let delta_notional = now_notional - prev_notional;
-                let delta_qty_dec = delta_qty.as_decimal();
-                if delta_qty_dec.is_zero() {
-                    cumulative_avg
-                } else {
-                    delta_notional / delta_qty_dec
-                }
-            } else {
-                Decimal::ZERO
-            };
-
-            entry.filled_qty = Some(cumulative_qty);
-            entry.total_fees = cumulative_fees;
-            entry.avg_price = cumulative_avg;
-
-            if is_terminal {
-                state.remove(&order_id);
-            }
-
-            (
-                delta_qty,
-                delta_fees,
-                last_fill_price_decimal,
-                stored_quantity,
-            )
-        }
-    };
-
-    // Restore the original order quantity on terminal events when the venue's
-    // zeroed leaves_quantity would otherwise collapse the report to filled_qty.
-    if is_terminal && report.quantity < restored_quantity {
-        report.quantity = restored_quantity;
-    }
-
-    // Emit the synthesized FillReport before the OrderStatusReport when there
-    // is one. The engine's reconciler treats an OrderStatusReport with status
-    // `Filled` / `PartiallyFilled` as authoritative for `filled_qty` and will
-    // *infer* a synthetic fill when the local order is behind the report. If
-    // the OrderStatusReport landed first, that inferred fill would race ours
-    // and ours would then be rejected as an overfill.
-    let synthesized_fill = if delta_qty.is_positive()
-        && last_fill_price_decimal.is_sign_positive()
-        && !last_fill_price_decimal.is_zero()
-    {
-        let price_precision = instrument.price_precision();
-        match Price::from_decimal_dp(last_fill_price_decimal, price_precision) {
-            Ok(last_px) => {
-                // Coinbase's user channel reports cumulative state and does
-                // not assign a per-fill trade id, so we synthesize one.
-                // `TradeId` is a 36-char stack string; a full venue UUID
-                // (36 chars) plus the cumulative_qty would overflow. Use the
-                // first 8 chars of the venue UUID (already random hex) as a
-                // stable per-order discriminator.
-                let order_id_short = &update.order_id[..update.order_id.len().min(8)];
-                let trade_id = TradeId::new(format!("{order_id_short}-{cumulative_qty}"));
-                let trade_id_str = trade_id.as_str().to_string();
-
-                let is_new = {
-                    let mut dedup = fill_dedup.lock().expect(MUTEX_POISONED);
-                    dedup.insert((update.order_id.clone(), trade_id_str))
-                };
-
-                if is_new {
-                    let commission_currency = instrument.quote_currency();
-                    match Money::from_decimal(delta_fees, commission_currency) {
-                        Ok(commission) => Some(parse_ws_user_event_to_fill_report(
-                            &update,
-                            delta_qty,
-                            last_px,
-                            commission,
-                            trade_id,
-                            &instrument,
-                            emitter.account_id(),
-                            fill_liquidity_side,
-                            ts_event,
-                            ts_init,
-                        )),
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to build commission Money for order {}: {e}",
-                                update.order_id
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    log::debug!(
-                        "Dropping duplicate fill venue_order_id={}, trade_id={}",
-                        update.order_id,
-                        trade_id,
-                    );
-                    None
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to build Price from derived last_fill={last_fill_price_decimal} at precision {price_precision} for order {}: {e}",
-                    update.order_id
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    if let Some(mut fill_report) = synthesized_fill {
-        if let Some(id) = publish_instrument_id {
-            fill_report.instrument_id = id;
-        }
-        emitter.send_fill_report(fill_report);
-    }
-
-    // OSR emission policy:
-    // - For order types that carry a price (LIMIT / STOP_LIMIT) or trigger
-    //   (STOP_MARKET / *_IF_TOUCHED), the report must include the relevant
-    //   field before reaching the engine reconciler; otherwise the order
-    //   reconstruction path panics with a missing-field error. Patching
-    //   above pulls these from the OrderContext when one is available, but
-    //   if enrichment was needed and unavailable (REST fetch failed for an
-    //   external order) the report is still missing the field and is unsafe
-    //   to emit.
-    // - Snapshots emit only when we have submit-time metadata; the
-    //   user-channel snapshot omits these fields entirely. With metadata,
-    //   the report has been patched above and is safe to emit (this
-    //   preserves reconnect-time partial-fill recovery for orders submitted
-    //   by this process). For unknown orders, the REST mass-status path
-    //   called from `LiveNode` startup is the canonical source.
-    let report_safe_for_type = match report.order_type {
-        OrderType::Limit | OrderType::LimitIfTouched => report.price.is_some(),
-        OrderType::StopLimit => report.price.is_some() && report.trigger_price.is_some(),
-        OrderType::StopMarket | OrderType::MarketIfTouched => report.trigger_price.is_some(),
-        _ => true,
-    };
-    let should_emit = (!is_snapshot || have_order_contexts) && report_safe_for_type;
-    if should_emit {
-        emitter.send_order_status_report(*report);
-    } else if !report_safe_for_type {
-        log::warn!(
-            "Suppressed unsafe OrderStatusReport for {} {}: missing price/trigger after enrichment",
-            report.order_type,
-            update.order_id,
-        );
-    }
-}
-
-// Returns the submit-time / enriched metadata for `update`, fetching from
-// REST and populating the enrichment cache the first time an external order
-// is seen. `order_contexts` (keyed by `client_order_id`) covers orders this
-// client placed; `external_order_contexts` (keyed by venue `order_id`) covers
-// external orders whose `OrderStatusReport` would otherwise be unsafe to
-// reconstruct (LIMIT / STOP_LIMIT with `price = None`).
-async fn resolve_order_context(
-    update: &WsOrderUpdate,
-    order_type: OrderType,
-    report_price_missing: bool,
-    order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
-    external_order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
-    http_client: &CoinbaseHttpClient,
-    account_id: AccountId,
-) -> Option<OrderContext> {
-    if !update.client_order_id.is_empty() {
-        let map = order_contexts.lock().expect(MUTEX_POISONED);
-        if let Some(meta) = map.get(&update.client_order_id) {
-            return Some(meta.clone());
-        }
-    }
-
-    if let Some(meta) = external_order_contexts
-        .lock()
-        .expect(MUTEX_POISONED)
-        .get(&update.order_id)
-    {
-        return Some(meta.clone());
-    }
-
-    let needs_enrichment = report_price_missing
-        && matches!(
-            order_type,
-            OrderType::Limit
-                | OrderType::StopLimit
-                | OrderType::LimitIfTouched
-                | OrderType::StopMarket
-                | OrderType::MarketIfTouched
-        );
-
-    if !needs_enrichment {
-        return None;
-    }
-
-    let venue_order_id = VenueOrderId::new(update.order_id.as_str());
-    match http_client
-        .request_order_status_report(account_id, None, Some(venue_order_id))
-        .await
-    {
-        Ok(rest_report) => {
-            let post_only_from_rest = matches!(order_type, OrderType::Limit | OrderType::StopLimit)
-                && rest_report.post_only;
-            let meta = OrderContext {
-                price: rest_report.price,
-                trigger_price: rest_report.trigger_price,
-                trigger_type: rest_report.trigger_type,
-                post_only: post_only_from_rest,
-                submitted_product_id: None,
-            };
-            external_order_contexts
-                .lock()
-                .expect(MUTEX_POISONED)
-                .insert(update.order_id.clone(), meta.clone());
-            Some(meta)
-        }
-        Err(e) => {
-            log::warn!(
-                "Failed to enrich external order {} via REST: {e}",
-                update.order_id
-            );
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_model::{
         enums::AccountType,
+        events::OrderEventAny,
         identifiers::{Symbol, TraderId},
         instruments::CurrencyPair,
         types::Currency,
@@ -2056,9 +2178,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_http_auth_failure_classification() {
-        let err = anyhow::Error::new(CoinbaseHttpError::auth("HTTP 401: authentication failed"))
-            .context("failed to submit order");
+    #[case(401)]
+    #[case(403)]
+    fn test_submit_http_auth_failure_classification(#[case] status: u16) {
+        let err = anyhow::Error::new(CoinbaseHttpError::auth(format!(
+            "HTTP {status}: authentication failed"
+        )))
+        .context("failed to submit order");
 
         assert!(!is_coinbase_local_submit_failure(&err));
         assert!(is_coinbase_explicit_submit_rejection(&err));
@@ -2071,8 +2197,152 @@ mod tests {
             .context("failed to submit order");
 
         assert!(!is_coinbase_local_submit_failure(&err));
-        assert!(is_coinbase_explicit_submit_rejection(&err));
+        assert!(!is_coinbase_explicit_submit_rejection(&err));
+        assert!(is_coinbase_ambiguous_submit_failure(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
+    }
+
+    #[tokio::test]
+    async fn test_rate_limited_submit_retains_context_until_user_update() {
+        let (emitter, mut rx) = make_emitter();
+        let (dedup, state) = make_dedup_state_pair();
+        let order_contexts = Arc::new(Mutex::new(AHashMap::new()));
+        let external_order_contexts = Arc::new(Mutex::new(AHashMap::new()));
+        let context = OrderContext {
+            price: Some(Price::from("100.00")),
+            trigger_price: Some(Price::from("99.00")),
+            trigger_type: Some(TriggerType::LastPrice),
+            post_only: true,
+            submitted_product_id: Some(Ustr::from("BTC-USDC")),
+        };
+        order_contexts
+            .lock()
+            .insert("client-1".to_string(), context.clone());
+        let err = anyhow::Error::new(CoinbaseHttpError::rate_limit(Some(1_000)))
+            .context("failed to submit order");
+
+        handle_coinbase_submit_failure(
+            &err,
+            &order_contexts,
+            &emitter,
+            StrategyId::from("S-001"),
+            InstrumentId::from("BTC-USD.COINBASE"),
+            ClientOrderId::from("client-1"),
+            UnixNanos::default(),
+        );
+
+        assert!(rx.try_recv().is_err());
+        {
+            let map = order_contexts.lock();
+            let retained = map.get("client-1").expect("submit context retained");
+            assert_eq!(retained.price, context.price);
+            assert_eq!(retained.trigger_price, context.trigger_price);
+            assert_eq!(retained.trigger_type, context.trigger_type);
+            assert_eq!(retained.post_only, context.post_only);
+            assert_eq!(retained.submitted_product_id, context.submitted_product_id);
+        }
+
+        let mut update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
+        update.order_type = CbType::StopLimit;
+        handle_user_order_update(
+            make_carrier(update),
+            &emitter,
+            &dedup,
+            &state,
+            &order_contexts,
+            &external_order_contexts,
+            &CoinbaseHttpClient::default(),
+            AccountId::new("COINBASE-001"),
+        )
+        .await;
+
+        assert!(order_contexts.lock().is_empty());
+        let (orders, fills) = drain_all_reports(&mut rx);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(
+            orders[0].client_order_id,
+            Some(ClientOrderId::from("client-1"))
+        );
+        assert_eq!(
+            orders[0].instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert_eq!(orders[0].order_type, OrderType::StopLimit);
+        assert_eq!(orders[0].order_status, OrderStatus::Filled);
+        assert_eq!(orders[0].price, Some(Price::from("100.00")));
+        assert_eq!(orders[0].trigger_price, Some(Price::from("99.00")));
+        assert_eq!(orders[0].trigger_type, Some(TriggerType::LastPrice));
+        assert!(orders[0].post_only);
+        assert_eq!(fills.len(), 1);
+        assert_eq!(
+            fills[0].client_order_id,
+            Some(ClientOrderId::from("client-1"))
+        );
+        assert_eq!(
+            fills[0].instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert_eq!(fills[0].liquidity_side, LiquiditySide::Maker);
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(400))]
+    #[case(Some(401))]
+    #[case(Some(403))]
+    fn test_definitive_submit_failure_rejects_and_removes_context(#[case] status: Option<u16>) {
+        let (emitter, mut rx) = make_emitter();
+        let order_contexts = Mutex::new(AHashMap::from_iter([(
+            "client-rejected".to_string(),
+            make_limit_context(),
+        )]));
+        let (err, reason) = match status {
+            None => (
+                anyhow::anyhow!("Unsupported Coinbase order configuration"),
+                "submit-order-error: Unsupported Coinbase order configuration".to_string(),
+            ),
+            Some(400) => (
+                anyhow::Error::new(CoinbaseHttpError::bad_request("HTTP 400: refused")),
+                "submit-order-rejected: bad request: HTTP 400: refused".to_string(),
+            ),
+            Some(status @ (401 | 403)) => (
+                anyhow::Error::new(CoinbaseHttpError::auth(format!("HTTP {status}: refused"))),
+                format!("submit-order-rejected: auth error: HTTP {status}: refused"),
+            ),
+            Some(status) => panic!("unsupported status {status}"),
+        };
+
+        handle_coinbase_submit_failure(
+            &err,
+            &order_contexts,
+            &emitter,
+            StrategyId::from("S-REJECT"),
+            InstrumentId::from("BTC-USD.COINBASE"),
+            ClientOrderId::from("client-rejected"),
+            UnixNanos::from(42_u64),
+        );
+
+        assert!(order_contexts.lock().is_empty());
+        let event = rx.try_recv().expect("order rejection emitted");
+        let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+            panic!("expected OrderRejected event, was {event:?}");
+        };
+        assert_eq!(rejected.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(rejected.strategy_id, StrategyId::from("S-REJECT"));
+        assert_eq!(
+            rejected.instrument_id,
+            InstrumentId::from("BTC-USD.COINBASE")
+        );
+        assert_eq!(
+            rejected.client_order_id,
+            ClientOrderId::from("client-rejected")
+        );
+        assert_eq!(rejected.account_id, AccountId::from("COINBASE-001"));
+        assert_eq!(rejected.reason, reason);
+        assert_eq!(rejected.ts_event, UnixNanos::from(42_u64));
+        assert!(!rejected.reconciliation);
+        assert!(!rejected.due_post_only);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -2108,7 +2378,6 @@ mod tests {
         let mut dedup = FillDedup::new(2);
         assert!(dedup.insert(("v".to_string(), "t1".to_string())));
         assert!(dedup.insert(("v".to_string(), "t2".to_string())));
-        // Insert a third; oldest (t1) should be evicted so re-insertion succeeds.
         assert!(dedup.insert(("v".to_string(), "t3".to_string())));
         assert!(dedup.insert(("v".to_string(), "t1".to_string())));
     }
@@ -2118,7 +2387,6 @@ mod tests {
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("a");
         state.entry_or_default("b");
-        // Capacity reached; inserting a third evicts "a"
         state.entry_or_default("c");
         assert_eq!(state.len(), 2);
         assert!(state.map.contains_key("b"));
@@ -2132,7 +2400,6 @@ mod tests {
         state.entry_or_default("a");
         state.entry_or_default("b");
         state.remove("a");
-        // After remove, the next insert should fit without evicting "b"
         state.entry_or_default("c");
         assert_eq!(state.len(), 2);
         assert!(state.map.contains_key("b"));
@@ -2141,9 +2408,6 @@ mod tests {
 
     #[rstest]
     fn test_cumulative_state_remove_and_reinsert_does_not_evict_live_state() {
-        // Codex repro: remove() must purge stale deque slots so a later
-        // re-insert of the same key cannot have the eviction loop pop the
-        // stale slot and remove the now-live entry.
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("a");
         state.remove("a");
@@ -2164,9 +2428,6 @@ mod tests {
 
     #[rstest]
     fn test_cumulative_state_hit_refreshes_lru_recency() {
-        // A repeat access to an existing key must move it to the back of the
-        // eviction queue so a hot order receiving many updates is not evicted
-        // by churn on other orders.
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("a");
         state.entry_or_default("b");
@@ -2190,7 +2451,7 @@ mod tests {
         // (compacted) so memory does not grow without bound under high churn.
         let mut state = CumulativeStateMap::with_capacity(2);
         state.entry_or_default("live");
-        // Churn far beyond 2*capacity to force the deque-compaction path.
+
         for i in 0..50 {
             let key = format!("t{i}");
             state.entry_or_default(&key);
@@ -2231,32 +2492,22 @@ mod tests {
 
     fn test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("BTC-USD"),
-            Currency::get_or_create_crypto("BTC"),
-            Currency::get_or_create_crypto("USD"),
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            Some(Quantity::from("0.00000001")),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("BTC-USD"))
+                .base_currency(Currency::get_or_create_crypto("BTC"))
+                .quote_currency(Currency::get_or_create_crypto("USD"))
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .min_quantity(Quantity::from("0.00000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn make_emitter() -> (
@@ -2402,7 +2653,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // Open with no fills yet.
         let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
         process_user_order_update(
             make_carrier(update),
@@ -2413,7 +2663,6 @@ mod tests {
             None,
         );
 
-        // Status report emitted, no fill report.
         let mut got_status = false;
         let mut got_fill = false;
 
@@ -2436,25 +2685,20 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // First partial: 0.5 @ 100, total_fees=0.05.
         let update_1 = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
         process_user_order_update(make_carrier(update_1), None, &emitter, &dedup, &state, None);
 
-        // Second partial: cumulative 1.0 @ 110, total_fees=0.15.
-        // delta_qty = 0.5; per_fill_px = (110*1.0 - 100*0.5) / 0.5 = 120.
-        // delta_fees = 0.10.
+        // per_fill_px = (110*1.0 - 100*0.5) / 0.5 = 120
         let update_2 = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
         process_user_order_update(make_carrier(update_2), None, &emitter, &dedup, &state, None);
 
         let fills = drain_fill_reports(&mut rx);
         assert_eq!(fills.len(), 2);
 
-        // First synthesized fill mirrors the first partial.
         assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
         assert_eq!(fills[0].last_px, Price::from("100.00"));
         assert_eq!(fills[0].commission.as_decimal().to_string(), "0.05");
 
-        // Second synthesized fill is per-fill price (120), not cumulative avg (110).
         assert_eq!(fills[1].last_qty, Quantity::from("0.50000000"));
         assert_eq!(fills[1].last_px, Price::from("120.00"));
         assert_eq!(fills[1].commission.as_decimal().to_string(), "0.10");
@@ -2482,7 +2726,7 @@ mod tests {
         // the same cumulative=0.5 snapshot. The fill_dedup must drop the
         // synthesized fill because the trade_id matches the prior emission.
         {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             s.clear();
         }
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
@@ -2514,10 +2758,9 @@ mod tests {
         let update = make_user_order_update("1.0", "0", "100.00", "0.10", CbStatus::Filled);
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
-        // Drain emitted events.
         let _ = drain_fill_reports(&mut rx);
 
-        let s = state.lock().unwrap();
+        let s = state.lock();
         assert!(
             s.get("venue-1").is_none(),
             "terminal status should remove cumulative state entry"
@@ -2532,7 +2775,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // cumulative_quantity > 0 but avg_price = 0 (defensive: should not emit fill).
         let update = make_user_order_update("0.5", "0.5", "0", "0", CbStatus::Open);
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
@@ -2572,7 +2814,7 @@ mod tests {
 
         // The snapshot must seed cumulative_state so that the next live update
         // computes a correct delta.
-        let s = state.lock().unwrap();
+        let s = state.lock();
         let entry = s.get("venue-1").expect("snapshot should seed state");
         assert_eq!(entry.filled_qty.unwrap(), Quantity::from("0.50000000"));
     }
@@ -2585,7 +2827,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // Cold-start snapshot at cumulative=0.5.
         let snap = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
         process_user_order_update(
             make_carrier_with_kind(snap, true),
@@ -2596,8 +2837,6 @@ mod tests {
             None,
         );
 
-        // Subsequent live update at cumulative=1.0 should emit a single fill
-        // for the 0.5 delta only, not the full cumulative.
         let live = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
         process_user_order_update(make_carrier(live), None, &emitter, &dedup, &state, None);
 
@@ -2606,7 +2845,6 @@ mod tests {
         assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
         // Per-fill price derived from notional delta: (110*1.0 - 100*0.5) / 0.5 = 120.
         assert_eq!(fills[0].last_px, Price::from("120.00"));
-        // delta_fees = 0.10.
         assert_eq!(fills[0].commission.as_decimal().to_string(), "0.10");
     }
 
@@ -2620,7 +2858,6 @@ mod tests {
             CUMULATIVE_STATE_CAPACITY,
         )));
 
-        // Live partial: cumulative=0, leaves=1.0 (full size 1.0 working).
         let working = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
         process_user_order_update(
             make_carrier(working),
@@ -2630,7 +2867,7 @@ mod tests {
             &state,
             None,
         );
-        // Drain the open report.
+
         while rx.try_recv().is_ok() {}
 
         // Cancellation: venue zeroes leaves_quantity. cum+leaves would be 0,

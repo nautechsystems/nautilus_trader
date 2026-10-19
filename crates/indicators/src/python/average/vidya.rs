@@ -23,21 +23,28 @@ use pyo3::prelude::*;
 use crate::{
     average::{MovingAverageType, vidya::VariableIndexDynamicAverage},
     indicator::{Indicator, MovingAverage},
+    python::float_precision,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl VariableIndexDynamicAverage {
-    /// Creates a new `VariableIndexDynamicAverage` instance.
+    /// Variable index dynamic average.
     #[new]
-    #[pyo3(signature = (period, price_type=None, cmo_ma_type=None))]
-    #[must_use]
+    #[pyo3(signature = (period, price_type=None, cmo_ma_type=None, cmo_period=None))]
     pub fn py_new(
         period: usize,
         price_type: Option<PriceType>,
         cmo_ma_type: Option<MovingAverageType>,
-    ) -> Self {
-        Self::new(period, price_type, cmo_ma_type)
+        cmo_period: Option<usize>,
+    ) -> PyResult<Self> {
+        Self::new_checked(
+            period,
+            cmo_period.unwrap_or(period),
+            price_type,
+            cmo_ma_type,
+        )
+        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -57,6 +64,12 @@ impl VariableIndexDynamicAverage {
     #[pyo3(name = "period")]
     const fn py_period(&self) -> usize {
         self.period
+    }
+
+    #[getter]
+    #[pyo3(name = "cmo_period")]
+    const fn py_cmo_period(&self) -> usize {
+        self.cmo_period
     }
 
     #[getter]
@@ -103,17 +116,22 @@ impl VariableIndexDynamicAverage {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        float_precision::check_quote(quote)?;
         self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) -> PyResult<()> {
+        float_precision::check_trade(trade)?;
         self.handle_trade(trade);
+        Ok(())
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        float_precision::check_bar(bar)?;
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]

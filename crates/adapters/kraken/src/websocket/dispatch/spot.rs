@@ -35,6 +35,7 @@ use nautilus_model::{
     types::Quantity,
 };
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use super::{
     OrderIdentity, WsDispatchState, ensure_accepted_emitted, fill_report_to_order_filled,
@@ -125,7 +126,7 @@ fn execution_inner(
         return;
     };
 
-    // Mirror the existing behaviour: cache the order quantity by truncated cli
+    // Mirror the existing behavior: cache the order quantity by truncated cli
     // ord id so the parser can fall back to it for quote-quantity orders.
     let cached_qty = exec
         .cl_ord_id
@@ -323,16 +324,12 @@ fn status_tracked(
             // The fill itself is emitted from the trade-side of dispatch via
             // fill_tracked; nothing to do here.
         }
-        OrderStatus::Filled
-            // Terminal-fill marker. If the same execution carries fill data
-            // (`exec_id` is present) the fill side runs next and is
-            // responsible for cumulative tracking + cleanup; only do the
-            // cleanup here when this is a status-only Filled marker without
-            // an accompanying fill payload.
-            if !has_fill => {
-                state.insert_filled(client_order_id);
-                state.cleanup_terminal(&client_order_id);
-            }
+
+        // Fill dispatch handles cleanup when the report includes a fill
+        OrderStatus::Filled if !has_fill => {
+            state.insert_filled(client_order_id);
+            state.cleanup_terminal(&client_order_id);
+        }
         OrderStatus::Canceled => {
             ensure_accepted_emitted(
                 client_order_id,
@@ -355,6 +352,7 @@ fn status_tracked(
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                report.cancel_reason.as_deref().map(Ustr::from),
             );
             emitter.send_order_event(OrderEventAny::Canceled(canceled));
             state.cleanup_terminal(&client_order_id);

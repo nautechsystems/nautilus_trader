@@ -33,14 +33,12 @@ Examples include listed BTC or ETH option combos on crypto derivatives venues.
 | `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
 | `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                     |
 | `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`             | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -48,23 +46,24 @@ Examples include listed BTC or ETH option combos on crypto derivatives venues.
   `OptionSpread`.
 - The venue publishes the spread as a single tradable instrument.
 - The strategy can be linear, inverse, or quanto, depending on the currency set.
+- Spread prices can be zero or negative, and the `RiskEngine` accepts non-positive prices
+  for this instrument class.
 - Store venue-specific leg details in `info` when the adapter provides them.
 
 ## Example
 
 ```rust tab="Rust"
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::CryptoOptionSpread,
     types::{Currency, Price, Quantity},
 };
-use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-let activation = Utc.with_ymd_and_hms(2026, 5, 12, 0, 0, 0).unwrap();
-let expiration = Utc.with_ymd_and_hms(2026, 5, 19, 8, 0, 0).unwrap();
+let activation: Timestamp = "2026-05-12T00:00:00Z".parse().unwrap();
+let expiration: Timestamp = "2026-05-19T08:00:00Z".parse().unwrap();
 
 let btc_spread = CryptoOptionSpread::builder()
     .instrument_id(InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"))
@@ -74,16 +73,14 @@ let btc_spread = CryptoOptionSpread::builder()
     .settlement_currency(Currency::from("BTC"))
     .is_inverse(false)
     .strategy_type(Ustr::from("CS"))
-    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
-    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .activation_ns(UnixNanos::from(activation))
+    .expiration_ns(UnixNanos::from(expiration))
     .price_precision(4)
     .size_precision(1)
     .price_increment(Price::from("0.0001"))
     .size_increment(Quantity::from("0.1"))
     .multiplier(Quantity::from("1"))
     .min_quantity(Quantity::from("0.1"))
-    .maker_fee(dec!(0.0003))
-    .taker_fee(dec!(0.0003))
     .ts_event(UnixNanos::default())
     .ts_init(UnixNanos::default())
     .build()
@@ -91,8 +88,6 @@ let btc_spread = CryptoOptionSpread::builder()
 ```
 
 ```python tab="Python"
-from decimal import Decimal
-
 import pandas as pd
 
 from nautilus_trader.model import CryptoOptionSpread
@@ -120,8 +115,6 @@ btc_spread = CryptoOptionSpread(
     price_increment=Price.from_str("0.0001"),
     size_increment=Quantity.from_str("0.1"),
     min_quantity=Quantity.from_str("0.1"),
-    maker_fee=Decimal("0.0003"),
-    taker_fee=Decimal("0.0003"),
     ts_event=0,
     ts_init=0,
 )
@@ -129,7 +122,7 @@ btc_spread = CryptoOptionSpread(
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoOptionSpread` instruments include:
+**Adapters that create or consume `CryptoOptionSpread` instruments include**:
 
 - [Deribit](../../integrations/deribit.md) for crypto option combos.
 - [OKX](../../integrations/okx.md) for crypto option spread markets.

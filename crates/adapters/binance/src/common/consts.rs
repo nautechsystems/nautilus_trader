@@ -15,7 +15,7 @@
 
 //! Binance venue constants and API endpoints.
 
-use std::{num::NonZeroU32, sync::LazyLock};
+use std::{num::NonZeroU32, sync::LazyLock, time::Duration};
 
 use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::ratelimiter::quota::Quota;
@@ -55,6 +55,12 @@ pub const BINANCE_FUTURES_USD_HTTP_URL: &str = "https://fapi.binance.com";
 /// Binance COIN-M Futures API base URL (live exchange).
 pub const BINANCE_FUTURES_COIN_HTTP_URL: &str = "https://dapi.binance.com";
 
+/// Default WebSocket heartbeat interval in seconds.
+///
+/// Binance caps ping/pong frames at 5 per second, so this sits well inside the limit while keeping
+/// the derived liveness window tight.
+pub const BINANCE_WS_HEARTBEAT_SECS: u64 = 20;
+
 /// Binance European Options API base URL (live exchange).
 pub const BINANCE_OPTIONS_HTTP_URL: &str = "https://eapi.binance.com";
 
@@ -65,7 +71,7 @@ pub const BINANCE_OPTIONS_TESTNET_HTTP_URL: &str = "https://testnet.binancefutur
 pub const BINANCE_SPOT_TESTNET_HTTP_URL: &str = "https://testnet.binance.vision";
 
 /// Binance USD-M Futures API base URL (testnet).
-pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://demo-fapi.binance.com";
+pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
 
 /// Binance COIN-M Futures API base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
@@ -154,6 +160,9 @@ pub const BINANCE_FUTURES_COIN_TESTNET_WS_URL: &str = "wss://dstream.binancefutu
 
 /// HTTP header name for the Binance API key.
 pub const BINANCE_API_KEY_HEADER: &str = "X-MBX-APIKEY";
+
+/// HTTP response header carrying the venue's minimum retry delay on HTTP 429 and 418 responses.
+pub const BINANCE_RETRY_AFTER_HEADER: &str = "Retry-After";
 
 /// Binance Spot API version path.
 pub const BINANCE_SPOT_API_PATH: &str = "/api/v3";
@@ -283,12 +292,16 @@ pub const BINANCE_EAPI_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
     },
 ];
 
-/// WebSocket subscription rate limit: 5 messages per second.
+/// WebSocket subscription rate limit: one message per 300 ms with no burst.
 ///
-/// Binance limits incoming WebSocket messages (subscribe/unsubscribe) to 5 per second.
-pub static BINANCE_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
-    Quota::per_second(NonZeroU32::new(5).expect("non-zero")).expect("valid constant")
-});
+/// Binance limits incoming WebSocket messages (subscribe/unsubscribe) to 5 per second and
+/// closes the connection with code 1008 ("Too many requests") when that is exceeded. A
+/// `Quota::per_second(5)` token bucket allows a burst of 5 followed by one refill every
+/// 200 ms, so up to 9 messages can land within the first rolling second and trip the
+/// limit. A fixed 300 ms period (about 3.3 messages per second) spaces every message
+/// evenly and stays under the venue limit with headroom.
+pub static BINANCE_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> =
+    LazyLock::new(|| Quota::with_period(Duration::from_millis(300)).expect("valid constant"));
 
 /// WebSocket connection rate limit: 1 per second (conservative).
 ///
@@ -359,5 +372,12 @@ mod tests {
     #[case(BINANCE_SPOT_SBE_WS_API_DEMO_URL)]
     fn test_spot_sbe_ws_api_urls_use_current_schema(#[case] url: &str) {
         assert!(url.ends_with("sbeSchemaId=3&sbeSchemaVersion=5"));
+    }
+
+    #[rstest]
+    fn test_ws_subscription_quota_paces_one_message_per_period() {
+        let quota = *BINANCE_WS_SUBSCRIPTION_QUOTA;
+        assert_eq!(quota.burst_size().get(), 1);
+        assert_eq!(quota.replenish_interval(), Duration::from_millis(300));
     }
 }

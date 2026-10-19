@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test sizing behavior.
+"""
 
 from decimal import Decimal
 
@@ -34,13 +37,19 @@ EQUITY = Money.from_str("1000000 USD")
 RISK = Decimal("0.001")
 
 
-def test_position_sizer_exposes_instrument():
+def test_position_sizer_exposes_instrument() -> None:
+    """
+    Test position sizer exposes instrument.
+    """
     sizer = PositionSizer(GBPUSD)
 
     assert sizer.instrument is GBPUSD
 
 
-def test_position_sizer_updates_matching_instrument():
+def test_position_sizer_updates_matching_instrument() -> None:
+    """
+    Test position sizer updates matching instrument.
+    """
     replacement = TestInstrumentProvider.gbpusd_sim()
     sizer = PositionSizer(GBPUSD)
 
@@ -49,7 +58,10 @@ def test_position_sizer_updates_matching_instrument():
     assert sizer.instrument is replacement
 
 
-def test_position_sizer_rejects_mismatched_instrument_update():
+def test_position_sizer_rejects_mismatched_instrument_update() -> None:
+    """
+    Test position sizer rejects mismatched instrument update.
+    """
     sizer = PositionSizer(GBPUSD)
 
     with pytest.raises(ValueError, match=r"instrument\.id"):
@@ -58,7 +70,10 @@ def test_position_sizer_rejects_mismatched_instrument_update():
     assert sizer.instrument is GBPUSD
 
 
-def test_position_sizer_rejects_invalid_instrument_update():
+def test_position_sizer_rejects_invalid_instrument_update() -> None:
+    """
+    Test position sizer rejects invalid instrument update.
+    """
     sizer = PositionSizer(GBPUSD)
 
     with pytest.raises(TypeError, match="must be an `Instrument`"):
@@ -69,19 +84,28 @@ def test_position_sizer_rejects_invalid_instrument_update():
 
 @pytest.mark.parametrize("sizer_type", [PositionSizer, FixedRiskSizer])
 @pytest.mark.parametrize("instrument", [None, "GBP/USD.SIM", 1])
-def test_sizer_rejects_invalid_instrument(sizer_type, instrument):
+def test_sizer_rejects_invalid_instrument(sizer_type: object, instrument: object) -> None:
+    """
+    Test sizer rejects invalid instrument.
+    """
     with pytest.raises(TypeError, match="must be an `Instrument`"):
         sizer_type(instrument)
 
 
-def test_position_sizer_calculate_is_abstract():
+def test_position_sizer_calculate_is_abstract() -> None:
+    """
+    Test position sizer calculate is abstract.
+    """
     sizer = PositionSizer(GBPUSD)
 
     with pytest.raises(NotImplementedError, match="subclasses must implement"):
         sizer.calculate(ENTRY, STOP_LOSS, EQUITY, RISK)
 
 
-def test_fixed_risk_sizer_inherits_position_sizer():
+def test_fixed_risk_sizer_inherits_position_sizer() -> None:
+    """
+    Test fixed risk sizer inherits position sizer.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     assert isinstance(sizer, PositionSizer)
@@ -96,7 +120,15 @@ def test_fixed_risk_sizer_inherits_position_sizer():
         (ENTRY, ENTRY, EQUITY, Decimal(1)),
     ],
 )
-def test_calculate_returns_zero_without_riskable_size(entry, stop_loss, equity, exchange_rate):
+def test_calculate_returns_zero_without_riskable_size(
+    entry: object,
+    stop_loss: object,
+    equity: object,
+    exchange_rate: object,
+) -> None:
+    """
+    Test calculate returns zero without riskable size.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     result = sizer.calculate(
@@ -110,7 +142,10 @@ def test_calculate_returns_zero_without_riskable_size(entry, stop_loss, equity, 
     assert result == Quantity.zero()
 
 
-def test_calculate_uses_decimal_defaults():
+def test_calculate_uses_decimal_defaults() -> None:
+    """
+    Test calculate uses decimal defaults.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     result = sizer.calculate(
@@ -123,7 +158,10 @@ def test_calculate_uses_decimal_defaults():
     assert result == Quantity.from_int(1_000_000)
 
 
-def test_calculate_accepts_zero_unit_batch_size():
+def test_calculate_accepts_zero_unit_batch_size() -> None:
+    """
+    Test calculate accepts zero unit batch size.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     result = sizer.calculate(
@@ -137,7 +175,10 @@ def test_calculate_accepts_zero_unit_batch_size():
     assert result == Quantity.from_int(1_000_000)
 
 
-def test_calculate_rejects_positive_size_rounded_to_zero():
+def test_calculate_rejects_positive_size_rounded_to_zero() -> None:
+    """
+    Test calculate rejects positive size rounded to zero.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     with pytest.raises(ValueError, match="value rounded to zero for quantity"):
@@ -150,7 +191,10 @@ def test_calculate_rejects_positive_size_rounded_to_zero():
         )
 
 
-def test_calculate_applies_commission():
+def test_calculate_applies_commission() -> None:
+    """
+    Test calculate applies commission.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     result = sizer.calculate(
@@ -164,7 +208,10 @@ def test_calculate_applies_commission():
     assert result == Quantity.from_int(999_600)
 
 
-def test_calculate_applies_hard_limit():
+def test_calculate_applies_hard_limit() -> None:
+    """
+    Test calculate applies hard limit.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     result = sizer.calculate(
@@ -179,7 +226,10 @@ def test_calculate_applies_hard_limit():
     assert result == Quantity.from_int(500_000)
 
 
-def test_calculate_batches_multiple_units():
+def test_calculate_batches_multiple_units() -> None:
+    """
+    Test calculate batches multiple units.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     result = sizer.calculate(
@@ -208,7 +258,14 @@ def test_calculate_batches_multiple_units():
         ("units", -1, "units"),
     ],
 )
-def test_calculate_rejects_invalid_values(parameter, value, message):
+def test_calculate_rejects_invalid_values(
+    parameter: object,
+    value: object,
+    message: object,
+) -> None:
+    """
+    Test calculate rejects invalid values.
+    """
     sizer = FixedRiskSizer(GBPUSD)
     arguments = {
         "entry": ENTRY,
@@ -233,7 +290,10 @@ def test_calculate_rejects_invalid_values(parameter, value, message):
     ],
 )
 @pytest.mark.parametrize("value", ["0.001", 1, 0.001, True])
-def test_calculate_rejects_non_decimal_numeric_parameters(parameter, value):
+def test_calculate_rejects_non_decimal_numeric_parameters(parameter: object, value: object) -> None:
+    """
+    Test calculate rejects non decimal numeric parameters.
+    """
     sizer = FixedRiskSizer(GBPUSD)
     arguments = {
         "entry": ENTRY,
@@ -251,7 +311,10 @@ def test_calculate_rejects_non_decimal_numeric_parameters(parameter, value):
     "parameter",
     ["risk", "commission_rate", "exchange_rate", "unit_batch_size"],
 )
-def test_calculate_rejects_none_for_required_decimal_parameters(parameter):
+def test_calculate_rejects_none_for_required_decimal_parameters(parameter: object) -> None:
+    """
+    Test calculate rejects none for required decimal parameters.
+    """
     sizer = FixedRiskSizer(GBPUSD)
     arguments = {
         "entry": ENTRY,
@@ -274,10 +337,13 @@ def test_calculate_rejects_none_for_required_decimal_parameters(parameter):
     ],
 )
 def test_calculate_returns_value_error_on_decimal_overflow(
-    risk,
-    commission_rate,
-    exchange_rate,
-):
+    risk: object,
+    commission_rate: object,
+    exchange_rate: object,
+) -> None:
+    """
+    Test calculate returns value error on decimal overflow.
+    """
     sizer = FixedRiskSizer(GBPUSD)
 
     with pytest.raises(

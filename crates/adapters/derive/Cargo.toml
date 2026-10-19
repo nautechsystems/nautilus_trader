@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-derive"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -47,6 +46,13 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+simulation = [
+  "dep:madsim",
+  "nautilus-common/simulation",
+  "nautilus-core/simulation",
+  "nautilus-live/simulation",
+  "nautilus-network/simulation",
+]
 
 [package.metadata]
 cargo-fuzz = true
@@ -61,20 +67,22 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true }
+alloy = { workspace = true, features = ["sol-types", "signer-local"] }
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
-chrono = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
+indexmap = { workspace = true }
+jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -87,10 +95,13 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-execution = { workspace = true }
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -134,7 +145,7 @@ doc = false
 test = false
 
 [[bin]]
-name = "fuzz_ws_decode"
+name = "fuzz-ws-decode"
 path = "fuzz/fuzz_targets/fuzz_ws_decode.rs"
 required-features = ["fuzz"]
 test = false
@@ -142,7 +153,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_decimal_decode"
+name = "fuzz-decimal-decode"
 path = "fuzz/fuzz_targets/fuzz_decimal_decode.rs"
 required-features = ["fuzz"]
 test = false
@@ -150,7 +161,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_trade_module_encode"
+name = "fuzz-trade-module-encode"
 path = "fuzz/fuzz_targets/fuzz_trade_module_encode.rs"
 required-features = ["fuzz"]
 test = false
@@ -158,7 +169,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_action_hash"
+name = "fuzz-action-hash"
 path = "fuzz/fuzz_targets/fuzz_action_hash.rs"
 required-features = ["fuzz"]
 test = false
@@ -166,7 +177,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_nonce_sequence"
+name = "fuzz-nonce-sequence"
 path = "fuzz/fuzz_targets/fuzz_nonce_sequence.rs"
 required-features = ["fuzz"]
 test = false
@@ -194,7 +205,10 @@ path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
 
+# Run with `cargo test -p nautilus-derive --features examples --test derive-book-stress -- --scenario initial --timeout 2 --rounds 60`.
 [[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]
+name = "derive-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

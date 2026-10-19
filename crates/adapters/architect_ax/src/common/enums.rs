@@ -56,7 +56,7 @@ use super::consts::{
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -138,7 +138,7 @@ impl AxEnvironment {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -210,7 +210,7 @@ impl From<AxInstrumentState> for MarketStatusAction {
     Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "lowercase")]
+#[strum(serialize_all = "snake_case")]
 pub enum AxCategory {
     Fx,
     Equities,
@@ -262,7 +262,7 @@ impl From<AxCategory> for AssetClass {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -281,8 +281,8 @@ pub enum AxOrderSide {
 impl From<AxOrderSide> for AggressorSide {
     fn from(side: AxOrderSide) -> Self {
         match side {
-            AxOrderSide::Buy => Self::Buyer,
-            AxOrderSide::Sell => Self::Seller,
+            AxOrderSide::Buy => Self::Buy,
+            AxOrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -305,14 +305,11 @@ impl From<AxOrderSide> for PositionSide {
     }
 }
 
-impl TryFrom<OrderSide> for AxOrderSide {
-    type Error = &'static str;
-
-    fn try_from(side: OrderSide) -> Result<Self, Self::Error> {
+impl From<OrderSide> for AxOrderSide {
+    fn from(side: OrderSide) -> Self {
         match side {
-            OrderSide::Buy => Ok(Self::Buy),
-            OrderSide::Sell => Ok(Self::Sell),
-            _ => Err("Invalid order side for AX"),
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -320,7 +317,7 @@ impl TryFrom<OrderSide> for AxOrderSide {
 /// How a perpetual symbol's funding accrues over a trading day.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AxFundingVariant {
@@ -328,12 +325,15 @@ pub enum AxFundingVariant {
     DailyClose,
     /// A fixed number of intraday slots, each charging its share of the day's TWAP premium.
     IntradayTwap,
+    /// A funding classification added by the venue.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Status of one funding slot within a `GET /funding-slots` trading day.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AxFundingSlotStatus {
@@ -345,6 +345,9 @@ pub enum AxFundingSlotStatus {
     Skipped,
     /// Slot is scheduled but not yet realized or projected.
     Pending,
+    /// A funding classification added by the venue.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Order status as returned by the AX Exchange API.
@@ -374,7 +377,7 @@ pub enum AxFundingSlotStatus {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -407,12 +410,15 @@ pub enum AxOrderStatus {
     /// Order is in a stale state (expected transitions not occurring).
     Stale,
     /// Order status is unknown.
+    #[serde(other)]
     Unknown,
 }
 
-impl From<AxOrderStatus> for OrderStatus {
-    fn from(status: AxOrderStatus) -> Self {
-        match status {
+impl TryFrom<AxOrderStatus> for OrderStatus {
+    type Error = anyhow::Error;
+
+    fn try_from(status: AxOrderStatus) -> Result<Self, Self::Error> {
+        Ok(match status {
             AxOrderStatus::Pending => Self::Submitted,
             AxOrderStatus::Accepted => Self::Accepted,
             AxOrderStatus::PartiallyFilled => Self::PartiallyFilled,
@@ -421,13 +427,13 @@ impl From<AxOrderStatus> for OrderStatus {
             AxOrderStatus::Canceled => Self::Canceled,
             AxOrderStatus::Rejected => Self::Rejected,
             AxOrderStatus::Expired => Self::Expired,
-            AxOrderStatus::Replaced => Self::Accepted,
-            AxOrderStatus::DoneForDay => Self::Canceled,
+            AxOrderStatus::Replaced => Self::Canceled,
+            AxOrderStatus::DoneForDay => Self::Expired,
             AxOrderStatus::Out => Self::Canceled,
             AxOrderStatus::ReconciledOut => Self::Canceled,
             AxOrderStatus::Stale => Self::Accepted,
-            AxOrderStatus::Unknown => Self::Initialized,
-        }
+            AxOrderStatus::Unknown => anyhow::bail!("Unmapped AX order status"),
+        })
     }
 }
 
@@ -458,7 +464,7 @@ impl From<AxOrderStatus> for OrderStatus {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -478,11 +484,16 @@ pub enum AxTimeInForce {
     Ato,
     /// At-the-Close: execute at market close or expire.
     Atc,
+    /// Time in force added by the venue.
+    #[serde(other)]
+    Unknown,
 }
 
-impl From<AxTimeInForce> for TimeInForce {
-    fn from(tif: AxTimeInForce) -> Self {
-        match tif {
+impl TryFrom<AxTimeInForce> for TimeInForce {
+    type Error = anyhow::Error;
+
+    fn try_from(tif: AxTimeInForce) -> Result<Self, Self::Error> {
+        Ok(match tif {
             AxTimeInForce::Gtc => Self::Gtc,
             AxTimeInForce::Gtd => Self::Gtd,
             AxTimeInForce::Day => Self::Day,
@@ -490,7 +501,8 @@ impl From<AxTimeInForce> for TimeInForce {
             AxTimeInForce::Fok => Self::Fok,
             AxTimeInForce::Ato => Self::AtTheOpen,
             AxTimeInForce::Atc => Self::AtTheClose,
-        }
+            AxTimeInForce::Unknown => anyhow::bail!("Unmapped AX time in force"),
+        })
     }
 }
 
@@ -543,7 +555,7 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -730,7 +742,7 @@ pub enum AxOrderRequestType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -791,7 +803,7 @@ pub enum AxMdWsMessageType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -866,7 +878,7 @@ pub enum AxOrderWsMessageType {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -906,7 +918,7 @@ pub enum AxCancelReason {
         eq_int,
         frozen,
         hash,
-        module = "nautilus_trader.core.nautilus_pyo3.architect_ax",
+        module = "nautilus_trader.adapters.architect_ax",
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
@@ -1168,5 +1180,102 @@ mod tests {
         #[case] expected: AssetClass,
     ) {
         assert_eq!(AssetClass::from(category), expected);
+    }
+
+    #[rstest]
+    fn test_future_order_state_is_preserved_but_not_mapped() {
+        let value = serde_json::Value::String("FUTURE_STATE".into());
+        let status: AxOrderStatus = serde_json::from_value(value).unwrap();
+        assert_eq!(status, AxOrderStatus::Unknown);
+        assert_eq!(
+            OrderStatus::try_from(status).unwrap_err().to_string(),
+            "Unmapped AX order status"
+        );
+    }
+
+    #[rstest]
+    fn test_future_funding_classifications() {
+        let value = serde_json::Value::String("future_value".into());
+        assert_eq!(
+            serde_json::from_value::<AxFundingVariant>(value.clone()).unwrap(),
+            AxFundingVariant::Unknown
+        );
+        assert_eq!(
+            serde_json::from_value::<AxFundingSlotStatus>(value).unwrap(),
+            AxFundingSlotStatus::Unknown
+        );
+    }
+
+    #[rstest]
+    fn test_energy_etfs_category_text_matches_wire_name() {
+        assert_eq!(AxCategory::EnergyEtfs.to_string(), "energy_etfs");
+        assert_eq!(
+            "energy_etfs".parse::<AxCategory>().unwrap(),
+            AxCategory::EnergyEtfs
+        );
+    }
+
+    #[rstest]
+    #[case("CandleWidth", enum_wire_roundtrip::<AxCandleWidth>)]
+    #[case("EstimatedFundingRateStatus", enum_wire_roundtrip::<crate::http::models::AxEstimatedFundingStatus>)]
+    #[case("FundingSlotStatus", enum_wire_roundtrip::<AxFundingSlotStatus>)]
+    #[case("FundingVariant", enum_wire_roundtrip::<AxFundingVariant>)]
+    #[case("InstrumentCategory", enum_wire_roundtrip::<AxCategory>)]
+    #[case("InstrumentState", enum_wire_roundtrip::<AxInstrumentState>)]
+    #[case("Side", enum_wire_roundtrip::<AxOrderSide>)]
+    #[case("OrderRejectReason", enum_wire_roundtrip::<crate::http::models::AxOrderRejectReason>)]
+    #[case("OrderState", enum_wire_roundtrip::<AxOrderStatus>)]
+    #[case("RepriceBehavior", enum_wire_roundtrip::<crate::http::models::AxRepriceBehavior>)]
+    #[case("TimeInForce", enum_wire_roundtrip::<AxTimeInForce>)]
+    #[case("Environment", enum_wire_roundtrip::<AxEnvironment>)]
+    #[case("MarketDataLevel", enum_wire_roundtrip::<AxMarketDataLevel>)]
+    #[case("MdRequestType", enum_wire_roundtrip::<AxMdRequestType>)]
+    #[case("OrderRequestType", enum_wire_roundtrip::<AxOrderRequestType>)]
+    #[case("MdWsMessageType", enum_wire_roundtrip::<AxMdWsMessageType>)]
+    #[case("OrderWsMessageType", enum_wire_roundtrip::<AxOrderWsMessageType>)]
+    #[case("CancelReason", enum_wire_roundtrip::<AxCancelReason>)]
+    #[case("CancelRejectionReason", enum_wire_roundtrip::<AxCancelRejectionReason>)]
+    fn test_documented_enum_values(
+        #[case] name: &str,
+        #[case] roundtrip: fn(serde_json::Value) -> serde_json::Value,
+    ) {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/wire_enum_values.json")).unwrap();
+
+        for value in fixtures[name].as_array().unwrap() {
+            assert_eq!(roundtrip(value.clone()), *value, "{name}: {value}");
+        }
+    }
+
+    fn enum_wire_roundtrip<T: serde::de::DeserializeOwned + Serialize>(
+        value: serde_json::Value,
+    ) -> serde_json::Value {
+        serde_json::to_value(serde_json::from_value::<T>(value).unwrap()).unwrap()
+    }
+    #[rstest]
+    #[case(AxOrderStatus::Pending, OrderStatus::Submitted)]
+    #[case(AxOrderStatus::Accepted, OrderStatus::Accepted)]
+    #[case(AxOrderStatus::PartiallyFilled, OrderStatus::PartiallyFilled)]
+    #[case(AxOrderStatus::Filled, OrderStatus::Filled)]
+    #[case(AxOrderStatus::Canceled, OrderStatus::Canceled)]
+    #[case(AxOrderStatus::Rejected, OrderStatus::Rejected)]
+    #[case(AxOrderStatus::Expired, OrderStatus::Expired)]
+    #[case(AxOrderStatus::Replaced, OrderStatus::Canceled)]
+    #[case(AxOrderStatus::DoneForDay, OrderStatus::Expired)]
+    fn test_documented_order_status_mapping(
+        #[case] wire: AxOrderStatus,
+        #[case] expected: OrderStatus,
+    ) {
+        assert_eq!(OrderStatus::try_from(wire).unwrap(), expected);
+    }
+    #[rstest]
+    fn test_future_time_in_force_is_not_mapped() {
+        let value = serde_json::Value::String("FUTURE_TIF".into());
+        let tif: AxTimeInForce = serde_json::from_value(value).unwrap();
+        assert_eq!(tif, AxTimeInForce::Unknown);
+        assert_eq!(
+            TimeInForce::try_from(tif).unwrap_err().to_string(),
+            "Unmapped AX time in force"
+        );
     }
 }

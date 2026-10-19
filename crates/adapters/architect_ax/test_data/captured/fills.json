@@ -1,0 +1,45 @@
+{
+  "fills": [
+    {
+      "trade_id": "fixture-0002",
+      "order_id": "fixture-0003",
+      "account_id": "fixture-0001",
+      "timestamp": "2026-09-23T09:04:43.869841610Z",
+      "symbol": "XAG-PERP",
+      "price": "65.48",
+      "quantity": 1,
+      "is_taker": true,
+      "fee": "0.013096",
+      "side": "B",
+      "realized_pnl": "-0.03"
+    },
+    {
+      "trade_id": "fixture-0004",
+      "order_id": "fixture-0005",
+      "account_id": "fixture-0001",
+      "timestamp": "2026-09-23T09:04:42.863520365Z",
+      "symbol": "XAG-PERP",
+      "price": "65.45",
+      "quantity": 2,
+      "is_taker": true,
+      "fee": "0.02618",
+      "side": "S",
+      "realized_pnl": "-0.03"
+    },
+    {
+      "trade_id": "fixture-0006",
+      "order_id": "fixture-0007",
+      "account_id": "fixture-0001",
+      "timestamp": "2026-09-23T09:04:41.865874059Z",
+      "symbol": "XAG-PERP",
+      "price": "65.48",
+      "quantity": 1,
+      "is_taker": true,
+      "fee": "0.013096",
+      "side": "B",
+      "realized_pnl": null
+    }
+  ],
+  "limit": 5,
+  "total_count": 3
+}

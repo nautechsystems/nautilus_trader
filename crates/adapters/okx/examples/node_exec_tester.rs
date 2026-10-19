@@ -20,12 +20,12 @@
 //! Run with: `cargo run --example okx-exec-tester --package nautilus-okx --features examples`
 //!
 //! Required credential environment variables:
-//! - `OKX_API_KEY`.
-//! - `OKX_API_SECRET`.
-//! - `OKX_API_PASSPHRASE`.
+//! - `OKX_API_KEY`
+//! - `OKX_API_SECRET`
+//! - `OKX_API_PASSPHRASE`
 
 use nautilus_common::enums::Environment;
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -33,15 +33,20 @@ use nautilus_model::{
 use nautilus_okx::{
     common::{
         consts::OKX_CLIENT_ID,
-        enums::{OKXEnvironment, OKXInstrumentType},
+        enums::{OKXEnvironment, OKXInstrumentType, OKXMarginMode},
     },
-    config::{OKXDataClientConfig, OKXExecClientConfig},
+    config::{OKXDataClientConfig, OKXExecutionClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const OKX_ENVIRONMENT: OKXEnvironment = OKXEnvironment::Live;
+const MARGIN_MODE: OKXMarginMode = OKXMarginMode::Cross;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "OKX-001";
 const NODE_NAME: &str = "OKX-EXEC-TESTER-001";
@@ -70,20 +75,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = OKXExecClientConfig {
-        trader_id,
+    let exec_config = OKXExecutionClientConfig {
         account_id,
         api_key: None,        // Will use 'OKX_API_KEY' env var
         api_secret: None,     // Will use 'OKX_API_SECRET' env var
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap],
+        margin_mode: Some(MARGIN_MODE),
         environment: okx_environment,
         ..Default::default()
     };
 
     let data_factory = OKXDataClientFactory::new();
     let exec_factory = OKXExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -103,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             // OKX doesn't allow hyphens in client order IDs
             use_hyphens_in_client_order_ids: false,
             ..Default::default()
@@ -111,6 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .open_position_on_start_qty(order_qty.as_decimal())
         .log_data(false)
         // .enable_limit_buys(false)

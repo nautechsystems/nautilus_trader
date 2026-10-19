@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model", from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
 )]
 #[cfg_attr(
     feature = "python",
@@ -67,10 +67,6 @@ pub struct Commodity {
     pub margin_init: Decimal,
     /// The maintenance (position) margin in percentage of position value.
     pub margin_maint: Decimal,
-    /// The fee rate for liquidity makers as a percentage of order value.
-    pub maker_fee: Decimal,
-    /// The fee rate for liquidity takers as a percentage of order value.
-    pub taker_fee: Decimal,
     /// The rounded lot unit size (standard/board).
     pub lot_size: Option<Quantity>,
     /// The maximum allowable order quantity.
@@ -97,17 +93,8 @@ pub struct Commodity {
 
 #[bon::bon]
 impl Commodity {
-    /// Creates a new [`Commodity`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
@@ -125,8 +112,6 @@ impl Commodity {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -170,8 +155,6 @@ impl Commodity {
             min_price,
             margin_init: margin_init.unwrap_or_default(),
             margin_maint: margin_maint.unwrap_or_default(),
-            maker_fee: maker_fee.unwrap_or_default(),
-            taker_fee: taker_fee.unwrap_or_default(),
             tick_scheme,
             info,
             ts_event,
@@ -179,75 +162,14 @@ impl Commodity {
         })
     }
 
-    /// Creates a new [`Commodity`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any parameter is invalid (see `new_checked`).
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        asset_class: AssetClass,
-        quote_currency: Currency,
-        price_precision: u8,
-        size_precision: u8,
-        price_increment: Price,
-        size_increment: Quantity,
-        lot_size: Option<Quantity>,
-        max_quantity: Option<Quantity>,
-        min_quantity: Option<Quantity>,
-        max_notional: Option<Money>,
-        min_notional: Option<Money>,
-        max_price: Option<Price>,
-        min_price: Option<Price>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            asset_class,
-            quote_currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`Commodity`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`Commodity::new_checked`], which the builder calls so the same
-    /// correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`Commodity::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,
@@ -267,8 +189,6 @@ impl Commodity {
         min_price: Option<Price>,
         margin_init: Option<Decimal>,
         margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
         tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
@@ -292,8 +212,6 @@ impl Commodity {
             min_price,
             margin_init,
             margin_maint,
-            maker_fee,
-            taker_fee,
             tick_scheme,
             info,
             ts_event,
@@ -317,9 +235,6 @@ impl Hash for Commodity {
 }
 
 impl Instrument for Commodity {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Commodity(self)
     }
@@ -445,12 +360,12 @@ impl Instrument for Commodity {
         self.margin_maint
     }
 
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
     }
 
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {
@@ -508,8 +423,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -538,8 +451,6 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
             0.into(),
             0.into(),
         );
@@ -551,7 +462,7 @@ mod tests {
     fn test_serialization_roundtrip(commodity_gold: Commodity) {
         let json = serde_json::to_string(&commodity_gold).unwrap();
         let deserialized: Commodity = serde_json::from_str(&json).unwrap();
-        assert_eq!(commodity_gold, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]
@@ -574,8 +485,6 @@ mod tests {
             Some(Price::from("0.01")),
             Some(dec!(0.01)),
             Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
             None,
             None,
             1.into(),
@@ -601,8 +510,6 @@ mod tests {
             .min_price(Price::from("0.01"))
             .margin_init(dec!(0.01))
             .margin_maint(dec!(0.02))
-            .maker_fee(dec!(0.0002))
-            .taker_fee(dec!(0.0004))
             .ts_event(1.into())
             .ts_init(2.into())
             .build()

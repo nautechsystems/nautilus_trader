@@ -13,25 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{DateTime, Utc};
 use derive_builder::Builder;
+use jiff::Timestamp;
 use serde::Serialize;
 
 mod datetime_format {
-    use chrono::{DateTime, Utc};
+    use jiff::Timestamp;
     use serde::{self, Serializer};
 
-    pub(super) fn serialize<S>(
-        date: &Option<DateTime<Utc>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
+    pub(super) fn serialize<S>(date: &Option<Timestamp>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match date {
-            Some(dt) => {
-                serializer.serialize_str(&dt.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-            }
+            Some(dt) => serializer.serialize_str(&format!("{dt:.3}")),
             None => serializer.serialize_none(),
         }
     }
@@ -62,9 +57,9 @@ pub struct InstrumentFilter {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(with = "datetime_format")]
     #[builder(default)]
-    pub available_since: Option<DateTime<Utc>>,
+    pub available_since: Option<Timestamp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(with = "datetime_format")]
     #[builder(default)]
-    pub available_to: Option<DateTime<Utc>>,
+    pub available_to: Option<Timestamp>,
 }

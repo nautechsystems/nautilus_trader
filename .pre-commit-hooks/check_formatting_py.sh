@@ -35,7 +35,7 @@ VIOLATIONS=0
 echo "Checking for blank line above \`if\` statements (Python)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*if\s' nautilus_trader tests examples docs python build.py --type py 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading '^\s*if\s' examples docs python --type py 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -237,7 +237,7 @@ fi
 echo "Checking for blank line above \`match\` statements (Python)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*match\s' nautilus_trader tests examples docs python build.py --type py 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading '^\s*match\s' examples docs python --type py 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -430,7 +430,7 @@ fi
 echo "Checking for blank line above \`for\` statements (Python)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*(async\s+)?for\s' nautilus_trader tests examples docs python build.py --type py 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading '^\s*(async\s+)?for\s' examples docs python --type py 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -626,7 +626,7 @@ fi
 echo "Checking for blank line above \`while\` loops (Python)..."
 
 rg_exit=0
-output=$(rg -n -B 1 --no-heading '^\s*while\s' nautilus_trader tests examples docs python build.py --type py 2> /dev/null) || rg_exit=$?
+output=$(rg -n -B 1 --no-heading '^\s*while\s' examples docs python --type py 2> /dev/null) || rg_exit=$?
 if [ $rg_exit -gt 1 ]; then
   echo "ERROR: ripgrep failed with exit code $rg_exit"
   exit 1
@@ -793,5 +793,5 @@ if [ $VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 
-echo "✓ Formatting conventions are valid (Python)"
+echo "Formatting conventions are valid (Python)"
 exit 0
