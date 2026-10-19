@@ -11722,6 +11722,8 @@ async fn test_post_reconnect_paginates_coherent_fill_snapshot() {
     .await
     .expect("paginated recovery did not publish mass status");
 
+    wait_for_reconciliation_state(&client, false).await;
+
     let fill_count = mass_status
         .fill_reports()
         .values()
@@ -11820,6 +11822,8 @@ async fn test_post_reconnect_retries_transient_mass_status_failure() {
             break;
         }
     }
+
+    wait_for_reconciliation_state(&client, false).await;
 
     assert_eq!(mass_status_counts, Some((3, 2)));
     assert!(!client.is_reconciling());
