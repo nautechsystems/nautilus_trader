@@ -582,7 +582,8 @@ impl AxMdWebSocketClient {
     ///
     /// A stream already open with the same options is replaced so the book starts from a fresh
     /// snapshot. Returns without subscribing when `cancel` has already fired, and stops waiting
-    /// once it fires; a queued write still completes so the venue matches the subscription state.
+    /// once it fires. Cancellation skips the book write's unsent work; a write already admitted to the
+    /// network can still complete before later subscription changes.
     pub(crate) async fn subscribe_book_deltas_gated(
         &self,
         symbol: Ustr,
