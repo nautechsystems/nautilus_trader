@@ -564,6 +564,7 @@ impl DatabentoFeedHandler {
         let mut buffering_start = None;
         let mut buffered_deltas: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
         let mut initialized_books = HashSet::new();
+        let mut trade_sources: AHashMap<InstrumentId, u8> = AHashMap::new();
         let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
         let gateway_addr = self.gateway_addr.clone();
@@ -944,12 +945,12 @@ impl DatabentoFeedHandler {
                     }
                 }
 
-                if let Some(data) = data1 {
-                    self.send_msg(DatabentoMessage::Data(data));
-                }
+                let rtype = record.header().rtype;
 
-                if let Some(data) = data2 {
-                    self.send_msg(DatabentoMessage::Data(data));
+                for data in [data1, data2].into_iter().flatten() {
+                    if claim_trade_source(&data, rtype, &mut trade_sources) {
+                        self.send_msg(DatabentoMessage::Data(data));
+                    }
                 }
             }
         }
@@ -1298,6 +1299,26 @@ fn handle_record(
     )
 }
 
+/// Claims the instrument's trade source for a trade decoded from a record of `rtype`, returning
+/// whether `data` should be sent.
+///
+/// The `trades`, `mbp-1`, `tbbo`, `cmbp-1`, `tcbbo`, and `mbo` schemas all carry the same venue
+/// trades, so an instrument subscribed on several of them would receive each trade once per schema.
+/// The first record type to deliver a trade for an instrument carries its trades for the session,
+/// and trades decoded from any other record type are dropped. A later subscription never takes
+/// over, since its stream starts at an unknown point and a handover could drop or repeat trades.
+/// Data other than trades always passes.
+fn claim_trade_source(
+    data: &Data,
+    rtype: u8,
+    trade_sources: &mut AHashMap<InstrumentId, u8>,
+) -> bool {
+    match data {
+        Data::Trade(trade) => *trade_sources.entry(trade.instrument_id).or_insert(rtype) == rtype,
+        _ => true,
+    }
+}
+
 fn resolve_price_precision(
     record_instrument_id: u32,
     instrument_id: InstrumentId,
@@ -1400,7 +1421,7 @@ fn flush_mbo_event_boundary(
 mod tests {
     use std::path::PathBuf;
 
-    use databento::live::Subscription;
+    use databento::{dbn::enums::rtype, live::Subscription};
     use indexmap::IndexMap;
     use rstest::*;
     use time::macros::datetime;
@@ -1569,6 +1590,69 @@ mod tests {
             &mut buffered,
         );
         assert!(flushed.is_none());
+    }
+
+    fn stub_trade(instrument_id: InstrumentId) -> Data {
+        use nautilus_model::{
+            data::TradeTick,
+            enums::AggressorSide,
+            identifiers::TradeId,
+            types::{Price, Quantity},
+        };
+
+        Data::Trade(TradeTick::new(
+            instrument_id,
+            Price::from("100.00"),
+            Quantity::from("5"),
+            AggressorSide::Buy,
+            TradeId::new("1"),
+            1.into(),
+            1.into(),
+        ))
+    }
+
+    #[rstest]
+    fn test_trade_source_is_first_record_type_to_deliver_a_trade() {
+        let trade = stub_trade(InstrumentId::from("TEST.GLBX"));
+        let mut trade_sources = AHashMap::new();
+
+        let sent: Vec<bool> = [rtype::MBP_1, rtype::MBP_0, rtype::MBO, rtype::MBP_1]
+            .into_iter()
+            .map(|rtype| claim_trade_source(&trade, rtype, &mut trade_sources))
+            .collect();
+
+        assert_eq!(sent, [true, false, false, true]);
+    }
+
+    #[rstest]
+    fn test_trade_source_is_kept_per_instrument() {
+        let es_trade = stub_trade(InstrumentId::from("ESM4.GLBX"));
+        let nq_trade = stub_trade(InstrumentId::from("NQM4.GLBX"));
+        let mut trade_sources = AHashMap::new();
+
+        let sent: Vec<bool> = [
+            (&es_trade, rtype::MBP_0),
+            (&nq_trade, rtype::MBO),
+            (&es_trade, rtype::MBO),
+            (&nq_trade, rtype::MBP_0),
+        ]
+        .into_iter()
+        .map(|(trade, rtype)| claim_trade_source(trade, rtype, &mut trade_sources))
+        .collect();
+
+        assert_eq!(sent, [true, true, false, false]);
+    }
+
+    #[rstest]
+    fn test_trade_source_passes_data_other_than_trades() {
+        let instrument_id = InstrumentId::from("TEST.GLBX");
+        let mut trade_sources = AHashMap::new();
+        let _ = claim_trade_source(&stub_trade(instrument_id), rtype::MBP_0, &mut trade_sources);
+        let delta = Data::BookDelta(stub_delta(instrument_id, 1));
+
+        let sent = claim_trade_source(&delta, rtype::MBO, &mut trade_sources);
+
+        assert!(sent);
     }
 
     fn create_test_handler(reconnect_timeout_mins: Option<u64>) -> DatabentoFeedHandler {
