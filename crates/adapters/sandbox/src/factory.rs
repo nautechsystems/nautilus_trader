@@ -24,7 +24,7 @@ use nautilus_common::{
     factories::{ClientConfig, SimulatedExecutionClientFactory},
     live::clock::LiveClock,
 };
-use nautilus_execution::client::core::ExecutionClientCore;
+use nautilus_execution::{client::core::ExecutionClientCore, models::fee::FeeModelHandle};
 use nautilus_model::identifiers::{ClientId, TraderId};
 
 use crate::{config::SandboxExecutionClientConfig, execution::SandboxExecutionClient};
@@ -57,9 +57,51 @@ impl SandboxExecutionClientFactory {
     pub const fn new() -> Self {
         Self
     }
+
+    /// Returns a factory using the runtime fee model factory, overriding `config.fee_model`.
+    ///
+    /// The function is called once per client and should return a fresh model
+    /// handle to keep account-specific state isolated.
+    #[must_use]
+    pub const fn with_fee_model_factory(
+        self,
+        factory: fn() -> FeeModelHandle,
+    ) -> impl SimulatedExecutionClientFactory + Clone {
+        ConfiguredSandboxExecutionClientFactory {
+            fee_model_factory: Some(factory),
+        }
+    }
 }
 
 impl SimulatedExecutionClientFactory for SandboxExecutionClientFactory {
+    fn create(
+        &self,
+        trader_id: TraderId,
+        name: &str,
+        config: &dyn ClientConfig,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+        ConfiguredSandboxExecutionClientFactory {
+            fee_model_factory: None,
+        }
+        .create(trader_id, name, config, cache)
+    }
+
+    fn name(&self) -> &'static str {
+        "SANDBOX"
+    }
+
+    fn config_type(&self) -> &'static str {
+        "SandboxExecutionClientConfig"
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ConfiguredSandboxExecutionClientFactory {
+    fee_model_factory: Option<fn() -> FeeModelHandle>,
+}
+
+impl SimulatedExecutionClientFactory for ConfiguredSandboxExecutionClientFactory {
     fn create(
         &self,
         trader_id: TraderId,
@@ -91,15 +133,24 @@ impl SimulatedExecutionClientFactory for SandboxExecutionClientFactory {
             cache.clone(),
         );
 
-        let client = SandboxExecutionClient::new(core, sandbox_config, clock, cache)?;
+        let client = match self.fee_model_factory {
+            Some(factory) => SandboxExecutionClient::new_with_fee_model(
+                core,
+                sandbox_config,
+                clock,
+                cache,
+                factory(),
+            ),
+            None => SandboxExecutionClient::new(core, sandbox_config, clock, cache)?,
+        };
         Ok(Box::new(client))
     }
 
     fn name(&self) -> &'static str {
-        "SANDBOX"
+        SandboxExecutionClientFactory.name()
     }
 
     fn config_type(&self) -> &'static str {
-        "SandboxExecutionClientConfig"
+        SandboxExecutionClientFactory.config_type()
     }
 }
