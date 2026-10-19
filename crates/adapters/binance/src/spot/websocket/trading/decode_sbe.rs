@@ -21,6 +21,7 @@
 //! The existing JSON parse functions in [`super::parse`] then convert these to Nautilus types.
 
 use anyhow::Context;
+use nautilus_serialization::sbe::GroupSizeEncoding;
 use ustr::Ustr;
 
 use super::user_data::{
@@ -249,9 +250,14 @@ fn execution_report_min_block_length(version: u16) -> usize {
 ///
 /// # Errors
 ///
-/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
-/// match, balances framing is malformed, or a balance mantissa and exponent cannot be converted to
-/// a decimal. A balance conversion error rejects the whole message; no partial balances are returned.
+/// Returns an error if:
+/// - The buffer is too short.
+/// - The template ID or schema ID does not match.
+/// - The balance count exceeds [`crate::spot::sbe::MAX_GROUP_SIZE`].
+/// - Message or balance framing is malformed.
+/// - A balance mantissa and exponent cannot be converted to a decimal.
+///
+/// A balance conversion error rejects the whole message; no partial balances are returned.
 pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccountPositionMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -315,7 +321,7 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
         );
     }
 
-    let count = buf.get_u32_at(min_len + 2);
+    let count = GroupSizeEncoding::decode(&data[min_len..group_header_end])?.num_in_group;
     let mut entry_offset = group_header_end;
 
     for index in 0..count {
@@ -337,8 +343,7 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
     let update_time_us = dec.update_time();
 
     let mut balances_dec = dec.balances_decoder();
-    let count = balances_dec.count() as usize;
-    let mut balances = Vec::with_capacity(count);
+    let mut balances = Vec::with_capacity(count as usize);
 
     while let Some(_idx) = balances_dec
         .advance()
@@ -1366,6 +1371,77 @@ mod tests {
 
         let msg = decode_account_position(&data).unwrap();
         assert!(msg.balances.is_empty());
+    }
+
+    #[rstest]
+    #[case::above_limit_empty(crate::spot::sbe::MAX_GROUP_SIZE + 1, false)]
+    #[case::above_limit_complete(crate::spot::sbe::MAX_GROUP_SIZE + 1, true)]
+    #[case::max_count(u32::MAX, false)]
+    fn test_decode_account_position_rejects_excessive_count(
+        #[case] count: u32,
+        #[case] complete: bool,
+    ) {
+        let entries = if complete {
+            vec![("BTC", -2, 12345, 6789); count as usize]
+        } else {
+            Vec::new()
+        };
+
+        let mut data = encode_account_position(123000, 456000, &entries);
+        let group_offset =
+            HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
+        data[group_offset + 2..group_offset + group_size_encoding_codec::ENCODED_LENGTH]
+            .copy_from_slice(&count.to_le_bytes());
+
+        let err = decode_account_position(&data).unwrap_err();
+
+        assert_eq!(
+            err.downcast_ref::<crate::spot::sbe::SbeDecodeError>(),
+            Some(&crate::spot::sbe::SbeDecodeError::GroupSizeTooLarge {
+                count,
+                max: crate::spot::sbe::MAX_GROUP_SIZE,
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_decode_account_position_accepts_maximum_count() {
+        let entries = vec![("ASSET", -3, 12345, 6789); crate::spot::sbe::MAX_GROUP_SIZE as usize];
+        let data = encode_account_position(123000, 456000, &entries);
+
+        let msg = decode_account_position(&data).unwrap();
+
+        assert_eq!(msg.event_type, "outboundAccountPosition");
+        assert_eq!(msg.event_time, 123);
+        assert_eq!(msg.last_update_time, 456);
+        assert_eq!(msg.balances.len(), entries.len());
+
+        for balance in msg.balances {
+            assert_eq!(balance.asset, "ASSET");
+            assert_eq!(balance.free, Decimal::new(12345, 3));
+            assert_eq!(balance.locked, Decimal::new(6789, 3));
+        }
+    }
+
+    #[rstest]
+    fn test_decode_account_position_validates_all_assets_before_decoding() {
+        let mut data = encode_account_position(
+            123000,
+            456000,
+            &[("BTC", i8::MIN, 12345, 6789), ("USDT", -3, 4321, 8765)],
+        );
+        data.pop();
+
+        let err = decode_account_position(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "Buffer too short for asset: expected {}, was {}",
+                data.len() + 1,
+                data.len()
+            )
+        );
     }
 
     #[rstest]
