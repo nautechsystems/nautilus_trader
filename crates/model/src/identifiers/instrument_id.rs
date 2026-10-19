@@ -28,6 +28,7 @@ use thiserror::Error;
 #[cfg(feature = "defi")]
 use crate::defi::{Blockchain, PoolIdentifier, validation::validate_address};
 use crate::{
+    deserialization::StringInput,
     enums::InstrumentClass,
     identifiers::{Symbol, Venue},
 };
@@ -237,7 +238,7 @@ impl<'de> Deserialize<'de> for InstrumentId {
     where
         D: Deserializer<'de>,
     {
-        let instrument_id_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(instrument_id_str) = Deserialize::deserialize(deserializer)?;
         Self::from_str(instrument_id_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }

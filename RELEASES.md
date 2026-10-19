@@ -81,6 +81,7 @@ Released on TBD (UTC).
 
 - Improved Dockerfile linting to run Hadolint without Docker
 - Standardized Architect AX owned execution report tasks
+- Optimized JSON and MessagePack decoding and custom data response encoding
 - Upgraded `OSV Scanner` tool to v2.7.0
 - Upgraded `Socket CLI` tool to v1.8.2
 - Upgraded `uv` tool to v0.13.0

@@ -56,13 +56,26 @@ version-unstable as noted above.
 
 The supported serialization formats serve different market data use cases. Choose the format based on your use case:
 
+Latencies are the median of three full sessions' mean estimates, each with 100 Criterion samples,
+a 3-second warmup, and a 5-second measurement period.
+
 | Format  | Serialize | Deserialize | Size      | Use case                                   |
 | ------- | --------- | ----------- | --------- | ------------------------------------------ |
-| JSON    | ~332ns    | ~779ns      | 174 bytes | Human-readable output, debugging, APIs.    |
-| MsgPack | ~375ns    | ~634ns      | 134 bytes | Compact storage, network transmission.     |
+| JSON    | 344 ns    | 356 ns      | 185 bytes | Human-readable output, debugging, APIs.    |
+| MsgPack | 413 ns    | 221 ns      | 135 bytes | Compact storage, network transmission.     |
 | Arrow   | TBD       | TBD         | Columnar  | Batch processing, Parquet, IPC, analytics. |
 
-Performance numbers shown for `QuoteTick` serialization (measured on AMD Ryzen 9 7950X).
+Measured 2026-10-19 with the existing `serialization_comparison` QuoteTick fixture
+on AMD Ryzen Threadripper 9980X, Linux 7.0.0-34-generic, and rustc 1.99.0
+(b940084d7 2026-09-28). The `bench-lto` build uses standard precision and the `sbe` feature.
+Processes run with the `performance` governor and per-process ASLR disabled;
+SMT and CPU boost remain enabled. No builds, full test suites, or profiling run concurrently.
+
+The largest `(maximum - minimum) / median` spread across these four cases is 2.3%.
+JSON and MessagePack round trips preserve every fixture field.
+Sizes are encoded byte lengths for that fixture. Reproduce the publication controls described in the
+[benchmarking guide](../../docs/developer_guide/benchmarking.md#measure-criterion-for-publication).
+
 Arrow is optimized for batch processing rather than individual messages.
 
 ### Usage examples

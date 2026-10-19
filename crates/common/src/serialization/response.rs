@@ -110,7 +110,7 @@ struct WireCustomResponse<'a> {
     client_id: ClientId,
     venue: Option<Venue>,
     data_type: Cow<'a, DataType>,
-    data: CustomPayload,
+    data: CustomPayload<'a>,
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
     ts_init: UnixNanos,
@@ -152,16 +152,16 @@ impl<'a> WireCustomResponse<'a> {
     clippy::large_enum_variant,
     reason = "transient serialization views avoid an extra allocation for scalar payloads"
 )]
-pub(super) enum CustomPayload {
-    Scalar(CustomItem),
-    Batch(Vec<CustomItem>),
-    Bytes(Vec<u8>),
-    Buffer(Bytes),
-    Text(String),
+pub(super) enum CustomPayload<'a> {
+    Scalar(CustomItem<'a>),
+    Batch(Vec<CustomItem<'a>>),
+    Bytes(Cow<'a, [u8]>),
+    Buffer(Cow<'a, Bytes>),
+    Text(Cow<'a, str>),
 }
 
-impl CustomPayload {
-    pub(super) fn from_native(value: &dyn std::any::Any) -> anyhow::Result<Self> {
+impl<'a> CustomPayload<'a> {
+    pub(super) fn from_native(value: &'a dyn std::any::Any) -> anyhow::Result<Self> {
         if let Some(value) = value.downcast_ref::<CustomData>() {
             return Ok(Self::Scalar(CustomItem::from_native(value)));
         }
@@ -173,15 +173,15 @@ impl CustomPayload {
         }
 
         if let Some(value) = value.downcast_ref::<Vec<u8>>() {
-            return Ok(Self::Bytes(value.clone()));
+            return Ok(Self::Bytes(Cow::Borrowed(value)));
         }
 
         if let Some(value) = value.downcast_ref::<Bytes>() {
-            return Ok(Self::Buffer(value.clone()));
+            return Ok(Self::Buffer(Cow::Borrowed(value)));
         }
 
         if let Some(value) = value.downcast_ref::<String>() {
-            return Ok(Self::Text(value.clone()));
+            return Ok(Self::Text(Cow::Borrowed(value)));
         }
 
         anyhow::bail!(
@@ -198,34 +198,55 @@ impl CustomPayload {
                     .map(CustomItem::into_native)
                     .collect::<anyhow::Result<Vec<_>>>()?,
             ),
-            Self::Bytes(value) => Arc::new(value),
-            Self::Buffer(value) => Arc::new(value),
-            Self::Text(value) => Arc::new(value),
+            Self::Bytes(value) => Arc::new(value.into_owned()),
+            Self::Buffer(value) => Arc::new(value.into_owned()),
+            Self::Text(value) => Arc::new(value.into_owned()),
         })
     }
 }
 
 #[derive(Serialize, Deserialize)]
-pub(super) struct CustomItem {
-    pub(super) data_type: DataType,
-    pub(super) value: Data,
+pub(super) struct CustomItem<'a> {
+    pub(super) data_type: Cow<'a, DataType>,
+    pub(super) value: CustomValue<'a>,
 }
 
-impl CustomItem {
-    pub(super) fn from_native(value: &CustomData) -> Self {
+impl<'a> CustomItem<'a> {
+    pub(super) fn from_native(value: &'a CustomData) -> Self {
         Self {
-            data_type: value.data_type.clone(),
-            value: Data::Custom(value.clone()),
+            data_type: Cow::Borrowed(&value.data_type),
+            value: CustomValue::Borrowed(value),
         }
     }
 
     fn into_native(self) -> anyhow::Result<CustomData> {
-        let Data::Custom(mut value) = self.value else {
-            anyhow::bail!("custom response contains a non-custom payload")
+        let mut value = match self.value {
+            CustomValue::Borrowed(value) => value.clone(),
+            CustomValue::Owned(Data::Custom(value)) => value,
+            CustomValue::Owned(_) => {
+                anyhow::bail!("custom response contains a non-custom payload")
+            }
         };
 
-        value.data_type = self.data_type;
+        value.data_type = self.data_type.into_owned();
         Ok(value)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "model features vary enum sizes; owned decoding avoids an extra allocation"
+)]
+pub(super) enum CustomValue<'a> {
+    Borrowed(&'a CustomData),
+    Owned(Data),
+}
+
+impl<'de> Deserialize<'de> for CustomValue<'_> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Data::deserialize(deserializer).map(Self::Owned)
     }
 }
 

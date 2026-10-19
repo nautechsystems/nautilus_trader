@@ -25,22 +25,16 @@
 //! Same canonical surface every adapter should ship; pair this with `data.rs`,
 //! `exec.rs`, and `signing.rs`.
 
-mod common;
+include!("adapter/mod.rs");
+
+#[path = "common/mod.rs"]
+mod inputs;
 
 use std::{hint::black_box, str::FromStr};
 
-use common::{btc_perp, fixtures};
 use criterion::{Criterion, criterion_group, criterion_main};
+use inputs::{btc_perp, fixtures};
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_hyperliquid::{
-    common::HyperliquidDataConverter,
-    http::models::Cloid,
-    websocket::{
-        dispatch::WsDispatchState,
-        messages::{HyperliquidWsMessage, WsBookData, WsTradeData},
-        parse::{parse_ws_order_book_deltas, parse_ws_trade_tick},
-    },
-};
 use nautilus_live::execution::context::{OrderContext, OrderIdentity};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
@@ -51,14 +45,23 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
+use crate::{
+    common::HyperliquidDataConverter,
+    http::models::Cloid,
+    websocket::{
+        dispatch::WsDispatchState,
+        messages::{HyperliquidWsMessage, WsBookData, WsTradeData, decode_ws_message},
+        parse::{parse_ws_order_book_deltas, parse_ws_trade_tick},
+    },
+};
+
 // ----- decode-only (whichever JSON tokenizer is active via features) --------
 
 fn bench_decode_trade(c: &mut Criterion) {
     let mut group = c.benchmark_group("decode_only");
     group.bench_function("trade", |b| {
         b.iter(|| {
-            let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::TRADE)).unwrap();
+            let msg: HyperliquidWsMessage = decode_ws_message(black_box(fixtures::TRADE)).unwrap();
             black_box(msg);
         });
     });
@@ -70,7 +73,7 @@ fn bench_decode_book(c: &mut Criterion) {
     group.bench_function("book", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::BOOK_L2)).unwrap();
+                decode_ws_message(black_box(fixtures::BOOK_L2)).unwrap();
             black_box(msg);
         });
     });
@@ -81,7 +84,8 @@ fn bench_decode_book(c: &mut Criterion) {
 
 fn bench_parse_trade(c: &mut Criterion) {
     let instrument = btc_perp();
-    let msg: HyperliquidWsMessage = serde_json::from_str(fixtures::TRADE).unwrap();
+    let msg: HyperliquidWsMessage = decode_ws_message(fixtures::TRADE).unwrap();
+
     let trade: WsTradeData = match msg {
         HyperliquidWsMessage::Trades { data } => data.into_iter().next().unwrap(),
         _ => unreachable!(),
@@ -100,7 +104,8 @@ fn bench_parse_trade(c: &mut Criterion) {
 
 fn bench_parse_book_deltas(c: &mut Criterion) {
     let instrument = btc_perp();
-    let msg: HyperliquidWsMessage = serde_json::from_str(fixtures::BOOK_L2).unwrap();
+    let msg: HyperliquidWsMessage = decode_ws_message(fixtures::BOOK_L2).unwrap();
+
     let book: WsBookData = match msg {
         HyperliquidWsMessage::L2Book { data } => data,
         _ => unreachable!(),
@@ -193,7 +198,8 @@ fn bench_uuid4_new(c: &mut Criterion) {
 fn bench_data_converter_ws_snapshot(c: &mut Criterion) {
     let converter = HyperliquidDataConverter::new();
     let instrument_id = btc_perp().id();
-    let msg: HyperliquidWsMessage = serde_json::from_str(fixtures::BOOK_L2).unwrap();
+    let msg: HyperliquidWsMessage = decode_ws_message(fixtures::BOOK_L2).unwrap();
+
     let book: WsBookData = match msg {
         HyperliquidWsMessage::L2Book { data } => data,
         _ => unreachable!(),
@@ -311,10 +317,11 @@ fn bench_event_filled_construct(c: &mut Criterion) {
 // is a measurement artifact, not a real cost. The second+ calls hit the
 // `filled_orders` dedup early return.
 fn bench_dispatch_reused_fill(c: &mut Criterion) {
-    use nautilus_hyperliquid::websocket::dispatch::dispatch_order_fill;
     use nautilus_model::reports::FillReport;
 
-    let (emitter, mut _rx) = common::bench_emitter();
+    use crate::websocket::dispatch::dispatch_order_fill;
+
+    let (emitter, mut _rx) = inputs::bench_emitter();
     let cid = ClientOrderId::from("O-BENCH-R");
     let voi = VenueOrderId::from("430481837807");
     let state = WsDispatchState::new();
@@ -323,7 +330,7 @@ fn bench_dispatch_reused_fill(c: &mut Criterion) {
     state.insert_accepted(cid);
 
     let report = FillReport::new(
-        common::account_id(),
+        inputs::account_id(),
         btc_perp().id(),
         voi,
         TradeId::new("TRADE-1"),

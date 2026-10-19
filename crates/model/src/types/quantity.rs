@@ -75,12 +75,13 @@ use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, checked_mul_div_fixed,
     checked_mul_div_raw, format_scaled_u128, mantissa_exponent_to_fixed_i128,
     mantissa_exponent_to_raw_checked, parse_decimal_mantissa, raw_scale, raw_scales_match,
-    scaled_raw_to_decimal,
+    remove_underscores, scaled_raw_to_decimal,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+use crate::deserialization::StringInput;
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
 
@@ -894,8 +895,7 @@ impl FromStr for Quantity {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let clean_value = value.replace('_', "");
-
+        let clean_value = remove_underscores(value);
         if clean_value.contains('e') || clean_value.contains('E') {
             let decimal = Decimal::from_scientific(&clean_value)
                 .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
@@ -977,7 +977,7 @@ impl<'de> Deserialize<'de> for Quantity {
     where
         D: Deserializer<'de>,
     {
-        let qty_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(qty_str) = Deserialize::deserialize(deserializer)?;
         Self::from_str(qty_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }

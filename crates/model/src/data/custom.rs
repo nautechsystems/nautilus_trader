@@ -528,6 +528,7 @@ mod tests {
     struct TestCustomData {
         ts_init: UnixNanos,
         instrument_id: InstrumentId,
+        payload: serde_json::Value,
     }
 
     impl HasTsInit for TestCustomData {
@@ -571,23 +572,37 @@ mod tests {
     }
 
     #[rstest]
-    fn test_custom_data_json_roundtrip() {
-        register_custom_data_json::<TestCustomData>()
+    fn test_custom_data_roundtrip(
+        #[values(false, true)] msgpack: bool,
+        #[values(None, Some(Params::new()), Some(serde_json::from_value(json!({"key": [1, {"nested": true}]})).unwrap()))]
+        metadata: Option<Params>,
+        #[values(None, Some("TEST.SIM".to_string()))] identifier: Option<String>,
+    ) {
+        ensure_custom_data_json_registered::<TestCustomData>()
             .expect("TestCustomData must register for JSON roundtrip test");
 
         let instrument_id = InstrumentId::from("TEST.SIM");
-        let metadata = Some(
-            serde_json::from_value::<Params>(json!({"key1": "value1", "key2": "value2"})).unwrap(),
-        );
+
         let inner = TestCustomData {
             ts_init: UnixNanos::from(100),
             instrument_id,
+            payload: json!({"nested": [null, {"min": i64::MIN, "max": u64::MAX, "price": "123.4500"}], "empty": [], "flag": false}),
         };
-        let data_type = DataType::new("TestCustomData", metadata, Some(instrument_id.to_string()));
-        let original = CustomData::new(Arc::new(inner), data_type);
 
-        let json_bytes = serde_json::to_vec(&original).unwrap();
-        let roundtripped = CustomData::from_json_bytes(&json_bytes).unwrap();
+        let data_type = DataType::new("TestCustomData", metadata, identifier);
+        let original = CustomData::new(Arc::new(inner), data_type);
+        let roundtripped = if msgpack {
+            let bytes = rmp_serde::to_vec_named(&original).unwrap();
+
+            let Data::Custom(value) = rmp_serde::from_slice(&bytes).unwrap() else {
+                panic!("custom payload must retain its variant");
+            };
+
+            value
+        } else {
+            let bytes = serde_json::to_vec(&original).unwrap();
+            CustomData::from_json_bytes(&bytes).unwrap()
+        };
 
         assert_eq!(
             roundtripped.data_type.type_name(),
@@ -595,7 +610,10 @@ mod tests {
         );
         assert_eq!(
             roundtripped.data_type.metadata(),
-            original.data_type.metadata()
+            original
+                .data_type
+                .metadata()
+                .filter(|value| !value.is_empty())
         );
         assert_eq!(
             roundtripped.data_type.identifier(),
@@ -620,6 +638,7 @@ mod tests {
         let data = TestCustomData {
             ts_init: UnixNanos::from(100),
             instrument_id,
+            payload: json!({"value": 42}),
         };
         let data_type = DataType::new("TestCustomData", None, Some(instrument_id.to_string()));
         let custom_data = CustomData::new(Arc::new(data), data_type);

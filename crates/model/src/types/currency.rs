@@ -32,7 +32,7 @@ use ustr::Ustr;
 
 #[allow(unused_imports)]
 use super::fixed::{FIXED_PRECISION, check_fixed_precision};
-use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
+use crate::{currencies::CURRENCY_MAP, deserialization::StringInput, enums::CurrencyType};
 
 /// Error returned when a currency cannot be resolved from the model currency map.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -314,7 +314,7 @@ impl<'de> Deserialize<'de> for Currency {
     where
         D: serde::Deserializer<'de>,
     {
-        let currency_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(currency_str) = Deserialize::deserialize(deserializer)?;
         Self::from_str(currency_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }

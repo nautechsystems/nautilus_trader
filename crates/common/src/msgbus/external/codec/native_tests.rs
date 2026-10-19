@@ -73,6 +73,48 @@ fn responses_preserve_every_field(
 #[rstest]
 #[case(SerializationEncoding::Json)]
 #[case(SerializationEncoding::MsgPack)]
+fn custom_response_rejects_non_custom_after_wire_decode(
+    #[case] encoding: SerializationEncoding,
+    #[values(false, true)] invalid_params: bool,
+) {
+    let response = responses(1).into_iter().next().unwrap();
+    let mut value = serde_json::to_value(response).unwrap();
+    value["Data"]["data"]["Scalar"]["value"] =
+        serde_json::to_value(quote_ethusdt_binance()).unwrap();
+    let invalid = serde_json::Value::Bool(true);
+    if invalid_params {
+        value["Data"]["params"] = invalid.clone();
+    }
+
+    let (actual, params_error) = match encoding {
+        SerializationEncoding::Json => (
+            serde_json::from_value::<DataResponse>(value).map_err(|e| e.to_string()),
+            serde_json::from_value::<Params>(invalid)
+                .unwrap_err()
+                .to_string(),
+        ),
+        SerializationEncoding::MsgPack => (
+            rmp_serde::from_slice::<DataResponse>(&rmp_serde::to_vec_named(&value).unwrap())
+                .map_err(|e| e.to_string()),
+            rmp_serde::from_slice::<Params>(&rmp_serde::to_vec_named(&invalid).unwrap())
+                .unwrap_err()
+                .to_string(),
+        ),
+        SerializationEncoding::Sbe => unreachable!(),
+    };
+
+    let expected = if invalid_params {
+        params_error
+    } else {
+        "custom response contains a non-custom payload".to_string()
+    };
+
+    assert_eq!(actual.err().unwrap(), expected);
+}
+
+#[rstest]
+#[case(SerializationEncoding::Json)]
+#[case(SerializationEncoding::MsgPack)]
 fn l1_book_response_starts_new_snapshot_after_roundtrip(#[case] encoding: SerializationEncoding) {
     let mut expected = responses(1)
         .into_iter()

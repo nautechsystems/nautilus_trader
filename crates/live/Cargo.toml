@@ -157,6 +157,11 @@ name = "reconciliation"
 path = "benches/reconciliation.rs"
 harness = false
 
+[[bench]]
+name = "msgbus_python"
+harness = false
+required-features = ["python"]
+
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"

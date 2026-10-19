@@ -46,6 +46,21 @@ pub fn bench_money_from_raw(c: &mut Criterion) {
     });
 }
 
+pub fn bench_money_from_str(c: &mut Criterion) {
+    let expected = Money::from("12345.67 USD");
+
+    for (name, input) in [
+        ("Money::from_str", "12345.67 USD"),
+        ("Money::from_str (underscores)", "12_345.67 USD"),
+        ("Money::from_str (scientific)", "1.234567e4 USD"),
+    ] {
+        assert_eq!(input.parse::<Money>().unwrap(), expected);
+        c.bench_function(name, |b| {
+            b.iter(|| black_box(input).parse::<Money>().unwrap());
+        });
+    }
+}
+
 pub fn bench_money_add(c: &mut Criterion) {
     let currency = usd();
     let a = Money::new(100.50, currency);
@@ -117,6 +132,7 @@ criterion_group!(
     bench_money_from_decimal,
     bench_money_from_decimal_high_scale,
     bench_money_from_raw,
+    bench_money_from_str,
     bench_money_from_mantissa_exponent,
     bench_money_add,
     bench_money_sub,

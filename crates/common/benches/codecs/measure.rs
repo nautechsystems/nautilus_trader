@@ -17,7 +17,9 @@ use std::{
     any::Any,
     cell::{Cell, RefCell},
     collections::VecDeque,
+    fs,
     hint::black_box,
+    path::Path,
     rc::Rc,
     time::Instant,
 };
@@ -25,22 +27,31 @@ use std::{
 use bytes::Bytes;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
+    data::{
+        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        OptionGreekValues, OptionGreeks, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        option_chain::StrikeRange,
+        stubs::{
+            quote_ethusdt_binance, stub_bar, stub_custom_data, stub_delta, stub_deltas,
+            stub_depth10, stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buy,
+        },
+    },
     enums::{
-        AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
-        PositionSide, TimeInForce,
+        AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+        PositionAdjustmentType, PositionSide, TimeInForce,
     },
     events::{
-        AccountState, OrderEventAny, PositionAdjusted, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened, order::spec::*,
+        AccountState, OrderEventAny, OrderInitialized, PortfolioSnapshot, PositionAdjusted,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened, order::spec::*,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
-        TradeId, TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, TradeId, TraderId, VenueOrderId,
     },
-    instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
+    instruments::{Instrument, InstrumentAny, stubs::*},
     orders::OrderList,
     position::Position,
-    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -55,7 +66,12 @@ use super::{
 use crate::{
     enums::SerializationEncoding,
     messages::{
-        data::{DataResponse, RequestCommand, RequestJoin},
+        data::{
+            DataResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
+            RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestJoin, RequestOptionChainReferencePrice, RequestQuotes,
+            RequestTrades, SubscribeCommand, UnsubscribeCommand, subscribe::*,
+        },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
             GenerateExecutionMassStatus, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
@@ -78,9 +94,48 @@ const TS_BASE: u64 = 1_700_000_000_000_000_000;
 fn native_codec_measurements() {
     let samples = setting("NAUTILUS_BENCH_SAMPLES", 100_000);
     let trials = setting("NAUTILUS_BENCH_TRIALS", 3);
+    let warmup = setting("NAUTILUS_BENCH_WARMUP", WARMUP);
     let selected_case = std::env::var("NAUTILUS_BENCH_CASE").ok();
     let selected_format = std::env::var("NAUTILUS_BENCH_FORMAT").ok();
     let profile = std::env::var("NAUTILUS_BENCH_PROFILE").ok();
+    let formats = [
+        ("json", SerializationEncoding::Json),
+        ("msgpack", SerializationEncoding::MsgPack),
+    ];
+    println!(
+        "{}",
+        json!({"environment": {"samples": samples, "trials": trials, "warmup": warmup, "queue_capacity": CAPACITY, "profile": profile}})
+    );
+
+    for trial in 0..trials {
+        for index in 0..formats.len() {
+            let (format, encoding) = formats[(index + trial) % formats.len()];
+
+            if selected_format
+                .as_deref()
+                .is_some_and(|value| value != format)
+            {
+                continue;
+            }
+
+            let config = Run {
+                samples,
+                warmup,
+                trial,
+                format,
+                encoding,
+                profile: profile.as_deref(),
+                selected_case: selected_case.as_deref(),
+            };
+
+            measure_format(&config);
+        }
+    }
+
+    reset_bus();
+}
+
+fn measure_format(config: &Run<'_>) {
     let mut init = OrderInitializedSpec::builder()
         .ts_event((TS_BASE + 123).into())
         .ts_init((TS_BASE + 124).into())
@@ -248,7 +303,54 @@ fn native_codec_measurements() {
     let commands = execution_commands(&submit, &cancel, &modify);
     let events = execution_events();
     let positions = execution_positions();
+    let response_cases = data_responses();
+    let request_cases = data_requests();
+    let subscription_cases = data_subscriptions();
     let (fill_report, position_report) = execution_reports();
+
+    let mut mass_reports = Vec::new();
+
+    for count in [0, 1, 32, 256] {
+        let mut mass = ExecutionMassStatus::new(
+            ClientId::from("CLIENT-1"),
+            AccountId::from("SIM-1"),
+            "BINANCE".into(),
+            (TS_BASE + 220).into(),
+            Some(UUID4::new()),
+        );
+        mass.set_report_window(Some((TS_BASE - 1_000).into()), true);
+        let mut orders = Vec::new();
+
+        for index in 0..count {
+            let mut order = report.clone();
+            order.venue_order_id = VenueOrderId::new(format!("VENUE-{index}"));
+            orders.push(order);
+        }
+
+        mass.add_order_reports(orders);
+        mass.add_fill_reports(vec![fill_report.clone(); count]);
+        mass.add_position_reports(vec![position_report.clone(); count]);
+        mass_reports.push((format!("execution_mass_status_{count}"), mass));
+    }
+
+    let snapshot = PortfolioSnapshot::new(
+        account.account_id,
+        account.account_type,
+        account.base_currency,
+        account.balances.clone(),
+        account.margins.clone(),
+        vec![Money::from("12.34 USD")],
+        vec![Money::from("-5.67 USD")],
+        vec![Money::from("1012.34 USD")],
+        Some(Money::from("1012.34 USD")),
+        true,
+        vec![InstrumentId::from("BTCUSDT.BINANCE")],
+        vec![Currency::USDT()],
+        vec![InstrumentId::from("ETHUSDT.BINANCE")],
+        UUID4::new(),
+        (TS_BASE + 221).into(),
+        (TS_BASE + 222).into(),
+    );
 
     let mass_request = GenerateExecutionMassStatus {
         trader_id: TraderId::from("TRADER-1"),
@@ -261,241 +363,276 @@ fn native_codec_measurements() {
         causation_id: Some(UUID4::new()),
     };
 
-    let formats = [
-        ("json", SerializationEncoding::Json),
-        ("msgpack", SerializationEncoding::MsgPack),
-    ];
-    println!(
-        "{}",
-        json!({"environment": {"samples": samples, "trials": trials, "warmup": WARMUP, "queue_capacity": CAPACITY, "profile": profile}})
-    );
+    market_data(config);
+    report_bundles(&report, &fill_report, config);
 
-    for trial in 0..trials {
-        for index in 0..formats.len() {
-            let (format, encoding) = formats[(index + trial) % formats.len()];
-
-            if selected_format
-                .as_deref()
-                .is_some_and(|value| value != format)
-            {
-                continue;
-            }
-
-            let config = Run {
-                samples,
-                trial,
-                format,
-                encoding,
-                profile: profile.as_deref(),
-                selected_case: selected_case.as_deref(),
-            };
-
-            run(
-                "submit_order",
-                BusPayloadType::TradingCommand,
-                &submit,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<TradingCommand>,
-                &config,
-            );
-            run(
-                "cancel_order",
-                BusPayloadType::TradingCommand,
-                &cancel,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<TradingCommand>,
-                &config,
-            );
-            run(
-                "modify_order",
-                BusPayloadType::TradingCommand,
-                &modify,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<TradingCommand>,
-                &config,
-            );
-            run(
-                "query_account",
-                BusPayloadType::TradingCommand,
-                &query,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<TradingCommand>,
-                &config,
-            );
-            run(
-                "order_updated",
-                BusPayloadType::OrderEvent,
-                &updated,
-                msgbus::publish_order_event,
-                install_order,
-                &config,
-            );
-            run(
-                "order_filled",
-                BusPayloadType::OrderEvent,
-                &filled,
-                msgbus::publish_order_event,
-                install_order,
-                &config,
-            );
-            run(
-                "instrument_reply",
-                BusPayloadType::DataResponse,
-                &instrument,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<DataResponse>,
-                &config,
-            );
-            run(
-                "catalog_reply",
-                BusPayloadType::DataResponse,
-                &catalog,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<DataResponse>,
-                &config,
-            );
-            run(
-                "order_accepted",
-                BusPayloadType::OrderEvent,
-                &accepted,
-                msgbus::publish_order_event,
-                install_order,
-                &config,
-            );
-            run(
-                "order_status_report",
-                BusPayloadType::OrderStatusReport,
-                &report,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<OrderStatusReport>,
-                &config,
-            );
-            run(
-                "request_join",
-                BusPayloadType::RequestCommand,
-                &request,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<RequestCommand>,
-                &config,
-            );
-            run(
-                "historical_trades",
-                BusPayloadType::DataResponse,
-                &reply,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<DataResponse>,
-                &config,
-            );
-            run(
-                "custom_batch",
-                BusPayloadType::DataResponse,
-                &custom,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<DataResponse>,
-                &config,
-            );
-            run(
-                "account_state",
-                BusPayloadType::AccountState,
-                &account,
-                msgbus::publish_account_state,
-                install_account,
-                &config,
-            );
-
-            run(
-                "account_state_plain",
-                BusPayloadType::AccountState,
-                &account_plain,
-                msgbus::publish_account_state,
-                install_account,
-                &config,
-            );
-
-            for (name, value) in &commands {
-                run(
-                    name,
-                    BusPayloadType::TradingCommand,
-                    value,
-                    |topic, value| msgbus::publish_any(topic, value),
-                    install_any::<TradingCommand>,
-                    &config,
-                );
-            }
-
-            for (name, value) in &events {
-                run(
-                    name,
-                    BusPayloadType::OrderEvent,
-                    value,
-                    msgbus::publish_order_event,
-                    install_order,
-                    &config,
-                );
-            }
-
-            for (name, value) in &positions {
-                run(
-                    name,
-                    BusPayloadType::PositionEvent,
-                    value,
-                    msgbus::publish_position_event,
-                    install_position,
-                    &config,
-                );
-            }
-
-            run(
-                "fill_report",
-                BusPayloadType::FillReport,
-                &fill_report,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<FillReport>,
-                &config,
-            );
-            run(
-                "position_status_report",
-                BusPayloadType::PositionStatusReport,
-                &position_report,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<PositionStatusReport>,
-                &config,
-            );
-            run(
-                "generate_mass_status",
-                BusPayloadType::GenerateExecutionMassStatus,
-                &mass_request,
-                |topic, value| msgbus::publish_any(topic, value),
-                install_any::<GenerateExecutionMassStatus>,
-                &config,
-            );
-
-            if config.profile == Some("decode_latency") {
-                for (name, command) in [
-                    ("submit_order", &submit),
-                    ("cancel_order", &cancel),
-                    ("modify_order", &modify),
-                ] {
-                    execution_concrete(name, command, &config);
-                }
-
-                for (name, command) in &commands {
-                    if name.ends_with("_plain") {
-                        execution_concrete(name, command, &config);
-                    }
-                }
-            }
-        }
+    for (name, value) in &subscription_cases {
+        run(
+            &format!("subscribe_{name}"),
+            BusPayloadType::SubscribeCommand,
+            value,
+            |topic, value| msgbus::publish_any(topic, value),
+            install_any::<SubscribeCommand>,
+            config,
+        );
+        let unsubscribe = value.clone().into_unsubscribe(
+            UUID4::new(),
+            (TS_BASE + 311).into(),
+            Some(UUID4::new()),
+        );
+        run(
+            &format!("unsubscribe_{name}"),
+            BusPayloadType::UnsubscribeCommand,
+            &unsubscribe,
+            |topic, value| msgbus::publish_any(topic, value),
+            install_any::<UnsubscribeCommand>,
+            config,
+        );
     }
 
-    reset_bus();
+    measure_command("submit_order", &submit, config);
+    measure_command("cancel_order", &cancel, config);
+    measure_command("modify_order", &modify, config);
+    measure_command("query_account", &query, config);
+    run(
+        "order_updated",
+        BusPayloadType::OrderEvent,
+        &updated,
+        msgbus::publish_order_event,
+        install_order,
+        config,
+    );
+    run(
+        "order_filled",
+        BusPayloadType::OrderEvent,
+        &filled,
+        msgbus::publish_order_event,
+        install_order,
+        config,
+    );
+    run(
+        "instrument_reply",
+        BusPayloadType::DataResponse,
+        &instrument,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<DataResponse>,
+        config,
+    );
+    run(
+        "catalog_reply",
+        BusPayloadType::DataResponse,
+        &catalog,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<DataResponse>,
+        config,
+    );
+    run(
+        "order_accepted",
+        BusPayloadType::OrderEvent,
+        &accepted,
+        msgbus::publish_order_event,
+        install_order,
+        config,
+    );
+    run(
+        "order_status_report",
+        BusPayloadType::OrderStatusReport,
+        &report,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<OrderStatusReport>,
+        config,
+    );
+    run(
+        "request_join",
+        BusPayloadType::RequestCommand,
+        &request,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<RequestCommand>,
+        config,
+    );
+    run(
+        "historical_trades",
+        BusPayloadType::DataResponse,
+        &reply,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<DataResponse>,
+        config,
+    );
+    run(
+        "custom_batch",
+        BusPayloadType::DataResponse,
+        &custom,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<DataResponse>,
+        config,
+    );
+
+    for (name, value) in &mass_reports {
+        run(
+            name,
+            BusPayloadType::ExecutionMassStatus,
+            value,
+            |topic, value| msgbus::publish_any(topic, value),
+            install_any::<ExecutionMassStatus>,
+            config,
+        );
+    }
+
+    run(
+        "portfolio_snapshot",
+        BusPayloadType::PortfolioSnapshot,
+        &snapshot,
+        msgbus::publish_portfolio_snapshot,
+        install_snapshot,
+        config,
+    );
+
+    for (name, value) in &response_cases {
+        run(
+            name,
+            BusPayloadType::DataResponse,
+            value,
+            |topic, value| msgbus::publish_any(topic, value),
+            install_any::<DataResponse>,
+            config,
+        );
+    }
+
+    for (name, value) in &request_cases {
+        run(
+            name,
+            BusPayloadType::RequestCommand,
+            value,
+            |topic, value| msgbus::publish_any(topic, value),
+            install_any::<RequestCommand>,
+            config,
+        );
+    }
+
+    run(
+        "account_state",
+        BusPayloadType::AccountState,
+        &account,
+        msgbus::publish_account_state,
+        install_account,
+        config,
+    );
+
+    run(
+        "account_state_plain",
+        BusPayloadType::AccountState,
+        &account_plain,
+        msgbus::publish_account_state,
+        install_account,
+        config,
+    );
+
+    for (name, value) in &commands {
+        measure_command(name, value, config);
+    }
+
+    for (name, value) in &events {
+        run(
+            name,
+            BusPayloadType::OrderEvent,
+            value,
+            msgbus::publish_order_event,
+            install_order,
+            config,
+        );
+    }
+
+    for (name, value) in &positions {
+        run(
+            name,
+            BusPayloadType::PositionEvent,
+            value,
+            msgbus::publish_position_event,
+            install_position,
+            config,
+        );
+    }
+
+    run(
+        "fill_report",
+        BusPayloadType::FillReport,
+        &fill_report,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<FillReport>,
+        config,
+    );
+    run(
+        "position_status_report",
+        BusPayloadType::PositionStatusReport,
+        &position_report,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<PositionStatusReport>,
+        config,
+    );
+    run(
+        "generate_mass_status",
+        BusPayloadType::GenerateExecutionMassStatus,
+        &mass_request,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<GenerateExecutionMassStatus>,
+        config,
+    );
+}
+
+#[derive(Serialize, serde::Deserialize)]
+struct OrderWithFills {
+    order_report: OrderStatusReport,
+    fill_reports: Vec<FillReport>,
+}
+
+fn report_bundles(order: &OrderStatusReport, fill: &FillReport, config: &Run<'_>) {
+    if !matches!(
+        config.profile,
+        Some("decode_latency" | "codec_latency" | "encode" | "decode")
+    ) {
+        return;
+    }
+
+    for count in [0, 1, 32, 256] {
+        let value = OrderWithFills {
+            order_report: order.clone(),
+            fill_reports: vec![fill.clone(); count],
+        };
+
+        run(
+            &format!("generic_report_order_with_fills_{count}"),
+            BusPayloadType::ExecutionMassStatus,
+            &value,
+            |_, _| unreachable!(),
+            |_| unreachable!(),
+            config,
+        );
+    }
+}
+
+fn measure_command(name: &str, command: &TradingCommand, config: &Run<'_>) {
+    run(
+        name,
+        BusPayloadType::TradingCommand,
+        command,
+        |topic, value| msgbus::publish_any(topic, value),
+        install_any::<TradingCommand>,
+        config,
+    );
+
+    if matches!(
+        config.profile,
+        Some("decode_latency" | "codec_latency" | "encode" | "decode")
+    ) {
+        execution_concrete(name, command, config);
+    }
 }
 
 fn execution_commands(
     submit: &TradingCommand,
     cancel: &TradingCommand,
     modify: &TradingCommand,
-) -> [(&'static str, TradingCommand); 10] {
+) -> [(&'static str, TradingCommand); 12] {
     let TradingCommand::SubmitOrder(submit) = submit else {
         unreachable!()
     };
@@ -540,6 +677,34 @@ fn execution_commands(
         vec![submit.client_order_id, init_second.client_order_id],
         (TS_BASE + 142).into(),
     );
+
+    let list = SubmitOrderList {
+        trader_id: submit.trader_id,
+        client_id: submit.client_id,
+        strategy_id: submit.strategy_id,
+        instrument_id: submit.instrument_id,
+        order_list,
+        order_inits: vec![submit.order_init.clone(), init_second],
+        exec_algorithm_id: None,
+        position_id: None,
+        params: Some(params()),
+        command_id: UUID4::new(),
+        ts_init: (TS_BASE + 143).into(),
+        correlation_id: Some(UUID4::new()),
+        causation_id: Some(UUID4::new()),
+    };
+
+    let mut algorithm = submit.clone();
+    algorithm.exec_algorithm_id = Some(ExecAlgorithmId::from("TWAP"));
+    algorithm.position_id = Some(PositionId::from("POSITION-1"));
+    execution_algorithm(&mut algorithm.order_init);
+    let mut list_algorithm = list.clone();
+    list_algorithm.exec_algorithm_id = Some(ExecAlgorithmId::from("TWAP"));
+    list_algorithm.position_id = Some(PositionId::from("POSITION-2"));
+    for init in &mut list_algorithm.order_inits {
+        execution_algorithm(init);
+    }
+
     [
         (
             "submit_order_plain",
@@ -559,23 +724,14 @@ fn execution_commands(
         ),
         ("submit_order_limit", TradingCommand::SubmitOrder(limit)),
         (
-            "submit_order_list",
-            TradingCommand::SubmitOrderList(SubmitOrderList {
-                trader_id: submit.trader_id,
-                client_id: submit.client_id,
-                strategy_id: submit.strategy_id,
-                instrument_id: submit.instrument_id,
-                order_list,
-                order_inits: vec![submit.order_init.clone(), init_second],
-                exec_algorithm_id: None,
-                position_id: None,
-                params: Some(params()),
-                command_id: UUID4::new(),
-                ts_init: (TS_BASE + 143).into(),
-                correlation_id: Some(UUID4::new()),
-                causation_id: Some(UUID4::new()),
-            }),
+            "submit_order_algorithm",
+            TradingCommand::SubmitOrder(algorithm),
         ),
+        (
+            "submit_order_list_algorithm",
+            TradingCommand::SubmitOrderList(list_algorithm),
+        ),
+        ("submit_order_list", TradingCommand::SubmitOrderList(list)),
         (
             "modify_orders",
             TradingCommand::ModifyOrders(BatchModifyOrders {
@@ -638,6 +794,19 @@ fn execution_commands(
             }),
         ),
     ]
+}
+
+fn execution_algorithm(init: &mut OrderInitialized) {
+    init.exec_algorithm_id = Some(ExecAlgorithmId::from("TWAP"));
+    init.exec_spawn_id = Some(ClientOrderId::from("SPAWN-1"));
+    init.exec_algorithm_params = Some(
+        [
+            ("zeta".into(), "last".into()),
+            ("alpha".into(), "first".into()),
+        ]
+        .into_iter()
+        .collect(),
+    );
 }
 
 fn execution_events() -> [(&'static str, OrderEventAny); 14] {
@@ -805,12 +974,653 @@ fn execution_concrete(name: &str, command: &TradingCommand, config: &Run<'_>) {
         TradingCommand::ModifyOrder(value) => {
             concrete!(value, ModifyOrder);
         }
-        _ => unreachable!(),
+        TradingCommand::SubmitOrderList(value) => concrete!(value, SubmitOrderList),
+        TradingCommand::ModifyOrders(value) => concrete!(value, BatchModifyOrders),
+        TradingCommand::CancelOrders(value) => concrete!(value, BatchCancelOrders),
+        TradingCommand::CancelAllOrders(value) => concrete!(value, CancelAllOrders),
+        TradingCommand::QueryOrder(value) => concrete!(value, QueryOrder),
+        TradingCommand::QueryAccount(value) => concrete!(value, QueryAccount),
+    }
+}
+
+fn data_responses() -> Vec<(String, DataResponse)> {
+    let names = [
+        "custom_scalar",
+        "custom_batch",
+        "custom_empty",
+        "custom_bytes",
+        "custom_buffer",
+        "custom_text",
+        "instrument",
+        "instruments",
+        "book",
+        "book_deltas",
+        "book_depth",
+        "quotes",
+        "trades",
+        "funding_rates",
+        "option_chain_reference_price",
+        "bars",
+    ];
+    let mut cases = Vec::new();
+
+    for mode in [0, 1, 2] {
+        for count in [1, 32, 256] {
+            let values = responses(mode);
+            assert_eq!(values.len(), names.len());
+
+            for (name, mut value) in names.into_iter().zip(values) {
+                if count == 1 {
+                    cases.extend(instrument_responses(&value, mode));
+                }
+
+                if !resize_response(&mut value, count) {
+                    continue;
+                }
+
+                cases.push((format!("response_{name}_mode{mode}_{count}"), value));
+            }
+        }
+    }
+
+    cases
+}
+
+fn instrument_responses(value: &DataResponse, mode: u8) -> Vec<(String, DataResponse)> {
+    let DataResponse::Instrument(response) = value else {
+        return Vec::new();
+    };
+
+    let mut cases = Vec::new();
+
+    for (name, instrument) in instrument_cases() {
+        let mut response = response.clone();
+        response.data = instrument;
+        cases.push((
+            format!("response_instrument_{name}_mode{mode}"),
+            DataResponse::Instrument(response),
+        ));
+    }
+
+    cases
+}
+
+fn instrument_cases() -> [(&'static str, InstrumentAny); 17] {
+    [
+        ("betting", InstrumentAny::Betting(betting())),
+        (
+            "binary_option",
+            InstrumentAny::BinaryOption(binary_option()),
+        ),
+        ("cfd", InstrumentAny::Cfd(cfd_gold())),
+        ("commodity", InstrumentAny::Commodity(commodity_gold())),
+        (
+            "crypto_future",
+            InstrumentAny::CryptoFuture(crypto_future_btcusdt(
+                2,
+                6,
+                Price::from("0.01"),
+                Quantity::from("0.000001"),
+            )),
+        ),
+        (
+            "crypto_futures_spread",
+            InstrumentAny::CryptoFuturesSpread(crypto_futures_spread_btc_deribit()),
+        ),
+        (
+            "crypto_option",
+            InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+                3,
+                1,
+                Price::from("0.001"),
+                Quantity::from("0.1"),
+            )),
+        ),
+        (
+            "crypto_option_spread",
+            InstrumentAny::CryptoOptionSpread(crypto_option_spread_btc_deribit()),
+        ),
+        (
+            "crypto_perpetual",
+            InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()),
+        ),
+        ("equity", InstrumentAny::Equity(equity_aapl())),
+        (
+            "futures_contract",
+            InstrumentAny::FuturesContract(futures_contract_es(None, None)),
+        ),
+        (
+            "futures_spread",
+            InstrumentAny::FuturesSpread(futures_spread_es()),
+        ),
+        (
+            "index",
+            InstrumentAny::IndexInstrument(index_instrument_spx()),
+        ),
+        (
+            "option_contract",
+            InstrumentAny::OptionContract(option_contract_appl()),
+        ),
+        (
+            "option_spread",
+            InstrumentAny::OptionSpread(option_spread()),
+        ),
+        (
+            "perpetual_contract",
+            InstrumentAny::PerpetualContract(perpetual_contract_eurusd()),
+        ),
+        (
+            "tokenized_asset",
+            InstrumentAny::TokenizedAsset(tokenized_asset_aaplx()),
+        ),
+    ]
+}
+
+fn resize_response(value: &mut DataResponse, count: usize) -> bool {
+    macro_rules! resize {
+        ($value:expr) => {
+            if let Some(first) = $value.data.first().cloned() {
+                $value.data.resize(count, first);
+            }
+        };
+    }
+
+    match value {
+        DataResponse::Data(response) => {
+            if let Some(values) = response.data.downcast_ref::<Vec<CustomData>>() {
+                let mut values = values.clone();
+                if let Some(first) = values.first().cloned() {
+                    values.resize(count, first);
+                }
+
+                response.data = std::sync::Arc::new(values);
+            } else if let Some(values) = response.data.downcast_ref::<Vec<u8>>() {
+                response.data = std::sync::Arc::new(values.repeat(count));
+            } else if let Some(values) = response.data.downcast_ref::<Bytes>() {
+                response.data = std::sync::Arc::new(Bytes::from(values.repeat(count)));
+            } else if let Some(value) = response.data.downcast_ref::<String>() {
+                response.data = std::sync::Arc::new(value.repeat(count));
+            }
+        }
+        DataResponse::Instruments(value) => resize!(value),
+        DataResponse::BookDeltas(value) => resize!(value),
+        DataResponse::BookDepth(value) => resize!(value),
+        DataResponse::Quotes(value) => resize!(value),
+        DataResponse::Trades(value) => resize!(value),
+        DataResponse::FundingRates(value) => resize!(value),
+        DataResponse::Bars(value) => resize!(value),
+        _ => {
+            if count != 1 {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+fn data_requests() -> Vec<(String, RequestCommand)> {
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let client_id = ClientId::from("CLIENT-1");
+    let bar_type = "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL".parse().unwrap();
+    let series_id = "DERIBIT:BTC:BTC:1800000000000000000".parse().unwrap();
+    let data_type = stub_custom_data(77, -88, Some(params()), None).data_type;
+    let mut cases = Vec::new();
+
+    for populated in [false, true] {
+        let start = populated.then(|| jiff::Timestamp::new(-91, -123_456_789).unwrap());
+        let end = populated.then(|| jiff::Timestamp::new(92, 987_654_321).unwrap());
+        let limit = populated.then(|| std::num::NonZeroUsize::new(256).unwrap());
+        let depth = populated.then(|| std::num::NonZeroUsize::new(10).unwrap());
+        let parameters = populated.then(params);
+        let ts_init = UnixNanos::from(TS_BASE + 219);
+        macro_rules! ranged {
+            ($variant:ident, $ty:ident, $identity:expr) => {
+                (
+                    stringify!($variant),
+                    RequestCommand::$variant($ty::new(
+                        $identity,
+                        start,
+                        end,
+                        limit,
+                        Some(client_id),
+                        UUID4::new(),
+                        ts_init,
+                        parameters.clone(),
+                    )),
+                )
+            };
+        }
+
+        for (name, value) in [
+            (
+                "Data",
+                RequestCommand::Data(RequestCustomData::new(
+                    client_id,
+                    data_type.clone(),
+                    start,
+                    end,
+                    limit,
+                    UUID4::new(),
+                    ts_init,
+                    parameters.clone(),
+                )),
+            ),
+            (
+                "Instrument",
+                RequestCommand::Instrument(RequestInstrument::new(
+                    instrument_id,
+                    start,
+                    end,
+                    Some(client_id),
+                    UUID4::new(),
+                    ts_init,
+                    parameters.clone(),
+                )),
+            ),
+            (
+                "Instruments",
+                RequestCommand::Instruments(RequestInstruments::new(
+                    start,
+                    end,
+                    Some(client_id),
+                    Some("BINANCE".into()),
+                    UUID4::new(),
+                    ts_init,
+                    parameters.clone(),
+                )),
+            ),
+            (
+                "BookSnapshot",
+                RequestCommand::BookSnapshot(RequestBookSnapshot::new(
+                    instrument_id,
+                    depth,
+                    Some(client_id),
+                    UUID4::new(),
+                    ts_init,
+                    parameters.clone(),
+                )),
+            ),
+            ranged!(BookDeltas, RequestBookDeltas, instrument_id),
+            (
+                "BookDepth",
+                RequestCommand::BookDepth(RequestBookDepth::new(
+                    instrument_id,
+                    start,
+                    end,
+                    limit,
+                    depth,
+                    Some(client_id),
+                    UUID4::new(),
+                    ts_init,
+                    parameters.clone(),
+                )),
+            ),
+            ranged!(Quotes, RequestQuotes, instrument_id),
+            ranged!(Trades, RequestTrades, instrument_id),
+            ranged!(FundingRates, RequestFundingRates, instrument_id),
+            (
+                "OptionChainReferencePrice",
+                RequestCommand::OptionChainReferencePrice(RequestOptionChainReferencePrice::new(
+                    series_id,
+                    instrument_id,
+                    Some(client_id),
+                    UUID4::new(),
+                    ts_init,
+                    parameters.clone(),
+                )),
+            ),
+            ranged!(Bars, RequestBars, bar_type),
+            (
+                "Join",
+                RequestCommand::Join(RequestJoin::new(
+                    vec![UUID4::new(), UUID4::new()],
+                    start,
+                    end,
+                    UUID4::new(),
+                    ts_init,
+                    parameters.clone(),
+                    Some(UUID4::new()),
+                )),
+            ),
+        ] {
+            cases.push((format!("request_{name}_populated{populated}"), value));
+        }
+    }
+
+    cases
+}
+
+fn data_subscriptions() -> Vec<(String, SubscribeCommand)> {
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let bar_type = "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL".parse().unwrap();
+    let series_id = "DERIBIT:BTC:BTC:1800000000000000000".parse().unwrap();
+    let data_type = stub_custom_data(77, -88, None, None).data_type;
+    let mut cases = Vec::new();
+
+    for populated in [false, true] {
+        macro_rules! subscription {
+            ($variant:ident, $ty:ident, {$($field:ident: $value:expr),* $(,)?}) => {
+                SubscribeCommand::$variant($ty {
+                    $($field: $value,)*
+                    client_id: Some(ClientId::from("CLIENT-1")),
+                    venue: Some("BINANCE".into()),
+                    command_id: UUID4::new(),
+                    ts_init: (TS_BASE + 309).into(),
+                    correlation_id: populated.then(UUID4::new),
+                    params: populated.then(params),
+                })
+            };
+        }
+
+        for value in [
+            subscription!(Data, SubscribeCustomData, {data_type: data_type.clone()}),
+            subscription!(Instrument, SubscribeInstrument, {instrument_id: instrument_id}),
+            SubscribeCommand::Instruments(SubscribeInstruments {
+                client_id: Some(ClientId::from("CLIENT-1")),
+                venue: "BINANCE".into(),
+                command_id: UUID4::new(),
+                ts_init: (TS_BASE + 310).into(),
+                correlation_id: populated.then(UUID4::new),
+                params: populated.then(params),
+            }),
+            subscription!(BookDeltas, SubscribeBookDeltas, {instrument_id: instrument_id,
+                book_type: BookType::L3_MBO,
+                depth: std::num::NonZeroUsize::new(20), managed: true}),
+            subscription!(BookDepth, SubscribeBookDepth, {instrument_id: instrument_id,
+                book_type: BookType::L2_MBP,
+                depth: std::num::NonZeroUsize::new(10), managed: false}),
+            subscription!(BookSnapshots, SubscribeBookSnapshots, {instrument_id: instrument_id,
+                book_type: BookType::L2_MBP,
+                depth: std::num::NonZeroUsize::new(5), interval_ms: std::num::NonZeroUsize::new(250).unwrap()}),
+            subscription!(Quotes, SubscribeQuotes, {instrument_id: instrument_id}),
+            subscription!(Trades, SubscribeTrades, {instrument_id: instrument_id}),
+            subscription!(Bars, SubscribeBars, {bar_type: bar_type}),
+            subscription!(MarkPrices, SubscribeMarkPrices, {instrument_id: instrument_id}),
+            subscription!(IndexPrices, SubscribeIndexPrices, {instrument_id: instrument_id}),
+            subscription!(FundingRates, SubscribeFundingRates, {instrument_id: instrument_id}),
+            subscription!(InstrumentStatus, SubscribeInstrumentStatus, {instrument_id: instrument_id}),
+            subscription!(InstrumentClose, SubscribeInstrumentClose, {instrument_id: instrument_id}),
+            subscription!(OptionGreeks, SubscribeOptionGreeks, {instrument_id: instrument_id}),
+        ] {
+            let name = match &value {
+                SubscribeCommand::Data(_) => "data",
+                SubscribeCommand::Instrument(_) => "instrument",
+                SubscribeCommand::Instruments(_) => "instruments",
+                SubscribeCommand::BookDeltas(_) => "book_deltas",
+                SubscribeCommand::BookDepth(_) => "book_depth",
+                SubscribeCommand::BookSnapshots(_) => "book_snapshots",
+                SubscribeCommand::Quotes(_) => "quotes",
+                SubscribeCommand::Trades(_) => "trades",
+                SubscribeCommand::Bars(_) => "bars",
+                SubscribeCommand::MarkPrices(_) => "mark_prices",
+                SubscribeCommand::IndexPrices(_) => "index_prices",
+                SubscribeCommand::FundingRates(_) => "funding_rates",
+                SubscribeCommand::InstrumentStatus(_) => "instrument_status",
+                SubscribeCommand::InstrumentClose(_) => "instrument_close",
+                SubscribeCommand::OptionGreeks(_) => "option_greeks",
+                SubscribeCommand::OptionChain(_) => unreachable!(),
+            };
+
+            cases.push((format!("{name}_populated{populated}"), value));
+        }
+
+        for (name, strike_range) in [
+            (
+                "fixed",
+                StrikeRange::Fixed(vec![Price::from("20000.125"), Price::from("21000.750")]),
+            ),
+            (
+                "relative",
+                StrikeRange::AtmRelative {
+                    strikes_above: 7,
+                    strikes_below: 3,
+                },
+            ),
+            ("percent", StrikeRange::AtmPercent { pct: 12.5 }),
+            (
+                "delta",
+                StrikeRange::Delta {
+                    target: 0.35,
+                    tolerance: 0.07,
+                },
+            ),
+        ] {
+            let value = subscription!(OptionChain, SubscribeOptionChain, {series_id: series_id,
+                strike_range: strike_range, snapshot_interval_ms: populated.then_some(250)});
+            cases.push((format!("option_chain_{name}_populated{populated}"), value));
+        }
+    }
+
+    cases
+}
+
+fn market_data(config: &Run<'_>) {
+    macro_rules! market {
+        ($name:literal, $kind:ident, $value:expr, $ty:ty, $publish:ident, $subscribe:ident) => {{
+            let value = $value;
+            run(
+                $name,
+                BusPayloadType::$kind,
+                &value,
+                msgbus::$publish,
+                |seen| {
+                    msgbus::$subscribe(
+                        TOPIC.into(),
+                        TypedHandler::from(move |value: &$ty| {
+                            black_box(value);
+                            seen.set(seen.get() + 1);
+                        }),
+                        None,
+                    );
+                },
+                config,
+            );
+        }};
+    }
+    market!(
+        "market_deltas",
+        OrderBookDeltas,
+        stub_deltas(),
+        OrderBookDeltas,
+        publish_deltas,
+        subscribe_book_deltas
+    );
+    market!(
+        "market_depth",
+        OrderBookDepth,
+        stub_depth10(),
+        OrderBookDepth,
+        publish_depth,
+        subscribe_book_depth
+    );
+    market!(
+        "market_quote",
+        QuoteTick,
+        quote_ethusdt_binance(),
+        QuoteTick,
+        publish_quote,
+        subscribe_quotes
+    );
+    market!(
+        "market_trade",
+        TradeTick,
+        stub_trade_ethusdt_buy(),
+        TradeTick,
+        publish_trade,
+        subscribe_trades
+    );
+    market!(
+        "market_bar",
+        Bar,
+        stub_bar(),
+        Bar,
+        publish_bar,
+        subscribe_bars
+    );
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+
+    let mark = MarkPriceUpdate {
+        instrument_id,
+        value: Price::from("20001.125"),
+        ts_event: (TS_BASE + 11).into(),
+        ts_init: (TS_BASE + 12).into(),
+    };
+
+    market!(
+        "market_mark",
+        MarkPriceUpdate,
+        mark,
+        MarkPriceUpdate,
+        publish_mark_price,
+        subscribe_mark_prices
+    );
+
+    let index = IndexPriceUpdate {
+        instrument_id,
+        value: Price::from("19999.750"),
+        ts_event: (TS_BASE + 13).into(),
+        ts_init: (TS_BASE + 14).into(),
+    };
+
+    market!(
+        "market_index",
+        IndexPriceUpdate,
+        index,
+        IndexPriceUpdate,
+        publish_index_price,
+        subscribe_index_prices
+    );
+
+    let funding = FundingRateUpdate {
+        instrument_id,
+        rate: rust_decimal_macros::dec!(-0.0123456789),
+        interval: Some(480),
+        next_funding_ns: Some((TS_BASE + 1_000).into()),
+        ts_event: (TS_BASE + 15).into(),
+        ts_init: (TS_BASE + 16).into(),
+    };
+
+    market!(
+        "market_funding",
+        FundingRateUpdate,
+        funding,
+        FundingRateUpdate,
+        publish_funding_rate,
+        subscribe_funding_rates
+    );
+
+    let greeks = OptionGreeks {
+        instrument_id,
+        convention: Default::default(),
+        greeks: OptionGreekValues {
+            delta: 0.41,
+            gamma: 0.02,
+            theta: -0.03,
+            vega: 0.14,
+            rho: 0.05,
+        },
+        mark_iv: Some(0.51),
+        bid_iv: Some(0.49),
+        ask_iv: Some(0.53),
+        underlying_price: Some(20_000.5),
+        open_interest: Some(1234.75),
+        ts_event: (TS_BASE + 17).into(),
+        ts_init: (TS_BASE + 18).into(),
+    };
+
+    market!(
+        "market_greeks",
+        OptionGreeks,
+        greeks,
+        OptionGreeks,
+        publish_option_greeks,
+        subscribe_option_greeks
+    );
+
+    if matches!(
+        config.profile,
+        Some("codec_latency" | "decode_latency" | "encode" | "decode")
+    ) {
+        let values = [
+            (
+                "custom",
+                Data::Custom(stub_custom_data(77, -88, Some(params()), None)),
+            ),
+            ("delta", Data::BookDelta(stub_delta())),
+            ("quote", Data::Quote(quote_ethusdt_binance())),
+            ("trade", Data::Trade(stub_trade_ethusdt_buy())),
+            ("bar", Data::Bar(stub_bar())),
+            ("mark", Data::MarkPrice(mark)),
+            ("index", Data::IndexPrice(index)),
+            ("funding", Data::FundingRate(funding)),
+            ("greeks", Data::OptionGreeks(greeks)),
+            ("status", Data::InstrumentStatus(stub_instrument_status())),
+            ("close", Data::InstrumentClose(stub_instrument_close())),
+            (
+                "instrument",
+                Data::Instrument(Box::new(InstrumentAny::CurrencyPair(
+                    currency_pair_btcusdt(),
+                ))),
+            ),
+        ];
+        macro_rules! untagged {
+            ($variant:ident, $kind:ident, $ty:ty, $value:expr) => {{
+                let value = $value;
+                let bytes = serialize_payload(
+                    config.encoding,
+                    BusPayloadType::$kind,
+                    &Data::$variant(Box::new(value.clone())),
+                )
+                .unwrap();
+                let decoded: $ty =
+                    deserialize_payload(BusPayloadType::$kind, config.encoding, &bytes)
+                        .unwrap()
+                        .unwrap();
+                assert_eq!(
+                    serde_json::to_value(decoded).unwrap(),
+                    serde_json::to_value(value).unwrap()
+                );
+                let error =
+                    deserialize_payload::<Data>(BusPayloadType::$kind, config.encoding, &bytes)
+                        .unwrap_err();
+                assert_eq!(
+                    error.root_cause().to_string(),
+                    "Missing 'type' field in Data"
+                );
+            }};
+        }
+        untagged!(BookDeltas, OrderBookDeltas, OrderBookDeltas, stub_deltas());
+        untagged!(BookDepth, OrderBookDepth, OrderBookDepth, stub_depth10());
+
+        for (name, value) in values {
+            run(
+                &format!("generic_data_{name}_single"),
+                BusPayloadType::DataResponse,
+                &value,
+                |_, _| unreachable!(),
+                |_| unreachable!(),
+                config,
+            );
+
+            for count in [1, 32, 256] {
+                let values = vec![value.clone(); count];
+                run(
+                    &format!("generic_data_{name}_{count}"),
+                    BusPayloadType::DataResponse,
+                    &values,
+                    |_, _| unreachable!(),
+                    |_| unreachable!(),
+                    config,
+                );
+            }
+        }
     }
 }
 
 struct Run<'a> {
     samples: usize,
+    warmup: usize,
     trial: usize,
     format: &'a str,
     encoding: SerializationEncoding,
@@ -839,6 +1649,10 @@ fn run<T: Serialize + DeserializeOwned + Any>(
         return;
     }
 
+    if config.profile == Some("processor_latency") && !kind.is_typed_message() {
+        return;
+    }
+
     let payload = serialize_payload(config.encoding, kind, value).unwrap();
     let decoded: T = deserialize_payload(kind, config.encoding, &payload)
         .unwrap()
@@ -848,7 +1662,8 @@ fn run<T: Serialize + DeserializeOwned + Any>(
         serde_json::to_value(value).unwrap()
     );
 
-    for _ in 0..WARMUP {
+    wire_fixture(name, kind, value, &payload, config);
+    for _ in 0..config.warmup {
         black_box(serialize_payload(config.encoding, kind, black_box(value)).unwrap());
         black_box(
             deserialize_payload::<T>(kind, config.encoding, black_box(&payload))
@@ -857,11 +1672,47 @@ fn run<T: Serialize + DeserializeOwned + Any>(
         );
     }
 
+    if config.profile == Some("processor_latency") {
+        processor(name, kind, value, payload, install, config);
+        return;
+    }
+
+    measure_codec(name, kind, value, &payload, config);
+    if config.profile.is_some() {
+        return;
+    }
+
+    let case = Case {
+        name,
+        kind,
+        value,
+        publish,
+        install,
+    };
+
+    stages(&case, payload.len(), config, false);
+    stages(&case, payload.len(), config, true);
+    for (label, burst, retry) in [
+        ("steady", 1, true),
+        ("burst", 256, true),
+        ("overload", 256, false),
+    ] {
+        delivery(&case, config, (label, burst, retry));
+    }
+}
+
+fn measure_codec<T: Serialize + DeserializeOwned + Any>(
+    name: &str,
+    kind: BusPayloadType,
+    value: &T,
+    payload: &Bytes,
+    config: &Run<'_>,
+) {
     if config.profile == Some("decode_latency") {
         let mut times = Vec::with_capacity(config.samples);
         for _ in 0..config.samples {
             let started = Instant::now();
-            let decoded = decode::<T>(config.encoding, kind, black_box(&payload));
+            let decoded = decode::<T>(config.encoding, kind, black_box(payload));
             times.push(started.elapsed().as_nanos() as u64);
             black_box(decoded);
         }
@@ -870,14 +1721,16 @@ fn run<T: Serialize + DeserializeOwned + Any>(
         return;
     }
 
-    if let Some(operation) = config.profile {
+    if let Some(operation) = config.profile.filter(|value| *value != "codec_latency") {
+        profile_boundary();
+
         for _ in 0..config.samples {
             match operation {
                 "encode" => {
                     black_box(encode(config.encoding, kind, black_box(value)));
                 }
                 "decode" => {
-                    black_box(decode::<T>(config.encoding, kind, black_box(&payload)));
+                    black_box(decode::<T>(config.encoding, kind, black_box(payload)));
                 }
                 _ => panic!("profile must be encode or decode"),
             }
@@ -898,7 +1751,7 @@ fn run<T: Serialize + DeserializeOwned + Any>(
         encoded.push(started.elapsed().as_nanos() as u64);
         black_box(bytes);
         let started = Instant::now();
-        let decoded = decode::<T>(config.encoding, kind, black_box(&payload));
+        let decoded = decode::<T>(config.encoding, kind, black_box(payload));
         decoded_times.push(started.elapsed().as_nanos() as u64);
         black_box(decoded);
     }
@@ -912,24 +1765,112 @@ fn run<T: Serialize + DeserializeOwned + Any>(
         config,
         &json!({}),
     );
+}
 
-    let case = Case {
-        name,
-        kind,
-        value,
-        publish,
-        install,
+fn wire_fixture<T: Serialize + DeserializeOwned + Any>(
+    name: &str,
+    kind: BusPayloadType,
+    value: &T,
+    payload: &Bytes,
+    config: &Run<'_>,
+) {
+    let filename = format!("{name}.{}.json", config.format);
+
+    if let Ok(directory) = std::env::var("NAUTILUS_BENCH_FIXTURE_DIR") {
+        let directory = Path::new(&directory);
+        fs::create_dir_all(directory).unwrap();
+        let message = BusMessage::with_str_topic(TOPIC, kind, payload.clone(), config.encoding);
+        let decoded: T = deserialize_payload(kind, config.encoding, payload)
+            .unwrap()
+            .unwrap();
+        let reencoded = serialize_payload(config.encoding, kind, &decoded).unwrap();
+        let fixture = json!({"case": name, "message": message, "reencoded": reencoded,
+            "expected": serde_json::to_value(value).unwrap(),
+            "diagnostic": name.starts_with("generic_"),
+            "native_type": std::any::type_name::<T>()});
+        fs::write(
+            directory.join(&filename),
+            serde_json::to_vec(&fixture).unwrap(),
+        )
+        .unwrap();
+    }
+
+    if let Ok(directory) = std::env::var("NAUTILUS_BENCH_REPLAY_DIR") {
+        let bytes = fs::read(Path::new(&directory).join(&filename)).unwrap();
+        let fixture: Value = serde_json::from_slice(&bytes).unwrap();
+        let message: BusMessage = serde_json::from_value(fixture["message"].clone()).unwrap();
+        assert_eq!(message.encoding, config.encoding);
+        assert_eq!(message.payload_type, kind);
+        let decoded: T = deserialize_payload(kind, config.encoding, &message.payload)
+            .unwrap()
+            .unwrap();
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), fixture["expected"]);
+        assert_eq!(
+            serialize_payload(config.encoding, kind, &decoded).unwrap(),
+            serde_json::from_value::<Bytes>(fixture["reencoded"].clone()).unwrap()
+        );
+    }
+}
+
+fn processor<T: Serialize + Any>(
+    name: &str,
+    kind: BusPayloadType,
+    value: &T,
+    payload: Bytes,
+    install: fn(Rc<Cell<usize>>),
+    config: &Run<'_>,
+) {
+    reset_bus();
+    let mut bus = MessageBus::default();
+    bus.add_streaming_type(kind);
+    set_message_bus(Rc::new(RefCell::new(bus)));
+    let seen = Rc::new(Cell::new(0));
+    install(seen.clone());
+    let message = BusMessage::with_str_topic(TOPIC, kind, payload, config.encoding);
+    let mut expected = serde_json::to_value(value).unwrap();
+    expected
+        .as_object_mut()
+        .unwrap()
+        .insert("payload_type".into(), Value::from(kind.as_str()));
+    msgbus::process_external_typed_message(&message, &mut |value, mapping| {
+        assert!(value.downcast_ref::<T>().is_some());
+        assert_eq!(mapping, &expected);
+        Ok(())
+    })
+    .unwrap();
+
+    let mut callback = |value: &dyn Any, mapping: &Value| {
+        black_box(value);
+        black_box(mapping);
+        Ok(())
     };
 
-    stages(&case, payload.len(), config, false);
-    stages(&case, payload.len(), config, true);
-    for (label, burst, retry) in [
-        ("steady", 1, true),
-        ("burst", 256, true),
-        ("overload", 256, false),
-    ] {
-        delivery(&case, config, (label, burst, retry));
+    for _ in 0..config.warmup {
+        msgbus::process_external_typed_message(black_box(&message), &mut callback).unwrap();
     }
+
+    seen.set(0);
+    let mut times = Vec::with_capacity(config.samples);
+    for _ in 0..config.samples {
+        let started = Instant::now();
+        msgbus::process_external_typed_message(black_box(&message), &mut callback).unwrap();
+        times.push(started.elapsed().as_nanos() as u64);
+    }
+
+    assert_eq!(seen.get(), config.samples);
+    emit(
+        name,
+        "processor_and_local_publish",
+        &times,
+        message.payload.len(),
+        config,
+        &json!({}),
+    );
+}
+
+#[inline(never)]
+fn profile_boundary() {
+    black_box(Box::new(0_u8));
 }
 
 #[inline(never)]
@@ -1127,6 +2068,17 @@ fn install_any<T: Any>(seen: Rc<Cell<usize>>) {
     msgbus::subscribe_any(
         TOPIC.into(),
         ShareableMessageHandler::from_typed(move |value: &T| {
+            black_box(value);
+            seen.set(seen.get() + 1);
+        }),
+        None,
+    );
+}
+
+fn install_snapshot(seen: Rc<Cell<usize>>) {
+    msgbus::subscribe_portfolio_snapshot(
+        TOPIC.into(),
+        TypedHandler::from(move |value: &PortfolioSnapshot| {
             black_box(value);
             seen.set(seen.get() + 1);
         }),

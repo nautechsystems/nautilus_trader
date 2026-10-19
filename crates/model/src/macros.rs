@@ -32,11 +32,14 @@ macro_rules! enum_strum_serde {
             where
                 D: $crate::__serde::Deserializer<'de>,
             {
-                let value =
-                    <::std::borrow::Cow<'de, str> as $crate::__serde::Deserialize>::deserialize(
-                        deserializer,
-                    )?;
-                <$type as ::core::str::FromStr>::from_str(value.as_ref())
+                use $crate::__serde as serde;
+
+                #[derive(serde::Deserialize)]
+                #[serde(crate = "serde", transparent)]
+                struct StringInput<'a>(#[serde(borrow)] ::std::borrow::Cow<'a, str>);
+
+                let StringInput(value) = StringInput::deserialize(deserializer)?;
+                <Self as ::core::str::FromStr>::from_str(value.as_ref())
                     .map_err($crate::__serde::de::Error::custom)
             }
         }

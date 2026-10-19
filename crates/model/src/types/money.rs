@@ -79,13 +79,17 @@ use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
-use crate::types::{
-    Currency, Quantity,
-    fixed::{
-        FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, check_fixed_raw_i128,
-        check_fixed_raw_u128, compare_raw_signed, format_scaled_i128,
-        mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
-        raw_scale, raw_scales_match, scaled_raw_to_decimal,
+use crate::{
+    deserialization::StringInput,
+    types::{
+        Currency, Quantity,
+        fixed::{
+            FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision,
+            check_fixed_raw_i128, check_fixed_raw_u128, compare_raw_signed, format_scaled_i128,
+            mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked,
+            parse_decimal_mantissa, raw_scale, raw_scales_match, remove_underscores,
+            scaled_raw_to_decimal,
+        },
     },
 };
 
@@ -619,21 +623,23 @@ impl FromStr for Money {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = value.split_whitespace().collect();
+        let mut parts = value.split_whitespace();
 
         // Ensure we have both the amount and currency
-        if parts.len() != 2 {
+        let (Some(amount), Some(currency), None) = (parts.next(), parts.next(), parts.next())
+        else {
             return Err(format!(
                 "Error invalid input format '{value}'. Expected '<amount> <currency>'"
             ));
-        }
+        };
 
-        let clean_amount = parts[0].replace('_', "");
+        let clean_amount = remove_underscores(amount);
 
-        let currency = Currency::from_str(parts[1]).map_err(|e| e.to_string())?;
+        let currency = Currency::from_str(currency).map_err(|e| e.to_string())?;
+
         if clean_amount.contains('e') || clean_amount.contains('E') {
             let decimal = Decimal::from_scientific(&clean_amount)
-                .map_err(|e| format!("Error parsing amount '{}' as Decimal: {e}", parts[0]))?;
+                .map_err(|e| format!("Error parsing amount '{amount}' as Decimal: {e}"))?;
             return Self::from_decimal(decimal, currency).map_err(|e| e.to_string());
         }
 
@@ -875,7 +881,7 @@ impl<'de> Deserialize<'de> for Money {
     where
         D: Deserializer<'de>,
     {
-        let money_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(money_str) = Deserialize::deserialize(deserializer)?;
         Self::from_str(money_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
@@ -1490,6 +1496,16 @@ mod tests {
     #[should_panic(expected = "Condition failed")]
     fn test_from_str_invalid_input(#[case] input: &str) {
         let _ = Money::from(input);
+    }
+
+    #[rstest]
+    #[case("invalid UNKNOWN_FROM_STR", "Unknown currency: UNKNOWN_FROM_STR")]
+    #[case(
+        "1__e+ USD",
+        "Error parsing amount '1__e+' as Decimal: Failed to parse"
+    )]
+    fn test_from_str_preserves_error_order_and_input(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(input.parse::<Money>(), Err(expected.to_string()));
     }
 
     #[rstest]

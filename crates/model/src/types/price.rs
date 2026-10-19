@@ -67,12 +67,13 @@ use super::fixed::compare_raw_signed;
 use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, format_scaled_i128,
     mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
-    raw_scales_match, scaled_raw_to_decimal,
+    raw_scales_match, remove_underscores, scaled_raw_to_decimal,
 };
 #[cfg(feature = "high-precision")]
 use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use crate::deserialization::StringInput;
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
 
@@ -621,8 +622,7 @@ impl FromStr for Price {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let clean_value = value.replace('_', "");
-
+        let clean_value = remove_underscores(value);
         if clean_value.contains('e') || clean_value.contains('E') {
             let decimal = Decimal::from_scientific(&clean_value)
                 .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
@@ -869,7 +869,7 @@ impl<'de> Deserialize<'de> for Price {
     where
         D: Deserializer<'de>,
     {
-        let price_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(price_str) = Deserialize::deserialize(deserializer)?;
         Self::from_str(price_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
