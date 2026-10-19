@@ -49,6 +49,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
+- Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
 - Fixed Hyperliquid WebSocket readiness being published before handler initialization
 - Fixed Interactive Brokers small-lot entry prices after commission rounding (#5327), thanks @bebop23
