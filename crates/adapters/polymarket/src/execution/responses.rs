@@ -56,7 +56,7 @@ use crate::{
 };
 
 #[expect(clippy::too_many_arguments)]
-pub(super) async fn handle_batch_order_responses(
+pub(super) fn handle_batch_order_responses(
     responses: Vec<OrderResponse>,
     batch_orders: Vec<BatchLimitOrderContext>,
     expected_venue_order_ids: Vec<VenueOrderId>,
@@ -70,7 +70,7 @@ pub(super) async fn handle_batch_order_responses(
     pending_submits: &PendingSubmitTracker,
     pending_cancels: &PendingCancelTracker,
     account_id: AccountId,
-) {
+) -> impl Future<Output = ()> + Send + 'static {
     let response_len = responses.len();
     let order_len = batch_orders.len();
 
@@ -81,11 +81,10 @@ pub(super) async fn handle_batch_order_responses(
     }
 
     let mut follow_ups = Vec::new();
+    let mut batch_orders = batch_orders.into_iter().zip(expected_venue_order_ids);
 
-    for ((batch_order, response), expected_venue_order_id) in batch_orders
-        .iter()
-        .zip(responses)
-        .zip(&expected_venue_order_ids)
+    for (response, (batch_order, expected_venue_order_id)) in
+        responses.into_iter().zip(batch_orders.by_ref())
     {
         let time_in_force = batch_order.order.time_in_force();
         let (deferred_cancel, fok_order_id) = if submit_response_outcome(&response, time_in_force)
@@ -94,8 +93,8 @@ pub(super) async fn handle_batch_order_responses(
             (
                 handle_unknown_submit_result(
                     &batch_order.order,
-                    *expected_venue_order_id,
-                    &submit_response_unknown_reason(&response, false, *expected_venue_order_id),
+                    expected_venue_order_id,
+                    &submit_response_unknown_reason(&response, false, expected_venue_order_id),
                     None,
                     emitter,
                     clock,
@@ -115,7 +114,7 @@ pub(super) async fn handle_batch_order_responses(
             let deferred_cancel = handle_order_response(
                 Ok(response),
                 &batch_order.order,
-                *expected_venue_order_id,
+                expected_venue_order_id,
                 emitter,
                 clock,
                 fill_tracker,
@@ -135,11 +134,7 @@ pub(super) async fn handle_batch_order_responses(
         }
     }
 
-    for (batch_order, expected_venue_order_id) in batch_orders
-        .iter()
-        .zip(expected_venue_order_ids)
-        .skip(response_len)
-    {
+    for (batch_order, expected_venue_order_id) in batch_orders {
         let deferred_cancel = handle_unknown_submit_result(
             &batch_order.order,
             expected_venue_order_id,
@@ -204,7 +199,11 @@ pub(super) async fn handle_batch_order_responses(
                 }
             }
         });
-    join_all(follow_ups).await;
+
+    let follow_ups = join_all(follow_ups);
+    async move {
+        follow_ups.await;
+    }
 }
 
 pub(super) fn reject_submit_order(

@@ -67,6 +67,7 @@ Released on TBD (UTC).
 - Fixed OKX external limit orders missing amendment confirmations
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails
+- Fixed Polymarket batch submits delaying later chunks behind FOK recovery and deferred cancels
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
 - Fixed Polymarket reconciliation reverting resting partially filled orders to `Accepted`
 - Fixed Polymarket `price_change` quotes carrying sizes from different price levels

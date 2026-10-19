@@ -16,6 +16,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
 use nautilus_core::{string::secret::SecretString, time::AtomicTime};
 use nautilus_live::execution::{context::OrderContext, failure::CommandFailure};
@@ -724,6 +725,8 @@ impl PolymarketExecutionClient {
 
             let total = submissions.len();
             let mut offset = 0;
+            let mut follow_ups: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
+
             while offset < total {
                 let end = (offset + BATCH_ORDER_LIMIT).min(total);
                 let mut submissions_chunk = submissions[offset..end].to_vec();
@@ -733,8 +736,14 @@ impl PolymarketExecutionClient {
                     let submission = submissions_chunk.pop().expect("len 1");
                     let expected_venue_order_id = submission.expected_venue_order_id;
                     let batch_order = orders_chunk.pop().expect("len 1");
-                    handle_single_order_response(
-                        submitter.post_limit_order_submission(submission).await,
+                    let result = Box::pin(complete_with_follow_ups(
+                        submitter.post_limit_order_submission(submission),
+                        &mut follow_ups,
+                    ))
+                    .await;
+
+                    let response = handle_single_order_response(
+                        result,
                         batch_order,
                         expected_venue_order_id,
                         &submitter,
@@ -747,20 +756,23 @@ impl PolymarketExecutionClient {
                         &pending_submits,
                         &pending_cancels,
                         account_id,
-                    )
-                    .await;
+                    );
+                    Box::pin(complete_with_follow_ups(response, &mut follow_ups)).await;
                 } else {
                     let expected_venue_order_ids: Vec<VenueOrderId> = submissions_chunk
                         .iter()
                         .map(|submission| submission.expected_venue_order_id)
                         .collect();
 
-                    match submitter
-                        .post_limit_order_submissions(submissions_chunk)
-                        .await
-                    {
+                    let result = complete_with_follow_ups(
+                        submitter.post_limit_order_submissions(submissions_chunk),
+                        &mut follow_ups,
+                    )
+                    .await;
+
+                    match result {
                         Ok(responses) => {
-                            handle_batch_order_responses(
+                            let follow_up = handle_batch_order_responses(
                                 responses,
                                 orders_chunk,
                                 expected_venue_order_ids,
@@ -774,8 +786,9 @@ impl PolymarketExecutionClient {
                                 &pending_submits,
                                 &pending_cancels,
                                 account_id,
-                            )
-                            .await;
+                            );
+
+                            follow_ups.push(follow_up.boxed());
                         }
                         Err(e) => match classify_http_command_failure(&e) {
                             CommandFailure::Ambiguous(reason) => {
@@ -800,16 +813,25 @@ impl PolymarketExecutionClient {
                                             batch_order.price_precision,
                                         )
                                     {
-                                        execute_deferred_cancel(
-                                            &submitter,
-                                            &batch_order.order,
-                                            &order_id_str,
-                                            venue_order_id,
-                                            &emitter,
-                                            &pending_cancels,
-                                            clock,
-                                        )
-                                        .await;
+                                        let submitter = submitter.clone();
+                                        let emitter = emitter.clone();
+                                        let pending_cancels = pending_cancels.clone();
+
+                                        follow_ups.push(
+                                            async move {
+                                                execute_deferred_cancel(
+                                                    &submitter,
+                                                    &batch_order.order,
+                                                    &order_id_str,
+                                                    venue_order_id,
+                                                    &emitter,
+                                                    &pending_cancels,
+                                                    clock,
+                                                )
+                                                .await;
+                                            }
+                                            .boxed(),
+                                        );
                                     }
                                 }
                             }
@@ -831,6 +853,8 @@ impl PolymarketExecutionClient {
 
                 offset = end;
             }
+
+            follow_ups.for_each(|()| async {}).await;
 
             Ok(())
         });
@@ -1536,6 +1560,23 @@ impl PolymarketExecutionClient {
         liquidity_side: LiquiditySide,
     ) -> anyhow::Result<Money> {
         calculate_commission(instrument, last_qty, last_px, liquidity_side)
+    }
+}
+
+async fn complete_with_follow_ups<F>(
+    operation: F,
+    follow_ups: &mut FuturesUnordered<BoxFuture<'_, ()>>,
+) -> F::Output
+where
+    F: Future,
+{
+    tokio::pin!(operation);
+
+    loop {
+        tokio::select! {
+            result = &mut operation => return result,
+            _ = follow_ups.next(), if !follow_ups.is_empty() => {}
+        }
     }
 }
 
