@@ -261,7 +261,12 @@ pub(super) fn cache_and_publish_instruments(
     now_ns: UnixNanos,
     instruments: Vec<InstrumentAny>,
 ) -> usize {
-    let mut total = 0;
+    let update_state = instrument_update_state.lock();
+    if update_state.retired {
+        return 0;
+    }
+
+    let mut pending = Vec::with_capacity(instruments.len());
 
     for instrument in instruments {
         if is_instrument_expired_and_not_reported_open(&instrument, now_ns) {
@@ -272,21 +277,50 @@ pub(super) fn cache_and_publish_instruments(
             continue;
         }
 
-        let instrument_id = instrument.id();
+        match update_state.compose_instrument(&instrument) {
+            Ok(instrument) => pending.push(instrument),
+            Err(e) => log::error!(
+                "Failed to apply live tick to instrument {}: {e}",
+                instrument.id()
+            ),
+        }
+    }
 
-        if apply_live_instrument(
-            closed_condition_ids,
-            instrument_update_state,
-            instruments_cache,
-            token_meta,
-            &instrument,
-            |instrument| {
-                if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
-                    log::warn!("Failed to publish instrument {instrument_id}: {e}");
-                }
-            },
-        ) {
-            total += 1;
+    {
+        let terminal_conditions = closed_condition_ids.lock();
+        pending.retain(|instrument| {
+            !extract_condition_id(&instrument.id())
+                .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+        });
+
+        if pending.is_empty() {
+            return 0;
+        }
+
+        for instrument in &pending {
+            token_meta.insert(
+                Ustr::from(instrument.raw_symbol().as_str()),
+                TokenMeta::from_instrument(instrument),
+            );
+        }
+
+        // Batch cache writes while keeping closure checks and cache mutations ordered
+        instruments_cache.rcu(|map| {
+            map.extend(
+                pending
+                    .iter()
+                    .map(|instrument| (instrument.id(), instrument.clone())),
+            );
+        });
+    }
+
+    let total = pending.len();
+
+    // Keep the update guard through publication so live tick updates cannot overtake this batch
+    for instrument in pending {
+        let instrument_id = instrument.id();
+        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+            log::warn!("Failed to publish instrument {instrument_id}: {e}");
         }
     }
 
@@ -824,12 +858,83 @@ mod tests {
     }
 
     #[rstest]
-    fn cache_and_publish_skips_terminal_condition() {
+    fn cache_and_publish_merges_batch_and_preserves_live_ticks() {
         let instruments = Arc::new(AtomicMap::new());
         let instrument_update_state = Arc::new(Mutex::new(InstrumentUpdateState::default()));
         let token_meta = Arc::new(DashMap::new());
-        let closed_condition_ids =
-            Arc::new(Mutex::new(AHashSet::from_iter(["terminal".to_string()])));
+        let existing =
+            stub_instrument("existing-token", Price::from("0.01"), Quantity::from("0.1"));
+        let stale = stub_instrument("updated-token", Price::from("0.01"), Quantity::from("0.1"));
+        cache_instrument_unchecked(&instruments, &token_meta, &existing);
+        cache_instrument_unchecked(&instruments, &token_meta, &stale);
+        let refreshed = stub_instrument(
+            "updated-token",
+            Price::from("0.01"),
+            Quantity::from("0.001"),
+        );
+        let added = stub_instrument("added-token", Price::from("0.01"), Quantity::from("0.1"));
+        let invalid = stub_instrument("invalid-token", Price::from("0.01"), Quantity::from("0.1"));
+        instrument_update_state.lock().record_live_tick(
+            Ustr::from("updated-token"),
+            "0.001".parse().unwrap(),
+            UnixNanos::from(42),
+        );
+        instrument_update_state.lock().record_live_tick(
+            Ustr::from("invalid-token"),
+            "-0.01".parse().unwrap(),
+            UnixNanos::from(43),
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let total = cache_and_publish_instruments(
+            &Arc::new(Mutex::new(AHashSet::new())),
+            &instrument_update_state,
+            &instruments,
+            &token_meta,
+            &tx.into(),
+            UnixNanos::default(),
+            vec![refreshed.clone(), added.clone(), invalid.clone()],
+        );
+        let events = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|event| match event {
+                DataEvent::Instrument(instrument) => instrument,
+                _ => panic!("Expected instrument event"),
+            })
+            .collect::<Vec<_>>();
+        let updated = instruments.get_cloned(&refreshed.id()).unwrap();
+        let meta = token_meta.get(&Ustr::from("updated-token")).unwrap();
+
+        assert_eq!(total, 2);
+        assert_eq!(instruments.len(), 3);
+        assert_eq!(token_meta.len(), 3);
+        assert_eq!(instruments.get_cloned(&existing.id()), Some(existing));
+        assert_eq!(instruments.get_cloned(&added.id()), Some(added.clone()));
+        assert!(!instruments.contains_key(&invalid.id()));
+        assert!(!token_meta.contains_key(&Ustr::from("invalid-token")));
+        assert_eq!(updated.price_increment(), Price::from("0.001"));
+        assert_eq!(updated.size_increment(), Quantity::from("0.001"));
+        assert_eq!(updated.ts_event(), UnixNanos::from(42));
+        assert_eq!(meta.instrument_id, refreshed.id());
+        assert_eq!(meta.price_precision, 4);
+        assert_eq!(meta.size_precision, 3);
+        assert_eq!(events, vec![updated, added]);
+    }
+
+    #[rstest]
+    #[case::terminal_condition(false)]
+    #[case::retired_generation(true)]
+    fn cache_and_publish_skips_terminal_or_retired(#[case] retired: bool) {
+        let instruments = Arc::new(AtomicMap::new());
+        let instrument_update_state = Arc::new(Mutex::new(InstrumentUpdateState::default()));
+        let token_meta = Arc::new(DashMap::new());
+        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
+
+        if retired {
+            instrument_update_state.lock().retire_generation();
+        } else {
+            closed_condition_ids.lock().insert("terminal".to_string());
+        }
+
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let instrument =
             stub_instrument("terminal-token", Price::from("0.01"), Quantity::from("0.1"));
