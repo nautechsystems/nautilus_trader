@@ -34,6 +34,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::Cache,
@@ -69,7 +70,7 @@ use nautilus_execution::{
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
         position_prices_match, process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
-        reconcile_order_report_with_commission,
+        reconcile_order_report_with_commission, should_reconciliation_update,
     },
 };
 use nautilus_model::{
@@ -2431,7 +2432,7 @@ impl ExecutionManager {
             ) {
                 Ok(order_events) => events.extend(order_events),
                 Err(e) => log::error!(
-                    "Deferring reconciliation for {client_order_id}: venue commission calculation failed: {e}"
+                    "Deferring reconciliation for {client_order_id}: order reconciliation failed: {e}"
                 ),
             }
         }
@@ -4475,6 +4476,28 @@ impl ExecutionManager {
         );
         let ts_now = self.clock.borrow().timestamp_ns();
 
+        let mut events = Vec::new();
+        let mut amended = None;
+
+        if order.status() == OrderStatus::PendingUpdate
+            && matches!(
+                report.order_status,
+                OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
+            )
+            && should_reconciliation_update(order, report)
+        {
+            events = generate_reconciliation_order_pre_fill_events(order, report, ts_now);
+            let mut working = order.clone();
+            for event in &events {
+                working
+                    .apply(event.clone())
+                    .context("failed to project reconciled amendment")?;
+            }
+
+            amended = Some(working);
+        }
+
+        let order = amended.as_ref().unwrap_or(order);
         let commission = if matches!(
             report.order_status,
             OrderStatus::PartiallyFilled | OrderStatus::Filled
@@ -4504,11 +4527,10 @@ impl ExecutionManager {
             return Ok(Vec::new());
         }
 
-        Ok(
-            reconcile_order_report_with_commission(order, report, instrument, ts_now, commission)
-                .into_iter()
-                .collect(),
-        )
+        events.extend(reconcile_order_report_with_commission(
+            order, report, instrument, ts_now, commission,
+        ));
+        Ok(events)
     }
 
     /// Reconciles an order with its associated fills atomically.

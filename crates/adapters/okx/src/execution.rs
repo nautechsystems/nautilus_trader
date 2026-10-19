@@ -696,7 +696,7 @@ impl OKXExecutionClient {
 
             match result {
                 Ok(response) => {
-                    dispatch_state.bind_algo_parent(
+                    dispatch_state.bind_order(
                         client_order_id,
                         VenueOrderId::new(response.algo_id.as_str()),
                     );
@@ -977,13 +977,18 @@ impl OKXExecutionClient {
         }
 
         let cache = self.core.cache();
-        let order_identity = cache.order(&client_order_id).map(|order| OrderIdentity {
-            client_order_id,
-            instrument_id,
-            strategy_id,
-            order_side: order.order_side(),
-            order_type: order.order_type(),
-        });
+
+        let order_identity = cache
+            .order(&client_order_id)
+            .filter(|order| !OKX_CONDITIONAL_ORDER_TYPES.contains(&order.order_type()))
+            .map(|order| OrderIdentity {
+                client_order_id,
+                instrument_id,
+                strategy_id,
+                order_side: order.order_side(),
+                order_type: order.order_type(),
+            });
+
         drop(cache);
 
         if let Some(order_identity) = order_identity {
@@ -1598,6 +1603,30 @@ impl ExecutionClient for OKXExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn register_external_order(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        _instrument_id: InstrumentId,
+        _strategy_id: StrategyId,
+        _ts_init: UnixNanos,
+    ) {
+        let cache = self.core.cache();
+
+        let Some(order) = cache.order_ref(&client_order_id) else {
+            log::warn!("Cannot track imported OKX order {client_order_id}: order not cached");
+            return;
+        };
+
+        if order.order_type() != OrderType::Limit {
+            return;
+        }
+
+        let context = OrderContext::from(&*order);
+        self.ws_dispatch_state
+            .register_external_order(context, venue_order_id);
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -3946,19 +3975,27 @@ mod tests {
         extract::ws::{Message, WebSocketUpgrade},
         routing::{get, post},
     };
-    use nautilus_common::{cache::Cache, messages::ExecutionEvent, testing::wait_until_async};
-    use nautilus_core::UUID4;
+    use nautilus_common::{
+        cache::Cache,
+        messages::{ExecutionEvent, ExecutionReport as CommonExecutionReport},
+        testing::wait_until_async,
+    };
+    use nautilus_core::{AtomicMap, UUID4};
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
         events::{OrderEventAny, OrderInitialized},
-        identifiers::{OrderListId, TradeId, TraderId},
-        instruments::{CryptoFuture, Instrument, stubs::crypto_future_btcusdt},
+        identifiers::{OrderListId, Symbol, TradeId, TraderId},
+        instruments::{
+            CryptoFuture, Instrument,
+            stubs::{crypto_future_btcusdt, currency_pair_ethusdt},
+        },
         orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Money, Price, Quantity},
     };
     use rstest::rstest;
     use serde_json::Value;
+    use ustr::Ustr;
 
     use super::*;
     use crate::common::{
@@ -5841,6 +5878,179 @@ mod tests {
                     if rejected.client_order_id == client_order_id
             )),
             "local cancel validation failure should not emit OrderCancelRejected: {events:?}",
+        );
+    }
+
+    #[rstest]
+    fn test_imported_conditional_order_preserves_report_routing() {
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        let cid = ClientOrderId::from("OEEADEMOSTOPLIMIT001");
+        let iid = InstrumentId::from("ETH-USDT.OKX");
+        let mut instrument = currency_pair_ethusdt();
+        instrument.id = iid;
+        instrument.raw_symbol = Symbol::from("ETH-USDT");
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from("ETH-USDT"),
+            InstrumentAny::CurrencyPair(instrument),
+        );
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(iid)
+            .client_order_id(cid)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.003"))
+            .price(Price::from("1886.00"))
+            .trigger_price(Price::from("1900.00"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client.core.client_id), false)
+            .unwrap();
+        client.register_external_order(
+            cid,
+            VenueOrderId::from("7003"),
+            iid,
+            order.strategy_id(),
+            UnixNanos::default(),
+        );
+        client.ensure_order_identity(cid, order.strategy_id(), iid);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        let mut fee_cache = FeeCache::new();
+        let mut fills = FilledQtyCache::new();
+        let mut snapshots = AHashMap::new();
+        let mut parent: Value =
+            serde_json::from_str(include_str!("../test_data/ws_orders_algo.json")).unwrap();
+        let msg = &mut parent["data"][0];
+        msg["algoClOrdId"] = serde_json::json!(cid.as_str());
+        msg["algoId"] = serde_json::json!("7003");
+        msg["instId"] = serde_json::json!("ETH-USDT");
+        msg["ordType"] = serde_json::json!("conditional");
+        msg["state"] = serde_json::json!("live");
+        let message =
+            OKXWsMessage::AlgoOrders(serde_json::from_value(parent["data"].clone()).unwrap());
+        dispatch_ws_message(
+            message,
+            &client.emitter,
+            &client.ws_dispatch_state,
+            client.core.account_id,
+            client.core.account_type,
+            &instruments,
+            &mut fee_cache,
+            &mut fills,
+            &mut snapshots,
+            client.clock,
+        );
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = event else {
+            panic!("expected imported parent report, was {event:?}");
+        };
+
+        assert_eq!(report.client_order_id, Some(cid));
+        assert_eq!(report.venue_order_id, VenueOrderId::from("7003"));
+        assert!(rx.try_recv().is_err());
+        let child: Value = serde_json::from_str(include_str!(
+            "../test_data/ws_orders_algo_child_filled_empty_cl_ord_id.json"
+        ))
+        .unwrap();
+        let message = OKXWsMessage::Orders(serde_json::from_value(child["data"].clone()).unwrap());
+        dispatch_ws_message(
+            message,
+            &client.emitter,
+            &client.ws_dispatch_state,
+            client.core.account_id,
+            client.core.account_type,
+            &instruments,
+            &mut fee_cache,
+            &mut fills,
+            &mut snapshots,
+            client.clock,
+        );
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Report(CommonExecutionReport::Fill(report)) = event else {
+            panic!("expected imported child fill report, was {event:?}");
+        };
+
+        assert_eq!(report.client_order_id, Some(cid));
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("2497956918703120501")
+        );
+        assert_eq!(report.last_qty, Quantity::from("0.003"));
+        assert_eq!(report.last_px, Price::from("1886.00"));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(client.ws_dispatch_state.order_identity(cid), None);
+    }
+
+    #[rstest]
+    fn test_register_external_order_without_cached_order() {
+        let client = build_test_exec_client();
+        let cid = ClientOrderId::from("O-MISSING");
+        client.register_external_order(
+            cid,
+            VenueOrderId::from("7002"),
+            InstrumentId::from("BTC-USDT.OKX"),
+            StrategyId::from("S-MISSING"),
+            UnixNanos::default(),
+        );
+        assert_eq!(client.ws_dispatch_state.order_identity(cid), None);
+        assert!(!client.ws_dispatch_state.contains_accepted(&cid));
+    }
+
+    #[rstest]
+    fn test_register_external_order_tracks_initialized_import() {
+        let (client, cache) = build_test_exec_client_with_cache();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.OKX"))
+            .client_order_id(ClientOrderId::from("O-IMPORTED"))
+            .strategy_id(StrategyId::from("S-IMPORTED"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.02"))
+            .price(Price::from("50000.0"))
+            .build();
+        let venue_order_id = VenueOrderId::from("7001");
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client.core.client_id), false)
+            .unwrap();
+
+        client.register_external_order(
+            order.client_order_id(),
+            venue_order_id,
+            order.instrument_id(),
+            order.strategy_id(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            client
+                .ws_dispatch_state
+                .order_identity(order.client_order_id()),
+            Some(OrderIdentity::from(&order))
+        );
+        assert!(
+            client
+                .ws_dispatch_state
+                .contains_accepted(&order.client_order_id())
+        );
+        assert!(
+            !client
+                .ws_dispatch_state
+                .contains_triggered(&order.client_order_id())
+        );
+        assert_eq!(order.status(), OrderStatus::Initialized);
+        assert_eq!(order.account_id(), None);
+        assert_eq!(order.venue_order_id(), None);
+        client
+            .ws_dispatch_state
+            .remove_order_tracking(order.client_order_id());
+        assert_eq!(
+            client
+                .ws_dispatch_state
+                .order_identity(order.client_order_id()),
+            None
         );
     }
 

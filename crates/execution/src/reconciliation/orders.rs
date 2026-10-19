@@ -30,7 +30,7 @@ use nautilus_model::{
     },
     identifiers::{AccountId, PositionId, TradeId},
     instruments::{Instrument, InstrumentAny},
-    orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
+    orders::{LIMIT_ORDER_TYPES, Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
@@ -141,7 +141,7 @@ fn generate_reconciliation_order_events_inner(
             }
         }
 
-        if report_is_working(report) && should_reconciliation_update(&working, report) {
+        if is_working(report.order_status) && should_reconciliation_update(&working, report) {
             let updated = create_reconciliation_updated(&working, report, ts_now);
             if let Err(e) = working.apply(updated.clone()) {
                 log::warn!(
@@ -253,8 +253,8 @@ pub fn generate_reconciliation_order_pre_fill_events(
     }
 
     let (working, mut events) = prepare_reconciliation_order(order, report, ts_now);
-
     if report.order_status == OrderStatus::Triggered
+        && working.status() != OrderStatus::Triggered
         && let Some(triggered) = reconcile_order_report(&working, report, None, ts_now)
     {
         events.push(triggered);
@@ -291,7 +291,9 @@ fn prepare_reconciliation_order(
     }
 
     if report_is_confirmed_state(report)
-        && (local_accepts_amendment(&working) || pending_terminal_quantity_update(&working, report))
+        && (is_working(working.status())
+            || working.status() == OrderStatus::PendingUpdate && is_working(report.order_status)
+            || pending_terminal_quantity_update(&working, report))
         && should_reconciliation_update(&working, report)
     {
         let updated = create_reconciliation_updated(&working, report, ts_now);
@@ -390,8 +392,10 @@ pub fn reconcile_order_report_with_commission(
 
     match report.order_status {
         OrderStatus::Accepted => {
-            if order.status() == OrderStatus::Accepted
-                && should_reconciliation_update(order, report)
+            if matches!(
+                order.status(),
+                OrderStatus::Accepted | OrderStatus::PendingUpdate
+            ) && should_reconciliation_update(order, report)
             {
                 return Some(create_reconciliation_updated(order, report, ts_now));
             }
@@ -658,7 +662,7 @@ fn create_reconciliation_fill_voids(
             report.ts_last,
             ts_now,
             true,
-            report_is_working(report),
+            is_working(report.order_status),
         );
         event.causation_id = Some(report.report_id);
         corrections.push(OrderEventAny::FillVoided(event));
@@ -1030,6 +1034,15 @@ pub(super) fn create_reconciliation_updated(
         _ => None,
     };
 
+    // Market-style reports can carry an execution cap instead of a limit price
+    let price = if LIMIT_ORDER_TYPES.contains(&order.order_type())
+        || order.order_type() == OrderType::MarketToLimit
+    {
+        report.price
+    } else {
+        None
+    };
+
     OrderEventAny::Updated(OrderUpdated::new(
         order.trader_id(),
         order.strategy_id(),
@@ -1042,7 +1055,7 @@ pub(super) fn create_reconciliation_updated(
         true, // reconciliation
         order.venue_order_id(),
         order.account_id(),
-        report.price,
+        price,
         trigger_price,
         None, // protection_price
         order.is_quote_quantity(),
@@ -1353,9 +1366,9 @@ fn report_is_confirmed_state(report: &OrderStatusReport) -> bool {
     )
 }
 
-fn report_is_working(report: &OrderStatusReport) -> bool {
+fn is_working(status: OrderStatus) -> bool {
     matches!(
-        report.order_status,
+        status,
         OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
     )
 }
@@ -1377,13 +1390,6 @@ pub(crate) fn is_superseded_terminal_report(order: &OrderAny, report: &OrderStat
             .venue_order_ids()
             .iter()
             .any(|venue_order_id| **venue_order_id == report.venue_order_id)
-}
-
-fn local_accepts_amendment(order: &OrderAny) -> bool {
-    matches!(
-        order.status(),
-        OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
-    )
 }
 
 fn pending_terminal_quantity_update(order: &OrderAny, report: &OrderStatusReport) -> bool {

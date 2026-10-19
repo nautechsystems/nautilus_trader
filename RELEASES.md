@@ -39,6 +39,7 @@ Released on TBD (UTC).
 
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
 - Fixed SBE market data decoding panics on invalid prices and quantities
+- Fixed reconciliation leaving amended orders in `PendingUpdate` after working reports confirm changed terms
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
@@ -63,6 +64,7 @@ Released on TBD (UTC).
 - Fixed Lighter fill parse errors consuming acceptance and replay state
 - Fixed Lighter read retries ignoring `Retry-After` response headers
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
+- Fixed OKX external limit orders missing amendment confirmations
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails
 - Fixed Polymarket cancels lost while submit responses register venue order IDs

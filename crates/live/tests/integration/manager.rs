@@ -21178,3 +21178,148 @@ async fn test_fresh_cache_venue_id_history_requires_client_proof(#[case] venue_i
         1
     );
 }
+
+#[rstest]
+#[case::accepted(OrderStatus::Accepted, "0", true)]
+#[case::partially_filled(OrderStatus::PartiallyFilled, "2", true)]
+#[case::unchanged(OrderStatus::Accepted, "0", false)]
+#[tokio::test]
+async fn test_reconcile_pending_update_working_report(
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+    #[case] changed: bool,
+) {
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let cid = ClientOrderId::from("O-PENDING-AMEND");
+    let vid = VenueOrderId::from("V-PENDING-AMEND");
+    let order = create_pending_update_order(
+        "O-PENDING-AMEND",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "1",
+        "3000.00",
+        vid,
+    );
+    ctx.add_order(order);
+    let mut report = create_order_report(
+        Some(cid),
+        vid,
+        test_instrument_id(),
+        status,
+        Quantity::from(if changed { "3" } else { "1" }),
+        Quantity::from(filled_qty),
+    );
+
+    if changed {
+        report.price = Some(Price::from("3100.00"));
+    }
+
+    if status == OrderStatus::PartiallyFilled {
+        report.avg_px = Some(dec!(3050));
+    }
+
+    let mass = create_mass_status(vec![report], vec![]);
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let after = ctx.get_order(&cid).unwrap();
+
+    if changed {
+        assert_eq!(
+            result.events.len(),
+            if status == OrderStatus::PartiallyFilled {
+                2
+            } else {
+                1
+            }
+        );
+        assert!(matches!(result.events[0], OrderEventAny::Updated(_)));
+
+        if status == OrderStatus::PartiallyFilled {
+            assert!(matches!(result.events[1], OrderEventAny::Filled(_)));
+        }
+
+        assert_eq!(after.status(), status);
+        assert_eq!(after.quantity(), Quantity::from("3"));
+        assert_eq!(after.price(), Some(Price::from("3100.00")));
+    } else {
+        assert!(result.events.is_empty());
+        assert_eq!(after.status(), OrderStatus::PendingUpdate);
+        assert_eq!(after.quantity(), Quantity::from("1"));
+        assert_eq!(after.price(), Some(Price::from("3000.00")));
+    }
+
+    assert_eq!(after.filled_qty(), Quantity::from(filled_qty));
+}
+
+#[rstest]
+#[case::working(OrderStatus::Accepted)]
+#[case::triggered(OrderStatus::Triggered)]
+#[tokio::test]
+async fn test_reconcile_pending_update_trigger_price(#[case] status: OrderStatus) {
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let cid = ClientOrderId::from("O-TRIGGER-AMEND");
+    let vid = VenueOrderId::from("V-TRIGGER-AMEND");
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(test_instrument_id())
+        .client_order_id(cid)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .price(Price::from("3100.00"))
+        .trigger_price(Price::from("3200.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, vid);
+    let pending = OrderPendingUpdateSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(cid)
+        .account_id(test_account_id())
+        .venue_order_id(vid)
+        .build();
+    order.apply(OrderEventAny::PendingUpdate(pending)).unwrap();
+    ctx.add_order(order);
+    let mut report = create_order_report(
+        Some(cid),
+        vid,
+        test_instrument_id(),
+        status,
+        Quantity::from("1"),
+        Quantity::from(0),
+    );
+    report.order_type = OrderType::StopLimit;
+    report.price = Some(Price::from("3100.00"));
+    report.trigger_price = Some(Price::from("3250.00"));
+    report.ts_triggered = Some(report.ts_last);
+    let mass = create_mass_status(vec![report], vec![]);
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    assert_eq!(
+        result.events.len(),
+        if status == OrderStatus::Triggered {
+            2
+        } else {
+            1
+        }
+    );
+
+    let OrderEventAny::Updated(updated) = &result.events[0] else {
+        panic!("expected amendment before trigger, was {:?}", result.events);
+    };
+
+    assert_eq!(updated.trigger_price, Some(Price::from("3250.00")));
+
+    if status == OrderStatus::Triggered {
+        assert!(matches!(result.events[1], OrderEventAny::Triggered(_)));
+    }
+
+    let after = ctx.get_order(&cid).unwrap();
+    assert_eq!(after.status(), status);
+    assert_eq!(after.quantity(), Quantity::from("1"));
+    assert_eq!(after.price(), Some(Price::from("3100.00")));
+    assert_eq!(after.trigger_price(), Some(Price::from("3250.00")));
+    assert_eq!(after.filled_qty(), Quantity::from(0));
+}
