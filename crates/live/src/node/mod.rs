@@ -3169,6 +3169,7 @@ where
                     *receiver = None;
                     continue;
                 };
+
                 match msgbus::republish_pending_external_response(&message) {
                     Ok(true) => {},
                     Ok(false) | Err(_) => pending.push_back(message),
