@@ -2066,6 +2066,16 @@ must distinguish `ReconnectRequestOutcome` variants, use the reconnect handle's 
 Transports that are already reconnecting, disconnecting, closed, or unsupported each need a different
 response. Stream-mode clients own their reconnect loop, and their handles report `Unsupported`.
 
+:::note
+Never require the old socket to remain live until a replacement is ready. Use the existing reconnect
+path instead of adding parallel connection ownership, buffering, and epoch coordination to avoid a
+reconnect gap.
+
+Execution reconciliation can often recover missed order and fill state. Use venue-supported snapshots
+or replay for market-data gaps. Recovery depends on venue coverage and does not guarantee delivery of
+every missed message.
+:::
+
 #### Shutdown
 
 Shutdown signals tasks, asks the transport to close, and then joins or aborts owned work according

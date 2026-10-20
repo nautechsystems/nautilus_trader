@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added native external MessageBus data requests and replies for JSON and MessagePack
+- Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
 
 ### Breaking Changes
 

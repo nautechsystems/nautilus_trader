@@ -686,6 +686,16 @@ impl FeedHandler {
                             let subscribed_topic = typed_subscribe_topic(&text);
 
                             if let Ok(frame) = serde_json::from_str::<LighterWsFrame>(&text) {
+                                if let LighterWsFrame::Shutdown { close_in_ms } = frame {
+                                    if let Some(ws_client) = &self.inner
+                                        && ws_client.connection_epoch() == connection_epoch
+                                        && ws_client.request_reconnect()
+                                    {
+                                        log::info!("Lighter server shutdown in {close_in_ms} ms, reconnect requested");
+                                    }
+                                    continue;
+                                }
+
                                 if let Some(topic) = subscribed_topic
                                     && !self.complete_typed_subscription(topic, connection_epoch)
                                 {
@@ -1496,6 +1506,7 @@ impl FeedHandler {
                 ref candles,
                 ..
             } => self.handle_candles(channel, candles, ts_init),
+            LighterWsFrame::Shutdown { .. } => Vec::new(),
             LighterWsFrame::Height { .. } => raw_message(&frame),
         }
     }
