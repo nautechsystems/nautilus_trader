@@ -324,7 +324,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.28.0", features = ["v4", "serde"] }
-webpki-roots = "1.0.9"
+webpki-roots = "1.0.10"
 zeroize = { version = "1.9.1", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
@@ -413,8 +413,9 @@ days = 3
 trusted-base = "origin/develop"
 
 [workspace.metadata.cooldown.allow]
-rustls = "0.23.46"
-sockudo-ws = "3.1.0"
+rustls-webpki = "0.103.16"
+webpki-root-certs = "1.0.10"
+webpki-roots = "1.0.10"
 
 # -----------------------------------------------------------------------------
 # Profiles

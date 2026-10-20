@@ -3985,6 +3985,12 @@ criteria = "safe-to-deploy"
 delta = "0.103.14 -> 0.103.15"
 notes = "Reports ML-DSA verification as FIPS submitted when the underlying AWS-LC FIPS provider is active, matching the provider's submitted 4.x module. Signature verification remains delegated to aws-lc-rs; no algorithm, parsing, unsafe code, dependency, build-script, or ambient capability change was added."
 
+[[audits.rustls-webpki]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.103.15 -> 0.103.16"
+notes = "Reviewed the complete published delta and matched all packaged source files to upstream commit 8ecdcc76f56b68fda67a6adf7976f5eed5006a4c. Adds eight distrusted emSign SPKIs and rejects their use in certificate paths and trust anchors. The upstream distrusted_spki regression passes. Registry checksums match; publisher ctz has prior releases. No new unsafe code, dependencies, build script, network destination, process execution, filesystem access, or credential behavior."
+
 [[audits.schannel]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4701,6 +4707,18 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.3.105 -> 0.3.106"
 notes = "Generated WebGL feature bindings only. No handwritten unsafe or ambient capability in the delta."
+
+[[audits.webpki-root-certs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.9 -> 1.0.10"
+notes = "Reviewed the complete published delta and matched all packaged source files to upstream commit 70760478b9d3ea729b22faa0b5324da38a297c1c. Removes only the emSign ECC Root CA - G3 certificate; its SHA256 fingerprint matches the root removed by the Python CA bundle 2026.10.19. No certificates are added. Registry checksums match; publisher cpu has prior releases. No new code, dependencies, build script, or ambient capability."
+
+[[audits.webpki-roots]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.9 -> 1.0.10"
+notes = "Reviewed the complete published delta and matched all packaged source files to upstream commit 70760478b9d3ea729b22faa0b5324da38a297c1c. Removes only the emSign ECC Root CA - G3 trust anchor and its certificate comment. No roots are added. The 0.26.11 compatibility crate only re-exports this v1 trust store. Registry checksums match; publisher cpu has prior releases. No new code, dependencies, build script, or ambient capability."
 
 [[audits.whoami]]
 who = "Nautech Systems <info@nautechsystems.io>"

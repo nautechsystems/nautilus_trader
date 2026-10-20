@@ -71,7 +71,9 @@ environments = [
   "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 exclude-newer = "7 days"
-exclude-newer-package = { ruff = "3 days" }
+# Keep the reviewed certifi security release eligible; remove its cutoff after
+# 2026-10-27T02:24:17Z, when the seven-day default includes it
+exclude-newer-package = { certifi = "2026-10-20T02:24:17Z", ruff = "3 days" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by

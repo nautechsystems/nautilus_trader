@@ -18,6 +18,9 @@ feature-depth = 1
 unused-ignored-advisory = "deny"
 # Ignored advisories (use sparingly - document the reason)
 ignore = [
+  # webpki-roots 0.26.11 only re-exports v1's roots; the workspace requires fixed v1.0.10
+  { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 is a re-export of the fixed v1.0.10 trust store, required by the workspace" },
+
   # paste unmaintained, transitive via alloy
   # TODO: Monitor https://github.com/alloy-rs/alloy for migration to pastey or alternative
   { id = "RUSTSEC-2024-0436", reason = "paste unmaintained, transitive via alloy" },

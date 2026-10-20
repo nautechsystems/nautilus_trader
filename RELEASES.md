@@ -135,6 +135,7 @@ Released on TBD (UTC).
 - Upgraded `pyo3` crate to v0.30.1
 - Upgraded `pyo3-async-runtimes` crate to v0.30.0
 - Upgraded `redb` crate to v4.4.0
+- Upgraded `rustls-webpki` crate to v0.103.16
 - Upgraded `serde_json` crate to v1.0.154
 - Upgraded `smallvec` crate to v1.16.3
 - Upgraded `sockudo-ws` crate to v3.1.0 (#5345), thanks @sunlei
@@ -142,6 +143,8 @@ Released on TBD (UTC).
 - Upgraded `tokio` crate to v1.53.3
 - Upgraded `toml` crate to v1.1.8
 - Upgraded `uuid` crate to v1.28.0
+- Upgraded `webpki-root-certs` and `webpki-roots` crates to v1.0.10
+- Upgraded `certifi` package to v2026.10.19
 - Upgraded `kaleido` package to v1.5.0
 - Upgraded `polars` package (test) to v2.0.0
 - Upgraded `pyarrow` package (test) to v26.0.0
