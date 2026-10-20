@@ -15,6 +15,11 @@
 
 //! Instrument parsing for Polymarket markets.
 
+use std::{
+    collections::{BTreeMap, HashMap, hash_map::Entry},
+    sync::Arc,
+};
+
 use jiff::Timestamp;
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
@@ -26,9 +31,10 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use ustr::Ustr;
 
-use super::models::{CryptoMarketConfig, FeeSchedule, GammaMarket, GammaTag};
+use super::models::{CryptoMarketConfig, FeeSchedule, GammaEvent, GammaMarket, GammaTag};
 use crate::common::{
     consts::{POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
@@ -61,7 +67,7 @@ pub struct PolymarketInstrumentDef {
     /// Original Gamma market response.
     #[serde(default)]
     pub gamma_market: String,
-    /// Original enclosing event response from event-based discovery.
+    /// Enclosing event response from event-based discovery, excluding its markets array.
     pub gamma_event: Option<String>,
     /// Question ID (resolution hash).
     pub question_id: Option<String>,
@@ -108,6 +114,13 @@ pub struct PolymarketInstrumentDef {
 /// Each market produces two definitions: one for the Yes outcome
 /// and one for the No outcome.
 pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
+    parse_gamma_market_with_event_cache(market, &mut HashMap::new())
+}
+
+pub(super) fn parse_gamma_market_with_event_cache(
+    market: &GammaMarket,
+    event_metadata: &mut HashMap<*const GammaEvent, String>,
+) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
     let event_id = market_event_id(market);
 
     let game_id = market.game_id.clone().or_else(|| {
@@ -149,6 +162,18 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
 
     let neg_risk = market.neg_risk;
 
+    let gamma_event = if let Some(event) = &market.parent_event {
+        let key = Arc::as_ptr(event);
+        if let Entry::Vacant(entry) = event_metadata.entry(key) {
+            let mut fields: BTreeMap<String, &RawValue> = serde_json::from_str(&event.raw)?;
+            fields.remove("markets");
+            entry.insert(serde_json::to_string(&fields)?);
+        }
+        event_metadata.get(&key)
+    } else {
+        None
+    };
+
     let mut defs = Vec::with_capacity(2);
 
     for (token_id, outcome_label) in token_ids.iter().zip(outcomes.iter()) {
@@ -163,7 +188,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             market_id: market.id.clone(),
             event_id,
             gamma_market: market.raw.clone(),
-            gamma_event: market.parent_event.as_ref().map(|event| event.raw.clone()),
+            gamma_event: gamma_event.cloned(),
             question_id: market.question_id.clone(),
             outcome,
             question: market.question.clone(),

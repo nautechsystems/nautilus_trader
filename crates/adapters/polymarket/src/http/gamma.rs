@@ -48,7 +48,10 @@ use crate::{
         error::{Error, Result, decode_response},
         models::{GammaEvent, GammaMarket, GammaTag, SearchResponse},
         pagination::{Completion, CursorProtocol, FetchOutcome, Paginator, WindowedCollect},
-        parse::{create_instrument_from_def, enrich_market_fee_schedule, parse_gamma_market},
+        parse::{
+            create_instrument_from_def, enrich_market_fee_schedule,
+            parse_gamma_market_with_event_cache,
+        },
         query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
         rate_limits::POLYMARKET_GAMMA_REST_QUOTA,
     },
@@ -361,13 +364,16 @@ pub(crate) fn parse_markets_with_transient(
     let mut instruments = Vec::new();
     let mut transient = Vec::new();
 
+    // Parents stay alive for this batch; pointer keys distinguish snapshots with repeated IDs
+    let mut event_metadata = HashMap::new();
+
     for market in markets {
         if is_transient_clob_token_ids(&market.clob_token_ids) {
             transient.push(market.condition_id.clone());
             continue;
         }
 
-        match parse_gamma_market(market) {
+        match parse_gamma_market_with_event_cache(market, &mut event_metadata) {
             Ok(defs) => {
                 for def in defs {
                     match create_instrument_from_def(&def, ts_init) {
@@ -978,10 +984,13 @@ fn parse_gamma_markets_response(raw: &RawValue) -> Result<Vec<GammaMarket>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::http::parse::parse_gamma_market;
 
     fn load_fee_market(filename: &str) -> GammaMarket {
         let path = format!("test_data/{filename}");
@@ -1022,9 +1031,13 @@ mod tests {
 
     #[rstest]
     fn test_event_discovery_retains_parent_metadata() {
-        let raw = include_str!("../../test_data/gamma_event.json");
-        let events: Vec<GammaEvent> = serde_json::from_str(raw).unwrap();
-        let expected: Vec<Value> = serde_json::from_str(raw).unwrap();
+        let raw = include_str!("../../test_data/gamma_event.json").replacen(
+            '{',
+            r#"{"unknown\u0046ield":12345678901.123456789012345678,"#,
+            1,
+        );
+        let events: Vec<GammaEvent> = serde_json::from_str(&raw).unwrap();
+        let expected: Vec<Value> = serde_json::from_str(&raw).unwrap();
         let markets = flatten_event_markets(events);
         assert_eq!(markets.len(), 2);
 
@@ -1048,10 +1061,12 @@ mod tests {
                 serde_json::from_str::<Value>(&market.raw).unwrap(),
                 *expected_market
             );
+            let mut expected_metadata: BTreeMap<String, Box<RawValue>> =
+                serde_json::from_str(&parent.raw).unwrap();
+            expected_metadata.remove("markets");
             let defs = parse_gamma_market(market).unwrap();
             for def in defs {
                 assert_eq!(def.event_id.unwrap().as_str(), parent.id);
-                assert_eq!(def.gamma_event.as_ref(), Some(&parent.raw));
                 assert_eq!(def.gamma_market, market.raw);
                 let instrument = create_instrument_from_def(&def, 1.into()).unwrap();
 
@@ -1061,7 +1076,13 @@ mod tests {
 
                 let info = binary.info.unwrap();
                 assert_eq!(binary.event_id.unwrap().as_str(), parent.id);
-                assert_eq!(info.get_str("gamma_event"), Some(parent.raw.as_str()));
+                assert_eq!(info.get_str("gamma_event"), def.gamma_event.as_deref());
+                let actual_metadata: BTreeMap<String, Box<RawValue>> =
+                    serde_json::from_str(info.get_str("gamma_event").unwrap()).unwrap();
+                assert_eq!(actual_metadata.len(), expected_metadata.len());
+                for (key, value) in &expected_metadata {
+                    assert_eq!(actual_metadata[key].get(), value.get(), "{key}");
+                }
                 assert_eq!(info.get_str("gamma_market"), Some(market.raw.as_str()));
             }
         }

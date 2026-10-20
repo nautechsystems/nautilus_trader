@@ -3618,6 +3618,52 @@ async fn test_request_instruments_by_event_params() {
 
 #[rstest]
 #[tokio::test]
+async fn test_event_instrument_metadata_grows_linearly() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_gamma_domain_client(&addr);
+    let mut retained_sizes = Vec::new();
+
+    for market_count in [8, 16] {
+        let markets: Vec<Value> = (0..market_count)
+            .map(|index| {
+                gamma_market_with_slug(
+                    &format!("metadata-{index}"),
+                    &format!("0xcondition_metadata_{index}"),
+                    [&(2 * index + 1).to_string(), &(2 * index + 2).to_string()],
+                )
+            })
+            .collect();
+        let event = gamma_event_with_markets("metadata-event", &markets);
+        *state.gamma_events_response.lock().await = Some(json!([event]));
+        let instruments = client
+            .request_instruments_by_event_params(GetGammaEventsParams::default())
+            .await
+            .unwrap();
+        assert_eq!(instruments.len(), 2 * market_count);
+
+        let mut retained_bytes = 0;
+
+        for (index, instrument) in instruments.iter().enumerate() {
+            let InstrumentAny::BinaryOption(binary) = instrument else {
+                panic!("Expected a BinaryOption instrument");
+            };
+            assert_eq!(binary.event_id.unwrap().as_str(), "evt-test-001");
+            assert_eq!(binary.raw_symbol.as_str(), (index + 1).to_string());
+            let info = binary.info.as_ref().unwrap();
+            retained_bytes += info.get_str("gamma_event").unwrap().len();
+            let raw_market: Value =
+                serde_json::from_str(info.get_str("gamma_market").unwrap()).unwrap();
+            assert_eq!(raw_market, markets[index / 2]);
+        }
+        retained_sizes.push(retained_bytes);
+    }
+
+    assert_eq!(retained_sizes[1], 2 * retained_sizes[0]);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_events_by_params_accepts_composite_sports_game_id() {
     // Issue #4771: a single sports market carrying a composite `gameId` failed
     // the whole paginated event walk, discarding every page fetched so far.
