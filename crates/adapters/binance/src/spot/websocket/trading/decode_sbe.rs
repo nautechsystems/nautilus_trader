@@ -64,8 +64,13 @@ const EXECUTION_REPORT_VAR_DATA_FIELDS: [&str; 6] = [
 ///
 /// # Errors
 ///
-/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
-/// match, or variable-length data is malformed.
+/// Returns an error if:
+/// - The buffer is too short.
+/// - The template ID or schema ID does not match.
+/// - The declared block length is shorter than the minimum for the message version.
+/// - The price, quantity, or commission exponent is the SBE null value (-128).
+/// - The execution type or order side is unsupported.
+/// - Variable-length data is malformed.
 pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecutionReport> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -135,10 +140,9 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         version,
     );
 
-    // Widen wire exponents so the summed quote-quantity exponent cannot overflow
-    let price_exp = i16::from(dec.price_exponent());
-    let qty_exp = i16::from(dec.qty_exponent());
-    let commission_exp = i16::from(dec.commission_exponent());
+    let price_exp = dec.price_exponent();
+    let qty_exp = dec.qty_exponent();
+    let commission_exp = dec.commission_exponent();
 
     let event_time_us = dec.event_time();
     let transact_time_us = dec.transact_time();
@@ -208,17 +212,17 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         side,
         order_type: order_type_str.to_string(),
         time_in_force,
-        original_qty: mantissa_to_decimal_string(orig_qty_mantissa, qty_exp),
-        price: mantissa_to_decimal_string(price_mantissa, price_exp),
-        stop_price: mantissa_to_decimal_string(stop_price_mantissa, price_exp),
+        original_qty: mantissa_to_decimal_string(orig_qty_mantissa, qty_exp)?,
+        price: mantissa_to_decimal_string(price_mantissa, price_exp)?,
+        stop_price: mantissa_to_decimal_string(stop_price_mantissa, price_exp)?,
         execution_type,
         order_status,
         reject_reason,
         order_id,
-        last_filled_qty: mantissa_to_decimal_string(last_qty_mantissa, qty_exp),
-        cumulative_filled_qty: mantissa_to_decimal_string(executed_qty_mantissa, qty_exp),
-        last_filled_price: mantissa_to_decimal_string(last_price_mantissa, price_exp),
-        commission: mantissa_to_decimal_string(commission_mantissa, commission_exp),
+        last_filled_qty: mantissa_to_decimal_string(last_qty_mantissa, qty_exp)?,
+        cumulative_filled_qty: mantissa_to_decimal_string(executed_qty_mantissa, qty_exp)?,
+        last_filled_price: mantissa_to_decimal_string(last_price_mantissa, price_exp)?,
+        commission: mantissa_to_decimal_string(commission_mantissa, commission_exp)?,
         commission_asset,
         transaction_time: us_to_ms(transact_time_us),
         trade_id,
@@ -227,8 +231,8 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         order_creation_time: order_creation_time_us.map_or(0, us_to_ms),
         cumulative_quote_qty: mantissa_to_decimal_string(
             cummulative_quote_qty_mantissa,
-            price_exp + qty_exp,
-        ),
+            price_exp,
+        )?,
         original_client_order_id: orig_client_order_id,
         expiry_reason,
     })
@@ -382,8 +386,12 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
 ///
 /// # Errors
 ///
-/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
-/// match, or asset framing is malformed.
+/// Returns an error if:
+/// - The buffer is too short.
+/// - The template ID or schema ID does not match.
+/// - The declared block length is shorter than the minimum for the message version.
+/// - The quantity exponent is the SBE null value (-128).
+/// - Asset framing is malformed.
 pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUpdateMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -443,7 +451,7 @@ pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUp
 
     let event_time_us = dec.event_time();
     let clear_time_us = dec.clear_time().unwrap_or(0);
-    let qty_exponent = i16::from(dec.qty_exponent());
+    let qty_exponent = dec.qty_exponent();
     let free_qty_delta = dec.free_qty_delta();
 
     let asset = {
@@ -455,7 +463,7 @@ pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUp
         event_type: "balanceUpdate".to_string(),
         event_time: us_to_ms(event_time_us),
         asset: Ustr::from(&asset),
-        delta: mantissa_to_decimal_string(free_qty_delta, qty_exponent),
+        delta: mantissa_to_decimal_string(free_qty_delta, qty_exponent)?,
         clear_time: us_to_ms(clear_time_us),
     })
 }
@@ -576,20 +584,23 @@ fn us_to_ms(us: i64) -> i64 {
 ///
 /// SBE encodes numeric values as `mantissa * 10^exponent`. For exponent = -2
 /// and mantissa = 250000, the result is "2500.00".
-///
-/// The exponent is `i16` so callers can pass the sum of two `i8` wire exponents.
-fn mantissa_to_decimal_string(mantissa: i64, exponent: i16) -> String {
+fn mantissa_to_decimal_string(mantissa: i64, exponent: i8) -> anyhow::Result<String> {
+    if exponent == i8::MIN {
+        anyhow::bail!("Invalid SBE decimal exponent: {exponent} is null");
+    }
+
     let decimal_places = usize::from(exponent.unsigned_abs());
 
     if mantissa == 0 {
         if exponent >= 0 {
-            return "0".to_string();
+            return Ok("0".to_string());
         }
         let mut s = "0.".to_string();
         for _ in 0..decimal_places {
             s.push('0');
         }
-        return s;
+
+        return Ok(s);
     }
 
     let negative = mantissa < 0;
@@ -619,23 +630,29 @@ fn mantissa_to_decimal_string(mantissa: i64, exponent: i16) -> String {
     };
 
     if negative {
-        format!("-{result}")
+        Ok(format!("-{result}"))
     } else {
-        result
+        Ok(result)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::identifiers::{AccountId, InstrumentId};
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
-    use crate::spot::sbe::spot::{
-        WriteBuf, bool_enum::BoolEnum, execution_type::ExecutionType, floor, match_type,
-        order_capacity, order_side::OrderSide, order_status::OrderStatus,
-        order_type::OrderType as SbeOrderType, peg_offset_type, peg_price_type,
-        self_trade_prevention_mode::SelfTradePreventionMode, time_in_force::TimeInForce as SbeTif,
+    use crate::spot::{
+        sbe::spot::{
+            WriteBuf, bool_enum::BoolEnum, execution_type::ExecutionType, floor, match_type,
+            order_capacity, order_side::OrderSide, order_status::OrderStatus,
+            order_type::OrderType as SbeOrderType, peg_offset_type, peg_price_type,
+            self_trade_prevention_mode::SelfTradePreventionMode,
+            time_in_force::TimeInForce as SbeTif,
+        },
+        websocket::trading::parse::parse_spot_exec_report_to_order_status,
     };
 
     #[expect(clippy::too_many_arguments)]
@@ -821,34 +838,45 @@ mod tests {
 
     #[rstest]
     fn test_mantissa_to_decimal_string_basic() {
-        assert_eq!(mantissa_to_decimal_string(250000, -2), "2500.00");
-        assert_eq!(mantissa_to_decimal_string(100000000, -8), "1.00000000");
-        assert_eq!(mantissa_to_decimal_string(0, -8), "0.00000000");
-        assert_eq!(mantissa_to_decimal_string(0, 0), "0");
-        assert_eq!(mantissa_to_decimal_string(42, 0), "42");
-        assert_eq!(mantissa_to_decimal_string(42, 2), "4200");
-        assert_eq!(mantissa_to_decimal_string(5, -3), "0.005");
-        assert_eq!(mantissa_to_decimal_string(-250000, -2), "-2500.00");
+        assert_eq!(mantissa_to_decimal_string(250000, -2).unwrap(), "2500.00");
+        assert_eq!(
+            mantissa_to_decimal_string(100000000, -8).unwrap(),
+            "1.00000000"
+        );
+        assert_eq!(mantissa_to_decimal_string(0, -8).unwrap(), "0.00000000");
+        assert_eq!(mantissa_to_decimal_string(0, 0).unwrap(), "0");
+        assert_eq!(mantissa_to_decimal_string(42, 0).unwrap(), "42");
+        assert_eq!(mantissa_to_decimal_string(42, 2).unwrap(), "4200");
+        assert_eq!(mantissa_to_decimal_string(5, -3).unwrap(), "0.005");
+        assert_eq!(mantissa_to_decimal_string(-250000, -2).unwrap(), "-2500.00");
+        assert_eq!(
+            mantissa_to_decimal_string(i64::MIN, -2).unwrap(),
+            "-92233720368547758.08"
+        );
     }
 
     #[rstest]
-    fn test_mantissa_to_decimal_string_min_exponent() {
-        let result = mantissa_to_decimal_string(1, i16::from(i8::MIN));
+    fn test_mantissa_to_decimal_string_wire_domain(
+        #[values(i64::MIN, -250000, -1, 0, 1, 250000, i64::MAX)] mantissa: i64,
+    ) {
+        for exponent in i8::MIN..=i8::MAX {
+            let result = mantissa_to_decimal_string(mantissa, exponent);
 
-        assert_eq!(result.len(), 130);
-        assert!(result.starts_with("0.000"));
-        assert!(result.ends_with('1'));
-    }
+            if exponent == i8::MIN {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "Invalid SBE decimal exponent: -128 is null"
+                );
+            } else {
+                assert!(result.unwrap().len() <= 147);
+            }
+        }
 
-    #[rstest]
-    fn test_mantissa_to_decimal_string_summed_exponents_do_not_wrap() {
-        let price_exp: i8 = -80;
-        let qty_exp: i8 = -80;
+        let largest = mantissa_to_decimal_string(i64::MIN, i8::MAX).unwrap();
+        let smallest = mantissa_to_decimal_string(-1, -127).unwrap();
 
-        let result = mantissa_to_decimal_string(1, i16::from(price_exp) + i16::from(qty_exp));
-
-        assert_eq!(result.len(), 162);
-        assert!(result.ends_with('1'));
+        assert_eq!(largest, format!("-9223372036854775808{}", "0".repeat(127)));
+        assert_eq!(smallest, format!("-0.{}1", "0".repeat(126)));
     }
 
     #[rstest]
@@ -1094,17 +1122,17 @@ mod tests {
             SbeTif::Gtc,
             ExecutionType::Trade,
             OrderStatus::Filled,
-            -2,           // price_exp
-            -8,           // qty_exp
-            -8,           // commission_exp
-            250000,       // price = 2500.00
-            100000000,    // orig_qty = 1.00000000
-            0,            // stop_price
-            100000000,    // last_qty = 1.00000000
-            250000,       // last_price = 2500.00 (uses price_exp)
-            100000000,    // executed_qty = 1.00000000
-            250000000000, // cumm_quote_qty = 2500.00000000 (uses price_exp... actually this is wrong)
-            250000,       // commission = 0.00250000
+            -2,        // price_exp
+            -8,        // qty_exp
+            -8,        // commission_exp
+            250000,    // price = 2500.00
+            100000000, // orig_qty = 1.00000000
+            0,         // stop_price
+            100000000, // last_qty = 1.00000000
+            250000,    // last_price = 2500.00 (uses price_exp)
+            100000000, // executed_qty = 1.00000000
+            250000,    // cumm_quote_qty = 2500.00
+            250000,    // commission = 0.00250000
             "USDT",
             true, // is_maker
             false,
@@ -1116,11 +1144,24 @@ mod tests {
 
         let report = decode_execution_report(&data).unwrap();
 
+        let status = parse_spot_exec_report_to_order_status(
+            &report,
+            InstrumentId::from("ETHUSDT.BINANCE"),
+            2,
+            8,
+            AccountId::from("BINANCE-001"),
+            false,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
         assert_eq!(report.execution_type, BinanceSpotExecutionType::Trade);
         assert_eq!(report.order_status, BinanceOrderStatus::Filled);
         assert_eq!(report.trade_id, 98765432);
         assert_eq!(report.last_filled_qty, "1.00000000");
         assert_eq!(report.last_filled_price, "2500.00");
+        assert_eq!(report.cumulative_quote_qty, "2500.00");
+        assert_eq!(status.avg_px.unwrap().to_string(), "2500.00");
         assert_eq!(report.commission_asset, Some(Ustr::from("USDT")));
         assert!(report.is_maker);
     }
@@ -1256,6 +1297,54 @@ mod tests {
             format!(
                 "SBE execution report block length too short: expected at least {EXECUTION_REPORT_BLOCK_LENGTH_V3}, was {block_length}"
             )
+        );
+    }
+
+    #[rstest]
+    #[case::price(16)]
+    #[case::qty(17)]
+    #[case::commission(18)]
+    fn test_decode_execution_report_rejects_null_exponent(
+        #[case] offset: usize,
+        #[values(0, 1)] mantissa: i64,
+    ) {
+        let mut data = encode_bounds_execution_report();
+        let buf = WriteBuf::new(&mut data);
+        let mut enc = execution_report_event_codec::ExecutionReportEventEncoder::default()
+            .wrap(buf, HEADER_LEN);
+        enc.price(mantissa);
+        enc.stop_price(mantissa);
+        enc.last_price(mantissa);
+        enc.orig_qty(mantissa);
+        enc.last_qty(mantissa);
+        enc.executed_qty(mantissa);
+        enc.cummulative_quote_qty(mantissa);
+        enc.commission(mantissa);
+        data[HEADER_LEN + offset] = i8::MIN.to_le_bytes()[0];
+
+        let err = decode_execution_report(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Invalid SBE decimal exponent: -128 is null"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_execution_report_quote_uses_price_exponent() {
+        let mut data = encode_bounds_execution_report();
+        let buf = WriteBuf::new(&mut data);
+        let mut enc = execution_report_event_codec::ExecutionReportEventEncoder::default()
+            .wrap(buf, HEADER_LEN);
+        enc.price_exponent(-64);
+        enc.qty_exponent(-64);
+        enc.cummulative_quote_qty(1);
+
+        let report = decode_execution_report(&data).unwrap();
+
+        assert_eq!(
+            report.cumulative_quote_qty,
+            format!("0.{}1", "0".repeat(63))
         );
     }
 
@@ -1676,6 +1765,18 @@ mod tests {
         assert_eq!(msg.asset, "BTC");
         assert_eq!(msg.delta, "100.00000000");
         assert_eq!(msg.clear_time, 1709654400000);
+    }
+
+    #[rstest]
+    fn test_decode_balance_update_rejects_null_exponent(#[values(0, 1, -1)] mantissa: i64) {
+        let data = encode_balance_update(123000, 456000, i8::MIN, mantissa, "ASSET");
+
+        let err = decode_balance_update(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Invalid SBE decimal exponent: -128 is null"
+        );
     }
 
     #[rstest]
