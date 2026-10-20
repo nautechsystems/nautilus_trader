@@ -36,7 +36,7 @@ use nautilus_core::{
     correctness::{CorrectnessResultExt, FAILED, check_equal},
 };
 use nautilus_execution::{
-    matching_core::RestingOrder,
+    matching::RestingOrder,
     matching_engine::{
         OrderMatchingEngine, config::OrderMatchingEngineConfig, inflight::InflightOrders,
     },

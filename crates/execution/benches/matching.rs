@@ -30,7 +30,7 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use nautilus_execution::matching_core::{MatchAction, OrderMatchingCore, RestingOrder};
+use nautilus_execution::matching::{MatchAction, OrderMatchingCore, RestingOrder};
 use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::{OrderEventAny, order::spec::OrderInitializedSpec},
@@ -84,7 +84,7 @@ fn seeded_limit(seq: usize) -> RestingOrder {
 }
 
 fn bench_add_order(c: &mut Criterion) {
-    let mut group = c.benchmark_group("matching_core/add_order");
+    let mut group = c.benchmark_group("matching/add_order");
     // The duplicate-check in `add_order` is a `debug_assert!` and is stripped
     // in bench builds, so we measure only side routing + push at population n.
     let info = make_limit(OrderSide::Buy, "200.00", usize::MAX);
@@ -112,7 +112,7 @@ fn bench_add_order(c: &mut Criterion) {
 }
 
 fn bench_get_order(c: &mut Criterion) {
-    let mut group = c.benchmark_group("matching_core/get_order");
+    let mut group = c.benchmark_group("matching/get_order");
 
     for &n in SIZES {
         let (core, bid_ids, ask_ids) = seeded_core(n);
@@ -134,7 +134,7 @@ fn bench_get_order(c: &mut Criterion) {
 }
 
 fn bench_order_exists(c: &mut Criterion) {
-    let mut group = c.benchmark_group("matching_core/order_exists");
+    let mut group = c.benchmark_group("matching/order_exists");
 
     for &n in SIZES {
         let (core, _, _) = seeded_core(n);
@@ -176,7 +176,7 @@ impl DeleteCase {
 }
 
 fn bench_delete_order(c: &mut Criterion) {
-    let mut group = c.benchmark_group("matching_core/delete_order");
+    let mut group = c.benchmark_group("matching/delete_order");
     let cases = [
         DeleteCase::BidHead,
         DeleteCase::BidTail,
@@ -235,7 +235,7 @@ fn delete_input(case: DeleteCase, n: usize) -> (OrderMatchingCore, ClientOrderId
 }
 
 fn bench_iterate(c: &mut Criterion) {
-    let mut group = c.benchmark_group("matching_core/iterate");
+    let mut group = c.benchmark_group("matching/iterate");
 
     for &n in SIZES {
         let no_fill = seeded_core(n).0;
@@ -300,16 +300,16 @@ fn bench_predicates(c: &mut Criterion) {
     assert_eq!(core.get_orders(), before);
 
     // Single-call predicates; useful as a baseline against `iterate` per-order cost.
-    c.bench_function("matching_core/is_limit_matched/buy", |b| {
+    c.bench_function("matching/is_limit_matched/buy", |b| {
         b.iter(|| black_box(core.is_limit_matched(OrderSide::Buy, black_box(buy_price))));
     });
-    c.bench_function("matching_core/is_stop_matched/buy", |b| {
+    c.bench_function("matching/is_stop_matched/buy", |b| {
         b.iter(|| black_box(core.is_stop_matched(OrderSide::Buy, black_box(buy_price))));
     });
-    c.bench_function("matching_core/is_touch_triggered/buy", |b| {
+    c.bench_function("matching/is_touch_triggered/buy", |b| {
         b.iter(|| black_box(core.is_touch_triggered(OrderSide::Buy, black_box(buy_price))));
     });
-    c.bench_function("matching_core/is_limit_fillable/buy", |b| {
+    c.bench_function("matching/is_limit_fillable/buy", |b| {
         b.iter(|| black_box(core.is_limit_fillable(OrderSide::Buy, black_box(buy_price))));
     });
 }

@@ -53,7 +53,7 @@ use ustr::Ustr;
 
 use super::{PendingMessage, handlers::OrderEmulatorOnEventHandler};
 use crate::{
-    matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
+    matching::{MatchAction, OrderMatchingCore, RestingOrder},
     order_manager::{OrderManagerAction, manager::OrderManager},
     trailing::{store_trailing_stop_activation, trailing_stop_calculate},
 };

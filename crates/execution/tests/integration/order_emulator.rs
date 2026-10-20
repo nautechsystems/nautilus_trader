@@ -26,8 +26,7 @@ use nautilus_common::{
 };
 use nautilus_core::UUID4;
 use nautilus_execution::{
-    engine::ExecutionEngine, matching_core::OrderMatchingCore,
-    order_emulator::emulator::OrderEmulator,
+    engine::ExecutionEngine, matching::OrderMatchingCore, order_emulator::emulator::OrderEmulator,
 };
 use nautilus_model::{
     data::QuoteTick,

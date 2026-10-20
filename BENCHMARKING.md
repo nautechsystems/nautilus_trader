@@ -72,7 +72,7 @@ Choose the workload scope based on the behavior the result needs to represent.
 These live in each crate's `benches/` folder and target individual functions or public methods judged to
 be hot paths. Examples:
 
-- `crates/execution/benches/matching_core.rs`: the `OrderMatchingCore` add,
+- `crates/execution/benches/matching.rs`: the `OrderMatchingCore` add,
   delete, lookup, and iterate API.
 - `crates/execution/benches/matching_engine.rs`: market data, order submission,
   passive matching, resting fills, modify, and cancel paths through

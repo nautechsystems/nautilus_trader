@@ -141,7 +141,7 @@
 
 pub mod client;
 pub mod engine;
-pub mod matching_core;
+pub mod matching;
 pub mod matching_engine;
 pub mod models;
 pub mod order_emulator;

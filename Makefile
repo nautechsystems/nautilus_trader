@@ -1284,7 +1284,7 @@ CODSPEED_BENCH_TARGETS := \
 	f64_vs_decimal_to_price_quantity money_criterion price_criterion quantity_criterion \
 	expressions_criterion order_fills_criterion position_replay_criterion \
 	cache_orders cache_query_sets cache_xrate client_order_id order_list_id position_id matching \
-	msgbus mstr throttler matching_core
+	msgbus mstr throttler
 CODSPEED_BENCH_ARGS := $(addprefix --package ,$(CODSPEED_BENCH_CRATES)) \
 	$(addprefix --bench ,$(CODSPEED_BENCH_TARGETS))
 

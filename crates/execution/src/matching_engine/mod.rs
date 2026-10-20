@@ -82,7 +82,7 @@ use self::{
     config::OrderMatchingEngineConfig, ids_generator::IdsGenerator, inflight::InflightOrders,
 };
 use crate::{
-    matching_core::{MatchAction, OrderMatchingCore, RestingOrder},
+    matching::{MatchAction, OrderMatchingCore, RestingOrder},
     models::{
         fee::{FeeModel, FeeModelHandle},
         fill::{FillModel, FillModelHandle, is_price_tradable},
