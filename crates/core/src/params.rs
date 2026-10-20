@@ -234,7 +234,7 @@ impl Params {
             .chain(owned.into_iter().flatten())
     }
 
-    pub(crate) fn shared_values(&self) -> &IndexMap<String, Arc<Value>> {
+    fn shared_values(&self) -> &IndexMap<String, Arc<Value>> {
         self.shared.get_or_init(|| {
             self.owned
                 .get()
@@ -246,16 +246,14 @@ impl Params {
     }
 
     fn shared_values_mut(&mut self) -> &mut IndexMap<String, Arc<Value>> {
-        if self.shared.get().is_none() {
-            self.shared = self
-                .owned
+        self.shared.get_or_init(|| {
+            self.owned
                 .take()
                 .unwrap_or_default()
                 .into_iter()
                 .map(|(key, value)| (key, Arc::new(value)))
-                .collect::<IndexMap<_, _>>()
-                .into();
-        }
+                .collect()
+        });
 
         self.owned = OnceLock::new();
         self.shared.get_mut().unwrap()
@@ -313,16 +311,14 @@ impl Deref for Params {
 
 impl DerefMut for Params {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        if self.owned.get().is_none() {
-            self.owned = self
-                .shared
+        self.owned.get_or_init(|| {
+            self.shared
                 .take()
                 .unwrap_or_default()
                 .into_iter()
                 .map(|(key, value)| (key, Arc::unwrap_or_clone(value)))
-                .collect::<IndexMap<_, _>>()
-                .into();
-        }
+                .collect()
+        });
 
         self.shared = OnceLock::new();
         self.owned.get_mut().unwrap()
