@@ -21,7 +21,7 @@
 use std::{
     fmt::Debug,
     hash::Hash,
-    ops::{Deref, DerefMut, Index, IndexMut},
+    ops::{self, Deref, DerefMut, Index, IndexMut},
     sync::{Arc, OnceLock},
 };
 
@@ -308,25 +308,68 @@ impl DerefMut for Params {
     }
 }
 
-impl<I> Index<I> for Params
+impl<Q> Index<&Q> for Params
 where
-    IndexMap<String, Arc<Value>>: Index<I, Output = Arc<Value>>,
+    Q: ?Sized + Hash + Equivalent<String>,
 {
     type Output = Value;
 
-    fn index(&self, index: I) -> &Self::Output {
+    fn index(&self, index: &Q) -> &Self::Output {
         &self.shared_values()[index]
     }
 }
 
-impl<I> IndexMut<I> for Params
+impl<Q> IndexMut<&Q> for Params
 where
-    IndexMap<String, Arc<Value>>: IndexMut<I, Output = Arc<Value>>,
+    Q: ?Sized + Hash + Equivalent<String>,
 {
-    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+    fn index_mut(&mut self, index: &Q) -> &mut Self::Output {
         Arc::make_mut(&mut self.shared_values_mut()[index])
     }
 }
+
+impl Index<usize> for Params {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.shared_values()[index]
+    }
+}
+
+impl IndexMut<usize> for Params {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        Arc::make_mut(&mut self.shared_values_mut()[index])
+    }
+}
+
+// Range access materializes owned values to preserve the Slice API
+macro_rules! impl_range_index {
+    ($($range:ty),+ $(,)?) => {$(
+        impl Index<$range> for Params {
+            type Output = indexmap::map::Slice<String, Value>;
+
+            fn index(&self, range: $range) -> &Self::Output {
+                &self.deref()[range]
+            }
+        }
+
+        impl IndexMut<$range> for Params {
+            fn index_mut(&mut self, range: $range) -> &mut Self::Output {
+                &mut self.deref_mut()[range]
+            }
+        }
+    )+};
+}
+
+impl_range_index!(
+    ops::Range<usize>,
+    ops::RangeFrom<usize>,
+    ops::RangeFull,
+    ops::RangeInclusive<usize>,
+    ops::RangeTo<usize>,
+    ops::RangeToInclusive<usize>,
+    (ops::Bound<usize>, ops::Bound<usize>),
+);
 
 impl<'a> IntoIterator for &'a Params {
     type Item = (&'a String, &'a Value);
@@ -398,7 +441,7 @@ pub fn from_pydict(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{ops::Bound, sync::Arc};
 
     use indexmap::IndexMap;
     use rstest::*;
@@ -554,6 +597,35 @@ mod tests {
             serde_json::to_value(&params).unwrap(),
             json!({"name": "inserted", "count": 1}),
         );
+    }
+
+    #[rstest]
+    fn test_shared_params_preserve_range_indexing() {
+        let mut params = Params::new();
+        params.insert("first".to_string(), json!(1));
+        params.insert("second".to_string(), json!(2));
+        let original = params.clone();
+        assert_eq!(params[0], json!(1));
+        assert!(params.owned.get().is_none());
+
+        let ranges: [&indexmap::map::Slice<String, Value>; 7] = [
+            &params[..],
+            &params[0..1],
+            &params[1..],
+            &params[..1],
+            &params[0..=0],
+            &params[..=0],
+            &params[(Bound::Included(0), Bound::Excluded(1))],
+        ];
+        assert_eq!(ranges.map(indexmap::map::Slice::len), [2, 1, 1, 1, 1, 1, 1]);
+
+        let range: &mut indexmap::map::Slice<String, Value> = &mut params[0..1];
+        range[0] = json!(3);
+        params[1] = json!(4);
+        assert_eq!(params.get_u64("first"), Some(3));
+        assert_eq!(params.get_u64("second"), Some(4));
+        assert_eq!(original.get_u64("first"), Some(1));
+        assert_eq!(original.get_u64("second"), Some(2));
     }
 
     #[rstest]
