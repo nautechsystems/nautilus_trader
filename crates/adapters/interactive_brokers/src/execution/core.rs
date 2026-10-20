@@ -1141,6 +1141,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             self.config.port,
             self.config.client_id,
             self.config.connection_timeout,
+            self.config.max_reconnect_attempts,
         )
         .await
         .context("Failed to connect to IB Gateway/TWS")?;

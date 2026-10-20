@@ -191,11 +191,11 @@ configurations reach the Rust factories. Reconciliation is a pull interface driv
 
 ### Reconnect and resubscribe
 
-The `ibapi` transport reconnects the socket with Fibonacci backoff up to a bounded attempt count, then
-establishes a complete session. A TCP connection followed by a transient handshake or startup error consumes
-an attempt and retries instead of ending recovery. A successful reconnect resets open subscription channels by
-delivering a connection-reset error to each. On exhaustion the transport shuts down and the adapter reports
-disconnected.
+The `ibapi` transport reconnects the socket with Fibonacci backoff up to a bounded attempt count
+(`max_reconnect_attempts`), then establishes a complete session. A TCP connection followed by a transient
+handshake or startup error consumes an attempt and retries instead of ending recovery. A successful reconnect
+resets open subscription channels by delivering a connection-reset error to each. On exhaustion the transport
+shuts down and the adapter reports disconnected.
 
 Each data stream then waits for the transport, subscribes again, and retries failed resubscriptions with a
 delay. One generic stream driver owns this lifecycle policy for every stream type, so recovery behavior cannot
@@ -739,6 +739,7 @@ upgrading a node that trades or records contracts with a magnifier above 1:
 | `batch_quotes`                   | `True`                    | Prefer `reqMktData` for quote subscriptions.                                |
 | `all_last_trades`                | `True`                    | Include AllLast trades; set `False` to request Last trades only.            |
 | `subscription_idle_timeout_secs` | `None`                    | Emit a custom-data event after this many seconds without subscription data. |
+| `max_reconnect_attempts`         | `None`                    | Bound ibapi's automatic reconnect attempts.                                 |
 | `instrument_provider`            | Default provider config   | Configure contract and instrument loading.                                  |
 | `dockerized_gateway`             | `None`                    | Reserved and rejected; start the gateway separately.                        |
 
@@ -768,6 +769,7 @@ not restart a subscription.
 | `request_timeout`                            | `60` seconds            | Set the IB request timeout.                          |
 | `fetch_all_open_orders`                      | `False`                 | Request all open orders visible to the session.      |
 | `track_option_exercise_from_position_update` | `False`                 | Track option exercise through position updates.      |
+| `max_reconnect_attempts`                     | `None`                  | Bound ibapi's automatic reconnect attempts.          |
 | `instrument_provider`                        | Default provider config | Configure contract and instrument loading.           |
 | `dockerized_gateway`                         | `None`                  | Reserved and rejected; start the gateway separately. |
 
