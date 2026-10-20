@@ -39,6 +39,7 @@ Released on TBD (UTC).
 
 ### Security
 
+- Fixed matching-engine restarts reusing position IDs for independent hedging orders
 - Fixed `DataType::from_str` panics on repeated identifier suffixes
 - Fixed custom-data deserialization panics on metadata containing the reserved `identifier` key
 - Fixed Python order `from_dict` methods aborting on invalid identifiers, quantities, and prices

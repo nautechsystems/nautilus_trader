@@ -234,19 +234,27 @@ impl IdsGenerator {
     }
 
     /// Generates a venue position ID when position IDs are enabled.
+    ///
+    /// Skips IDs held by cached positions, including closed positions.
     pub fn generate_venue_position_id(&mut self) -> Option<PositionId> {
         if !self.use_position_ids {
             return None;
         }
 
-        self.position_count += 1;
+        loop {
+            self.position_count += 1;
 
-        if self.use_random_ids {
-            Some(PositionId::new(UUID4::new().to_string()))
-        } else {
-            Some(PositionId::new(
-                format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),
-            ))
+            let position_id = if self.use_random_ids {
+                PositionId::new(UUID4::new().to_string())
+            } else {
+                PositionId::new(
+                    format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),
+                )
+            };
+
+            if !self.cache.borrow().position_exists(&position_id) {
+                return Some(position_id);
+            }
         }
     }
 
@@ -295,7 +303,7 @@ mod tests {
         enums::{OmsType, OrderSide, OrderType},
         events::{OrderFilled, order::spec::OrderFilledSpec},
         identifiers::{
-            AccountId, ClientOrderId, PositionId, StrategyId, Venue, VenueOrderId,
+            AccountId, ClientOrderId, PositionId, StrategyId, TradeId, Venue, VenueOrderId,
             stubs::account_id,
         },
         instruments::{
@@ -399,6 +407,62 @@ mod tests {
 
         let position_id = ids_generator.get_position_id(&market_order_buy, None);
         assert_eq!(position_id, Some(PositionId::new("BINANCE-1-1")));
+    }
+
+    #[rstest]
+    fn test_get_position_id_probes_past_cached_positions(
+        instrument_eth_usdt: InstrumentAny,
+        market_order_buy: OrderAny,
+        market_order_sell: OrderAny,
+        market_order_fill: OrderFilled,
+        #[values(false, true)] closed: bool,
+        #[values(false, true)] reset: bool,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut generator = get_ids_generator(cache.clone(), true, OmsType::Hedging);
+
+        if reset {
+            assert_eq!(
+                generator.generate_venue_position_id(),
+                Some(PositionId::from("BINANCE-1-1"))
+            );
+            generator.reset();
+        }
+
+        for suffix in [1, 2, 4] {
+            let mut fill = market_order_fill.clone();
+            fill.position_id = Some(PositionId::from(format!("BINANCE-1-{suffix}")));
+            if suffix != 1 {
+                fill.client_order_id = ClientOrderId::from(format!("RETAINED-{suffix}"));
+            }
+
+            let mut position = Position::new(&instrument_eth_usdt, fill.clone());
+            if closed {
+                fill.order_side = OrderSide::Sell;
+                fill.trade_id = TradeId::from(format!("CLOSE-{suffix}"));
+                position.apply(&fill);
+            }
+
+            assert_eq!(position.is_closed(), closed);
+            cache
+                .borrow_mut()
+                .add_position(&position, OmsType::Hedging)
+                .unwrap();
+        }
+
+        let mapped = generator.get_position_id(&market_order_buy, Some(false));
+        let first = generator.get_position_id(&market_order_sell, None);
+        let next = generator.get_position_id(&market_order_sell, None);
+
+        assert_eq!(mapped, Some(PositionId::from("BINANCE-1-1")));
+        assert_eq!(first, Some(PositionId::from("BINANCE-1-3")));
+        assert_eq!(next, Some(PositionId::from("BINANCE-1-5")));
+        assert_eq!(
+            cache
+                .borrow()
+                .position_id(&market_order_buy.client_order_id()),
+            Some(&PositionId::from("BINANCE-1-1"))
+        );
     }
 
     #[rstest]

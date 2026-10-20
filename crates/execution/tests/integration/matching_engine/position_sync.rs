@@ -18,6 +18,137 @@ use nautilus_model::orders::stubs::TestOrderEventStubs;
 use super::*;
 
 #[rstest]
+fn test_hedging_restart_preserves_independent_positions() {
+    let account_id = AccountId::from("ACCOUNT-001");
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let config = OrderMatchingEngineConfig::default();
+    let (mut engine, cache, handler) = bracket_margin_engine(
+        &instrument,
+        account_id,
+        OmsType::Hedging,
+        BookType::L2_MBP,
+        config.clone(),
+    );
+    let orders = [("RETAINED-A", "2.000"), ("RETAINED-B", "3.000")];
+    for (index, (id, qty)) in orders.into_iter().enumerate() {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(OrderSide::Buy)
+            .price(Price::from("1000.00"))
+            .quantity(Quantity::from(qty))
+            .submit(true)
+            .build();
+        engine.process_order(&mut order, account_id);
+        add_then_remove_liquidity(
+            &mut engine,
+            &instrument,
+            OrderSide::Sell,
+            "1000.00",
+            qty,
+            index as u64 + 1,
+        );
+    }
+
+    let position_a = PositionId::from("BINANCE-1-1");
+    let position_b = PositionId::from("BINANCE-1-2");
+    assert_eq!(
+        cache.borrow().position(&position_a).unwrap().quantity,
+        Quantity::from("2.000")
+    );
+    assert_eq!(
+        cache.borrow().position(&position_b).unwrap().quantity,
+        Quantity::from("3.000")
+    );
+    drop(engine);
+
+    let clock = VirtualClock::new();
+    clock.set_time(UnixNanos::from(1));
+
+    let engine = OrderMatchingEngine::new(
+        instrument.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        BookType::L2_MBP,
+        OmsType::Hedging,
+        AccountType::Margin,
+        Rc::new(RefCell::new(clock)),
+        cache.clone(),
+        config,
+    );
+
+    let mut engine = CachingEngine {
+        engine,
+        cache: cache.clone(),
+    };
+
+    clear_order_event_handler_messages(&handler);
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("INDEPENDENT"))
+        .side(OrderSide::Sell)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    add_then_remove_liquidity(
+        &mut engine,
+        &instrument,
+        OrderSide::Buy,
+        "1000.00",
+        "1.000",
+        3,
+    );
+
+    let events = get_order_event_handler_messages(&handler);
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| {
+            if let OrderEventAny::Filled(fill) = event {
+                Some((fill.client_order_id, fill.position_id, fill.last_qty))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let cache = cache.borrow();
+    let a = cache.position(&position_a).unwrap();
+    let b = cache.position(&position_b).unwrap();
+    assert_eq!(
+        (a.side, a.quantity),
+        (PositionSide::Long, Quantity::from("2.000"))
+    );
+    assert_eq!(
+        (b.side, b.quantity),
+        (PositionSide::Long, Quantity::from("3.000"))
+    );
+
+    let position_new = PositionId::from("BINANCE-1-3");
+    assert_eq!(
+        fills,
+        vec![(
+            order.client_order_id(),
+            Some(position_new),
+            Quantity::from("1.000")
+        )]
+    );
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 3);
+    assert_eq!(
+        cache.position_id(&order.client_order_id()),
+        Some(&position_new)
+    );
+    let new = cache.position(&position_new).unwrap();
+    assert_eq!(
+        (new.side, new.quantity),
+        (PositionSide::Short, Quantity::from("1.000"))
+    );
+}
+
+#[rstest]
 fn test_position_fills_sync_reduce_only_orders(
     #[values(OrderSide::Buy, OrderSide::Sell)] opening_side: OrderSide,
     #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
