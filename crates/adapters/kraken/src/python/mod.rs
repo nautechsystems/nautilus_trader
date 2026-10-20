@@ -36,7 +36,6 @@ use crate::{
 };
 
 pub mod config;
-pub mod enums;
 pub mod factories;
 pub mod http_futures;
 pub mod http_spot;
