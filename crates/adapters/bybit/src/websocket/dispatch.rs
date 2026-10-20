@@ -808,6 +808,7 @@ fn parse_order_filled(
         .exec_fee
         .parse()
         .with_context(|| format!("failed to parse execFee='{}'", exec.exec_fee))?;
+    let price_currency = instrument.quote_currency();
     let commission_currency = get_currency(&exec.fee_currency);
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
@@ -830,7 +831,7 @@ fn parse_order_filled(
         identity.order_type,
         last_qty,
         last_px,
-        commission_currency,
+        price_currency,
         liquidity_side,
         UUID4::new(),
         ts_event,
@@ -1294,10 +1295,13 @@ mod tests {
     use crate::{
         common::{
             enums::{BybitExecType, BybitOrderSide, BybitProductType},
-            parse::{parse_linear_instrument, parse_spot_instrument},
+            parse::{parse_inverse_instrument, parse_linear_instrument, parse_spot_instrument},
             testing::load_test_json,
         },
-        http::models::{BybitInstrumentLinearResponse, BybitInstrumentSpotResponse},
+        http::models::{
+            BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
+            BybitInstrumentSpotResponse,
+        },
         websocket::messages::{
             BybitWsAccountExecutionFastMsg, BybitWsMessage, BybitWsOrderResponse,
         },
@@ -1317,6 +1321,14 @@ mod tests {
         let instrument = &response.result.list[0];
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
         parse_spot_instrument(instrument, ts, ts).unwrap()
+    }
+
+    fn inverse_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_inverse.json");
+        let response: BybitInstrumentInverseResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let ts = UnixNanos::new(1_700_000_000_000_000_000);
+        parse_inverse_instrument(instrument, ts, ts).unwrap()
     }
 
     fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {
@@ -1624,6 +1636,58 @@ mod tests {
 
         let commission = filled.commission.expect("commission present");
         assert_eq!(commission.currency.code, "BTC");
+    }
+
+    #[rstest]
+    #[case::spot_base_fee(BybitProductType::Spot, "BTC", "0.000001", "USDT")]
+    #[case::spot_quote_fee(BybitProductType::Spot, "USDT", "0.1", "USDT")]
+    #[case::linear_fee(BybitProductType::Linear, "USDT", "0.1", "USDT")]
+    #[case::inverse_fee(BybitProductType::Inverse, "BTC", "0.000001", "USD")]
+    #[case::spot_zero_fee(BybitProductType::Spot, "BTC", "0", "USDT")]
+    #[case::inverse_rebate(BybitProductType::Inverse, "BTC", "-0.000001", "USD")]
+    fn parse_order_filled_separates_price_and_commission_currencies(
+        #[case] category: BybitProductType,
+        #[case] fee_currency: &str,
+        #[case] fee: &str,
+        #[case] expected_price_currency: &str,
+    ) {
+        let instrument = match category {
+            BybitProductType::Spot => spot_instrument(),
+            BybitProductType::Linear => linear_instrument(),
+            BybitProductType::Inverse => inverse_instrument(),
+            _ => unreachable!("unsupported test product"),
+        };
+        let (emitter, _rx) = create_emitter();
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+        let mut exec = msg.data[0].clone();
+        exec.category = category;
+        exec.symbol = instrument.raw_symbol().inner();
+        exec.exec_qty = "1".to_string();
+        exec.exec_fee = fee.to_string();
+        exec.fee_currency = Ustr::from(fee_currency);
+        let identity = OrderIdentity {
+            instrument_id: instrument.id(),
+            order_side: OrderSide::Sell,
+            order_type: OrderType::Market,
+            ..default_identity()
+        };
+
+        let filled = parse_order_filled(
+            &exec,
+            &instrument,
+            &identity,
+            &emitter,
+            test_account_id(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let commission = filled.commission.expect("commission present");
+        assert_eq!(commission.currency.code, fee_currency);
+        assert_eq!(commission.as_decimal(), fee.parse::<Decimal>().unwrap());
+        assert_eq!(filled.currency.code, expected_price_currency);
     }
 
     #[rstest]
