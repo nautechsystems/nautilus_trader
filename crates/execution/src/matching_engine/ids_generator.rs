@@ -118,6 +118,7 @@ impl IdsGenerator {
                              probing past {conflict_count} ownership conflicts"
                         );
                     }
+
                     return Ok(venue_order_id);
                 }
                 Err(e) => {
@@ -134,6 +135,7 @@ impl IdsGenerator {
                             conflict.claimant_client_order_id,
                         );
                     }
+
                     conflict_count += 1;
                 }
             }
@@ -211,7 +213,6 @@ impl IdsGenerator {
 
         let mut counter = self.execution_count;
         let mut digit_start = value.len();
-
         loop {
             digit_start -= 1;
             value[digit_start] = b'0' + (counter % 10) as u8;
@@ -249,16 +250,6 @@ impl IdsGenerator {
         }
     }
 
-    /// Generates a venue order ID.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the deterministic order counter is exhausted.
-    pub fn generate_venue_order_id(&mut self) -> VenueOrderId {
-        self.try_generate_venue_order_id()
-            .expect("Venue order ID counter exhausted")
-    }
-
     fn try_generate_venue_order_id(&mut self) -> anyhow::Result<VenueOrderId> {
         self.order_count = self
             .order_count
@@ -290,6 +281,7 @@ fn fnv1a_trade_id_hash(venue: Venue, raw_id: u32, ts_init_ns: u64) -> u64 {
             hash = hash.wrapping_mul(FNV_PRIME);
         }
     }
+
     hash
 }
 
@@ -486,6 +478,7 @@ mod tests {
         // (RFC 4122 v4) rather than a raw uuid::Uuid::new_v4 call. The seam
         // already swaps to madsim::rand::thread_rng() under cfg(madsim).
         let cache = Rc::new(RefCell::new(Cache::default()));
+
         let mut generator = IdsGenerator::new(
             Venue::from("BINANCE"),
             OmsType::Netting,
@@ -538,6 +531,7 @@ mod tests {
                 )
                 .unwrap();
         }
+
         let mut ids_generator = get_ids_generator(Rc::clone(&cache), true, OmsType::Netting);
 
         let venue_order_id = ids_generator.get_venue_order_id(&market_order_buy).unwrap();
@@ -714,11 +708,11 @@ mod tests {
     ) {
         let mut generator = build_ids_generator(Venue::from("BINANCE"), 1);
         generator.execution_count = execution_count;
-
         let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             generator.generate_trade_id(UnixNanos::from(1_700_000_000_000_000_000_u64));
         }))
         .expect_err("an oversized trade ID should fail validation");
+
         let message = panic
             .downcast_ref::<String>()
             .map(String::as_str)
@@ -745,9 +739,9 @@ mod tests {
             counter += 1;
             counter
         });
+
         let mut generator = build_ids_generator(Venue::from("BINANCE"), 1);
         generator.execution_count = usize::MAX;
-
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             generator.generate_trade_id(UnixNanos::from(1_700_000_000_000_000_000_u64))
         }));
