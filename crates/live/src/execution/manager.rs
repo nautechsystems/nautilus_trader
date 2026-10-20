@@ -2255,15 +2255,25 @@ impl ExecutionManager {
         order: &OrderAny,
         clients: &[&dyn ExecutionClient],
     ) -> ReportClientCoverage {
-        if let Some(client_id) = self.cache.borrow().client_id(&order.client_order_id()) {
-            return ReportClientCoverage::Resolved(IndexSet::from([*client_id]));
-        }
-
-        let client_ids =
-            responsible_client_ids(order.account_id(), order.instrument_id().venue, clients);
+        let client_ids = if let Some(client_id) =
+            self.cache.borrow().client_id(&order.client_order_id())
+        {
+            IndexSet::from([*client_id])
+        } else {
+            responsible_client_ids(order.account_id(), order.instrument_id().venue, clients)
+        };
 
         if client_ids.is_empty() {
-            ReportClientCoverage::Unresolved
+            return ReportClientCoverage::Unresolved;
+        }
+
+        // Coverage only decides whether an absent report proves the order is no longer open
+        let instrument_id = order.instrument_id();
+        if clients.iter().any(|client| {
+            client_ids.contains(&client.client_id())
+                && !client.provides_bulk_order_coverage(instrument_id)
+        }) {
+            ReportClientCoverage::Unavailable(client_ids)
         } else {
             ReportClientCoverage::Resolved(client_ids)
         }
@@ -2501,6 +2511,16 @@ impl ExecutionManager {
                         if !responsible_clients.is_empty() =>
                     {
                         responsible_clients
+                    }
+                    // Coverage only decides whether an absent report proves the order is gone
+                    Some(ReportClientCoverage::Unavailable(responsible_clients)) => {
+                        if self.order_coverage_warnings.insert(client_order_id) {
+                            log::warn!(
+                                "Skipping order reconciliation for {client_order_id}: complete bulk order coverage is unavailable from responsible execution clients: {responsible_clients:?}"
+                            );
+                        }
+
+                        continue;
                     }
                     _ => {
                         if self.order_coverage_warnings.insert(client_order_id) {

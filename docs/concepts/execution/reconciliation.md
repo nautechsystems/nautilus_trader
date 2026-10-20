@@ -840,6 +840,14 @@ venue. This catches false negatives from bulk query limitations or timing delays
 `FILLED` orders that are "not found" at the venue are silently ignored. Venues commonly drop
 completed orders from their query results.
 
+#### Bulk order coverage
+
+A venue that does not publish open orders cannot prove that a missing report means the order is
+gone. Such a client reports incomplete bulk order coverage, and the engine skips order
+reconciliation for it instead of resolving the order as not found. The Sandbox adapter is one
+such client: it tracks its orders internally and never publishes them in a bulk order status
+report.
+
 ### Position checks
 
 Position checks use separate retry counters per instrument and account. A successful position

@@ -166,6 +166,15 @@ pub trait ExecutionClient {
         true
     }
 
+    /// Returns whether a bulk order status report request provides complete coverage for the
+    /// given instrument, so that an absent report is evidence the order is no longer open.
+    ///
+    /// A client whose venue does not publish open orders must return `false`, otherwise order
+    /// reconciliation treats the absent report as evidence the order no longer exists.
+    fn provides_bulk_order_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        true
+    }
+
     /// Returns whether this client's venue settles expiring contracts itself, such as a
     /// simulated venue that closes positions with expiration fills.
     ///

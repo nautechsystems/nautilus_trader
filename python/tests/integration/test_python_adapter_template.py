@@ -94,6 +94,7 @@ def test_template_declares_all_client_hooks(client_type) -> None:
         in {
             "_handles_order_venue",
             "_provides_bulk_position_coverage",
+            "_provides_bulk_order_coverage",
             "_calculate_commission",
         }
     }

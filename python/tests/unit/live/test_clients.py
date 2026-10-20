@@ -97,6 +97,7 @@ async def test_default_execution_coverage_and_commission_hooks(execution_client)
     assert execution_client._handles_order_venue(Venue("OTHER")) is False
     assert execution_client._handles_order_venue(None) is False
     assert execution_client._provides_bulk_position_coverage(instrument.id) is True
+    assert execution_client._provides_bulk_order_coverage(instrument.id) is True
     assert (
         execution_client._calculate_commission(
             instrument,

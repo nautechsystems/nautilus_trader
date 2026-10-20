@@ -1838,6 +1838,21 @@ impl ExecutionClient for PythonExecutionClient {
             false
         })
     }
+    fn provides_bulk_order_coverage(&self, instrument_id: InstrumentId) -> bool {
+        Python::attach(|py| {
+            self.client
+                .instance
+                .call_method1(py, "_provides_bulk_order_coverage", (instrument_id,))?
+                .extract::<bool>(py)
+        })
+        .unwrap_or_else(|e| {
+            log::error!(
+                "Client {} bulk order coverage failed: {e}",
+                self.client.client_id
+            );
+            false
+        })
+    }
     fn calculate_commission(
         &self,
         instrument: &InstrumentAny,
@@ -2268,6 +2283,11 @@ class Runtime:
         return self.result
     def _provides_bulk_position_coverage(self, instrument_id):
         self.calls.append(('positions', instrument_id))
+        if self.failure is not None:
+            raise self.failure
+        return self.result
+    def _provides_bulk_order_coverage(self, instrument_id):
+        self.calls.append(('orders', instrument_id))
         if self.failure is not None:
             raise self.failure
         return self.result
@@ -2863,9 +2883,13 @@ class Runtime:
             client.provides_bulk_position_coverage(instrument_id),
             mode == "true"
         );
+        assert_eq!(
+            client.provides_bulk_order_coverage(instrument_id),
+            mode == "true"
+        );
         Python::attach(|py| {
             let calls = client.client.runtime.getattr(py, "calls").unwrap();
-            assert_eq!(calls.bind(py).len().unwrap(), 2);
+            assert_eq!(calls.bind(py).len().unwrap(), 3);
             let first = calls.bind(py).get_item(0).unwrap();
             assert_eq!(
                 first.get_item(0).unwrap().extract::<String>().unwrap(),
@@ -2882,6 +2906,19 @@ class Runtime:
             );
             assert_eq!(
                 second
+                    .get_item(1)
+                    .unwrap()
+                    .extract::<InstrumentId>()
+                    .unwrap(),
+                instrument_id
+            );
+            let third = calls.bind(py).get_item(2).unwrap();
+            assert_eq!(
+                third.get_item(0).unwrap().extract::<String>().unwrap(),
+                "orders"
+            );
+            assert_eq!(
+                third
                     .get_item(1)
                     .unwrap()
                     .extract::<InstrumentId>()

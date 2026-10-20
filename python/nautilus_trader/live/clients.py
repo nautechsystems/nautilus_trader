@@ -627,6 +627,9 @@ class ExecutionClient(_Client):
     def _provides_bulk_position_coverage(self, instrument_id: InstrumentId) -> bool:  # noqa: ARG002 - Keep the adapter hook signature for subclasses.
         return True
 
+    def _provides_bulk_order_coverage(self, instrument_id: InstrumentId) -> bool:  # noqa: ARG002 - Keep the adapter hook signature for subclasses.
+        return True
+
     def _calculate_commission(
         self,
         instrument: object,  # noqa: ARG002 - Keep the adapter hook signature for subclasses.

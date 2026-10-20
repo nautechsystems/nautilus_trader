@@ -2129,6 +2129,9 @@ fn test_client_initial_state(execution_client: SandboxExecutionClient, venue: Ve
     assert!(
         !execution_client.provides_bulk_position_coverage(InstrumentId::from("ETHUSDT-PERP.SIM"))
     );
+    assert!(
+        !execution_client.provides_bulk_order_coverage(InstrumentId::from("ETHUSDT-PERP.SIM"))
+    );
     assert!(execution_client.settles_contract_expirations());
     assert_eq!(execution_client.matching_engine_count(), 0);
 }
@@ -4465,6 +4468,70 @@ async fn test_position_check_keeps_open_sandbox_position(
             .borrow()
             .position(&position.id)
             .is_some_and(|position| position.is_open())
+    );
+
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_order_check_keeps_resting_sandbox_order(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    let (mut context, mut rx) =
+        setup_channel_context(trader_id, account_id, venue, &instrument, None);
+    context
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 1000.0, 1001.0))
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("900.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-OPEN-CHECK-1".into())
+        .build();
+    submit_to_client(&context, trader_id, &order);
+    apply_order_events_from_channel(&context.cache, &mut rx);
+
+    // The sandbox tracks its orders internally and never publishes them in a
+    // bulk order status report, so the order is absent from the response.
+    assert_eq!(
+        cached_status(&context.cache, &order),
+        OrderStatus::Accepted,
+        "seed order must be Accepted before the open-order check"
+    );
+
+    let mut manager = ExecutionManager::new(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        ExecutionManagerConfig {
+            open_check_open_only: false,
+            open_check_missing_retries: 1,
+            open_check_threshold_ns: DurationNanos::ZERO,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let events = manager.check_open_orders(&[&context.client]).await;
+
+    assert!(
+        events.is_empty(),
+        "a resting sandbox order must not be rejected; was {:?}",
+        events
+            .iter()
+            .map(order_event_kind)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        cached_status(&context.cache, &order),
+        OrderStatus::Accepted,
+        "the resting order must remain accepted"
     );
 
     context.client.stop().unwrap();

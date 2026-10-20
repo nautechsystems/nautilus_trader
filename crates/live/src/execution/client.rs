@@ -335,6 +335,12 @@ impl ExecutionClient for LiveExecutionClient {
             .provides_bulk_position_coverage(instrument_id)
     }
 
+    fn provides_bulk_order_coverage(&self, instrument_id: InstrumentId) -> bool {
+        self.client
+            .borrow()
+            .provides_bulk_order_coverage(instrument_id)
+    }
+
     fn settles_contract_expirations(&self) -> bool {
         self.client.borrow().settles_contract_expirations()
     }

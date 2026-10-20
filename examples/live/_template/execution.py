@@ -131,6 +131,10 @@ class TemplateExecutionClient(ExecutionClient):
         return super()._provides_bulk_position_coverage(instrument_id)
 
     @override
+    def _provides_bulk_order_coverage(self, instrument_id: model.InstrumentId) -> bool:
+        return super()._provides_bulk_order_coverage(instrument_id)
+
+    @override
     def _calculate_commission(
         self,
         instrument: object,
