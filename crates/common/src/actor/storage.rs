@@ -34,7 +34,6 @@ use nautilus_model::{
     orderbook::{OrderBook, level::BookLevel},
     types::Price,
 };
-use serde_json::Value;
 use ustr::Ustr;
 
 /// Measures known storage for a custom-data envelope, excluding the opaque payload.
@@ -53,19 +52,10 @@ pub(super) fn data_type(data: &DataType) -> usize {
         .saturating_add(data.metadata().map_or(0, params))
 }
 
-/// Measures accessible key, value, and element storage in request metadata.
+/// Estimates retained key, value, and element storage in request metadata.
 #[must_use]
 pub(super) fn params(params: &Params) -> usize {
-    params.iter().fold(
-        params
-            .capacity()
-            .saturating_mul(size_of::<(usize, String, Value)>()),
-        |bytes, (key, value)| {
-            bytes
-                .saturating_add(key.capacity())
-                .saturating_add(json(value))
-        },
-    )
+    params.estimated_heap_size()
 }
 
 /// Measures variable-sized contents of an order event.
@@ -94,23 +84,6 @@ pub(super) fn order_event(event: &OrderEventAny) -> usize {
 fn interned_map(map: &IndexMap<Ustr, Ustr>) -> usize {
     map.capacity()
         .saturating_mul(size_of::<(usize, Ustr, Ustr)>())
-}
-
-fn json(value: &Value) -> usize {
-    match value {
-        Value::String(value) => value.capacity(),
-        Value::Array(values) => values.iter().fold(
-            values.capacity().saturating_mul(size_of::<Value>()),
-            |bytes, value| bytes.saturating_add(json(value)),
-        ),
-        Value::Object(values) => values.iter().fold(0usize, |bytes, (key, value)| {
-            bytes
-                .saturating_add(size_of::<(String, Value)>())
-                .saturating_add(key.capacity())
-                .saturating_add(json(value))
-        }),
-        _ => 0,
-    }
 }
 
 /// Measures visible levels and orders retained by an order-book snapshot.
@@ -160,6 +133,7 @@ pub(super) fn pool(pool: &Pool) -> usize {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde_json::Value;
 
     use super::*;
 
@@ -170,22 +144,23 @@ mod tests {
         let capacity = text.capacity();
         let mut values = Vec::with_capacity(7);
         values.push(Value::String(text));
+        let mut map = IndexMap::new();
         let expected = values.capacity() * size_of::<Value>() + capacity;
-        assert_eq!(json(&Value::Array(values)), expected);
+        map.insert(String::new(), Value::Array(values));
+        let expected = expected + map.capacity() * size_of::<(usize, String, Value)>();
+        assert_eq!(params(&Params::from_index_map(map)), expected);
     }
 
     #[rstest]
     fn metadata_charges_keys_and_nested_values() {
-        let mut values = Params::default();
+        let mut values = IndexMap::new();
         let mut key = String::with_capacity(41);
         key.push_str("key");
         let mut value = String::with_capacity(83);
         value.push_str("payload");
         let contents = key.capacity() + value.capacity();
         values.insert(key, Value::String(value));
-        assert_eq!(
-            params(&values),
-            values.capacity() * size_of::<(usize, String, Value)>() + contents
-        );
+        let expected = values.capacity() * size_of::<(usize, String, Value)>() + contents;
+        assert_eq!(params(&Params::from_index_map(values)), expected);
     }
 }

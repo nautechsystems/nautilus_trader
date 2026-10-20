@@ -67,6 +67,66 @@ impl Params {
         }
     }
 
+    /// Returns the number of parameters without materializing values.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self.shared.get() {
+            Some(values) => values.len(),
+            None => self.owned.get().map_or(0, IndexMap::len),
+        }
+    }
+
+    /// Returns whether the map is empty without materializing values.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns whether the map contains a key without materializing values.
+    #[must_use]
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        Q: ?Sized + Hash + Equivalent<String>,
+    {
+        self.get(key).is_some()
+    }
+
+    /// Estimates retained heap storage in bytes without materializing values.
+    ///
+    /// Counts both cached maps and charges shared allocations in full for each entry.
+    /// Excludes allocator and hash-table overhead.
+    #[must_use]
+    pub fn estimated_heap_size(&self) -> usize {
+        let owned = self.owned.get().map_or(0, |values| {
+            values.iter().fold(
+                values
+                    .capacity()
+                    .saturating_mul(size_of::<(usize, String, Value)>()),
+                |bytes, (key, value)| {
+                    bytes
+                        .saturating_add(key.capacity())
+                        .saturating_add(json_heap_size(value))
+                },
+            )
+        });
+
+        self.shared.get().map_or(owned, |values| {
+            values.iter().fold(
+                owned.saturating_add(values.capacity().saturating_mul(size_of::<(
+                    usize,
+                    String,
+                    Arc<Value>,
+                )>())),
+                |bytes, (key, value)| {
+                    bytes
+                        .saturating_add(key.capacity())
+                        .saturating_add(size_of::<(usize, usize, Value)>())
+                        .saturating_add(json_heap_size(value))
+                },
+            )
+        })
+    }
+
     /// Inserts a JSON value, returning the previous value if present.
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
         self.insert_shared(key, Arc::new(value))
@@ -301,6 +361,23 @@ impl<'de> Deserialize<'de> for Params {
     }
 }
 
+fn json_heap_size(value: &Value) -> usize {
+    match value {
+        Value::String(value) => value.capacity(),
+        Value::Array(values) => values.iter().fold(
+            values.capacity().saturating_mul(size_of::<Value>()),
+            |bytes, value| bytes.saturating_add(json_heap_size(value)),
+        ),
+        Value::Object(values) => values.iter().fold(0usize, |bytes, (key, value)| {
+            bytes
+                .saturating_add(size_of::<(String, Value)>())
+                .saturating_add(key.capacity())
+                .saturating_add(json_heap_size(value))
+        }),
+        _ => 0,
+    }
+}
+
 #[cfg(feature = "python")]
 /// Converts a Python dict to `Params`.
 ///
@@ -358,6 +435,61 @@ mod tests {
         assert_eq!(params.get_f64("missing"), None);
         assert_eq!(params.get_u64("str_val"), None);
         assert_eq!(params.get_str("u64_val"), None);
+    }
+
+    #[rstest]
+    fn test_params_queries_do_not_materialize_values(#[values(false, true)] shared: bool) {
+        let mut params = Params::new();
+        assert_eq!(params.len(), 0);
+        assert!(params.is_empty());
+        assert!(!params.contains_key("missing"));
+        assert_eq!(params.estimated_heap_size(), 0);
+        assert!(params.shared.get().is_none());
+        assert!(params.owned.get().is_none());
+
+        params.insert(
+            "payload".to_string(),
+            json!({"markets": [{"id": "market"}]}),
+        );
+
+        if !shared {
+            let _: &mut IndexMap<String, Value> = &mut params;
+        }
+
+        assert_eq!(params.len(), 1);
+        assert!(!params.is_empty());
+        assert!(params.contains_key::<str>("payload"));
+        assert!(params.contains_key(&"payload".to_string()));
+        assert!(!params.contains_key("missing"));
+        assert_eq!(params.shared.get().is_some(), shared);
+        assert_eq!(params.owned.get().is_some(), !shared);
+    }
+
+    #[rstest]
+    fn test_params_heap_size_includes_shared_and_cached_storage() {
+        let mut key = String::with_capacity(41);
+        key.push_str("key");
+        let mut value = String::with_capacity(83);
+        value.push_str("payload");
+        let contents = key.capacity() + value.capacity();
+        let mut params = Params::new();
+        params.insert(key, Value::String(value));
+        let shared = params.shared.get().unwrap();
+        let shared_bytes = shared.capacity() * size_of::<(usize, String, Arc<Value>)>()
+            + size_of::<(usize, usize, Value)>()
+            + contents;
+
+        assert_eq!(params.estimated_heap_size(), shared_bytes);
+        assert!(params.owned.get().is_none());
+
+        let owned: &IndexMap<String, Value> = &params;
+        let (key, Value::String(value)) = owned.first().unwrap() else {
+            panic!("Expected a string value");
+        };
+        let owned_bytes = owned.capacity() * size_of::<(usize, String, Value)>()
+            + key.capacity()
+            + value.capacity();
+        assert_eq!(params.estimated_heap_size(), shared_bytes + owned_bytes);
     }
 
     #[rstest]
