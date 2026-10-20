@@ -28,7 +28,7 @@ use super::check_client_id_or_venue;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -71,7 +71,7 @@ impl SubscribeCustomData {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -114,7 +114,7 @@ impl SubscribeInstrument {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -153,7 +153,7 @@ impl SubscribeInstruments {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -206,7 +206,7 @@ impl SubscribeBookDeltas {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -304,7 +304,7 @@ impl SubscribeBookSnapshots {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -347,7 +347,7 @@ impl SubscribeQuotes {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -390,7 +390,7 @@ impl SubscribeTrades {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -433,7 +433,7 @@ impl SubscribeBars {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -476,7 +476,7 @@ impl SubscribeMarkPrices {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -519,7 +519,7 @@ impl SubscribeIndexPrices {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -562,7 +562,7 @@ impl SubscribeFundingRates {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -605,7 +605,7 @@ impl SubscribeInstrumentStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -648,7 +648,7 @@ impl SubscribeOptionGreeks {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",

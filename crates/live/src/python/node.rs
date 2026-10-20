@@ -158,12 +158,7 @@ impl PyLiveNode {
 ///
 /// Stays valid for the node's whole lifetime, including while a hosted run owns the node, and is
 /// safe to call from any thread or from a signal handler.
-#[pyo3::pyclass(
-    module = "nautilus_trader.live",
-    name = "LiveNodeHandle",
-    frozen,
-    skip_from_py_object
-)]
+#[pyo3::pyclass(module = "nautilus_trader.live", name = "LiveNodeHandle", frozen)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
 #[derive(Clone, Debug)]
 pub struct PyLiveNodeHandle {

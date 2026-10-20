@@ -27,7 +27,7 @@ use super::check_client_id_or_venue;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -70,7 +70,7 @@ impl UnsubscribeCustomData {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -113,7 +113,7 @@ impl UnsubscribeInstrument {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -152,7 +152,7 @@ impl UnsubscribeInstruments {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -195,7 +195,7 @@ impl UnsubscribeBookDeltas {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -277,7 +277,7 @@ impl UnsubscribeBookSnapshots {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -320,7 +320,7 @@ impl UnsubscribeQuotes {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -363,7 +363,7 @@ impl UnsubscribeTrades {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -406,7 +406,7 @@ impl UnsubscribeBars {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -449,7 +449,7 @@ impl UnsubscribeMarkPrices {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -492,7 +492,7 @@ impl UnsubscribeIndexPrices {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -535,7 +535,7 @@ impl UnsubscribeFundingRates {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -578,7 +578,7 @@ impl UnsubscribeInstrumentStatus {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",
@@ -621,7 +621,7 @@ impl UnsubscribeOptionGreeks {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.live", frozen, skip_from_py_object)
+    pyo3::pyclass(module = "nautilus_trader.live", frozen)
 )]
 #[cfg_attr(
     feature = "python",

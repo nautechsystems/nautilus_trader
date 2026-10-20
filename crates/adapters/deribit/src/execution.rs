@@ -321,30 +321,12 @@ impl DeribitExecutionClient {
         Ok(params)
     }
 
-    /// Submits a single order to Deribit.
-    ///
-    /// This is the core submission logic shared by `submit_order` and `submit_order_list`.
-    fn submit_single_order(&self, order: &OrderAny, task_name: &'static str) {
-        if order.is_closed() {
-            log::warn!("Cannot submit closed order {}", order.client_order_id());
-            return;
-        }
-
-        let params = match Self::build_order_params(order) {
-            Ok(params) => params,
-            Err(e) => {
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    &format!("{e}"),
-                    ts_event,
-                    false,
-                );
-                return;
-            }
-        };
+    fn spawn_order_submit(
+        &self,
+        order: &OrderAny,
+        params: DeribitOrderParams,
+        task_name: &'static str,
+    ) {
         let client_order_id = order.client_order_id();
         let trader_id = order.trader_id();
         let strategy_id = order.strategy_id();
@@ -352,10 +334,8 @@ impl DeribitExecutionClient {
         let order_side = order.order_side();
 
         log::debug!("OrderSubmitted client_order_id={client_order_id}");
-        self.emitter.emit_order_submitted(order);
 
         let ws_client = self.ws_client.clone();
-
         self.spawn_task(task_name, async move {
             let result = ws_client
                 .submit_order(
@@ -829,7 +809,14 @@ impl ExecutionClient for DeribitExecutionClient {
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
-        self.submit_single_order(&order, "submit_order");
+        if order.is_closed() {
+            log::warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
+
+        let params = Self::build_order_params(&order)?;
+        self.emitter.try_emit_order_submitted(&order)?;
+        self.spawn_order_submit(&order, params, "submit_order");
         Ok(())
     }
 
@@ -839,7 +826,28 @@ impl ExecutionClient for DeribitExecutionClient {
             return Ok(());
         }
 
-        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+        let mut orders = self.core.get_orders_for_list(&cmd.order_list)?;
+        orders.retain(|order| {
+            if order.is_closed() {
+                log::warn!("Cannot submit closed order {}", order.client_order_id());
+                false
+            } else {
+                true
+            }
+        });
+
+        if orders.is_empty() {
+            return Ok(());
+        }
+
+        let params = orders
+            .iter()
+            .map(|order| Self::build_order_params(order))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        for order in &orders {
+            self.emitter.try_emit_order_submitted(order)?;
+        }
 
         log::debug!(
             "Submitting order list {} with {} orders for instrument={}",
@@ -848,10 +856,8 @@ impl ExecutionClient for DeribitExecutionClient {
             cmd.instrument_id
         );
 
-        // Deribit doesn't have native batch order submission
-        // Loop through and submit each order individually using shared logic
-        for order in &orders {
-            self.submit_single_order(order, "submit_order_list_item");
+        for (order, params) in orders.iter().zip(params) {
+            self.spawn_order_submit(order, params, "submit_order_list_item");
         }
 
         Ok(())
@@ -1231,12 +1237,20 @@ fn check_params_serialize<T: Serialize>(params: &T) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::{ExecutionEvent, execution::ExecutionReport};
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache,
+        messages::{ExecutionEvent, execution::ExecutionReport},
+    };
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide},
-        events::OrderFilled,
-        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId},
+        enums::{LiquiditySide, OrderSide, OrderStatus},
+        events::{OrderDenied, OrderFilled},
+        identifiers::{
+            ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId, VenueOrderId,
+        },
+        orders::{OrderList, OrderTestBuilder},
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -1330,5 +1344,218 @@ mod tests {
             ExecutionEvent::Report(ExecutionReport::Fill(_))
         ));
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case(false, false, "Cannot send order event: sender not initialized")]
+    #[case(false, true, "Failed to send order event: channel closed")]
+    #[case(true, false, "Cannot send order event: sender not initialized")]
+    #[case(true, true, "Failed to send order event: channel closed")]
+    #[tokio::test]
+    async fn test_submit_event_failure_returns_error_before_spawning(
+        #[case] batch: bool,
+        #[case] closed: bool,
+        #[case] expected_error: &str,
+    ) {
+        let (mut client, orders, _cache) = submission_test_rig(TimeInForce::Gtc);
+
+        if closed {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+            client.emitter.set_sender(tx);
+            drop(rx);
+        }
+
+        let error = submit_test_orders(&client, &orders, batch).unwrap_err();
+
+        assert_eq!(error.to_string(), expected_error);
+        assert_eq!(client.pending_tasks.len(), 0);
+
+        for order in orders {
+            let cached = client
+                .core
+                .cache()
+                .try_order_owned(&order.client_order_id())
+                .unwrap();
+            assert_eq!(cached.status(), OrderStatus::Initialized);
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_submit_list_validation_failure_precedes_events_and_tasks() {
+        let (mut client, orders, _cache) = submission_test_rig(TimeInForce::AtTheOpen);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+
+        let error = submit_test_orders(&client, &orders, true).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Unsupported time_in_force AtTheOpen for Deribit"
+        );
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert_eq!(client.pending_tasks.len(), 0);
+    }
+
+    #[rstest]
+    #[case(false, false)]
+    #[case(true, false)]
+    #[case(true, true)]
+    #[tokio::test]
+    async fn test_submit_queues_expected_events(#[case] batch: bool, #[case] close_first: bool) {
+        let (mut client, orders, cache) = submission_test_rig(TimeInForce::Gtc);
+        if close_first {
+            let order = &orders[0];
+
+            let denied = OrderDenied::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                "Already denied".into(),
+                UUID4::new(),
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+            );
+            cache
+                .borrow_mut()
+                .update_order(&OrderEventAny::Denied(denied))
+                .unwrap();
+        }
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+
+        submit_test_orders(&client, &orders, batch).unwrap();
+        let expected = if close_first {
+            &orders[1..]
+        } else if batch {
+            &orders[..]
+        } else {
+            &orders[..1]
+        };
+
+        let events = expected
+            .iter()
+            .map(|_| match rx.try_recv().unwrap() {
+                ExecutionEvent::Order(OrderEventAny::Submitted(event)) => event,
+                other => panic!("Unexpected submitted message: {other:?}"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+
+        for (event, order) in events.iter().zip(expected) {
+            assert_eq!(event.trader_id, client.core.trader_id);
+            assert_eq!(event.strategy_id, order.strategy_id());
+            assert_eq!(event.instrument_id, order.instrument_id());
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(event.account_id, client.core.account_id);
+            assert_eq!(event.ts_event, event.ts_init);
+            assert_eq!(event.causation_id, None);
+        }
+    }
+
+    fn submission_test_rig(
+        second_time_in_force: TimeInForce,
+    ) -> (DeribitExecutionClient, Vec<OrderAny>, Rc<RefCell<Cache>>) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("DERIBIT"),
+            *DERIBIT_VENUE,
+            OmsType::Netting,
+            AccountId::from("DERIBIT-001"),
+            AccountType::Margin,
+            None,
+            cache.clone(),
+        );
+
+        let config = DeribitExecutionClientConfig {
+            api_key: Some("test_api_key".into()),
+            api_secret: Some("test_api_secret".into()),
+            ..Default::default()
+        };
+
+        let client = DeribitExecutionClient::new(core, config).unwrap();
+
+        let orders = [TimeInForce::Gtc, second_time_in_force]
+            .into_iter()
+            .enumerate()
+            .map(|(index, time_in_force)| {
+                let order = OrderTestBuilder::new(OrderType::Limit)
+                    .trader_id(TraderId::from("TESTER-001"))
+                    .strategy_id(StrategyId::from("S-001"))
+                    .instrument_id(InstrumentId::from("BTC-PERPETUAL.DERIBIT"))
+                    .client_order_id(ClientOrderId::new(format!("submit-{index}")))
+                    .quantity(Quantity::from(if index == 0 { "10" } else { "20" }))
+                    .price(Price::from(if index == 0 { "50000" } else { "51000" }))
+                    .time_in_force(time_in_force)
+                    .build();
+                cache
+                    .borrow_mut()
+                    .add_order(order.clone(), None, None, false)
+                    .unwrap();
+                order
+            })
+            .collect();
+
+        (client, orders, cache)
+    }
+
+    fn submit_test_orders(
+        client: &DeribitExecutionClient,
+        orders: &[OrderAny],
+        batch: bool,
+    ) -> anyhow::Result<()> {
+        let first = &orders[0];
+
+        if batch {
+            let order_list = OrderList::new(
+                OrderListId::from("submit-list-001"),
+                first.instrument_id(),
+                first.strategy_id(),
+                orders.iter().map(Order::client_order_id).collect(),
+                UnixNanos::default(),
+            );
+            client.submit_order_list(SubmitOrderList::new(
+                first.trader_id(),
+                Some(client.client_id()),
+                first.strategy_id(),
+                order_list,
+                orders
+                    .iter()
+                    .map(|order| order.init_event().clone())
+                    .collect(),
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+        } else {
+            client.submit_order(SubmitOrder::new(
+                first.trader_id(),
+                Some(client.client_id()),
+                first.strategy_id(),
+                first.instrument_id(),
+                first.client_order_id(),
+                first.init_event().clone(),
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+        }
     }
 }

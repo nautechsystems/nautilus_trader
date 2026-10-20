@@ -71,6 +71,7 @@ environments = [
   "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 exclude-newer = "7 days"
+exclude-newer-package = { ruff = "3 days" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -152,7 +153,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.16.10", "ty>=0.0.86"]
+dev = ["maturin==1.15.0", "ruff>=0.17.1", "ty>=0.0.86"]
 test = [
   "pyarrow>=26.0.0",
   "polars",
@@ -270,11 +271,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "D",
   "E501",
   "F401",
+  "ICN001",
   "N802",
   "PYI011",
   "RUF002",
   "RUF100",
-] # Generated stubs mirror Rust API names and types; E501 stays in the generator header too
+] # Generated stubs mirror Rust API names, types, and imports; E501 stays in the generator header too
 "nautilus_trader/adapters/*/__init__.py" = [
   "F405",
 ] # Adapter facades re-export star-imported names in __all__
@@ -285,6 +287,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "D",
   "E501",
   "F401",
+  "ICN001",
   "N802",
   "PYI011",
   "RUF002",

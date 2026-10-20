@@ -783,7 +783,7 @@ model.
 
 The Python targets accept the uv minor series defined by `required-version` in
 `python/pyproject.toml`. `make sync`, `make py-stubs`, and `make build-debug` stop when the installed
-version falls outside that range. Run `make update-uv` to install the exact project version from
+version falls outside that range. Run `make install-uv` to install the exact project version from
 `.nautilus-engineering/tools.toml`.
 
 Do not edit wrapper `///` comments in `crates/**/src/python/`. Edit the core Rust item docs and

@@ -45,8 +45,7 @@ use crate::{
     providers::extract_condition_id,
     resolve::{
         StrictResolvedMarket, admit_data_resolution_instrument, apply_watched_condition_resolution,
-        build_strict_resolved_market, remove_data_resolve_watch_entry,
-        upsert_data_resolve_watch_entry_from_instrument,
+        build_strict_resolved_market, upsert_data_resolve_watch_entry_from_instrument,
     },
 };
 
@@ -199,8 +198,6 @@ impl PolymarketDataClient {
         let active_instrument_close_subs = self.subscriptions.active_instrument_close_subs.clone();
         let data_sender = self.data_sender.clone();
         let cancellation = self.cancellation_token.clone();
-        let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
-        let resolve_watch_apply_mutex = self.resolve_watch_apply_mutex.clone();
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
         let future = async move {
             let mut scheduled_guard = scheduled_guard;
@@ -406,15 +403,8 @@ impl PolymarketDataClient {
                                         "Auto-loaded instrument {} filtered out",
                                         instrument.id()
                                     );
-                                    let _guard = resolve_watch_apply_mutex.lock();
-                                    active_instrument_status_subs.remove(&instrument_id);
-                                    active_instrument_close_subs.remove(&instrument_id);
-                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
-                                    remove_data_resolve_watch_entry(
-                                        &resolve_poll_watchlist,
-                                        instrument_id,
-                                        false,
-                                    );
+                                    subscriptions
+                                        .discard_filtered_instrument(instrument_id, &batch);
                                     continue;
                                 }
 
@@ -461,15 +451,8 @@ impl PolymarketDataClient {
                                         "Auto-loaded instrument {} filtered out",
                                         instrument.id()
                                     );
-                                    let _guard = resolve_watch_apply_mutex.lock();
-                                    active_instrument_status_subs.remove(&instrument_id);
-                                    active_instrument_close_subs.remove(&instrument_id);
-                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
-                                    remove_data_resolve_watch_entry(
-                                        &resolve_poll_watchlist,
-                                        instrument_id,
-                                        false,
-                                    );
+                                    subscriptions
+                                        .discard_filtered_instrument(instrument_id, &batch);
                                     continue;
                                 }
 

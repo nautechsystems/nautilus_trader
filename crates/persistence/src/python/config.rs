@@ -45,8 +45,7 @@ use crate::config::{
 #[pyo3::pyclass(
     frozen,
     name = "CatalogBackend",
-    module = "nautilus_trader.persistence",
-    skip_from_py_object
+    module = "nautilus_trader.persistence"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct PyCatalogBackend {

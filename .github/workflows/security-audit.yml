@@ -152,6 +152,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Python
+        # https://github.com/actions/setup-python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
       - name: Get uv version from pyproject.toml
         id: uv-version
         run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"

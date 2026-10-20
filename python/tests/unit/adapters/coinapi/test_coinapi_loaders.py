@@ -16,7 +16,7 @@
 Test the CoinAPI flat file loader bindings against the committed fixtures.
 """
 
-import datetime
+import datetime as dt
 from decimal import ROUND_HALF_EVEN
 from decimal import Decimal
 from pathlib import Path
@@ -45,7 +45,7 @@ from nautilus_trader.model import RecordFlag
 FIXTURES = Path(__file__).resolve().parents[5] / "crates/adapters/coinapi/test_data/csv"
 BINANCE = InstrumentId.from_str("BTCUSDT.BINANCE")
 COINBASE = InstrumentId.from_str("BTC-USD.COINBASE")
-BOOK_DATE = datetime.date(2025, 9, 1)
+BOOK_DATE = dt.date(2025, 9, 1)
 
 # 2025-09-01T00:00:00Z
 DAY_START = 1_756_684_800_000_000_000

@@ -185,7 +185,6 @@ impl FeeModel for FeeModelAny {
     pyo3::pyclass(
         module = "nautilus_trader.execution",
         extends = PyFeeModel,
-        skip_from_py_object
     )
 )]
 pub struct FixedFeeModel {
@@ -239,7 +238,6 @@ impl FeeModel for FixedFeeModel {
     pyo3::pyclass(
         module = "nautilus_trader.execution",
         extends = PyFeeModel,
-        skip_from_py_object
     )
 )]
 pub struct PerContractFeeModel {
@@ -308,7 +306,6 @@ fn spread_contract_count(instrument: &InstrumentAny) -> anyhow::Result<Decimal> 
     pyo3::pyclass(
         module = "nautilus_trader.execution",
         extends = PyFeeModel,
-        skip_from_py_object
     )
 )]
 pub struct MakerTakerFeeModel {
@@ -387,7 +384,6 @@ impl FeeModel for MakerTakerFeeModel {
     pyo3::pyclass(
         module = "nautilus_trader.execution",
         extends = PyFeeModel,
-        skip_from_py_object
     )
 )]
 pub struct ProbabilityPriceFeeModel {
@@ -461,7 +457,6 @@ impl FeeModel for ProbabilityPriceFeeModel {
     pyo3::pyclass(
         module = "nautilus_trader.execution",
         extends = PyFeeModel,
-        skip_from_py_object
     )
 )]
 pub struct CappedOptionFeeModel {
@@ -569,7 +564,6 @@ impl FeeModel for CappedOptionFeeModel {
     pyo3::pyclass(
         module = "nautilus_trader.execution",
         extends = PyFeeModel,
-        skip_from_py_object
     )
 )]
 pub struct TieredNotionalOptionFeeModel {

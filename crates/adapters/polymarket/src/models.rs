@@ -44,7 +44,6 @@ use crate::http::models::FeeSchedule;
     pyo3::pyclass(
         module = "nautilus_trader.adapters.polymarket",
         extends = PyFeeModel,
-        skip_from_py_object
     )
 )]
 pub struct PolymarketFeeModel;
