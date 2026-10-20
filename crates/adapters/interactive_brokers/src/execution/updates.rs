@@ -160,6 +160,7 @@ impl InteractiveBrokersExecutionClient {
         let ib_account = self.ib_account;
         let commission_cache = Arc::clone(&self.commission_cache);
         let pending_execution_cache = Arc::clone(&self.pending_execution_cache);
+        let zero_commission_executions = Arc::clone(&self.zero_commission_executions);
         let position_tracker = Arc::clone(&self.position_tracker);
         let is_connected = Arc::clone(&self.is_connected);
         let tasks = self
@@ -187,6 +188,7 @@ impl InteractiveBrokersExecutionClient {
                     ib_account,
                     &commission_cache,
                     &pending_execution_cache,
+                    &zero_commission_executions,
                     &position_tracker,
                     Some(&venue_ctx),
                 ) => {
@@ -278,6 +280,7 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         commission_cache: &Arc<Mutex<CommissionCache>>,
         pending_execution_cache: &Arc<Mutex<PendingExecutionCache>>,
+        zero_commission_executions: &Arc<Mutex<ZeroCommissionExecutions>>,
         position_tracker: &PositionTracker,
         venue_ctx: Option<&NoticeVenueContext>,
     ) where
@@ -307,6 +310,7 @@ impl InteractiveBrokersExecutionClient {
                                 ib_account,
                                 commission_cache,
                                 pending_execution_cache,
+                                zero_commission_executions,
                                 position_tracker,
                                 venue_ctx,
                             )
@@ -342,6 +346,7 @@ impl InteractiveBrokersExecutionClient {
                         ib_account,
                         commission_cache,
                         pending_execution_cache,
+                        zero_commission_executions,
                         position_tracker,
                         venue_ctx,
                     )
@@ -368,6 +373,7 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         commission_cache: &Arc<Mutex<CommissionCache>>,
         pending_execution_cache: &Arc<Mutex<PendingExecutionCache>>,
+        zero_commission_executions: &Arc<Mutex<ZeroCommissionExecutions>>,
         position_tracker: &PositionTracker,
         venue_ctx: Option<&NoticeVenueContext>,
     ) -> anyhow::Result<()> {
@@ -406,6 +412,11 @@ impl InteractiveBrokersExecutionClient {
                 execution_id,
                 "IB commissionReport did not arrive within 5 seconds; emitting with zero commission",
             );
+
+            // Remember that this execution was emitted at zero commission, so a commission
+            // report arriving later is recognised as too late to apply to the emitted fill.
+            zero_commission_executions.lock().add(execution_id.clone());
+
             commission_cache
                 .lock()
                 .insert(execution_id, (0.0, commission_currency));
@@ -1002,6 +1013,7 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         commission_cache: &Arc<Mutex<CommissionCache>>,
         pending_live_exec_data: &Arc<Mutex<PendingExecutionCache>>,
+        zero_commission_executions: &Arc<Mutex<ZeroCommissionExecutions>>,
         position_tracker: &PositionTracker,
         venue_ctx: Option<&NoticeVenueContext>,
     ) -> anyhow::Result<()> {
@@ -1110,6 +1122,24 @@ impl InteractiveBrokersExecutionClient {
                 let pending_exec_data = pending_live_exec_data
                     .lock()
                     .remove(&commission.execution_id);
+
+                // A report for an execution whose fill was already emitted at zero commission
+                // cannot be applied: the fill is out and the engine drops a later fill for the
+                // same trade_id as a duplicate. Make the loss visible instead of leaving a
+                // stale entry in the commission cache that nothing reads again.
+                if pending_exec_data.is_none()
+                    && zero_commission_executions
+                        .lock()
+                        .contains(&commission.execution_id)
+                {
+                    tracing::warn!(
+                        execution_id = commission.execution_id,
+                        commission = commission.commission,
+                        currency = commission.currency,
+                        "IB commissionReport arrived after the execution was already emitted at zero commission; the commission was not applied",
+                    );
+                    return Ok(());
+                }
 
                 {
                     let mut cache = commission_cache.lock();

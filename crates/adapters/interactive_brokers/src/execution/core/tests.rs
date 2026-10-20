@@ -1655,6 +1655,7 @@ async fn open_order_refresh_clears_pending_modify_only_on_match(
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let position_tracker = create_position_tracker();
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
@@ -1684,6 +1685,7 @@ async fn open_order_refresh_clears_pending_modify_only_on_match(
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &position_tracker,
         None,
     )
@@ -1707,6 +1709,7 @@ async fn trailing_stop_modify_is_acknowledged_by_its_trail_stop_price() {
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let position_tracker = create_position_tracker();
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
@@ -1740,6 +1743,7 @@ async fn trailing_stop_modify_is_acknowledged_by_its_trail_stop_price() {
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &position_tracker,
         None,
     )
@@ -1779,6 +1783,7 @@ async fn open_order_refresh_emits_order_updated_only_on_change(
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let position_tracker = create_position_tracker();
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
@@ -1821,6 +1826,7 @@ async fn open_order_refresh_emits_order_updated_only_on_change(
             Ustr::from("001"),
             &commission_cache,
             &pending_execution_cache,
+            &zero_commission_executions,
             &position_tracker,
             None,
         )
@@ -2021,6 +2027,7 @@ async fn execution_data_records_own_fill_before_commission_report(
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let position_tracker = create_position_tracker();
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
@@ -2043,6 +2050,7 @@ async fn execution_data_records_own_fill_before_commission_report(
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &position_tracker,
         None,
     )
@@ -3302,6 +3310,7 @@ async fn handle_order_update_ignores_deactivated_open_order(
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let position_tracker = create_position_tracker();
     let mut open_order = create_test_open_order(order_id, status, client_order_id.as_str());
     open_order.order.what_if = what_if;
@@ -3325,6 +3334,7 @@ async fn handle_order_update_ignores_deactivated_open_order(
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &position_tracker,
         None,
     )
@@ -3980,6 +3990,7 @@ async fn test_process_order_update_stream_emits_accepted_then_canceled() {
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let position_tracker = create_position_tracker();
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -4019,6 +4030,7 @@ async fn test_process_order_update_stream_emits_accepted_then_canceled() {
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &position_tracker,
         None,
     )
@@ -4047,6 +4059,7 @@ async fn test_process_order_update_stream_clears_market_order_update_prices() {
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
     let mut subscription = ChannelSubscription::new(update_receiver);
@@ -4081,6 +4094,7 @@ async fn test_process_order_update_stream_clears_market_order_update_prices() {
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &create_position_tracker(),
         None,
     )
@@ -4116,6 +4130,7 @@ async fn execution_without_commission_flushes_with_zero_marker() {
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let instrument_id = equity.id();
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
@@ -4149,6 +4164,7 @@ async fn execution_without_commission_flushes_with_zero_marker() {
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &position_tracker,
         None,
     )
@@ -4172,6 +4188,104 @@ async fn execution_without_commission_flushes_with_zero_marker() {
 }
 
 #[rstest]
+#[tokio::test]
+async fn late_commission_report_after_zero_commission_flush_is_not_applied() {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let order_id = 7008;
+    let contract_id = 12349;
+    let client_order_id = ClientOrderId::from("O-LATE-COMMISSION");
+    let position_tracker = create_position_tracker();
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+    insert_tracked_order(
+        &orders,
+        order_id,
+        create_tracked_order_context(client_order_id, instrument_id),
+    );
+
+    let mut exec_data =
+        create_test_execution_data(order_id, "exec-late-commission", 1.0, 50.0, "BOT");
+    exec_data.contract.contract_id = contract_id;
+    exec_data.contract.security_type = SecurityType::Stock;
+    exec_data.contract.symbol = IBSymbol::from("AAPL");
+    exec_data.contract.exchange = Exchange::from("SMART");
+    exec_data.contract.currency = IBCurrency::from("USD");
+    let execution_id = exec_data.execution.execution_id.clone();
+    pending_execution_cache.lock().insert(
+        execution_id.clone(),
+        (
+            tokio::time::Instant::now() - Duration::from_secs(5),
+            exec_data,
+        ),
+    );
+
+    // The commission report does not arrive in time, so the fill is emitted at zero commission.
+    InteractiveBrokersExecutionClient::flush_executions_without_commission(
+        &orders,
+        &instrument_provider,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &zero_commission_executions,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Accepted(event))
+            if event.client_order_id == client_order_id
+    ));
+    assert!(matches!(
+        exec_receiver.try_recv().unwrap(),
+        ExecutionEvent::Order(OrderEventAny::Filled(event))
+            if event.client_order_id == client_order_id
+                && event.commission == Some(Money::new(0.0, Currency::USD()))
+    ));
+
+    // The real commission arrives afterwards, too late to amend the emitted fill.
+    InteractiveBrokersExecutionClient::handle_order_update(
+        &OrderUpdate::CommissionReport(CommissionReport {
+            execution_id: execution_id.clone(),
+            commission: 1.25,
+            currency: String::from("USD"),
+            realized_pnl: None,
+            yields: None,
+            yield_redemption_date: String::new(),
+        }),
+        &orders,
+        &instrument_provider,
+        &exec_sender.clone().into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &zero_commission_executions,
+        &position_tracker,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // No further event is emitted, and the late commission leaves no stale cache entry behind.
+    assert!(exec_receiver.try_recv().is_err());
+    assert!(commission_cache.lock().is_empty());
+    assert!(pending_execution_cache.lock().is_empty());
+}
+
+#[rstest]
 #[case(false)]
 #[case(true)]
 #[tokio::test]
@@ -4187,6 +4301,7 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report(
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
     let mut subscription = ChannelSubscription::new(update_receiver);
@@ -4231,6 +4346,7 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report(
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &position_tracker,
         None,
     )
@@ -4282,6 +4398,7 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
     let mut subscription = ChannelSubscription::new(update_receiver);
@@ -4322,6 +4439,7 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &create_position_tracker(),
         None,
     )
@@ -4364,6 +4482,7 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &create_position_tracker(),
         None,
     )
@@ -4394,6 +4513,7 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let (long_leg, short_leg) = insert_test_spread_legs(&instrument_provider);
@@ -4419,6 +4539,7 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
         &exec_sender,
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
     )
     .await;
 
@@ -4466,6 +4587,7 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
         &exec_sender,
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
     )
     .await;
 
@@ -4683,6 +4805,7 @@ async fn run_order_update_stream(
     exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
     commission_cache: &Arc<Mutex<CommissionCache>>,
     pending_execution_cache: &Arc<Mutex<PendingExecutionCache>>,
+    zero_commission_executions: &Arc<Mutex<ZeroCommissionExecutions>>,
 ) {
     let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
     let mut subscription = ChannelSubscription::new(update_receiver);
@@ -4703,6 +4826,7 @@ async fn run_order_update_stream(
         Ustr::from("001"),
         commission_cache,
         pending_execution_cache,
+        zero_commission_executions,
         &create_position_tracker(),
         None,
     )
@@ -4719,6 +4843,7 @@ async fn test_process_order_update_stream_preserves_execution_reference_without_
     let orders = OrderTracker::new(NATIVE_CLIENT_ID);
     let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
     let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let zero_commission_executions = Arc::new(Mutex::new(ZeroCommissionExecutions::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
     let mut subscription = ChannelSubscription::new(update_receiver);
@@ -4761,6 +4886,7 @@ async fn test_process_order_update_stream_preserves_execution_reference_without_
         Ustr::from("001"),
         &commission_cache,
         &pending_execution_cache,
+        &zero_commission_executions,
         &create_position_tracker(),
         None,
     )

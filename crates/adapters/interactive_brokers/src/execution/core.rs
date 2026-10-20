@@ -43,7 +43,7 @@ pub(super) use ibapi::{
     subscriptions::SubscriptionItem,
 };
 pub(super) use nautilus_common::{
-    cache::{Cache, fifo::FifoCacheMap},
+    cache::{Cache, fifo::FifoCache, fifo::FifoCacheMap},
     clients::{ExecutionClient, ExecutionReportTask},
     enums::LogLevel,
     factories::OrderEventFactory,
@@ -167,6 +167,9 @@ pub struct InteractiveBrokersExecutionClient {
     pub(super) commission_cache: Arc<Mutex<CommissionCache>>,
     /// Execution cache by execution ID while awaiting commission reports.
     pub(super) pending_execution_cache: Arc<Mutex<PendingExecutionCache>>,
+    /// Execution IDs whose fill was already emitted at zero commission, so a commission report
+    /// arriving later can be recognised as too late to apply.
+    pub(super) zero_commission_executions: Arc<Mutex<ZeroCommissionExecutions>>,
     /// Position tracker for detecting external position changes (e.g., option exercises).
     pub(super) position_tracker: PositionTracker,
 }
@@ -174,6 +177,7 @@ pub struct InteractiveBrokersExecutionClient {
 pub(super) type CommissionCache = FifoCacheMap<String, (f64, String), 10_000>;
 pub(super) type PendingExecutionCache =
     FifoCacheMap<String, (tokio::time::Instant, ExecutionData), 10_000>;
+pub(super) type ZeroCommissionExecutions = FifoCache<String, 10_000>;
 
 #[derive(Clone)]
 pub(super) struct OrderTracker {
@@ -472,6 +476,7 @@ impl InteractiveBrokersExecutionClient {
             orders,
             commission_cache: Arc::new(Mutex::new(CommissionCache::new())),
             pending_execution_cache: Arc::new(Mutex::new(PendingExecutionCache::new())),
+            zero_commission_executions: Arc::new(Mutex::new(ZeroCommissionExecutions::new())),
             position_tracker: create_position_tracker(),
         })
     }
