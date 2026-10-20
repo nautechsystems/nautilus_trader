@@ -20,6 +20,7 @@
 
 use nautilus_core::{UnixNanos, serialization::serialize_decimal_as_str};
 use nautilus_model::{
+    events::OrderInitialized,
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     types::Currency,
 };
@@ -1003,9 +1004,9 @@ impl From<AxWsErrorResponse> for AxWsError {
     }
 }
 
-/// Metadata for pending order operations.
+/// Identity and event context for a tracked order.
 ///
-/// Used to correlate order responses with the original request.
+/// Retained through uncertain request outcomes until definitive terminal evidence.
 #[derive(Debug, Clone)]
 pub struct OrderMetadata {
     /// Trader ID for event generation.
@@ -1016,7 +1017,12 @@ pub struct OrderMetadata {
     pub instrument_id: InstrumentId,
     /// Client order ID for correlation.
     pub client_order_id: ClientOrderId,
-    /// Venue order ID (populated after acknowledgment).
+    /// Submitted Nautilus order, before AX-specific transformations.
+    /// Absent for external orders registered without a cached Nautilus order.
+    pub order_init: Option<OrderInitialized>,
+    /// Whether acceptance is already known.
+    pub is_accepted: bool,
+    /// Current venue order ID, including a promoted replacement.
     pub venue_order_id: Option<VenueOrderId>,
     /// Original order timestamp.
     pub ts_init: UnixNanos,

@@ -26,6 +26,8 @@ Released on TBD (UTC).
 - Changed `BusMessage` to add `source`; use `BusMessage::new` to construct messages without provenance
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
+- Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
+- Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
 - Changed Binance Spot SBE `parse_depth_snapshot` and `parse_depth_diff` to return `Result`; handle parse errors
 - Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
@@ -58,6 +60,7 @@ Released on TBD (UTC).
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
 - Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
+- Fixed Architect AX order tracking across uncertain submits, replacements, and simulated market order fills
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
 - Fixed Architect AX special-fill reconciliation, fill-history windows, and cached flat-position recovery
 - Fixed Architect AX position-report requests dropping flat rows and skipping invalid rows

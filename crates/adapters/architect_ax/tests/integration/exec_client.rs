@@ -59,7 +59,9 @@ use nautilus_model::{
         AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         TriggerType,
     },
-    events::{AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderRejected},
+    events::{
+        AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderRejected, OrderSubmitted,
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
         VenueOrderId,
@@ -282,14 +284,42 @@ async fn test_exec_client_refreshes_fees_on_reconnect() {
 }
 
 #[rstest]
-#[case::maker(false, false, "1000.00 USD")]
-#[case::taker(true, false, "12500.00 USD")]
-#[case::maker_reconnected(false, true, "3000.00 USD")]
-#[case::taker_reconnected(true, true, "6500.00 USD")]
+#[case::maker(false, false, OrderType::Limit, None, OrderSide::Buy, "1000.00 USD")]
+#[case::taker(true, false, OrderType::Limit, None, OrderSide::Buy, "12500.00 USD")]
+#[case::maker_reconnected(false, true, OrderType::Limit, None, OrderSide::Buy, "3000.00 USD")]
+#[case::taker_reconnected(true, true, OrderType::Limit, None, OrderSide::Buy, "6500.00 USD")]
+#[case::market(true, false, OrderType::Market, None, OrderSide::Buy, "12500.00 USD")]
+#[case::released_limit(
+    false,
+    false,
+    OrderType::Limit,
+    Some(OrderType::StopLimit),
+    OrderSide::Buy,
+    "1000.00 USD"
+)]
+#[case::released_market(
+    true,
+    false,
+    OrderType::Market,
+    Some(OrderType::StopMarket),
+    OrderSide::Buy,
+    "12500.00 USD"
+)]
+#[case::maker_opposite_execution_side(
+    false,
+    false,
+    OrderType::Limit,
+    None,
+    OrderSide::Sell,
+    "1000.00 USD"
+)]
 #[tokio::test]
 async fn test_exec_client_stream_fill_uses_account_fee_rates(
     #[case] agg: bool,
     #[case] reconnect: bool,
+    #[case] order_type: OrderType,
+    #[case] historical_type: Option<OrderType>,
+    #[case] execution_side: OrderSide,
     #[case] expected: &str,
 ) {
     let (addr, state) = start_test_server().await.unwrap();
@@ -299,6 +329,11 @@ async fn test_exec_client_stream_fill_uses_account_fee_rates(
     fill["o"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
     fill["xs"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
     fill["xs"]["agg"] = serde_json::json!(agg);
+    fill["xs"]["d"] = serde_json::json!(if execution_side == OrderSide::Buy {
+        "B"
+    } else {
+        "S"
+    });
     *state.order_fill_payload.lock().await = Some(fill);
     client.start().unwrap();
     client.connect().await.unwrap();
@@ -314,7 +349,7 @@ async fn test_exec_client_stream_fill_uses_account_fee_rates(
     drain_rx(&mut rx);
     let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
     let client_order_id = ClientOrderId::from("O-COMMISSION");
-    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    let mut builder = OrderTestBuilder::new(order_type);
     builder
         .trader_id(TraderId::from("TESTER-001"))
         .strategy_id(StrategyId::from("S-001"))
@@ -324,7 +359,29 @@ async fn test_exec_client_stream_fill_uses_account_fee_rates(
         .quantity(Quantity::from("100"))
         .price(Price::from("50000.0000"))
         .time_in_force(TimeInForce::Gtc);
-    let order = builder.build();
+    let mut order = builder.build();
+
+    if let Some(historical_type) = historical_type {
+        let historical = OrderTestBuilder::new(historical_type)
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .price(Price::from("50000.0000"))
+            .trigger_price(Price::from("49999.0000"))
+            .build();
+        let history = historical.events().into_iter().cloned();
+        match &mut order {
+            OrderAny::Limit(order) => order.prepend_events(history),
+            OrderAny::Market(order) => order.prepend_events(history),
+            _ => unreachable!(),
+        }
+
+        assert_eq!(order.init_event().order_type, historical_type);
+    }
+
     cache
         .borrow_mut()
         .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
@@ -344,6 +401,8 @@ async fn test_exec_client_stream_fill_uses_account_fee_rates(
 
     client.disconnect().await.unwrap();
 
+    assert_eq!(fill.order_type, order_type);
+    assert_eq!(fill.order_side, OrderSide::Buy);
     assert_eq!(fill.commission, Some(Money::from(expected)));
     assert_eq!(
         state
@@ -357,6 +416,185 @@ async fn test_exec_client_stream_fill_uses_account_fee_rates(
     assert_eq!(fill.last_qty.as_decimal(), dec!(100));
     assert_eq!(fill.last_px.as_decimal(), dec!(50000));
     assert_eq!(fill.trade_id.as_str(), "T-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+}
+
+#[rstest]
+#[case::submitted(OrderStatus::Submitted, false, "EURUSD-PERP", false, None)]
+#[case::accepted(OrderStatus::Accepted, false, "EURUSD-PERP", false, None)]
+#[case::reconnected_submitted(OrderStatus::Submitted, true, "EURUSD-PERP", false, None)]
+#[case::reconnected_accepted(OrderStatus::Accepted, true, "EURUSD-PERP", false, None)]
+#[case::uncataloged(OrderStatus::Submitted, false, "RETIRED-PERP", false, None)]
+#[case::persisted_instrument(OrderStatus::Submitted, false, "RETIRED-PERP", true, None)]
+#[case::released_market(
+    OrderStatus::Submitted,
+    false,
+    "EURUSD-PERP",
+    false,
+    Some(OrderType::StopMarket)
+)]
+#[tokio::test]
+async fn test_connect_restores_order_before_first_stream_fill(
+    #[case] status: OrderStatus,
+    #[case] reconnect: bool,
+    #[case] symbol: &str,
+    #[case] persisted: bool,
+    #[case] historical_type: Option<OrderType>,
+) {
+    let accepted = status == OrderStatus::Accepted;
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("AX-001");
+    add_test_account_to_cache(&cache, account_id);
+    let instrument_id = InstrumentId::from(format!("{symbol}.AX"));
+    let mut instrument = load_test_data("http_get_instruments.json")["instruments"][0].clone();
+    instrument["symbol"] = serde_json::json!(symbol);
+    instrument["state"] = serde_json::json!("DELISTED");
+    if persisted {
+        let instrument = serde_json::from_value(instrument.clone()).unwrap();
+        let instrument =
+            parse_instrument(&instrument, UnixNanos::from(1), UnixNanos::from(2)).unwrap();
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+    }
+
+    *state.instrument_payload.lock().await = Some(instrument);
+    let client_order_id = ClientOrderId::from("O-RESTORED-MARKET");
+    let venue_order_id = VenueOrderId::from("OID-RESTORED-MARKET");
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-RESTORED"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .time_in_force(TimeInForce::Ioc)
+        .build();
+
+    if let Some(historical_type) = historical_type {
+        let historical = OrderTestBuilder::new(historical_type)
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .trigger_price(Price::from("49999.0000"))
+            .build();
+
+        let OrderAny::Market(order) = &mut order else {
+            unreachable!()
+        };
+
+        order.prepend_events(historical.events().into_iter().cloned());
+    }
+
+    let order_init = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+
+    let submitted = OrderSubmitted::new(
+        order_init.trader_id,
+        order_init.strategy_id,
+        instrument_id,
+        client_order_id,
+        account_id,
+        UUID4::new(),
+        UnixNanos::from(11),
+        UnixNanos::from(12),
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
+
+    if accepted {
+        let event = OrderAccepted::new(
+            order_init.trader_id,
+            order_init.strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            account_id,
+            UUID4::new(),
+            UnixNanos::from(13),
+            UnixNanos::from(14),
+            false,
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Accepted(event))
+            .unwrap();
+    }
+
+    let mut fill = load_test_data("ws_order_filled.json");
+    fill["o"]["s"] = serde_json::json!(symbol);
+    fill["xs"]["s"] = serde_json::json!(symbol);
+    fill["o"]["oid"] = serde_json::json!(venue_order_id.as_str());
+    fill["o"]["cid"] = serde_json::json!(
+        nautilus_architect_ax::common::parse::client_order_id_to_cid(&client_order_id)
+    );
+    fill["o"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
+    fill["xs"]["aid"] = serde_json::json!("01JBXR-7QK2-0000");
+
+    if reconnect {
+        client.start().unwrap();
+        client.connect().await.unwrap();
+        client.disconnect().await.unwrap();
+        drain_rx(&mut rx);
+    }
+
+    state.order_initial_events.lock().await.push(fill);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let mut order_events = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(ExecutionEvent::Order(event)) = rx.recv().await {
+                let complete = matches!(event, OrderEventAny::Filled(_));
+                order_events.push(event);
+
+                if complete {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("restored order must receive tracked fill");
+
+    client.disconnect().await.unwrap();
+
+    let fill = match order_events.last().unwrap() {
+        OrderEventAny::Filled(fill) => fill,
+        _ => panic!("expected fill"),
+    };
+
+    assert_eq!(
+        state.instrument_queries.lock().await.len(),
+        usize::from(symbol == "RETIRED-PERP" && !persisted)
+    );
+    assert_eq!(order_events.len(), if accepted { 1 } else { 2 });
+
+    if !accepted {
+        let OrderEventAny::Accepted(event) = &order_events[0] else {
+            panic!("expected acceptance first");
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(event.venue_order_id, venue_order_id);
+    }
+
+    assert_eq!(fill.trader_id, order_init.trader_id);
+    assert_eq!(fill.strategy_id, order_init.strategy_id);
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.instrument_id, instrument_id);
+    assert_eq!(fill.venue_order_id, venue_order_id);
+    assert_eq!(fill.account_id, account_id);
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.order_type, OrderType::Market);
+    assert_eq!(fill.last_qty.as_decimal(), dec!(100));
+    assert_eq!(fill.last_px.as_decimal(), dec!(50000));
 }
 
 #[rstest]
@@ -3065,8 +3303,10 @@ async fn test_modify_order_while_disconnected_emits_local_rejection() {
 }
 
 #[rstest]
+#[case::current(false)]
+#[case::stale_caller(true)]
 #[tokio::test]
-async fn test_modify_order_success_emits_no_rejection() {
+async fn test_modify_order_success_emits_no_rejection(#[case] stale: bool) {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -3094,7 +3334,11 @@ async fn test_modify_order_success_emits_no_rejection() {
         StrategyId::from("S-001"),
         instrument_id,
         client_order_id,
-        Some(old_venue_order_id),
+        Some(if stale {
+            VenueOrderId::from("STALE-CALLER-ID")
+        } else {
+            old_venue_order_id
+        }),
         Some(Quantity::from("5")),
         Some(Price::from("50001.00")),
         None,
@@ -3118,6 +3362,15 @@ async fn test_modify_order_success_emits_no_rejection() {
         std::time::Duration::from_secs(5),
     )
     .await;
+
+    let requests = state.replace_order_requests.lock().await.clone();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0]["oid"],
+        serde_json::json!(old_venue_order_id.as_str())
+    );
+    assert_eq!(requests[0]["p"], serde_json::json!("50001.00"));
+    assert_eq!(requests[0]["q"], serde_json::json!(5));
 
     // No rejection event expected on success path
     let result = tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await;
@@ -3906,7 +4159,7 @@ async fn test_query_order_uses_venue_id_from_place_response() {
                 StrategyId::from("S-001"),
                 instrument_id,
                 client_order_id,
-                None,
+                Some(VenueOrderId::from("STALE-CALLER-ID")),
                 UUID4::new(),
                 UnixNanos::default(),
                 None,

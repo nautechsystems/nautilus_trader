@@ -98,7 +98,6 @@ pub(crate) struct AxOrdersWsFeedHandler {
     message_queue: VecDeque<AxOrdersWsMessage>,
     orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
     venue_to_client_order_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
-    cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
     has_authenticated_session: bool,
     needs_session_restore: bool,
 }
@@ -113,7 +112,6 @@ impl AxOrdersWsFeedHandler {
         auth_tracker: AuthTracker,
         orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
         venue_to_client_order_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
-        cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
     ) -> Self {
         Self {
             signal,
@@ -125,7 +123,6 @@ impl AxOrdersWsFeedHandler {
             message_queue: VecDeque::new(),
             orders_metadata,
             venue_to_client_order_id,
-            cid_to_client_order_id,
             has_authenticated_session: false,
             needs_session_restore: false,
         }
@@ -238,9 +235,6 @@ impl AxOrdersWsFeedHandler {
 
                 if let Err(e) = self.send_json(&order).await {
                     log::error!("Failed to send place order message: {e}");
-                    self.pending_orders.remove(&request_id);
-                    self.orders_metadata.remove(&order_info.client_order_id);
-                    self.cid_to_client_order_id.remove(&order_info.cid);
                     self.message_queue
                         .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
                             "Failed to send place order for {}: {e}",
@@ -353,14 +347,6 @@ impl AxOrdersWsFeedHandler {
                     err.err.msg
                 );
 
-                if let Some(order_info) = self.pending_orders.remove(&err.rid) {
-                    self.orders_metadata.remove(&order_info.client_order_id);
-                    log::debug!(
-                        "Cleaned up metadata for failed order: {}",
-                        order_info.client_order_id
-                    );
-                }
-
                 Some(vec![AxOrdersWsMessage::Error(err.into())])
             }
             AxOrdersWsFrame::Response(resp) => self.handle_response(resp),
@@ -391,9 +377,14 @@ impl AxOrdersWsFeedHandler {
                 if let Some(mut metadata) =
                     self.orders_metadata.get_mut(&order_info.client_order_id)
                 {
-                    metadata.venue_order_id = Some(venue_order_id);
-                    self.venue_to_client_order_id
-                        .insert(venue_order_id, order_info.client_order_id);
+                    if metadata
+                        .venue_order_id
+                        .is_none_or(|current| current == venue_order_id)
+                    {
+                        metadata.venue_order_id = Some(venue_order_id);
+                        self.venue_to_client_order_id
+                            .insert(venue_order_id, order_info.client_order_id);
+                    }
                 } else {
                     log::debug!(
                         "Order tracking already cleared before place response: {}",
@@ -442,17 +433,27 @@ mod tests {
     use std::sync::{Arc, atomic::AtomicBool};
 
     use dashmap::DashMap;
+    use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
-        identifiers::{InstrumentId, StrategyId, TraderId},
-        types::Currency,
+        identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
+        types::{Currency, Money},
     };
     use nautilus_network::websocket::AuthTracker;
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use ustr::Ustr;
 
     use super::*;
-    use crate::websocket::messages::{
-        AxWsOrderError, AxWsOrderErrorResponse, AxWsPlaceOrderResponse, AxWsPlaceOrderResult,
+    use crate::{
+        common::enums::{AxOrderSide, AxTimeInForce},
+        execution::create_order_filled,
+        websocket::{
+            messages::{
+                AxWsOrderError, AxWsOrderErrorResponse, AxWsOrderFilled, AxWsPlaceOrderResponse,
+                AxWsPlaceOrderResult,
+            },
+            orders::OrdersCaches,
+        },
     };
 
     fn test_handler() -> AxOrdersWsFeedHandler {
@@ -463,7 +464,6 @@ mod tests {
             cmd_rx,
             raw_rx,
             AuthTracker::default(),
-            Arc::new(DashMap::new()),
             Arc::new(DashMap::new()),
             Arc::new(DashMap::new()),
         )
@@ -553,7 +553,6 @@ mod tests {
         handler
             .orders_metadata
             .insert(client_order_id, test_order_metadata(client_order_id));
-        handler.cid_to_client_order_id.insert(cid, client_order_id);
         handler.pending_orders.insert(
             request_id,
             WsOrderInfo {
@@ -574,15 +573,179 @@ mod tests {
             .unwrap();
 
         assert_eq!(messages.len(), 1);
-        assert!(handler.pending_orders.get(&request_id).is_none());
-        assert!(!handler.orders_metadata.contains_key(&client_order_id));
         assert_eq!(
             handler
-                .cid_to_client_order_id
-                .get(&cid)
-                .map(|client_order_id| *client_order_id),
-            Some(client_order_id),
+                .pending_orders
+                .get(&request_id)
+                .unwrap()
+                .client_order_id,
+            client_order_id,
         );
+        assert!(handler.orders_metadata.contains_key(&client_order_id));
+        handler.handle_response(AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
+            rid: request_id,
+            res: AxWsPlaceOrderResult {
+                oid: "OID-13".to_string(),
+            },
+        }));
+
+        assert_eq!(
+            handler
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(VenueOrderId::from("OID-13"))
+        );
+        assert_eq!(
+            *handler
+                .venue_to_client_order_id
+                .get(&VenueOrderId::from("OID-13"))
+                .unwrap(),
+            client_order_id
+        );
+    }
+
+    #[rstest]
+    #[case::send_failure(true)]
+    #[case::request_error(false)]
+    #[tokio::test]
+    async fn test_uncertain_place_error_then_fill(#[case] send_failure: bool) {
+        let mut handler = test_handler();
+        let client_order_id = ClientOrderId::from("CID-UNCERTAIN");
+        let request_id = 17;
+        let cid = 1017;
+        handler
+            .orders_metadata
+            .insert(client_order_id, test_order_metadata(client_order_id));
+
+        let order_info = WsOrderInfo {
+            client_order_id,
+            symbol: Ustr::from("EURUSD-PERP"),
+            cid,
+        };
+
+        if send_failure {
+            handler
+                .handle_command(HandlerCommand::PlaceOrder {
+                    request_id,
+                    order: AxWsPlaceOrder {
+                        rid: request_id,
+                        t: AxOrderRequestType::PlaceOrder,
+                        s: order_info.symbol,
+                        d: AxOrderSide::Buy,
+                        q: 100,
+                        p: Decimal::from(50000),
+                        tif: AxTimeInForce::Gtc,
+                        po: false,
+                        tag: None,
+                        cid: Some(cid),
+                    },
+                    order_info,
+                })
+                .await;
+
+            assert!(matches!(
+                handler.message_queue.pop_front(),
+                Some(AxOrdersWsMessage::Error(_))
+            ));
+        } else {
+            handler.pending_orders.insert(request_id, order_info);
+            handler.handle_raw_message(AxOrdersWsFrame::Error(AxWsOrderErrorResponse {
+                rid: request_id,
+                err: AxWsOrderError {
+                    code: Some(500),
+                    msg: Some("unresolved request".to_string()),
+                },
+            }));
+        }
+
+        let caches = OrdersCaches {
+            orders_metadata: handler.orders_metadata.clone(),
+            venue_to_client_id: handler.venue_to_client_order_id.clone(),
+            cid_to_client_order_id: Arc::new(DashMap::new()),
+        };
+
+        caches.cid_to_client_order_id.insert(cid, client_order_id);
+        let mut fill: AxWsOrderFilled =
+            serde_json::from_str(include_str!("../../../test_data/ws_order_filled.json")).unwrap();
+        fill.o.cid = Some(cid);
+        let event = create_order_filled(
+            &fill.o,
+            &fill.xs,
+            fill.ts,
+            fill.tn,
+            &caches,
+            AccountId::from("AX-001"),
+            Money::from("1.23 USD"),
+            get_atomic_clock_realtime(),
+        )
+        .expect("fill after uncertain error must remain tracked");
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(event.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(event.strategy_id, StrategyId::from("S-001"));
+        assert_eq!(event.instrument_id, InstrumentId::from("EURUSD-PERP.AX"));
+        assert_eq!(event.last_qty.as_decimal(), Decimal::from(100));
+        assert_eq!(event.last_px.as_decimal(), Decimal::from(50000));
+        assert_eq!(event.commission, Some(Money::from("1.23 USD")));
+        assert_eq!(
+            handler
+                .pending_orders
+                .get(&request_id)
+                .unwrap()
+                .client_order_id,
+            client_order_id
+        );
+        assert_eq!(
+            *caches.cid_to_client_order_id.get(&cid).unwrap(),
+            client_order_id
+        );
+    }
+
+    #[rstest]
+    fn test_late_place_response_preserves_replacement_binding() {
+        let mut handler = test_handler();
+        let client_order_id = ClientOrderId::from("CID-REPLACED");
+        let replacement_id = VenueOrderId::from("OID-CHILD");
+        let mut metadata = test_order_metadata(client_order_id);
+        metadata.venue_order_id = Some(replacement_id);
+        handler.orders_metadata.insert(client_order_id, metadata);
+        handler
+            .venue_to_client_order_id
+            .insert(replacement_id, client_order_id);
+        handler.pending_orders.insert(
+            18,
+            WsOrderInfo {
+                client_order_id,
+                symbol: Ustr::from("EURUSD-PERP"),
+                cid: 1018,
+            },
+        );
+
+        handler.handle_response(AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
+            rid: 18,
+            res: AxWsPlaceOrderResult {
+                oid: "OID-PARENT".to_string(),
+            },
+        }));
+
+        assert_eq!(
+            handler
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(replacement_id)
+        );
+        assert_eq!(
+            *handler
+                .venue_to_client_order_id
+                .get(&replacement_id)
+                .unwrap(),
+            client_order_id
+        );
+        assert_eq!(handler.venue_to_client_order_id.len(), 1);
     }
 
     #[rstest]
@@ -618,6 +781,8 @@ mod tests {
             strategy_id: StrategyId::from("S-001"),
             instrument_id: InstrumentId::from("EURUSD-PERP.AX"),
             client_order_id,
+            order_init: None,
+            is_accepted: false,
             venue_order_id: None,
             ts_init: 0.into(),
             size_precision: 0,

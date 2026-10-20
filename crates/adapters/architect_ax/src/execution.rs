@@ -39,6 +39,7 @@ use nautilus_common::{
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
+    msgbus::{self, TypedHandler},
 };
 use nautilus_core::{
     AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
@@ -96,7 +97,10 @@ use crate::{
     websocket::{
         AxOrdersWsMessage, AxWsOrderEvent,
         messages::{AxWsOrder, AxWsTradeExecution, OrderMetadata},
-        orders::{AxOrdersWebSocketClient, AxOrdersWsClientError, OrdersCaches},
+        orders::{
+            AxOrdersWebSocketClient, AxOrdersWsClientError, OrdersCaches,
+            client::reserve_cid_mapping,
+        },
     },
 };
 
@@ -109,6 +113,7 @@ pub struct AxExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: AxHttpClient,
     ws_orders: AxOrdersWebSocketClient,
+    order_event_handler: Option<TypedHandler<OrderEventAny>>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
@@ -181,6 +186,7 @@ impl AxExecutionClient {
             emitter,
             http_client,
             ws_orders,
+            order_event_handler: None,
             session_tasks,
             pending_tasks,
             shutdown_errors: Vec::new(),
@@ -189,6 +195,55 @@ impl AxExecutionClient {
 
     pub(crate) fn set_event_sender(&mut self, sender: EventSender<ExecutionEvent>) {
         self.emitter.set_sender(sender);
+    }
+
+    fn ensure_order_event_subscription(&mut self) {
+        if self.order_event_handler.is_some() {
+            return;
+        }
+
+        let caches = self.ws_orders.caches().clone();
+        let account_id = self.core.account_id;
+
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            let OrderEventAny::Accepted(accepted) = event else {
+                return;
+            };
+
+            if accepted.account_id != account_id {
+                return;
+            }
+
+            let Some(mut metadata) = caches.orders_metadata.get_mut(&accepted.client_order_id)
+            else {
+                return;
+            };
+
+            if metadata.trader_id != accepted.trader_id
+                || metadata.strategy_id != accepted.strategy_id
+                || metadata.instrument_id != accepted.instrument_id
+            {
+                return;
+            }
+
+            metadata.is_accepted = true;
+            if metadata.venue_order_id.is_none() {
+                metadata.venue_order_id = Some(accepted.venue_order_id);
+                drop(metadata);
+                caches
+                    .venue_to_client_id
+                    .insert(accepted.venue_order_id, accepted.client_order_id);
+            }
+        });
+
+        msgbus::subscribe_order_events("events.order.*".into(), handler.clone(), Some(10));
+        self.order_event_handler = Some(handler);
+    }
+
+    fn clear_order_event_subscription(&mut self) {
+        if let Some(handler) = self.order_event_handler.take() {
+            msgbus::unsubscribe_order_events("events.order.*".into(), &handler);
+        }
     }
 
     async fn authenticate(&self, credential: &Credential) -> anyhow::Result<SecretString> {
@@ -229,7 +284,6 @@ impl AxExecutionClient {
         let (
             order_for_task,
             client_order_id,
-            strategy_id,
             instrument_id,
             order_side,
             order_type,
@@ -243,7 +297,6 @@ impl AxExecutionClient {
             (
                 order.clone(),
                 order.client_order_id(),
-                order.strategy_id(),
                 order.instrument_id(),
                 order.order_side(),
                 order.order_type(),
@@ -254,8 +307,8 @@ impl AxExecutionClient {
             )
         };
 
+        let order_init = cmd.order_init.clone();
         let ws_orders = self.ws_orders.clone();
-        let trader_id = self.core.trader_id;
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
@@ -341,11 +394,7 @@ impl AxExecutionClient {
 
             let result = ws_orders
                 .submit_order(
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    order_side,
+                    &order_init,
                     quantity,
                     submit_time_in_force,
                     price,
@@ -448,6 +497,7 @@ impl AxExecutionClient {
     }
 
     async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.clear_order_event_subscription();
         self.abort_session_tasks();
         self.abort_pending_tasks();
         self.http_client.cancel_all_requests();
@@ -589,6 +639,48 @@ impl ExecutionClient for AxExecutionClient {
             self.core.set_instruments_initialized();
         }
 
+        let orders = {
+            let cache = self.core.cache();
+            let mut orders = cache.orders_refs(Some(&AX_VENUE), None, None, None, None);
+            orders.retain(|order| {
+                (order.is_open() || order.is_inflight())
+                    && order.trader_id() == self.core.trader_id
+                    && order
+                        .account_id()
+                        .is_none_or(|account_id| account_id == self.core.account_id)
+                    && cache
+                        .client_id(&order.client_order_id())
+                        .is_none_or(|client_id| *client_id == self.core.client_id)
+            });
+
+            orders
+                .into_iter()
+                .map(|order| order.cloned())
+                .collect::<Vec<_>>()
+        };
+
+        for order in orders {
+            let symbol = order.instrument_id().symbol.inner();
+            let needs_instrument = self.http_client.get_instrument(&symbol).is_none()
+                && self
+                    .core
+                    .cache()
+                    .instrument(&order.instrument_id())
+                    .is_none();
+
+            if needs_instrument {
+                let instrument = self
+                    .http_client
+                    .request_instrument(symbol)
+                    .await
+                    .with_context(|| format!("failed to restore AX instrument {symbol}"))?;
+                self.http_client.cache_instrument(instrument);
+            }
+
+            self.restore_order_tracking(&order, None)?;
+        }
+
+        self.ensure_order_event_subscription();
         self.ws_orders.connect(token.expose_secret()).await?;
         log::debug!("Connected to orders WebSocket");
 
@@ -666,6 +758,7 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.clear_order_event_subscription();
         self.abort_session_tasks();
         self.abort_pending_tasks();
         self.http_client.cancel_all_requests();
@@ -691,12 +784,12 @@ impl ExecutionClient for AxExecutionClient {
         let http_client = self.http_client.clone();
         let account_id = self.core.account_id;
         let client_order_id = cmd.client_order_id;
-        let venue_order_id = cmd.venue_order_id.or_else(|| {
-            self.ws_orders
-                .orders_metadata()
-                .get(&client_order_id)
-                .and_then(|metadata| metadata.venue_order_id)
-        });
+        let venue_order_id = self
+            .ws_orders
+            .orders_metadata()
+            .get(&client_order_id)
+            .and_then(|metadata| metadata.venue_order_id)
+            .or(cmd.venue_order_id);
         let instrument_id = cmd.instrument_id;
         let emitter = self.emitter.clone();
         let caches = self.ws_orders.caches().clone();
@@ -753,6 +846,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
+        self.ensure_order_event_subscription();
+
         if self.core.is_started() {
             return Ok(());
         }
@@ -769,6 +864,8 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
+        self.clear_order_event_subscription();
+
         if self.core.is_stopped() {
             return Ok(());
         }
@@ -783,6 +880,7 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
+        self.clear_order_event_subscription();
         self.abort_session_tasks();
         self.abort_pending_tasks();
         self.core.set_disconnected();
@@ -790,6 +888,7 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
+        self.clear_order_event_subscription();
         self.abort_session_tasks();
         self.abort_pending_tasks();
         self.core.set_disconnected();
@@ -860,8 +959,14 @@ impl ExecutionClient for AxExecutionClient {
             return Ok(());
         }
 
-        let venue_order_id = match cmd.venue_order_id {
-            Some(ref voi) => *voi,
+        let tracked_venue_order_id = self
+            .ws_orders
+            .orders_metadata()
+            .get(&cmd.client_order_id)
+            .and_then(|metadata| metadata.venue_order_id);
+
+        let venue_order_id = match tracked_venue_order_id.or(cmd.venue_order_id) {
+            Some(voi) => voi,
             None => {
                 emit_ax_modify_rejected(
                     &self.emitter,
@@ -942,6 +1047,7 @@ impl ExecutionClient for AxExecutionClient {
                     record_replacement_venue_id(
                         &caches,
                         client_order_id,
+                        venue_order_id,
                         new_venue_order_id,
                         false,
                     );
@@ -1357,6 +1463,15 @@ impl ExecutionClient for AxExecutionClient {
         strategy_id: StrategyId,
         _ts_init: UnixNanos,
     ) {
+        let order = self.core.cache().order_owned(&client_order_id);
+        if let Some(order) = order {
+            if let Err(e) = self.restore_order_tracking(&order, Some(venue_order_id)) {
+                log::warn!("Cannot restore AX order {client_order_id}: {e}");
+            }
+
+            return;
+        }
+
         self.ws_orders.register_external_order(
             client_order_id,
             venue_order_id,
@@ -1367,6 +1482,69 @@ impl ExecutionClient for AxExecutionClient {
 }
 
 impl AxExecutionClient {
+    fn restore_order_tracking(
+        &self,
+        order: &OrderAny,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> anyhow::Result<()> {
+        let client_order_id = order.client_order_id();
+        let caches = self.ws_orders.caches();
+
+        let instrument = self
+            .http_client
+            .get_instrument(&order.instrument_id().symbol.inner())
+            .or_else(|| {
+                self.core
+                    .cache()
+                    .instrument(&order.instrument_id())
+                    .cloned()
+            })
+            .context("cannot restore AX order without its instrument")?;
+
+        self.http_client.cache_instrument(instrument.clone());
+        self.ws_orders.cache_instrument(instrument.clone());
+        let cid = client_order_id_to_cid(&client_order_id);
+        let cid_owner = caches.cid_to_client_order_id.get(&cid).map(|entry| *entry);
+        if cid_owner != Some(client_order_id) {
+            reserve_cid_mapping(caches, cid, client_order_id)?;
+        }
+
+        let metadata = OrderMetadata {
+            trader_id: order.trader_id(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id,
+            order_init: order
+                .events()
+                .into_iter()
+                .rev()
+                .find_map(|event| match event {
+                    OrderEventAny::Initialized(init) => Some(init.clone()),
+                    _ => None,
+                }),
+            is_accepted: order.status() != OrderStatus::Submitted,
+            venue_order_id: order.venue_order_id().or(venue_order_id),
+            ts_init: order.init_event().ts_init,
+            size_precision: instrument.size_precision(),
+            price_precision: instrument.price_precision(),
+            quote_currency: instrument.quote_currency(),
+        };
+
+        let venue_order_id = caches
+            .orders_metadata
+            .entry(client_order_id)
+            .or_insert(metadata)
+            .venue_order_id;
+
+        if let Some(venue_order_id) = venue_order_id {
+            caches
+                .venue_to_client_id
+                .insert(venue_order_id, client_order_id);
+        }
+
+        Ok(())
+    }
+
     fn report_client(&self) -> AxReportClient {
         AxReportClient {
             http_client: self.http_client.clone(),
@@ -1654,6 +1832,35 @@ fn dispatch_order_event(
     account_fee_rates: &AtomicMap<Option<Ustr>, MakerTakerFeeRates>,
     clock: &'static AtomicTime,
 ) {
+    let (order, replacement_id) = match &event {
+        AxWsOrderEvent::Acknowledged(msg) => (Some(&msg.o), None),
+        AxWsOrderEvent::PartiallyFilled(msg) => (Some(&msg.o), None),
+        AxWsOrderEvent::Filled(msg) => (Some(&msg.o), None),
+        AxWsOrderEvent::Canceled(msg) => (Some(&msg.o), None),
+        AxWsOrderEvent::Rejected(msg) => (Some(&msg.o), None),
+        AxWsOrderEvent::Expired(msg) => (Some(&msg.o), None),
+        AxWsOrderEvent::Replaced(msg) => {
+            (Some(msg.ro.as_ref()), replacement_venue_order_id(msg).ok())
+        }
+        AxWsOrderEvent::DoneForDay(msg) => (Some(&msg.o), None),
+        AxWsOrderEvent::Heartbeat | AxWsOrderEvent::CancelRejected(_) => (None, None),
+    };
+
+    let allow_previous = matches!(
+        &event,
+        AxWsOrderEvent::PartiallyFilled(_) | AxWsOrderEvent::Filled(_)
+    );
+
+    if let Some(order) = order
+        && !is_valid_order_update(order, caches, replacement_id, allow_previous)
+    {
+        log::warn!(
+            "Deferring stale or malformed AX order update, order_id={}",
+            order.oid
+        );
+        return;
+    }
+
     match event {
         AxWsOrderEvent::Heartbeat => {}
         AxWsOrderEvent::Acknowledged(msg) => {
@@ -1720,6 +1927,8 @@ fn dispatch_order_event(
                 clock,
             ) {
                 emitter.send_order_status_report(report);
+            } else {
+                return;
             }
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
@@ -1731,6 +1940,8 @@ fn dispatch_order_event(
                 create_order_rejected(&msg.o, &reason, msg.ts, msg.tn, caches, account_id, clock)
             {
                 emitter.send_order_event(OrderEventAny::Rejected(event));
+            } else {
+                return;
             }
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
@@ -1762,6 +1973,8 @@ fn dispatch_order_event(
                 clock,
             ) {
                 emitter.send_order_status_report(report);
+            } else {
+                return;
             }
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
@@ -1786,16 +1999,18 @@ fn dispatch_order_event(
                 clock,
             ) {
                 emitter.send_order_event(OrderEventAny::Updated(event));
-            } else if let Some(report) = create_order_status_report(
-                order,
-                OrderStatus::Accepted,
-                msg.ts,
-                msg.tn,
-                caches,
-                account_id,
-                instruments,
-                clock,
-            ) {
+            } else if lookup_order_metadata(&msg.ro, caches).is_none()
+                && let Some(report) = create_order_status_report(
+                    order,
+                    OrderStatus::Accepted,
+                    msg.ts,
+                    msg.tn,
+                    caches,
+                    account_id,
+                    instruments,
+                    clock,
+                )
+            {
                 emitter.send_order_status_report(report);
             }
         }
@@ -1815,13 +2030,27 @@ fn dispatch_order_event(
                 clock,
             ) {
                 emitter.send_order_status_report(report);
+            } else {
+                return;
             }
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
         AxWsOrderEvent::CancelRejected(msg) => {
-            let venue_order_id = VenueOrderId::new(&msg.oid);
-            if let Some(client_order_id) = caches.venue_to_client_id.get(&venue_order_id)
+            let Ok(venue_order_id) = VenueOrderId::new_checked(&msg.oid) else {
+                log::warn!("Invalid AX cancel rejection order ID");
+                return;
+            };
+
+            let client_order_id = caches
+                .venue_to_client_id
+                .get(&venue_order_id)
+                .map(|entry| *entry);
+
+            if let Some(client_order_id) = client_order_id
                 && let Some(metadata) = caches.orders_metadata.get(&client_order_id)
+                && metadata
+                    .venue_order_id
+                    .is_none_or(|current| current == venue_order_id)
             {
                 let event = OrderCancelRejected::new(
                     metadata.trader_id,
@@ -1872,6 +2101,11 @@ fn dispatch_fill_event(
         );
     }
 
+    if execution.s != order.s {
+        log::warn!("Deferring inconsistent AX fill, trade_id={}", execution.tid);
+        return;
+    }
+
     let commission =
         match calculate_fill_commission(order, execution, instruments, account_fee_rates) {
             Ok(commission) => commission,
@@ -1887,6 +2121,15 @@ fn dispatch_fill_event(
     if let Some(event) = create_order_filled(
         order, execution, ts, tn, caches, account_id, commission, clock,
     ) {
+        let needs_acceptance =
+            lookup_order_metadata(order, caches).is_some_and(|metadata| !metadata.is_accepted);
+
+        if needs_acceptance
+            && let Some(accepted) = create_order_accepted(order, ts, tn, caches, account_id, clock)
+        {
+            emitter.send_order_event(OrderEventAny::Accepted(accepted));
+        }
+
         emitter.send_order_event(OrderEventAny::Filled(event));
     } else if let Some(report) = create_fill_report(
         order,
@@ -1947,22 +2190,67 @@ pub(crate) fn lookup_order_metadata<'a>(
     order: &AxWsOrder,
     caches: &'a OrdersCaches,
 ) -> Option<dashmap::mapref::one::Ref<'a, ClientOrderId, OrderMetadata>> {
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    let client_order_id = VenueOrderId::new_checked(&order.oid)
+        .ok()
+        .and_then(|venue_order_id| {
+            caches
+                .venue_to_client_id
+                .get(&venue_order_id)
+                .map(|entry| *entry)
+        });
 
-    if let Some(client_order_id) = caches.venue_to_client_id.get(&venue_order_id)
-        && let Some(metadata) = caches.orders_metadata.get(&*client_order_id)
+    if let Some(client_order_id) = client_order_id
+        && let Some(metadata) = caches.orders_metadata.get(&client_order_id)
     {
         return Some(metadata);
     }
 
     if let Some(cid) = order.cid
-        && let Some(client_order_id) = caches.cid_to_client_order_id.get(&cid)
-        && let Some(metadata) = caches.orders_metadata.get(&*client_order_id)
+        && let Some(client_order_id) = caches.cid_to_client_order_id.get(&cid).map(|entry| *entry)
+        && let Some(metadata) = caches.orders_metadata.get(&client_order_id)
     {
         return Some(metadata);
     }
 
     None
+}
+
+fn is_valid_order_update(
+    order: &AxWsOrder,
+    caches: &OrdersCaches,
+    replacement_id: Option<VenueOrderId>,
+    allow_previous: bool,
+) -> bool {
+    let Ok(venue_order_id) = VenueOrderId::new_checked(&order.oid) else {
+        return false;
+    };
+
+    let Some(metadata) = lookup_order_metadata(order, caches) else {
+        return true;
+    };
+
+    if metadata.instrument_id.symbol.inner() != order.s {
+        return false;
+    }
+
+    if let Some(order_init) = &metadata.order_init
+        && order_init.order_side != OrderSide::from(order.d)
+    {
+        return false;
+    }
+
+    let is_current = metadata
+        .venue_order_id
+        .is_none_or(|current| current == venue_order_id || replacement_id == Some(current));
+    let client_order_id = metadata.client_order_id;
+    drop(metadata);
+
+    is_current
+        || (allow_previous
+            && caches
+                .venue_to_client_id
+                .get(&venue_order_id)
+                .is_some_and(|mapped| *mapped == client_order_id))
 }
 
 pub(crate) fn replacement_venue_order_id(
@@ -1985,8 +2273,19 @@ pub(crate) fn create_order_accepted(
     account_id: AccountId,
     clock: &'static AtomicTime,
 ) -> Option<OrderAccepted> {
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    if !is_valid_order_update(order, caches, None, false) {
+        return None;
+    }
+
+    let ts_event = ax_timestamp_stn_to_unix_nanos(event_ts, event_tn)
+        .map_err(|e| log::error!("{e}"))
+        .ok()?;
+    let venue_order_id = VenueOrderId::new_checked(&order.oid).ok()?;
     let metadata = lookup_order_metadata(order, caches)?;
+
+    if metadata.is_accepted {
+        return None;
+    }
 
     let client_order_id = metadata.client_order_id;
     let trader_id = metadata.trader_id;
@@ -1994,17 +2293,21 @@ pub(crate) fn create_order_accepted(
     let instrument_id = metadata.instrument_id;
     drop(metadata);
 
+    let mut entry = caches.orders_metadata.get_mut(&client_order_id)?;
+    if entry.is_accepted
+        || entry
+            .venue_order_id
+            .is_some_and(|current| current != venue_order_id)
+    {
+        return None;
+    }
+
+    entry.venue_order_id = Some(venue_order_id);
+    entry.is_accepted = true;
+    drop(entry);
     caches
         .venue_to_client_id
         .insert(venue_order_id, client_order_id);
-
-    if let Some(mut entry) = caches.orders_metadata.get_mut(&client_order_id) {
-        entry.venue_order_id = Some(venue_order_id);
-    }
-
-    let ts_event = ax_timestamp_stn_to_unix_nanos(event_ts, event_tn)
-        .map_err(|e| log::error!("{e}"))
-        .ok()?;
 
     Some(OrderAccepted::new(
         trader_id,
@@ -2032,6 +2335,19 @@ pub(crate) fn create_order_updated(
     let metadata = lookup_order_metadata(order, caches)
         .or_else(|| lookup_order_metadata(replaced_order, caches))?;
 
+    if metadata.instrument_id.symbol.inner() != order.s
+        || metadata
+            .order_init
+            .as_ref()
+            .is_some_and(|order_init| order_init.order_side != OrderSide::from(order.d))
+    {
+        log::warn!(
+            "Deferring inconsistent AX replacement, order_id={}",
+            order.oid
+        );
+        return None;
+    }
+
     let client_order_id = metadata.client_order_id;
     let trader_id = metadata.trader_id;
     let strategy_id = metadata.strategy_id;
@@ -2040,14 +2356,23 @@ pub(crate) fn create_order_updated(
     let size_precision = metadata.size_precision;
     drop(metadata);
 
-    record_replacement_venue_id(caches, client_order_id, replacement_venue_order_id, true);
-
     let ts_event = ax_timestamp_stn_to_unix_nanos(event_timestamp.0, event_timestamp.1)
         .map_err(|e| log::error!("{e}"))
         .ok()?;
 
     let quantity = Quantity::from_decimal_dp(Decimal::from(order.q), size_precision).ok()?;
-    let price = Price::from_decimal_dp(order.p, price_precision).ok();
+    let price = Some(Price::from_decimal_dp(order.p, price_precision).ok()?);
+    let previous_venue_order_id = VenueOrderId::new_checked(&replaced_order.oid).ok()?;
+
+    if !record_replacement_venue_id(
+        caches,
+        client_order_id,
+        previous_venue_order_id,
+        replacement_venue_order_id,
+        true,
+    ) {
+        return None;
+    }
 
     Some(OrderUpdated::new(
         trader_id,
@@ -2079,7 +2404,7 @@ pub(crate) fn create_order_filled(
     commission: Money,
     clock: &'static AtomicTime,
 ) -> Option<OrderFilled> {
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    let venue_order_id = VenueOrderId::new_checked(&order.oid).ok()?;
     let metadata = lookup_order_metadata(order, caches)?;
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(event_ts, event_tn)
@@ -2090,7 +2415,15 @@ pub(crate) fn create_order_filled(
         Quantity::from_decimal_dp(Decimal::from(execution.q), metadata.size_precision).ok()?;
     let last_px = Price::from_decimal_dp(execution.p, metadata.price_precision).ok()?;
 
-    let order_side = OrderSide::from(order.d);
+    let order_side = metadata.order_init.as_ref().map_or_else(
+        || OrderSide::from(order.d),
+        |order_init| order_init.order_side,
+    );
+    let order_type = metadata
+        .order_init
+        .as_ref()
+        .map_or(OrderType::Limit, |order_init| order_init.order_type);
+    let trade_id = TradeId::new_checked(&execution.tid).ok()?;
 
     let liquidity_side = if execution.agg {
         LiquiditySide::Taker
@@ -2105,9 +2438,9 @@ pub(crate) fn create_order_filled(
         metadata.client_order_id,
         venue_order_id,
         account_id,
-        TradeId::new(&execution.tid),
+        trade_id,
         order_side,
-        OrderType::Limit,
+        order_type,
         last_qty,
         last_px,
         metadata.quote_currency,
@@ -2130,7 +2463,7 @@ pub(crate) fn create_order_canceled(
     account_id: AccountId,
     clock: &'static AtomicTime,
 ) -> Option<OrderCanceled> {
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    let venue_order_id = VenueOrderId::new_checked(&order.oid).ok()?;
     let metadata = lookup_order_metadata(order, caches)?;
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(event_ts, event_tn)
@@ -2160,7 +2493,7 @@ pub(crate) fn create_order_expired(
     account_id: AccountId,
     clock: &'static AtomicTime,
 ) -> Option<OrderExpired> {
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    let venue_order_id = VenueOrderId::new_checked(&order.oid).ok()?;
     let metadata = lookup_order_metadata(order, caches)?;
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(event_ts, event_tn)
@@ -2217,6 +2550,22 @@ fn cleanup_closed_order_status_report(report: &OrderStatusReport, caches: &Order
         return;
     }
 
+    let client_order_id = report.client_order_id.or_else(|| {
+        caches
+            .venue_to_client_id
+            .get(&report.venue_order_id)
+            .map(|entry| *entry)
+    });
+
+    if let Some(client_order_id) = client_order_id
+        && let Some(metadata) = caches.orders_metadata.get(&client_order_id)
+        && metadata
+            .venue_order_id
+            .is_some_and(|current| current != report.venue_order_id)
+    {
+        return;
+    }
+
     cleanup_terminal_order_tracking_ids(
         caches,
         Some(&report.venue_order_id),
@@ -2226,7 +2575,14 @@ fn cleanup_closed_order_status_report(report: &OrderStatusReport, caches: &Order
 }
 
 pub(crate) fn cleanup_terminal_order_tracking(order: &AxWsOrder, caches: &OrdersCaches) {
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    if !is_valid_order_update(order, caches, None, false) {
+        return;
+    }
+
+    let Ok(venue_order_id) = VenueOrderId::new_checked(&order.oid) else {
+        return;
+    };
+
     cleanup_terminal_order_tracking_ids(caches, Some(&venue_order_id), order.cid, None);
 }
 
@@ -2264,15 +2620,27 @@ fn cleanup_terminal_order_tracking_ids(
 fn record_replacement_venue_id(
     caches: &OrdersCaches,
     client_order_id: ClientOrderId,
+    previous_venue_order_id: VenueOrderId,
     venue_order_id: VenueOrderId,
     remove_previous_venue_ids: bool,
-) {
+) -> bool {
+    let Some(mut entry) = caches.orders_metadata.get_mut(&client_order_id) else {
+        return false;
+    };
+
+    if entry
+        .venue_order_id
+        .is_some_and(|current| current != previous_venue_order_id && current != venue_order_id)
+    {
+        log::warn!("Deferring stale AX replacement for {client_order_id}");
+        return false;
+    }
+
+    entry.venue_order_id = Some(venue_order_id);
+    drop(entry);
     caches
         .venue_to_client_id
         .insert(venue_order_id, client_order_id);
-    if let Some(mut entry) = caches.orders_metadata.get_mut(&client_order_id) {
-        entry.venue_order_id = Some(venue_order_id);
-    }
 
     if remove_previous_venue_ids {
         caches
@@ -2282,6 +2650,8 @@ fn record_replacement_venue_id(
                     || *mapped_venue_order_id == venue_order_id
             });
     }
+
+    true
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -2295,9 +2665,13 @@ fn create_order_status_report(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     clock: &'static AtomicTime,
 ) -> Option<OrderStatusReport> {
+    if lookup_order_metadata(order, caches).is_some() {
+        return None;
+    }
+
     let instruments_snap = instruments.load();
     let instrument = instruments_snap.get(&order.s)?;
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    let venue_order_id = VenueOrderId::new_checked(&order.oid).ok()?;
     let instrument_id = instrument.id();
     let order_side = OrderSide::from(order.d);
 
@@ -2366,9 +2740,13 @@ fn create_fill_report(
     commission: Money,
     clock: &'static AtomicTime,
 ) -> Option<FillReport> {
+    if lookup_order_metadata(order, caches).is_some() {
+        return None;
+    }
+
     let instruments_snap = instruments.load();
     let instrument = instruments_snap.get(&order.s)?;
-    let venue_order_id = VenueOrderId::new(&order.oid);
+    let venue_order_id = VenueOrderId::new_checked(&order.oid).ok()?;
     let instrument_id = instrument.id();
     let order_side = order.d.into();
 
@@ -2688,7 +3066,13 @@ mod tests {
             .venue_to_client_id
             .insert(old_venue_order_id, client_order_id);
 
-        record_replacement_venue_id(&caches, client_order_id, new_venue_order_id, false);
+        record_replacement_venue_id(
+            &caches,
+            client_order_id,
+            old_venue_order_id,
+            new_venue_order_id,
+            false,
+        );
 
         assert!(caches.venue_to_client_id.contains_key(&old_venue_order_id));
         assert!(caches.venue_to_client_id.contains_key(&new_venue_order_id));
@@ -2701,10 +3085,176 @@ mod tests {
             Some(new_venue_order_id),
         );
 
-        record_replacement_venue_id(&caches, client_order_id, new_venue_order_id, true);
+        record_replacement_venue_id(
+            &caches,
+            client_order_id,
+            old_venue_order_id,
+            new_venue_order_id,
+            true,
+        );
 
         assert!(!caches.venue_to_client_id.contains_key(&old_venue_order_id));
         assert!(caches.venue_to_client_id.contains_key(&new_venue_order_id));
+    }
+
+    #[rstest]
+    fn test_late_replacement_cannot_regress_active_leg() {
+        let caches = test_caches();
+        let client_order_id = ClientOrderId::from("O-CHAIN");
+        let parent = VenueOrderId::from("OID-A");
+        let child = VenueOrderId::from("OID-B");
+        let current = VenueOrderId::from("OID-C");
+        let mut metadata = test_metadata(client_order_id, InstrumentId::from("BTC-PERP.AX"));
+        metadata.venue_order_id = Some(parent);
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.venue_to_client_id.insert(parent, client_order_id);
+        assert!(record_replacement_venue_id(
+            &caches,
+            client_order_id,
+            parent,
+            child,
+            true
+        ));
+        assert!(record_replacement_venue_id(
+            &caches,
+            client_order_id,
+            child,
+            current,
+            true
+        ));
+        let late_http = record_replacement_venue_id(&caches, client_order_id, parent, child, false);
+        let old_order = test_ws_order(parent.as_str(), dec!(50000), 100);
+        let new_order = test_ws_order(child.as_str(), dec!(50001), 100);
+        caches.cid_to_client_order_id.insert(127, client_order_id);
+        let mut old_order = old_order;
+        old_order.cid = Some(127);
+        let late_event = create_order_updated(
+            &new_order,
+            &old_order,
+            child,
+            (1609459200, 0),
+            &caches,
+            AccountId::from("AX-001"),
+            get_atomic_clock_realtime(),
+        );
+
+        assert!(!late_http);
+        assert!(late_event.is_none());
+        assert_eq!(
+            caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(current)
+        );
+        assert_eq!(
+            *caches.venue_to_client_id.get(&current).unwrap(),
+            client_order_id
+        );
+        assert_eq!(caches.venue_to_client_id.len(), 1);
+    }
+
+    #[rstest]
+    #[case::timestamp(0)]
+    #[case::price(1)]
+    #[case::instrument(2)]
+    #[case::side(3)]
+    fn test_malformed_replacement_does_not_promote(#[case] invalid: u8) {
+        let caches = test_caches();
+        let client_order_id = ClientOrderId::from("O-BAD-REPLACE");
+        let parent = VenueOrderId::from("OID-PARENT");
+        let child = VenueOrderId::from("OID-CHILD");
+        let mut metadata = test_metadata(client_order_id, InstrumentId::from("BTC-PERP.AX"));
+        metadata.venue_order_id = Some(parent);
+        let submitted = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-PERP.AX"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .price(Price::from("50000.00"))
+            .build();
+        metadata.order_init = Some(submitted.init_event().clone());
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.venue_to_client_id.insert(parent, client_order_id);
+        let old_order = test_ws_order(parent.as_str(), dec!(50000), 100);
+
+        let mut new_order = test_ws_order(
+            child.as_str(),
+            if invalid == 1 {
+                Decimal::MAX
+            } else {
+                dec!(50001)
+            },
+            101,
+        );
+
+        if invalid == 2 {
+            new_order.s = Ustr::from("WRONG-PERP");
+        }
+
+        if invalid == 3 {
+            new_order.d = AxOrderSide::Sell;
+        }
+
+        let event = create_order_updated(
+            &new_order,
+            &old_order,
+            child,
+            (if invalid == 0 { -1 } else { 1609459200 }, 0),
+            &caches,
+            AccountId::from("AX-001"),
+            get_atomic_clock_realtime(),
+        );
+
+        let mut message: crate::websocket::messages::AxWsOrderReplaced =
+            serde_json::from_str(include_str!("../test_data/ws_order_replaced_live.json")).unwrap();
+        message.ro = Box::new(old_order);
+        message.no = Some(Box::new(new_order));
+        message.noid = Some(child.to_string());
+        if invalid == 0 {
+            message.ts = -1;
+        }
+
+        let instruments = AtomicMap::new();
+        instruments.insert(Ustr::from("BTC-PERP"), test_perp_instrument("BTC-PERP"));
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        dispatch_order_event(
+            AxWsOrderEvent::Replaced(message),
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &AtomicMap::new(),
+            clock,
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert!(event.is_none());
+        assert_eq!(
+            caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(parent)
+        );
+        assert_eq!(
+            *caches.venue_to_client_id.get(&parent).unwrap(),
+            client_order_id
+        );
+        assert_eq!(caches.venue_to_client_id.len(), 1);
     }
 
     fn test_metadata(client_order_id: ClientOrderId, instrument_id: InstrumentId) -> OrderMetadata {
@@ -2713,6 +3263,8 @@ mod tests {
             strategy_id: StrategyId::from("S-001"),
             instrument_id,
             client_order_id,
+            order_init: None,
+            is_accepted: true,
             venue_order_id: None,
             ts_init: 0.into(),
             size_precision: 0,
@@ -2865,10 +3417,9 @@ mod tests {
         let instrument_id = InstrumentId::from("BTC-PERP.AX");
         let venue_order_id = VenueOrderId::new("OID-ACK");
 
-        caches.orders_metadata.insert(
-            client_order_id,
-            test_metadata(client_order_id, instrument_id),
-        );
+        let mut metadata = test_metadata(client_order_id, instrument_id);
+        metadata.is_accepted = false;
+        caches.orders_metadata.insert(client_order_id, metadata);
         let cid_value = 7u64;
         caches
             .cid_to_client_order_id
@@ -2898,6 +3449,626 @@ mod tests {
         );
         let meta = caches.orders_metadata.get(&client_order_id).unwrap();
         assert_eq!(meta.venue_order_id, Some(venue_order_id));
+    }
+
+    #[rstest]
+    #[case::unbound_partial(false, false)]
+    #[case::response_before_partial(true, false)]
+    #[case::unbound_complete(false, true)]
+    #[case::response_before_complete(true, true)]
+    fn test_market_fill_before_acknowledgement(#[case] bound: bool, #[case] complete: bool) {
+        let raw = if complete {
+            include_str!("../test_data/ws_order_filled.json")
+        } else {
+            include_str!("../test_data/ws_order_partially_filled.json")
+        };
+
+        let mut event: AxWsOrderEvent = serde_json::from_str(raw).unwrap();
+
+        let order = match &mut event {
+            AxWsOrderEvent::Filled(msg) => &mut msg.o,
+            AxWsOrderEvent::PartiallyFilled(msg) => &mut msg.o,
+            _ => unreachable!(),
+        };
+
+        order.cid = Some(117);
+        let venue_order_id = VenueOrderId::from(order.oid.as_str());
+        let client_order_id = ClientOrderId::from("O-ORIGINAL-MARKET");
+        let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+        let local_order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .time_in_force(TimeInForce::Ioc)
+            .build();
+        let mut metadata = test_metadata(client_order_id, instrument_id);
+        metadata.is_accepted = false;
+        metadata.order_init = Some(local_order.init_event().clone());
+        metadata.venue_order_id = bound.then_some(venue_order_id);
+        let caches = test_caches();
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.cid_to_client_order_id.insert(117, client_order_id);
+        if bound {
+            caches
+                .venue_to_client_id
+                .insert(venue_order_id, client_order_id);
+        }
+
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from("EURUSD-PERP"),
+            test_perp_instrument("EURUSD-PERP"),
+        );
+        let rates = AtomicMap::new();
+        rates.insert(
+            Some(Ustr::from("fixture-account")),
+            MakerTakerFeeRates::new(dec!(0.0002), dec!(0.0025)),
+        );
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        dispatch_order_event(
+            event,
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &rates,
+            clock,
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = rx.try_recv().unwrap()
+        else {
+            panic!("expected acceptance before fill");
+        };
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = rx.try_recv().unwrap() else {
+            panic!("expected tracked fill");
+        };
+
+        assert_eq!(accepted.client_order_id, client_order_id);
+        assert_eq!(accepted.venue_order_id, venue_order_id);
+        assert_eq!(accepted.instrument_id, instrument_id);
+        assert_eq!(fill.client_order_id, client_order_id);
+        assert_eq!(fill.trader_id, local_order.trader_id());
+        assert_eq!(fill.strategy_id, local_order.strategy_id());
+        assert_eq!(fill.instrument_id, instrument_id);
+        assert_eq!(fill.account_id, account_id);
+        assert_eq!(fill.venue_order_id, venue_order_id);
+        assert_eq!(fill.order_type, OrderType::Market);
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(
+            fill.last_qty.as_decimal(),
+            if complete { dec!(100) } else { dec!(50) }
+        );
+        assert_eq!(fill.last_px.as_decimal(), dec!(50000));
+        assert_eq!(
+            fill.commission,
+            Some(Money::from(if complete {
+                "1000.00 USD"
+            } else {
+                "500.00 USD"
+            }))
+        );
+        assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+        assert!(rx.try_recv().is_err());
+
+        if complete {
+            assert!(caches.orders_metadata.is_empty());
+            assert!(caches.cid_to_client_order_id.is_empty());
+        } else {
+            let metadata = caches.orders_metadata.get(&client_order_id).unwrap();
+            assert_eq!(metadata.venue_order_id, Some(venue_order_id));
+            assert!(metadata.is_accepted);
+            assert_eq!(metadata.order_init.as_ref(), Some(local_order.init_event()));
+        }
+    }
+
+    #[rstest]
+    #[case::partial_first(false, false)]
+    #[case::complete_first(true, false)]
+    #[case::partial_second(false, true)]
+    #[case::complete_second(true, true)]
+    fn test_parent_fill_before_stream_replacement(#[case] complete: bool, #[case] second: bool) {
+        let mut event: AxWsOrderEvent = serde_json::from_str(if complete {
+            include_str!("../test_data/ws_order_filled.json")
+        } else {
+            include_str!("../test_data/ws_order_partially_filled.json")
+        })
+        .unwrap();
+
+        let order = match &mut event {
+            AxWsOrderEvent::Filled(msg) => &mut msg.o,
+            AxWsOrderEvent::PartiallyFilled(msg) => &mut msg.o,
+            _ => unreachable!(),
+        };
+
+        order.cid = Some(131);
+        let first_id = VenueOrderId::from("OID-FIRST");
+        let parent_id = VenueOrderId::from(order.oid.as_str());
+        let child_id = VenueOrderId::from("OID-REPLACEMENT");
+        let client_order_id = ClientOrderId::from("O-PARENT-FILL");
+        let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+        let caches = test_caches();
+        let mut metadata = test_metadata(client_order_id, instrument_id);
+        metadata.venue_order_id = Some(if second { first_id } else { parent_id });
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.cid_to_client_order_id.insert(131, client_order_id);
+        if second {
+            caches.venue_to_client_id.insert(first_id, client_order_id);
+            assert!(record_replacement_venue_id(
+                &caches,
+                client_order_id,
+                first_id,
+                parent_id,
+                false,
+            ));
+        }
+
+        caches.venue_to_client_id.insert(parent_id, client_order_id);
+        assert!(record_replacement_venue_id(
+            &caches,
+            client_order_id,
+            parent_id,
+            child_id,
+            false,
+        ));
+        let parent_order = order.clone();
+        let mut child_order = parent_order.clone();
+        child_order.oid = child_id.to_string();
+        child_order.p = dec!(50001);
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from("EURUSD-PERP"),
+            test_perp_instrument("EURUSD-PERP"),
+        );
+        let rates = AtomicMap::new();
+        rates.insert(
+            Some(Ustr::from("fixture-account")),
+            MakerTakerFeeRates::new(dec!(0.0002), dec!(0.0025)),
+        );
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        dispatch_order_event(
+            event.clone(),
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &rates,
+            clock,
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = rx.try_recv().unwrap() else {
+            panic!("expected tracked parent fill");
+        };
+
+        assert_eq!(fill.client_order_id, client_order_id);
+        assert_eq!(fill.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(fill.strategy_id, StrategyId::from("S-001"));
+        assert_eq!(fill.instrument_id, instrument_id);
+        assert_eq!(fill.account_id, account_id);
+        assert_eq!(fill.venue_order_id, parent_id);
+        assert_eq!(fill.order_type, OrderType::Limit);
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(
+            fill.last_qty.as_decimal(),
+            if complete { dec!(100) } else { dec!(50) }
+        );
+        assert_eq!(fill.last_px.as_decimal(), dec!(50000));
+        assert_eq!(
+            fill.commission,
+            Some(Money::from(if complete {
+                "1000.00 USD"
+            } else {
+                "500.00 USD"
+            }))
+        );
+        assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+        assert_eq!(fill.ts_event, UnixNanos::from(1_609_459_200_123_456_789u64));
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert_eq!(
+            caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(child_id)
+        );
+        assert_eq!(
+            *caches.venue_to_client_id.get(&parent_id).unwrap(),
+            client_order_id
+        );
+        assert_eq!(
+            *caches.venue_to_client_id.get(&child_id).unwrap(),
+            client_order_id
+        );
+        assert_eq!(
+            *caches.cid_to_client_order_id.get(&131).unwrap(),
+            client_order_id
+        );
+
+        let updated = create_order_updated(
+            &child_order,
+            &parent_order,
+            child_id,
+            (1609459201, 0),
+            &caches,
+            account_id,
+            clock,
+        )
+        .unwrap();
+        dispatch_order_event(
+            event,
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &rates,
+            clock,
+        );
+        assert_eq!(updated.venue_order_id, Some(child_id));
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(!caches.venue_to_client_id.contains_key(&parent_id));
+        assert_eq!(caches.venue_to_client_id.len(), 1);
+        assert_eq!(
+            caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(child_id)
+        );
+    }
+
+    #[rstest]
+    fn test_reconciled_acceptance_suppresses_duplicate_stream_acceptance() {
+        let mut event: AxWsOrderEvent =
+            serde_json::from_str(include_str!("../test_data/ws_order_partially_filled.json"))
+                .unwrap();
+
+        let AxWsOrderEvent::PartiallyFilled(msg) = &mut event else {
+            unreachable!()
+        };
+
+        msg.o.cid = Some(133);
+        let venue_order_id = VenueOrderId::from(msg.o.oid.as_str());
+        let client_order_id = ClientOrderId::from("O-RECONCILED-ACCEPTANCE");
+        let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            *AX_CLIENT_ID,
+            *AX_VENUE,
+            OmsType::Netting,
+            AccountId::from("AX-001"),
+            AccountType::Margin,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+        let mut client = AxExecutionClient::new(core, AxExecutionClientConfig::default()).unwrap();
+        client.ensure_order_event_subscription();
+        client.ensure_order_event_subscription();
+        let caches = client.ws_orders.caches().clone();
+        let mut metadata = test_metadata(client_order_id, instrument_id);
+        metadata.is_accepted = false;
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.cid_to_client_order_id.insert(133, client_order_id);
+        let accepted = OrderEventAny::Accepted(OrderAccepted::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            AccountId::from("AX-001"),
+            UUID4::new(),
+            1.into(),
+            2.into(),
+            true,
+        ));
+        msgbus::publish_order_event("events.order.S-001".into(), &accepted);
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from("EURUSD-PERP"),
+            test_perp_instrument("EURUSD-PERP"),
+        );
+        let rates = AtomicMap::new();
+        rates.insert(
+            Some(Ustr::from("fixture-account")),
+            MakerTakerFeeRates::new(dec!(0.0002), dec!(0.0025)),
+        );
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        dispatch_order_event(
+            event,
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &rates,
+            clock,
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(fill)) = rx.try_recv().unwrap() else {
+            panic!("expected fill without duplicate acceptance");
+        };
+
+        assert_eq!(fill.client_order_id, client_order_id);
+        assert_eq!(fill.venue_order_id, venue_order_id);
+        assert_eq!(fill.last_qty, Quantity::from("50"));
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        let metadata = caches.orders_metadata.get(&client_order_id).unwrap();
+        assert!(metadata.is_accepted);
+        assert_eq!(metadata.venue_order_id, Some(venue_order_id));
+        drop(metadata);
+        client.stop().unwrap();
+        caches
+            .orders_metadata
+            .get_mut(&client_order_id)
+            .unwrap()
+            .is_accepted = false;
+        msgbus::publish_order_event("events.order.S-001".into(), &accepted);
+        assert!(
+            !caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .is_accepted
+        );
+        assert!(client.order_event_handler.is_none());
+    }
+
+    #[rstest]
+    #[case::acknowledgement(false, false)]
+    #[case::terminal_parent(true, false)]
+    #[case::pending_acknowledgement(false, true)]
+    #[case::pending_terminal_parent(true, true)]
+    fn test_stale_parent_preserves_replacement(#[case] terminal: bool, #[case] mapped: bool) {
+        let mut event: AxWsOrderEvent = serde_json::from_str(if terminal {
+            include_str!("../test_data/ws_order_canceled.json")
+        } else {
+            include_str!("../test_data/ws_order_acknowledged.json")
+        })
+        .unwrap();
+
+        let order = match &mut event {
+            AxWsOrderEvent::Acknowledged(msg) => &mut msg.o,
+            AxWsOrderEvent::Canceled(msg) => &mut msg.o,
+            _ => unreachable!(),
+        };
+
+        order.cid = Some(119);
+        let parent_id = VenueOrderId::from(order.oid.as_str());
+        let child_id = VenueOrderId::from("OID-ACTIVE-CHILD");
+        let client_order_id = ClientOrderId::from("O-STALE-PARENT");
+        let caches = test_caches();
+        let mut metadata = test_metadata(client_order_id, InstrumentId::from("EURUSD-PERP.AX"));
+        metadata.venue_order_id = Some(child_id);
+        metadata.is_accepted = true;
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.cid_to_client_order_id.insert(119, client_order_id);
+        caches.venue_to_client_id.insert(child_id, client_order_id);
+        if mapped {
+            caches.venue_to_client_id.insert(parent_id, client_order_id);
+        }
+
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from("EURUSD-PERP"),
+            test_perp_instrument("EURUSD-PERP"),
+        );
+        dispatch_order_event(
+            event,
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &AtomicMap::new(),
+            clock,
+        );
+        let report = test_status_report(Some(client_order_id), parent_id, OrderStatus::Canceled);
+        cleanup_closed_order_status_report(&report, &caches);
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(child_id)
+        );
+        assert_eq!(
+            *caches.venue_to_client_id.get(&child_id).unwrap(),
+            client_order_id
+        );
+        assert_eq!(
+            *caches.cid_to_client_order_id.get(&119).unwrap(),
+            client_order_id
+        );
+        assert_eq!(caches.venue_to_client_id.len(), if mapped { 2 } else { 1 });
+    }
+
+    #[rstest]
+    fn test_stale_parent_cancel_rejection_is_deferred() {
+        let event: AxWsOrderEvent =
+            serde_json::from_str(include_str!("../test_data/ws_cancel_rejected.json")).unwrap();
+        let parent = VenueOrderId::from("O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        let child = VenueOrderId::from("OID-CHILD");
+        let client_order_id = ClientOrderId::from("O-STALE-CANCEL");
+        let caches = test_caches();
+        let mut metadata = test_metadata(client_order_id, InstrumentId::from("EURUSD-PERP.AX"));
+        metadata.venue_order_id = Some(child);
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.venue_to_client_id.insert(parent, client_order_id);
+        caches.venue_to_client_id.insert(child, client_order_id);
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        dispatch_order_event(
+            event,
+            &emitter,
+            &caches,
+            account_id,
+            &AtomicMap::new(),
+            &AtomicMap::new(),
+            clock,
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(child)
+        );
+        assert_eq!(
+            *caches.venue_to_client_id.get(&child).unwrap(),
+            client_order_id
+        );
+    }
+
+    #[rstest]
+    #[case::trade_id(0)]
+    #[case::timestamp(1)]
+    #[case::venue_id(2)]
+    #[case::instrument(3)]
+    fn test_malformed_tracked_fill_preserves_context(#[case] invalid: u8) {
+        let mut fill: AxWsOrderFilled =
+            serde_json::from_str(include_str!("../test_data/ws_order_filled.json")).unwrap();
+        fill.o.cid = Some(121);
+        let venue_order_id = VenueOrderId::from(fill.o.oid.as_str());
+        let client_order_id = ClientOrderId::from("O-MALFORMED");
+        let caches = test_caches();
+        let mut metadata = test_metadata(client_order_id, InstrumentId::from("EURUSD-PERP.AX"));
+        metadata.venue_order_id = Some(venue_order_id);
+        caches.orders_metadata.insert(client_order_id, metadata);
+        caches.cid_to_client_order_id.insert(121, client_order_id);
+        caches
+            .venue_to_client_id
+            .insert(venue_order_id, client_order_id);
+
+        match invalid {
+            0 => fill.xs.tid.clear(),
+            1 => fill.ts = -1,
+            2 => fill.o.oid.clear(),
+            3 => fill.o.s = Ustr::from("WRONG-PERP"),
+            _ => unreachable!(),
+        }
+
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from("EURUSD-PERP"),
+            test_perp_instrument("EURUSD-PERP"),
+        );
+        let rates = AtomicMap::new();
+        rates.insert(
+            Some(Ustr::from("fixture-account")),
+            MakerTakerFeeRates::new(dec!(0.0002), dec!(0.0025)),
+        );
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+        dispatch_order_event(
+            AxWsOrderEvent::Filled(fill),
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &rates,
+            clock,
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            caches
+                .orders_metadata
+                .get(&client_order_id)
+                .unwrap()
+                .venue_order_id,
+            Some(venue_order_id)
+        );
+        assert_eq!(
+            *caches.venue_to_client_id.get(&venue_order_id).unwrap(),
+            client_order_id
+        );
+        assert_eq!(
+            *caches.cid_to_client_order_id.get(&121).unwrap(),
+            client_order_id
+        );
     }
 
     #[rstest]

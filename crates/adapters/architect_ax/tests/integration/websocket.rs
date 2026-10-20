@@ -27,9 +27,10 @@ use nautilus_architect_ax::{
 };
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_model::{
-    enums::{OrderSide, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, StrategyId, TraderId, VenueOrderId},
+    enums::{OrderSide, OrderType, TimeInForce},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::Instrument,
+    orders::builder::OrderTestBuilder,
     types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
@@ -1419,13 +1420,18 @@ async fn test_orders_submit_order() {
     client.connect("test_token").await.unwrap();
     wait_for_connection(&state).await;
 
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("TEST-STRATEGY"))
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("TEST-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("50000.00"))
+        .build();
     let request_id = client
         .submit_order(
-            trader_id,
-            StrategyId::from("TEST-STRATEGY"),
-            instrument.id(),
-            ClientOrderId::from("TEST-001"),
-            OrderSide::Buy,
+            order.init_event(),
             Quantity::from("100"),
             TimeInForce::Gtc,
             Price::from("50000.00"),
@@ -1474,13 +1480,18 @@ async fn test_orders_submit_order_missing_cached_instrument_returns_lookup_error
 
     let instrument = create_test_instrument("EURUSD-PERP");
 
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("TEST-STRATEGY"))
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("TEST-001"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("50000.00"))
+        .build();
     let result = client
         .submit_order(
-            trader_id,
-            StrategyId::from("TEST-STRATEGY"),
-            instrument.id(),
-            ClientOrderId::from("TEST-001"),
-            OrderSide::Buy,
+            order.init_event(),
             Quantity::from("100"),
             TimeInForce::Gtc,
             Price::from("50000.00"),
@@ -1530,8 +1541,10 @@ async fn test_orders_cancel_order_rejects_without_venue_order_id() {
 }
 
 #[rstest]
+#[case::caller_id(false)]
+#[case::tracked_replacement(true)]
 #[tokio::test]
-async fn test_orders_cancel_order_with_venue_order_id() {
+async fn test_orders_cancel_order_with_venue_order_id(#[case] replaced: bool) {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/orders/ws");
     let account_id = AccountId::from("AX-001");
@@ -1551,6 +1564,18 @@ async fn test_orders_cancel_order_with_venue_order_id() {
 
     let client_order_id = ClientOrderId::from("O-123");
     let venue_order_id = VenueOrderId::new("OID-123");
+    let replacement_id = VenueOrderId::from("OID-REPLACEMENT");
+
+    if replaced {
+        client.cache_instrument(create_test_instrument("EURUSD-PERP"));
+        assert!(client.register_external_order(
+            client_order_id,
+            replacement_id,
+            InstrumentId::from("EURUSD-PERP.AX"),
+            StrategyId::from("S-001")
+        ));
+    }
+
     let request_id = client
         .cancel_order(client_order_id, Some(venue_order_id))
         .await
@@ -1570,7 +1595,14 @@ async fn test_orders_cancel_order_with_venue_order_id() {
         .iter()
         .find(|m| m.get("t").and_then(|v| v.as_str()) == Some("x"))
         .expect("expected a cancel-order message");
-    assert_eq!(cancel.get("oid").and_then(|v| v.as_str()), Some("OID-123"));
+    assert_eq!(
+        cancel.get("oid").and_then(|v| v.as_str()),
+        Some(if replaced {
+            replacement_id.as_str()
+        } else {
+            "OID-123"
+        })
+    );
 
     client.close().await.expect("close WebSocket client");
 }

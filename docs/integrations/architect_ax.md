@@ -361,6 +361,7 @@ and output format.
 The AX order-entry API has no order-type selector. Its single native order shape requires a price,
 which the adapter maps to a Nautilus `LIMIT` order. The adapter simulates a Nautilus `MARKET` order
 by previewing an aggressive price and submitting that priced shape with IOC.
+Tracked fills retain the submitted Nautilus order type and side, including simulated market orders.
 
 The official [REST place-order](https://docs.architect.exchange/api-reference/order-management/place-order)
 and [orders WebSocket](https://docs.architect.exchange/api-reference/order-management/orders-ws) request
@@ -435,6 +436,12 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | Cancel all orders  | ✓         | Cancel all open orders for an instrument.                          |
 | Batch cancel       | -         | The adapter sends individual cancels.                              |
 | Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
+
+The adapter restores cached local open and in-flight orders before processing the orders stream. An uncertain
+send or request failure retains local tracking until a terminal event or a terminal reconciliation report
+identifies the active venue order. After replacement, queries, modifications, and cancels use the active
+venue order ID. Stale parent updates and malformed tracked updates wait for reconciliation without being
+routed as external orders.
 
 A cancel that already has a venue order ID is forwarded, including a second cancel of a
 terminal order. A strategy does not send that second cancel after the local order is already

@@ -87,6 +87,7 @@ pub(crate) struct TestServerState {
     pub whoami_fail: Arc<AtomicBool>,
     pub whoami_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub order_fill_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub order_initial_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
     pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_fail: Arc<AtomicBool>,
@@ -100,6 +101,7 @@ pub(crate) struct TestServerState {
     pub preview_partial: Arc<AtomicBool>,
     pub replace_order_fail: Arc<AtomicBool>,
     pub replace_order_count: Arc<AtomicUsize>,
+    pub replace_order_requests: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub replace_order_oid: Arc<tokio::sync::Mutex<Option<String>>>,
     pub order_status_response: Arc<tokio::sync::Mutex<Option<(u16, serde_json::Value)>>>,
     pub order_status_queries: Arc<tokio::sync::Mutex<Vec<GetOrderStatusParams>>>,
@@ -139,6 +141,7 @@ impl Default for TestServerState {
             whoami_fail: Arc::new(AtomicBool::new(false)),
             whoami_payload: Arc::new(tokio::sync::Mutex::new(None)),
             order_fill_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            order_initial_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_fail: Arc::new(AtomicBool::new(false)),
@@ -152,6 +155,7 @@ impl Default for TestServerState {
             preview_partial: Arc::new(AtomicBool::new(false)),
             replace_order_fail: Arc::new(AtomicBool::new(false)),
             replace_order_count: Arc::new(AtomicUsize::new(0)),
+            replace_order_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             replace_order_oid: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -522,6 +526,17 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
 
     state.authenticated.store(true, Ordering::Relaxed);
 
+    let initial_events = state.order_initial_events.lock().await.clone();
+    for event in initial_events {
+        if socket
+            .send(Message::Text(event.to_string().into()))
+            .await
+            .is_err()
+        {
+            return;
+        }
+    }
+
     loop {
         if state.disconnect_trigger.load(Ordering::Relaxed) {
             break;
@@ -794,6 +809,11 @@ async fn handle_replace_order(
     State(state): State<TestServerState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> axum::response::Response {
+    state
+        .replace_order_requests
+        .lock()
+        .await
+        .push(payload.clone());
     state.replace_order_count.fetch_add(1, Ordering::Relaxed);
     if state.replace_order_fail.load(Ordering::Relaxed) {
         return (
