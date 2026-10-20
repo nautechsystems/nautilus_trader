@@ -15,10 +15,7 @@
 
 //! Instrument parsing for Polymarket markets.
 
-use std::{
-    collections::{BTreeMap, HashMap, hash_map::Entry},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 use jiff::Timestamp;
 use nautilus_core::{Params, UnixNanos};
@@ -31,7 +28,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
+use serde_json::Value;
 use ustr::Ustr;
 
 use super::models::{CryptoMarketConfig, FeeSchedule, GammaEvent, GammaMarket, GammaTag};
@@ -67,8 +64,8 @@ pub struct PolymarketInstrumentDef {
     /// Original Gamma market response.
     #[serde(default)]
     pub gamma_market: String,
-    /// Enclosing event response from event-based discovery, excluding its markets array.
-    pub gamma_event: Option<String>,
+    /// Shared original enclosing event JSON string from event-based discovery.
+    pub gamma_event: Option<Arc<Value>>,
     /// Question ID (resolution hash).
     pub question_id: Option<String>,
     /// Outcome label.
@@ -119,7 +116,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
 
 pub(super) fn parse_gamma_market_with_event_cache(
     market: &GammaMarket,
-    event_metadata: &mut HashMap<*const GammaEvent, String>,
+    event_metadata: &mut HashMap<*const GammaEvent, Arc<Value>>,
 ) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
     let event_id = market_event_id(market);
 
@@ -162,17 +159,13 @@ pub(super) fn parse_gamma_market_with_event_cache(
 
     let neg_risk = market.neg_risk;
 
-    let gamma_event = if let Some(event) = &market.parent_event {
-        let key = Arc::as_ptr(event);
-        if let Entry::Vacant(entry) = event_metadata.entry(key) {
-            let mut fields: BTreeMap<String, &RawValue> = serde_json::from_str(&event.raw)?;
-            fields.remove("markets");
-            entry.insert(serde_json::to_string(&fields)?);
-        }
-        event_metadata.get(&key)
-    } else {
-        None
-    };
+    let gamma_event = market.parent_event.as_ref().map(|event| {
+        Arc::clone(
+            event_metadata
+                .entry(Arc::as_ptr(event))
+                .or_insert_with(|| Arc::new(Value::String(event.raw.clone()))),
+        )
+    });
 
     let mut defs = Vec::with_capacity(2);
 
@@ -188,7 +181,7 @@ pub(super) fn parse_gamma_market_with_event_cache(
             market_id: market.id.clone(),
             event_id,
             gamma_market: market.raw.clone(),
-            gamma_event: gamma_event.cloned(),
+            gamma_event: gamma_event.clone(),
             question_id: market.question_id.clone(),
             outcome,
             question: market.question.clone(),
@@ -454,7 +447,7 @@ pub fn create_instrument_from_def(
     // `min_quantity`, so leave it unset and let the venue reject out-of-bounds orders.
     let min_quantity: Option<Quantity> = None;
 
-    let info: Params = serde_json::from_value(build_info_json(def))?;
+    let info = build_info(def);
 
     let binary_option = BinaryOption::builder()
         .instrument_id(instrument_id)
@@ -564,11 +557,11 @@ pub(crate) fn tick_relative_price_bounds(tick_size: Decimal) -> anyhow::Result<(
     Ok((min_price, max_price))
 }
 
-fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
-    let mut map = serde_json::Map::new();
+fn build_info(def: &PolymarketInstrumentDef) -> Params {
+    let mut map = Params::new();
     map.insert("gamma_market".to_string(), def.gamma_market.clone().into());
     if let Some(event) = &def.gamma_event {
-        map.insert("gamma_event".to_string(), event.clone().into());
+        map.insert_shared("gamma_event".to_string(), Arc::clone(event));
     }
 
     if let Some(event_id) = def.event_id {
@@ -658,7 +651,7 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         );
     }
 
-    serde_json::Value::Object(map)
+    map
 }
 
 fn get_currency(code: &str) -> Currency {

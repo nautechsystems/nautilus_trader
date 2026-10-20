@@ -1333,17 +1333,18 @@ relationships leave `event_id` unset. Both outcome instruments share the same ev
 
 Live instruments retain the complete received Gamma market JSON string in `info["gamma_market"]`, including
 unknown fields and nested events, tags, and series when returned by Gamma. Event-based discovery also
-retains the enclosing event JSON in `info["gamma_event"]`, excluding its top-level `markets` array.
+retains the enclosing response in `info["gamma_event"]`, including its full `markets` array.
 
-The compact event snapshot is built once per event and copied into each outcome instrument. Each instrument's
-`gamma_market` contains its own full market response. Raw-event APIs retain the complete event, including
-sibling markets; fetching it later may return a different snapshot.
+Outcome instruments from the same event share its JSON allocation, including across instrument clones.
+Rust callers can borrow it with `info.get_str("gamma_event")` and copy it with `to_owned()` when needed.
+Metadata values use `Arc<Value>`; `Params::get_mut` provides copy-on-write access.
+Python access and serialized contents are unchanged. Serialization does not retain allocation sharing.
 The existing normalized metadata keys remain available, including `token_id`, `condition_id`, `market_id`,
 and `event_id` when known.
 
-These strings contain the received fields before enrichment. Tick-size updates preserve them. Use the
+These strings contain the received JSON objects before enrichment. Tick-size updates preserve them. Use the
 instrument's typed price increment for the current tick size. The adapter does not fetch additional related
-resources solely to populate metadata. Keeping raw JSON field values preserves unknown fields and numeric
+resources solely to populate metadata. Storing the original JSON strings preserves unknown fields and numeric
 precision across serialization formats. Decode them when needed:
 
 ```python

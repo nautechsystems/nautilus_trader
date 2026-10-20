@@ -3593,13 +3593,7 @@ async fn test_get_public_search() {
 #[tokio::test]
 async fn test_request_instruments_by_event_params() {
     let state = TestServerState::default();
-
-    let market = gamma_market_with_slug(
-        "evt-param-mkt",
-        "0xcondition_evt_param_inst",
-        ["92000000000000000001", "92000000000000000002"],
-    );
-    let event = gamma_event_with_markets("evt-param-test", &[market]);
+    let event = load_json("gamma_event.json")[0].clone();
     *state.gamma_events_response.lock().await = Some(json!([event]));
 
     let addr = start_mock_server(state.clone()).await;
@@ -3613,53 +3607,21 @@ async fn test_request_instruments_by_event_params() {
         .await
         .unwrap();
 
-    assert_eq!(instruments.len(), 2);
-}
+    assert_eq!(instruments.len(), 4);
+    let shared_event = instruments[0].info().unwrap().get("gamma_event").unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(shared_event.as_str().unwrap()).unwrap(),
+        event,
+    );
 
-#[rstest]
-#[tokio::test]
-async fn test_event_instrument_metadata_grows_linearly() {
-    let state = TestServerState::default();
-    let addr = start_mock_server(state.clone()).await;
-    let client = create_gamma_domain_client(&addr);
-    let mut retained_sizes = Vec::new();
+    let cloned = instruments[0].clone();
 
-    for market_count in [8, 16] {
-        let markets: Vec<Value> = (0..market_count)
-            .map(|index| {
-                gamma_market_with_slug(
-                    &format!("metadata-{index}"),
-                    &format!("0xcondition_metadata_{index}"),
-                    [&(2 * index + 1).to_string(), &(2 * index + 2).to_string()],
-                )
-            })
-            .collect();
-        let event = gamma_event_with_markets("metadata-event", &markets);
-        *state.gamma_events_response.lock().await = Some(json!([event]));
-        let instruments = client
-            .request_instruments_by_event_params(GetGammaEventsParams::default())
-            .await
-            .unwrap();
-        assert_eq!(instruments.len(), 2 * market_count);
-
-        let mut retained_bytes = 0;
-
-        for (index, instrument) in instruments.iter().enumerate() {
-            let InstrumentAny::BinaryOption(binary) = instrument else {
-                panic!("Expected a BinaryOption instrument");
-            };
-            assert_eq!(binary.event_id.unwrap().as_str(), "evt-test-001");
-            assert_eq!(binary.raw_symbol.as_str(), (index + 1).to_string());
-            let info = binary.info.as_ref().unwrap();
-            retained_bytes += info.get_str("gamma_event").unwrap().len();
-            let raw_market: Value =
-                serde_json::from_str(info.get_str("gamma_market").unwrap()).unwrap();
-            assert_eq!(raw_market, markets[index / 2]);
-        }
-        retained_sizes.push(retained_bytes);
+    for instrument in instruments.iter().chain([&cloned]) {
+        assert!(std::ptr::eq(
+            instrument.info().unwrap().get("gamma_event").unwrap(),
+            shared_event,
+        ));
     }
-
-    assert_eq!(retained_sizes[1], 2 * retained_sizes[0]);
 }
 
 #[rstest]

@@ -27,7 +27,7 @@ use crate::{
     python::{serialization::serialize_pyobject_pyo3, to_pyvalue_err},
 };
 
-/// Converts a Python dict to `Params` (IndexMap<String, Value>).
+/// Converts a Python dict to `Params`.
 ///
 /// An empty dict canonicalizes to `None`, distinguishing "no params provided"
 /// from a populated map. This is not the inverse of [`params_to_pydict`], which
@@ -129,7 +129,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     }
 }
 
-/// Converts `Params` (IndexMap<String, Value>) to a Python dict.
+/// Converts `Params` to a Python dict.
 ///
 /// # Errors
 ///
