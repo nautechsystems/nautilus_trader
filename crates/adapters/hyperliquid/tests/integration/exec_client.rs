@@ -112,6 +112,8 @@ struct TestServerState {
     command_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
     exchange_request_count: Arc<tokio::sync::Mutex<usize>>,
     info_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    ws_connections: Arc<AtomicUsize>,
+    ws_subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     last_exchange_action: Arc<tokio::sync::Mutex<Option<Value>>>,
     reject_next_order: Arc<std::sync::atomic::AtomicBool>,
     /// Returns a `status="ok"` envelope whose inner `statuses[0]` carries a
@@ -183,6 +185,8 @@ impl Default for TestServerState {
             command_response_override: Arc::new(tokio::sync::Mutex::new(None)),
             exchange_request_count: Arc::new(tokio::sync::Mutex::new(0)),
             info_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            ws_connections: Arc::new(AtomicUsize::new(0)),
+            ws_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             last_exchange_action: Arc::new(tokio::sync::Mutex::new(None)),
             reject_next_order: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             inner_order_error_next: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -725,6 +729,7 @@ async fn handle_health() -> impl IntoResponse {
 }
 
 async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    state.ws_connections.fetch_add(1, Ordering::Relaxed);
     ws.on_upgrade(move |socket| handle_ws_socket(socket, state))
 }
 
@@ -921,6 +926,12 @@ async fn send_ws_subscription_response(
     state: &TestServerState,
     payload: &Value,
 ) -> bool {
+    state
+        .ws_subscriptions
+        .lock()
+        .await
+        .push(payload["subscription"].clone());
+
     if !state.ack_subscriptions.load(Ordering::Relaxed) {
         return true;
     }
@@ -11305,14 +11316,13 @@ async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable(
 }
 
 #[rstest]
+#[case("0xd8da6bf26964af9d7eed9e03e53415d37aa96045")]
+#[case(" \t0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 ")]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_get_account_address_uses_explicit_account_address() {
-    // When `config.account_address` is set, the client must use it for info
-    // requests instead of the user_address derived from the private key.
-    // The mock captures the `user` field of the most recent `clearinghouseState`
-    // request so we can assert the override actually flowed through.
+async fn test_get_account_address_uses_explicit_account_address(#[case] explicit_address: &str) {
     let state = TestServerState::default();
     let last_user = state.last_clearinghouse_user.clone();
+    let subscriptions = state.ws_subscriptions.clone();
     let addr = start_mock_server(state).await;
 
     let trader_id = TraderId::from("TESTER-001");
@@ -11331,7 +11341,6 @@ async fn test_get_account_address_uses_explicit_account_address() {
         cache.clone(),
     );
 
-    let explicit_address = "0xcafebabedeadbeef000000000000000000000001";
     let config = HyperliquidExecutionClientConfig {
         private_key: Some(TEST_PRIVATE_KEY.into()),
         base_url_http: Some(format!("http://{addr}/info")),
@@ -11355,13 +11364,60 @@ async fn test_get_account_address_uses_explicit_account_address() {
         .await
         .clone()
         .expect("clearinghouseState request must have been issued during connect");
+    wait_until_async(
+        || async { subscriptions.lock().await.len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(captured, "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",);
     assert_eq!(
-        captured.to_lowercase(),
-        explicit_address,
-        "config.account_address must be the user supplied to clearinghouseState",
+        *subscriptions.lock().await,
+        vec![
+            json!({"type": "orderUpdates", "user": captured}),
+            json!({"type": "userEvents", "user": captured}),
+        ],
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_invalid_account_address_prevents_network_requests() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *HYPERLIQUID_CLIENT_ID,
+        *HYPERLIQUID_VENUE,
+        OmsType::Netting,
+        AccountId::from("HYPERLIQUID-001"),
+        AccountType::Margin,
+        None,
+        Rc::new(RefCell::new(Cache::default())),
+    );
+
+    let config = HyperliquidExecutionClientConfig {
+        private_key: Some(TEST_PRIVATE_KEY.into()),
+        account_address: Some("0xinvalid".to_string()),
+        base_url_http: Some(format!("http://{addr}/info")),
+        base_url_exchange: Some(format!("http://{addr}/exchange")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        ..HyperliquidExecutionClientConfig::default()
+    };
+
+    let e = HyperliquidExecutionClient::new(core, config).unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        "bad request: Account address must be 20 bytes of valid hex"
+    );
+    assert_eq!(*state.info_requests.lock().await, Vec::<Value>::new());
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+    assert_eq!(*state.ws_subscriptions.lock().await, Vec::<Value>::new());
 }
 
 #[rstest]

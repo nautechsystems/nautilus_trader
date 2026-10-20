@@ -35,6 +35,8 @@ Released on TBD (UTC).
 - Changed Bybit spot xStocks to `TokenizedAsset`; update type checks (#5344), thanks @dxwil
 - Changed Deribit local validation failures from `OrderRejected` to `OrderDenied`; invalid members deny the whole list
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
+- Changed Hyperliquid account inputs to require lowercase or EIP-55 hex; blank explicit addresses now error
+- Changed `HyperliquidHttpClient::set_account_address` to return `Result`; handle validation errors
 - Changed Interactive Brokers magnified price units; follow the adapter upgrade guide (#5322), thanks @chaneyka1
 - Changed Interactive Brokers execution config literals; add `base_currency: None` (#5322), thanks @chaneyka1
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
@@ -75,6 +77,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid funding history truncation and latest-row limits (#5343), thanks @dxwil
 - Fixed Hyperliquid builder-fee commands treating invalid `HYPERLIQUID_TESTNET` values as mainnet
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
+- Fixed Hyperliquid account addresses reaching requests and subscriptions without validation or normalization
 - Fixed Hyperliquid USD class transfers to return an explicit unsupported-action error before signing
 - Fixed Hyperliquid WebSocket readiness being published before handler initialization
 - Fixed Hyperliquid private WebSocket parse errors exposing account data in logs

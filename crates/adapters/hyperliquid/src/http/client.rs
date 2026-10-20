@@ -62,7 +62,7 @@ use serde_json::Value;
 use ustr::Ustr;
 
 use crate::{
-    account::resolve_execution_account_address,
+    account::{normalize_account_address, resolve_execution_account_address},
     common::{
         consts::{
             ASSET_INDEX_INFO_KEY, HYPERLIQUID_REST_WEIGHT_PER_MINUTE, HYPERLIQUID_VENUE,
@@ -1244,7 +1244,7 @@ impl HyperliquidHttpClient {
                 // No credentials available, create unauthenticated client
                 let mut client = Self::new(environment, timeout_secs, proxy_url)
                     .map_err(|e| Error::auth(format!("Failed to create HTTP client: {e}")))?;
-                client.set_account_address(account_address);
+                client.set_account_address(account_address)?;
                 Ok(client)
             }
         }
@@ -1370,8 +1370,19 @@ impl HyperliquidHttpClient {
     }
 
     /// Sets the account address override for queries (agent wallet support).
-    pub fn set_account_address(&mut self, address: Option<String>) {
-        self.account_address = address;
+    ///
+    /// Trims surrounding whitespace and stores lowercase hex. Requires a `0x`-prefixed lowercase
+    /// or EIP-55 checksummed address.
+    /// `None` clears the override. Invalid input leaves the current override unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the account address is invalid.
+    pub fn set_account_address(&mut self, address: Option<String>) -> Result<()> {
+        self.account_address = address
+            .map(|address| normalize_account_address(&address))
+            .transpose()?;
+        Ok(())
     }
 
     /// Caches a single instrument.
@@ -5130,6 +5141,65 @@ mod tests {
         .unwrap();
 
         assert_eq!(client.get_account_address().unwrap(), account_address);
+    }
+
+    #[rstest]
+    fn test_with_credentials_rejects_invalid_account_address() {
+        let e = HyperliquidHttpClient::with_credentials(
+            Some(TEST_PRIVATE_KEY.to_string()),
+            None,
+            Some("0xinvalid"),
+            HyperliquidEnvironment::Mainnet,
+            60,
+            Some("invalid proxy URL".to_string()),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "bad request: Account address must be 20 bytes of valid hex"
+        );
+    }
+
+    #[rstest]
+    fn test_set_account_address_normalizes_and_preserves_override_on_error() {
+        let mut client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        client
+            .set_account_address(Some(
+                " \t0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 ".to_string(),
+            ))
+            .unwrap();
+        let e = client
+            .set_account_address(Some("0xinvalid".to_string()))
+            .unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "bad request: Account address must be 20 bytes of valid hex"
+        );
+        assert_eq!(
+            client.get_account_address().unwrap(),
+            "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+        );
+    }
+
+    #[rstest]
+    fn test_set_account_address_clears_override() {
+        let mut client = HyperliquidHttpClient::from_resolved_credentials(
+            Some(TEST_PRIVATE_KEY.to_string()),
+            None,
+            Some("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+            HyperliquidEnvironment::Mainnet,
+            60,
+            None,
+        )
+        .unwrap();
+        let signer_address = client.inner.get_account_address().unwrap();
+        client.set_account_address(None).unwrap();
+
+        assert_eq!(client.account_address, None);
+        assert_eq!(client.get_account_address().unwrap(), signer_address);
     }
 
     #[rstest]

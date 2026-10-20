@@ -1693,6 +1693,12 @@ to REST account queries and WebSocket user subscriptions. Signing still uses
 the configured private key, and vault trading still sends `vaultAddress` in the
 signed exchange payload when `vault_address` is set.
 
+`account_address` and `HYPERLIQUID_ACCOUNT_ADDRESS` accept lowercase or EIP-55
+checksummed hex with a `0x` prefix. The adapter trims surrounding whitespace
+and normalizes accepted addresses to lowercase before use. Invalid addresses,
+including a blank explicit `account_address`, fail before network I/O.
+A blank `HYPERLIQUID_ACCOUNT_ADDRESS` is ignored during address resolution.
+
 Explicit config values take precedence over environment variables. Environment
 variables fill only omitted config values.
 

@@ -414,7 +414,7 @@ impl HyperliquidExecutionClient {
         .context("failed to create Hyperliquid HTTP client")?;
 
         http_client.set_account_id(core.account_id);
-        http_client.set_account_address(account_address);
+        http_client.set_account_address(account_address)?;
         http_client.set_normalize_prices(config.normalize_prices);
         http_client.set_market_order_slippage_bps(config.market_order_slippage_bps);
         http_client.set_include_builder_attribution(config.include_builder_attribution);
