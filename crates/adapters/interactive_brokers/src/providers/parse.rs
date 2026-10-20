@@ -262,7 +262,7 @@ fn ib_contract_info_for_contract(contract: &ibapi::contracts::Contract) -> nauti
     let contract_params = contract_to_params(contract);
 
     for (key, value) in &contract_params {
-        contract_map.insert(key.clone(), value.as_ref().clone());
+        contract_map.insert(key.clone(), value.clone());
     }
 
     info.insert(

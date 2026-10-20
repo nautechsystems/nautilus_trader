@@ -450,7 +450,7 @@ impl DataType {
 
                 let mut metadata_map = serde_json::Map::new();
                 for (key, value) in entries {
-                    metadata_map.insert(key.clone(), value.as_ref().clone());
+                    metadata_map.insert(key.clone(), value.clone());
                 }
 
                 serde_json::to_string(&metadata_map).unwrap_or_default()

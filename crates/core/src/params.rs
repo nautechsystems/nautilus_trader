@@ -13,21 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Generic parameter storage using `IndexMap<String, Arc<Value>>`.
+//! Generic JSON parameter storage with shared values.
 //!
 //! This module provides a centralized definition of [`Params`] as a generic storage
 //! solution for `serde_json::Value` data, along with Python bindings.
 
 use std::{
+    fmt::Debug,
+    hash::Hash,
     ops::{Deref, DerefMut, Index, IndexMut},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
-use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use indexmap::{Equivalent, IndexMap};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
-/// Newtype wrapper for generic parameter storage.
+/// Generic parameter storage.
 ///
 /// This represents a map of string keys to JSON values, used for passing
 /// adapter-specific configuration, metadata, and any generic key-value data.
@@ -39,54 +41,67 @@ use serde_json::Value;
 /// consistent serialization and debugging.
 ///
 /// Values are shared across clones. Borrow them through `get` or the typed getters,
-/// and use `get_mut` for copy-on-write access. Serialization preserves the values,
-/// but does not preserve sharing.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Params(IndexMap<String, Arc<Value>>);
+/// and use `get_mut` for copy-on-write access. The dereferenced `IndexMap` and its
+/// iterators retain their owned `Value` API, materializing values when accessed.
+/// Serialization preserves the values, but does not preserve sharing.
+#[derive(Default)]
+pub struct Params {
+    // Both maps may be cached, but mutation must invalidate the other representation
+    shared: OnceLock<IndexMap<String, Arc<Value>>>,
+    owned: OnceLock<IndexMap<String, Value>>,
+}
 
 impl Params {
     /// Creates an empty `Params` map.
     #[must_use]
     pub fn new() -> Self {
-        Self(IndexMap::new())
+        Self::default()
     }
 
     /// Creates `Params` from an `IndexMap`.
     #[must_use]
     pub fn from_index_map(map: IndexMap<String, Value>) -> Self {
-        Self(
-            map.into_iter()
-                .map(|(key, value)| (key, Arc::new(value)))
-                .collect(),
-        )
+        Self {
+            owned: map.into(),
+            ..Self::default()
+        }
     }
 
-    /// Inserts a JSON value, returning the previous shared value if present.
-    pub fn insert(&mut self, key: String, value: Value) -> Option<Arc<Value>> {
+    /// Inserts a JSON value, returning the previous value if present.
+    pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
         self.insert_shared(key, Arc::new(value))
+            .map(Arc::unwrap_or_clone)
     }
 
     /// Inserts a shared JSON value without copying its contents.
     pub fn insert_shared(&mut self, key: String, value: Arc<Value>) -> Option<Arc<Value>> {
-        self.0.insert(key, value)
+        self.shared_values_mut().insert(key, value)
     }
 
     /// Returns a borrowed JSON value.
     #[must_use]
-    pub fn get(&self, key: &str) -> Option<&Value> {
-        self.0.get(key).map(AsRef::as_ref)
+    pub fn get<Q>(&self, key: &Q) -> Option<&Value>
+    where
+        Q: ?Sized + Hash + Equivalent<String>,
+    {
+        match self.shared.get() {
+            Some(values) => values.get(key).map(AsRef::as_ref),
+            None => self.owned.get()?.get(key),
+        }
     }
 
     /// Returns a shared JSON handle, which can be cloned without copying the value.
     #[must_use]
     pub fn get_shared(&self, key: &str) -> Option<&Arc<Value>> {
-        self.0.get(key)
+        self.shared_values().get(key)
     }
 
     /// Returns a mutable JSON value, copying it first if other handles share it.
-    pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
-        self.0.get_mut(key).map(Arc::make_mut)
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut Value>
+    where
+        Q: ?Sized + Hash + Equivalent<String>,
+    {
+        self.shared_values_mut().get_mut(key).map(Arc::make_mut)
     }
 
     /// Extracts a `u64` value from the params map.
@@ -148,19 +163,88 @@ impl Params {
     pub fn to_pydict(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::types::PyDict>> {
         crate::python::params::params_to_pydict(py, self)
     }
+
+    pub(crate) fn shared_values(&self) -> &IndexMap<String, Arc<Value>> {
+        self.shared.get_or_init(|| {
+            self.owned
+                .get()
+                .into_iter()
+                .flatten()
+                .map(|(key, value)| (key.clone(), Arc::new(value.clone())))
+                .collect()
+        })
+    }
+
+    fn shared_values_mut(&mut self) -> &mut IndexMap<String, Arc<Value>> {
+        if self.shared.get().is_none() {
+            self.shared = self
+                .owned
+                .take()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(key, value)| (key, Arc::new(value)))
+                .collect::<IndexMap<_, _>>()
+                .into();
+        }
+
+        self.owned = OnceLock::new();
+        self.shared.get_mut().unwrap()
+    }
 }
 
+impl Clone for Params {
+    fn clone(&self) -> Self {
+        Self {
+            shared: self.shared_values().clone().into(),
+            ..Self::default()
+        }
+    }
+}
+
+impl Debug for Params {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(Params))
+            .field(self.shared_values())
+            .finish()
+    }
+}
+
+impl PartialEq for Params {
+    fn eq(&self, other: &Self) -> bool {
+        self.shared_values() == other.shared_values()
+    }
+}
+
+impl Eq for Params {}
+
 impl Deref for Params {
-    type Target = IndexMap<String, Arc<Value>>;
+    type Target = IndexMap<String, Value>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.owned.get_or_init(|| {
+            self.shared_values()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.as_ref().clone()))
+                .collect()
+        })
     }
 }
 
 impl DerefMut for Params {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        if self.owned.get().is_none() {
+            self.owned = self
+                .shared
+                .take()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(key, value)| (key, Arc::unwrap_or_clone(value)))
+                .collect::<IndexMap<_, _>>()
+                .into();
+        }
+
+        self.shared = OnceLock::new();
+        self.owned.get_mut().unwrap()
     }
 }
 
@@ -171,7 +255,7 @@ where
     type Output = Value;
 
     fn index(&self, index: I) -> &Self::Output {
-        &self.0[index]
+        &self.shared_values()[index]
     }
 }
 
@@ -180,16 +264,40 @@ where
     IndexMap<String, Arc<Value>>: IndexMut<I, Output = Arc<Value>>,
 {
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
-        Arc::make_mut(&mut self.0[index])
+        Arc::make_mut(&mut self.shared_values_mut()[index])
     }
 }
 
 impl<'a> IntoIterator for &'a Params {
-    type Item = (&'a String, &'a Arc<Value>);
-    type IntoIter = indexmap::map::Iter<'a, String, Arc<Value>>;
+    type Item = (&'a String, &'a Value);
+    type IntoIter = indexmap::map::Iter<'a, String, Value>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.deref().iter()
+    }
+}
+
+impl Serialize for Params {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self.shared.get() {
+            Some(values) => values.serialize(serializer),
+            None => self.deref().serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Params {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(Self {
+            shared: IndexMap::deserialize(deserializer)?.into(),
+            ..Self::default()
+        })
     }
 }
 
@@ -217,7 +325,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use rstest::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::Params;
 
@@ -274,12 +382,60 @@ mod tests {
     }
 
     #[rstest]
-    fn test_shared_params_preserve_serialization_and_order() {
+    fn test_shared_params_preserve_owned_map_operations() {
+        let mut params = Params::new();
+        params.insert("name".to_string(), json!("original"));
+        let original = params.clone();
+        assert_eq!(
+            params
+                .values()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>(),
+            ["original"],
+        );
+
+        *params.entry("name".to_string()).or_insert(Value::Null) = json!("updated");
+        assert_eq!(params.get::<str>("name"), Some(&json!("updated")));
+        assert_eq!(original.get_str("name"), Some("original"));
+        assert_eq!(
+            serde_json::to_value(&params).unwrap(),
+            json!({"name": "updated"}),
+        );
+        let updated = params.clone();
+        assert!(Arc::ptr_eq(
+            params.get_shared("name").unwrap(),
+            updated.get_shared("name").unwrap(),
+        ));
+
+        let previous: Option<Value> = params.insert("name".to_string(), json!("inserted"));
+        assert_eq!(previous, Some(json!("updated")));
+        assert_eq!(updated.get_str("name"), Some("updated"));
+        params.entry("count".to_string()).or_insert(json!(0));
+        *params.get_mut::<str>("count").unwrap() = json!(1);
+
+        let values: &IndexMap<String, Value> = &params;
+        assert_eq!(values["name"], "inserted");
+        assert_eq!(values["count"], 1);
+        let entries: indexmap::map::Iter<'_, String, Value> = (&params).into_iter();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            serde_json::to_value(&params).unwrap(),
+            json!({"name": "inserted", "count": 1}),
+        );
+    }
+
+    #[rstest]
+    fn test_shared_params_preserve_serialization_and_order(#[values(false, true)] shared: bool) {
         let original = IndexMap::from([
             ("z".to_string(), json!({"markets": [{"id": "market"}]})),
             ("a".to_string(), json!([null, true, 42, "text"])),
         ]);
         let params = Params::from_index_map(original.clone());
+
+        if shared {
+            assert!(params.get_shared("z").is_some());
+        }
+
         let json = serde_json::to_string(&params).unwrap();
         let msgpack = rmp_serde::to_vec_named(&params).unwrap();
 

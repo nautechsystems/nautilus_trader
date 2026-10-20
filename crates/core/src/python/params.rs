@@ -136,7 +136,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
 /// Returns an error if conversion of any value fails.
 pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
-    for (key, value) in params {
+    for (key, value) in params.shared_values() {
         let py_value = value_to_pyobject(py, value)?;
         dict.set_item(key, py_value)?;
     }

@@ -1337,7 +1337,8 @@ retains the enclosing response in `info["gamma_event"]`, including its full `mar
 
 Outcome instruments from the same event share its JSON allocation, including across instrument clones.
 Rust callers can borrow it with `info.get_str("gamma_event")` and copy it with `to_owned()` when needed.
-Metadata values use `Arc<Value>`; `Params::get_mut` provides copy-on-write access.
+`Params::get_shared` returns a shared handle; `get_mut` provides copy-on-write access.
+Access through the dereferenced `IndexMap<String, Value>` materializes owned values for compatibility.
 Python access and serialized contents are unchanged. Serialization does not retain allocation sharing.
 The existing normalized metadata keys remain available, including `token_id`, `condition_id`, `market_id`,
 and `event_id` when known.
