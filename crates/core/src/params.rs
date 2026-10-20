@@ -224,7 +224,6 @@ impl Params {
         crate::python::params::params_to_pydict(py, self)
     }
 
-    #[cfg(feature = "python")]
     pub(crate) fn borrowed_entries(&self) -> impl Iterator<Item = (&String, &Value)> {
         let shared = self.shared.get();
         let owned = self.owned.get().filter(|_| shared.is_none());
@@ -274,15 +273,26 @@ impl Clone for Params {
 
 impl Debug for Params {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple(stringify!(Params))
-            .field(self.shared_values())
-            .finish()
+        let mut tuple = f.debug_tuple(stringify!(Params));
+
+        match self.shared.get() {
+            Some(values) => tuple.field(values),
+            None => tuple.field(self.owned.get().unwrap_or(&IndexMap::new())),
+        }
+        .finish()
     }
 }
 
 impl PartialEq for Params {
     fn eq(&self, other: &Self) -> bool {
-        self.shared_values() == other.shared_values()
+        if let (Some(values), Some(other_values)) = (self.shared.get(), other.shared.get()) {
+            return values == other_values;
+        }
+
+        self.len() == other.len()
+            && self
+                .borrowed_entries()
+                .all(|(key, value)| other.get(key) == Some(value))
     }
 }
 
@@ -501,6 +511,8 @@ mod tests {
         assert!(params.is_empty());
         assert!(!params.contains_key("missing"));
         assert_eq!(params.estimated_heap_size(), 0);
+        assert_eq!(format!("{params:?}"), "Params({})");
+        assert_eq!(params, Params::new());
         assert!(params.shared.get().is_none());
         assert!(params.owned.get().is_none());
 
@@ -549,6 +561,37 @@ mod tests {
             + key.capacity()
             + value.capacity();
         assert_eq!(params.estimated_heap_size(), shared_bytes + owned_bytes);
+    }
+
+    #[rstest]
+    fn test_params_debug_and_equality_preserve_storage(#[values(false, true)] shared: bool) {
+        let values = IndexMap::from([
+            (
+                "payload".to_string(),
+                json!({"markets": [{"id": "market"}]}),
+            ),
+            ("active".to_string(), json!(true)),
+        ]);
+        let expected_debug = format!("Params({values:?})");
+        let mut params = Params::from_index_map(values.clone());
+        let mut other = Params::from_index_map(values.into_iter().rev().collect());
+
+        if shared {
+            params.get_mut("payload").unwrap();
+        }
+
+        let retained_bytes = params.estimated_heap_size();
+        let other_bytes = other.estimated_heap_size();
+        assert_eq!(format!("{params:?}"), expected_debug);
+        assert_eq!(params.estimated_heap_size(), retained_bytes);
+        assert_eq!(params, other);
+        assert_eq!(other, params);
+        assert_eq!(params.estimated_heap_size(), retained_bytes);
+        assert_eq!(other.estimated_heap_size(), other_bytes);
+
+        *other.get_mut("payload").unwrap() = Value::Null;
+        assert_ne!(params, other);
+        assert_ne!(params, Params::new());
     }
 
     #[rstest]
