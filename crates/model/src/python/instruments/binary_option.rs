@@ -258,18 +258,8 @@ impl BinaryOption {
     #[getter]
     #[pyo3(name = "info")]
     fn py_info(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Convert HashMap<String, serde_json::Value> back to Python dict
         if let Some(ref info_map) = self.info {
-            let py_dict = PyDict::new(py);
-
-            for (key, value) in info_map {
-                // Convert serde_json::Value back to Python object via JSON
-                let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
-                let py_value =
-                    PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
-                py_dict.set_item(key, py_value)?;
-            }
-            Ok(py_dict.unbind())
+            info_map.to_pydict(py)
         } else {
             Ok(PyDict::new(py).unbind())
         }
@@ -311,21 +301,7 @@ impl BinaryOption {
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
-        // Serialize info dict
-        if let Some(ref info_map) = self.info {
-            let info_dict = PyDict::new(py);
-
-            for (key, value) in info_map {
-                let json_str = serde_json::to_string(value).map_err(to_pyvalue_err)?;
-                let py_value =
-                    PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
-                info_dict.set_item(key, py_value)?;
-            }
-            dict.set_item("info", info_dict)?;
-        } else {
-            dict.set_item("info", PyDict::new(py))?;
-        }
-
+        dict.set_item("info", self.py_info(py)?)?;
         dict.set_item("event_id", self.event_id.map(|value| value.to_string()))?;
 
         match &self.outcome {
@@ -377,6 +353,8 @@ impl BinaryOption {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
 
@@ -452,9 +430,22 @@ mod tests {
             "gamma_market".to_string(),
             "0.1234567890123456789012345678".into(),
         );
+        let event = Arc::new(r#"{"markets":[{"id":"first"},{"id":"sibling"}]}"#.into());
+        info.insert_shared("gamma_event".to_string(), Arc::clone(&event));
+        let info_bytes = info.estimated_heap_size();
         binary_option.info = Some(info);
         Python::initialize();
         Python::attach(|py| {
+            let info = binary_option.py_info(py).unwrap();
+            assert_eq!(
+                info.bind(py)
+                    .get_item("gamma_event")
+                    .unwrap()
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                event.as_str().unwrap(),
+            );
             let values = binary_option.py_to_dict(py).unwrap();
             let values: Py<PyDict> = values.extract(py).unwrap();
             let new_binary_option = BinaryOption::py_from_dict(py, values).unwrap();
@@ -464,5 +455,9 @@ mod tests {
                 serde_json::to_value(&new_binary_option).unwrap(),
             );
         });
+        assert_eq!(
+            binary_option.info.as_ref().unwrap().estimated_heap_size(),
+            info_bytes,
+        );
     }
 }
