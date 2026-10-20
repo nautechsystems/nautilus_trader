@@ -53,7 +53,10 @@ use crate::{
     common::consts::{IB_CLIENT_ID, IB_VENUE},
     config::InteractiveBrokersInstrumentProviderConfig,
     execution::{
-        account::check_external_position_change, parse::FillEvidence, reports::FillReportCollector,
+        account::check_external_position_change,
+        parse::FillEvidence,
+        reports::FillReportCollector,
+        updates::{OrderUpdateLoopOutcome, RebindDelays},
     },
     stubs::ChannelSubscription,
 };
@@ -6430,4 +6433,375 @@ fn seed_instruments_from_cache_adds_instruments_loaded_by_data_client() {
         contract
     );
     assert!(client.instrument_provider.find(&absent_id).is_none());
+}
+
+/// Order-update stream stand-in that counts live instances, so a test can check that the
+/// previous stream was dropped before the next bind.
+struct LiveCountedSubscription {
+    inner: ChannelSubscription<OrderUpdate>,
+    live: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl LiveCountedSubscription {
+    fn new(
+        inner: ChannelSubscription<OrderUpdate>,
+        live: &Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Self {
+        live.fetch_add(1, Ordering::SeqCst);
+        Self {
+            inner,
+            live: Arc::clone(live),
+        }
+    }
+}
+
+impl Drop for LiveCountedSubscription {
+    fn drop(&mut self) {
+        self.live.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl futures_util::Stream for LiveCountedSubscription {
+    type Item = Result<ibapi::subscriptions::SubscriptionItem<OrderUpdate>, ibapi::Error>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::pin::Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
+
+type OrderUpdateChannel = (
+    tokio::sync::mpsc::UnboundedSender<Result<OrderUpdate, ibapi::Error>>,
+    ChannelSubscription<OrderUpdate>,
+);
+
+fn order_update_channel() -> OrderUpdateChannel {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    (sender, ChannelSubscription::new(receiver))
+}
+
+/// A bind factory handing out the queued streams in order; `None` is a failed bind. Sends
+/// on the returned channel per call, counts the calls, and counts binds made while a
+/// previous stream was still alive.
+fn bind_queue(
+    streams: Vec<Option<ChannelSubscription<OrderUpdate>>>,
+    live: &Arc<std::sync::atomic::AtomicUsize>,
+) -> (
+    impl FnMut() -> std::future::Ready<anyhow::Result<LiveCountedSubscription>>,
+    tokio::sync::mpsc::UnboundedReceiver<()>,
+    Arc<std::sync::atomic::AtomicUsize>,
+    Arc<std::sync::atomic::AtomicUsize>,
+) {
+    let (bound_tx, bound_rx) = tokio::sync::mpsc::unbounded_channel();
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let binds_while_live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = Arc::clone(&calls);
+    let violations = Arc::clone(&binds_while_live);
+    let live = Arc::clone(live);
+    let mut queue: std::collections::VecDeque<_> = streams.into();
+    let bind = move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        if live.load(Ordering::SeqCst) != 0 {
+            violations.fetch_add(1, Ordering::SeqCst);
+        }
+        let _ = bound_tx.send(());
+        std::future::ready(match queue.pop_front() {
+            Some(Some(stream)) => Ok(LiveCountedSubscription::new(stream, &live)),
+            _ => Err(anyhow::anyhow!("no order update stream")),
+        })
+    };
+    (bind, bound_rx, calls, binds_while_live)
+}
+
+async fn run_order_update_stream_for_test<B, F>(
+    orders: &OrderTracker,
+    exec_sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+    initial: LiveCountedSubscription,
+    bind: B,
+    is_client_alive: impl Fn() -> bool,
+    cancel: CancellationToken,
+) -> OrderUpdateLoopOutcome
+where
+    B: FnMut() -> F,
+    F: std::future::Future<Output = anyhow::Result<LiveCountedSubscription>>,
+{
+    let instrument_provider = create_test_instrument_provider();
+    let commission_cache = Arc::new(Mutex::new(CommissionCache::new()));
+    let pending_execution_cache = Arc::new(Mutex::new(PendingExecutionCache::new()));
+    let position_tracker = create_position_tracker();
+
+    InteractiveBrokersExecutionClient::run_order_update_stream(
+        initial,
+        bind,
+        is_client_alive,
+        cancel,
+        RebindDelays {
+            after_stream: Duration::from_millis(10),
+            after_bind_failure: Duration::from_millis(10),
+        },
+        orders,
+        &instrument_provider,
+        &exec_sender.into(),
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        Ustr::from("001"),
+        &commission_cache,
+        &pending_execution_cache,
+        &position_tracker,
+        None,
+    )
+    .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_run_order_update_stream_rebinds_after_error_and_end() {
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let instrument_id = create_test_spread_instrument();
+
+    for order_id in [7101, 7102] {
+        let client_order_id = ClientOrderId::from(format!("O-REBIND-{order_id}").as_str());
+        insert_tracked_order(
+            &orders,
+            order_id,
+            create_tracked_order_context(client_order_id, instrument_id),
+        );
+    }
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    // Stream A: two items, then a terminal error.
+    let (sender_a, stream_a) = order_update_channel();
+    sender_a
+        .send(Ok(OrderUpdate::OpenOrder(create_test_open_order(
+            7101,
+            "Submitted",
+            "",
+        ))))
+        .unwrap();
+    sender_a
+        .send(Ok(OrderUpdate::OrderStatus(create_test_order_status(
+            7101,
+            "Cancelled",
+        ))))
+        .unwrap();
+    sender_a
+        .send(Err(ibapi::Error::Parse(
+            0,
+            String::new(),
+            "empty Action".to_string(),
+        )))
+        .unwrap();
+    // Stream B: an open order and its status, then it ends (sender dropped).
+    let (sender_b, stream_b) = order_update_channel();
+    sender_b
+        .send(Ok(OrderUpdate::OpenOrder(create_test_open_order(
+            7102,
+            "Submitted",
+            "",
+        ))))
+        .unwrap();
+    sender_b
+        .send(Ok(OrderUpdate::OrderStatus(create_test_order_status(
+            7102,
+            "Submitted",
+        ))))
+        .unwrap();
+    drop(sender_b);
+    // Stream C: stays open until the loop is stopped.
+    let (_sender_c, stream_c) = order_update_channel();
+
+    // Bind 1 fails (retry path), bind 2 hands out B, bind 3 hands out C.
+    let (bind, mut binds, calls, binds_while_live) =
+        bind_queue(vec![None, Some(stream_b), Some(stream_c)], &live);
+    let initial = LiveCountedSubscription::new(stream_a, &live);
+    let cancel = CancellationToken::new();
+
+    let controller = async {
+        for expected in ["Accepted", "Canceled", "Accepted"] {
+            let event = exec_receiver.recv().await.expect("event");
+            let ExecutionEvent::Order(event) = event else {
+                panic!("unexpected event: {event:?}");
+            };
+            let name = match event {
+                OrderEventAny::Accepted(_) => "Accepted",
+                OrderEventAny::Canceled(_) => "Canceled",
+                other => panic!("unexpected order event: {other:?}"),
+            };
+            assert_eq!(name, expected);
+        }
+
+        for _ in 0..3 {
+            binds.recv().await.expect("bind call");
+        }
+        cancel.cancel();
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            run_order_update_stream_for_test(
+                &orders,
+                exec_sender,
+                initial,
+                bind,
+                || true,
+                cancel.clone()
+            ),
+            controller
+        );
+    })
+    .await
+    .expect("loop re-binds and returns once cancelled");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        binds_while_live.load(Ordering::SeqCst),
+        0,
+        "the ended stream must be dropped before the next bind"
+    );
+    assert!(exec_receiver.try_recv().is_err(), "no further events");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_run_order_update_stream_stops_on_cancel() {
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (_sender, stream) = order_update_channel();
+    let (bind, _, calls, _) = bind_queue(Vec::new(), &live);
+    let initial = LiveCountedSubscription::new(stream, &live);
+    let cancel = CancellationToken::new();
+
+    let controller = async {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        cancel.cancel();
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            run_order_update_stream_for_test(
+                &orders,
+                exec_sender,
+                initial,
+                bind,
+                || true,
+                cancel.clone()
+            ),
+            controller
+        );
+    })
+    .await
+    .expect("loop returns once cancelled");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "no re-bind after stop");
+    assert!(exec_receiver.try_recv().is_err());
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_run_order_update_stream_stops_when_stream_ends_on_dead_client() {
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let (exec_sender, _exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    // The stream ends without an error (sender dropped) while the client reports down.
+    let (sender, stream) = order_update_channel();
+    drop(sender);
+    let (_spare_sender, spare) = order_update_channel();
+    let (bind, _, calls, _) = bind_queue(vec![Some(spare)], &live);
+    let initial = LiveCountedSubscription::new(stream, &live);
+
+    let exit = tokio::time::timeout(
+        Duration::from_secs(5),
+        run_order_update_stream_for_test(
+            &orders,
+            exec_sender,
+            initial,
+            bind,
+            || false,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("loop returns on a dead client");
+
+    assert_eq!(exit, OrderUpdateLoopOutcome::TransportShutdown);
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "no bind on a dead client");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_run_order_update_stream_stops_on_shutdown_error() {
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let (exec_sender, _exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    // ibapi 5.0 ends every subscription with `Error::Shutdown` on a bus shutdown
+    let (sender, stream) = order_update_channel();
+    sender.send(Err(ibapi::Error::Shutdown)).unwrap();
+    drop(sender);
+    let (_spare_sender, spare) = order_update_channel();
+    let (bind, _, calls, _) = bind_queue(vec![Some(spare)], &live);
+    let initial = LiveCountedSubscription::new(stream, &live);
+
+    let exit = tokio::time::timeout(
+        Duration::from_secs(5),
+        run_order_update_stream_for_test(
+            &orders,
+            exec_sender,
+            initial,
+            bind,
+            || true,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("loop returns on a shutdown error");
+
+    assert_eq!(exit, OrderUpdateLoopOutcome::TransportShutdown);
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "no bind after a shutdown");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_run_order_update_stream_stops_when_bind_fails_with_shutdown() {
+    let orders = OrderTracker::new(NATIVE_CLIENT_ID);
+    let (exec_sender, _exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    // The stream errors, so the loop re-binds; the bus then shuts down and every bind fails
+    // with `Error::Shutdown`, wrapped in the same `anyhow` context as the production bind.
+    let (sender, stream) = order_update_channel();
+    sender
+        .send(Err(ibapi::Error::Parse(
+            0,
+            String::new(),
+            "empty Action".to_string(),
+        )))
+        .unwrap();
+    drop(sender);
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = Arc::clone(&calls);
+    let bind = move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+        std::future::ready(Err::<LiveCountedSubscription, _>(
+            anyhow::Error::from(ibapi::Error::Shutdown)
+                .context("Failed to start order update stream"),
+        ))
+    };
+    let initial = LiveCountedSubscription::new(stream, &live);
+
+    let exit = tokio::time::timeout(
+        Duration::from_secs(5),
+        run_order_update_stream_for_test(
+            &orders,
+            exec_sender,
+            initial,
+            bind,
+            || true,
+            CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("loop returns when the bind fails with a shutdown");
+
+    assert_eq!(exit, OrderUpdateLoopOutcome::TransportShutdown);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "no retry after a bind failed with a shutdown"
+    );
 }

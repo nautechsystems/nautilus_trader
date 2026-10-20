@@ -228,8 +228,10 @@ stateDiagram-v2
 
 Quotes, trades, depth, bars, option greeks, and index prices follow this lifecycle. Before a depth
 stream applies data from a replacement subscription, it clears the existing book so stale levels
-cannot survive. If the order-update or global notice stream ends, the execution client reports
-disconnected instead of appearing healthy with a dead stream.
+cannot survive. If the order update stream ends or yields an error, the execution client drops the
+subscription, waits, and binds it again, retrying a failed bind; order events between the end and
+the re-bind are not replayed. If the ibapi transport has shut down, or the global notice stream
+ends, the execution client reports disconnected instead of appearing healthy with a dead stream.
 
 ### Order identity and cancellation
 
