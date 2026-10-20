@@ -548,6 +548,41 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cash_account_state_exact_usd_roundtrip() {
+        let total = Money::from_str_exact("1.0001 USD").unwrap();
+        let locked = Money::from_str_exact("0.000001 USD").unwrap();
+        let free = Money::from_str_exact("1.000099 USD").unwrap();
+        let balance = AccountBalance::new_checked(total, locked, free).unwrap();
+
+        let state = AccountState::new(
+            AccountId::new("EXACT-001"),
+            AccountType::Cash,
+            vec![balance],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(123),
+            UnixNanos::from(456),
+            Some(Currency::USD()),
+        );
+        let json = serde_json::to_value(&state).unwrap();
+        let restored: AccountState = serde_json::from_value(json.clone()).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&state).unwrap();
+        let restored_msgpack: AccountState = rmp_serde::from_slice(&msgpack).unwrap();
+
+        assert_eq!(json["balances"][0]["total"], "1.0001 USD");
+        assert_eq!(json["balances"][0]["locked"], "0.000001 USD");
+        assert_eq!(json["balances"][0]["free"], "1.000099 USD");
+
+        for restored in [restored, restored_msgpack] {
+            assert_eq!(restored.balances[0].total, total);
+            assert_eq!(restored.balances[0].locked, locked);
+            assert_eq!(restored.balances[0].free, free);
+            assert_eq!(serde_json::to_value(restored).unwrap(), json);
+        }
+    }
+
+    #[rstest]
     #[case(AccountType::Cash, false)]
     #[case(AccountType::Margin, false)]
     #[case(AccountType::Betting, false)]

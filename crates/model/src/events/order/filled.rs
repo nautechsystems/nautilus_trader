@@ -598,6 +598,24 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_filled_exact_usd_commission_roundtrip() {
+        let mut fill = create_test_order_filled();
+        let commission = Money::from_str_exact("0.000001 USD").unwrap();
+        fill.commission = Some(commission);
+        let json = serde_json::to_value(&fill).unwrap();
+        let restored: OrderFilled = serde_json::from_value(json.clone()).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&fill).unwrap();
+        let restored_msgpack: OrderFilled = rmp_serde::from_slice(&msgpack).unwrap();
+
+        assert_eq!(json["commission"], "0.000001 USD");
+
+        for restored in [restored, restored_msgpack] {
+            assert_eq!(restored.commission, Some(commission));
+            assert_eq!(serde_json::to_value(restored).unwrap(), json);
+        }
+    }
+
+    #[rstest]
     fn test_order_filled_without_commission_serialization() {
         let mut order_filled = create_test_order_filled();
         order_filled.commission = None;

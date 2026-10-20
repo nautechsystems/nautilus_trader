@@ -432,7 +432,7 @@ pub fn decode_betting_instrument_batch(
 
         let max_notional = match max_notional_values {
             Some(column) if !column.is_null(i) => {
-                Some(Money::from_str(column.value(i)).map_err(|e| {
+                Some(Money::from_str_exact(column.value(i)).map_err(|e| {
                     EncodingError::ParseError("max_notional", format!("row {i}: {e}"))
                 })?)
             }
@@ -441,7 +441,7 @@ pub fn decode_betting_instrument_batch(
 
         let min_notional = match min_notional_values {
             Some(column) if !column.is_null(i) => {
-                Some(Money::from_str(column.value(i)).map_err(|e| {
+                Some(Money::from_str_exact(column.value(i)).map_err(|e| {
                     EncodingError::ParseError("min_notional", format!("row {i}: {e}"))
                 })?)
             }

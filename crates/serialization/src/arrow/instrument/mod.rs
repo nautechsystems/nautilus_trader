@@ -683,7 +683,12 @@ mod tests {
         instruments::{
             Instrument, InstrumentAny,
             currency_pair::CurrencyPair,
-            stubs::{betting, equity_aapl},
+            stubs::{
+                betting, cfd_gold, commodity_gold, crypto_future_btcusdt,
+                crypto_futures_spread_btc_deribit, crypto_option_btc_deribit,
+                crypto_option_spread_btc_deribit, crypto_perpetual_ethusdt, currency_pair_ethusdt,
+                equity_aapl, perpetual_contract_eurusd, tokenized_asset_aaplx,
+            },
         },
         types::{Currency, Money, Price, Quantity},
     };
@@ -808,6 +813,44 @@ mod tests {
             }
             _ => panic!("Decoded instrument type mismatch"),
         }
+    }
+
+    #[rstest]
+    #[case::binary_option(nautilus_model::instruments::stubs::binary_option().into_any())]
+    #[case::betting(betting().into_any())]
+    #[case::cfd(cfd_gold().into_any())]
+    #[case::commodity(commodity_gold().into_any())]
+    #[case::crypto_future(crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001")).into_any())]
+    #[case::crypto_futures_spread(crypto_futures_spread_btc_deribit().into_any())]
+    #[case::crypto_option(crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1")).into_any())]
+    #[case::crypto_option_spread(crypto_option_spread_btc_deribit().into_any())]
+    #[case::crypto_perpetual(crypto_perpetual_ethusdt().into_any())]
+    #[case::currency_pair(currency_pair_ethusdt().into_any())]
+    #[case::perpetual_contract(perpetual_contract_eurusd().into_any())]
+    #[case::tokenized_asset(tokenized_asset_aaplx().into_any())]
+    fn test_instrument_exact_money_notional_round_trip(#[case] instrument: InstrumentAny) {
+        let currency = instrument.quote_currency();
+        let maximum = Money::from_decimal_exact(dec!(1.000000001), currency).unwrap();
+        let minimum = Money::from_decimal_exact(dec!(0.000000003), currency).unwrap();
+        let mut encoded = serde_json::to_value(instrument).unwrap();
+        let fields = encoded
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap();
+        fields["max_notional"] = serde_json::to_value(maximum).unwrap();
+        fields["min_notional"] = serde_json::to_value(minimum).unwrap();
+        let instrument: InstrumentAny = serde_json::from_value(encoded).unwrap();
+        let metadata = instrument.metadata();
+        let batch =
+            InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+        let decoded = decode_instrument_any_batch(&metadata, &batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].id(), instrument.id());
+        assert_eq!(decoded[0].max_notional(), Some(maximum));
+        assert_eq!(decoded[0].min_notional(), Some(minimum));
     }
 
     #[rstest]

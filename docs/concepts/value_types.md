@@ -163,16 +163,16 @@ print(type(result3))  # <class 'decimal.Decimal'>
 
 ## Precision handling
 
-Each value type carries a precision that indicates the number of decimal places. `Price` and `Quantity` store
-an explicit `precision` field, while `Money` uses its currency's precision. Precision is set at construction
-and is immutable. The types have no "unspecified" precision.
+`Price` and `Quantity` store an explicit, immutable `precision` field that indicates the number of decimal
+places. `Money` uses its currency's precision for default rounding and minimum display precision. Its exact
+constructors can retain finer amounts without changing the currency. The types have no "unspecified" precision.
 
 ### Fixed-point representation
 
-Value types are stored internally as integers scaled to a global fixed precision (for example, 10^16 in
-high-precision mode), not floating-point numbers. The precision tracks the number of decimal places used at
-construction and controls display formatting and serialization. But the underlying raw value always uses the
-global scale.
+Value types use scaled integers instead of floating-point numbers. The global scale is 10^9 in standard
+mode and 10^16 in high-precision mode. DeFi values with higher supported precision use that precision as
+their scale. For `Price` and `Quantity`, the explicit precision controls display formatting and serialization.
+`Money` displays at least its currency precision and retains finer stored digits.
 
 ```python
 from nautilus_trader.model import Price
@@ -257,6 +257,27 @@ result = usd_amount + Money(25.00, USD)
 result = usd_amount + eur_amount
 ```
 
+Use `Money.from_decimal_exact` or `Money.from_str_exact` to preserve amounts finer than the currency precision:
+
+```python
+from decimal import Decimal
+
+from nautilus_trader.model import Currency, Money
+
+USD = Currency.from_str("USD")
+exact = Money.from_decimal_exact(Decimal("1.0001"), USD)
+
+assert str(exact) == "1.0001 USD"
+assert exact.currency.precision == 2
+assert Money.from_str("1.0001 USD") == Money.from_str("1.00 USD")
+```
+
+Exact constructors reject precision loss and out-of-range amounts. USD supports 9 decimal places in standard
+mode and 16 in high-precision mode. DeFi currencies use their currency scale when it is higher.
+`Money.from_decimal_exact` requires a `Decimal` and raises `TypeError` for other types. `Money(...)`,
+`Money.from_str`, and `Money.from_decimal` round to the currency precision.
+String serialization preserves stored finer digits; deserialization restores them without currency rounding.
+
 ## Common patterns
 
 ### Accumulating values
@@ -299,7 +320,9 @@ string_value = str(price)  # "123.456"
 Float conversion supports precision up to 16. `float()`, `as_double()`, and arithmetic with a
 `float` operand raise `ValueError` for precision 17 or 18 rather than round away the extra digits.
 Conversions at precision 16 or below can still round, since a float holds about 16 significant
-digits. Use `as_decimal()` for an exact value.
+digits. Use `as_decimal()` to avoid binary-float conversion. The conversion uses Rust `Decimal`, whose
+96-bit mantissa can lose fractional digits when a value has too many significant digits. String
+serialization preserves the full stored `Money` amount.
 
 ### Creating from strings
 

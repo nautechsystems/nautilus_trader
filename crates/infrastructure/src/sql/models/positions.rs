@@ -20,16 +20,20 @@ use nautilus_model::{
     enums::{OrderSide, PositionSide},
     events::PositionSnapshot,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{Currency, Money, Quantity},
+    types::{Currency, Quantity},
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
 
-use crate::sql::models::decode_error;
+use crate::sql::models::{decode_error, decode_money};
 
 #[derive(Debug)]
 pub struct PositionSnapshotRow(pub PositionSnapshot);
 
 impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full position snapshot constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<&str, _>("id").map(PositionId::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
@@ -73,16 +77,21 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
         let realized_return = row.try_get::<Option<f64>, _>("realized_return")?;
         let realized_pnl = row
             .try_get::<Option<&str>, _>("realized_pnl")?
-            .map(Money::from);
+            .map(|value| decode_money(value, "realized_pnl"))
+            .transpose()?;
         let unrealized_pnl = row
             .try_get::<Option<&str>, _>("unrealized_pnl")
             .ok()
-            .and_then(|x| x.map(Money::from));
+            .flatten()
+            .map(|value| decode_money(value, "unrealized_pnl"))
+            .transpose()?;
         let commissions = row
             .try_get::<Option<Vec<String>>, _>("commissions")?
-            .map_or_else(Vec::new, |c| {
-                c.into_iter().map(|s| Money::from(&s)).collect()
-            });
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| decode_money(&value, "commissions"))
+            .collect::<Result<Vec<_>, _>>()?;
+
         let duration_ns = row
             .try_get::<Option<&str>, _>("duration_ns")?
             .map(|value| {

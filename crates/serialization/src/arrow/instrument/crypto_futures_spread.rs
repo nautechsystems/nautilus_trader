@@ -400,7 +400,8 @@ pub fn decode_crypto_futures_spread_batch(
                         EncodingError::ParseError("max_notional", format!("row {i}: invalid type"))
                     })?
                     .value(i);
-                Some(Money::from_str(value).map_err(|e| {
+
+                Some(Money::from_str_exact(value).map_err(|e| {
                     EncodingError::ParseError("max_notional", format!("row {i}: {e}"))
                 })?)
             };
@@ -416,7 +417,8 @@ pub fn decode_crypto_futures_spread_batch(
                         EncodingError::ParseError("min_notional", format!("row {i}: invalid type"))
                     })?
                     .value(i);
-                Some(Money::from_str(value).map_err(|e| {
+
+                Some(Money::from_str_exact(value).map_err(|e| {
                     EncodingError::ParseError("min_notional", format!("row {i}: {e}"))
                 })?)
             };

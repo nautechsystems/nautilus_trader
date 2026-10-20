@@ -5,6 +5,9 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added native external MessageBus data requests and replies for JSON and MessagePack
+- Added `Money::from_decimal_exact` and `Money::from_str_exact` for fractional amounts beyond currency precision
+- Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
+- Added accumulation of fractional `Money` commissions beyond currency precision
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
@@ -17,6 +20,8 @@ Released on TBD (UTC).
 - Removed Hyperliquid `Secrets::from_file` and `from_json`; use `from_private_key` or `from_env`
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
+- Changed `Money` display and decimal conversion to retain finer digits; round to currency precision explicitly
+- Changed `Money` deserialization to reject excess precision instead of rounding; round inputs before loading
 - Changed SBE depth encoding for padded or variable levels and nonzero order IDs; update readers for the new layout
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
@@ -137,6 +142,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
+- Added `Money` exact-construction and persistence guidance
 - Updated Lighter funding rate units and live interval documentation (#5356), thanks @dxwil
 
 ### Deprecations

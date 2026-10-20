@@ -39,6 +39,7 @@ from nautilus_trader.model import InstrumentCloseType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model import MarketStatusAction
+from nautilus_trader.model import Money
 from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import NautilusRecordType
 from nautilus_trader.model import Price
@@ -585,6 +586,26 @@ def test_query_data_arrow_bytes_rejects_string_selector(tmp_path: Path) -> None:
 
     with pytest.raises(TypeError, match="data_type must be NautilusDataType"):
         catalog.query_data_arrow_bytes("QuoteTick")  # type: ignore[arg-type]
+
+
+def test_catalog_instrument_exact_money_notional_roundtrip(tmp_path: Path) -> None:
+    """
+    Restore exact notional limits through Parquet without currency rounding.
+    """
+    catalog = _catalog(tmp_path, "exact_notional")
+    maximum = Money.from_str_exact("1.0001 USD")
+    minimum = Money.from_str_exact("0.0001 USD")
+    payload = TestInstrumentProvider.audusd_sim().to_dict()
+    payload["max_notional"] = str(maximum)
+    payload["min_notional"] = str(minimum)
+    instrument = CurrencyPair.from_dict(payload)
+    catalog.write_instruments([instrument])
+    restored = catalog.instruments(instrument_ids=[str(instrument.id)])
+
+    assert len(restored) == 1
+    assert restored[0].id == instrument.id
+    assert restored[0].max_notional == maximum
+    assert restored[0].min_notional == minimum
 
 
 def test_catalog_instruments_applies_where_clause(tmp_path: Path) -> None:

@@ -16,6 +16,11 @@
 Test balance behavior.
 """
 
+from decimal import Decimal
+
+import pytest
+
+from nautilus_trader.model import HIGH_PRECISION
 from nautilus_trader.model import AccountBalance
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
@@ -133,6 +138,136 @@ def test_margin_balance_to_from_dict() -> None:
         "instrument_id": "AUD/USD.SIM",
         "currency": "USD",
     }
+
+
+def test_account_balance_exact_usd_dict_roundtrip() -> None:
+    """
+    Restore exact USD balances without a binary-float conversion.
+    """
+    balance = AccountBalance(
+        total=Money.from_str_exact("1.0001 USD"),
+        locked=Money.from_str_exact("0.000001 USD"),
+        free=Money.from_str_exact("1.000099 USD"),
+    )
+    values = balance.to_dict()
+    restored = AccountBalance.from_dict(values)
+
+    assert values == {
+        "type": "AccountBalance",
+        "total": "1.0001",
+        "locked": "0.000001",
+        "free": "1.000099",
+        "currency": "USD",
+    }
+    assert restored == balance
+    assert restored.currency == USD
+    assert restored.total.as_decimal() == Decimal("1.0001")
+    assert restored.locked.as_decimal() == Decimal("0.000001")
+    assert restored.free.as_decimal() == Decimal("1.000099")
+
+
+def test_account_balance_dict_rejects_precision_lost_before_validation() -> None:
+    """
+    Reject an unrepresentable residual before checking balance invariants.
+    """
+    amount = "1." + "0" * 28 + "1"
+    values = {"total": amount, "locked": "0", "free": amount, "currency": "USD"}
+
+    with pytest.raises(ValueError, match="amount exceeds native money precision"):
+        AccountBalance.from_dict(values)
+
+
+def test_margin_balance_exact_usd_dict_roundtrip() -> None:
+    """
+    Preserve sub-cent margin amounts in Python dictionaries.
+    """
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    balance = MarginBalance(
+        Money.from_str_exact("1.0001 USD"),
+        Money.from_str_exact("0.000001 USD"),
+        instrument_id,
+    )
+    values = balance.to_dict()
+    restored = MarginBalance.from_dict(values)
+
+    assert values == {
+        "type": "MarginBalance",
+        "initial": "1.0001",
+        "maintenance": "0.000001",
+        "instrument_id": "AUD/USD.SIM",
+        "currency": "USD",
+    }
+    assert restored == balance
+    assert restored.currency == USD
+    assert restored.instrument_id == instrument_id
+    assert restored.initial.as_decimal() == Decimal("1.0001")
+    assert restored.maintenance.as_decimal() == Decimal("0.000001")
+
+
+@pytest.mark.skipif(not HIGH_PRECISION, reason="Requires the native 16-decimal money scale")
+@pytest.mark.parametrize(
+    ("total", "locked", "free"),
+    [
+        (
+            "17014118346045.1234567891234567",
+            "0.0000000000000001",
+            "17014118346045.1234567891234566",
+        ),
+        (
+            "-17014118346045.1234567891234567",
+            "0.0000000000000002",
+            "-17014118346045.1234567891234569",
+        ),
+    ],
+)
+def test_account_balance_dict_preserves_amounts_beyond_decimal_capacity(
+    total: str,
+    locked: str,
+    free: str,
+) -> None:
+    """
+    Preserve native amounts without rounding their dictionary strings through Decimal.
+    """
+    balance = AccountBalance(
+        Money.from_str_exact(f"{total} USD"),
+        Money.from_str_exact(f"{locked} USD"),
+        Money.from_str_exact(f"{free} USD"),
+    )
+    values = balance.to_dict()
+
+    assert values == {
+        "type": "AccountBalance",
+        "total": total,
+        "locked": locked,
+        "free": free,
+        "currency": "USD",
+    }
+    assert AccountBalance.from_dict(values) == balance
+
+
+@pytest.mark.skipif(not HIGH_PRECISION, reason="Requires the native 16-decimal money scale")
+def test_margin_balance_dict_preserves_amounts_beyond_decimal_capacity() -> None:
+    """
+    Preserve both margin amounts beyond the Decimal mantissa capacity.
+    """
+    initial = "17014118346045.1234567891234567"
+    maintenance = "17014118346044.9876543219876543"
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    balance = MarginBalance(
+        Money.from_str_exact(f"{initial} USD"),
+        Money.from_str_exact(f"{maintenance} USD"),
+        instrument_id,
+    )
+    values = balance.to_dict()
+
+    assert values == {
+        "type": "MarginBalance",
+        "initial": initial,
+        "maintenance": maintenance,
+        "instrument_id": "AUD/USD.SIM",
+        "currency": "USD",
+    }
+    assert MarginBalance.from_dict(values) == balance
 
 
 def test_account_balance_hash() -> None:

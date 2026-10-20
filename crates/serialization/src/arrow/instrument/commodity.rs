@@ -363,7 +363,8 @@ pub fn decode_commodity_batch(
                         EncodingError::ParseError("max_notional", format!("row {i}: invalid type"))
                     })?
                     .value(i);
-                Some(Money::from_str(max_not_str).map_err(|e| {
+
+                Some(Money::from_str_exact(max_not_str).map_err(|e| {
                     EncodingError::ParseError("max_notional", format!("row {i}: {e}"))
                 })?)
             };
@@ -379,7 +380,8 @@ pub fn decode_commodity_batch(
                         EncodingError::ParseError("min_notional", format!("row {i}: invalid type"))
                     })?
                     .value(i);
-                Some(Money::from_str(min_not_str).map_err(|e| {
+
+                Some(Money::from_str_exact(min_not_str).map_err(|e| {
                     EncodingError::ParseError("min_notional", format!("row {i}: {e}"))
                 })?)
             };

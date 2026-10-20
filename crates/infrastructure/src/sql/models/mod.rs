@@ -17,6 +17,7 @@
 
 use std::fmt::Display;
 
+use nautilus_model::types::Money;
 use sqlx::{Row, postgres::PgRow};
 
 pub mod accounts;
@@ -50,6 +51,10 @@ pub(crate) fn read_u64(row: &PgRow, column: &str) -> Result<u64, sqlx::Error> {
 
 pub(crate) fn i64_to_u64(value: i64, label: &str) -> Result<u64, sqlx::Error> {
     u64::try_from(value).map_err(|e| decode_error(label, value, e))
+}
+
+pub(crate) fn decode_money(value: &str, label: &str) -> Result<Money, sqlx::Error> {
+    Money::from_str_exact(value).map_err(|e| decode_error(label, value, e))
 }
 
 fn i32_to_u8(value: i32, label: &str) -> Result<u8, sqlx::Error> {
