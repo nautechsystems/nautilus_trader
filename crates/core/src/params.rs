@@ -224,6 +224,17 @@ impl Params {
         crate::python::params::params_to_pydict(py, self)
     }
 
+    #[cfg(feature = "python")]
+    pub(crate) fn borrowed_entries(&self) -> impl Iterator<Item = (&String, &Value)> {
+        let shared = self.shared.get();
+        let owned = self.owned.get().filter(|_| shared.is_none());
+        shared
+            .into_iter()
+            .flatten()
+            .map(|(key, value)| (key, value.as_ref()))
+            .chain(owned.into_iter().flatten())
+    }
+
     pub(crate) fn shared_values(&self) -> &IndexMap<String, Arc<Value>> {
         self.shared.get_or_init(|| {
             self.owned
@@ -315,7 +326,7 @@ where
     type Output = Value;
 
     fn index(&self, index: &Q) -> &Self::Output {
-        &self.shared_values()[index]
+        self.get(index).expect("no entry found for key")
     }
 }
 
@@ -332,7 +343,10 @@ impl Index<usize> for Params {
     type Output = Value;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.shared_values()[index]
+        match self.shared.get() {
+            Some(values) => &values[index],
+            None => &self.deref()[index],
+        }
     }
 }
 
@@ -504,6 +518,8 @@ mod tests {
         assert!(params.contains_key::<str>("payload"));
         assert!(params.contains_key(&"payload".to_string()));
         assert!(!params.contains_key("missing"));
+        assert_eq!(&params["payload"], params.get("payload").unwrap());
+        assert_eq!(&params[0], params.get("payload").unwrap());
         assert_eq!(params.shared.get().is_some(), shared);
         assert_eq!(params.owned.get().is_some(), !shared);
     }

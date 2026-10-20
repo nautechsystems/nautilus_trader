@@ -136,7 +136,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
 /// Returns an error if conversion of any value fails.
 pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
-    for (key, value) in params.shared_values() {
+    for (key, value) in params.borrowed_entries() {
         let py_value = value_to_pyobject(py, value)?;
         dict.set_item(key, py_value)?;
     }
@@ -145,6 +145,7 @@ pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>>
 
 #[cfg(test)]
 mod tests {
+    use indexmap::IndexMap;
     use pyo3::exceptions::PyValueError;
     use rstest::rstest;
     use serde_json::json;
@@ -186,7 +187,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_params_pydict_roundtrip() {
+    fn test_params_pydict_roundtrip(#[values(false, true)] shared: bool) {
         let mut params = Params::new();
         params.insert("null".to_string(), Value::Null);
         params.insert("enabled".to_string(), json!(true));
@@ -206,9 +207,15 @@ mod tests {
             json!({"venue": "SIM", "limits": [i64::MIN, u64::MAX]}),
         );
 
+        if !shared {
+            let _: &mut IndexMap<String, Value> = &mut params;
+        }
+
+        let retained_bytes = params.estimated_heap_size();
         Python::initialize();
         Python::attach(|py| {
             let dict = params_to_pydict(py, &params).unwrap();
+            assert_eq!(params.estimated_heap_size(), retained_bytes);
             let restored = pydict_to_params(py, &dict).unwrap().unwrap();
             let empty = PyDict::new(py).unbind();
             let absent = pydict_to_params(py, &empty).unwrap();
@@ -218,6 +225,7 @@ mod tests {
                 restored.keys().collect::<Vec<_>>(),
                 params.keys().collect::<Vec<_>>()
             );
+            assert_eq!(params.borrowed_entries().count(), params.len());
             assert_eq!(absent, None);
         });
     }
