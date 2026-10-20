@@ -383,9 +383,22 @@ fn validate_product_environment(
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::cache::Cache;
+    use nautilus_live::ExecutionClientCore;
+    use nautilus_model::{
+        enums::OmsType,
+        identifiers::{ClientId, TraderId, Venue},
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        data::{KrakenFuturesDataClient, KrakenSpotDataClient},
+        execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
+        websocket::spot_v2::client::KrakenSpotWebSocketClient,
+    };
 
     const DATA_API_KEY: &str = "data-api-key-sentinel";
     const DATA_API_SECRET: &str = "data-api-secret-sentinel";
@@ -515,5 +528,83 @@ validate_l3_checksum = false
         );
         assert_eq!(config.use_ws_trade, expected.use_ws_trade);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    #[case::spot(false)]
+    #[case::futures(true)]
+    fn test_data_constructor_rejects_invalid_config(#[case] futures: bool) {
+        let config = KrakenDataClientConfig {
+            product_type: KrakenProductType::Spot,
+            environment: KrakenEnvironment::Demo,
+            ..Default::default()
+        };
+
+        let expected = config.validate().unwrap_err().to_string();
+        let client_id = ClientId::from("KRAKEN");
+        let error = if futures {
+            KrakenFuturesDataClient::new(client_id, config).err()
+        } else {
+            KrakenSpotDataClient::new(client_id, config).err()
+        }
+        .expect("invalid config must fail before client setup");
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::plain(false)]
+    #[case::level3(true)]
+    fn test_websocket_constructor_rejects_invalid_config(#[case] level3: bool) {
+        let config = KrakenDataClientConfig {
+            product_type: KrakenProductType::Spot,
+            environment: KrakenEnvironment::Demo,
+            ..Default::default()
+        };
+
+        let expected = config.validate().unwrap_err().to_string();
+        let cancellation_token = tokio_util::sync::CancellationToken::new();
+        let result = if level3 {
+            KrakenSpotWebSocketClient::l3(config, cancellation_token, None)
+        } else {
+            KrakenSpotWebSocketClient::new(config, cancellation_token, None)
+        };
+
+        let error = result.unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::spot(false)]
+    #[case::futures(true)]
+    fn test_execution_constructor_rejects_invalid_config(#[case] futures: bool) {
+        let config = KrakenExecutionClientConfig {
+            product_type: KrakenProductType::Spot,
+            environment: KrakenEnvironment::Demo,
+            ..Default::default()
+        };
+
+        let expected = config.validate().unwrap_err().to_string();
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("KRAKEN"),
+            Venue::from("KRAKEN"),
+            OmsType::Netting,
+            config.account_id,
+            AccountType::Margin,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let error = if futures {
+            KrakenFuturesExecutionClient::new(core, config).err()
+        } else {
+            KrakenSpotExecutionClient::new(core, config).err()
+        }
+        .expect("invalid config must fail before credentials or client setup");
+
+        assert_eq!(error.to_string(), expected);
     }
 }

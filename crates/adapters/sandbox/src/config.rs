@@ -16,6 +16,7 @@
 //! Configuration for sandbox execution client.
 
 use ahash::AHashMap;
+use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_execution::{
     matching_engine::config::OrderMatchingEngineConfig,
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModelAny},
@@ -145,6 +146,20 @@ pub struct SandboxExecutionClientConfig {
 }
 
 impl SandboxExecutionClientConfig {
+    /// Validates that starting balances use distinct currencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a starting-balance currency repeats.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let currencies: Vec<_> = self
+            .starting_balances
+            .iter()
+            .map(|balance| balance.currency)
+            .collect();
+        check_unique_values("starting_balances", &currencies)
+    }
+
     /// Creates an [`OrderMatchingEngineConfig`] from this sandbox config.
     #[must_use]
     pub fn to_matching_engine_config(&self) -> OrderMatchingEngineConfig {
@@ -265,6 +280,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use nautilus_core::DurationNanos;
     use nautilus_execution::models::{
         fee::{FeeModelAny, ProbabilityPriceFeeModel},
@@ -385,5 +401,29 @@ mod tests {
         let result = toml::Value::try_from(&config);
 
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::same_currency(vec![Money::from("100 USD"), Money::from("200 USD")], true)]
+    #[case::same_balance(vec![Money::from("100 USD"), Money::from("100 USD")], true)]
+    #[case::distinct(vec![Money::from("100 USD"), Money::from("200 EUR")], false)]
+    #[case::empty(vec![], false)]
+    fn test_starting_balance_currency_uniqueness(
+        #[case] starting_balances: Vec<Money>,
+        #[case] duplicate: bool,
+    ) {
+        let config = SandboxExecutionClientConfig {
+            starting_balances: starting_balances.clone(),
+            ..Default::default()
+        };
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate("starting_balances", None))
+        } else {
+            Ok(())
+        };
+
+        assert_eq!(config.validate(), expected);
+        assert_eq!(config.starting_balances, starting_balances);
     }
 }

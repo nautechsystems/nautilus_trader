@@ -62,7 +62,7 @@ const NATIVE_CLIENT_ID: i32 = 1;
 
 fn create_test_instrument_provider() -> Arc<InteractiveBrokersInstrumentProvider> {
     let config = InteractiveBrokersInstrumentProviderConfig::default();
-    Arc::new(InteractiveBrokersInstrumentProvider::new(config))
+    Arc::new(InteractiveBrokersInstrumentProvider::new(config).unwrap())
 }
 
 fn create_test_execution_client() -> (

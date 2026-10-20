@@ -143,6 +143,10 @@ pub struct PolymarketDataClient {
 
 impl PolymarketDataClient {
     /// Creates a new [`PolymarketDataClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration is invalid.
     pub fn new(
         client_id: ClientId,
         config: PolymarketDataClientConfig,
@@ -150,7 +154,7 @@ impl PolymarketDataClient {
         clob_public_client: PolymarketClobPublicClient,
         data_api_client: PolymarketDataApiHttpClient,
         ws_client: PolymarketMarketConnectionPool,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         Self::new_with_proxy(
             client_id,
             config,
@@ -163,6 +167,10 @@ impl PolymarketDataClient {
     }
 
     /// Creates a new data client with an optional validated proxy URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration is invalid.
     pub fn new_with_proxy(
         client_id: ClientId,
         mut config: PolymarketDataClientConfig,
@@ -171,14 +179,17 @@ impl PolymarketDataClient {
         data_api_client: PolymarketDataApiHttpClient,
         ws_client: PolymarketMarketConnectionPool,
         proxy_url: Option<ProxyUrl>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+        let polybolt_credential = config.polybolt_credential()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let socket_factory = SocketControlFactory::new(client_id, Some(*POLYMARKET_VENUE));
         let ws_client = ws_client.with_socket_factory(socket_factory.clone());
         let polybolt_socket_control = Some(socket_factory.control(POLYBOLT_STREAMS_ENDPOINT));
         let provider =
-            PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
+            PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone())?;
         let configured_fetch_max_concurrency = config.new_market_fetch_max_concurrency;
         let fetch_max_concurrency =
             clamp_new_market_fetch_max_concurrency(configured_fetch_max_concurrency);
@@ -198,11 +209,6 @@ impl PolymarketDataClient {
         let polybolt_transport_backend = config.transport_backend;
         let polybolt_data_sender = data_sender.clone();
 
-        let polybolt_credential = config.polybolt_credential().unwrap_or_else(|e| {
-            log::error!("{e}; PolyBolt price subscriptions will be rejected");
-            None
-        });
-
         let tasks = TaskGroup::new();
         let cancellation_token = tasks.cancellation_token();
 
@@ -220,7 +226,7 @@ impl PolymarketDataClient {
             config.subscribe_new_markets,
         );
 
-        Self {
+        Ok(Self {
             clock,
             client_id,
             config,
@@ -259,7 +265,7 @@ impl PolymarketDataClient {
             proxy_url,
             reset_pending: false,
             shutdown_errors: Vec::new(),
-        }
+        })
     }
 
     /// Returns a reference to the client configuration.

@@ -161,14 +161,16 @@ impl BlockchainExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if transaction limits are missing or invalid, independent verification is
-    /// missing or conflicts with the configured chain, the deployment manifest or provider
-    /// topology is invalid, a configured address or token pair is invalid, the router allowlist is
-    /// empty, or the slippage bounds are inconsistent or not below 100%.
+    /// Returns an error if selections contain duplicates, transaction limits are missing or
+    /// invalid, independent verification is missing or conflicts with the configured chain,
+    /// the deployment manifest, provider topology, a configured address, or a token pair is invalid,
+    /// the router allowlist is empty, or the slippage bounds are inconsistent or not below 100%.
     pub fn new(
         core_client: ExecutionClientCore,
         config: BlockchainExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let transaction_limits = Self::transaction_limits(&config)?;
         let chain = Arc::new(config.chain.clone());
         let cache = BlockchainCache::new(Arc::clone(&chain));
@@ -176,7 +178,8 @@ impl BlockchainExecutionClient {
             config.http_rpc_url.clone().into_inner(),
             config.rpc_requests_per_second,
             None,
-        ));
+        )?);
+
         let verification_config = config.verification.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Independent Blockchain execution verification is required")
         })?;

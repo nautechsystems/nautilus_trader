@@ -92,7 +92,8 @@ async fn test_spot_connection_logging(#[case] backend: TransportBackend) {
         },
         CancellationToken::new(),
         None,
-    );
+    )
+    .unwrap();
 
     let debug = format!("{client:?}");
     tokio::time::timeout(Duration::from_secs(5), async {

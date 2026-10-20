@@ -17,6 +17,8 @@
 
 use std::collections::HashMap;
 
+use ahash::AHashSet;
+use nautilus_common::config::ConfigError;
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::InstrumentId;
@@ -25,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::{
+    common::symbol::VenueSymbol,
     http::{
         client::{CoinApiHttpConfig, REST_URL},
         query::SymbolsQuery,
@@ -134,6 +137,16 @@ impl Default for CoinApiDataClientConfig {
 }
 
 impl CoinApiDataClientConfig {
+    /// Validates the configured instrument selections.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection lists no instruments, instrument IDs repeat, or an
+    /// instrument does not map to the selected exchange.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_selections(&self.instruments)
+    }
+
     /// Returns the REST transport configuration, applying overrides to the defaults.
     #[must_use]
     pub fn http_config(&self) -> CoinApiHttpConfig {
@@ -167,6 +180,33 @@ impl CoinApiDataClientConfig {
             proxy_url: self.proxy_url.clone(),
         }
     }
+}
+
+fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Result<()> {
+    let mut seen = AHashSet::new();
+
+    for selection in selections {
+        anyhow::ensure!(
+            !selection.instrument_ids.is_empty(),
+            "CoinAPI selection for {} lists no instruments",
+            selection.exchange_id
+        );
+
+        for instrument_id in &selection.instrument_ids {
+            let exchange_id = VenueSymbol::from_native(*instrument_id)?.exchange_id;
+            anyhow::ensure!(
+                exchange_id == selection.exchange_id,
+                "{instrument_id} maps to CoinAPI exchange {exchange_id}, not {}",
+                selection.exchange_id
+            );
+
+            if !seen.insert(*instrument_id) {
+                anyhow::bail!(ConfigError::duplicate("instruments", None));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

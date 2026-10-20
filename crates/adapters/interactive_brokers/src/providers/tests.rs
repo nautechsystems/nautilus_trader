@@ -43,7 +43,7 @@ use crate::{
 
 fn create_test_provider() -> InteractiveBrokersInstrumentProvider {
     let config = InteractiveBrokersInstrumentProviderConfig::default();
-    InteractiveBrokersInstrumentProvider::new(config)
+    InteractiveBrokersInstrumentProvider::new(config).unwrap()
 }
 
 fn create_test_option_spread(instrument_id: InstrumentId) -> OptionSpread {
@@ -281,7 +281,7 @@ fn test_determine_stock_venue_reuses_compatible_cached_mic_venue() {
         ..Default::default()
     };
 
-    let provider = InteractiveBrokersInstrumentProvider::new(config);
+    let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
     provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
 
     let contract = Contract {
@@ -326,7 +326,8 @@ fn test_determine_stock_venue_uses_symbol_to_mic_venue() {
         convert_exchange_to_mic_venue: true,
         ..Default::default()
     };
-    let provider = InteractiveBrokersInstrumentProvider::new(config);
+
+    let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
 
     let mapped = Contract {
         contract_id: 0,
@@ -352,7 +353,8 @@ fn test_determine_stock_venue_symbol_mapping_wins_over_cached_venue() {
         symbol_to_mic_venue: HashMap::from([("AAPL".to_string(), "EQUS".to_string())]),
         ..Default::default()
     };
-    let provider = InteractiveBrokersInstrumentProvider::new(config);
+
+    let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
     provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
 
     let contract = Contract {

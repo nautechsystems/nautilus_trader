@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_client,
         None,
         vec![Arc::new(event_query), Arc::new(predicate)],
-    );
+    )?;
 
     log::info!("Loading top-20 presidential election markets by liquidity (outcome='Yes')...");
     provider.load_all(None).await?;

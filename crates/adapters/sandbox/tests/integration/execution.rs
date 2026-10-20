@@ -25,6 +25,7 @@ use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
     clock::{Clock, VirtualClock},
+    config::ConfigError,
     factories::SimulatedExecutionClientFactory,
     live::set_exec_event_sender,
     messages::{
@@ -7959,6 +7960,48 @@ fn test_cancel_all_after_first_duplicate_submit_receipt(
         .map(|event| (order_event_kind(event), event.client_order_id()))
         .collect();
     assert_eq!(events, vec![("canceled", order.client_order_id())]);
+}
+
+#[rstest]
+#[case::configured(false)]
+#[case::runtime(true)]
+fn test_constructor_rejects_duplicate_balances(
+    #[case] runtime: bool,
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut config = create_config(trader_id, account_id, venue);
+    config.starting_balances = vec![Money::from("100 USD"), Money::from("200 USD")];
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        ClientId::from("SANDBOX"),
+        config.venue,
+        config.oms_type,
+        config.account_id,
+        config.account_type,
+        config.base_currency,
+        cache.clone(),
+    );
+
+    let result = if runtime {
+        config.fee_model = None;
+        let model = MakerTakerFeeModel::zero();
+        let fee_model = FeeModelHandle::new(model);
+        SandboxExecutionClient::new_with_fee_model(core, config, clock, cache, fee_model)
+    } else {
+        SandboxExecutionClient::new(core, config, clock, cache)
+    };
+
+    let error = result.unwrap_err();
+
+    assert_eq!(
+        error.downcast_ref::<ConfigError>(),
+        Some(&ConfigError::duplicate("starting_balances", None)),
+    );
 }
 
 #[rstest]

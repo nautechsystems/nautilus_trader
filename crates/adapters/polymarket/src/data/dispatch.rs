@@ -3680,7 +3680,8 @@ mod tests {
             clob_public,
             data_api,
             ws,
-        );
+        )
+        .unwrap();
 
         (client, rx)
     }
@@ -3714,6 +3715,7 @@ mod tests {
             data_api,
             ws,
         )
+        .unwrap()
     }
 
     #[rstest]

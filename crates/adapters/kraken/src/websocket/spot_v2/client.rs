@@ -142,11 +142,16 @@ impl Clone for KrakenSpotWebSocketClient {
 
 impl KrakenSpotWebSocketClient {
     /// Creates a new client for the configured public/private endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration is invalid.
     pub fn new(
         config: KrakenDataClientConfig,
         cancellation_token: CancellationToken,
         proxy_url: Option<String>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
         let url = if config.ws_private_url.is_some() {
             config.ws_private_url()
         } else {
@@ -159,11 +164,17 @@ impl KrakenSpotWebSocketClient {
     ///
     /// Selects `config.ws_l3_url()` and otherwise mirrors [`Self::new`]. `Level3`
     /// subscriptions are treated as authenticated and must follow `authenticate()`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration is invalid.
     pub fn l3(
         config: KrakenDataClientConfig,
         cancellation_token: CancellationToken,
         proxy_url: Option<String>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let url = config.ws_l3_url();
         Self::new_with_url(url, config, cancellation_token, proxy_url)
     }
@@ -173,7 +184,9 @@ impl KrakenSpotWebSocketClient {
         mut config: KrakenDataClientConfig,
         cancellation_token: CancellationToken,
         proxy_url: Option<String>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<SpotHandlerCommand>();
         let initial_mode = AtomicU8::new(ConnectionMode::Closed.as_u8());
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
@@ -181,7 +194,7 @@ impl KrakenSpotWebSocketClient {
         let transport_backend = config.transport_backend;
         config.proxy_url = proxy_url.clone().map(SecretString::from);
 
-        Self {
+        Ok(Self {
             url: url.into(),
             config,
             signal: Arc::new(AtomicBool::new(false)),
@@ -206,7 +219,7 @@ impl KrakenSpotWebSocketClient {
             transport_backend,
             proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
-        }
+        })
     }
 
     pub(crate) fn begin_shutdown(&self) {
@@ -1882,7 +1895,8 @@ mod tests {
             },
             CancellationToken::new(),
             None,
-        );
+        )
+        .unwrap();
 
         let observer = ws_client.clone();
         let expected = serde_json::json!({
@@ -1932,7 +1946,8 @@ mod tests {
             },
             CancellationToken::new(),
             None,
-        );
+        )
+        .unwrap();
 
         let debug = format!("{client:?}");
         assert!(debug.contains(&format!("url: {origin:?}")));
@@ -1947,7 +1962,8 @@ mod tests {
             KrakenDataClientConfig::default(),
             CancellationToken::new(),
             Some("http://user:proxy-secret@localhost".to_string()),
-        );
+        )
+        .unwrap();
         *client.auth_token.write().await = Some(SecretString::from("auth-token".to_string()));
 
         let debug = format!("{client:?}");
@@ -2016,7 +2032,7 @@ mod tests {
     #[rstest]
     fn test_req_id_counter_is_shared_arc_and_monotonic() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::new(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::new(cfg, CancellationToken::new(), None).unwrap();
         let counter = client.req_id_counter();
         let a = counter.fetch_add(1, Ordering::Relaxed);
         let b = counter.fetch_add(1, Ordering::Relaxed);
@@ -2051,6 +2067,7 @@ mod tests {
             CancellationToken::new(),
             None,
         )
+        .unwrap()
     }
 
     #[rstest]
@@ -2158,7 +2175,7 @@ mod tests {
     #[rstest]
     fn test_l3_factory_uses_ws_l3_url() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
         assert_eq!(client.url(), "wss://ws-l3.kraken.com/v2");
     }
 
@@ -2168,7 +2185,8 @@ mod tests {
             ws_l3_url: Some("wss://override.example/v2".to_string()),
             ..Default::default()
         };
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
         assert_eq!(client.url(), "wss://override.example/v2");
     }
 
@@ -2176,7 +2194,7 @@ mod tests {
     #[tokio::test]
     async fn test_subscribe_book_l3_without_auth_errors_and_leaves_clean_state() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
 
         let err = client
             .subscribe_book_l3(Ustr::from("BTC/USD"), 1000)
@@ -2194,7 +2212,7 @@ mod tests {
     #[tokio::test]
     async fn test_subscribe_book_l3_invalid_depth_errors() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
 
         let err = client
             .subscribe_book_l3(Ustr::from("BTC/USD"), 50)
@@ -2272,7 +2290,7 @@ mod tests {
     #[rstest]
     fn test_subscribe_book_l3_refcount_idempotent() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
         let key = "level3:BTC/USD";
 
         assert!(client.subscriptions.add_reference(key));
@@ -2285,7 +2303,7 @@ mod tests {
     #[tokio::test]
     async fn test_subscribe_book_l3_rejects_depth_mismatch() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
 
         let key = "level3:BTC/USD";
         client.subscriptions.add_reference(key);
@@ -2362,7 +2380,7 @@ mod tests {
     #[tokio::test]
     async fn test_generic_subscribe_rejects_level3() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
 
         let err = client
             .subscribe(
@@ -2392,7 +2410,7 @@ mod tests {
     #[rstest]
     fn test_l3_depths_shared_between_subscribe_and_handle() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
 
         let handle = client.l3_depths_handle();
         client.l3_depths.lock().insert("BTC/USD".to_string(), 100);
@@ -2628,7 +2646,7 @@ mod tests {
     #[rstest]
     fn test_resync_book_l3_does_not_touch_refcount() {
         let cfg = KrakenDataClientConfig::default();
-        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
+        let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None).unwrap();
         let key = "level3:BTC/USD";
 
         assert!(client.subscriptions.add_reference(key));

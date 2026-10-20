@@ -671,7 +671,8 @@ fn create_test_data_client_with_resolution_options(
         clob_public,
         data_api,
         ws,
-    );
+    )
+    .unwrap();
 
     (client, rx)
 }

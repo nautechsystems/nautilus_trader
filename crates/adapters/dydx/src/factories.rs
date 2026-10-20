@@ -199,6 +199,8 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             })?
             .clone();
 
+        dydx_config.validate()?;
+
         // dYdX uses netting for perpetual futures
         let oms_type = OmsType::Netting;
 

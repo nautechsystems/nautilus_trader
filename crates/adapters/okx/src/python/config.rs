@@ -15,6 +15,7 @@
 
 //! Python bindings for OKX configuration.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::string::secret::SecretString;
 use nautilus_model::{enums::OmsType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
@@ -78,9 +79,10 @@ impl OKXDataClientConfig {
         load_spreads: bool,
         transport_backend: Option<TransportBackend>,
         instrument_families: Option<Vec<String>>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             api_passphrase: api_passphrase.map(SecretString::from),
@@ -109,7 +111,10 @@ impl OKXDataClientConfig {
                 .unwrap_or(defaults.book_snapshot_timeout_secs),
             vip_level,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -173,9 +178,10 @@ impl OKXExecutionClientConfig {
         transport_backend: Option<TransportBackend>,
         spot_trade_quote_ccy: Option<String>,
         oms_type: Option<OmsType>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             account_id,
             oms_type,
             api_key: api_key.map(SecretString::from),
@@ -202,7 +208,10 @@ impl OKXExecutionClientConfig {
             auth_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             spot_trade_quote_ccy,
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -217,9 +226,75 @@ impl OKXExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use pyo3::{
+        Python,
+        exceptions::PyValueError,
+        types::{PyDict, PyList},
+    };
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::data(false)]
+    #[case::execution(true)]
+    fn test_python_config_duplicate_types(
+        #[case] execution: bool,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let values = if duplicate {
+                vec![
+                    OKXInstrumentType::Swap,
+                    OKXInstrumentType::Spot,
+                    OKXInstrumentType::Swap,
+                ]
+            } else {
+                vec![OKXInstrumentType::Swap, OKXInstrumentType::Spot]
+            };
+
+            let objects: Vec<_> = values
+                .iter()
+                .map(|value| Py::new(py, *value).unwrap())
+                .collect();
+            let list = PyList::new(py, objects).unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("instrument_types", list).unwrap();
+            if execution {
+                kwargs
+                    .set_item(
+                        "account_id",
+                        Py::new(py, AccountId::from("OKX-001")).unwrap(),
+                    )
+                    .unwrap();
+            }
+
+            let config_type = if execution {
+                py.get_type::<OKXExecutionClientConfig>()
+            } else {
+                py.get_type::<OKXDataClientConfig>()
+            };
+
+            let result = config_type.call((), Some(&kwargs));
+            if duplicate {
+                let error = result.unwrap_err();
+                assert!(error.is_instance_of::<PyValueError>(py));
+                assert_eq!(
+                    error.value(py).str().unwrap().to_str().unwrap(),
+                    "duplicate instrument_types"
+                );
+            } else {
+                let config = result.unwrap();
+                let actual: Vec<OKXInstrumentType> = config
+                    .getattr("instrument_types")
+                    .unwrap()
+                    .extract()
+                    .unwrap();
+                assert_eq!(actual, values);
+            }
+        });
+    }
 
     #[rstest]
     fn test_data_config_py_new() {
@@ -246,7 +321,8 @@ mod tests {
             true,
             None,
             Some(vec!["BTC-USD".to_string()]),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             config.instrument_families,
@@ -282,7 +358,8 @@ mod tests {
             None,
             Some("USD".to_string()),
             Some(OmsType::Hedging),
-        );
+        )
+        .unwrap();
 
         assert!(config.load_spreads);
         assert_eq!(config.auth_timeout_secs, None);

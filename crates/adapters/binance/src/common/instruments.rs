@@ -18,9 +18,10 @@
 use std::str::FromStr;
 
 use ahash::AHashSet;
+use nautilus_common::config::ConfigError;
 use nautilus_model::identifiers::InstrumentId;
 
-use crate::config::BinanceInstrumentProviderConfig;
+use crate::{common::enums::BinanceProductType, config::BinanceInstrumentProviderConfig};
 
 /// Normalized Binance instrument selector.
 #[derive(Debug, Clone)]
@@ -34,12 +35,17 @@ pub struct BinanceInstrumentSelector {
 }
 
 impl BinanceInstrumentSelector {
-    /// Creates a selector from validated provider configuration.
+    /// Creates a selector from provider configuration.
     ///
     /// # Errors
     ///
-    /// Returns an error if a configured instrument ID or filter value is malformed.
-    pub fn new(config: &BinanceInstrumentProviderConfig) -> anyhow::Result<Self> {
+    /// Returns an error if instrument loading configuration is invalid.
+    pub fn new(
+        config: &BinanceInstrumentProviderConfig,
+        product_type: BinanceProductType,
+    ) -> anyhow::Result<Self> {
+        config.validate(product_type)?;
+
         let load_ids = config
             .load_ids
             .as_deref()
@@ -95,7 +101,7 @@ impl BinanceInstrumentSelector {
     }
 }
 
-fn filter_values(
+pub(crate) fn filter_values(
     config: &BinanceInstrumentProviderConfig,
     key: &str,
 ) -> anyhow::Result<Option<AHashSet<String>>> {
@@ -116,12 +122,17 @@ fn filter_values(
         _ => anyhow::bail!("filter {key:?} is not a string or array"),
     };
 
-    Ok(Some(
-        values
-            .into_iter()
-            .map(|value| value.trim().to_ascii_uppercase())
-            .collect(),
-    ))
+    let mut normalized = AHashSet::with_capacity(values.len());
+    for value in values {
+        if !normalized.insert(value.trim().to_ascii_uppercase()) {
+            anyhow::bail!(ConfigError::duplicate(
+                format!("instrument_provider.filters.{key}"),
+                None
+            ));
+        }
+    }
+
+    Ok(Some(normalized))
 }
 
 fn matches_filter(values: &Option<AHashSet<String>>, value: &str) -> bool {
@@ -156,7 +167,8 @@ mod tests {
             ]),
             ..Default::default()
         };
-        let selector = BinanceInstrumentSelector::new(&config).unwrap();
+
+        let selector = BinanceInstrumentSelector::new(&config, BinanceProductType::UsdM).unwrap();
 
         assert!(selector.includes(
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
@@ -187,7 +199,8 @@ mod tests {
             filters: HashMap::from([("symbols".to_string(), serde_json::json!(["btcusdt"]))]),
             ..Default::default()
         };
-        let selector = BinanceInstrumentSelector::new(&config).unwrap();
+
+        let selector = BinanceInstrumentSelector::new(&config, BinanceProductType::Spot).unwrap();
 
         assert!(selector.includes(
             InstrumentId::from("BTCUSDT.BINANCE"),
@@ -216,7 +229,8 @@ mod tests {
             ]),
             ..Default::default()
         };
-        let selector = BinanceInstrumentSelector::new(&config).unwrap();
+
+        let selector = BinanceInstrumentSelector::new(&config, BinanceProductType::Spot).unwrap();
 
         assert!(selector.is_explicit(InstrumentId::from("BTCUSDT.BINANCE"), "BTCUSDT"));
         assert!(selector.is_explicit(InstrumentId::from("ETHUSDT.BINANCE"), "ETHUSDT"));
@@ -225,9 +239,51 @@ mod tests {
 
     #[rstest]
     fn test_is_explicit_is_false_for_bulk_loads() {
-        let selector =
-            BinanceInstrumentSelector::new(&BinanceInstrumentProviderConfig::default()).unwrap();
+        let selector = BinanceInstrumentSelector::new(
+            &BinanceInstrumentProviderConfig::default(),
+            BinanceProductType::Spot,
+        )
+        .unwrap();
 
         assert!(!selector.is_explicit(InstrumentId::from("BTCUSDT.BINANCE"), "BTCUSDT"));
+    }
+
+    #[rstest]
+    fn test_constructor_rejects_duplicate_ids() {
+        let config = BinanceInstrumentProviderConfig {
+            load_ids: Some(vec![
+                "BTCUSDT.BINANCE".to_string(),
+                "BTCUSDT.BINANCE".to_string(),
+            ]),
+            ..Default::default()
+        };
+
+        let error = BinanceInstrumentSelector::new(&config, BinanceProductType::Spot).unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate(
+                "instrument_provider.load_ids",
+                None
+            )),
+        );
+    }
+
+    #[rstest]
+    fn test_constructor_rejects_spot_contract_filter() {
+        let config = BinanceInstrumentProviderConfig {
+            filters: HashMap::from([(
+                "contract_types".to_string(),
+                serde_json::json!(["PERPETUAL"]),
+            )]),
+            ..Default::default()
+        };
+
+        let error = BinanceInstrumentSelector::new(&config, BinanceProductType::Spot).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "unsupported Binance instrument filter \"contract_types\" for Spot"
+        );
     }
 }

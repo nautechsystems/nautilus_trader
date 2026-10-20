@@ -2849,10 +2849,7 @@ impl BinanceSpotHttpClient {
         config: &BinanceInstrumentProviderConfig,
         us: bool,
     ) -> BinanceSpotHttpResult<Vec<InstrumentAny>> {
-        config
-            .validate(BinanceProductType::Spot)
-            .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?;
-        let selector = BinanceInstrumentSelector::new(config)
+        let selector = BinanceInstrumentSelector::new(config, BinanceProductType::Spot)
             .map_err(|e| BinanceSpotHttpError::ValidationError(e.to_string()))?;
         let ts_init = self.generate_ts_init();
 

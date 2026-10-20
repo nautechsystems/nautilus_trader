@@ -20,6 +20,7 @@ use std::{
     fmt::Debug,
 };
 
+use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_core::string::secret::SecretString;
 use nautilus_model::{identifiers::InstrumentId, types::Currency};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
@@ -136,6 +137,8 @@ pub struct InteractiveBrokersDataClientConfig {
 
 impl InteractiveBrokersDataClientConfig {
     pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        self.instrument_provider.validate()?;
+
         anyhow::ensure!(
             self.subscription_idle_timeout_secs != Some(0),
             "subscription_idle_timeout_secs must be positive when set",
@@ -452,8 +455,31 @@ impl Default for DockerizedIBGatewayConfig {
     }
 }
 
+impl InteractiveBrokersInstrumentProviderConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("load_contracts", &self.load_contracts)
+    }
+}
+
+impl InteractiveBrokersExecutionClientConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        self.instrument_provider.validate()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use nautilus_model::types::Currency;
     use rstest::rstest;
 
@@ -620,5 +646,140 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains(expected), "{error}");
+    }
+
+    #[rstest]
+    #[case("load_contracts", serde_json::json!([{"secType": "STK", "conId": 265598}, {"secType": "STK", "conId": 756733}]))]
+    fn test_instrument_provider_selection_uniqueness(
+        #[case] field: &str,
+        #[case] mut values: serde_json::Value,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        if duplicate {
+            let entries = values.as_array_mut().unwrap();
+            entries.push(entries[0].clone());
+        }
+
+        let mut input =
+            serde_json::to_value(InteractiveBrokersInstrumentProviderConfig::default()).unwrap();
+        input[field] = values;
+        let config: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate(field, None))
+        } else {
+            Ok(())
+        };
+
+        let result = config.validate();
+
+        assert_eq!(result, expected);
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
+
+    #[rstest]
+    fn test_client_configs_reject_duplicate_provider_selections() {
+        let provider: InteractiveBrokersInstrumentProviderConfig = serde_json::from_value(serde_json::json!({
+            "load_contracts": [{"secType": "STK", "conId": 265598}, {"secType": "STK", "conId": 265598}]
+        })).unwrap();
+
+        let data = super::InteractiveBrokersDataClientConfig {
+            instrument_provider: provider.clone(),
+            ..Default::default()
+        };
+
+        let execution = InteractiveBrokersExecutionClientConfig {
+            instrument_provider: provider,
+            ..Default::default()
+        };
+
+        let data_result = data
+            .validate()
+            .map_err(|e| e.downcast::<ConfigError>().unwrap());
+        let execution_result = execution.validate();
+        let expected = Err(ConfigError::duplicate("load_contracts", None));
+
+        assert_eq!(data_result, expected);
+        assert_eq!(execution_result, expected);
+    }
+
+    #[rstest]
+    #[case::data(false)]
+    #[case::execution(true)]
+    fn test_client_constructor_rejects_duplicate_config_before_setup(#[case] execution: bool) {
+        use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+        use nautilus_common::cache::Cache;
+        use nautilus_live::ExecutionClientCore;
+        use nautilus_model::{
+            enums::{AccountType, OmsType},
+            identifiers::{AccountId, ClientId, TraderId, Venue},
+        };
+
+        use crate::{
+            data::InteractiveBrokersDataClient, execution::InteractiveBrokersExecutionClient,
+            providers::instruments::InteractiveBrokersInstrumentProvider,
+        };
+
+        let duplicate_config: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(serde_json::json!({
+                "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+            }))
+            .unwrap();
+        let provider =
+            Arc::new(InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap());
+
+        let error = if execution {
+            let core = ExecutionClientCore::new(
+                TraderId::from("TESTER-001"),
+                ClientId::from("IB"),
+                Venue::from("IB"),
+                OmsType::Netting,
+                AccountId::from("IB-001"),
+                AccountType::Margin,
+                None,
+                Rc::new(RefCell::new(Cache::default())),
+            );
+
+            let config = InteractiveBrokersExecutionClientConfig {
+                client_id: 1,
+                instrument_provider: duplicate_config,
+                ..Default::default()
+            };
+
+            InteractiveBrokersExecutionClient::new(core, config, provider).err()
+        } else {
+            InteractiveBrokersDataClient::new(
+                ClientId::from("IB"),
+                super::InteractiveBrokersDataClientConfig {
+                    instrument_provider: duplicate_config,
+                    ..Default::default()
+                },
+                provider,
+            )
+            .err()
+        }
+        .expect("duplicate config must fail before client setup or connection");
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("load_contracts", None))
+        );
+    }
+
+    #[rstest]
+    fn test_provider_constructor_rejects_duplicate_config() {
+        let config = serde_json::from_value(serde_json::json!({
+            "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+        }))
+        .unwrap();
+
+        let error =
+            crate::providers::instruments::InteractiveBrokersInstrumentProvider::new(config)
+                .unwrap_err();
+
+        assert_eq!(error, ConfigError::duplicate("load_contracts", None));
     }
 }

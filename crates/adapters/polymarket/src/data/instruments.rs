@@ -701,6 +701,7 @@ mod tests {
             data_api,
             ws,
         )
+        .unwrap()
     }
 
     #[rstest]
@@ -1023,7 +1024,8 @@ mod tests {
 
         let mut client = make_client(PolymarketDataClientConfig::default());
         client.provider =
-            crate::providers::PolymarketInstrumentProvider::new(http.clone(), Some(config.clone()));
+            crate::providers::PolymarketInstrumentProvider::new(http.clone(), Some(config.clone()))
+                .unwrap();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.data_sender = tx.into();
 

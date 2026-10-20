@@ -2124,10 +2124,7 @@ impl BinanceFuturesHttpClient {
         config: &BinanceInstrumentProviderConfig,
     ) -> BinanceFuturesHttpResult<Vec<InstrumentAny>> {
         let _guard = self.instruments_load_lock.lock().await;
-        config
-            .validate(self.product_type)
-            .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
-        let selector = BinanceInstrumentSelector::new(config)
+        let selector = BinanceInstrumentSelector::new(config, self.product_type)
             .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
         let ts_init = UnixNanos::default();
         let mut cache = Vec::new();

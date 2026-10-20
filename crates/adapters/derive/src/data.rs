@@ -141,8 +141,10 @@ impl DeriveDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP client cannot be initialized.
+    /// Returns an error if currencies repeat or the HTTP client cannot be initialized.
     pub fn new(client_id: ClientId, config: DeriveDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let proxy_url = config

@@ -312,7 +312,7 @@ fn resolve_load_filters(
     let currencies = filters
         .and_then(|map| {
             map.get("currency")
-                .map(|currency| vec![currency.trim().to_string()])
+                .map(|currency| vec![currency.clone()])
                 .or_else(|| map.get("currencies").map(|value| split_currencies(value)))
         })
         .unwrap_or_else(|| default_currencies.to_vec());
@@ -348,12 +348,16 @@ fn split_currencies(value: &str) -> Vec<String> {
 fn normalize_currencies(currencies: Vec<String>) -> Vec<String> {
     let mut currencies: Vec<_> = currencies
         .into_iter()
-        .map(|currency| currency.trim().to_string())
-        .filter(|currency| !currency.is_empty())
+        .filter_map(|currency| normalize_currency(&currency).map(ToOwned::to_owned))
         .collect();
     currencies.sort();
     currencies.dedup();
     currencies
+}
+
+pub(crate) fn normalize_currency(currency: &str) -> Option<&str> {
+    let currency = currency.trim();
+    (!currency.is_empty()).then_some(currency)
 }
 
 fn currency_from_instrument_id(instrument_id: &InstrumentId) -> Option<&str> {

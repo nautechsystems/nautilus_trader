@@ -809,11 +809,8 @@ mod tests {
 
     async fn erc20_contract_against(state: MockRpcState) -> (Erc20Contract, MockRpcState) {
         let addr = start_mock_rpc_server(state.clone()).await;
-        let rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            format!("http://{addr}"),
-            None,
-            None,
-        ));
+        let rpc_client =
+            Arc::new(BlockchainHttpRpcClient::new(format!("http://{addr}"), None, None).unwrap());
         (Erc20Contract::new(rpc_client, true), state)
     }
 

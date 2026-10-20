@@ -15,6 +15,7 @@
 
 //! Configuration structures for the Derive adapter.
 
+use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
@@ -22,7 +23,10 @@ use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{enums::DeriveEnvironment, urls};
+use crate::{
+    common::{enums::DeriveEnvironment, urls},
+    providers::normalize_currency,
+};
 
 /// Configuration for the Derive data client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
@@ -104,6 +108,23 @@ impl DeriveDataClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validates that configured currency entries contain no duplicates.
+    ///
+    /// Nonblank currencies must also be distinct after trimming.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if currency entries repeat or nonblank entries match after trimming.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("currencies", &self.currencies)?;
+        let normalized: Vec<_> = self
+            .currencies
+            .iter()
+            .filter_map(|currency| normalize_currency(currency))
+            .collect();
+        check_unique_values("currencies", &normalized)
     }
 
     /// Returns the REST API base URL, respecting environment and overrides.
@@ -303,9 +324,23 @@ impl DeriveExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("currencies")]
+    fn test_data_config_rejects_duplicate_selections(#[case] field: &str) {
+        let mut input = serde_json::to_value(DeriveDataClientConfig::default()).unwrap();
+        input[field] = serde_json::json!(["first", "second", "first"]);
+        let config: DeriveDataClientConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+        let result = config.validate();
+
+        assert_eq!(result, Err(ConfigError::duplicate(field, None)));
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
 
     #[rstest]
     fn test_data_config_defaults() {
@@ -460,5 +495,28 @@ mod tests {
         let debug = format!("{config:?}");
         assert!(!debug.contains("redacted"));
         assert!(debug.contains("session_key: None"));
+    }
+
+    #[rstest]
+    #[case::trimmed(vec!["BTC", "ETH", " BTC "], true)]
+    #[case::blank(vec!["", ""], true)]
+    #[case::distinct(vec![" ETH ", "BTC"], false)]
+    fn test_currencies_normalized_uniqueness(#[case] values: Vec<&str>, #[case] duplicate: bool) {
+        let currencies: Vec<_> = values.into_iter().map(str::to_string).collect();
+
+        let config = DeriveDataClientConfig {
+            currencies: currencies.clone(),
+            ..Default::default()
+        };
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate("currencies", None))
+        } else {
+            Ok(())
+        };
+
+        let result = config.validate();
+        assert_eq!(result, expected);
+        assert_eq!(config.currencies, currencies);
     }
 }

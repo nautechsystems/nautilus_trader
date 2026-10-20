@@ -25,6 +25,7 @@ use nautilus_betfair::{
 };
 use nautilus_common::{
     clients::DataClient,
+    config::ConfigError,
     live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{DataEvent, data::SubscribeBookDeltas, system::SocketState},
     testing::wait_until_async,
@@ -76,7 +77,8 @@ fn create_test_data_client_with_config(
         NavigationFilter::default(),
         currency,
         None,
-    );
+    )
+    .unwrap();
 
     (client, rx)
 }
@@ -1863,4 +1865,46 @@ async fn test_data_client_unparsable_recovery_image_fails_its_recovery() {
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
     server.await.unwrap();
+}
+
+#[rstest]
+#[case::client(false)]
+#[case::stream(true)]
+fn test_constructor_rejects_invalid_config(#[case] stream: bool) {
+    let mut config = BetfairDataClientConfig {
+        market_ids: Some(vec!["1.1".to_string(), "1.1".to_string()]),
+        ..Default::default()
+    };
+
+    let mut stream_config = plain_stream_config(1);
+
+    if stream {
+        config.market_ids = None;
+        stream_config.heartbeat_secs = Some(0);
+    }
+
+    let http_client = create_test_http_client("127.0.0.1:1".parse().unwrap());
+    let error = BetfairDataClient::new(
+        *BETFAIR_CLIENT_ID,
+        http_client,
+        test_credential(),
+        stream_config,
+        config,
+        NavigationFilter::default(),
+        Currency::GBP(),
+        None,
+    )
+    .expect_err("invalid config must fail before client setup");
+
+    if stream {
+        assert_eq!(
+            error.to_string(),
+            "heartbeat_secs must be positive when set"
+        );
+    } else {
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("market_ids", None)),
+        );
+    }
 }

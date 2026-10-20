@@ -954,7 +954,7 @@ mod tests {
 
     fn create_test_instrument_provider() -> InteractiveBrokersInstrumentProvider {
         let config = InteractiveBrokersInstrumentProviderConfig::default();
-        InteractiveBrokersInstrumentProvider::new(config)
+        InteractiveBrokersInstrumentProvider::new(config).unwrap()
     }
 
     fn create_test_instrument_id() -> InstrumentId {
@@ -966,7 +966,8 @@ mod tests {
     fn create_test_avg_px_provider() -> InteractiveBrokersInstrumentProvider {
         let provider = InteractiveBrokersInstrumentProvider::new(
             crate::config::InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
         provider.insert_test_instrument(InstrumentAny::Equity(equity_aapl()), 265_598, 1);
         provider
     }
@@ -1277,7 +1278,8 @@ mod tests {
         let instrument_id = instrument.id;
         let provider = InteractiveBrokersInstrumentProvider::new(
             crate::config::InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
         provider.insert_test_instrument(InstrumentAny::CurrencyPair(instrument), 495_759_171, 1);
         let reports = fills
             .into_iter()

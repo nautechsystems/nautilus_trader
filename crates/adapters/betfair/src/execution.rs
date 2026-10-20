@@ -191,7 +191,10 @@ pub struct BetfairExecutionClient {
 
 impl BetfairExecutionClient {
     /// Creates a new [`BetfairExecutionClient`] instance.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client or stream configuration is invalid.
     pub fn new(
         core: ExecutionClientCore,
         http_client: BetfairHttpClient,
@@ -199,7 +202,10 @@ impl BetfairExecutionClient {
         stream_config: BetfairStreamConfig,
         config: BetfairExecutionClientConfig,
         currency: Currency,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+        stream_config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,
@@ -217,7 +223,7 @@ impl BetfairExecutionClient {
         let session_tasks = TaskGroup::new();
         let pending_tasks = TaskGroup::new();
 
-        Self {
+        Ok(Self {
             core,
             clock,
             emitter,
@@ -236,7 +242,7 @@ impl BetfairExecutionClient {
             pending_tasks,
             shutdown_errors: Vec::new(),
             account_refresh_tx: None,
-        }
+        })
     }
 
     /// Returns true while new-order submissions are halted for stream recovery.
@@ -8261,7 +8267,8 @@ mod tests {
             config.stream_config(),
             config,
             Currency::GBP(),
-        );
+        )
+        .unwrap();
 
         client.sync_ocm_state_from_cache();
 
@@ -8397,7 +8404,8 @@ mod tests {
             config.stream_config(),
             config,
             Currency::GBP(),
-        );
+        )
+        .unwrap();
 
         client.sync_ocm_state_from_cache();
 

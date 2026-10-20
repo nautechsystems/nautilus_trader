@@ -128,7 +128,8 @@ impl ExecutionClientFactory for MockBetfairExecutionClientFactory {
             plain_stream_config(self.stream_port),
             BetfairExecutionClientConfig::default(),
             Currency::GBP(),
-        );
+        )
+        .unwrap();
         Ok(Box::new(client))
     }
 

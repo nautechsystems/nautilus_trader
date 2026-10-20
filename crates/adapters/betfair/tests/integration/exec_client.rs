@@ -44,6 +44,7 @@ use nautilus_betfair::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    config::ConfigError,
     live::runner::{replace_system_event_sender, set_data_event_sender, set_exec_event_sender},
     messages::{
         DataEvent, ExecutionEvent,
@@ -211,7 +212,8 @@ fn create_test_execution_client_with_configs(
         stream_config,
         config,
         currency,
-    );
+    )
+    .unwrap();
     client.start().unwrap();
 
     (client, rx, data_rx, cache)
@@ -12781,4 +12783,54 @@ async fn test_cancel_allowed_during_reconciliation() {
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
     server.await.unwrap();
+}
+
+#[rstest]
+#[case::client(false)]
+#[case::stream(true)]
+fn test_constructor_rejects_invalid_config(#[case] stream: bool) {
+    let mut config = BetfairExecutionClientConfig {
+        reconcile_market_ids: Some(vec!["1.1".to_string(), "1.1".to_string()]),
+        ..Default::default()
+    };
+
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *BETFAIR_CLIENT_ID,
+        *BETFAIR_VENUE,
+        OmsType::Netting,
+        AccountId::from("BETFAIR-001"),
+        AccountType::Betting,
+        None,
+        Rc::new(RefCell::new(Cache::default())),
+    );
+    let mut stream_config = plain_stream_config(1);
+
+    if stream {
+        config.reconcile_market_ids = None;
+        stream_config.heartbeat_secs = Some(0);
+    }
+
+    let http_client = create_test_http_client("127.0.0.1:1".parse().unwrap());
+    let error = BetfairExecutionClient::new(
+        core,
+        http_client,
+        test_credential(),
+        stream_config,
+        config,
+        Currency::GBP(),
+    )
+    .expect_err("invalid config must fail before client setup");
+
+    if stream {
+        assert_eq!(
+            error.to_string(),
+            "heartbeat_secs must be positive when set"
+        );
+    } else {
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("reconcile_market_ids", None)),
+        );
+    }
 }

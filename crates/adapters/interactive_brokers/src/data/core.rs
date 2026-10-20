@@ -2642,9 +2642,9 @@ mod tests {
 
         let config = InteractiveBrokersDataClientConfig::default();
 
-        let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
-            config.instrument_provider.clone(),
-        ));
+        let provider = Arc::new(
+            InteractiveBrokersInstrumentProvider::new(config.instrument_provider.clone()).unwrap(),
+        );
         let client = InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
 
         assert_eq!(client.venue(), None);
@@ -2657,9 +2657,9 @@ mod tests {
 
         let config = InteractiveBrokersDataClientConfig::default();
 
-        let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
-            config.instrument_provider.clone(),
-        ));
+        let provider = Arc::new(
+            InteractiveBrokersInstrumentProvider::new(config.instrument_provider.clone()).unwrap(),
+        );
         let mut client =
             InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
 
@@ -2692,9 +2692,9 @@ mod tests {
 
         let config = InteractiveBrokersDataClientConfig::default();
 
-        let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
-            config.instrument_provider.clone(),
-        ));
+        let provider = Arc::new(
+            InteractiveBrokersInstrumentProvider::new(config.instrument_provider.clone()).unwrap(),
+        );
         let mut client =
             InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
         let bar_type = "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL".to_string();

@@ -96,6 +96,8 @@ impl PolymarketDataClientFactory {
         name: &str,
         polymarket_config: &PolymarketDataClientConfig,
     ) -> anyhow::Result<PolymarketDataClient> {
+        polymarket_config.validate()?;
+
         let client_id = ClientId::from(name);
         let proxy_url = polymarket_config.validated_proxy_url()?;
         // Fail fast on malformed credentials; the client resolves them again for its feed.
@@ -145,7 +147,7 @@ impl PolymarketDataClientFactory {
             data_api_client,
             ws_client,
             proxy_url,
-        );
+        )?;
 
         for filter in &polymarket_config.filters {
             client.add_instrument_filter(Arc::clone(filter));
@@ -274,6 +276,7 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::VirtualClock,
+        config::ConfigError,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
         live::runner::replace_data_event_sender,
         messages::DataEvent,
@@ -542,5 +545,28 @@ mod tests {
         assert!(!error.contains(SECRET));
         assert!(!error.contains(&BASE64.encode(SECRET)));
         assert!(!error.contains(&expected_auth));
+    }
+
+    #[rstest]
+    fn test_factory_rejects_duplicate_selections_before_setup() {
+        let config = PolymarketDataClientConfig {
+            instrument_config: Some(crate::config::PolymarketInstrumentProviderConfig {
+                event_slugs: Some(vec!["event-one".to_string(), "event-one".to_string()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let error = PolymarketDataClientFactory
+            .create("POLYMARKET", &config, cache.into(), clock)
+            .err()
+            .expect("duplicate config must fail before client setup");
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("event_slugs", None))
+        );
     }
 }

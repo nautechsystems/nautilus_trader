@@ -123,10 +123,16 @@ pub struct KrakenFuturesExecutionClient {
 
 impl KrakenFuturesExecutionClient {
     /// Creates a new [`KrakenFuturesExecutionClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configuration validation or client initialization fails.
     pub fn new(
         core: ExecutionClientCore,
         config: KrakenExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,

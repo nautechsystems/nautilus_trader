@@ -132,6 +132,8 @@ impl OKXExecutionClient {
         core: ExecutionClientCore,
         config: OKXExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let api_key = config
             .api_key
             .as_ref()

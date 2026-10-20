@@ -146,6 +146,8 @@ impl OKXDataClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(client_id: ClientId, config: OKXDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let api_key = config
@@ -1796,14 +1798,7 @@ fn configured_instrument_types(config: &OKXDataClientConfig) -> Vec<OKXInstrumen
     if config.instrument_types.is_empty() {
         vec![OKXInstrumentType::Spot]
     } else {
-        // A type configured twice must not fetch or publish its instruments twice
-        let mut seen = AHashSet::new();
-        config
-            .instrument_types
-            .iter()
-            .filter(|inst_type| seen.insert(**inst_type))
-            .copied()
-            .collect()
+        config.instrument_types.clone()
     }
 }
 
@@ -1820,15 +1815,10 @@ async fn fetch_configured_instruments(
     let mut all_instruments = Vec::new();
 
     for inst_type in &instrument_types {
-        let Some(mut families) =
-            resolve_instrument_families(&config.instrument_families, *inst_type)
+        let Some(families) = resolve_instrument_families(&config.instrument_families, *inst_type)
         else {
             continue;
         };
-
-        // A family configured twice must not fetch or publish its instruments twice
-        let mut seen = AHashSet::new();
-        families.retain(|family| seen.insert(family.clone()));
 
         if families.is_empty() {
             let (mut fetched, _inst_id_codes) = http_client
@@ -3167,7 +3157,9 @@ mod tests {
         response::Json,
         routing::get,
     };
-    use nautilus_common::{live::runner::replace_data_event_sender, testing::wait_until_async};
+    use nautilus_common::{
+        config::ConfigError, live::runner::replace_data_event_sender, testing::wait_until_async,
+    };
     use nautilus_core::UUID4;
     use nautilus_model::{
         identifiers::Symbol,
@@ -4580,94 +4572,31 @@ mod tests {
         assert_eq!(instruments_by_symbol.load().len(), 1);
     }
 
-    #[tokio::test]
-    async fn reconcile_fetches_duplicate_configured_families_once() {
-        let state = RefreshServerState {
-            instruments_payload: Arc::new(tokio::sync::Mutex::new(test_payload(
-                "http_get_instruments_swap.json",
-            ))),
-            ..RefreshServerState::default()
-        };
-        let addr = start_refresh_server(state.clone()).await;
-        let http = refresh_http_client(addr);
+    #[rstest]
+    fn data_client_rejects_duplicate_configured_families() {
         let config = OKXDataClientConfig::builder()
-            .instrument_types(vec![OKXInstrumentType::Swap])
-            .instrument_families(vec!["BTC-USD".to_string(), "BTC-USD".to_string()])
+            .instrument_families(vec!["BTC-USDT".to_string(), "BTC-USDT".to_string()])
             .build();
-        let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let error = OKXDataClient::new(ClientId::from("OKX"), config)
+            .expect_err("duplicate config must fail before client setup");
 
-        let summary = reconcile_instruments(
-            &http,
-            &config,
-            &instruments_by_symbol,
-            &update_lock,
-            None,
-            None,
-            &sender.clone().into(),
-        )
-        .await
-        .expect("reconcile");
-
-        let queries = state.instrument_queries.lock().await;
         assert_eq!(
-            queries.len(),
-            1,
-            "a duplicated family must be fetched only once"
-        );
-        drop(queries);
-        assert_eq!(summary.fetched, 1);
-        assert_eq!(summary.changed, 1);
-        assert_eq!(
-            instrument_events(&mut receiver).len(),
-            1,
-            "a duplicated family must not publish its instruments twice"
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("instrument_families", None))
         );
     }
 
-    #[tokio::test]
-    async fn reconcile_fetches_duplicate_configured_types_once() {
-        let state = RefreshServerState {
-            instruments_payload: Arc::new(tokio::sync::Mutex::new(test_payload(
-                "http_get_instruments_swap.json",
-            ))),
-            ..RefreshServerState::default()
-        };
-        let addr = start_refresh_server(state.clone()).await;
-        let http = refresh_http_client(addr);
+    #[rstest]
+    fn data_client_rejects_duplicate_configured_types() {
         let config = OKXDataClientConfig::builder()
             .instrument_types(vec![OKXInstrumentType::Swap, OKXInstrumentType::Swap])
             .build();
-        let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let error = OKXDataClient::new(ClientId::from("OKX"), config)
+            .expect_err("duplicate config must fail before client setup");
 
-        let summary = reconcile_instruments(
-            &http,
-            &config,
-            &instruments_by_symbol,
-            &update_lock,
-            None,
-            None,
-            &sender.clone().into(),
-        )
-        .await
-        .expect("reconcile");
-
-        let queries = state.instrument_queries.lock().await;
         assert_eq!(
-            queries.len(),
-            1,
-            "a duplicated type must be fetched only once"
-        );
-        drop(queries);
-        assert_eq!(summary.fetched, 3);
-        assert_eq!(summary.changed, 3);
-        assert_eq!(
-            instrument_events(&mut receiver).len(),
-            3,
-            "a duplicated type must not publish its instruments twice"
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("instrument_types", None))
         );
     }
 

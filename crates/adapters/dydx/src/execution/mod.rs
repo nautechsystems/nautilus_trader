@@ -182,6 +182,8 @@ impl DydxExecutionClient {
         wallet_address: String,
         subaccount_number: u32,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let trader_id = core.trader_id;
         let account_id = core.account_id;
         let clock = get_atomic_clock_realtime();

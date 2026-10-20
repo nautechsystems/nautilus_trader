@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
@@ -24,7 +25,6 @@ use crate::{
         PolymarketDataClientConfig, PolymarketExecutionClientConfig,
         PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig,
     },
-    providers::build_gamma_params_from_hashmap,
 };
 
 const PY_OPTION_U64_MISSING_SENTINEL: u64 = u64::MAX;
@@ -52,14 +52,18 @@ impl PolymarketUpDownEventSlugConfig {
         interval_mins: Option<u64>,
         periods: Option<u64>,
         start_offset_periods: Option<i64>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let default = Self::default();
-        Self {
+
+        let config = Self {
             assets: assets.unwrap_or(default.assets),
             interval_mins: interval_mins.unwrap_or(default.interval_mins),
             periods: periods.unwrap_or(default.periods),
             start_offset_periods: start_offset_periods.unwrap_or(default.start_offset_periods),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __repr__(&self) -> String {
@@ -105,10 +109,7 @@ impl PolymarketInstrumentProviderConfig {
             use_gamma_markets: use_gamma_markets.unwrap_or(default.use_gamma_markets),
         };
 
-        if let Some(filters) = config.filters.as_ref() {
-            build_gamma_params_from_hashmap(filters)
-                .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket Gamma filters: {e}")))?;
-        }
+        config.validate().map_err(to_pyvalue_err)?;
         Ok(config)
     }
 
@@ -220,6 +221,7 @@ impl PolymarketDataClientConfig {
         config
             .validated_proxy_url()
             .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket proxy URL: {e}")))?;
+        config.validate().map_err(to_pyvalue_err)?;
         Ok(config)
     }
 
@@ -290,6 +292,7 @@ impl PolymarketExecutionClientConfig {
             instrument_config,
         };
 
+        config.validate().map_err(to_pyvalue_err)?;
         config.validate_signer().map_err(to_pyvalue_err)?;
         config
             .validated_proxy_url()
@@ -316,7 +319,7 @@ impl PolymarketExecutionClientConfig {
 mod tests {
     use pyo3::{
         Bound, IntoPyObject, Python,
-        types::{PyAnyMethods, PyDict, PyDictMethods, PyTuple},
+        types::{PyAnyMethods, PyDict, PyDictMethods, PyStringMethods, PyTuple},
     };
     use rstest::rstest;
 
@@ -696,6 +699,59 @@ mod tests {
 
             assert!(message.contains("Invalid Polymarket proxy URL"));
             assert!(!message.contains(SECRET));
+        });
+    }
+
+    #[rstest]
+    #[case::provider("provider")]
+    #[case::data("data")]
+    #[case::execution("execution")]
+    fn test_python_config_rejects_nested_or_filter_duplicates(#[case] kind: &str) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+
+            let cls = match kind {
+                "provider" => {
+                    kwargs
+                        .set_item(
+                            "filters",
+                            std::collections::HashMap::from([("slug", "one,two,one")]),
+                        )
+                        .unwrap();
+                    py.get_type::<PolymarketInstrumentProviderConfig>()
+                }
+                _ => {
+                    let provider = PolymarketInstrumentProviderConfig {
+                        series_ids: Some(vec![1, 2, 1]),
+                        ..Default::default()
+                    };
+
+                    kwargs
+                        .set_item("instrument_config", pyo3::Py::new(py, provider).unwrap())
+                        .unwrap();
+
+                    if kind == "data" {
+                        py.get_type::<PolymarketDataClientConfig>()
+                    } else {
+                        py.get_type::<PolymarketExecutionClientConfig>()
+                    }
+                }
+            };
+
+            let error = cls.call((), Some(&kwargs)).unwrap_err();
+
+            let field = if kind == "provider" {
+                "filters.slug"
+            } else {
+                "series_ids"
+            };
+
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(
+                error.value(py).str().unwrap().to_str().unwrap(),
+                format!("duplicate {field}")
+            );
         });
     }
 }

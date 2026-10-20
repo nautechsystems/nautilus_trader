@@ -150,7 +150,10 @@ pub(crate) fn custom_data_with_instrument(
 
 impl BetfairDataClient {
     /// Creates a new [`BetfairDataClient`] instance.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client or stream configuration is invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         client_id: ClientId,
@@ -161,7 +164,10 @@ impl BetfairDataClient {
         nav_filter: NavigationFilter,
         currency: Currency,
         min_notional: Option<Money>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+        stream_config.validate()?;
+
         let data_sender = get_data_event_sender();
         let http_client = Arc::new(http_client);
         let socket_control = Some(SocketControl::new(
@@ -193,7 +199,7 @@ impl BetfairDataClient {
         let session_tasks = TaskGroup::new();
         let command_tasks = TaskGroup::new();
 
-        Self {
+        Ok(Self {
             clock: get_atomic_clock_realtime(),
             client_id,
             http_client,
@@ -217,7 +223,7 @@ impl BetfairDataClient {
             command_tasks,
             stream_shutdowns: Arc::new(Mutex::new(Vec::new())),
             shutdown_errors: Vec::new(),
-        }
+        })
     }
 
     async fn finish_tasks(&self) -> anyhow::Result<()> {

@@ -267,15 +267,12 @@ impl VerificationRpcClient {
         identity: BlockchainProviderIdentity,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let rpc = BlockchainHttpRpcClient::new(http_rpc_url, rpc_requests_per_second, None)?;
+        Ok(Self {
             identity,
-            rpc: Arc::new(BlockchainHttpRpcClient::new(
-                http_rpc_url,
-                rpc_requests_per_second,
-                None,
-            )),
-        }
+            rpc: Arc::new(rpc),
+        })
     }
 
     pub(crate) fn from_authoritative(
@@ -412,8 +409,9 @@ impl VerificationCoordinator {
                 )
             },
         );
-        let verifier_a = verifiers.next().expect("validated verifier count");
-        let verifier_b = verifiers.next().expect("validated verifier count");
+
+        let verifier_a = verifiers.next().expect("validated verifier count")?;
+        let verifier_b = verifiers.next().expect("validated verifier count")?;
 
         Ok(Self {
             sources: [authoritative, verifier_a, verifier_b],
@@ -2124,11 +2122,8 @@ mod tests {
         let mut config = config();
         config.verifiers[0].http_rpc_url = format!("http://{verifier_a_addr}").into();
         config.verifiers[1].http_rpc_url = format!("http://{verifier_b_addr}").into();
-        let authoritative_rpc = Arc::new(BlockchainHttpRpcClient::new(
-            authoritative_url.clone(),
-            None,
-            None,
-        ));
+        let authoritative_rpc =
+            Arc::new(BlockchainHttpRpcClient::new(authoritative_url.clone(), None, None).unwrap());
         VerificationCoordinator::new(authoritative_rpc, &authoritative_url, &config, None).unwrap()
     }
 

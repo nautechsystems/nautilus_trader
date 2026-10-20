@@ -163,16 +163,17 @@ impl SnapshotValidation {
 impl BlockchainDataClientCore {
     /// Creates a new instance of [`BlockchainDataClientCore`].
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `use_hypersync_for_live_data` is false but `wss_rpc_url` is None.
-    #[must_use]
+    /// Returns an error if DEX selections contain duplicates or RPC or HyperSync initialization fails.
     pub fn new(
         config: BlockchainDataClientConfig,
         hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
         data_tx: Option<EventSender<DataEvent>>,
         cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let chain = Arc::clone(&config.chain);
         let cache = BlockchainCache::new(Arc::clone(&chain));
 
@@ -183,12 +184,14 @@ impl BlockchainDataClientCore {
             REDACTED
         );
 
-        let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
-            let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
+        let rpc_client = if let (false, Some(wss_rpc_url)) = (
+            config.use_hypersync_for_live_data,
+            config.wss_rpc_url.as_ref(),
+        ) {
             log::debug!("WebSocket RPC URL: {REDACTED}");
             Some(Self::initialize_rpc_client(
                 chain.name,
-                wss_rpc_url.into_inner(),
+                wss_rpc_url.clone().into_inner(),
                 config.transport_backend,
                 config.proxy_url.clone().map(|value| value.into_inner()),
             ))
@@ -200,7 +203,7 @@ impl BlockchainDataClientCore {
             config.http_rpc_url.clone().into_inner(),
             config.rpc_requests_per_second,
             config.proxy_url.clone().map(|value| value.into_inner()),
-        ));
+        )?);
         let multicall_calls_per_rpc_request = config.multicall_calls_per_rpc_request;
         let erc20_contract = Erc20Contract::new(
             Arc::clone(&http_rpc_client),
@@ -208,8 +211,8 @@ impl BlockchainDataClientCore {
         );
 
         let hypersync_client =
-            HyperSyncClient::new(Arc::clone(&chain), hypersync_tx, cancellation_token.clone());
-        Self {
+            HyperSyncClient::new(Arc::clone(&chain), hypersync_tx, cancellation_token.clone())?;
+        Ok(Self {
             chain,
             config,
             rpc_client,
@@ -223,7 +226,7 @@ impl BlockchainDataClientCore {
             subscription_manager: DefiDataSubscriptionManager::new(),
             data_tx,
             cancellation_token,
-        }
+        })
     }
 
     /// Configures socket state reporting and reconnect control for direct RPC data.
@@ -279,8 +282,11 @@ impl BlockchainDataClientCore {
     ///
     /// # Errors
     ///
-    /// Returns an error if cache initialization or connection setup fails.
+    /// Returns an error if DEX selections contain duplicates, cache initialization fails, or
+    /// connection setup fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
+        self.config.validate()?;
+
         log::debug!(
             "Connecting blockchain data client for '{}'",
             self.chain.name

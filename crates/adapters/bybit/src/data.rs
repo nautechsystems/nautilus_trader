@@ -137,6 +137,8 @@ impl BybitDataClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(client_id: ClientId, config: BybitDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let socket_factory = SocketControlFactory::new(client_id, Some(*BYBIT_VENUE));

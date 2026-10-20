@@ -1106,9 +1106,12 @@ mod tests {
     }
 
     fn instrument_provider() -> Arc<InteractiveBrokersInstrumentProvider> {
-        Arc::new(InteractiveBrokersInstrumentProvider::new(
-            InteractiveBrokersInstrumentProviderConfig::default(),
-        ))
+        Arc::new(
+            InteractiveBrokersInstrumentProvider::new(
+                InteractiveBrokersInstrumentProviderConfig::default(),
+            )
+            .unwrap(),
+        )
     }
 
     #[rstest::rstest]

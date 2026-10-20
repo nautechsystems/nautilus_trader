@@ -17,6 +17,7 @@
 
 use std::str::FromStr;
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::{identifiers::InstrumentId, types::Currency};
 use pyo3::prelude::*;
@@ -219,7 +220,7 @@ impl InteractiveBrokersExecutionClientConfig {
         validate_order_id_client_slot(client_id)?;
         let request_timeout = request_timeout.unwrap_or(60);
 
-        Ok(Self {
+        let config = Self {
             host,
             port,
             client_id,
@@ -231,7 +232,10 @@ impl InteractiveBrokersExecutionClientConfig {
             track_option_exercise_from_position_update: track_option_exercise_from_position_update
                 .unwrap_or(false),
             instrument_provider: instrument_provider.unwrap_or_default(),
-        })
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     /// Returns the host.
@@ -327,7 +331,7 @@ impl InteractiveBrokersInstrumentProviderConfig {
         filter_callable: Option<String>,
         cache_path: Option<String>,
     ) -> PyResult<Self> {
-        Ok(Self {
+        let config = Self {
             symbology_method: symbology_method.unwrap_or_default(),
             load_ids: load_ids.unwrap_or_default(),
             load_contracts: if let Some(c) = load_contracts {
@@ -359,7 +363,10 @@ impl InteractiveBrokersInstrumentProviderConfig {
                 .collect::<PyResult<_>>()?,
             filter_callable,
             cache_path,
-        })
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     /// Returns the symbology method.

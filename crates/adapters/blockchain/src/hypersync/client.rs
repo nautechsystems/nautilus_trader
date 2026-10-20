@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    env::VarError,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -23,12 +24,14 @@ use std::{
 
 use ahash::AHashMap;
 use alloy::primitives::Address;
+use anyhow::Context;
 use futures_util::Stream;
 use hypersync_client::{
     StreamConfig,
     net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
+use nautilus_common::config::{ConfigError, check_non_empty_field};
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, hex};
 use nautilus_live::task::{TaskJoinOutcome, TaskSlot, finish_task};
 use nautilus_model::{
@@ -41,6 +44,9 @@ use crate::{
     hypersync::transform::transform_hypersync_block,
     rpc::{http::validate_execution_endpoint, types::BlockchainMessage},
 };
+
+const API_TOKEN_ENV: &str = "ENVIO_API_TOKEN";
+const API_TOKEN_FORMAT: &str = "a UUID";
 
 /// An item yielded by the contract-events stream.
 ///
@@ -92,32 +98,35 @@ pub struct HyperSyncClient {
 impl HyperSyncClient {
     /// Creates a new [`HyperSyncClient`] instance for the given chain and message sender.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if:
-    /// - The chain's `hypersync_url` is invalid.
-    /// - The `ENVIO_API_TOKEN` environment variable is not set or invalid.
-    /// - The underlying client cannot be initialized.
-    #[must_use]
+    /// Returns an error if the HyperSync endpoint or `ENVIO_API_TOKEN` is invalid, the token
+    /// is missing, or the underlying client cannot be initialized.
     pub fn new(
         chain: SharedChain,
         tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
         cancellation_token: tokio_util::sync::CancellationToken,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let mut config = hypersync_client::ClientConfig::default();
+
         let hypersync_url = validate_execution_endpoint(chain.hypersync_url.as_str(), "HyperSync")
-            .expect("Invalid HyperSync URL");
+            .map_err(|e| ConfigError::invalid_value("chain.hypersync_url", e.to_string()))?;
+
         config.url = hypersync_url.to_string();
-        config.api_token = std::env::var("ENVIO_API_TOKEN")
-            .expect("ENVIO_API_TOKEN environment variable must be set");
+        config.api_token = std::env::var(API_TOKEN_ENV).map_err(|e| match e {
+            VarError::NotPresent => ConfigError::missing_field(API_TOKEN_ENV),
+            VarError::NotUnicode(_) => ConfigError::invalid_format(API_TOKEN_ENV, API_TOKEN_FORMAT),
+        })?;
+
+        check_non_empty_field(API_TOKEN_ENV, &config.api_token)?;
 
         config
             .validate()
-            .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
+            .map_err(|_| ConfigError::invalid_format(API_TOKEN_ENV, API_TOKEN_FORMAT))?;
         let client = hypersync_client::Client::new_with_agent(config, NAUTILUS_USER_AGENT)
-            .expect("Failed to create HyperSync client - check ENVIO_API_TOKEN is a valid UUID");
+            .context("failed to create HyperSync client")?;
 
-        Self {
+        Ok(Self {
             chain,
             client: Arc::new(client),
             blocks_task: TaskSlot::new(),
@@ -126,7 +135,7 @@ impl HyperSyncClient {
             tx,
             pool_addresses: AHashMap::new(),
             cancellation_token,
-        }
+        })
     }
 
     #[must_use]
@@ -840,11 +849,89 @@ mod tests {
         format::{Address as HypersyncAddress, Hash, Quantity},
         simple_types::{Block as HypersyncBlock, Log},
     };
+    #[cfg(not(madsim))]
+    use nautilus_common::{clients::DataClient, live::runner::replace_data_event_sender};
     use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
     use nautilus_model::defi::Chain;
+    #[cfg(not(madsim))]
+    use nautilus_model::identifiers::ClientId;
     use rstest::rstest;
 
     use super::*;
+    #[cfg(not(madsim))]
+    use crate::{config::BlockchainDataClientConfig, data::client::BlockchainDataClient};
+
+    #[cfg(not(madsim))]
+    const TOKEN_TEST_ENV: &str = "BLOCKCHAIN_HYPERSYNC_TOKEN_TEST";
+
+    #[cfg(not(madsim))]
+    #[rstest]
+    #[case::missing(None, "missing")]
+    #[case::empty(Some(""), "empty")]
+    #[case::malformed(Some("not-a-uuid"), "malformed")]
+    fn test_constructor_rejects_invalid_token(#[case] token: Option<&str>, #[case] expected: &str) {
+        let module = module_path!().split_once("::").unwrap().1;
+        let child_test = format!("{module}::hypersync_constructor_token_child");
+        let executable = std::env::current_exe().unwrap();
+        let mut command = std::process::Command::new(executable);
+        command
+            .args(["--exact", &child_test, "--ignored"])
+            .env(TOKEN_TEST_ENV, expected)
+            .env_remove(API_TOKEN_ENV);
+
+        if let Some(token) = token {
+            command.env(API_TOKEN_ENV, token);
+        }
+
+        let output = command.output().unwrap();
+        let stdout = String::from_utf8(output.stdout).unwrap();
+
+        assert_eq!(output.status.code(), Some(0), "{stdout}");
+        assert!(
+            stdout.contains(&format!("test {child_test} ... ok")),
+            "{stdout}"
+        );
+    }
+
+    #[cfg(not(madsim))]
+    #[ignore = "runs only in the isolated HyperSync token test process"]
+    #[tokio::test]
+    async fn hypersync_constructor_token_child() {
+        let Ok(case) = std::env::var(TOKEN_TEST_ENV) else {
+            return;
+        };
+
+        let expected = match case.as_str() {
+            "missing" => ConfigError::missing_field(API_TOKEN_ENV),
+            "empty" => ConfigError::empty_field(API_TOKEN_ENV),
+            "malformed" => ConfigError::invalid_format(API_TOKEN_ENV, "a UUID"),
+            _ => panic!("unexpected token test case: {case}"),
+        };
+
+        let mut chain = Chain::new(Blockchain::Arbitrum, 42_161);
+        chain.hypersync_url = "https://42161.hypersync.xyz".to_string();
+        let chain = Arc::new(chain);
+        let error = HyperSyncClient::new(
+            Arc::clone(&chain),
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .unwrap_err();
+        let config = BlockchainDataClientConfig::builder()
+            .chain(chain)
+            .http_rpc_url("http://127.0.0.1:1".into())
+            .build();
+        let mut client = BlockchainDataClient::new(ClientId::from("BLOCKCHAIN"), config).unwrap();
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        assert_eq!(error.downcast_ref::<ConfigError>(), Some(&expected));
+
+        for _ in 0..2 {
+            let error = client.connect().await.unwrap_err();
+            assert_eq!(error.downcast_ref::<ConfigError>(), Some(&expected));
+        }
+    }
 
     fn synthetic_block(number: u64, timestamp_secs: u64) -> HypersyncBlock {
         HypersyncBlock {
@@ -872,15 +959,23 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Invalid HyperSync URL")]
-    fn hypersync_rejects_remote_cleartext_before_loading_token() {
+    fn test_constructor_rejects_remote_cleartext_before_loading_token() {
         let mut chain = Chain::new(Blockchain::Arbitrum, 42_161);
         chain.hypersync_url = "http://localhost:8080".to_string();
 
-        let _ = HyperSyncClient::new(
+        let error = HyperSyncClient::new(
             Arc::new(chain),
             None,
             tokio_util::sync::CancellationToken::new(),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::invalid_value(
+                "chain.hypersync_url",
+                "HyperSync endpoint must use HTTPS unless its host is a canonical loopback IP literal",
+            )),
         );
     }
 

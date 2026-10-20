@@ -620,6 +620,7 @@ mod tests {
         cache::Cache,
         clients::{DataClient, ExecutionClient},
         clock::{Clock, VirtualClock},
+        config::ConfigError,
         live::{
             dst::time::Instant,
             runner::{replace_data_event_sender, replace_exec_event_sender},
@@ -660,7 +661,7 @@ mod tests {
     use super::{super::NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP, *};
     use crate::{
         common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
-        config::PolymarketDataClientConfig,
+        config::{PolymarketDataClientConfig, PolymarketInstrumentProviderConfig},
         data::instruments::{apply_live_instrument, cache_instrument_unchecked},
         http::{
             clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
@@ -669,6 +670,77 @@ mod tests {
         resolve::upsert_resolve_watch_entry_from_instrument,
         websocket::{messages::PolymarketWsMessage, pool::PolymarketMarketConnectionPool},
     };
+
+    #[rstest]
+    #[case::plain_duplicates(false, false)]
+    #[case::proxy_duplicates(true, false)]
+    #[case::plain_credentials(false, true)]
+    #[case::proxy_credentials(true, true)]
+    fn test_constructor_rejects_invalid_config(
+        #[case] with_proxy: bool,
+        #[case] credentials: bool,
+    ) {
+        let mut config = PolymarketDataClientConfig {
+            instrument_config: Some(PolymarketInstrumentProviderConfig {
+                series_ids: Some(vec![10684, 10684]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let expected_credential_error = if credentials {
+            config.instrument_config = None;
+            config.api_key = Some("fixture-key".into());
+            config.api_secret = Some("not base64!".into());
+            config.passphrase = Some("fixture-passphrase".into());
+            Some(config.polybolt_credential().unwrap_err().to_string())
+        } else {
+            None
+        };
+
+        let gamma = PolymarketGammaHttpClient::new(None, 1, RetryConfig::default()).unwrap();
+        let clob = PolymarketClobPublicClient::new(None, 1).unwrap();
+        let data_api = PolymarketDataApiHttpClient::new(None, 1).unwrap();
+
+        let ws_client = PolymarketMarketConnectionPool::new(
+            None,
+            false,
+            TransportBackend::default(),
+            WS_DEFAULT_SUBSCRIPTIONS,
+        );
+
+        let result = if with_proxy {
+            PolymarketDataClient::new_with_proxy(
+                *POLYMARKET_CLIENT_ID,
+                config,
+                gamma,
+                clob,
+                data_api,
+                ws_client,
+                None,
+            )
+        } else {
+            PolymarketDataClient::new(
+                *POLYMARKET_CLIENT_ID,
+                config,
+                gamma,
+                clob,
+                data_api,
+                ws_client,
+            )
+        };
+
+        let error = result.unwrap_err();
+
+        if let Some(expected) = expected_credential_error {
+            assert_eq!(error.to_string(), expected);
+        } else {
+            assert_eq!(
+                error.downcast_ref::<ConfigError>(),
+                Some(&ConfigError::duplicate("series_ids", None)),
+            );
+        }
+    }
 
     struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
 
@@ -733,6 +805,7 @@ mod tests {
             ws,
             proxy_url,
         )
+        .unwrap()
     }
 
     fn make_client_with_fetch_concurrency(concurrency: usize) -> PolymarketDataClient {
@@ -769,6 +842,7 @@ mod tests {
             data_api,
             ws,
         )
+        .unwrap()
     }
 
     #[rstest]
@@ -830,7 +904,8 @@ mod tests {
                 TransportBackend::default(),
                 WS_DEFAULT_SUBSCRIPTIONS,
             ),
-        );
+        )
+        .unwrap();
         let instruments = client
             .provider()
             .http_client()

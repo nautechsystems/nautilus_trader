@@ -88,7 +88,8 @@ impl DataClientFactory for BlockchainDataClientFactory {
                 )
             })?;
 
-        let client = BlockchainDataClient::new(ClientId::from(name), blockchain_config.clone());
+        blockchain_config.validate()?;
+        let client = BlockchainDataClient::new(ClientId::from(name), blockchain_config.clone())?;
 
         Ok(Box::new(client))
     }
@@ -172,10 +173,15 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-    use nautilus_common::factories::DataClientFactory;
-    use nautilus_model::defi::chain::{Blockchain, chains};
+    use nautilus_common::{
+        cache::Cache, clock::VirtualClock, config::ConfigError, factories::DataClientFactory,
+    };
+    use nautilus_model::defi::{
+        DexType,
+        chain::{Blockchain, chains},
+    };
     use rstest::rstest;
 
     use crate::{
@@ -203,5 +209,25 @@ mod tests {
         let factory = BlockchainDataClientFactory::new();
         assert_eq!(factory.name(), BLOCKCHAIN);
         assert_eq!(factory.config_type(), "BlockchainDataClientConfig");
+    }
+
+    #[rstest]
+    fn test_factory_rejects_duplicate_selections_before_setup() {
+        let config = BlockchainDataClientConfig::builder()
+            .chain(Arc::new(chains::ETHEREUM.clone()))
+            .http_rpc_url("https://rpc.example.com".into())
+            .dex_ids(vec![DexType::UniswapV2, DexType::UniswapV2])
+            .build();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let error = BlockchainDataClientFactory::new()
+            .create("BLOCKCHAIN", &config, cache.into(), clock)
+            .err()
+            .expect("duplicate config must fail before client setup");
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("dex_ids", None))
+        );
     }
 }

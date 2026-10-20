@@ -121,6 +121,8 @@ impl BybitExecutionClient {
         core: ExecutionClientCore,
         config: BybitExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let (key_var, secret_var) = credential_env_vars(config.environment);
         let api_key = get_or_env_var(
             config.api_key.clone().map(SecretString::into_inner),

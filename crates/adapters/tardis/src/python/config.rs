@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::{data::BarSpecification, identifiers::InstrumentId};
 use pyo3::prelude::*;
@@ -115,9 +116,10 @@ impl TardisDataClientConfig {
         stream_options: Option<Vec<StreamNormalizedRequestOptions>>,
         extract_bbo_as_quotes: Option<bool>,
         tardis_http_url: Option<String>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             tardis_ws_url: tardis_ws_url.map(SecretString::from),
             tardis_http_url: tardis_http_url.map(SecretString::from),
@@ -127,7 +129,10 @@ impl TardisDataClientConfig {
             extract_bbo_as_quotes: extract_bbo_as_quotes.unwrap_or(defaults.extract_bbo_as_quotes),
             options: options.unwrap_or_default(),
             stream_options: stream_options.unwrap_or_default(),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]

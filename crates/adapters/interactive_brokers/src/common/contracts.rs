@@ -35,7 +35,7 @@ pub(crate) const KEY_OPTIONS_CHAIN_EXCHANGE: &str = "options_chain_exchange";
 pub(crate) const KEY_OPTIONS_CHAIN_EXCHANGE_ALT: &str = "optionsChainExchange";
 
 /// A configured IB contract with optional per-contract chain-building settings.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ConfiguredContract {
     /// The IB contract to load.
     pub contract: Contract,

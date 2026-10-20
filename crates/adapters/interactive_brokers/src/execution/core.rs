@@ -447,6 +447,8 @@ impl InteractiveBrokersExecutionClient {
         config: InteractiveBrokersExecutionClientConfig,
         instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         anyhow::ensure!(
             !config.client_id.unsigned_abs().is_multiple_of(1000),
             "Interactive Brokers execution client_id must not be a multiple of 1000 because order ID partitioning uses client_id % 1000, was {}",

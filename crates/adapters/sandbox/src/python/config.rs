@@ -15,6 +15,7 @@
 
 //! Python bindings for sandbox configuration.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_execution::{
     models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModelAny},
     python::{
@@ -81,7 +82,7 @@ impl SandboxExecutionClientConfig {
             .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?;
 
-        Ok(Self {
+        let config = Self {
             account_id,
             venue,
             starting_balances,
@@ -109,7 +110,10 @@ impl SandboxExecutionClientConfig {
             use_market_order_acks,
             oto_full_trigger,
             price_protection_points: price_protection_points.unwrap_or(0),
-        })
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]

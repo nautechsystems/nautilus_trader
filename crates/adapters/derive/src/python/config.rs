@@ -15,10 +15,11 @@
 
 //! Python bindings for Derive configuration.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
-use pyo3::pymethods;
+use pyo3::{PyResult, pymethods};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -61,10 +62,10 @@ impl DeriveDataClientConfig {
         transport_backend: Option<TransportBackend>,
         book_snapshot_timeout_secs: Option<u64>,
         book_stale_threshold_secs: Option<u64>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
 
-        Self {
+        let config = Self {
             base_url_rest,
             base_url_ws,
             proxy_url: proxy_url.map(SecretString::from),
@@ -82,7 +83,10 @@ impl DeriveDataClientConfig {
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(defaults.auto_load_missing_instruments),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -186,5 +190,43 @@ impl DeriveExecutionClientConfig {
 
     fn __repr__(&self) -> String {
         stringify!(DeriveExecutionClientConfig).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, types::PyDict};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_python_currencies_normalized_uniqueness(#[values(false, true)] duplicate: bool) {
+        Python::initialize();
+        Python::attach(|py| {
+            let mut values = vec![" ETH ".to_string(), "BTC".to_string()];
+            if duplicate {
+                values.push("ETH".to_string());
+            }
+
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("currencies", &values).unwrap();
+            let result = py
+                .get_type::<DeriveDataClientConfig>()
+                .call((), Some(&kwargs));
+
+            if duplicate {
+                let error = result.unwrap_err();
+                assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+                assert_eq!(
+                    error.value(py).str().unwrap().to_str().unwrap(),
+                    "duplicate currencies"
+                );
+            } else {
+                let config = result.unwrap();
+                let config = config.extract::<PyRef<DeriveDataClientConfig>>().unwrap();
+                assert_eq!(config.currencies, values);
+            }
+        });
     }
 }

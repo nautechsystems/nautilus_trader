@@ -15,6 +15,7 @@
 
 //! Configuration structures for the OKX adapter.
 
+use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{enums::OmsType, identifiers::AccountId};
@@ -145,6 +146,25 @@ impl OKXDataClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("instrument_types", &self.instrument_types)?;
+
+        if let Some(values) = &self.contract_types {
+            check_unique_values("contract_types", values)?;
+        }
+
+        if let Some(values) = &self.instrument_families {
+            check_unique_values("instrument_families", values)?;
+        }
+
+        Ok(())
     }
 
     /// Returns `true` when all API credential fields are available (in config or env vars).
@@ -309,6 +329,25 @@ impl OKXExecutionClientConfig {
         Self::default()
     }
 
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("instrument_types", &self.instrument_types)?;
+
+        if let Some(values) = &self.contract_types {
+            check_unique_values("contract_types", values)?;
+        }
+
+        if let Some(values) = &self.instrument_families {
+            check_unique_values("instrument_families", values)?;
+        }
+
+        Ok(())
+    }
+
     /// Returns `true` when all API credential fields are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
@@ -346,10 +385,53 @@ impl OKXExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, config::ConfigError};
     use nautilus_core::string::secret::REDACTED;
+    use nautilus_live::ExecutionClientCore;
+    use nautilus_model::{
+        enums::{AccountType, OmsType},
+        identifiers::{ClientId, TraderId, Venue},
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::execution::OKXExecutionClient;
+
+    #[rstest]
+    #[case::empty(vec![], false)]
+    #[case::distinct(vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap], false)]
+    #[case::adjacent(vec![OKXInstrumentType::Swap, OKXInstrumentType::Swap], true)]
+    #[case::separated(vec![OKXInstrumentType::Swap, OKXInstrumentType::Spot, OKXInstrumentType::Swap], true)]
+    fn test_config_duplicate_types(
+        #[case] values: Vec<OKXInstrumentType>,
+        #[case] duplicate: bool,
+    ) {
+        let data = OKXDataClientConfig {
+            instrument_types: values.clone(),
+            ..Default::default()
+        };
+
+        let execution = OKXExecutionClientConfig {
+            instrument_types: values.clone(),
+            ..Default::default()
+        };
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate("instrument_types", None))
+        } else {
+            Ok(())
+        };
+
+        let data_result = data.validate();
+        let execution_result = execution.validate();
+
+        assert_eq!(data_result, expected);
+        assert_eq!(execution_result, expected);
+        assert_eq!(data.instrument_types, values);
+        assert_eq!(execution.instrument_types, values);
+    }
 
     const DATA_API_KEY: &str = "okx-data-api-key-sentinel";
     const DATA_API_SECRET: &str = "okx-data-api-secret-sentinel";
@@ -609,5 +691,70 @@ region = "eea"
 
         let exec: OKXExecutionClientConfig = toml::from_str("auth_timeout_secs = 8\n").unwrap();
         assert_eq!(exec.auth_timeout_secs, Some(8));
+    }
+
+    #[rstest]
+    #[case("contract_types")]
+    #[case("instrument_families")]
+    fn test_optional_selection_duplicates(#[case] field: &str) {
+        let contract_types = (field == "contract_types").then(|| {
+            vec![
+                OKXContractType::Linear,
+                OKXContractType::Inverse,
+                OKXContractType::Linear,
+            ]
+        });
+
+        let instrument_families = (field == "instrument_families").then(|| {
+            vec![
+                "BTC-USDT".to_string(),
+                "ETH-USDT".to_string(),
+                "BTC-USDT".to_string(),
+            ]
+        });
+
+        let data = OKXDataClientConfig {
+            contract_types: contract_types.clone(),
+            instrument_families: instrument_families.clone(),
+            ..Default::default()
+        };
+
+        let execution = OKXExecutionClientConfig {
+            contract_types,
+            instrument_families,
+            ..Default::default()
+        };
+
+        let expected = Err(ConfigError::duplicate(field, None));
+
+        assert_eq!(data.validate(), expected);
+        assert_eq!(execution.validate(), expected);
+    }
+
+    #[rstest]
+    fn test_execution_client_rejects_duplicate_types() {
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("OKX"),
+            Venue::from("OKX"),
+            OmsType::Netting,
+            AccountId::from("OKX-001"),
+            AccountType::Margin,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let config = OKXExecutionClientConfig {
+            instrument_types: vec![OKXInstrumentType::Swap, OKXInstrumentType::Swap],
+            ..Default::default()
+        };
+
+        let error = OKXExecutionClient::new(core, config)
+            .expect_err("duplicate config must fail before credentials or client setup");
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("instrument_types", None))
+        );
     }
 }

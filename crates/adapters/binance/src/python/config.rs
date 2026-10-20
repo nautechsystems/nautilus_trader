@@ -59,14 +59,18 @@ impl BinanceInstrumentProviderConfig {
             .map(nautilus_live::python::config::coerce_json_config)
             .transpose()?
             .unwrap_or_default();
-        Ok(Self {
+
+        let config = Self {
             load_all,
             load_ids,
             filters,
             filter_callable,
             log_warnings,
             query_commission_rates,
-        })
+        };
+
+        config.validate_selections().map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __repr__(&self) -> String {
@@ -642,6 +646,90 @@ mod tests {
             );
             assert!(!config.log_warnings);
             assert!(config.query_commission_rates);
+        });
+    }
+
+    #[rstest]
+    #[case("load_ids")]
+    #[case("symbols")]
+    #[case("contract_types")]
+    fn test_python_provider_selection_uniqueness(
+        #[case] field: &str,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let mut values = vec!["first", "second"];
+            if duplicate {
+                values.push("first");
+            }
+
+            let kwargs = PyDict::new(py);
+            if field == "load_ids" {
+                kwargs.set_item("load_ids", &values).unwrap();
+            } else {
+                let filters = PyDict::new(py);
+                filters.set_item(field, &values).unwrap();
+                kwargs.set_item("filters", filters).unwrap();
+            }
+
+            let result = py
+                .get_type::<BinanceInstrumentProviderConfig>()
+                .call((), Some(&kwargs));
+
+            if duplicate {
+                let error = result.unwrap_err();
+
+                let expected = if field == "load_ids" {
+                    "instrument_provider.load_ids".to_string()
+                } else {
+                    format!("instrument_provider.filters.{field}")
+                };
+
+                assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+                assert_eq!(
+                    error.value(py).str().unwrap().to_str().unwrap(),
+                    format!("duplicate {expected}")
+                );
+            } else {
+                let config = result.unwrap();
+                let config = config
+                    .extract::<PyRef<BinanceInstrumentProviderConfig>>()
+                    .unwrap();
+
+                if field == "load_ids" {
+                    assert_eq!(config.load_ids.as_ref().unwrap(), &values);
+                } else {
+                    assert_eq!(config.filters.get(field), Some(&serde_json::json!(values)));
+                }
+            }
+        });
+    }
+
+    #[rstest]
+    #[case("symbols", vec!["BTCUSDT", " btcusdt "])]
+    #[case("bases", vec!["BTC", " btc "])]
+    #[case("quotes", vec!["USDT", " usdt "])]
+    #[case("contract_types", vec!["PERPETUAL", " perpetual "])]
+    fn test_python_provider_rejects_normalized_duplicates(
+        #[case] field: &str,
+        #[case] values: Vec<&str>,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let filters = PyDict::new(py);
+            filters.set_item(field, values).unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("filters", filters).unwrap();
+            let error = py
+                .get_type::<BinanceInstrumentProviderConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(
+                error.value(py).str().unwrap().to_str().unwrap(),
+                format!("duplicate instrument_provider.filters.{field}")
+            );
         });
     }
 }

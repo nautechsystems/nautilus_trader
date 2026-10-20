@@ -100,7 +100,7 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
 
         let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             ib_config.instrument_provider.clone(),
-        ));
+        )?);
         instrument_provider.seed_from_cache(&cache.borrow());
 
         let client = InteractiveBrokersDataClient::new(
@@ -172,7 +172,7 @@ impl ExecutionClientFactory for InteractiveBrokersExecutionClientFactory {
 
         let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             ib_config.instrument_provider.clone(),
-        ));
+        )?);
         instrument_provider.seed_from_cache(&cache.borrow());
 
         let core = ExecutionClientCore::new(

@@ -15,6 +15,7 @@
 
 //! Python bindings for Deribit configuration.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
@@ -67,9 +68,10 @@ impl DeribitDataClientConfig {
         update_instruments_interval_mins: Option<u64>,
         auto_load_missing_instruments: Option<bool>,
         transport_backend: Option<TransportBackend>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
@@ -90,7 +92,10 @@ impl DeribitDataClientConfig {
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(defaults.auto_load_missing_instruments),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -140,9 +145,10 @@ impl DeribitExecutionClientConfig {
         retry_delay_max_ms: Option<u64>,
         auth_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             account_id,
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
@@ -158,7 +164,10 @@ impl DeribitExecutionClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             auth_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -168,5 +177,75 @@ impl DeribitExecutionClientConfig {
 
     fn __repr__(&self) -> String {
         stringify!(DeribitExecutionClientConfig).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{
+        Python,
+        exceptions::PyValueError,
+        types::{PyDict, PyList},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::data(false)]
+    #[case::execution(true)]
+    fn test_python_config_duplicate_types(
+        #[case] execution: bool,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let values = if duplicate {
+                vec![
+                    DeribitProductType::Future,
+                    DeribitProductType::Option,
+                    DeribitProductType::Future,
+                ]
+            } else {
+                vec![DeribitProductType::Future, DeribitProductType::Option]
+            };
+
+            let objects: Vec<_> = values
+                .iter()
+                .map(|value| Py::new(py, *value).unwrap())
+                .collect();
+            let list = PyList::new(py, objects).unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("product_types", list).unwrap();
+            if execution {
+                kwargs
+                    .set_item(
+                        "account_id",
+                        Py::new(py, AccountId::from("DERIBIT-001")).unwrap(),
+                    )
+                    .unwrap();
+            }
+
+            let config_type = if execution {
+                py.get_type::<DeribitExecutionClientConfig>()
+            } else {
+                py.get_type::<DeribitDataClientConfig>()
+            };
+
+            let result = config_type.call((), Some(&kwargs));
+            if duplicate {
+                let error = result.unwrap_err();
+                assert!(error.is_instance_of::<PyValueError>(py));
+                assert_eq!(
+                    error.value(py).str().unwrap().to_str().unwrap(),
+                    "duplicate product_types"
+                );
+            } else {
+                let config = result.unwrap();
+                let actual: Vec<DeribitProductType> =
+                    config.getattr("product_types").unwrap().extract().unwrap();
+                assert_eq!(actual, values);
+            }
+        });
     }
 }

@@ -25,7 +25,7 @@ use ibapi::{
     subscriptions::SubscriptionItem,
 };
 use jiff::{Span, Timestamp, tz::Offset};
-use nautilus_common::cache::Cache;
+use nautilus_common::{cache::Cache, config::ConfigResult};
 use nautilus_model::{
     identifiers::{InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -154,10 +154,16 @@ impl StartupInstrumentLoader for IbStartupInstrumentLoader<'_> {
 
 impl InteractiveBrokersInstrumentProvider {
     /// Create a new `InteractiveBrokersInstrumentProvider`.
-    pub fn new(config: InteractiveBrokersInstrumentProviderConfig) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configured contracts contain duplicates.
+    pub fn new(config: InteractiveBrokersInstrumentProviderConfig) -> ConfigResult<Self> {
+        config.validate()?;
+
         let symbology = Symbology::new(config.symbology_method);
 
-        Self {
+        Ok(Self {
             config,
             symbology,
             contract_id_to_instrument_id: Arc::new(DashMap::new()),
@@ -166,7 +172,7 @@ impl InteractiveBrokersInstrumentProvider {
             contracts: Arc::new(DashMap::new()),
             price_magnifiers: Arc::new(DashMap::new()),
             startup_initialized: Arc::new(tokio::sync::Mutex::new(false)),
-        }
+        })
     }
 
     #[cfg(test)]
@@ -208,8 +214,10 @@ impl InteractiveBrokersInstrumentProvider {
     ///
     /// # Errors
     ///
-    /// Returns an error if cache loading fails.
+    /// Returns an error if configured contracts repeat.
     pub async fn initialize(&self) -> anyhow::Result<()> {
+        self.validate()?;
+
         if let Some(ref cache_path) = self.config.cache_path {
             match self.load_cache(cache_path).await {
                 Ok(cache_loaded) => {
@@ -1352,6 +1360,7 @@ impl InteractiveBrokersInstrumentProvider {
         contracts: Option<Vec<Contract>>,
         force_instrument_update: bool,
     ) -> anyhow::Result<Vec<InstrumentId>> {
+        self.validate()?;
         let mut loaded_ids = Vec::new();
 
         // Load from instrument IDs
@@ -1422,6 +1431,10 @@ impl InteractiveBrokersInstrumentProvider {
         }
 
         Ok(loaded_ids)
+    }
+
+    fn validate(&self) -> ConfigResult<()> {
+        self.config.validate()
     }
 }
 
@@ -2674,6 +2687,7 @@ mod tests {
         sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     };
 
+    use nautilus_common::config::ConfigError;
     use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
         identifiers::{Symbol, Venue},
@@ -2764,7 +2778,7 @@ mod tests {
             .cache_validity_days(7u32)
             .build();
 
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         (provider, temp_dir)
     }
 
@@ -2796,7 +2810,7 @@ mod tests {
 
     #[rstest]
     fn test_qualified_opra_details_preserve_canonical_instrument_identity() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let requested_id = InstrumentId::from("AAPL  270115P00155000.OPRA");
         let request = provider
             .resolve_contract_for_instrument(requested_id)
@@ -2917,7 +2931,7 @@ mod tests {
             ..Default::default()
         };
 
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         let loader = TestStartupLoader::new(true, true);
 
         let loaded_ids = provider.initialize_with_loader(&loader).await.unwrap();
@@ -2953,7 +2967,7 @@ mod tests {
             ..Default::default()
         };
 
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         let loader = TestStartupLoader::new(true, false);
 
         let error = provider.initialize_with_loader(&loader).await.unwrap_err();
@@ -2978,7 +2992,7 @@ mod tests {
             ..Default::default()
         };
 
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         let loader = TestStartupLoader::new(true, true);
         loader.fail_next_id.store(true, Ordering::SeqCst);
 
@@ -3004,7 +3018,7 @@ mod tests {
             ..Default::default()
         };
 
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
         let mut loader = TestStartupLoader::new(true, true);
         loader.yield_on_load = true;
 
@@ -3085,7 +3099,7 @@ mod tests {
             .cache_validity_days(7u32)
             .build();
 
-        let new_provider = InteractiveBrokersInstrumentProvider::new(new_config);
+        let new_provider = InteractiveBrokersInstrumentProvider::new(new_config).unwrap();
 
         let result = new_provider.load_cache(&cache_path).await;
         assert!(result.is_ok(), "load_cache should succeed");
@@ -3108,7 +3122,8 @@ mod tests {
             InteractiveBrokersInstrumentProviderConfig::builder()
                 .cache_validity_days(7u32)
                 .build(),
-        );
+        )
+        .unwrap();
         let cache_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/test_data/instrument_cache_chrono.json"
@@ -3153,7 +3168,8 @@ mod tests {
         );
         provider.save_cache(&cache_path).await.unwrap();
 
-        let new_provider = InteractiveBrokersInstrumentProvider::new(provider.config.clone());
+        let new_provider =
+            InteractiveBrokersInstrumentProvider::new(provider.config.clone()).unwrap();
 
         assert!(new_provider.load_cache(&cache_path).await.unwrap());
         assert_eq!(
@@ -3180,7 +3196,7 @@ mod tests {
             ..Default::default()
         };
 
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
 
         assert!(provider.is_filtered_sec_type(&SecurityType::Option.to_string()));
         assert!(!provider.is_filtered_sec_type(&SecurityType::Stock.to_string()));
@@ -3188,7 +3204,7 @@ mod tests {
 
     #[rstest]
     fn test_add_cached_instruments_only_seeds_ib_contracts() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let ib_instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("XNAS"));
         let non_ib_instrument_id =
             InstrumentId::new(Symbol::from("BTCUSDT"), Venue::from("BINANCE"));
@@ -3240,7 +3256,7 @@ mod tests {
 
     #[rstest]
     fn test_add_cached_instruments_cuts_stored_expiry_to_date() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let instrument_id = InstrumentId::new(Symbol::from("ESZ6"), Venue::from("CME"));
         let contract = create_future_contract_with_expiry_time();
         let instrument = create_test_instrument_with_info(
@@ -3292,7 +3308,8 @@ mod tests {
         );
         provider.save_cache(&cache_path).await.unwrap();
 
-        let new_provider = InteractiveBrokersInstrumentProvider::new(provider.config.clone());
+        let new_provider =
+            InteractiveBrokersInstrumentProvider::new(provider.config.clone()).unwrap();
 
         assert!(new_provider.load_cache(&cache_path).await.unwrap());
         assert_eq!(
@@ -3364,7 +3381,7 @@ mod tests {
     }
     #[rstest]
     fn restored_cache_seeds_provider_with_price_magnifier() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let mut cache = Cache::default();
         assert_eq!(provider.seed_from_cache(&cache), 0);
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
@@ -3401,7 +3418,7 @@ mod tests {
     fn cached_instrument_without_valid_magnifier_requires_qualification(
         #[case] magnifier: Option<i32>,
     ) {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
 
         let contract = Contract {
@@ -3419,7 +3436,7 @@ mod tests {
 
     #[rstest]
     fn price_magnifier_is_none_until_contract_metadata_is_loaded() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
         provider
             .instruments
@@ -3440,7 +3457,7 @@ mod tests {
 
     #[rstest]
     fn instrument_cached_after_seeding_supplies_its_price_magnifier() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let mut cache = Cache::default();
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
         assert_eq!(provider.seed_from_cache(&cache), 0);
@@ -3477,7 +3494,7 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_price_magnifier_skips_the_request_when_the_magnifier_is_known() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
         provider.price_magnifiers.insert(instrument_id, 100);
         let requests = AtomicUsize::new(0);
@@ -3496,7 +3513,7 @@ mod tests {
 
     #[tokio::test]
     async fn ensure_price_magnifier_takes_it_from_requested_contract_details() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
 
         let magnifier = provider
@@ -3522,7 +3539,7 @@ mod tests {
         #[case] request_fails: bool,
         #[case] expected: &str,
     ) {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
 
         let error = provider
@@ -3542,7 +3559,7 @@ mod tests {
     #[rstest]
     #[tokio::test(start_paused = true)]
     async fn ensure_price_magnifier_times_out_when_the_request_never_completes() {
-        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
         let timeout = Duration::from_secs(5);
         let start = tokio::time::Instant::now();
@@ -3558,5 +3575,16 @@ mod tests {
         );
         assert_eq!(tokio::time::Instant::now() - start, timeout);
         assert_eq!(provider.price_magnifier(&instrument_id), None);
+    }
+
+    #[rstest]
+    fn test_provider_rejects_duplicate_contracts_before_loading() {
+        let config = serde_json::from_value(serde_json::json!({
+            "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+        }))
+        .unwrap();
+        let error = InteractiveBrokersInstrumentProvider::new(config).unwrap_err();
+
+        assert_eq!(error, ConfigError::duplicate("load_contracts", None));
     }
 }

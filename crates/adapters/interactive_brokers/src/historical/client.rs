@@ -121,11 +121,13 @@ impl HistoricalInteractiveBrokersClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if provider initialization or the IB connection fails.
+    /// Returns an error if configuration validation, provider initialization, or the IB connection fails.
     pub async fn connect(config: InteractiveBrokersDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let instrument_provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             config.instrument_provider.clone(),
-        ));
+        )?);
         let shared_client = shared_client::get_or_connect(
             &config.host,
             config.port,
@@ -168,12 +170,14 @@ impl HistoricalInteractiveBrokersClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the shared client cannot connect or the instrument provider cannot
-    /// initialize.
+    /// Returns an error if configuration validation fails, the shared client cannot connect, or
+    /// the instrument provider cannot initialize.
     pub async fn connect_with_provider(
         instrument_provider: InteractiveBrokersInstrumentProvider,
         config: InteractiveBrokersDataClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let shared_client = shared_client::get_or_connect(
             &config.host,
             config.port,
@@ -922,5 +926,48 @@ fn data_ts_event(data: &Data) -> UnixNanos {
         Data::Trade(tick) => tick.ts_event,
         Data::Quote(tick) => tick.ts_event,
         _ => UnixNanos::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::config::ConfigError;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::config::InteractiveBrokersInstrumentProviderConfig;
+
+    #[rstest]
+    #[case::config(false)]
+    #[case::supplied_config(true)]
+    #[tokio::test]
+    async fn test_historical_connect_rejects_duplicates_before_connection(#[case] supplied: bool) {
+        let duplicate_provider: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(serde_json::json!({
+                "load_contracts": [{"conId": 265598}, {"conId": 265598}]
+            }))
+            .unwrap();
+
+        let config = InteractiveBrokersDataClientConfig {
+            host: "127.0.0.1".to_string(),
+            port: 1,
+            connection_timeout: 1,
+            instrument_provider: duplicate_provider,
+            ..Default::default()
+        };
+
+        let result = if supplied {
+            let provider = InteractiveBrokersInstrumentProvider::new(Default::default()).unwrap();
+
+            HistoricalInteractiveBrokersClient::connect_with_provider(provider, config).await
+        } else {
+            HistoricalInteractiveBrokersClient::connect(config).await
+        };
+
+        let error = result.expect_err("duplicate config must fail before gateway connection");
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("load_contracts", None))
+        );
     }
 }

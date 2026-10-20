@@ -24,7 +24,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
@@ -72,7 +72,7 @@ use crate::{
         recovery::{spawn_recovery_monitor, spawn_recovery_task, start_recovery},
         sync::{BookFrame, BookSubscription, BookSubscriptions},
     },
-    common::{consts::COINAPI, credential::resolve_api_key, symbol::VenueSymbol},
+    common::{consts::COINAPI, credential::resolve_api_key},
     config::{CoinApiDataClientConfig, CoinApiInstrumentSelection},
     http::{
         client::{CoinApiHttpClient, HistoryPages},
@@ -145,7 +145,7 @@ impl CoinApiDataClient {
     ///
     /// Panics if the data event sender is not initialized on this thread.
     pub fn new(client_id: ClientId, config: CoinApiDataClientConfig) -> anyhow::Result<Self> {
-        validate_selections(&config.instruments)?;
+        config.validate()?;
         validate_price_precisions(&config.instruments, &config.price_precisions)?;
         let api_key = resolve_api_key(config.api_key.clone())?;
         let http = CoinApiHttpClient::new(api_key.clone(), config.http_config())?;
@@ -1148,33 +1148,6 @@ impl InstrumentIndexState {
     }
 }
 
-fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Result<()> {
-    let mut seen = AHashSet::new();
-
-    for selection in selections {
-        anyhow::ensure!(
-            !selection.instrument_ids.is_empty(),
-            "CoinAPI selection for {} lists no instruments",
-            selection.exchange_id
-        );
-
-        for instrument_id in &selection.instrument_ids {
-            let exchange_id = VenueSymbol::from_native(*instrument_id)?.exchange_id;
-            anyhow::ensure!(
-                exchange_id == selection.exchange_id,
-                "{instrument_id} maps to CoinAPI exchange {exchange_id}, not {}",
-                selection.exchange_id
-            );
-            anyhow::ensure!(
-                seen.insert(*instrument_id),
-                "{instrument_id} is selected more than once"
-            );
-        }
-    }
-
-    Ok(())
-}
-
 fn validate_price_precisions(
     selections: &[CoinApiInstrumentSelection],
     price_precisions: &HashMap<InstrumentId, u8>,
@@ -1715,7 +1688,7 @@ mod tests {
     )]
     #[case(
         vec![selection("COINBASE", &["BTC-USD.COINBASE"]), selection("COINBASE", &["BTC-USD.COINBASE"])],
-        Some("BTC-USD.COINBASE is selected more than once")
+        Some("duplicate instruments")
     )]
     #[case(
         vec![selection("DERIBIT", &["BTC-PERPETUAL.DERIBIT"])],
@@ -1725,7 +1698,12 @@ mod tests {
         #[case] selections: Vec<CoinApiInstrumentSelection>,
         #[case] expected: Option<&str>,
     ) {
-        let result = validate_selections(&selections);
+        let config = CoinApiDataClientConfig {
+            instruments: selections,
+            ..Default::default()
+        };
+
+        let result = config.validate();
 
         assert_eq!(result.err().map(|e| e.to_string()).as_deref(), expected);
     }

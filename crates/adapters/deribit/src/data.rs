@@ -116,6 +116,8 @@ impl DeribitDataClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(client_id: ClientId, config: DeribitDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let api_key = config

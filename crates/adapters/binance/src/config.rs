@@ -17,7 +17,7 @@
 
 use std::{any::Any, collections::HashMap, fmt::Debug, str::FromStr, time::Duration};
 
-use nautilus_common::factories::ClientConfig;
+use nautilus_common::{config::check_unique_values, factories::ClientConfig};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -33,7 +33,10 @@ use nautilus_network::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::common::enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType};
+use crate::common::{
+    enums::{BinanceEnvironment, BinanceMarginType, BinanceProductType},
+    instruments::filter_values,
+};
 
 /// Configuration for Binance instrument loading.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
@@ -83,10 +86,12 @@ impl Default for BinanceInstrumentProviderConfig {
 impl BinanceInstrumentProviderConfig {
     /// Validates instrument loading configuration.
     ///
+    /// Filter selection uniqueness uses trimmed, uppercase values.
+    ///
     /// # Errors
     ///
-    /// Returns an error if IDs are malformed, filters are unsupported, or a legacy callable filter
-    /// cannot run safely in Binance v2.
+    /// Returns an error if IDs are malformed, selections contain duplicates, filters are
+    /// unsupported, or a legacy callable filter cannot run safely in Binance v2.
     pub fn validate(&self, product_type: BinanceProductType) -> anyhow::Result<()> {
         if let Some(filter_callable) = self
             .filter_callable
@@ -125,6 +130,21 @@ impl BinanceInstrumentProviderConfig {
             validate_filter_strings(key, value)?;
         }
 
+        self.validate_selections()?;
+        Ok(())
+    }
+
+    pub(crate) fn validate_selections(&self) -> anyhow::Result<()> {
+        if let Some(values) = &self.load_ids {
+            check_unique_values("instrument_provider.load_ids", values)?;
+        }
+
+        for (name, value) in &self.filters {
+            if value.is_array() {
+                filter_values(self, name)?;
+            }
+        }
+
         Ok(())
     }
 
@@ -154,6 +174,7 @@ fn validate_filter_strings(name: &str, value: &serde_json::Value) -> anyhow::Res
         valid,
         "Binance instrument filter {name:?} must be a non-empty string or array of strings"
     );
+
     Ok(())
 }
 
@@ -541,6 +562,7 @@ impl ClientConfig for BinanceExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;
@@ -831,5 +853,83 @@ oms_type = "Hedging"
                 "Binance instrument filter \"bases\" must be a non-empty string or array of strings"
             );
         }
+    }
+
+    #[rstest]
+    #[case("load_ids", serde_json::json!(["BTCUSDT.BINANCE", "ETHUSDT.BINANCE"]))]
+    fn test_instrument_provider_selection_uniqueness(
+        #[case] field: &str,
+        #[case] mut values: serde_json::Value,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        if duplicate {
+            let entries = values.as_array_mut().unwrap();
+            entries.push(entries[0].clone());
+        }
+
+        let mut input = serde_json::to_value(BinanceInstrumentProviderConfig::default()).unwrap();
+        input[field] = values;
+        let config: BinanceInstrumentProviderConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate(
+                format!("instrument_provider.{field}"),
+                None,
+            ))
+        } else {
+            Ok(())
+        };
+
+        let result = config
+            .validate(BinanceProductType::Spot)
+            .map_err(|e| e.downcast::<ConfigError>().unwrap());
+
+        assert_eq!(result, expected);
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case("symbols")]
+    #[case("bases")]
+    #[case("quotes")]
+    #[case("contract_types")]
+    fn test_filter_arrays_reject_duplicates(#[case] field: &str) {
+        let mut config = BinanceInstrumentProviderConfig::default();
+        config.filters.insert(
+            field.to_string(),
+            serde_json::json!(["first", "second", "first"]),
+        );
+        let error = config.validate(BinanceProductType::UsdM).unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate(
+                format!("instrument_provider.filters.{field}"),
+                None
+            ))
+        );
+    }
+
+    #[rstest]
+    #[case("symbols", serde_json::json!(["BTCUSDT", " btcusdt "]))]
+    #[case("bases", serde_json::json!(["BTC", " btc "]))]
+    #[case("quotes", serde_json::json!(["USDT", " usdt "]))]
+    #[case("contract_types", serde_json::json!(["PERPETUAL", " perpetual "]))]
+    fn test_filter_arrays_reject_normalized_duplicates(
+        #[case] field: &str,
+        #[case] values: serde_json::Value,
+    ) {
+        let mut config = BinanceInstrumentProviderConfig::default();
+        config.filters.insert(field.to_string(), values.clone());
+        let error = config.validate(BinanceProductType::UsdM).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate(
+                format!("instrument_provider.filters.{field}"),
+                None
+            ))
+        );
+        assert_eq!(config.filters.get(field), Some(&values));
     }
 }

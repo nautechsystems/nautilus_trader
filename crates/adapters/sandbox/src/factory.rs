@@ -140,7 +140,7 @@ impl SimulatedExecutionClientFactory for ConfiguredSandboxExecutionClientFactory
                 clock,
                 cache,
                 factory(),
-            ),
+            )?,
             None => SandboxExecutionClient::new(core, sandbox_config, clock, cache)?,
         };
         Ok(Box::new(client))

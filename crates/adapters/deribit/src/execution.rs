@@ -88,6 +88,8 @@ impl DeribitExecutionClient {
         core: ExecutionClientCore,
         config: DeribitExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let api_key = config
             .api_key
             .as_ref()

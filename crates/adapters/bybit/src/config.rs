@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::config::{ConfigResult, check_unique_values};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -133,6 +134,15 @@ impl BybitDataClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `product_types` repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("product_types", &self.product_types)
     }
 
     /// Returns `true` if both API key and secret are available.
@@ -300,6 +310,15 @@ impl BybitExecutionClientConfig {
         Self::default()
     }
 
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `product_types` repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("product_types", &self.product_types)
+    }
+
     /// Returns `true` if both API key and secret are available.
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
@@ -332,9 +351,65 @@ impl BybitExecutionClientConfig {
 }
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, config::ConfigError};
+    use nautilus_live::ExecutionClientCore;
+    use nautilus_model::{
+        enums::{AccountType, OmsType},
+        identifiers::{ClientId, TraderId, Venue},
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::{data::BybitDataClient, execution::BybitExecutionClient};
+
+    #[rstest]
+    fn test_data_client_rejects_duplicate_types() {
+        let config = BybitDataClientConfig {
+            product_types: vec![BybitProductType::Linear, BybitProductType::Linear],
+            ..Default::default()
+        };
+
+        let error = BybitDataClient::new(ClientId::from("BYBIT"), config)
+            .expect_err("duplicate config must fail before client setup");
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("product_types", None)),
+        );
+    }
+
+    #[rstest]
+    #[case::empty(vec![], false)]
+    #[case::distinct(vec![BybitProductType::Spot, BybitProductType::Linear], false)]
+    #[case::adjacent(vec![BybitProductType::Linear, BybitProductType::Linear], true)]
+    #[case::separated(vec![BybitProductType::Linear, BybitProductType::Spot, BybitProductType::Linear], true)]
+    fn test_config_duplicate_types(#[case] values: Vec<BybitProductType>, #[case] duplicate: bool) {
+        let data = BybitDataClientConfig {
+            product_types: values.clone(),
+            ..Default::default()
+        };
+
+        let execution = BybitExecutionClientConfig {
+            product_types: values.clone(),
+            ..Default::default()
+        };
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate("product_types", None))
+        } else {
+            Ok(())
+        };
+
+        let data_result = data.validate();
+        let execution_result = execution.validate();
+
+        assert_eq!(data_result, expected);
+        assert_eq!(execution_result, expected);
+        assert_eq!(data.product_types, values);
+        assert_eq!(execution.product_types, values);
+    }
 
     #[rstest]
     fn test_config_debug_redacts_credentials() {
@@ -635,5 +710,32 @@ http_timeout_secs = 45
         );
         assert_eq!(config.recv_window_ms, expected.recv_window_ms);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_execution_client_rejects_duplicate_types() {
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("BYBIT"),
+            Venue::from("BYBIT"),
+            OmsType::Netting,
+            AccountId::from("BYBIT-001"),
+            AccountType::Margin,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let config = BybitExecutionClientConfig {
+            product_types: vec![BybitProductType::Linear, BybitProductType::Linear],
+            ..Default::default()
+        };
+
+        let error = BybitExecutionClient::new(core, config)
+            .expect_err("duplicate config must fail before credentials or client setup");
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("product_types", None))
+        );
     }
 }

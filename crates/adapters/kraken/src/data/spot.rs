@@ -107,7 +107,13 @@ pub struct KrakenSpotDataClient {
 
 impl KrakenSpotDataClient {
     /// Creates a new [`KrakenSpotDataClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configuration validation or client initialization fails.
     pub fn new(client_id: ClientId, config: KrakenDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let session_tasks = TaskGroup::new();
         let cancellation_token = session_tasks.cancellation_token();
         let command_tasks = TaskGroup::new();
@@ -146,7 +152,7 @@ impl KrakenSpotDataClient {
         };
 
         let ws =
-            KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone(), proxy_url)
+            KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone(), proxy_url)?
                 .with_socket_control(socket_factory.control("kraken-spot-data-streams"));
 
         Ok(Self {
@@ -271,7 +277,7 @@ impl KrakenSpotDataClient {
                     .proxy_url
                     .as_ref()
                     .map(|value| value.expose_secret().to_owned()),
-            )
+            )?
             .with_socket_control(self.socket_factory.control("kraken-spot-data-streams"));
         }
         Ok(())
@@ -326,7 +332,7 @@ impl KrakenSpotDataClient {
                     .proxy_url
                     .as_ref()
                     .map(|value| value.expose_secret().to_owned()),
-            )
+            )?
             .with_socket_control(self.socket_factory.control("kraken-spot-l3-data-streams"));
 
             self.l3_handler_task = self.spawn_l3_handler_task(ws_l3.clone(), false);
@@ -1602,11 +1608,9 @@ mod tests {
             })
             .unwrap();
         client.l3_handler_task = Some(task.clone());
-        client.ws_l3 = Some(KrakenSpotWebSocketClient::l3(
-            config,
-            client.cancellation_token.clone(),
-            None,
-        ));
+        client.ws_l3 = Some(
+            KrakenSpotWebSocketClient::l3(config, client.cancellation_token.clone(), None).unwrap(),
+        );
 
         client.teardown_partial_connect().await.unwrap();
 

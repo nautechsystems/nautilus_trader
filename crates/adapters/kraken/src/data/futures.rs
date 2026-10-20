@@ -103,7 +103,13 @@ pub struct KrakenFuturesDataClient {
 
 impl KrakenFuturesDataClient {
     /// Creates a new [`KrakenFuturesDataClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configuration validation or client initialization fails.
     pub fn new(client_id: ClientId, config: KrakenDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let session_tasks = TaskGroup::new();
         let cancellation_token = session_tasks.cancellation_token();
         let command_tasks = TaskGroup::new();

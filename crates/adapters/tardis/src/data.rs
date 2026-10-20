@@ -90,12 +90,19 @@ pub struct TardisDataClient {
 }
 
 impl TardisDataClient {
+    // panics-doc-ok (transitive via get_data_event_sender)
     /// Creates a new [`TardisDataClient`] instance.
     ///
     /// # Errors
     ///
-    /// Returns an error if the data event sender is not initialized.
+    /// Returns an error if configured replay or stream selections contain duplicates.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the data event sender is not initialized on this thread.
     pub fn new(client_id: ClientId, config: TardisDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let data_sender = get_data_event_sender();
 
         let tasks = TaskGroup::new();

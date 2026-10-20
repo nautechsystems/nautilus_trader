@@ -255,7 +255,8 @@ mod tests {
         let instrument_id = instrument.id;
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
         provider.insert_test_instrument(InstrumentAny::CryptoPerpetual(instrument), 4242, 1);
 
         let mut builder = OrderTestBuilder::new(order_type);
@@ -366,7 +367,8 @@ mod tests {
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -396,7 +398,8 @@ mod tests {
         let order = create_test_order_with_side_and_tags(side, tags_json);
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("an action within the order side is valid");
@@ -454,7 +457,8 @@ mod tests {
         let order = create_test_order_with_side_and_tags(side, tags_json);
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect_err("the tag must be rejected");
@@ -493,7 +497,7 @@ mod tests {
         let tags_json = r#"{"activeStartTime": "20250101 09:30:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
         let config = InteractiveBrokersInstrumentProviderConfig::default();
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
 
         let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
         assert!(result.is_ok());
@@ -507,7 +511,7 @@ mod tests {
         let tags_json = r#"{"activeStopTime": "20250101 16:00:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
         let config = InteractiveBrokersInstrumentProviderConfig::default();
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
 
         let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
         assert!(result.is_ok());
@@ -521,7 +525,7 @@ mod tests {
         let tags_json = r#"{"activeStartTime": "20250101 09:30:00 UTC", "activeStopTime": "20250101 16:00:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
         let config = InteractiveBrokersInstrumentProviderConfig::default();
-        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
 
         let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
         assert!(result.is_ok());
@@ -545,7 +549,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -560,7 +565,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -578,7 +584,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -593,7 +600,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -617,7 +625,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -637,7 +646,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -696,7 +706,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -775,7 +786,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
 
@@ -795,7 +807,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
 
@@ -829,7 +842,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -854,7 +868,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -880,7 +895,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -906,7 +922,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect_err("unsupported trailing offset type should fail");
@@ -945,7 +962,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -991,7 +1009,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -1017,7 +1036,8 @@ mod tests {
 
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
 
         let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
@@ -1029,7 +1049,8 @@ mod tests {
     fn magnified_provider(price_magnifier: i32) -> InteractiveBrokersInstrumentProvider {
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
-        );
+        )
+        .unwrap();
         provider.insert_test_instrument(
             InstrumentAny::Equity(equity_aapl()),
             4242,
