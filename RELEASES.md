@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Fixed `DataType::from_str` panics on repeated identifier suffixes
 - Fixed custom-data deserialization panics on metadata containing the reserved `identifier` key
 - Fixed Python order `from_dict` methods aborting on invalid identifiers, quantities, and prices
+- Fixed Python account reconstruction aborting on invalid account IDs
 - Fixed JSON decimal deserialization panics on `i32::MIN` exponents in builds with overflow checks enabled
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
 

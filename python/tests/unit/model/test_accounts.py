@@ -16,8 +16,10 @@
 Test accounts behavior.
 """
 
+import re
 import subprocess
 import sys
+from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
@@ -275,6 +277,128 @@ def test_account_from_events_rejects_malformed_event(
     """
     with pytest.raises(KeyError, match="Missing required key: account_id"):
         factory(*args)
+
+
+@pytest.fixture(
+    params=[
+        (None, AccountType.CASH),
+        (cash_account_from_account_events, AccountType.CASH),
+        (betting_account_from_account_events, AccountType.BETTING),
+        (wallet_account_from_account_events, AccountType.WALLET),
+        (margin_account_from_account_events, AccountType.MARGIN),
+    ],
+    ids=["state", "cash", "betting", "wallet", "margin"],
+)
+def account_reconstruction(
+    request: pytest.FixtureRequest,
+) -> tuple[Callable[[dict[str, object]], object], dict[str, object]]:
+    """
+    Return an account parser and a valid state dictionary for each reconstruction path.
+    """
+    factory, account_type = request.param
+    state = AccountState(
+        account_id=AccountId("SIM-123"),
+        account_type=account_type,
+        balances=[],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=11,
+        ts_init=22,
+    )
+    parser = AccountState.from_dict if factory is None else lambda values: factory([values], True)
+    return parser, state.to_dict()
+
+
+@pytest.mark.parametrize(
+    ("account_id", "message"),
+    [
+        ("", "invalid string for 'value', was empty"),
+        ("   ", "invalid string for 'value', was all whitespace"),
+        ("SIM", "invalid string for 'value' did not contain '-', was 'SIM'"),
+        ("-123", "`value` issuer part (before '-') cannot be empty"),
+        ("SIM-", "`value` account part (after '-') cannot be empty"),
+        ("SIM-\u00e9", "invalid string for 'value' contained a non-ASCII char, was 'SIM-\u00e9'"),
+    ],
+)
+def test_account_reconstruction_rejects_invalid_account_id(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    account_id: str,
+    message: str,
+) -> None:
+    """
+    Test invalid account identifiers raise the checked constructor's ValueError.
+    """
+    parser, values = account_reconstruction
+    values["account_id"] = account_id
+
+    with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+        parser(values)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "account_type",
+        "base_currency",
+        "balances",
+        "margins",
+        "reported",
+        "event_id",
+        "ts_event",
+        "ts_init",
+    ],
+)
+def test_account_reconstruction_preserves_missing_field_error(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    field: str,
+) -> None:
+    """
+    Test missing fields retain precedence over invalid account identifiers.
+    """
+    parser, values = account_reconstruction
+    values["account_id"] = "INVALID"
+    del values[field]
+
+    with pytest.raises(KeyError) as exc_info:
+        parser(values)
+
+    assert exc_info.value.args == (f"Missing required key: {field}",)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("account_type", None),
+        ("base_currency", None),
+        ("balances", None),
+        ("margins", None),
+        ("reported", None),
+        ("event_id", None),
+        ("ts_event", None),
+        ("ts_init", None),
+        ("info", []),
+    ],
+)
+def test_account_reconstruction_preserves_field_type_error(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    field: str,
+    value: object,
+) -> None:
+    """
+    Test field type errors keep their messages and precede invalid account IDs.
+    """
+    parser, values = account_reconstruction
+    values[field] = value
+
+    with pytest.raises(TypeError) as exc_info:
+        parser(values)
+
+    values["account_id"] = "INVALID"
+    with pytest.raises(TypeError) as invalid_id_exc_info:
+        parser(values)
+
+    assert str(invalid_id_exc_info.value) == str(exc_info.value)
 
 
 def test_margin_model_exports() -> None:

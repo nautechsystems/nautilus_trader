@@ -199,8 +199,11 @@ impl AccountState {
             }
             _ => None,
         };
+
+        let account_id = AccountId::new_checked(account_id).map_err(to_pyvalue_err)?;
+
         let account = Self::new(
-            AccountId::from(account_id.as_str()),
+            account_id,
             get_required_parsed(values, "account_type", |s| {
                 AccountType::from_str(&s).map_err(|e| e.to_string())
             })?,
