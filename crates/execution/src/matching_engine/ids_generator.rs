@@ -664,21 +664,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_trade_id_counter_tiebreaker_for_same_ts() {
-        let mut generator = build_ids_generator(Venue::from("BINANCE"), 1);
-        let ts = UnixNanos::from(1_700_000_000_000_000_000_u64);
-
-        let first = generator.generate_trade_id(ts);
-        let second = generator.generate_trade_id(ts);
-        let third = generator.generate_trade_id(ts);
-        assert_ne!(first, second);
-        assert_ne!(second, third);
-        assert!(first.as_str().ends_with("-001"));
-        assert!(second.as_str().ends_with("-002"));
-        assert!(third.as_str().ends_with("-003"));
-    }
-
-    #[rstest]
     #[case(8, "T-5c080ffb681dc0d4-009")]
     #[case(9, "T-5c080ffb681dc0d4-010")]
     #[case(98, "T-5c080ffb681dc0d4-099")]

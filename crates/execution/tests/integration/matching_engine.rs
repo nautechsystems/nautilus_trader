@@ -10128,7 +10128,7 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
 
-    let mut engine = OrderMatchingEngine::new(
+    let engine = OrderMatchingEngine::new(
         instrument_eth_usdt.clone(),
         1,
         fill_model.into(),
@@ -10137,9 +10137,11 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
         OmsType::Netting,
         AccountType::Cash,
         clock,
-        cache,
+        cache.clone(),
         config,
     );
+
+    let mut engine = CachingEngine { engine, cache };
 
     // Set initial market state
     let quote = QuoteTick::new(
@@ -10164,6 +10166,15 @@ fn test_trade_execution_fill_model_at_limit_with_prob_zero_does_not_fill(
         .submit(true)
         .build();
     engine.process_order(&mut limit_order, account_id);
+    let accepted = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(accepted.len(), 1);
+    assert!(matches!(&accepted[0], OrderEventAny::Accepted(event)
+        if event.client_order_id == limit_order.client_order_id()));
+    assert!(
+        engine
+            .get_core()
+            .order_exists(limit_order.client_order_id())
+    );
     clear_order_event_handler_messages(&order_event_handler);
 
     // Trade at exactly the limit price
@@ -11441,24 +11452,24 @@ fn test_trade_tick_seeds_liquidity_consumption_for_stop_market_fill(
         })
         .collect();
 
-    assert!(
-        !fills.is_empty(),
-        "Stop order should have triggered and filled"
-    );
-
-    let total_qty: f64 = fills.iter().map(|f| f.last_qty.as_f64()).sum();
-    assert!(
-        (total_qty - 5.0).abs() < 0.001,
-        "Total fill qty should be 5.0, was {total_qty}"
-    );
-
-    // Trade consumed 8 of 10 at 1000.00 → only 2 remain at best ask.
-    // The stop order should NOT get all 5 at 1000.00, it should spill to 1001.00.
-    let got_fill_at_1001 = fills.iter().any(|f| f.last_px == Price::from("1001.00"));
-    assert!(
-        got_fill_at_1001,
-        "Expected fill at 1001.00 due to consumed liquidity at 1000.00, \
-         but all fills were at 1000.00. Trade consumption was not applied."
+    let actual: Vec<_> = fills
+        .iter()
+        .map(|fill| (fill.client_order_id, fill.last_px, fill.last_qty))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            (
+                stop_order.client_order_id(),
+                Price::from("1000.00"),
+                Quantity::from("2.000")
+            ),
+            (
+                stop_order.client_order_id(),
+                Price::from("1001.00"),
+                Quantity::from("3.000")
+            ),
+        ]
     );
 }
 
@@ -13356,12 +13367,18 @@ fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usd
 }
 
 #[rstest]
-fn test_l1_queue_position_bid_price_drop_clears_queue(
+#[case::bid_drop(OrderSide::Buy, "100.00", "99.00", "101.00", AggressorSide::Sell)]
+#[case::ask_rise(OrderSide::Sell, "101.00", "100.00", "102.00", AggressorSide::Buy)]
+fn test_l1_queue_position_quote_retreat_clears_queue(
     account_id: AccountId,
     instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] limit: &str,
+    #[case] next_bid: &str,
+    #[case] next_ask: &str,
+    #[case] aggressor: AggressorSide,
 ) {
-    // When bid drops below order price, queue is cleared and next trade fills.
-    let (mut engine, _cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
+    let (mut engine, cache, handler) = get_l1_queue_position_engine(instrument_eth_usdt.clone());
 
     let quote0 = QuoteTick::new(
         instrument_eth_usdt.id(),
@@ -13376,8 +13393,8 @@ fn test_l1_queue_position_bid_price_drop_clears_queue(
 
     let mut order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
-        .side(OrderSide::Buy)
-        .price(Price::from("100.00"))
+        .side(side)
+        .price(Price::from(limit))
         .quantity(Quantity::from("2.000"))
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
         .submit(true)
@@ -13385,11 +13402,10 @@ fn test_l1_queue_position_bid_price_drop_clears_queue(
     engine.process_order(&mut order, account_id);
     clear_order_event_handler_messages(&handler);
 
-    // Bid drops below order price -> queue cleared
     let quote1 = QuoteTick::new(
         instrument_eth_usdt.id(),
-        Price::from("99.00"),
-        Price::from("101.00"),
+        Price::from(next_bid),
+        Price::from(next_ask),
         Quantity::from("5.000"),
         Quantity::from("10.000"),
         UnixNanos::from(1),
@@ -13400,21 +13416,34 @@ fn test_l1_queue_position_bid_price_drop_clears_queue(
     // Trade at order level should fill (queue was cleared)
     let trade = TradeTick::new(
         instrument_eth_usdt.id(),
-        Price::from("100.00"),
+        Price::from(limit),
         Quantity::from("2.000"),
-        AggressorSide::Sell,
+        aggressor,
         TradeId::new("1"),
         UnixNanos::from(2),
         UnixNanos::from(2),
     );
     engine.process_trade_tick(&trade);
 
+    let messages = get_order_event_handler_messages(&handler);
+    assert_eq!(messages.len(), 1);
+
+    let OrderEventAny::Filled(fill) = &messages[0] else {
+        panic!("Expected queue fill")
+    };
+
+    assert_eq!(fill.client_order_id, order.client_order_id());
+    assert_eq!(fill.order_side, side);
+    assert_eq!(fill.last_px, Price::from(limit));
+    assert_eq!(fill.last_qty, Quantity::from("2.000"));
+    assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
     assert_eq!(
-        get_order_event_handler_messages(&handler)
-            .iter()
-            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
-            .count(),
-        1,
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Filled
     );
 }
 
@@ -17085,6 +17114,8 @@ fn run_otm_expiry_case(
 #[rstest]
 #[case::call_metadata(OptionKind::Call, Price::from("140.00"), None, Price::from("0.00"))]
 #[case::put_metadata(OptionKind::Put, Price::from("160.00"), None, Price::from("0.00"))]
+#[case::call_at_strike(OptionKind::Call, Price::from("149.00"), None, Price::from("0.00"))]
+#[case::put_at_strike(OptionKind::Put, Price::from("149.00"), None, Price::from("0.00"))]
 #[case::call_instrument_close(
     OptionKind::Call,
     Price::from("140.00"),
