@@ -6191,8 +6191,10 @@ async fn test_generate_mass_status_excludes_old_fill_without_poisoning_replay() 
 }
 
 #[rstest]
+#[case::server_close(false)]
+#[case::shutdown_notice(true)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_account_all_trades_dedupes_across_reconnect() {
+async fn test_account_all_trades_dedupes_across_reconnect(#[case] shutdown: bool) {
     // The dispatcher keys fill dedup on `TradeId`; a duplicate fill on
     // reconnect must not produce two OrderFilled events. We push the
     // same trade frame twice and assert exactly one fill reaches the
@@ -6246,8 +6248,8 @@ async fn test_account_all_trades_dedupes_across_reconnect() {
 
     // Push the first fill on the live socket and wait for the typed
     // OrderFilled to drain through the consumption loop, then force a
-    // reconnect via the server-side close primitive and push the same
-    // frame again on the replayed connection. `seen_trade_ids` is owned
+    // reconnect through the selected trigger and push the same frame
+    // again on the replayed connection. `seen_trade_ids` is owned
     // by `WsDispatchState` and intentionally NOT cleared on the
     // Reconnected arm of the consumption loop; a regression that wipes
     // it during reconnect would let the duplicate fill through.
@@ -6264,34 +6266,38 @@ async fn test_account_all_trades_dedupes_across_reconnect() {
         fills += 1;
     }
 
-    // Arm the server-side close and tickle a sendTx so the next inbound
-    // frame closes the socket; the WS layer reconnects and replays the
-    // 4 account subscriptions.
     let subs_before_reconnect = state.subscribes().await.len();
-    state.close_after_next_frame.store(true, Ordering::Relaxed);
-    let reconnect_order = make_limit_order(
-        "O-DEDUP-RECONNECT",
-        OrderSide::Buy,
-        Quantity::from("0.0050"),
-        Price::from("2361.31"),
-        TimeInForce::Gtc,
-        false,
-        false,
-    );
-    let reconnect_client_order_id = reconnect_order.client_order_id();
-    cache_order(&cache, reconnect_order);
-    let _ = client.cancel_order(CancelOrder::new(
-        trader_id(),
-        Some(client_id()),
-        strategy_id(),
-        eth_perp_id(),
-        reconnect_client_order_id,
-        Some(VenueOrderId::from("1")),
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-    ));
+    if shutdown {
+        state.push_frame(&json!({"type":"shutdown", "close_in_ms":10000}));
+        state.push_frame(&json!({"type":"shutdown", "close_in_ms":0}));
+    } else {
+        // The mock closes the socket on the next client frame
+        state.close_after_next_frame.store(true, Ordering::Relaxed);
+        let reconnect_order = make_limit_order(
+            "O-DEDUP-RECONNECT",
+            OrderSide::Buy,
+            Quantity::from("0.0050"),
+            Price::from("2361.31"),
+            TimeInForce::Gtc,
+            false,
+            false,
+        );
+        let reconnect_client_order_id = reconnect_order.client_order_id();
+        cache_order(&cache, reconnect_order);
+        let _ = client.cancel_order(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            reconnect_client_order_id,
+            Some(VenueOrderId::from("1")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+    }
+
     await_subscribe_count(&state, subs_before_reconnect + 4).await;
 
     // Push the duplicate on the post-reconnect socket; the broadcast
@@ -10592,4 +10598,65 @@ async fn process_execution_event(
     }
 
     event
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shutdown_gap_fill_reconciles_without_duplicate_late_live_delivery() {
+    let (address, state) = start_server().await;
+    let (mut client, mut events, _cache) = build_client(address);
+    client.connect().await.unwrap();
+    let original_subscriptions = state.subscribes().await.len();
+    state.push_frame(&json!({"type":"shutdown", "close_in_ms":10000}));
+    await_subscribe_count(&state, original_subscriptions + 4).await;
+    let trade = http_trade_fixture(19_209_006_977, 42);
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade.clone()]}));
+
+    let command = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_fill_reports(command.clone()).await.unwrap();
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(report.account_id, account_id());
+    assert_eq!(report.instrument_id, eth_perp_id());
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("562947905631053"))
+    );
+    assert_eq!(report.venue_order_id, VenueOrderId::from("562947905631053"));
+    assert_eq!(report.trade_id, TradeId::from("19209006977"));
+    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.last_qty, Quantity::from("0.1336"));
+    assert_eq!(report.last_px, Price::from("2352.73"));
+    assert_eq!(report.commission, Money::from("0.06160765 USDC"));
+    assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+    assert_eq!(report.avg_px, None);
+    assert_eq!(report.venue_position_id, None);
+    assert_eq!(report.ts_event, UnixNanos::from(1_777_941_384_181_000_000));
+    let repeated = client.generate_fill_reports(command).await.unwrap();
+    assert_eq!(repeated.len(), 1);
+    assert_eq!(repeated[0].trade_id, report.trade_id);
+    state.push_frame(&json!({"type":"update/account_all_trades", "channel":format!("account_all_trades:{TEST_ACCOUNT_INDEX}"), "trades":{"0":[trade]}}));
+
+    let duplicate = next_event_matching(&mut events, Duration::from_millis(300), |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Filled(_))
+                | ExecutionEvent::Report(ExecutionReport::Fill(_))
+        )
+    })
+    .await;
+
+    assert!(
+        duplicate.is_none(),
+        "reconciled fill must not be delivered again as live: {duplicate:?}"
+    );
+    client.disconnect().await.unwrap();
 }

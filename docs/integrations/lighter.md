@@ -1125,6 +1125,15 @@ The WebSocket client sends heartbeats every 30 seconds and reconnects with expon
 [250 milliseconds, 30 seconds]. After 90 seconds without an inbound frame, it reconnects even if
 the venue leaves the stalled socket open. Pongs refresh this window without market data.
 
+On a venue `shutdown` notice, the handler requests an immediate reconnect through the shared
+WebSocket client. Notices from an older connection are ignored. The adapter uses its normal
+subscription replay, [nonce recovery](#nonce-recovery), and
+[account stream readiness](#account-stream-readiness) paths.
+
+The old connection stops streaming before the replacement is ready. Fresh snapshots and HTTP
+reconciliation recover state across the gap. A subsequent server close, including code `1012`,
+uses the same reconnect path.
+
 ### Private authentication
 
 Private auth tokens have an 8-hour maximum lifetime. The adapter mints 7-hour tokens and rotates and

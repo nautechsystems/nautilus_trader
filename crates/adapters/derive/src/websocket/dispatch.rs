@@ -88,11 +88,7 @@ pub struct WsDispatchState {
     triggers_active: Mutex<AHashSet<ClientOrderId>>,
     terminal_orders: Mutex<FifoCacheMap<ClientOrderId, OrderBinding, ORDER_DEDUP_CAPACITY>>,
     terminal_revision: Mutex<Arc<()>>,
-    #[expect(
-        clippy::type_complexity,
-        reason = "order quantity, cumulative fills, and price share one lock for atomic updates"
-    )]
-    order_shapes: Mutex<AHashMap<ClientOrderId, (Quantity, Decimal, Option<Price>)>>,
+    order_shapes: Mutex<AHashMap<ClientOrderId, OrderShape>>,
     emitted_canceled: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     emitted_trades: Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>,
@@ -204,13 +200,15 @@ impl WsDispatchState {
             },
         );
 
+        let quantity = order.filled_qty() + order.leaves_qty();
         self.order_shapes.lock().insert(
             client_order_id,
-            (
-                order.filled_qty() + order.leaves_qty(),
-                order.filled_qty().as_decimal(),
-                order.price(),
-            ),
+            OrderShape {
+                quantity,
+                price: order.price(),
+                filled_qty: order.filled_qty().as_decimal(),
+                filled_qty_expected: quantity.as_decimal(),
+            },
         );
 
         if let Some(venue_order_id) = order.venue_order_id() {
@@ -328,10 +326,16 @@ impl WsDispatchState {
             .lock()
             .entry(client_order_id)
             .and_modify(|entry| {
-                entry.0 = quantity;
-                entry.2 = price;
+                entry.quantity = quantity;
+                entry.price = price;
+                entry.filled_qty_expected = quantity.as_decimal();
             })
-            .or_insert((quantity, Decimal::ZERO, price));
+            .or_insert(OrderShape {
+                quantity,
+                price,
+                filled_qty: Decimal::ZERO,
+                filled_qty_expected: quantity.as_decimal(),
+            });
     }
 
     pub(crate) fn order_shape(
@@ -341,7 +345,7 @@ impl WsDispatchState {
         self.order_shapes
             .lock()
             .get(client_order_id)
-            .map(|entry| (entry.0, entry.2))
+            .map(|entry| (entry.quantity, entry.price))
     }
 
     pub(crate) fn record_fill(&self, client_order_id: ClientOrderId, quantity: Quantity) {
@@ -352,14 +356,38 @@ impl WsDispatchState {
             .lock()
             .get_mut(&client_order_id)
             .is_some_and(|entry| {
-                entry.1 += quantity.as_decimal();
-                entry.1 >= entry.0.as_decimal()
+                entry.filled_qty += quantity.as_decimal();
+                entry.filled_qty >= entry.filled_qty_expected
             });
 
         if complete
             && self.pending_modify(&client_order_id).is_none()
             && !self.binding_unresolved(&client_order_id)
         {
+            self.forget(&client_order_id);
+        }
+    }
+
+    pub(crate) fn record_canceled(
+        &self,
+        client_order_id: ClientOrderId,
+        quantity: Quantity,
+        filled_qty: Quantity,
+    ) {
+        let _delivery = self.delivery_guard();
+
+        let pending_fills = self
+            .order_shapes
+            .lock()
+            .get_mut(&client_order_id)
+            .is_some_and(|entry| {
+                // Native amounts cover this leg; the logical quantity includes prior legs' fills
+                entry.filled_qty_expected =
+                    entry.quantity.as_decimal() - quantity.as_decimal() + filled_qty.as_decimal();
+                entry.filled_qty < entry.filled_qty_expected
+            });
+
+        if !pending_fills {
             self.forget(&client_order_id);
         }
     }
@@ -722,6 +750,14 @@ impl WsDispatchState {
     }
 }
 
+#[derive(Debug)]
+struct OrderShape {
+    quantity: Quantity,
+    price: Option<Price>,
+    filled_qty: Decimal,
+    filled_qty_expected: Decimal,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OrderBinding {
     pub identity: OrderIdentity,
@@ -746,6 +782,68 @@ mod tests {
             order_side: OrderSide::Buy,
             order_type: OrderType::Limit,
         }
+    }
+
+    #[rstest]
+    #[case(Decimal::ZERO, Decimal::ZERO)]
+    #[case(Decimal::new(4, 1), Decimal::ZERO)]
+    #[case(Decimal::new(4, 1), Decimal::new(4, 1))]
+    fn test_canceled_fill_target_includes_prior_legs(
+        #[case] prior_fills: Decimal,
+        #[case] delivered_prior_fills: Decimal,
+    ) {
+        let state = WsDispatchState::new(42);
+        let cid = ClientOrderId::from("CANCELED-REPLACEMENT");
+        let identity = sample_identity();
+        let quantity = Quantity::from_decimal_dp(Decimal::ONE + prior_fills, 3).unwrap();
+        let price = Some(Price::from("3501.00"));
+        state.register_identity(cid, identity);
+        state.record_order_shape(cid, quantity, price);
+        state.record_fill(
+            cid,
+            Quantity::from_decimal_dp(delivered_prior_fills, 3).unwrap(),
+        );
+        state.record_canceled(cid, Quantity::from("1.000"), Quantity::from("0.500"));
+
+        assert_eq!(state.identity(&cid), Some(identity));
+        assert_eq!(state.order_shape(&cid), Some((quantity, price)));
+        state.record_fill(cid, Quantity::from("0.200"));
+        state.record_canceled(cid, Quantity::from("1.000"), Quantity::from("0.500"));
+
+        assert_eq!(state.identity(&cid), Some(identity));
+        state.record_fill(cid, Quantity::from("0.300"));
+
+        let pending_prior_fills = prior_fills - delivered_prior_fills;
+        assert_eq!(
+            state.identity(&cid),
+            (!pending_prior_fills.is_zero()).then_some(identity),
+        );
+
+        if !pending_prior_fills.is_zero() {
+            state.record_fill(
+                cid,
+                Quantity::from_decimal_dp(pending_prior_fills, 3).unwrap(),
+            );
+        }
+
+        assert_eq!(state.identity(&cid), None);
+        assert_eq!(state.order_shape(&cid), None);
+    }
+
+    #[rstest]
+    #[case("0.000")]
+    #[case("0.500")]
+    fn test_canceled_without_pending_fills_retires_identity(#[case] filled_qty: &str) {
+        let state = WsDispatchState::new(42);
+        let cid = ClientOrderId::from("CANCELED-COMPLETE");
+        let filled_qty = Quantity::from(filled_qty);
+        state.register_identity(cid, sample_identity());
+        state.record_order_shape(cid, Quantity::from("1.000"), None);
+        state.record_fill(cid, filled_qty);
+        state.record_canceled(cid, Quantity::from("1.000"), filled_qty);
+
+        assert_eq!(state.identity(&cid), None);
+        assert_eq!(state.order_shape(&cid), None);
     }
 
     #[rstest]

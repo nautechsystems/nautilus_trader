@@ -5484,7 +5484,7 @@ fn emit_tracked_order_event(
                 return;
             }
 
-            dispatch_state.forget(&client_order_id);
+            dispatch_state.record_canceled(client_order_id, report.quantity, report.filled_qty);
         }
         OrderStatus::Expired | OrderStatus::Rejected => {
             emit_expiry_or_rejection(
@@ -7707,6 +7707,191 @@ mod tests {
         );
         state.forget(&cid);
         assert!(!state.trigger_active(&cid));
+    }
+
+    #[rstest]
+    #[case(0, false)]
+    #[case(1, false)]
+    #[case(2, false)]
+    #[case(0, true)]
+    #[case(1, true)]
+    #[case(2, true)]
+    fn test_canceled_partial_fill_retains_identity_until_trades_arrive(
+        #[case] fills_before_cancel: usize,
+        #[case] submit_response: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::new(42);
+        let client_order_id = ClientOrderId::from("PARTIAL-IOC-1");
+        let account_id = AccountId::from("DERIVE-001");
+
+        let identity = OrderIdentity {
+            instrument_id: InstrumentId::from("ETH-PERP.DERIVE"),
+            strategy_id: StrategyId::from("S-1"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        };
+
+        state.register_identity(client_order_id, identity);
+        state.record_order_shape(client_order_id, Quantity::from("1.000"), None);
+        let mut order: DeriveOrder = serde_json::from_str(include_str!(
+            "../test_data/perps/http_order_eth_partially_filled.json"
+        ))
+        .unwrap();
+        order.label = client_order_id.as_str().into();
+        order.order_id = "order-abc".into();
+        order.amount = dec!(1.0);
+        order.filled_amount = dec!(0.5);
+        order.order_status = DeriveOrderStatus::Cancelled;
+        order.order_type = DeriveOrderType::Limit;
+        let trade: DeriveTrade = serde_json::from_str(include_str!(
+            "../test_data/perps/http_private_trade_eth.json"
+        ))
+        .unwrap();
+
+        let trades: Vec<_> = [dec!(0.2), dec!(0.3)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, qty)| {
+                let mut trade = trade.clone();
+                trade.label = client_order_id.as_str().into();
+                trade.trade_id = format!("partial-ioc-{i}");
+                trade.trade_amount = qty;
+                trade
+            })
+            .collect();
+
+        let (emitter, mut rx) = test_emitter(clock);
+        dispatch_trades_payload(
+            DeriveTradesSubscriptionData {
+                trades: trades[..fills_before_cancel].to_vec(),
+            },
+            &emitter,
+            account_id,
+            clock,
+            &state,
+        );
+
+        for _ in 0..2 {
+            dispatch_orders_payload(
+                DeriveOrdersSubscriptionData {
+                    orders: vec![order.clone()],
+                },
+                &emitter,
+                account_id,
+                clock,
+                &state,
+            );
+        }
+
+        assert_eq!(
+            state.identity(&client_order_id),
+            (fills_before_cancel < trades.len()).then_some(identity),
+        );
+
+        for _ in 0..2 {
+            if submit_response {
+                dispatch_order_result(
+                    DeriveOrderResult {
+                        order: order.clone(),
+                        trades: trades.clone(),
+                    },
+                    client_order_id,
+                    &emitter,
+                    account_id,
+                    clock,
+                    &state,
+                );
+            } else {
+                for trade in &trades {
+                    dispatch_trades_payload(
+                        DeriveTradesSubscriptionData {
+                            trades: vec![trade.clone()],
+                        },
+                        &emitter,
+                        account_id,
+                        clock,
+                        &state,
+                    );
+
+                    dispatch_orders_payload(
+                        DeriveOrdersSubscriptionData {
+                            orders: vec![order.clone()],
+                        },
+                        &emitter,
+                        account_id,
+                        clock,
+                        &state,
+                    );
+                }
+            }
+        }
+
+        let mut accepted = 0;
+        let mut canceled = 0;
+        let mut fills = Vec::new();
+        let mut events = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+                    assert_eq!(event.client_order_id, client_order_id);
+                    accepted += 1;
+                    events.push("accepted");
+                }
+                ExecutionEvent::Order(OrderEventAny::Canceled(event)) => {
+                    assert_eq!(event.client_order_id, client_order_id);
+                    canceled += 1;
+                    events.push("canceled");
+                }
+                ExecutionEvent::Order(OrderEventAny::Filled(fill)) => {
+                    fills.push(fill);
+                    events.push("filled");
+                }
+                other => panic!("Expected tracked order events, received {other:?}"),
+            }
+        }
+
+        let expected_events: Vec<_> = std::iter::once("accepted")
+            .chain(std::iter::repeat_n("filled", fills_before_cancel))
+            .chain(std::iter::once("canceled"))
+            .chain(std::iter::repeat_n(
+                "filled",
+                trades.len() - fills_before_cancel,
+            ))
+            .collect();
+        assert_eq!(events, expected_events);
+        assert_eq!(accepted, 1);
+        assert_eq!(canceled, 1);
+        assert_eq!(fills.len(), trades.len());
+
+        for (fill, trade) in fills.iter().zip(&trades) {
+            assert_eq!(fill.trader_id, emitter.trader_id());
+            assert_eq!(fill.strategy_id, identity.strategy_id);
+            assert_eq!(fill.instrument_id, identity.instrument_id);
+            assert_eq!(fill.client_order_id, client_order_id);
+            assert_eq!(fill.venue_order_id, VenueOrderId::from("order-abc"));
+            assert_eq!(fill.account_id, account_id);
+            assert_eq!(fill.trade_id.as_str(), trade.trade_id);
+            assert_eq!(fill.order_side, identity.order_side);
+            assert_eq!(fill.order_type, identity.order_type);
+            assert_eq!(fill.last_qty.as_decimal(), trade.trade_amount);
+            assert_eq!(fill.last_px.as_decimal(), dec!(3499));
+            assert_eq!(fill.currency, Currency::USDC());
+            assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+            assert_eq!(fill.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+            assert_eq!(fill.position_id, None);
+            assert_eq!(
+                fill.commission,
+                Some(Money::from_decimal(dec!(0.02), Currency::USDC()).unwrap())
+            );
+            assert_eq!(fill.info, None);
+            assert_eq!(fill.causation_id, None);
+            assert!(!fill.reconciliation);
+        }
+
+        assert_eq!(state.identity(&client_order_id), None);
+        assert!(state.is_terminal(&client_order_id, identity.instrument_id));
     }
 
     #[rstest]

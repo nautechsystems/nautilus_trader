@@ -259,9 +259,15 @@ async fn initial(args: &StressArgs, ids: &[InstrumentId]) -> String {
             reconnect(&mut session);
         }
 
-        session
-            .healthy_within(ids, Duration::from_secs(timeout + 60))
-            .await;
+        let recovery_timeout = Duration::from_secs(timeout + 60);
+        session.healthy_within(ids, recovery_timeout).await;
+        if timeout > 0 {
+            session
+                .until(recovery_timeout, "initial unsubscribe acknowledged", |s| {
+                    ids.iter().all(|id| s.fault(id).unsubscribes > 0)
+                })
+                .await;
+        }
 
         for id in ids {
             let fault = session.fault(id).clone();

@@ -260,6 +260,10 @@ continues across reconnects with its remaining budget, and unsubscribe or shutdo
 waiting between attempts after its budget retries at once on the new connection. Recovery never ends in a
 failed state.
 
+Subscription writes run in order while the handler continues processing commands and frames. Cancellation
+skips unsent book subscription and recovery writes and keeps their snapshot gates closed. A write already
+admitted to the network can still complete before later subscription changes.
+
 The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
 queued before a replacement can complete recovery once the replacement write finishes. AX sends no
 frames while a book is unchanged, so the client does not treat a silent book as stale.

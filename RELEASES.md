@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added native external MessageBus data requests and replies for JSON and MessagePack
+- Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
 
 ### Breaking Changes
 
@@ -43,13 +44,16 @@ Released on TBD (UTC).
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
+- Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
 - Fixed Architect AX special-fill reconciliation, fill-history windows, and cached flat-position recovery
 - Fixed Architect AX position-report requests dropping flat rows and skipping invalid rows
 - Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
+- Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
+- Fixed Hyperliquid USD class transfers to return an explicit unsupported-action error before signing
 - Fixed Hyperliquid WebSocket readiness being published before handler initialization
 - Fixed Interactive Brokers small-lot entry prices after commission rounding (#5327), thanks @bebop23
 - Fixed Interactive Brokers futures expiry times blocking market data (#5318), thanks @chaneyka1

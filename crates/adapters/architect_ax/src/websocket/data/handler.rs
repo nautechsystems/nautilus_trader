@@ -24,6 +24,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use futures_util::future::BoxFuture;
 use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::websocket::{SubscriptionState, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
@@ -41,6 +42,8 @@ use crate::{
         parse::parse_md_message,
     },
 };
+
+const BOOK_WRITE_CANCELED: &str = "Book write canceled";
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -64,8 +67,8 @@ pub enum HandlerCommand {
     ///
     /// With an unsubscribe request ID, first unsubscribes the symbol so the venue restarts its
     /// stream with a snapshot. That acknowledgement stays untracked, keeping the topic desired for
-    /// reconnect replay. The write always runs, since the subscription state already counts it;
-    /// `cancel` only keeps the gate closed.
+    /// reconnect replay. Cancellation skips unsent work and keeps the gate closed. A write already
+    /// admitted to the network can still complete, ahead of later subscription changes.
     WriteBook {
         /// Request ID for correlation.
         request_id: i64,
@@ -75,7 +78,7 @@ pub enum HandlerCommand {
         symbol: Ustr,
         /// Market data subscription options.
         spec: AxMdSubscriptionSpec,
-        /// Keeps the gate closed once cancelled.
+        /// Cancels unsent work and keeps the gate closed.
         cancel: CancellationToken,
         /// Snapshot gate opened once the write completes.
         gate: SnapshotGate,
@@ -119,7 +122,7 @@ pub enum HandlerCommand {
 /// Emits raw venue types for downstream consumers to parse.
 pub(crate) struct AxMdWsFeedHandler {
     signal: Arc<AtomicBool>,
-    inner: Option<WebSocketClient>,
+    inner: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     subscriptions: SubscriptionState,
@@ -127,6 +130,7 @@ pub(crate) struct AxMdWsFeedHandler {
     replay_request_id: i64,
     needs_subscription_replay: bool,
     pending_subscription_requests: AHashMap<i64, PendingSubscriptionRequest>,
+    writes: VecDeque<PendingWrite>,
 }
 
 impl AxMdWsFeedHandler {
@@ -148,6 +152,7 @@ impl AxMdWsFeedHandler {
             replay_request_id: -1,
             needs_subscription_replay: false,
             pending_subscription_requests: AHashMap::new(),
+            writes: VecDeque::new(),
         }
     }
 
@@ -156,7 +161,7 @@ impl AxMdWsFeedHandler {
         self.replay_request_id
     }
 
-    async fn replay_subscriptions(&mut self) {
+    fn replay_subscriptions(&mut self) {
         self.pending_subscription_requests.clear();
         let topics = self.subscriptions.reset_after_reconnect();
         if topics.is_empty() {
@@ -179,8 +184,7 @@ impl AxMdWsFeedHandler {
                             request_id,
                             PendingSubscriptionRequest::Subscribe(topic.clone()),
                         );
-                        self.send_subscribe_candles(request_id, Ustr::from(symbol), width)
-                            .await;
+                        self.send_subscribe_candles(request_id, Ustr::from(symbol), width);
                     } else {
                         log::warn!("Failed to parse candle width from topic: {topic}");
                     }
@@ -192,7 +196,7 @@ impl AxMdWsFeedHandler {
                 log::debug!("Replaying market data subscription: symbol={symbol}, spec={spec:?}");
                 self.pending_subscription_requests
                     .insert(request_id, PendingSubscriptionRequest::Subscribe(topic));
-                self.send_subscribe(request_id, symbol, spec).await;
+                self.send_subscribe(request_id, symbol, spec);
             } else {
                 log::warn!("Failed to parse market data subscription topic: {topic}");
             }
@@ -221,7 +225,7 @@ impl AxMdWsFeedHandler {
         loop {
             if self.needs_subscription_replay && self.message_queue.is_empty() {
                 self.needs_subscription_replay = false;
-                self.replay_subscriptions().await;
+                self.replay_subscriptions();
             }
 
             if let Some(msg) = self.message_queue.pop_front() {
@@ -229,6 +233,25 @@ impl AxMdWsFeedHandler {
             }
 
             tokio::select! {
+                biased;
+
+                failed = async {
+                    match self.writes.front_mut() {
+                        Some(write) => (&mut write.future).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    let write = self.writes.pop_front();
+
+                    if let Some(request_id) = failed {
+                        self.pending_subscription_requests.remove(&request_id);
+                    } else if let Some(write) = write
+                        && let Some((_, Some(snapshot))) = write.book
+                    {
+                        self.message_queue.push_back(snapshot);
+                    }
+                }
+
                 Some(cmd) = self.cmd_rx.recv() => {
                     self.handle_command(cmd).await;
                 }
@@ -261,7 +284,7 @@ impl AxMdWsFeedHandler {
                     }
 
                     if let Some(message) = self.parse_raw_message(msg) {
-                        self.message_queue.push_back(message);
+                        self.queue_message(message);
                     }
 
                     if self.signal.load(Ordering::Acquire) {
@@ -273,14 +296,34 @@ impl AxMdWsFeedHandler {
         }
     }
 
+    fn queue_message(&mut self, message: AxDataWsMessage) {
+        let symbol = match &message {
+            AxDataWsMessage::MdMessage(AxMdMessage::BookL2(book)) if book.st => Some(book.s),
+            AxDataWsMessage::MdMessage(AxMdMessage::BookL3(book)) if book.st => Some(book.s),
+            _ => None,
+        };
+
+        if let Some((pending_symbol, snapshot)) = self
+            .writes
+            .front_mut()
+            .and_then(|write| write.book.as_mut())
+            && symbol == Some(*pending_symbol)
+        {
+            *snapshot = Some(message);
+        } else {
+            self.message_queue.push_back(message);
+        }
+    }
+
     async fn handle_command(&mut self, cmd: HandlerCommand) {
         match cmd {
             HandlerCommand::SetClient(client) => {
                 log::debug!("WebSocketClient received by handler");
-                self.inner = Some(client);
+                self.inner = Some(Arc::new(client));
             }
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnect command received");
+                self.writes.clear();
 
                 if let Some(inner) = self.inner.take() {
                     inner.disconnect().await;
@@ -288,7 +331,7 @@ impl AxMdWsFeedHandler {
             }
             HandlerCommand::ReplaySubscriptions => {
                 log::debug!("ReplaySubscriptions command received");
-                self.replay_subscriptions().await;
+                self.replay_subscriptions();
             }
             HandlerCommand::Subscribe {
                 request_id,
@@ -301,7 +344,7 @@ impl AxMdWsFeedHandler {
                 let topic = spec.topic(symbol.as_str());
                 self.pending_subscription_requests
                     .insert(request_id, PendingSubscriptionRequest::Subscribe(topic));
-                self.send_subscribe(request_id, symbol, spec).await;
+                self.send_subscribe(request_id, symbol, spec);
             }
             HandlerCommand::WriteBook {
                 request_id,
@@ -315,15 +358,53 @@ impl AxMdWsFeedHandler {
                 log::debug!(
                     "WriteBook command received: request_id={request_id}, symbol={symbol}, spec={spec:?}"
                 );
-                let result = self
-                    .write_book(request_id, unsubscribe_request_id, symbol, spec)
-                    .await;
 
-                if result.is_ok() && !cancel.is_cancelled() {
-                    gate.open();
+                if cancel.is_cancelled() {
+                    let _ = completion.send(Err(AxWsClientError::ClientError(
+                        BOOK_WRITE_CANCELED.to_string(),
+                    )));
+                    return;
                 }
 
-                let _ = completion.send(result);
+                let Some(client) = self.inner.clone() else {
+                    let _ = completion.send(Err(AxWsClientError::Transport(
+                        "No WebSocket client available".to_string(),
+                    )));
+                    return;
+                };
+
+                let epoch = client.connection_epoch();
+                let topic = spec.topic(symbol.as_str());
+                let subscriptions = self.subscriptions.clone();
+                self.pending_subscription_requests
+                    .insert(request_id, PendingSubscriptionRequest::Subscribe(topic));
+
+                let future = Box::pin(async move {
+                    let result = write_book(
+                        &client,
+                        &subscriptions,
+                        request_id,
+                        unsubscribe_request_id,
+                        symbol,
+                        spec,
+                        epoch,
+                        &cancel,
+                    )
+                    .await;
+
+                    let written = result.is_ok() && !cancel.is_cancelled();
+                    if written {
+                        gate.open();
+                    }
+
+                    let _ = completion.send(result);
+                    (!written).then_some(request_id)
+                });
+
+                self.writes.push_back(PendingWrite {
+                    future,
+                    book: Some((symbol, None)),
+                });
             }
             HandlerCommand::Unsubscribe {
                 request_id,
@@ -335,7 +416,7 @@ impl AxMdWsFeedHandler {
                 );
                 self.pending_subscription_requests
                     .insert(request_id, PendingSubscriptionRequest::Unsubscribe(topic));
-                self.send_unsubscribe(request_id, symbol).await;
+                self.send_unsubscribe(request_id, symbol);
             }
             HandlerCommand::SubscribeCandles {
                 request_id,
@@ -348,7 +429,7 @@ impl AxMdWsFeedHandler {
                 let topic = format!("candles:{symbol}:{width:?}");
                 self.pending_subscription_requests
                     .insert(request_id, PendingSubscriptionRequest::Subscribe(topic));
-                self.send_subscribe_candles(request_id, symbol, width).await;
+                self.send_subscribe_candles(request_id, symbol, width);
             }
             HandlerCommand::UnsubscribeCandles {
                 request_id,
@@ -363,13 +444,12 @@ impl AxMdWsFeedHandler {
                     .insert(request_id, PendingSubscriptionRequest::Unsubscribe(topic));
                 self.message_queue
                     .push_back(AxDataWsMessage::CandleUnsubscribed { symbol, width });
-                self.send_unsubscribe_candles(request_id, symbol, width)
-                    .await;
+                self.send_unsubscribe_candles(request_id, symbol, width);
             }
         }
     }
 
-    async fn send_subscribe(&mut self, request_id: i64, symbol: Ustr, spec: AxMdSubscriptionSpec) {
+    fn send_subscribe(&mut self, request_id: i64, symbol: Ustr, spec: AxMdSubscriptionSpec) {
         let msg = AxMdSubscribe {
             rid: request_id,
             msg_type: AxMdRequestType::Subscribe,
@@ -379,80 +459,26 @@ impl AxMdWsFeedHandler {
             ticker: spec.ticker,
         };
 
-        if let Err(e) = self.send_json(&msg).await {
+        if let Err(e) = self.send_json(request_id, &msg) {
             self.pending_subscription_requests.remove(&request_id);
             log::error!("Failed to send subscribe message: {e}");
         }
     }
 
-    async fn write_book(
-        &mut self,
-        request_id: i64,
-        unsubscribe_request_id: Option<i64>,
-        symbol: Ustr,
-        spec: AxMdSubscriptionSpec,
-    ) -> Result<(), AxWsClientError> {
-        let Some(client) = self.inner.as_ref() else {
-            return Err(AxWsClientError::Transport(
-                "No WebSocket client available".to_string(),
-            ));
-        };
-
-        let epoch = client.connection_epoch();
-        let topic = spec.topic(symbol.as_str());
-
-        if let Some(rid) = unsubscribe_request_id {
-            // Keeps the topic desired for reconnect replay, so its subscribe ack confirms it again
-            self.subscriptions.mark_failure(&topic);
-
-            let msg = AxMdUnsubscribe {
-                rid,
-                msg_type: AxMdRequestType::Unsubscribe,
-                symbol,
-            };
-
-            send_json_on_connection(client, &msg, epoch).await?;
-        }
-
-        let msg = AxMdSubscribe {
-            rid: request_id,
-            msg_type: AxMdRequestType::Subscribe,
-            symbol,
-            level: spec.level,
-            trades: spec.trades,
-            ticker: spec.ticker,
-        };
-
-        self.pending_subscription_requests
-            .insert(request_id, PendingSubscriptionRequest::Subscribe(topic));
-
-        if let Err(e) = send_json_on_connection(client, &msg, epoch).await {
-            self.pending_subscription_requests.remove(&request_id);
-            return Err(e);
-        }
-
-        Ok(())
-    }
-
-    async fn send_unsubscribe(&mut self, request_id: i64, symbol: Ustr) {
+    fn send_unsubscribe(&mut self, request_id: i64, symbol: Ustr) {
         let msg = AxMdUnsubscribe {
             rid: request_id,
             msg_type: AxMdRequestType::Unsubscribe,
             symbol,
         };
 
-        if let Err(e) = self.send_json(&msg).await {
+        if let Err(e) = self.send_json(request_id, &msg) {
             self.pending_subscription_requests.remove(&request_id);
             log::error!("Failed to send unsubscribe message: {e}");
         }
     }
 
-    async fn send_subscribe_candles(
-        &mut self,
-        request_id: i64,
-        symbol: Ustr,
-        width: AxCandleWidth,
-    ) {
+    fn send_subscribe_candles(&mut self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdSubscribeCandles {
             rid: request_id,
             msg_type: AxMdRequestType::SubscribeCandles,
@@ -460,18 +486,13 @@ impl AxMdWsFeedHandler {
             width,
         };
 
-        if let Err(e) = self.send_json(&msg).await {
+        if let Err(e) = self.send_json(request_id, &msg) {
             self.pending_subscription_requests.remove(&request_id);
             log::error!("Failed to send subscribe_candles message: {e}");
         }
     }
 
-    async fn send_unsubscribe_candles(
-        &mut self,
-        request_id: i64,
-        symbol: Ustr,
-        width: AxCandleWidth,
-    ) {
+    fn send_unsubscribe_candles(&mut self, request_id: i64, symbol: Ustr, width: AxCandleWidth) {
         let msg = AxMdUnsubscribeCandles {
             rid: request_id,
             msg_type: AxMdRequestType::UnsubscribeCandles,
@@ -479,24 +500,32 @@ impl AxMdWsFeedHandler {
             width,
         };
 
-        if let Err(e) = self.send_json(&msg).await {
+        if let Err(e) = self.send_json(request_id, &msg) {
             self.pending_subscription_requests.remove(&request_id);
             log::error!("Failed to send unsubscribe_candles message: {e}");
         }
     }
 
-    async fn send_json<T: serde::Serialize>(&self, msg: &T) -> Result<(), String> {
-        let Some(inner) = &self.inner else {
+    fn send_json<T: serde::Serialize>(&mut self, request_id: i64, msg: &T) -> Result<(), String> {
+        let Some(inner) = self.inner.clone() else {
             return Err("No WebSocket client available".to_string());
         };
 
         let payload = serde_json::to_string(msg).map_err(|e| e.to_string())?;
         log::trace!("Sending WebSocket payload ({} bytes)", payload.len());
 
-        inner
-            .send_text(payload, None)
-            .await
-            .map_err(|e| e.to_string())
+        let future = Box::pin(async move {
+            if let Err(e) = inner.send_text(payload, None).await {
+                log::error!("Failed to send subscription message: {e}");
+                return Some(request_id);
+            }
+
+            None
+        });
+
+        self.writes.push_back(PendingWrite { future, book: None });
+
+        Ok(())
     }
 
     fn parse_raw_message(&mut self, msg: Message) -> Option<AxDataWsMessage> {
@@ -602,24 +631,96 @@ enum PendingSubscriptionRequest {
     Unsubscribe(String),
 }
 
+struct PendingWrite {
+    future: BoxFuture<'static, Option<i64>>,
+    book: Option<(Ustr, Option<AxDataWsMessage>)>,
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the queued write retains its subscription, connection, and cancellation ownership"
+)]
+async fn write_book(
+    client: &WebSocketClient,
+    subscriptions: &SubscriptionState,
+    request_id: i64,
+    unsubscribe_request_id: Option<i64>,
+    symbol: Ustr,
+    spec: AxMdSubscriptionSpec,
+    epoch: u64,
+    cancel: &CancellationToken,
+) -> Result<(), AxWsClientError> {
+    if cancel.is_cancelled() {
+        return Err(AxWsClientError::ClientError(
+            BOOK_WRITE_CANCELED.to_string(),
+        ));
+    }
+
+    if let Some(rid) = unsubscribe_request_id {
+        let topic = spec.topic(symbol.as_str());
+
+        // Keeps the topic desired for reconnect replay, so its subscribe ack confirms it again
+        subscriptions.mark_failure(&topic);
+
+        let msg = AxMdUnsubscribe {
+            rid,
+            msg_type: AxMdRequestType::Unsubscribe,
+            symbol,
+        };
+
+        send_json_on_connection(client, &msg, epoch, cancel).await?;
+    }
+
+    let msg = AxMdSubscribe {
+        rid: request_id,
+        msg_type: AxMdRequestType::Subscribe,
+        symbol,
+        level: spec.level,
+        trades: spec.trades,
+        ticker: spec.ticker,
+    };
+
+    send_json_on_connection(client, &msg, epoch, cancel).await?;
+
+    if client.connection_epoch() != epoch || !client.is_active() {
+        return Err(AxWsClientError::Transport(
+            "Book subscription connection changed".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 // Sends once on the connection identified by `epoch`, never replaying on a replacement
 async fn send_json_on_connection<T: serde::Serialize>(
     client: &WebSocketClient,
     msg: &T,
     epoch: u64,
+    cancel: &CancellationToken,
 ) -> Result<(), AxWsClientError> {
     let payload =
         serde_json::to_string(msg).map_err(|e| AxWsClientError::ClientError(e.to_string()))?;
 
-    client
-        .send_text_on_connection(payload, None, epoch)
-        .await
-        .map_err(|e| AxWsClientError::Transport(e.to_string()))
+    tokio::select! {
+        biased;
+        () = cancel.cancelled() => {
+            Err(AxWsClientError::ClientError(BOOK_WRITE_CANCELED.to_string()))
+        }
+        result = client.send_text_on_connection(payload, None, epoch) => {
+            result.map_err(|e| AxWsClientError::Transport(e.to_string()))
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use nautilus_network::websocket::SubscriptionState;
+    use std::time::Duration;
+
+    use futures_util::{StreamExt, poll};
+    use nautilus_network::{
+        mode::ConnectionMode,
+        websocket::{SubscriptionState, TransportBackend, WebSocketConfig},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -770,12 +871,44 @@ mod tests {
             PendingSubscriptionRequest::Unsubscribe(TOPIC.to_string()),
         );
 
-        handler.replay_subscriptions().await;
+        handler.replay_subscriptions();
 
         assert_eq!(subscriptions.len(), 0);
         assert!(subscriptions.all_topics().is_empty());
         assert!(subscriptions.pending_subscribe_topics().is_empty());
         assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert!(handler.pending_subscription_requests.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_write_book_canceled_before_admission() {
+        let mut handler = create_handler(SubscriptionState::new(':'));
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let (completion, receiver) = tokio::sync::oneshot::channel();
+
+        handler
+            .handle_command(HandlerCommand::WriteBook {
+                request_id: 9,
+                unsubscribe_request_id: Some(10),
+                symbol: Ustr::from("EURUSD-PERP"),
+                spec: AxMdSubscriptionSpec::new(AxMarketDataLevel::Level2, Some(false), Some(true)),
+                cancel,
+                gate: gate.clone(),
+                completion,
+            })
+            .await;
+
+        let result = receiver.await.unwrap();
+
+        assert!(matches!(
+            result,
+            Err(AxWsClientError::ClientError(message)) if message == "Book write canceled"
+        ));
+        assert!(gate.lock().is_closed());
         assert!(handler.pending_subscription_requests.is_empty());
     }
 
@@ -812,6 +945,469 @@ mod tests {
         ));
         assert!(gate.lock().is_closed());
         assert!(handler.pending_subscription_requests.is_empty());
+    }
+
+    #[rstest]
+    #[case(AxMarketDataLevel::Level2, include_str!("../../../test_data/ws_md_book_l2.json"), false)]
+    #[case(AxMarketDataLevel::Level3, include_str!("../../../test_data/ws_md_book_l3.json"), false)]
+    #[case(AxMarketDataLevel::Level2, include_str!("../../../test_data/ws_md_book_l2.json"), true)]
+    #[tokio::test]
+    async fn test_book_snapshot_waits_for_write_confirmation(
+        #[case] level: AxMarketDataLevel,
+        #[case] fixture: &str,
+        #[case] canceled: bool,
+    ) {
+        let mut connection = HandlerConnection::new().await;
+        let cancel = CancellationToken::new();
+        let (mut command, gate, result) = book_command(cancel.clone());
+
+        let HandlerCommand::WriteBook { spec, .. } = &mut command else {
+            unreachable!();
+        };
+
+        spec.level = level;
+        connection.handler.handle_command(command).await;
+        let (release, held) = tokio::sync::oneshot::channel();
+        let mut write = connection.handler.writes.pop_front().unwrap();
+        let future = write.future;
+        write.future = Box::pin(async move {
+            held.await.unwrap();
+            future.await
+        });
+
+        connection.handler.writes.push_back(write);
+
+        let mut expected: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        connection
+            .frames
+            .send(Message::Text(expected.to_string().into()))
+            .unwrap();
+        connection.frame().await;
+        expected["ts"] = 1609459201_i64.into();
+        connection
+            .frames
+            .send(Message::Text(expected.to_string().into()))
+            .unwrap();
+        connection.frame().await;
+        assert!(gate.lock().is_closed());
+
+        let mut other = expected.clone();
+        other["s"] = "GBPUSD-PERP".into();
+        connection
+            .frames
+            .send(Message::Text(other.to_string().into()))
+            .unwrap();
+        let delivered = tokio::time::timeout(Duration::from_secs(2), connection.handler.next())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            book_value(delivered),
+            book_value(AxDataWsMessage::MdMessage(
+                parse_md_message(&other.to_string()).unwrap(),
+            ))
+        );
+
+        if canceled {
+            cancel.cancel();
+        }
+
+        release.send(()).unwrap();
+
+        if canceled {
+            connection.frame().await;
+            assert!(
+                matches!(result.await.unwrap(), Err(AxWsClientError::ClientError(message)) if message == "Book write canceled")
+            );
+            assert!(gate.lock().is_closed());
+        } else {
+            let delivered = tokio::time::timeout(Duration::from_secs(2), connection.handler.next())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                book_value(delivered),
+                book_value(AxDataWsMessage::MdMessage(
+                    parse_md_message(&expected.to_string()).unwrap(),
+                ))
+            );
+            assert!(result.await.unwrap().is_ok());
+            assert!(!gate.lock().is_closed());
+        }
+
+        connection.frame().await;
+    }
+
+    fn book_value(message: AxDataWsMessage) -> serde_json::Value {
+        match message {
+            AxDataWsMessage::MdMessage(AxMdMessage::BookL2(book)) => {
+                serde_json::to_value(book).unwrap()
+            }
+            AxDataWsMessage::MdMessage(AxMdMessage::BookL3(book)) => {
+                serde_json::to_value(book).unwrap()
+            }
+            other => panic!("Expected book snapshot, received {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_canceled_queued_book_sends_nothing(#[case] cancel_before_queue: bool) {
+        let mut connection = HandlerConnection::new().await;
+        let cancel = CancellationToken::new();
+        if cancel_before_queue {
+            cancel.cancel();
+        }
+
+        let (command, gate, result) = book_command(cancel.clone());
+        connection.handler.handle_command(command).await;
+        cancel.cancel();
+        connection.frame().await;
+
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), result).await.unwrap().unwrap(),
+            Err(AxWsClientError::ClientError(message)) if message == "Book write canceled"
+        ));
+        assert_eq!(
+            connection.written.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        );
+        assert!(gate.lock().is_closed());
+        assert!(connection.handler.pending_subscription_requests.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_held_book_write_allows_frames_and_turnover() {
+        let mut connection = HandlerConnection::new().await;
+        let client = connection.handler.inner.clone().unwrap();
+        client
+            .connection_mode_atomic()
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::Release);
+        let cancel = CancellationToken::new();
+        let (command, gate, result) = book_command(cancel.clone());
+        connection.handler.handle_command(command).await;
+        assert!(poll!(Box::pin(connection.handler.next())).is_pending());
+        connection.frame().await;
+        assert_eq!(
+            connection.written.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        );
+        assert!(gate.lock().is_closed());
+
+        cancel.cancel();
+        connection
+            .commands
+            .send(HandlerCommand::Unsubscribe {
+                request_id: 13,
+                symbol: Ustr::from("EURUSD-PERP"),
+                topic: TOPIC.to_string(),
+            })
+            .unwrap();
+
+        connection
+            .commands
+            .send(HandlerCommand::Subscribe {
+                request_id: 14,
+                symbol: Ustr::from("EURUSD-PERP"),
+                spec: AxMdSubscriptionSpec::new(AxMarketDataLevel::Level1, Some(true), Some(false)),
+            })
+            .unwrap();
+
+        connection.frame().await;
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), result).await.unwrap().unwrap(),
+            Err(AxWsClientError::ClientError(message)) if message == "Book write canceled"
+        ));
+
+        client
+            .connection_mode_atomic()
+            .store(ConnectionMode::Active.as_u8(), Ordering::Release);
+
+        let expected = [
+            serde_json::to_value(AxMdUnsubscribe {
+                rid: 13,
+                msg_type: AxMdRequestType::Unsubscribe,
+                symbol: Ustr::from("EURUSD-PERP"),
+            })
+            .unwrap(),
+            serde_json::to_value(AxMdSubscribe {
+                rid: 14,
+                msg_type: AxMdRequestType::Subscribe,
+                symbol: Ustr::from("EURUSD-PERP"),
+                level: AxMarketDataLevel::Level1,
+                trades: Some(true),
+                ticker: Some(false),
+            })
+            .unwrap(),
+        ];
+
+        let writes = async {
+            let mut writes = Vec::new();
+            for _ in 0..expected.len() {
+                writes.push(connection.written.recv().await.unwrap());
+            }
+
+            writes
+        };
+
+        let writes = tokio::select! {
+            frame = connection.handler.next() => panic!("Unexpected frame: {frame:?}"),
+            writes = tokio::time::timeout(Duration::from_secs(2), writes) => writes.unwrap(),
+        };
+
+        assert_eq!(writes, expected);
+        assert!(gate.lock().is_closed());
+        assert_eq!(
+            connection.written.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_held_book_write_allows_shutdown() {
+        let mut connection = HandlerConnection::new().await;
+        connection
+            .handler
+            .inner
+            .as_ref()
+            .unwrap()
+            .connection_mode_atomic()
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::Release);
+        let (command, gate, result) = book_command(CancellationToken::new());
+        connection.handler.handle_command(command).await;
+        assert!(poll!(Box::pin(connection.handler.next())).is_pending());
+        connection
+            .commands
+            .send(HandlerCommand::Disconnect)
+            .unwrap();
+        connection.frame().await;
+
+        assert!(result.await.is_err());
+        assert!(gate.lock().is_closed());
+        assert_eq!(
+            connection.written.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_canceled_replacement_skips_subscribe_after_unsubscribe() {
+        let mut connection = HandlerConnection::new().await;
+        let cancel = CancellationToken::new();
+        let (command, gate, result) = book_command(cancel.clone());
+        connection.handler.handle_command(command).await;
+        assert!(poll!(Box::pin(connection.handler.next())).is_pending());
+        let unsubscribe = tokio::time::timeout(Duration::from_secs(2), connection.written.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        cancel.cancel();
+        connection.frame().await;
+
+        assert_eq!(
+            unsubscribe,
+            serde_json::to_value(AxMdUnsubscribe {
+                rid: 12,
+                msg_type: AxMdRequestType::Unsubscribe,
+                symbol: Ustr::from("EURUSD-PERP"),
+            })
+            .unwrap()
+        );
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), result).await.unwrap().unwrap(),
+            Err(AxWsClientError::ClientError(message)) if message == "Book write canceled"
+        ));
+        assert!(gate.lock().is_closed());
+        assert_eq!(
+            connection.written.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnected_book_write_keeps_gate_closed() {
+        let mut connection = HandlerConnection::new().await;
+        let client = connection.handler.inner.clone().unwrap();
+        client
+            .connection_mode_atomic()
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::Release);
+        let (command, gate, result) = book_command(CancellationToken::new());
+        connection.handler.handle_command(command).await;
+        assert!(poll!(Box::pin(connection.handler.next())).is_pending());
+        client
+            .connection_epoch_atomic()
+            .fetch_add(1, Ordering::AcqRel);
+        client
+            .connection_mode_atomic()
+            .store(ConnectionMode::Active.as_u8(), Ordering::Release);
+        let result = tokio::select! {
+            frame = connection.handler.next() => panic!("Unexpected frame: {frame:?}"),
+            result = tokio::time::timeout(Duration::from_secs(2), result) => result.unwrap().unwrap(),
+        };
+
+        assert!(matches!(
+            result,
+            Err(AxWsClientError::Transport(message)) if message == "send failed: connection changed before write"
+        ));
+        assert!(gate.lock().is_closed());
+        assert_eq!(
+            connection.written.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        );
+        assert!(connection.handler.pending_subscription_requests.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_book_write_preserves_flags_and_opens_gate() {
+        let mut connection = HandlerConnection::new().await;
+        let (command, gate, result) = book_command(CancellationToken::new());
+        connection.handler.handle_command(command).await;
+        assert!(gate.lock().is_closed());
+        assert_eq!(
+            connection.written.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        );
+        let result = tokio::select! {
+            frame = connection.handler.next() => panic!("Unexpected frame: {frame:?}"),
+            result = tokio::time::timeout(Duration::from_secs(2), result) => result.unwrap().unwrap(),
+        };
+        let first = connection.written.recv().await.unwrap();
+        let second = connection.written.recv().await.unwrap();
+
+        assert!(result.is_ok());
+        assert!(!gate.lock().is_closed());
+        assert_eq!(
+            first,
+            serde_json::to_value(AxMdUnsubscribe {
+                rid: 12,
+                msg_type: AxMdRequestType::Unsubscribe,
+                symbol: Ustr::from("EURUSD-PERP"),
+            })
+            .unwrap()
+        );
+        assert_eq!(
+            second,
+            serde_json::to_value(AxMdSubscribe {
+                rid: 11,
+                msg_type: AxMdRequestType::Subscribe,
+                symbol: Ustr::from("EURUSD-PERP"),
+                level: AxMarketDataLevel::Level2,
+                trades: Some(false),
+                ticker: Some(true),
+            })
+            .unwrap()
+        );
+    }
+
+    fn book_command(
+        cancel: CancellationToken,
+    ) -> (
+        HandlerCommand,
+        SnapshotGate,
+        tokio::sync::oneshot::Receiver<Result<(), AxWsClientError>>,
+    ) {
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let (completion, result) = tokio::sync::oneshot::channel();
+
+        let command = HandlerCommand::WriteBook {
+            request_id: 11,
+            unsubscribe_request_id: Some(12),
+            symbol: Ustr::from("EURUSD-PERP"),
+            spec: AxMdSubscriptionSpec::new(AxMarketDataLevel::Level2, Some(false), Some(true)),
+            cancel,
+            gate: gate.clone(),
+            completion,
+        };
+
+        (command, gate, result)
+    }
+
+    struct HandlerConnection {
+        handler: AxMdWsFeedHandler,
+        commands: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        frames: tokio::sync::mpsc::UnboundedSender<Message>,
+        written: tokio::sync::mpsc::UnboundedReceiver<serde_json::Value>,
+        server: tokio::task::JoinHandle<()>,
+    }
+
+    impl HandlerConnection {
+        async fn new() -> Self {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("ws://{}", listener.local_addr().unwrap());
+            let (sent, written) = tokio::sync::mpsc::unbounded_channel();
+
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                while let Some(Ok(message)) = socket.next().await {
+                    if let Message::Text(text) = message {
+                        sent.send(serde_json::from_str(&text).unwrap()).unwrap();
+                    }
+                }
+            });
+
+            let config = WebSocketConfig::builder()
+                .url(url)
+                .backend(TransportBackend::Tungstenite)
+                .build()
+                .unwrap();
+            let client = WebSocketClient::builder()
+                .config(config)
+                .message_handler(Arc::new(|_| {}))
+                .connect()
+                .await
+                .unwrap();
+            let (commands, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (frames, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+            let mut handler = AxMdWsFeedHandler::new(
+                Arc::new(AtomicBool::new(false)),
+                cmd_rx,
+                raw_rx,
+                SubscriptionState::new(':'),
+            );
+            handler
+                .handle_command(HandlerCommand::SetClient(client))
+                .await;
+
+            Self {
+                handler,
+                commands,
+                frames,
+                written,
+                server,
+            }
+        }
+
+        async fn frame(&mut self) {
+            let heartbeat = include_str!("../../../test_data/ws_md_heartbeat.json");
+            self.frames.send(Message::Text(heartbeat.into())).unwrap();
+            let frame = tokio::time::timeout(Duration::from_secs(2), self.handler.next())
+                .await
+                .expect("handler must process frames while a book write waits")
+                .unwrap();
+
+            let AxDataWsMessage::MdMessage(AxMdMessage::Heartbeat(heartbeat)) = frame else {
+                panic!("Expected heartbeat, received {frame:?}");
+            };
+
+            assert_eq!(heartbeat.ts, 1609459200);
+            assert_eq!(heartbeat.tn, 123456789);
+        }
+    }
+
+    impl Drop for HandlerConnection {
+        fn drop(&mut self) {
+            self.server.abort();
+        }
     }
 
     fn create_handler(subscriptions: SubscriptionState) -> AxMdWsFeedHandler {

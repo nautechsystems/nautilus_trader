@@ -14261,6 +14261,158 @@ async fn test_submit_order_dedupes_response_fills_and_private_updates(
 }
 
 #[rstest]
+#[case::trade_stream(false)]
+#[case::submit_response(true)]
+#[tokio::test]
+async fn test_canceled_partial_ioc_late_fill_reaches_execution_engine(#[case] response_fill: bool) {
+    let ws_state = WsState::default();
+    let cid = ClientOrderId::from("STRAT-PARTIAL-IOC");
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let mut canceled = order_json_with(
+        "ord-partial-ioc",
+        cid.as_str(),
+        "buy",
+        "ETH-PERP",
+        1_700_000_002_000,
+        "cancelled",
+    );
+    canceled["filled_amount"] = json!("0.500");
+    canceled["time_in_force"] = json!("ioc");
+    let mut trade = trade_json_with_label(
+        "partial-ioc-fill",
+        "ord-partial-ioc",
+        "ETH-PERP",
+        cid.as_str(),
+    );
+    trade["trade_amount"] = json!("0.500");
+    *ws_state.order_notification_before_reply.lock().await = Some(make_subscription_frame(
+        &format!("{TEST_SUBACCOUNT}.orders"),
+        &json!([canceled.clone()]),
+    ));
+    *ws_state.order_reply.lock().await = Some(json!({"result": {
+        "order": canceled.clone(),
+        "trades": if response_fill { vec![trade.clone()] } else { vec![] },
+    }}));
+    let mut tc = build_client(RestState::default(), ws_state.clone()).await;
+    let native: DeriveInstrument = serde_json::from_value(sample_instrument_json()).unwrap();
+    let instrument = parse_derive_instrument_any(&native, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    tc.cache.borrow_mut().add_instrument(instrument).unwrap();
+    tc.client.connect().await.unwrap();
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Account(_)),
+        "initial account state",
+    )
+    .await;
+    let order = build_limit_order_with_time_in_force(
+        instrument_id,
+        cid,
+        OrderSide::Buy,
+        Price::from("3510.00"),
+        Quantity::from("1.000"),
+        TimeInForce::Ioc,
+        false,
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+    let mut events = Vec::new();
+
+    for index in 0..4 {
+        let event = drain_until(
+            &mut tc.rx,
+            |e| {
+                matches!(
+                    e,
+                    ExecutionEvent::Order(_) | ExecutionEvent::Report(ExecutionReport::Fill(_))
+                )
+            },
+            "cancellation-first IOC lifecycle",
+        )
+        .await;
+
+        let ExecutionEvent::Order(event) = event else {
+            panic!("A tracked partial IOC fill must not reach reconciliation");
+        };
+
+        events.push(event);
+
+        if index == 2 && !response_fill {
+            ws_state.push_notification(make_subscription_frame(
+                &format!("{TEST_SUBACCOUNT}.trades"),
+                &json!([trade.clone()]),
+            ));
+        }
+    }
+
+    ws_state.push_notification(make_subscription_frame(
+        &format!("{TEST_SUBACCOUNT}.orders"),
+        &json!([canceled]),
+    ));
+    ws_state.push_notification(make_subscription_frame(
+        &format!("{TEST_SUBACCOUNT}.trades"),
+        &json!([trade]),
+    ));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(250), tc.rx.recv())
+            .await
+            .is_err()
+    );
+    tc.client.disconnect().await.unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock, tc.cache.clone(), None);
+    engine.register_client(Box::new(tc.client)).unwrap();
+    for event in &events {
+        engine.process(event);
+    }
+
+    let kinds: Vec<_> = events.iter().map(OrderEventAny::event_type).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            OrderEventType::Submitted,
+            OrderEventType::Accepted,
+            OrderEventType::Canceled,
+            OrderEventType::Filled
+        ]
+    );
+
+    let OrderEventAny::Filled(fill) = events.last().unwrap() else {
+        unreachable!()
+    };
+
+    assert_eq!(fill.client_order_id, cid);
+    assert_eq!(fill.instrument_id, instrument_id);
+    assert_eq!(fill.account_id, AccountId::from("DERIVE-001"));
+    assert_eq!(fill.strategy_id, StrategyId::from("S-1"));
+    assert_eq!(fill.venue_order_id.as_str(), "ord-partial-ioc");
+    assert_eq!(fill.trade_id.as_str(), "partial-ioc-fill");
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.order_type, OrderType::Limit);
+    assert_eq!(fill.last_qty, Quantity::from("0.500"));
+    assert_eq!(fill.last_px, Price::from("3505.00"));
+    assert_eq!(fill.currency, Currency::USDC());
+    assert_eq!(fill.commission, Some(Money::from("0.5 USDC")));
+    assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+    assert!(!fill.reconciliation);
+    let cache = tc.cache.borrow();
+    let order = cache.order(&cid).unwrap();
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(order.quantity(), Quantity::from("1.000"));
+    assert_eq!(order.filled_qty(), Quantity::from("0.500"));
+    assert_eq!(order.leaves_qty(), Quantity::from("0.500"));
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, PositionSide::Long);
+    assert_eq!(positions[0].quantity, Quantity::from("0.500"));
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.5 USDC")]);
+}
+
+#[rstest]
 #[case(OrderType::Limit, false)]
 #[case(OrderType::StopMarket, false)]
 #[case(OrderType::Limit, true)]

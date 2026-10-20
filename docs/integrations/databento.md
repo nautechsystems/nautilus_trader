@@ -612,7 +612,8 @@ instrument has received its first delta.
 The live client buffers MBO messages until a record carries the `F_LAST` flag closing the match event, then
 passes one `OrderBookDeltas` container to the handler. Records that decode to no delta (a fill attribution, a
 status action, or a trade) can still carry `F_LAST`. Thus, the client honors the raw flag independently of the
-decoded payload. Otherwise, a partial event would be stranded and merged into the next event. A trade that
+decoded payload. Otherwise, a partial event would be stranded and merged into the next event. When MBO carries
+the instrument's trades (see [Real-time client architecture](#real-time-client-architecture)), a trade that
 closes the event follows the flushed container.
 
 Snapshot records (`F_SNAPSHOT`) accumulate into the same buffer and flush with the first non-snapshot event
@@ -812,6 +813,18 @@ The `DatabentoDataClient` wraps the other Databento adapter classes. It creates 
 dataset on the first subscription for that dataset, and every schema for that dataset shares the handler. The
 handler runs one async task that races the next gateway record against the next engine command. Thus, later
 subscriptions reach the running session without a reconnect.
+
+The `trades`, `mbp-1`, `tbbo`, `cmbp-1`, `tcbbo`, and `mbo` schemas all carry an instrument's trades. When
+one instrument is subscribed on several of them, such as quotes on `mbp-1` beside trades on `trades`, the
+handler sends each trade only once. The first schema to deliver a trade for the instrument carries its trades
+until the handler reconnects, and trades decoded from the other schemas are dropped. Quotes and book deltas
+from those schemas are still sent. Which schema delivers first can differ between sessions, so with `mbo`
+beside another trade schema, a trade does not always follow its event's book deltas. Limitations:
+
+- The `mbp-1` and `tbbo` schemas share a record type, so subscribing to both for one instrument still
+  delivers each trade, and the quote at each trade, twice.
+- A continuous symbol stops carrying a contract when it rolls. If a schema subscribed on a continuous symbol
+  carries a contract's trades, the other schemas' trades for that contract stay dropped after the roll.
 
 A single `DatabentoHistoricalClient` serves every historical request from the
 data client, including the instrument definitions fetched to seed price precision.
