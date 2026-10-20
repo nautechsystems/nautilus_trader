@@ -80,7 +80,10 @@ use super::{
 };
 use crate::{
     common::{
-        consts::IB_VENUE, contracts::parse_contract_from_json, shared_client::SharedClientHandle,
+        consts::IB_VENUE,
+        contracts::parse_contract_from_json,
+        shared_client::SharedClientHandle,
+        spreads::{is_spread_instrument_id, parse_spread_instrument_id_to_legs},
         symbology::is_crypto_contract,
     },
     config::{InteractiveBrokersDataClientConfig, MarketDataType},
@@ -1626,9 +1629,15 @@ impl DataClient for InteractiveBrokersDataClient {
                 self.spawn_command(async move {
                     let filters = params_to_string_filters(params.as_ref());
 
-                    if let Err(e) = instrument_provider
-                        .fetch_contract_details(&client_clone, instrument_id, force_update, filters)
-                        .await
+                    if let Err(e) = load_requested_instrument(
+                        &instrument_provider,
+                        &client_clone,
+                        instrument_id,
+                        force_update,
+                        filters,
+                        &data_sender,
+                    )
+                    .await
                     {
                         tracing::error!(
                             "Failed to fetch contract details for {}: {:?}",
@@ -2455,6 +2464,40 @@ impl Drop for InteractiveBrokersDataClient {
     fn drop(&mut self) {
         let _ = self.stop();
     }
+}
+
+// Loads a requested instrument into the provider. A generic spread is built as an IB BAG from its
+// qualified legs, as `load_ids` does, and its legs are published first because spread fills update
+// the leg positions.
+async fn load_requested_instrument(
+    instrument_provider: &InteractiveBrokersInstrumentProvider,
+    client: &ibapi::Client,
+    instrument_id: InstrumentId,
+    force_update: bool,
+    filters: Option<HashMap<String, String>>,
+    data_sender: &EventSender<DataEvent>,
+) -> anyhow::Result<()> {
+    if !is_spread_instrument_id(&instrument_id) {
+        return instrument_provider
+            .fetch_contract_details(client, instrument_id, force_update, filters)
+            .await;
+    }
+
+    instrument_provider
+        .fetch_spread_instrument(client, instrument_id, force_update, filters)
+        .await?;
+    let leg_ids = parse_spread_instrument_id_to_legs(&instrument_id)?
+        .into_iter()
+        .map(|(leg_id, _)| leg_id)
+        .collect::<Vec<_>>();
+
+    for leg in instrument_provider.find_all(&leg_ids) {
+        if let Err(e) = data_sender.send(DataEvent::Instrument(leg)) {
+            tracing::error!("Failed to send spread leg instrument: {e}");
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
