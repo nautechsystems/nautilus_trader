@@ -342,6 +342,12 @@ pub const BINANCE_STATUS_UNKNOWN_CODE: i64 = -1007;
 /// account-level hedge mode that PM keeps in sync across UM/CM.
 pub const BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE: i64 = -4531;
 
+/// Binance error code returned when a listen key does not exist.
+///
+/// Returned when closing a listen key that has already expired, or that has
+/// already been closed at the venue.
+pub const BINANCE_LISTEN_KEY_NOT_FOUND_CODE: i64 = -1125;
+
 /// Binance Spot LIMIT_MAKER rejection message.
 ///
 /// This message is specific to post-only (LIMIT_MAKER) orders that would match immediately.
@@ -364,6 +370,7 @@ mod tests {
         assert_eq!(BINANCE_UNEXPECTED_RESPONSE_CODE, -1006);
         assert_eq!(BINANCE_STATUS_UNKNOWN_CODE, -1007);
         assert_eq!(BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE, -4531);
+        assert_eq!(BINANCE_LISTEN_KEY_NOT_FOUND_CODE, -1125);
     }
 
     #[rstest]

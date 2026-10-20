@@ -45,12 +45,16 @@ use super::{
 };
 use crate::{
     common::{
-        consts::BINANCE_WS_HEARTBEAT_SECS,
+        consts::{BINANCE_LISTEN_KEY_NOT_FOUND_CODE, BINANCE_WS_HEARTBEAT_SECS},
         enums::{BinanceEnvironment, BinanceProductType},
         symbol::format_instrument_id,
         urls::get_futures_user_stream_url,
     },
-    futures::http::{client::BinanceFuturesHttpClient, query::BinanceOpenOrdersParamsBuilder},
+    futures::http::{
+        client::BinanceFuturesHttpClient,
+        error::BinanceFuturesHttpError,
+        query::BinanceOpenOrdersParamsBuilder,
+    },
 };
 
 /// Initial backoff between recovery retries.
@@ -273,16 +277,34 @@ where
     Ok(())
 }
 
+/// Returns the venue error code, when the venue answered with an error code.
+fn venue_error_code(error: &BinanceFuturesHttpError) -> Option<i64> {
+    match error {
+        BinanceFuturesHttpError::BinanceError { code, .. } => Some(*code),
+        _ => None,
+    }
+}
+
 async fn close_recovery_listen_key(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     let key = ctx.recovery_listen_key.read().clone();
     let Some(key) = key else {
         return Ok(());
     };
 
-    ctx.http_client
-        .close_listen_key(key.expose_secret())
-        .await
-        .context("failed to close uncommitted recovery listen key")?;
+    if let Err(error) = ctx.http_client.close_listen_key(key.expose_secret()).await {
+        // The venue no longer knows this listen key: it has expired, or it was
+        // already closed. There is nothing left to close, so treat it as closed
+        // and let recovery proceed. Propagating the error instead would leave
+        // the stale key in place, and every retry would fail on it again.
+        if venue_error_code(&error) != Some(BINANCE_LISTEN_KEY_NOT_FOUND_CODE) {
+            return Err(error).context("failed to close uncommitted recovery listen key");
+        }
+
+        log::warn!(
+            "Recovery listen key is no longer known at the venue (code {BINANCE_LISTEN_KEY_NOT_FOUND_CODE}); clearing it"
+        );
+    }
+
     let mut pending = ctx.recovery_listen_key.write();
     if pending.as_ref().map(SecretString::expose_secret) == Some(key.expose_secret()) {
         *pending = None;
@@ -458,7 +480,7 @@ mod tests {
         extract::State,
         http::{StatusCode, Uri},
         response::{IntoResponse, Response},
-        routing::get,
+        routing::{delete, get},
     };
     use nautilus_common::{
         cache::fifo::FifoCache,
@@ -587,6 +609,70 @@ mod tests {
         });
 
         (format!("http://{address}"), task)
+    }
+
+    #[derive(Clone, Copy)]
+    enum ListenKeyServerMode {
+        NotFound,
+        Rejected,
+    }
+
+    async fn listen_key_response(State(mode): State<ListenKeyServerMode>) -> Response {
+        match mode {
+            ListenKeyServerMode::NotFound => (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "code": BINANCE_LISTEN_KEY_NOT_FOUND_CODE,
+                    "msg": "This listenKey does not exist."
+                })),
+            )
+                .into_response(),
+            ListenKeyServerMode::Rejected => (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"code": -2010, "msg": "test rejection"})),
+            )
+                .into_response(),
+        }
+    }
+
+    async fn start_listen_key_server(mode: ListenKeyServerMode) -> (String, JoinHandle<()>) {
+        let app = Router::new()
+            .route("/fapi/v1/listenKey", delete(listen_key_response))
+            .with_state(mode);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        (format!("http://{address}"), task)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_close_recovery_listen_key_clears_key_when_venue_does_not_know_it() {
+        let (base_url, server_task) = start_listen_key_server(ListenKeyServerMode::NotFound).await;
+        let (context, _event_rx) = recovery_context(base_url);
+        *context.recovery_listen_key.write() = Some(SecretString::from("stale-listen-key"));
+
+        close_recovery_listen_key(&context).await.unwrap();
+
+        assert!(context.recovery_listen_key.read().is_none());
+        server_task.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_close_recovery_listen_key_keeps_key_when_close_fails() {
+        let (base_url, server_task) = start_listen_key_server(ListenKeyServerMode::Rejected).await;
+        let (context, _event_rx) = recovery_context(base_url);
+        *context.recovery_listen_key.write() = Some(SecretString::from("stale-listen-key"));
+
+        let error = close_recovery_listen_key(&context).await.unwrap_err();
+
+        assert!(error.to_string().contains("failed to close uncommitted recovery listen key"));
+        assert!(context.recovery_listen_key.read().is_some());
+        server_task.abort();
     }
 
     fn recovery_context(
