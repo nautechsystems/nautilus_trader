@@ -29,9 +29,12 @@ use ustr::Ustr;
 
 use super::{
     instruments::TokenMeta,
-    subscriptions::{DataSubscriptions, resolve_token_id_from},
+    subscriptions::{DataSubscriptions, SubscriptionKind, resolve_token_id_from},
 };
-use crate::{providers::extract_condition_id, resolve::ResolveWatchEntry};
+use crate::{
+    providers::extract_condition_id,
+    resolve::{ResolveWatchEntry, remove_data_resolve_watch_entry},
+};
 
 impl DataSubscriptions {
     pub(crate) async fn mark_closed(
@@ -111,6 +114,33 @@ impl DataSubscriptions {
             || self.active_instrument_close_subs.contains(&instrument_id);
         self.token_meta.contains_key(&token_id)
             || (self.ws_open_tokens.contains(&token_id) && !resolution_owned)
+    }
+
+    pub(super) fn discard_filtered_instrument(
+        &self,
+        instrument_id: InstrumentId,
+        pending_loads: &AHashSet<InstrumentId>,
+    ) {
+        {
+            let _guard = self.owner_lock.lock();
+            self.active_instrument_status_subs.remove(&instrument_id);
+            self.active_instrument_close_subs.remove(&instrument_id);
+            self.deferred_resolutions.remove(&instrument_id);
+            remove_data_resolve_watch_entry(&self.watchlist, instrument_id, false);
+        }
+
+        if !pending_loads.contains(&instrument_id) || self.instruments.contains_key(&instrument_id)
+        {
+            return;
+        }
+
+        for kind in [
+            SubscriptionKind::Quotes,
+            SubscriptionKind::Deltas,
+            SubscriptionKind::Trades,
+        ] {
+            self.unsubscribe(instrument_id, kind);
+        }
     }
 
     pub(super) async fn retire_instrument(&self, instrument_id: InstrumentId) {
@@ -331,7 +361,7 @@ mod tests {
 
     use ahash::AHashSet;
     use dashmap::DashMap;
-    use log::{Level, LevelFilter, Log, Metadata, Record};
+    use log::Level;
     use nautilus_common::live::dst::time::Instant;
     use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
@@ -355,34 +385,10 @@ mod tests {
         websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle},
     };
 
-    struct ClosureLogCapture {
-        messages: Mutex<Vec<String>>,
-    }
-
-    static CLOSURE_LOG_CAPTURE: ClosureLogCapture = ClosureLogCapture {
-        messages: Mutex::new(Vec::new()),
-    };
-
-    impl Log for ClosureLogCapture {
-        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            metadata.level() == Level::Info
-                && metadata.target() == "nautilus_polymarket::data::runtime"
-        }
-
-        fn log(&self, record: &Record<'_>) {
-            if self.enabled(record.metadata()) {
-                self.messages.lock().push(record.args().to_string());
-            }
-        }
-
-        fn flush(&self) {}
-    }
-
     #[rstest]
     #[tokio::test]
     async fn register_closed_condition_logs_once_per_condition() {
-        log::set_logger(&CLOSURE_LOG_CAPTURE).expect("test logger already installed");
-        log::set_max_level(LevelFilter::Info);
+        let _capture = super::super::test_logging::capture_logs().await;
 
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let ws_client = PolymarketMarketPoolHandle::test_single_shard(tx, &[]);
@@ -401,7 +407,10 @@ mod tests {
         }
 
         assert_eq!(
-            *CLOSURE_LOG_CAPTURE.messages.lock(),
+            super::super::test_logging::messages()
+                .into_iter()
+                .filter_map(|(level, message)| (level == Level::Info).then_some(message))
+                .collect::<Vec<_>>(),
             vec![
                 "Market closed for condition 0xCOND-A, retiring live data state".to_string(),
                 "Market closed for condition 0xCOND-B, retiring live data state".to_string(),

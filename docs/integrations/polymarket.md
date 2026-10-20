@@ -2376,6 +2376,9 @@ CLOB metadata. Account for that delay or raise the retry cap. After the retry bu
 the adapter logs a condition still missing on Gamma as a terminal miss. Resubscribe after the
 market becomes available.
 
+If the configured instrument filters reject an uncached instrument, auto-load drops its pending
+subscriptions without further retries or a terminal-miss error. It logs the rejection at DEBUG level.
+
 ### Market resolution events
 
 The Rust data client tracks Polymarket exposure by `condition_id` so both YES and NO legs

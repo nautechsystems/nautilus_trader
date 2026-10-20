@@ -24,6 +24,9 @@ mod requests;
 mod runtime;
 mod subscriptions;
 
+#[cfg(test)]
+mod test_logging;
+
 use std::{
     future::Future,
     sync::{

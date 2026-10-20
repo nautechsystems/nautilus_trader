@@ -5981,6 +5981,248 @@ mod tests {
     }
 
     #[rstest]
+    #[case::no_retry_budget(0)]
+    #[case::retries_available(2)]
+    #[tokio::test]
+    async fn auto_load_filtered_quote_subscription_stops_without_error(#[case] max_retries: u32) {
+        let _capture = super::super::test_logging::capture_logs().await;
+
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([
+                gamma_market_recheck_fixture_value()
+            ]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.add_instrument_filter(Arc::new(crate::filters::PredicateFilter::new(
+            "reject-all",
+            |_| false,
+        )));
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = max_retries;
+        client.config.auto_load_retry_delay_initial_secs = 0.0;
+        client.config.auto_load_retry_delay_max_secs = 0.0;
+        let instrument_id = fixture_yes_instrument_id();
+
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("quote subscription should queue auto-load");
+        wait_until_async(
+            || {
+                let client = &client;
+                async move { client.tasks.all_finished() }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        let logs = super::super::test_logging::messages();
+        assert_eq!(
+            state.queries.lock().as_slice(),
+            &[ExpiredAutoLoadQuery {
+                condition_ids: Some(TEST_CONDITION_ID.to_string()),
+                closed: None,
+            }],
+        );
+        assert!(logs.iter().any(|(level, message)| {
+            *level == log::Level::Debug
+                && message == &format!("Auto-loaded instrument {instrument_id} filtered out")
+        }));
+        assert!(
+            !logs.iter().any(|(level, _)| *level == log::Level::Error),
+            "Unexpected ERROR logs: {logs:?}",
+        );
+        assert!(!client.subscriptions.has_intent(instrument_id));
+        assert!(!client.instruments.load().contains_key(&instrument_id));
+        assert!(client.subscriptions.pending_auto_loads.lock().is_empty());
+        assert!(client.subscriptions.ws_open_tokens.is_empty());
+        assert!(state.market_payloads.lock().await.is_empty());
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::cached_sibling(false, false)]
+    #[case::cached_during_load(true, false)]
+    #[case::cached_during_cleanup(true, true)]
+    #[tokio::test]
+    async fn auto_load_filter_rejection_preserves_explicitly_loaded_sibling(
+        #[case] load_in_flight: bool,
+        #[case] cleanup_in_progress: bool,
+    ) {
+        let market = gamma_market_recheck_fixture_value();
+
+        let reply_release = Arc::new(tokio::sync::Semaphore::new(0));
+        let first_reply = if load_in_flight {
+            ScriptedAutoLoadReply::gated(serde_json::json!([market.clone()]), reply_release.clone())
+        } else {
+            ScriptedAutoLoadReply::ok(serde_json::json!([market.clone()]))
+        };
+
+        let state = ScriptedAutoLoadServerState::new(
+            vec![
+                first_reply,
+                ScriptedAutoLoadReply::ok(serde_json::json!([market])),
+            ],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        let sibling_id = fixture_no_instrument_id();
+        client.add_instrument_filter(Arc::new(crate::filters::PredicateFilter::new(
+            "reject-no",
+            move |instrument| instrument.id() != sibling_id,
+        )));
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 0;
+        let reconcile_mutex = client.subscriptions.ws_sub_mutex.clone();
+        let reconcile_guard = if cleanup_in_progress {
+            Some(reconcile_mutex.lock().await)
+        } else {
+            None
+        };
+
+        if load_in_flight {
+            client
+                .subscribe_quotes(SubscribeQuotes::new(
+                    sibling_id,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .expect("missing sibling subscription should auto-load");
+            wait_until_async(
+                || {
+                    let state = state.clone();
+                    async move { state.queries.lock().len() == 1 }
+                },
+                StdDuration::from_secs(3),
+            )
+            .await;
+        }
+
+        if cleanup_in_progress {
+            reply_release.add_permits(1);
+            wait_until_async(
+                || {
+                    let client = &client;
+                    async move { !client.subscriptions.active_quote_subs.contains(&sibling_id) }
+                },
+                StdDuration::from_secs(3),
+            )
+            .await;
+        }
+
+        client
+            .request_instrument(RequestInstrument::new(
+                sibling_id,
+                None,
+                None,
+                Some(client.client_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+            .expect("explicit sibling request should bypass filters");
+        wait_until_async(
+            || {
+                let client = &client;
+                async move { client.instruments.contains_key(&sibling_id) }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        let sibling = client
+            .instruments
+            .get_cloned(&sibling_id)
+            .expect("cached sibling");
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                sibling_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("cached sibling subscription");
+        drop(reconcile_guard);
+        wait_until_async(
+            || {
+                let client = &client;
+                async move {
+                    client
+                        .subscriptions
+                        .ws_open_tokens
+                        .contains(&Ustr::from(TEST_TOKEN_ID_NO))
+                }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        if load_in_flight {
+            reply_release.add_permits(1);
+        } else {
+            client
+                .subscribe_quotes(SubscribeQuotes::new(
+                    fixture_yes_instrument_id(),
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .expect("Yes subscription should auto-load");
+        }
+
+        wait_until_async(
+            || {
+                let client = &client;
+                async move { client.tasks.all_finished() }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        assert_eq!(client.instruments.get_cloned(&sibling_id), Some(sibling));
+        assert!(client.subscriptions.active_quote_subs.contains(&sibling_id));
+        assert!(
+            client
+                .subscriptions
+                .ws_open_tokens
+                .contains(&Ustr::from(TEST_TOKEN_ID_NO))
+        );
+        assert!(
+            client
+                .subscriptions
+                .token_meta
+                .contains_key(&Ustr::from(TEST_TOKEN_ID_NO))
+        );
+        assert!(
+            client
+                .instruments
+                .contains_key(&fixture_yes_instrument_id())
+        );
+        assert_eq!(state.queries.lock().len(), 2);
+        client.disconnect().await.expect("disconnect data client");
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn auto_load_filtered_open_resolution_subscription_clears_intent() {
         let state = ScriptedAutoLoadServerState::new(
