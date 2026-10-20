@@ -343,8 +343,8 @@ subscribers, then serialized into the existing `BusMessage` wire record:
 - `topic`: the exact message bus topic used by the internal publish call, for example
   `data.quotes.BINANCE.BTCUSDT` or `events.order.S-001`.
 - `type`: the canonical payload type name, for example `QuoteTick` or `OrderEventAny`.
-- `payload_kind`: present with the value `typed` for control, execution, and reconciliation
-  payloads whose fixed type names could also identify custom payloads.
+- `payload_kind`: present with the value `typed` for native data requests, replies,
+  control, execution, and reconciliation payloads whose fixed type names could also identify custom payloads.
 - `encoding`: the payload encoding selected from the message bus encoding policy.
 - `payload`: serialized bytes encoded with the selected encoding.
 
@@ -362,16 +362,28 @@ node's bus thread. Bounded egress implementations drop on a full queue instead o
 back-pressure to the trading loop. Closing the message bus closes the configured egress.
 
 Inbound external streams are exposed through the separate Rust `MessageBusExternalIngress` trait.
-Ingress yields the same `BusMessage { topic, payload_type, encoding, payload }` shape.
+Ingress yields the same `BusMessage { topic, payload_type, encoding, payload, source }` shape.
 `republish_external_message` decodes supported inbound messages and republishes them internally
 without forwarding the message back out. Normal internal republishing requires the inbound payload
 type to be registered for streaming and skips unregistered types without decoding.
+
+A Rust ingress implementation can attach optional `BusMessageSource` provenance: the publisher ID,
+process instance ID, stream, and sequence. Rust `msgbus::current_external_source()` exposes it while
+handlers and processors run synchronously, including for messages they publish internally. Nested
+external dispatch restores the previous source when it returns. Python processors do not receive
+provenance. The built-in Redis backing does not attach it.
 
 `LiveNode::add_stream_processor` in Rust and `LiveNode.add_stream_processor` in Python register
 callbacks for typed JSON or MessagePack payloads. Processors run in registration order before the
 internal streaming registration check, so they receive supported typed messages even when internal
 republishing is disabled. Python processors receive a mapping with an added `payload_type` field. A
 processor error stops later processors and skips internal republishing for that message.
+
+During data-client connection, the node republishes native data replies registered for streaming
+that have pending correlation handlers before normal dispatch. These replies bypass processors and can
+overtake buffered messages. Other external messages wait in a FIFO buffer capped at the ingress channel
+capacity. If the buffer fills, startup stops draining ingress, so a needed reply behind that traffic can
+stall connection until `timeout_connection` expires.
 
 For JSON and MessagePack custom data, egress writes and ingress expects an envelope in the Redis
 `payload` field, not the bare custom object. The canonical JSON envelope is:
@@ -433,9 +445,19 @@ Standalone full order book snapshots, `GreeksData` records, option chain slices,
 forwarded because those types do not implement Serde serialization.
 
 When `external_streams` is non-empty, JSON or MessagePack egress also forwards subscription
-commands, trading commands, data requests and replies, and execution mass-status requests. It also forwards order status reports, fill reports, position
-status reports, and execution mass-status reports. These payloads stay local when no external streams are
-configured.
+commands, trading commands, data requests and replies, and execution mass-status requests. It also forwards
+order status reports, fill reports, position status reports, and execution mass-status reports. These payloads
+stay local when no external streams are configured.
+
+Application code publishes native requests and replies with Rust `msgbus::publish_any`.
+The `DataEngine` does not forward requests for external clients, and `send_response` stays local.
+To route inbound replies to pending request callbacks, register `BusPayloadType::DataResponse`
+for streaming and subscribe a topic handler that calls `msgbus::send_response`.
+
+Native replies use the shared JSON/MessagePack response representation keyed by response kind.
+Book replies preserve all orders, metadata, and each side's unfinished L1 batch state. Their encoding
+is independent of the `sbe` feature. Python processors receive that serialized shape with an added
+`payload_type` field. Unsupported encodings for native requests and replies return an error.
 
 With SBE, Rust-native external egress forwards only these built-in market data payloads with schema codecs:
 
@@ -465,7 +487,7 @@ use nautilus_common::{
 use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
 
 let config = MessageBusConfig {
-    encoding: SerializationEncoding::Json,
+    encoding: SerializationEncoding::MsgPack,
     encoding_market_data: Some(SerializationEncoding::Sbe),
     timestamps_as_iso8601: true,
     buffer_interval_ms: Some(100),
@@ -524,7 +546,8 @@ Rust-native external message bus egress supports these encoding names:
 - MessagePack (`msgpack`)
 - SBE (`sbe`, with the Rust `sbe` feature)
 
-Use the `encoding` config option to control the message writing encoding.
+To use SBE for market data and MessagePack for all other payloads, set `encoding = "msgpack"` and
+`encoding_market_data = "sbe"`, as in the example above.
 Use `encoding_market_data` to override the encoding for market data payloads backed by the external
 bus binary codecs. Use `encoding_builtin` to override account state, portfolio snapshot, order
 event, and position event payloads. Custom and unmapped payload types always use `encoding`.

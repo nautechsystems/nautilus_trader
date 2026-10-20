@@ -107,6 +107,29 @@ impl OrderBook {
         }
     }
 
+    /// Returns the serialized L1 batch state for one side.
+    ///
+    /// Codes are 0 for no batch, 1 for an MBP batch, and 2 for a snapshot batch.
+    #[must_use]
+    pub fn batch_state_code(&self, side: OrderSide) -> u8 {
+        match side {
+            OrderSide::Buy => self.bids.batch_state_code(),
+            OrderSide::Sell => self.asks.batch_state_code(),
+        }
+    }
+
+    /// Restores one side's serialized L1 batch state after restoring its orders.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `code` is unknown, or nonzero on a non-L1 book.
+    pub fn set_batch_state_code(&mut self, side: OrderSide, code: u8) -> CorrectnessResult<()> {
+        match side {
+            OrderSide::Buy => self.bids.set_batch_state_code(code),
+            OrderSide::Sell => self.asks.set_batch_state_code(code),
+        }
+    }
+
     /// Resets the order book to its initial empty state.
     pub fn reset(&mut self) {
         self.bids.clear();

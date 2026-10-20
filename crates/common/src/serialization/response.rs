@@ -19,7 +19,7 @@ use bytes::Bytes;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BookOrder, CustomData, Data, DataType},
-    enums::{BookType, RecordFlag},
+    enums::{BookType, OrderSide, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     orderbook::OrderBook,
 };
@@ -281,6 +281,8 @@ impl<'a> WireBookResponse<'a> {
                     .chain(book.asks(None))
                     .flat_map(|level| level.iter().copied())
                     .collect(),
+                bid_batch_state: book.batch_state_code(OrderSide::Buy),
+                ask_batch_state: book.batch_state_code(OrderSide::Sell),
             },
             start: value.start,
             end: value.end,
@@ -302,6 +304,8 @@ impl<'a> WireBookResponse<'a> {
             );
         }
 
+        book.set_batch_state_code(OrderSide::Buy, self.data.bid_batch_state)?;
+        book.set_batch_state_code(OrderSide::Sell, self.data.ask_batch_state)?;
         book.sequence = self.data.sequence;
         book.ts_last = self.data.ts_last;
         book.update_count = self.data.update_count;
@@ -326,4 +330,8 @@ struct BookState {
     ts_last: UnixNanos,
     update_count: u64,
     orders: Vec<BookOrder>,
+    #[serde(default)]
+    bid_batch_state: u8,
+    #[serde(default)]
+    ask_batch_state: u8,
 }

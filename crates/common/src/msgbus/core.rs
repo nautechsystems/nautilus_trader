@@ -751,7 +751,7 @@ impl MessageBus {
     }
 
     /// Removes and returns the handler for the `correlation_id`.
-    pub(crate) fn take_response_handler(
+    pub fn take_response_handler(
         &mut self,
         correlation_id: &UUID4,
     ) -> Option<ShareableMessageHandler> {

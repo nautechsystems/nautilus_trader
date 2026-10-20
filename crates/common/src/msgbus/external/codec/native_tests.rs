@@ -23,8 +23,8 @@ use std::{
 use bytes::Bytes;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BookOrder, CustomData, FundingRateUpdate, stubs::*},
-    enums::{BookType, OrderSide, RecordFlag},
+    data::{BookOrder, CustomData, FundingRateUpdate, OrderBookDelta, stubs::*},
+    enums::{BookAction, BookType, OrderSide, RecordFlag},
     events::{
         OrderEventAny,
         order::spec::{OrderAcceptedSpec, OrderInitializedSpec},
@@ -661,4 +661,261 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
     }));
 
     values
+}
+
+#[rstest]
+#[case(0, 0)]
+#[case(RecordFlag::F_MBP as u8, 1)]
+#[case(RecordFlag::F_SNAPSHOT as u8, 2)]
+fn test_l1_reply_retains_subsequent_batch_behavior(
+    #[values(SerializationEncoding::Json, SerializationEncoding::MsgPack)]
+    encoding: SerializationEncoding,
+    #[case] flags: u8,
+    #[case] state: u8,
+    #[values(RecordFlag::F_MBP as u8, RecordFlag::F_SNAPSHOT as u8)] next_flags: u8,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let instrument_id = InstrumentId::from("EURUSD.SIM");
+    let mut original = OrderBook::new(instrument_id, BookType::L1_MBP);
+    original.add(
+        BookOrder::new(OrderSide::Buy, Price::from("100"), Quantity::from("2"), 1),
+        if side == OrderSide::Buy { flags } else { 0 },
+        11,
+        13.into(),
+    );
+    original.add(
+        BookOrder::new(OrderSide::Sell, Price::from("101"), Quantity::from("3"), 2),
+        if side == OrderSide::Sell { flags } else { 0 },
+        17,
+        19.into(),
+    );
+    let reply = DataResponse::Book(BookResponse::new(
+        UUID4::new(),
+        ClientId::from("SOURCE"),
+        instrument_id,
+        original.clone(),
+        None,
+        None,
+        23.into(),
+        None,
+    ));
+
+    let DataResponse::Book(mut decoded) = deserialize_payload::<DataResponse>(
+        BusPayloadType::DataResponse,
+        encoding,
+        &serialize_payload(encoding, BusPayloadType::DataResponse, &reply).unwrap(),
+    )
+    .unwrap()
+    .unwrap() else {
+        panic!("Expected book response");
+    };
+
+    assert_eq!(decoded.data.bids_as_map(None), original.bids_as_map(None));
+    assert_eq!(decoded.data.asks_as_map(None), original.asks_as_map(None));
+
+    assert_eq!(decoded.data.batch_state_code(side), state);
+    let other_side = side.opposite();
+    assert_eq!(decoded.data.batch_state_code(other_side), 0);
+    let retains_previous = flags == next_flags;
+
+    let price = if side == OrderSide::Buy { "99" } else { "102" };
+
+    let next = OrderBookDelta::new(
+        instrument_id,
+        BookAction::Add,
+        BookOrder::new(side, Price::from(price), Quantity::from("5"), 3),
+        next_flags | RecordFlag::F_LAST as u8,
+        29,
+        31.into(),
+        37.into(),
+    );
+    original.apply_delta(&next).unwrap();
+    decoded.data.apply_delta(&next).unwrap();
+
+    let expected_bid = if side == OrderSide::Buy && !retains_previous {
+        "99"
+    } else {
+        "100"
+    };
+
+    let expected_ask = if side == OrderSide::Sell && !retains_previous {
+        "102"
+    } else {
+        "101"
+    };
+
+    assert_eq!(original.best_bid_price(), Some(Price::from(expected_bid)));
+    assert_eq!(original.best_ask_price(), Some(Price::from(expected_ask)));
+    assert_eq!(decoded.data.bids_as_map(None), original.bids_as_map(None));
+    assert_eq!(decoded.data.asks_as_map(None), original.asks_as_map(None));
+    assert_eq!(decoded.data.batch_state_code(side), 0);
+    assert_eq!(decoded.data.batch_state_code(other_side), 0);
+    assert_eq!(decoded.data.sequence, original.sequence);
+    assert_eq!(decoded.data.ts_last, original.ts_last);
+    assert_eq!(decoded.data.update_count, original.update_count);
+}
+
+#[rstest]
+fn test_book_response_preserves_full_depth(
+    #[values(BookType::L2_MBP, BookType::L3_MBO)] book_type: BookType,
+    #[values(SerializationEncoding::Json, SerializationEncoding::MsgPack)]
+    encoding: SerializationEncoding,
+    #[values(20_000)] order_count: usize,
+) {
+    let instrument_id = InstrumentId::from("EURUSD.SIM");
+    let mut book = OrderBook::new(instrument_id, book_type);
+
+    for index in 0..order_count {
+        let side = if index % 2 == 0 {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        };
+
+        let price = if side == OrderSide::Buy {
+            index + 1
+        } else {
+            index + 100_000
+        };
+
+        book.add(
+            BookOrder::new(
+                side,
+                Price::from(price.to_string().as_str()),
+                Quantity::from((index % 97 + 1).to_string().as_str()),
+                index as u64 + 11,
+            ),
+            0,
+            index as u64 + 13,
+            (index as u64 + 17).into(),
+        );
+    }
+
+    let response = BookResponse::new(
+        UUID4::new(),
+        ClientId::from("SOURCE"),
+        instrument_id,
+        book,
+        None,
+        None,
+        30_000.into(),
+        None,
+    );
+
+    let DataResponse::Book(result) = deserialize_payload::<DataResponse>(
+        BusPayloadType::DataResponse,
+        encoding,
+        &serialize_payload(
+            encoding,
+            BusPayloadType::DataResponse,
+            &DataResponse::Book(response.clone()),
+        )
+        .unwrap(),
+    )
+    .unwrap()
+    .unwrap() else {
+        panic!("Expected book response");
+    };
+
+    let expected = response
+        .data
+        .to_deltas(response.data.ts_last, response.ts_init);
+    let actual = result.data.to_deltas(result.data.ts_last, result.ts_init);
+    assert_eq!(expected.deltas.len(), order_count + 1);
+    assert_eq!(actual.deltas, expected.deltas);
+    assert_eq!(actual.flags, expected.flags);
+    assert_eq!(actual.sequence, expected.sequence);
+    assert_eq!(actual.ts_event, expected.ts_event);
+    assert_eq!(actual.ts_init, expected.ts_init);
+    assert_eq!(result.data.book_type, book_type);
+    assert_eq!(result.data.update_count, response.data.update_count);
+}
+
+#[rstest]
+#[case(BookType::L1_MBP, 3, "Invalid L1 batch state code: 3")]
+#[case(
+    BookType::L2_MBP,
+    1,
+    "Cannot restore L1 batch state for book type L2_MBP"
+)]
+fn book_response_rejects_invalid_batch_state(
+    #[case] book_type: BookType,
+    #[case] code: u8,
+    #[case] message: &str,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let instrument_id = InstrumentId::from("EURUSD.SIM");
+    let book = OrderBook::new(instrument_id, book_type);
+    let response = DataResponse::Book(BookResponse::new(
+        UUID4::new(),
+        ClientId::from("SOURCE"),
+        instrument_id,
+        book,
+        None,
+        None,
+        23.into(),
+        None,
+    ));
+    let mut value = serde_json::to_value(&response).unwrap();
+
+    let name = match side {
+        OrderSide::Buy => "bid_batch_state",
+        OrderSide::Sell => "ask_batch_state",
+    };
+
+    value["Book"]["data"][name] = serde_json::json!(code);
+    assert_eq!(
+        serde_json::from_value::<DataResponse>(value)
+            .unwrap_err()
+            .to_string(),
+        message
+    );
+}
+
+#[rstest]
+fn book_response_accepts_legacy_state_without_batch_fields() {
+    let response = responses(1)
+        .into_iter()
+        .find(|value| matches!(value, DataResponse::Book(_)))
+        .unwrap();
+    let mut value = serde_json::to_value(&response).unwrap();
+    let fields = value["Book"]["data"].as_object_mut().unwrap();
+    assert_eq!(fields.remove("bid_batch_state"), Some(serde_json::json!(0)));
+    assert_eq!(fields.remove("ask_batch_state"), Some(serde_json::json!(0)));
+    let decoded: DataResponse = serde_json::from_value(value).unwrap();
+    assert_eq!(
+        serde_json::to_value(decoded).unwrap(),
+        serde_json::to_value(response).unwrap()
+    );
+}
+
+#[cfg(feature = "sbe")]
+#[rstest]
+fn mixed_sbe_market_data_and_msgpack_control_messages() {
+    use nautilus_model::data::QuoteTick;
+    use nautilus_serialization::sbe::FromSbe;
+
+    let recorded = install_bus(SerializationEncoding::MsgPack);
+    let quote = quote_ethusdt_binance();
+    let response = responses(1).remove(1);
+    msgbus::publish_quote("data.quotes".into(), &quote);
+    msgbus::publish_any("control.responses".into(), &response);
+    let messages = recorded.borrow();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].payload_type, BusPayloadType::QuoteTick);
+    assert_eq!(messages[0].encoding, SerializationEncoding::Sbe);
+    assert_eq!(QuoteTick::from_sbe(&messages[0].payload).unwrap(), quote);
+    assert_eq!(messages[1].payload_type, BusPayloadType::DataResponse);
+    assert_eq!(messages[1].encoding, SerializationEncoding::MsgPack);
+    let decoded: DataResponse = deserialize_payload(
+        BusPayloadType::DataResponse,
+        messages[1].encoding,
+        &messages[1].payload,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(decoded).unwrap(),
+        serde_json::to_value(response).unwrap()
+    );
 }

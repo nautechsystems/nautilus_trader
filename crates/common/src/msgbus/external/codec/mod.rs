@@ -99,18 +99,21 @@ pub(crate) fn deserialize_payload<T>(
 where
     T: DeserializeOwned + 'static,
 {
-    if !payload_type.supports(encoding) {
-        warn_unsupported_inbound(payload_type, encoding);
-        return Ok(None);
-    }
-
     let type_name = payload_type.as_str();
     match encoding {
         SerializationEncoding::Json => deserialize_json_payload(payload, type_name).map(Some),
         SerializationEncoding::MsgPack => deserialize_msgpack_payload(payload, type_name).map(Some),
         SerializationEncoding::Sbe => {
             warn_unsupported_inbound(payload_type, encoding);
-            Ok(None)
+            match payload_type {
+                BusPayloadType::RequestCommand => {
+                    anyhow::bail!("data request encoding is not supported: {encoding}");
+                }
+                BusPayloadType::DataResponse => {
+                    anyhow::bail!("data response encoding is not supported: {encoding}");
+                }
+                _ => Ok(None),
+            }
         }
     }
 }
@@ -207,6 +210,18 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest]
+    fn unsupported_control_payload_is_skipped() {
+        let decoded = deserialize_payload::<serde_json::Value>(
+            BusPayloadType::TradingCommand,
+            SerializationEncoding::Sbe,
+            b"unsupported",
+        )
+        .unwrap();
+
+        assert_eq!(decoded, None);
+    }
 
     #[cfg(feature = "sbe")]
     #[rstest]

@@ -29,7 +29,7 @@ pub(crate) mod codec;
 
 use self::codec::PayloadCodecError;
 use super::{
-    BusMessage, BusPayloadType, HAS_EXTERNAL_EGRESS, SUPPRESS_EXTERNAL_DEPTH,
+    BusMessage, BusMessageSource, BusPayloadType, HAS_EXTERNAL_EGRESS, SUPPRESS_EXTERNAL_DEPTH,
     SuppressExternalGuard,
     api::{
         publish_account_state, publish_any, publish_bar, publish_deltas, publish_depth,
@@ -172,6 +172,74 @@ where
     external_egress.publish(BusMessage::new(*topic, payload_type, payload, encoding));
 }
 
+thread_local! {
+    static EXTERNAL_SOURCE: Cell<Option<BusMessageSource>> = const { Cell::new(None) };
+}
+
+/// Returns the source of the external message currently being dispatched on this thread.
+#[must_use]
+pub fn current_external_source() -> Option<BusMessageSource> {
+    EXTERNAL_SOURCE.get()
+}
+
+struct ExternalSourceGuard(Option<BusMessageSource>);
+
+impl ExternalSourceGuard {
+    fn new(source: Option<BusMessageSource>) -> Self {
+        Self(EXTERNAL_SOURCE.replace(source))
+    }
+}
+
+impl Drop for ExternalSourceGuard {
+    fn drop(&mut self) {
+        EXTERNAL_SOURCE.set(self.0);
+    }
+}
+
+/// Republishes a native data reply only when its correlation handler is pending.
+///
+/// Returns `false` without dispatching when the message is not a streaming-registered
+/// `DataResponse` or no handler is pending for its correlation ID. `LiveNode` uses this during
+/// data-client connection, before actors and strategies subscribe. The reply dispatches through
+/// application topic handlers, with external provenance and egress suppression active during
+/// dispatch. Startup replies bypass stream processors and can overtake buffered messages from
+/// the same ingress.
+///
+/// # Errors
+///
+/// Returns an error if a native data reply cannot be decoded or its topic is invalid.
+pub fn republish_pending_external_response(message: &BusMessage) -> anyhow::Result<bool> {
+    if message.payload_type != BusPayloadType::DataResponse
+        || !is_registered_streaming_type(message)
+    {
+        return Ok(false);
+    }
+
+    let Some(response) = codec::deserialize_payload::<DataResponse>(
+        message.payload_type,
+        message.encoding,
+        &message.payload,
+    )?
+    else {
+        return Ok(false);
+    };
+
+    if get_message_bus()
+        .borrow()
+        .get_response_handler(response.correlation_id())
+        .is_none()
+    {
+        return Ok(false);
+    }
+
+    let topic =
+        MStr::<Topic>::topic_from_ustr(message.topic).context("invalid external message topic")?;
+    let _guard = SuppressExternalGuard::new();
+    let _source = ExternalSourceGuard::new(message.source);
+    publish_any(topic, &response);
+    Ok(true)
+}
+
 /// Decodes an externally-received [`BusMessage`] and republishes it onto the internal bus.
 ///
 /// The message `payload_type` header selects the concrete type and the message `encoding` selects
@@ -183,6 +251,7 @@ where
 /// # Errors
 ///
 /// Returns an error if the topic is invalid or a supported payload cannot be decoded. Unsupported
+/// encodings for native data requests and responses also return an error. Other unsupported
 /// type/encoding pairs are skipped with a warning.
 pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
     let topic =
@@ -193,6 +262,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
     }
 
     let _guard = SuppressExternalGuard::new();
+    let _source = ExternalSourceGuard::new(message.source);
 
     match message.payload_type {
         BusPayloadType::Custom(_) => {
@@ -364,10 +434,10 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
 /// Decodes a supported typed payload and passes it to `processor` before applying normal inbound
 /// republishing rules.
 ///
-/// JSON or MessagePack payloads identified by
-/// [`BusPayloadType::is_typed_message`] reach `processor` regardless of internal streaming
-/// registration. Internal republishing still requires
-/// registration. Unsupported type/encoding pairs are skipped with a warning. The processor mapping
+/// Supported typed JSON or MessagePack payloads reach `processor` regardless of internal streaming
+/// registration. Internal republishing still requires registration. Native requests and replies
+/// use the shared JSON/MessagePack codecs; unsupported encodings return an error.
+/// Other unsupported type/encoding pairs are skipped with a warning. The processor mapping
 /// includes a `payload_type` field containing the [`BusPayloadType`] name. External egress is
 /// suppressed for the duration of processing, including processor callbacks. Other payloads bypass
 /// the processor and follow normal inbound republishing. A processor error stops processing and
@@ -377,6 +447,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
 ///
 /// Returns an error if:
 /// - The topic is invalid.
+/// - A native data request or response uses an unsupported encoding.
 /// - The typed payload cannot be decoded or mapped to an object.
 /// - The mapping already contains the reserved `payload_type` field.
 /// - The processor fails.
@@ -388,6 +459,7 @@ pub fn process_external_typed_message(
     let topic =
         MStr::<Topic>::topic_from_ustr(message.topic).context("invalid external message topic")?;
     let _guard = SuppressExternalGuard::new();
+    let _source = ExternalSourceGuard::new(message.source);
 
     #[rustfmt::skip]
     let result = match message.payload_type {
@@ -432,18 +504,21 @@ where
     else {
         return Ok(());
     };
+
     let mut mapping = serde_json::to_value(&value).with_context(|| {
         format!(
             "failed to map decoded {} stream payload",
             message.payload_type
         )
     })?;
+
     let mapping_object = mapping.as_object_mut().with_context(|| {
         format!(
             "decoded {} stream payload did not map to an object",
             message.payload_type
         )
     })?;
+
     anyhow::ensure!(
         !mapping_object.contains_key("payload_type"),
         "decoded {} stream payload contains reserved payload_type field",
@@ -458,6 +533,7 @@ where
     if is_registered_streaming_type(message) {
         publish_any(topic, &value);
     }
+
     Ok(())
 }
 
@@ -600,6 +676,7 @@ fn decode_custom_data_value(
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use bytes::Bytes;
     use rstest::rstest;
     use serde::{Serialize, Serializer};
 
@@ -659,7 +736,6 @@ mod tests {
         let payload = ReentrantPayload(move || {
             let bus = get_message_bus();
             let mut bus = bus.borrow_mut();
-
             if dispose {
                 bus.dispose();
             } else {
@@ -698,6 +774,377 @@ mod tests {
         assert_message(&original[0], "outer", b"37");
         assert_eq!(replacement.len(), 1);
         assert_message(&replacement[0], "later", b"23");
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_native_requests_reach_processors_without_stream_registration(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        use nautilus_core::UUID4;
+        use nautilus_model::{data::DataType, identifiers::ClientId};
+
+        use crate::messages::data::RequestCustomData;
+
+        let publications = install_egress();
+        get_message_bus()
+            .borrow_mut()
+            .set_external_egress_config(
+                Box::new(RecordingEgress {
+                    messages: publications.clone(),
+                    closed: false,
+                }),
+                &crate::msgbus::MessageBusConfig {
+                    encoding,
+                    external_streams: Some(vec!["external.test".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let request = RequestCommand::Data(RequestCustomData::new(
+            ClientId::from("FEED"),
+            DataType::new("DistinctRequest", None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            71.into(),
+            None,
+        ));
+
+        let payload_type = BusPayloadType::RequestCommand;
+        publish_any("commands.data.FEED".into(), &request);
+
+        let message = publications.borrow()[0].clone();
+        let mut received = None;
+        process_external_typed_message(&message, &mut |value, mapping| {
+            let decoded =
+                serde_json::to_value(value.downcast_ref::<RequestCommand>().unwrap()).unwrap();
+
+            received = Some((decoded, mapping.clone()));
+            Ok(())
+        })
+        .unwrap();
+
+        let expected_value = serde_json::to_value(&request).unwrap();
+
+        let mut expected_mapping = expected_value.clone();
+        expected_mapping
+            .as_object_mut()
+            .unwrap()
+            .insert("payload_type".into(), payload_type.as_str().into());
+        assert_eq!(publications.borrow().len(), 1);
+        assert_eq!(message.topic.as_str(), "commands.data.FEED");
+        assert_eq!(message.payload_type, payload_type);
+        assert_eq!(message.encoding, encoding);
+        assert_eq!(received, Some((expected_value, expected_mapping)));
+    }
+
+    #[rstest]
+    #[case(BusPayloadType::RequestCommand, "data request")]
+    #[case(BusPayloadType::DataResponse, "data response")]
+    fn test_native_messages_reject_unsupported_encoding_without_dispatch(
+        #[case] payload_type: BusPayloadType,
+        #[case] name: &str,
+        #[values(SerializationEncoding::Sbe)] encoding: SerializationEncoding,
+    ) {
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+        let message = BusMessage::with_str_topic(
+            "external.test",
+            payload_type,
+            Bytes::from_static(b"unsupported"),
+            encoding,
+        );
+        let expected = format!("{name} encoding is not supported: {encoding}");
+        let mut calls = 0;
+        let error = process_external_typed_message(&message, &mut |_, _| {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(
+            republish_external_message(&message)
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+        assert_eq!(calls, 0);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_external_source_restored_after_nested_dispatch_and_processor_failure(
+        #[case] panic: bool,
+    ) {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+
+        use nautilus_core::UUID4;
+        use nautilus_model::{data::DataType, identifiers::ClientId};
+
+        use crate::{
+            messages::data::RequestCustomData,
+            msgbus::{ShareableMessageHandler, subscribe_any},
+        };
+
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::RequestCommand);
+        let request = RequestCommand::Data(RequestCustomData::new(
+            ClientId::from("FEED"),
+            DataType::new("DistinctRequest", None, None),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            71.into(),
+            None,
+        ));
+        let payload = codec::serialize_payload(
+            SerializationEncoding::Json,
+            BusPayloadType::RequestCommand,
+            &request,
+        )
+        .unwrap();
+        let mut message = BusMessage::with_str_topic(
+            "external.outer",
+            BusPayloadType::RequestCommand,
+            payload,
+            SerializationEncoding::Json,
+        );
+
+        let source = BusMessageSource {
+            publisher_id: "PUBLISHER-017".into(),
+            instance_id: UUID4::new(),
+            stream: "snapshot".into(),
+            sequence: 37,
+        };
+
+        message.source = Some(source);
+        let mut nested = message.clone();
+        nested.topic = "external.nested".into();
+        nested.source = None;
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let shared = received.clone();
+        subscribe_any(
+            nested.topic.as_str().into(),
+            ShareableMessageHandler::from_typed::<RequestCommand, _>(move |_| {
+                shared.borrow_mut().push(current_external_source());
+            }),
+            None,
+        );
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            process_external_typed_message(&message, &mut |_, _| {
+                assert_eq!(current_external_source(), Some(source));
+                republish_external_message(&nested)?;
+                assert_eq!(current_external_source(), Some(source));
+                assert_eq!(*received.borrow(), vec![None]);
+
+                assert!(!panic, "processor panicked");
+
+                anyhow::bail!("processor rejected payload")
+            })
+        }));
+
+        if panic {
+            assert_eq!(
+                result.unwrap_err().downcast_ref::<&str>(),
+                Some(&"processor panicked")
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().unwrap_err().to_string(),
+                "processor rejected payload"
+            );
+        }
+
+        assert_eq!(current_external_source(), None);
+    }
+
+    #[rstest]
+    #[case(false, false)]
+    #[case(true, false)]
+    #[case(false, true)]
+    #[case(true, true)]
+    fn test_native_response_processors_precede_streaming_filters(
+        #[case] streaming: bool,
+        #[case] rejected: bool,
+    ) {
+        use nautilus_core::UUID4;
+        use nautilus_model::{data::DataType, identifiers::ClientId};
+
+        use crate::{
+            messages::data::CustomDataResponse,
+            msgbus::{self, ShareableMessageHandler},
+        };
+
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+
+        if streaming {
+            get_message_bus()
+                .borrow_mut()
+                .add_streaming_type(BusPayloadType::DataResponse);
+        }
+
+        let response = CustomDataResponse::new(
+            UUID4::new(),
+            ClientId::from("FEED"),
+            None,
+            DataType::new("DistinctReply", None, None),
+            Bytes::from_static(b"native-bytes"),
+            Some(67.into()),
+            Some(71.into()),
+            73.into(),
+            None,
+        );
+        let publications = Rc::new(RefCell::new(Vec::new()));
+        get_message_bus()
+            .borrow_mut()
+            .set_external_egress_config(
+                Box::new(RecordingEgress {
+                    messages: publications.clone(),
+                    closed: false,
+                }),
+                &crate::msgbus::MessageBusConfig {
+                    encoding: SerializationEncoding::MsgPack,
+                    external_streams: Some(vec!["external.test".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        publish_any(
+            "responses.data.FEED".into(),
+            &DataResponse::Data(response.clone()),
+        );
+        let message = publications.borrow()[0].clone();
+        let published = Rc::new(RefCell::new(0));
+        let shared = published.clone();
+        msgbus::subscribe_any(
+            message.topic.as_str().into(),
+            ShareableMessageHandler::from_typed::<DataResponse, _>(move |_| {
+                *shared.borrow_mut() += 1;
+            }),
+            None,
+        );
+
+        let mut calls = 0;
+        let result = process_external_typed_message(&message, &mut |value, mapping| {
+            calls += 1;
+
+            let DataResponse::Data(actual) = value.downcast_ref::<DataResponse>().unwrap() else {
+                panic!("Expected native custom response");
+            };
+
+            assert_eq!(actual.correlation_id, response.correlation_id);
+            assert_eq!(
+                actual.data.downcast_ref::<Bytes>(),
+                response.data.downcast_ref::<Bytes>()
+            );
+            assert_eq!(
+                mapping,
+                &serde_json::json!({
+                    "payload_type": "DataResponse",
+                    "Data": {
+                        "correlation_id": response.correlation_id, "client_id": "FEED",
+                        "start": 67, "end": 71, "ts_init": 73, "params": null,
+                        "venue": null, "data_type": response.data_type,
+                        "data": {"Buffer": b"native-bytes".to_vec()},
+                    }
+                })
+            );
+
+            if rejected {
+                anyhow::bail!("processor rejected reply");
+            }
+
+            Ok(())
+        });
+
+        assert_eq!(calls, 1);
+        assert_eq!(publications.borrow().len(), 1);
+        assert_eq!(message.topic.as_str(), "responses.data.FEED");
+        assert_eq!(message.payload_type, BusPayloadType::DataResponse);
+        assert_eq!(message.encoding, SerializationEncoding::MsgPack);
+        assert_eq!(
+            result.err().map(|e| e.to_string()),
+            rejected.then(|| "processor rejected reply".to_string())
+        );
+        assert_eq!(*published.borrow(), usize::from(streaming && !rejected));
+    }
+
+    #[rstest]
+    fn test_startup_dispatches_only_registered_pending_data_responses() {
+        use nautilus_core::UUID4;
+        use nautilus_model::{data::DataType, identifiers::ClientId};
+
+        use crate::{
+            messages::data::CustomDataResponse,
+            msgbus::{self, ShareableMessageHandler},
+        };
+
+        let bus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(bus.clone());
+        bus.borrow_mut()
+            .add_streaming_type(BusPayloadType::DataResponse);
+        let id = UUID4::new();
+        let response = DataResponse::Data(CustomDataResponse::new(
+            id,
+            ClientId::from("FEED"),
+            None,
+            DataType::new("DistinctReply", None, None),
+            Bytes::from_static(b"native-bytes"),
+            None,
+            None,
+            73.into(),
+            None,
+        ));
+        let message = BusMessage::with_str_topic(
+            "responses.data.FEED",
+            BusPayloadType::DataResponse,
+            codec::serialize_payload(
+                SerializationEncoding::MsgPack,
+                BusPayloadType::DataResponse,
+                &response,
+            )
+            .unwrap(),
+            SerializationEncoding::MsgPack,
+        );
+
+        let topic_handler = ShareableMessageHandler::from_typed::<DataResponse, _>(|reply| {
+            msgbus::send_response(reply.correlation_id(), reply);
+        });
+
+        msgbus::subscribe_any(message.topic.as_str().into(), topic_handler, None);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let shared = received.clone();
+        assert!(!republish_pending_external_response(&message).unwrap());
+        msgbus::register_response_handler(
+            &id,
+            ShareableMessageHandler::from_typed::<CustomDataResponse, _>(move |reply| {
+                shared.borrow_mut().push((
+                    reply.correlation_id,
+                    reply.data.downcast_ref::<Bytes>().unwrap().clone(),
+                    reply.ts_init,
+                ));
+            }),
+        );
+
+        assert!(republish_pending_external_response(&message).unwrap());
+        assert!(!republish_pending_external_response(&message).unwrap());
+        assert_eq!(
+            *received.borrow(),
+            vec![(id, Bytes::from_static(b"native-bytes"), 73.into())]
+        );
     }
 
     fn install_egress() -> Rc<RefCell<Vec<BusMessage>>> {

@@ -936,17 +936,20 @@ impl PyLiveNode {
 
     /// Adds a callback for supported typed external messages.
     ///
-    /// While `run` or `run_async` services external ingress, the node invokes callbacks in
-    /// registration order before normal inbound streaming filters for recognized JSON or
-    /// MessagePack typed payloads. Each callback receives an encoding-independent Python mapping
-    /// that follows the concrete payload's serialized object shape and adds a `payload_type` field.
-    /// Other encodings are skipped with a warning. External egress is suppressed while the callback
-    /// runs, so synchronous publications remain local. Callback exceptions are logged, stop the
-    /// remaining processors, and skip internal republishing.
+    /// While the node's run loop services external ingress, processors run in registration order
+    /// before normal inbound streaming filters for supported typed JSON or MessagePack payloads.
+    /// Unsupported encodings do not reach processors. Rust callbacks receive the decoded
+    /// concrete value as `Any`, allowing them to downcast to the concrete payload type.
     ///
-    /// # Errors
+    /// Python callbacks receive the serialized payload shape with an added `payload_type` field.
+    /// Native data replies use the shared response representation keyed by response kind.
+    /// Callback exceptions are logged, stop remaining processors, and skip internal republishing.
+    /// The Python wrapper returns an error if the node is no longer available for mutation.
     ///
-    /// Returns an error if the node is no longer available for mutation.
+    /// External egress is suppressed while processors run, so synchronous publications remain
+    /// local. During data-client connection, streaming-registered `DataResponse` messages with a
+    /// pending correlation handler bypass processors and can overtake messages buffered until
+    /// normal dispatch starts.
     #[pyo3(name = "add_stream_processor")]
     fn py_add_stream_processor(&self, callback: Py<PyAny>) -> PyResult<()> {
         self.node_mut()?

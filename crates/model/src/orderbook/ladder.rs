@@ -21,9 +21,10 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use nautilus_core::UnixNanos;
-#[cfg(feature = "python")]
-use nautilus_core::correctness::{CorrectnessError, CorrectnessResult};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{CorrectnessError, CorrectnessResult},
+};
 
 use crate::{
     data::order::{BookOrder, OrderId},
@@ -101,7 +102,7 @@ impl Display for BookPrice {
 /// an incomplete MBP stream (missing `F_LAST`) would leave batch state that
 /// incorrectly affects subsequent snapshot processing.
 ///
-/// The discriminants are serialized in Python `OrderBook` state and must remain stable.
+/// The discriminants are serialized in `OrderBook` state and must remain stable.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 enum L1BatchState {
@@ -151,7 +152,6 @@ impl BookLadder {
     }
 
     #[must_use]
-    #[cfg(feature = "python")]
     pub(crate) fn batch_state_code(&self) -> u8 {
         self.batch_state as u8
     }
@@ -161,7 +161,6 @@ impl BookLadder {
     /// # Errors
     ///
     /// Returns an error if the state code is unknown or a batch state appears on a non-L1 ladder.
-    #[cfg(feature = "python")]
     pub(crate) fn set_batch_state_code(&mut self, code: u8) -> CorrectnessResult<()> {
         let batch_state = match code {
             0 => L1BatchState::None,
@@ -590,7 +589,6 @@ impl BookLadder {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "python")]
     use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
 
@@ -1905,7 +1903,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "python")]
     #[rstest]
     fn test_batch_state_code_round_trips_on_l1_ladder(#[values(0, 1, 2)] code: u8) {
         let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L1_MBP);
@@ -1915,7 +1912,6 @@ mod tests {
         assert_eq!(ladder.batch_state_code(), code);
     }
 
-    #[cfg(feature = "python")]
     #[rstest]
     #[case::unknown_code(BookType::L1_MBP, 3, "Invalid L1 batch state code: 3")]
     #[case::non_l1_batch(
@@ -1941,7 +1937,6 @@ mod tests {
         assert_eq!(ladder.batch_state_code(), 0);
     }
 
-    #[cfg(feature = "python")]
     #[rstest]
     fn test_set_batch_state_code_accepts_no_batch_on_non_l1_ladder() {
         let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L2_MBP);

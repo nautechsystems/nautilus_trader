@@ -16,6 +16,8 @@
 use std::fmt::Display;
 
 use bytes::Bytes;
+use nautilus_core::UUID4;
+use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, de::Error as _};
 use ustr::Ustr;
 
@@ -28,6 +30,19 @@ pub enum BusPayloadCategory {
     MarketData,
     BuiltIn,
     Other,
+}
+
+/// Identifies the publisher and position of an external stream delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BusMessageSource {
+    /// Stable identity of the external publisher.
+    pub publisher_id: TraderId,
+    /// Identity of the publisher process lifetime.
+    pub instance_id: UUID4,
+    /// Publisher-owned stream carrying the message.
+    pub stream: Ustr,
+    /// Position within that stream and publisher lifetime.
+    pub sequence: u64,
 }
 
 /// The payload type carried by a [`BusMessage`].
@@ -347,6 +362,9 @@ pub struct BusMessage {
     /// The encoding the `payload` is serialized with, so the receiver can decode it without
     /// relying on its own configuration (mirrors a wire `content-type`).
     pub encoding: SerializationEncoding,
+    /// Publisher provenance supplied by the external backing, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<BusMessageSource>,
 }
 
 impl BusMessage {
@@ -358,11 +376,13 @@ impl BusMessage {
         encoding: SerializationEncoding,
     ) -> Self {
         debug_assert!(!topic.is_empty());
+
         Self {
             topic,
             payload_type,
             payload,
             encoding,
+            source: None,
         }
     }
 
@@ -409,6 +429,37 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_source_round_trip_and_legacy_message_compatibility(#[case] with_source: bool) {
+        let mut message = BusMessage::with_str_topic(
+            "external.responses",
+            BusPayloadType::DataResponse,
+            Bytes::from_static(b"reply"),
+            SerializationEncoding::MsgPack,
+        );
+
+        if with_source {
+            message.source = Some(BusMessageSource {
+                publisher_id: "PUBLISHER-017".into(),
+                instance_id: UUID4::new(),
+                stream: "snapshot".into(),
+                sequence: 37,
+            });
+        }
+
+        let encoded = serde_json::to_value(&message).unwrap();
+        let decoded: BusMessage = serde_json::from_value(encoded.clone()).unwrap();
+
+        assert_eq!(encoded.get("source").is_some(), with_source);
+        assert_eq!(decoded.topic, message.topic);
+        assert_eq!(decoded.payload_type, message.payload_type);
+        assert_eq!(decoded.payload, message.payload);
+        assert_eq!(decoded.encoding, message.encoding);
+        assert_eq!(decoded.source, message.source);
+    }
 
     #[rstest]
     #[case("test/topic", "payload data")]

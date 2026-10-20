@@ -84,6 +84,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    collections::VecDeque,
     fmt::Debug,
     rc::{Rc, Weak},
     time::Duration,
@@ -398,13 +399,20 @@ impl LiveNode {
 
     /// Adds a callback for supported typed external messages.
     ///
-    /// While [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) services external ingress,
-    /// the node invokes processors in registration order before normal inbound streaming filters
-    /// for JSON or MessagePack payloads when
-    /// [`msgbus::BusPayloadType::is_typed_message`] returns `true`. Other encodings are skipped
-    /// with a warning. Each callback receives the decoded concrete value as [`Any`], allowing it
-    /// to downcast to the payload type. External egress is suppressed while the processors run,
-    /// so synchronous publications remain local.
+    /// While the node's run loop services external ingress, processors run in registration order
+    /// before normal inbound streaming filters for supported typed JSON or MessagePack payloads.
+    /// Unsupported encodings do not reach processors. Rust callbacks receive the decoded
+    /// concrete value as [`Any`], allowing them to downcast to the concrete payload type.
+    ///
+    /// Python callbacks receive the serialized payload shape with an added `payload_type` field.
+    /// Native data replies use the shared response representation keyed by response kind.
+    /// Callback exceptions are logged, stop remaining processors, and skip internal republishing.
+    /// The Python wrapper returns an error if the node is no longer available for mutation.
+    ///
+    /// External egress is suppressed while processors run, so synchronous publications remain
+    /// local. During data-client connection, streaming-registered `DataResponse` messages with a
+    /// pending correlation handler bypass processors and can overtake messages buffered until
+    /// normal dispatch starts.
     pub fn add_stream_processor<F>(&mut self, callback: F)
     where
         F: Fn(&dyn Any) + 'static,
@@ -1176,8 +1184,13 @@ impl LiveNode {
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
+        let mut pending_external = VecDeque::new();
         let data_connect_result = drive_with_event_buffering(
-            self.connect_data_phase(connection_deadline),
+            drive_with_external_ingress(
+                self.connect_data_phase(connection_deadline),
+                &mut external_msgbus_rx,
+                &mut pending_external,
+            ),
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
@@ -1188,6 +1201,8 @@ impl LiveNode {
             &mut data_cmd_rx,
         )
         .await;
+
+        self.finish_external_ingress_connection(external_msgbus_rx.as_ref());
 
         if let Err(e) = data_connect_result {
             flush_all_pending(
@@ -1900,7 +1915,7 @@ impl LiveNode {
                         metrics_start,
                     );
                 }
-                message = recv_external_msgbus_message(&mut external_msgbus_rx) => {
+                message = recv_external_msgbus_message(&mut external_msgbus_rx, &mut pending_external) => {
                     let external_msgbus_start = dst::time::Instant::now();
 
                     match message {
@@ -2131,6 +2146,15 @@ impl LiveNode {
                 "Failed to process external message bus topic '{}': {e:#}",
                 message.topic
             );
+        }
+    }
+
+    fn finish_external_ingress_connection(
+        &mut self,
+        receiver: Option<&tokio::sync::mpsc::Receiver<BusMessage>>,
+    ) {
+        if receiver.is_none() {
+            self.close_external_ingress();
         }
     }
 
@@ -3121,9 +3145,47 @@ fn record_runner_external_msgbus(
     );
 }
 
+async fn drive_with_external_ingress<F, T>(
+    future: F,
+    receiver: &mut Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+    pending: &mut VecDeque<BusMessage>,
+) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    tokio::pin!(future);
+    let capacity = receiver
+        .as_ref()
+        .map_or(0, tokio::sync::mpsc::Receiver::max_capacity);
+
+    loop {
+        tokio::select! {
+            biased;
+
+            result = &mut future => return result,
+            message = async { match receiver.as_mut() { Some(receiver) => receiver.recv().await, None => std::future::pending().await } }, if pending.len() < capacity => {
+                let Some(message) = message else {
+                    log::info!("External message bus ingress closed");
+                    *receiver = None;
+                    continue;
+                };
+                match msgbus::republish_pending_external_response(&message) {
+                    Ok(true) => {},
+                    Ok(false) | Err(_) => pending.push_back(message),
+                }
+            }
+        }
+    }
+}
+
 async fn recv_external_msgbus_message(
     rx: &mut Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+    pending: &mut VecDeque<BusMessage>,
 ) -> Option<BusMessage> {
+    if let Some(message) = pending.pop_front() {
+        return Some(message);
+    }
+
     match rx {
         Some(rx) => rx.recv().await,
         None => std::future::pending::<Option<BusMessage>>().await,
@@ -3929,6 +3991,203 @@ mod tests {
                     .to_string()
             ],
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_prioritizes_completed_connection() {
+        let message = BusMessage::with_str_topic(
+            "data.trades.FIRST",
+            BusPayloadType::TradeTick,
+            bytes::Bytes::new(),
+            SerializationEncoding::Json,
+        );
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        sender.send(message.clone()).await.unwrap();
+        let mut receiver = Some(receiver);
+        let mut pending = VecDeque::new();
+
+        let result =
+            drive_with_external_ingress(std::future::ready(17), &mut receiver, &mut pending).await;
+        let queued = receiver.as_mut().unwrap().try_recv().unwrap();
+
+        assert_eq!(result, 17);
+        assert!(pending.is_empty());
+        assert_eq!(
+            serde_json::to_value(queued).unwrap(),
+            serde_json::to_value(message).unwrap()
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_dispatches_correlated_response_before_buffered_traffic() {
+        use bytes::Bytes;
+        use nautilus_common::messages::data::{CustomDataResponse, DataResponse};
+        use nautilus_model::data::DataType;
+
+        let (egress, publications, _) = CapturingExternalEgress::new();
+        let bus = Rc::new(RefCell::new(msgbus::MessageBus::default()));
+        msgbus::set_message_bus(bus.clone());
+        bus.borrow_mut()
+            .set_external_egress_config(
+                Box::new(egress),
+                &MessageBusConfig {
+                    encoding: SerializationEncoding::MsgPack,
+                    external_streams: Some(vec!["external.test".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        bus.borrow_mut()
+            .add_streaming_type(BusPayloadType::DataResponse);
+        let id = UUID4::new();
+        let response = DataResponse::Data(CustomDataResponse::new(
+            id,
+            "FEED".into(),
+            None,
+            DataType::new("Startup", None, None),
+            Bytes::from_static(b"connected"),
+            Some(101.into()),
+            Some(103.into()),
+            107.into(),
+            None,
+        ));
+        msgbus::publish_any("responses.data.FEED".into(), &response);
+        let message = BusMessage::with_str_topic(
+            "responses.data.FEED",
+            BusPayloadType::DataResponse,
+            publications.borrow()[0].payload.clone(),
+            SerializationEncoding::MsgPack,
+        );
+        let (done, connected) = tokio::sync::oneshot::channel();
+        let done = Rc::new(RefCell::new(Some(done)));
+        msgbus::register_response_handler(
+            &id,
+            ShareableMessageHandler::from_typed::<CustomDataResponse, _>(move |reply| {
+                done.borrow_mut()
+                    .take()
+                    .unwrap()
+                    .send(reply.clone())
+                    .unwrap();
+            }),
+        );
+
+        msgbus::subscribe_any(
+            message.topic.as_str().into(),
+            ShareableMessageHandler::from_typed::<DataResponse, _>(|reply| {
+                msgbus::send_response(reply.correlation_id(), reply);
+            }),
+            None,
+        );
+
+        let unrelated = BusMessage::with_str_topic(
+            "data.trades.FIRST",
+            BusPayloadType::TradeTick,
+            Bytes::new(),
+            SerializationEncoding::Json,
+        );
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        sender.send(unrelated.clone()).await.unwrap();
+        sender.send(message).await.unwrap();
+        let mut receiver = Some(receiver);
+        let mut pending = VecDeque::new();
+        let actual = tokio::time::timeout(
+            Duration::from_secs(1),
+            drive_with_external_ingress(connected, &mut receiver, &mut pending),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(actual.correlation_id, id);
+        assert_eq!(actual.client_id, ClientId::from("FEED"));
+        assert_eq!(actual.venue, None);
+        assert_eq!(actual.data_type, DataType::new("Startup", None, None));
+        assert_eq!(
+            actual.data.downcast_ref::<Bytes>(),
+            Some(&Bytes::from_static(b"connected"))
+        );
+        assert_eq!(actual.start, Some(101.into()));
+        assert_eq!(actual.end, Some(103.into()));
+        assert_eq!(actual.ts_init, UnixNanos::from(107));
+        assert_eq!(actual.params, None);
+        assert_eq!(publications.borrow().len(), 1);
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            serde_json::to_value(pending.pop_front().unwrap()).unwrap(),
+            serde_json::to_value(unrelated).unwrap()
+        );
+        assert!(receiver.as_ref().unwrap().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_defers_unrelated_messages_with_bounded_fifo() {
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        let mut receiver = Some(receiver);
+
+        let message = |name: &str| {
+            BusMessage::with_str_topic(
+                name,
+                BusPayloadType::TradeTick,
+                bytes::Bytes::new(),
+                SerializationEncoding::Json,
+            )
+        };
+
+        let first = message("data.trades.FIRST");
+        let second = message("data.trades.SECOND");
+        let third = message("data.trades.THIRD");
+        sender.send(first.clone()).await.unwrap();
+        sender.send(second.clone()).await.unwrap();
+        let (done, connected) = tokio::sync::oneshot::channel();
+        let mut pending = VecDeque::new();
+        let mut connection = Box::pin(drive_with_external_ingress(
+            connected,
+            &mut receiver,
+            &mut pending,
+        ));
+        assert!(futures_util::poll!(&mut connection).is_pending());
+        sender.send(third.clone()).await.unwrap();
+        assert!(futures_util::poll!(&mut connection).is_pending());
+        done.send(()).unwrap();
+        connection.await.unwrap();
+
+        assert_eq!(pending.len(), 2);
+        assert_eq!(receiver.as_ref().unwrap().len(), 1);
+
+        for expected in [first, second, third] {
+            let received = recv_external_msgbus_message(&mut receiver, &mut pending)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(received).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_retains_receiver_closure_for_lifecycle_cleanup() {
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        drop(sender);
+        let mut receiver = Some(receiver);
+        let mut pending = VecDeque::new();
+        let (done, connected) = tokio::sync::oneshot::channel();
+        let mut connection = Box::pin(drive_with_external_ingress(
+            connected,
+            &mut receiver,
+            &mut pending,
+        ));
+        assert!(futures_util::poll!(&mut connection).is_pending());
+        done.send(()).unwrap();
+        connection.await.unwrap();
+
+        assert!(receiver.is_none());
+        assert!(pending.is_empty());
     }
 
     #[rstest]
