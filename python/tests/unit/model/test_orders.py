@@ -16,7 +16,11 @@
 Test orders behavior.
 """
 
+import json
+import subprocess
+import sys
 from decimal import Decimal
+from textwrap import dedent
 
 import pytest
 
@@ -1251,6 +1255,120 @@ def test_order_from_dict_rejects_invalid_metadata(
 
 
 @pytest.mark.parametrize("order_factory", ORDER_FACTORIES)
+def test_order_from_dict_rejects_invalid_domain_strings_subprocess(order_factory: object) -> None:
+    """
+    Test malformed order dictionary fields return Python errors without aborting.
+    """
+    order = order_factory()
+    values = order.to_dict()
+    invalid_values = {
+        "trader_id": ["", "BROKEN", "-001", "TRADER-", "TRÄDER-001"],
+        "strategy_id": ["", "BROKEN", "-002", "STRATEGY-", "STRÄTEGY-002"],
+        "instrument_id": ["", "AUD/USD", ".SIM", "AUD/USD.", "AUD/USD.SÍM"],
+        "client_order_id": ["", " ", "Ö-001"],
+        "order_list_id": ["", " ", "ÖL-002"],
+        "linked_order_ids": [["", "O-VALID"], ["O-VALID", ""], ["O-VALID", "Ö-003"]],
+        "parent_order_id": ["", " ", "Ö-004"],
+        "exec_algorithm_id": ["", " ", "TWÄP"],
+        "exec_spawn_id": ["", " ", "Ö-005"],
+    }
+
+    if "trigger_instrument_id" in values:
+        invalid_values["trigger_instrument_id"] = ["", "AUD/USD", ".SIM", "AUD/USD."]
+
+    numeric_fields = [
+        key
+        for key in ("quantity", "price", "trigger_price", "activation_price", "display_qty")
+        if key in values and not (key == "price" and isinstance(order, MarketToLimitOrder))
+    ]
+
+    for key in numeric_fields:
+        invalid_values[key] = ["", "invalid", "NaN", "1e100", "0." + "0" * 255 + "1"]
+        if key in ("quantity", "display_qty"):
+            invalid_values[key].append("-1")
+
+    required_fields = ["trader_id", "strategy_id", "instrument_id", "client_order_id", "quantity"]
+    if not isinstance(order, (TrailingStopLimitOrder, TrailingStopMarketOrder)):
+        required_fields.extend(key for key in ("price", "trigger_price") if key in numeric_fields)
+
+    cases = [(key, value) for key, variants in invalid_values.items() for value in variants]
+    code = dedent(
+        """\
+        import json
+        import sys
+        from nautilus_trader import model
+
+        order_class = getattr(model, sys.argv[1])
+        values, cases, required_fields = json.loads(sys.argv[2])
+        assert order_class.from_dict(values).to_dict() == values
+
+        for key, value in cases:
+            try:
+                order_class.from_dict(values | {key: value})
+            except ValueError as e:
+                assert key in str(e), (key, str(e))
+            else:
+                raise AssertionError((key, value, "expected ValueError"))
+
+        for key in dict(cases):
+            invalid_types = [123, ["O-VALID", 123]] if key == "linked_order_ids" else [123]
+            for value in invalid_types:
+                try:
+                    order_class.from_dict(values | {key: value})
+                except TypeError:
+                    pass
+                else:
+                    raise AssertionError((key, value, "expected TypeError"))
+
+        for key in required_fields:
+            missing = values.copy()
+            del missing[key]
+            try:
+                order_class.from_dict(missing)
+            except KeyError as e:
+                assert e.args == (f"Missing required key: {key}",), (key, e.args)
+            else:
+                raise AssertionError((key, "expected KeyError"))
+            try:
+                order_class.from_dict(values | {key: None})
+            except TypeError:
+                pass
+            else:
+                raise AssertionError((key, "expected TypeError for None"))
+
+        for key in dict(cases).keys() - set(required_fields):
+            missing = values.copy()
+            del missing[key]
+            expected = values | {key: None}
+            assert order_class.from_dict(missing).to_dict() == expected, key
+            assert order_class.from_dict(values | {key: None}).to_dict() == expected, key
+
+        print(f"{order_class.__name__}: {len(cases)} malformed strings rejected")
+        """,
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            type(order).__name__,
+            json.dumps([values, cases, required_fields]),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        result.stdout.strip() == f"{type(order).__name__}: {len(cases)} malformed strings rejected"
+    )
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("order_factory", ORDER_FACTORIES)
 def test_order_inspection_properties_are_consistent(order_factory: object) -> None:
     """
     Test order inspection properties are consistent.
@@ -1641,16 +1759,55 @@ def test_signed_decimal_qty() -> None:
     assert sell_order.signed_decimal_qty() == Decimal(-100000)
 
 
-def test_order_to_dict_from_dict_roundtrip() -> None:
+@pytest.mark.parametrize("order_factory", ORDER_FACTORIES)
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {},
+        {
+            "strategy_id": "EXTERNAL",
+            "instrument_id": "\u682a\u5f0f.SIM",
+            "contingency_type": "OCO",
+            "order_list_id": "OL-101",
+            "linked_order_ids": ("O-LINK-102", "O-LINK-103"),
+            "parent_order_id": "O-PARENT-104",
+            "exec_algorithm_id": "TWAP",
+            "exec_spawn_id": "O-SPAWN-105",
+            "exec_algorithm_params": {"interval": "3"},
+            "tags": ["tag-a", "tag-b"],
+        },
+    ],
+)
+@pytest.mark.parametrize(
+    ("quantity", "expected_qty", "expected_filled_qty"),
+    [("1_234.500", "1234.500", "0.000"), ("1.2345e2", "123.45", "0.00")],
+)
+def test_order_to_dict_from_dict_roundtrip(
+    order_factory: object,
+    metadata: dict[str, object],
+    quantity: str,
+    expected_qty: str,
+    expected_filled_qty: str,
+) -> None:
     """
     Test order to dict from dict roundtrip.
     """
-    order = _market_order()
+    order = order_factory()
+    values = order.to_dict()
+    values.update(metadata)
+    values["quantity"] = quantity
+    expected = values | {"quantity": expected_qty, "filled_qty": expected_filled_qty}
+    if "linked_order_ids" in metadata:
+        expected["linked_order_ids"] = list(metadata["linked_order_ids"])
 
-    d = order.to_dict()
-    restored = MarketOrder.from_dict(d)
+        for key, value, canonical in (
+            ("display_qty", "1_2.500", "12.500"),
+            ("activation_price", "-3.456e1", "-34.56"),
+        ):
+            if key in values:
+                values[key] = value
+                expected[key] = canonical
 
-    assert restored.client_order_id == order.client_order_id
-    assert restored.side == order.side
-    assert restored.quantity == order.quantity
-    assert restored.status == OrderStatus.INITIALIZED
+    restored = type(order).from_dict(values)
+
+    assert restored.to_dict() == expected
