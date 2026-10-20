@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
 - Changed Bybit TradFi perpetuals to `PerpetualContract`; update type checks (#5344), thanks @dxwil
 - Changed Bybit spot xStocks to `TokenizedAsset`; update type checks (#5344), thanks @dxwil
+- Changed Deribit local validation failures from `OrderRejected` to `OrderDenied`; invalid members deny the whole list
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
 - Changed Interactive Brokers magnified price units; follow the adapter upgrade guide (#5322), thanks @chaneyka1
 - Changed Interactive Brokers execution config literals; add `base_currency: None` (#5322), thanks @chaneyka1
@@ -59,6 +60,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot SBE stream panics and negative quantities parsed as large sizes
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
+- Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed Hyperliquid funding history truncation and latest-row limits (#5343), thanks @dxwil
 - Fixed Hyperliquid builder-fee commands treating invalid `HYPERLIQUID_TESTNET` values as mainnet

@@ -179,8 +179,19 @@ impl ExecutionEventEmitter {
 
     /// Generates and emits an order submitted event.
     pub fn emit_order_submitted(&self, order: &OrderAny) {
+        if let Err(e) = self.try_emit_order_submitted(order) {
+            log::warn!("{e}");
+        }
+    }
+
+    /// Generates and emits an order submitted event, reporting dispatch failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_emit_order_submitted(&self, order: &OrderAny) -> anyhow::Result<()> {
         let event = self.factory.generate_order_submitted(order, self.ts_init());
-        self.send_order_event(event);
+        self.try_send_order_event(event)
     }
 
     /// Generates and emits an order rejected event.

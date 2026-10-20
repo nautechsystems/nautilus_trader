@@ -540,6 +540,13 @@ self.subscribe_data(
 
 ## Orders capability
 
+The adapter validates order parameters and queues `OrderSubmitted` before sending an order.
+If validation or event queuing fails, the adapter returns an error without sending the order.
+The execution engine handles that error as `OrderDenied`.
+
+For order lists, the adapter validates every member and queues all `OrderSubmitted` events
+before sending any member. A validation or queuing failure prevents all venue requests for that list.
+
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
 
 ### Order types
