@@ -1286,11 +1286,12 @@ impl InteractiveBrokersInstrumentProvider {
                 ratio
             );
 
-            // Load the individual leg instrument
+            // Load the individual leg instrument; a leg seeded from the cache has a contract
+            // but no contract details, so fetch it too
             self.fetch_contract_details(
                 client,
                 *leg_instrument_id,
-                force_instrument_update,
+                force_instrument_update || !self.contract_details.contains_key(leg_instrument_id),
                 filters.clone(),
             )
             .await
