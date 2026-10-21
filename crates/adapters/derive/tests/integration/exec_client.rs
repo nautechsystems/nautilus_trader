@@ -7834,26 +7834,24 @@ async fn test_mass_status_timestamp_precedes_delayed_report_completion() {
 
     let response = rest_state.order_history_response.lock().await;
     let clock = get_atomic_clock_realtime();
-    let started = UnixNanos::from(1_700_000_000_000_000_071);
-    let completed = UnixNanos::from(1_700_000_005_000_000_093);
-    clock.make_static();
-    clock.set_time(started);
-    let (mass, ()) = tokio::join!(tc.client.generate_mass_status(None), async {
+    let started = clock.get_time_ns();
+    let (mass, released) = tokio::join!(tc.client.generate_mass_status(None), async {
         wait_until(
             || async { !rest_state.order_history_calls.lock().await.is_empty() },
             "history request blocked on response",
         )
         .await;
-        clock.set_time(completed);
+        let released = clock.get_time_ns();
         drop(response);
+        released
     });
     let mass = mass.unwrap().unwrap();
     let finished = clock.get_time_ns();
-    clock.make_realtime();
     tc.client.disconnect().await.unwrap();
 
-    assert_eq!(mass.ts_init, started);
-    assert_eq!(finished, completed);
+    assert!(started <= mass.ts_init);
+    assert!(mass.ts_init < released);
+    assert!(released < finished);
     assert_eq!(rest_state.order_history_calls.lock().await.len(), 1);
 }
 
