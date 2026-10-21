@@ -1778,6 +1778,8 @@ impl Portfolio {
 
     /// Initializes account margin based on existing open orders.
     ///
+    /// Cash accounts with `calculate_account_state` disabled retain reported balances and locks.
+    ///
     /// # Panics
     ///
     /// Panics if updating the cache with a mutated account fails.
@@ -1790,29 +1792,27 @@ impl Portfolio {
 
             // Ordered so margin recalculation materializes any unreported balance currency
             // in a stable sequence; the account balance map preserves insertion order.
-            let mut instruments = BTreeSet::new();
-
-            for client_order_id in cache.iter_client_order_ids_open(None, None, None, None) {
-                if let Some(order) = cache.order(&client_order_id) {
-                    instruments.insert(order.instrument_id());
-                }
-            }
+            let instruments: BTreeSet<_> = cache
+                .iter_client_order_ids_open(None, None, None, None)
+                .filter_map(|client_order_id| cache.order(&client_order_id))
+                .map(|order| order.instrument_id())
+                .collect();
 
             for instrument_id in instruments {
-                if let Some(instrument) = cache.instrument(&instrument_id) {
-                    let orders = cache
-                        .orders_open(None, Some(&instrument_id), None, None, None)
-                        .into_iter()
-                        .map(|order| order.clone())
-                        .collect::<Vec<OrderAny>>();
-                    instruments_with_orders.push((instrument.clone(), orders));
-                } else {
+                let Some(instrument) = cache.instrument(&instrument_id) else {
                     log::error!(
                         "Cannot update initial (order) margin: no instrument found for {instrument_id}"
                     );
                     initialized = false;
                     break;
-                }
+                };
+
+                let orders = cache
+                    .orders_open(None, Some(&instrument_id), None, None, None)
+                    .into_iter()
+                    .map(|order| order.clone())
+                    .collect::<Vec<OrderAny>>();
+                instruments_with_orders.push((instrument.clone(), orders));
             }
             instruments_with_orders
         };
@@ -1829,11 +1829,18 @@ impl Portfolio {
             for (account_id, orders) in by_account {
                 let account = {
                     let cache = self.cache.borrow();
+
                     match resolve_account_for_instrument(
                         &cache,
                         &instrument.id(),
                         account_id.as_ref(),
                     ) {
+                        Some(account)
+                            if matches!(&*account, AccountAny::Cash(_))
+                                && !account.calculated_account_state() =>
+                        {
+                            continue;
+                        }
                         Some(account) => account.cloned(),
                         None => {
                             log::error!(

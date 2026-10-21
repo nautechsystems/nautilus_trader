@@ -36,7 +36,7 @@ use nautilus_model::{
         AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel,
         OrderPendingUpdate, OrderSubmitted, PortfolioSnapshot, PositionAdjusted, PositionChanged,
         PositionClosed, PositionEvent, PositionOpened,
-        account::stubs::cash_account_state,
+        account::stubs::{betting_account_state, cash_account_state},
         order::{
             spec::{
                 OrderCancelRejectedSpec, OrderFillVoidedSpec, OrderFilledSpec,
@@ -53,7 +53,7 @@ use nautilus_model::{
         stubs::{account_id, uuid4},
     },
     instruments::{
-        CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
+        BinaryOption, CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
         stubs::{
             audusd_sim, betting, binary_option, btcusd_bybit, commodity_gold,
             crypto_futures_spread_btc_deribit, crypto_option_btc_deribit, currency_pair_btcusdt,
@@ -61,7 +61,7 @@ use nautilus_model::{
             option_contract_appl, option_spread,
         },
     },
-    orders::{Order, OrderAny, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::TestDefault,
     types::{
@@ -3460,6 +3460,197 @@ fn test_margin_partial_fill_updates_margin_init_from_leaves_qty(
 }
 
 #[rstest]
+fn test_initialize_orders_missing_instrument_preserves_account(mut portfolio: Portfolio) {
+    let state = get_cash_account(None);
+    portfolio.update_account(&state);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(InstrumentId::from("MISSING.SIM"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.00"))
+        .price(Price::from("0.75"))
+        .build();
+    let accepted =
+        TestOrderEventStubs::accepted(&order, state.account_id, VenueOrderId::from("V-MISSING"));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&accepted)
+        .unwrap();
+
+    portfolio.initialize_orders();
+
+    let cache = portfolio.cache().borrow();
+    let account = cache.account(&state.account_id).unwrap();
+    assert!(!portfolio.is_initialized());
+    assert_eq!(
+        account.balances().into_values().collect::<Vec<_>>(),
+        state.balances,
+    );
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, "1.80 USD", "454.9890 USD")]
+#[case::sell(OrderSide::Sell, "0.00 USD", "456.7890 USD")]
+fn test_initialize_orders_preserves_reported_cash_balances(
+    #[values(
+        InstrumentAny::BinaryOption(BinaryOption {
+            currency: Currency::USD(),
+            ..binary_option()
+        }),
+        InstrumentAny::Equity(equity_aapl())
+    )]
+    instrument: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] locked: &str,
+    #[case] free: &str,
+    #[values(None, Some(Currency::USD()))] base_currency: Option<Currency>,
+) {
+    let account_id_reported = AccountId::from("POLYMARKET-001");
+    let account_id_calculated = AccountId::from("POLYMARKET-002");
+    let money = |value| Money::from_str_exact(value).unwrap();
+    let reported_balances = vec![
+        AccountBalance::new(
+            money("123.4567 USD"),
+            money("7.8901 USD"),
+            money("115.5666 USD"),
+        ),
+        AccountBalance::new(
+            money("234.5678 EUR"),
+            money("9.0123 EUR"),
+            money("225.5555 EUR"),
+        ),
+    ];
+    let calculated_balances = vec![
+        AccountBalance::new(
+            money("456.7890 USD"),
+            money("12.3456 USD"),
+            money("444.4434 USD"),
+        ),
+        AccountBalance::new(
+            money("678.9012 EUR"),
+            money("3.4567 EUR"),
+            money("675.4445 EUR"),
+        ),
+    ];
+    let mut cache = Cache::new(None, None);
+    cache.add_instrument(instrument.clone()).unwrap();
+    let cache = Rc::new(RefCell::new(cache));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut portfolio = Portfolio::new(clock, Rc::clone(&cache), None);
+
+    for (account_id, calculate_account_state, balances, qty) in [
+        (account_id_reported, false, &reported_balances, "1.25"),
+        (account_id_calculated, true, &calculated_balances, "3.00"),
+    ] {
+        let state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            balances.clone(),
+            vec![],
+            true,
+            UUID4::new(),
+            0.into(),
+            0.into(),
+            base_currency,
+        );
+        portfolio.update_account(&state);
+        cache
+            .borrow_mut()
+            .account_mut(&account_id)
+            .unwrap()
+            .set_calculate_account_state(calculate_account_state);
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(ClientOrderId::new(format!("O-{account_id}")))
+            .instrument_id(instrument.id())
+            .side(side)
+            .quantity(Quantity::from(qty))
+            .price(Price::from("0.60"))
+            .build();
+        let accepted = TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            VenueOrderId::new(format!("V-{account_id}")),
+        );
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+    }
+
+    let expected_calculated = vec![
+        AccountBalance::new(money("456.7890 USD"), money(locked), money(free)),
+        calculated_balances[1],
+    ];
+
+    for _ in 0..2 {
+        portfolio.initialize_orders();
+
+        let cache = cache.borrow();
+        let reported = cache.account(&account_id_reported).unwrap();
+        let calculated = cache.account(&account_id_calculated).unwrap();
+        assert!(portfolio.is_initialized());
+        assert!(!reported.calculated_account_state());
+        assert!(calculated.calculated_account_state());
+        assert_eq!(
+            reported.balances().into_values().collect::<Vec<_>>(),
+            reported_balances,
+        );
+        assert_eq!(
+            calculated.balances().into_values().collect::<Vec<_>>(),
+            expected_calculated,
+        );
+    }
+}
+
+#[rstest]
+fn test_initialize_orders_rebuilds_reported_betting_liability(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+    betting_account_state: AccountState,
+) {
+    let instrument = InstrumentAny::Betting(betting());
+    let account_id = betting_account_state.account_id;
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), Rc::clone(&cache), None);
+    portfolio.update_account(&betting_account_state);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.00"))
+        .price(Price::from("1.25"))
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("V-001"));
+    cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+
+    portfolio.initialize_orders();
+
+    let cache = cache.borrow();
+    let account = cache.account(&account_id).unwrap();
+    assert!(portfolio.is_initialized());
+    assert!(!account.calculated_account_state());
+    assert_eq!(
+        account.balance(Some(Currency::GBP())),
+        Some(&AccountBalance::new(
+            Money::from("1000.00 GBP"),
+            Money::from("2.50 GBP"),
+            Money::from("997.50 GBP"),
+        )),
+    );
+}
+
+#[rstest]
 fn test_initialize_orders_cash_account_with_base_currency() {
     let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
         Symbol::from("AUD/USD"),
@@ -3490,6 +3681,11 @@ fn test_initialize_orders_cash_account_with_base_currency() {
         Some(Currency::USD()),
     );
     portfolio.update_account(&account_state);
+    cache
+        .borrow_mut()
+        .account_mut(&account_state.account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
 
     // Create and accept an open order
     let mut order = OrderTestBuilder::new(OrderType::Limit)
