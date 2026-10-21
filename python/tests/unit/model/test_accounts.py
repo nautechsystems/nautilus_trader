@@ -336,6 +336,32 @@ def test_account_reconstruction_rejects_invalid_account_id(
         parser(values)
 
 
+@pytest.mark.parametrize("instrument_id", ["INVALID", ".SIM", "AUD/USD."])
+def test_account_reconstruction_rejects_invalid_margin_instrument_id(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    instrument_id: str,
+) -> None:
+    """
+    Propagate malformed nested margin identifiers through every account parser.
+    """
+    parser, values = account_reconstruction
+    values["margins"] = [
+        {
+            "currency": "USD",
+            "initial": "1.0001",
+            "maintenance": "0.000001",
+            "instrument_id": instrument_id,
+        },
+    ]
+
+    with pytest.raises(ValueError, match="invalid `InstrumentId`") as parser_exc_info:
+        InstrumentId.from_str(instrument_id)
+    with pytest.raises(ValueError, match="Failed to parse 'instrument_id'") as exc_info:
+        parser(values)
+
+    assert str(exc_info.value) == f"Failed to parse 'instrument_id': {parser_exc_info.value}"
+
+
 @pytest.mark.parametrize(
     "field",
     [

@@ -203,7 +203,7 @@ impl MarginBalance {
         let maintenance = money_from_dict(values, "maintenance", currency)?;
 
         let instrument_id = get_optional_parsed(values, "instrument_id", |s| {
-            Ok::<InstrumentId, String>(InstrumentId::from(s))
+            InstrumentId::from_str(&s).map_err(|e| e.to_string())
         })?;
 
         Self::new_checked(initial, maintenance, instrument_id).map_err(to_pyvalue_err)

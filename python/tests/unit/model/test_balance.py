@@ -177,31 +177,61 @@ def test_account_balance_dict_rejects_precision_lost_before_validation() -> None
         AccountBalance.from_dict(values)
 
 
-def test_margin_balance_exact_usd_dict_roundtrip() -> None:
+@pytest.mark.parametrize(
+    ("instrument_id", "omit_instrument_id"),
+    [("AUD/USD.SIM", False), (None, False), (None, True)],
+)
+def test_margin_balance_exact_usd_dict_roundtrip(
+    instrument_id: str | None,
+    omit_instrument_id: bool,
+) -> None:
     """
     Preserve sub-cent margin amounts in Python dictionaries.
     """
-    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+    expected_id = InstrumentId.from_str(instrument_id) if instrument_id is not None else None
     balance = MarginBalance(
         Money.from_str_exact("1.0001 USD"),
         Money.from_str_exact("0.000001 USD"),
-        instrument_id,
+        expected_id,
     )
-    values = balance.to_dict()
+    serialized = balance.to_dict()
+    values = serialized.copy()
+    if omit_instrument_id:
+        del values["instrument_id"]
     restored = MarginBalance.from_dict(values)
 
-    assert values == {
+    assert serialized == {
         "type": "MarginBalance",
         "initial": "1.0001",
         "maintenance": "0.000001",
-        "instrument_id": "AUD/USD.SIM",
+        "instrument_id": instrument_id,
         "currency": "USD",
     }
     assert restored == balance
     assert restored.currency == USD
-    assert restored.instrument_id == instrument_id
+    assert restored.instrument_id == expected_id
     assert restored.initial.as_decimal() == Decimal("1.0001")
     assert restored.maintenance.as_decimal() == Decimal("0.000001")
+
+
+@pytest.mark.parametrize("instrument_id", ["INVALID", "", ".SIM", "AUD/USD.", "AUD/USD.\u00e9"])
+def test_margin_balance_from_dict_rejects_invalid_instrument_id(instrument_id: str) -> None:
+    """
+    Return a field-specific parsing error for malformed margin instrument identifiers.
+    """
+    values = {
+        "currency": "USD",
+        "initial": "1.0001",
+        "maintenance": "0.000001",
+        "instrument_id": instrument_id,
+    }
+
+    with pytest.raises(ValueError, match="invalid `InstrumentId`") as parser_exc_info:
+        InstrumentId.from_str(instrument_id)
+    with pytest.raises(ValueError, match="Failed to parse 'instrument_id'") as exc_info:
+        MarginBalance.from_dict(values)
+
+    assert str(exc_info.value) == f"Failed to parse 'instrument_id': {parser_exc_info.value}"
 
 
 @pytest.mark.skipif(not HIGH_PRECISION, reason="Requires the native 16-decimal money scale")
