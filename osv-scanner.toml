@@ -8,10 +8,6 @@
 # no available fixes. These are acknowledged risks with documented reasons.
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0381"
-reason = "webpki-roots 0.26.11 only re-exports v1's roots; the workspace requires fixed v1.0.10"
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2024-0436"
 reason = "paste crate is unmaintained but a transitive dependency via alloy"
 

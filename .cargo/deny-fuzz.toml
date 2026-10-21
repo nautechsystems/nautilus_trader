@@ -10,10 +10,7 @@ feature-depth = 1
 
 [advisories]
 unused-ignored-advisory = "deny"
-ignore = [
-  # webpki-roots 0.26.11 only re-exports v1's roots; nautilus-network requires fixed v1.0.10
-  { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 is a re-export of the fixed v1.0.10 trust store, required by nautilus-network" },
-]
+ignore = []
 
 [licenses]
 unused-allowed-license = "allow"

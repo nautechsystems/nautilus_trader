@@ -12,9 +12,6 @@
 
 [advisories]
 ignore = [
-  # webpki-roots 0.26.11 only re-exports v1's roots; the workspace requires fixed v1.0.10
-  "RUSTSEC-2026-0381",
-
   # paste unmaintained, transitive via alloy
   "RUSTSEC-2024-0436",
   # derivative unmaintained, transitive via alloy-primitives -> ruint -> ark-ff
