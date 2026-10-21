@@ -548,9 +548,9 @@ impl BookLadder {
 
             for book_order in level.orders.values() {
                 let current = book_order.size;
-                if cumulative_denominator + current >= target {
+                let remainder = target - cumulative_denominator;
+                if current >= remainder {
                     // This order has filled us, add fill and return
-                    let remainder = target - cumulative_denominator;
                     if remainder.is_positive() {
                         fills.push((book_order.price, remainder));
                     }
