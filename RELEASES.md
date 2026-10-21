@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Changed Lighter `L2TxAttributes` literals; add the new fields or use `..Default::default()`
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
+- Changed Polymarket data WebSocket timeouts from 15 to 30 seconds by default; `ws_timeout_secs` must be positive
 
 ### Security
 
@@ -115,6 +116,7 @@ Released on TBD (UTC).
 - Fixed OKX external limit orders missing amendment confirmations
 - Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
+- Fixed Polymarket data clients ignoring `ws_timeout_secs` for market and PolyBolt WebSockets
 - Fixed Polymarket auto-load retrying filter-rejected instruments and logging false missing-market errors
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails
 - Fixed Polymarket batch submits delaying later chunks behind FOK recovery and deferred cancels

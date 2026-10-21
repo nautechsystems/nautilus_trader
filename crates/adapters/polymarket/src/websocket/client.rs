@@ -24,6 +24,7 @@ use std::{
     time::Duration,
 };
 
+use nautilus_core::datetime::MILLISECONDS_IN_SECOND;
 use nautilus_live::{
     SocketControl,
     book::snapshot::SnapshotGate,
@@ -147,6 +148,7 @@ pub struct PolymarketWebSocketClient {
     task_handle: TaskSlot<()>,
     subscribe_new_markets: bool,
     transport_backend: TransportBackend,
+    connect_timeout_ms: u64,
     proxy_url: Option<ProxyUrl>,
     socket_sink: Option<SocketStateSink>,
     socket_control: Option<SocketControl>,
@@ -250,10 +252,16 @@ impl PolymarketWebSocketClient {
             task_handle: TaskSlot::new(),
             subscribe_new_markets,
             transport_backend,
+            connect_timeout_ms: 15_000,
             proxy_url,
             socket_sink: None,
             socket_control: None,
         }
+    }
+
+    pub(crate) fn with_connect_timeout(mut self, timeout_secs: u64) -> Self {
+        self.connect_timeout_ms = timeout_secs.saturating_mul(MILLISECONDS_IN_SECOND);
+        self
     }
 
     /// Configures socket state reporting for the underlying transport.
@@ -445,7 +453,7 @@ impl PolymarketWebSocketClient {
             headers,
             heartbeat_interval_secs: Some(POLYMARKET_HEARTBEAT_SECS),
             heartbeat_payload,
-            connect_timeout_ms: Some(15_000),
+            connect_timeout_ms: Some(self.connect_timeout_ms),
             reconnect_delay_initial_ms: Some(250),
             reconnect_delay_max_ms: Some(5_000),
             reconnect_backoff_factor: Some(2.0),
@@ -788,6 +796,21 @@ mod tests {
             .disconnect()
             .await
             .expect("disconnect websocket client");
+    }
+
+    #[rstest]
+    #[case::default(30, 30_000)]
+    #[case::custom(41, 41_000)]
+    #[case::large(u64::MAX, u64::MAX)]
+    fn market_connection_timeout(#[case] timeout_secs: u64, #[case] expected_ms: u64) {
+        let client =
+            PolymarketWebSocketClient::new_market(None, false, TransportBackend::default())
+                .with_connect_timeout(timeout_secs);
+
+        assert_eq!(
+            client.websocket_config().connect_timeout_ms,
+            Some(expected_ms)
+        );
     }
 
     #[rstest]

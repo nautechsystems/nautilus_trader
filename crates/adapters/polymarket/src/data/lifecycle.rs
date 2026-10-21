@@ -590,6 +590,7 @@ impl PolymarketDataClient {
                         self.proxy_url.clone(),
                         self.polybolt_socket_control.clone(),
                         self.polybolt_credential.clone(),
+                        self.config.ws_timeout_secs,
                     );
                 self.reset_pending = false;
             }
@@ -651,6 +652,7 @@ mod tests {
     };
     use nautilus_network::{
         retry::RetryConfig,
+        transport::TransportError,
         websocket::{TransportBackend, proxy::ProxyUrl},
     };
     use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
@@ -740,6 +742,108 @@ mod tests {
                 Some(&ConfigError::duplicate("series_ids", None)),
             );
         }
+    }
+
+    #[rstest]
+    #[case::initial(false)]
+    #[case::reset(true)]
+    #[tokio::test]
+    async fn data_websocket_connection_timeout(
+        #[case] after_reset: bool,
+        #[values(TransportBackend::Sockudo, TransportBackend::Tungstenite)]
+        backend: TransportBackend,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move {
+            let mut connections = Vec::new();
+
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                connections.push(stream);
+            }
+        });
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(tx);
+
+        let config = PolymarketDataClientConfig {
+            ws_timeout_secs: 1,
+            transport_backend: backend,
+            base_url_reference_prices: Some(url.clone()),
+            api_key: Some("fixture-key".into()),
+            api_secret: Some("Zml4dHVyZQ==".into()),
+            passphrase: Some("fixture-passphrase".into()),
+            ..Default::default()
+        };
+
+        let gamma = PolymarketGammaHttpClient::new(None, 1, RetryConfig::default()).unwrap();
+        let clob = PolymarketClobPublicClient::new(None, 1).unwrap();
+        let data_api = PolymarketDataApiHttpClient::new(None, 1).unwrap();
+
+        let ws_client = PolymarketMarketConnectionPool::new(
+            Some(url),
+            false,
+            backend,
+            WS_DEFAULT_SUBSCRIPTIONS,
+        );
+        let mut client = PolymarketDataClient::new(
+            *POLYMARKET_CLIENT_ID,
+            config,
+            gamma,
+            clob,
+            data_api,
+            ws_client,
+        )
+        .unwrap();
+
+        if after_reset {
+            client.reset_client();
+            client.disconnect_client().await.unwrap();
+        }
+
+        let market_error =
+            tokio::time::timeout(Duration::from_secs(20), client.ws_client.connect())
+                .await
+                .expect(
+                    "configured market handshake retries must finish before five old 15s attempts",
+                )
+                .unwrap_err();
+        client
+            .polybolt_feed
+            .track_subscribe(polybolt_crypto_data_type("btcusd"))
+            .unwrap();
+        let reference_error =
+            tokio::time::timeout(Duration::from_secs(3), client.polybolt_feed.connect())
+                .await
+                .expect(
+                    "configured reference-price handshake must finish before the old 15s timeout",
+                )
+                .unwrap_err();
+        client.disconnect_client().await.unwrap();
+        server.abort();
+
+        for error in [market_error, reference_error] {
+            assert!(
+                matches!(error.downcast_ref::<TransportError>(), Some(TransportError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut),
+                "{error:#}",
+            );
+        }
+    }
+
+    #[rstest]
+    fn data_websocket_timeout_rejects_zero() {
+        let config = PolymarketDataClientConfig {
+            ws_timeout_secs: 0,
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::range("ws_timeout_secs", "must be positive"))
+        );
     }
 
     struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
