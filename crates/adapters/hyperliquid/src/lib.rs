@@ -16,7 +16,10 @@
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [Hyperliquid](https://hyperliquid.gitbook.io/hyperliquid-docs) decentralized exchange.
 //!
 //! The `nautilus-hyperliquid` crate provides integration with the Hyperliquid API for
-//! trading perpetual futures on a decentralized exchange.
+//! market data and trading in perpetual futures, HIP-3 builder-deployed perpetuals, spot markets,
+//! and experimental HIP-4 outcome markets. The integration guide's
+//! [product support table](https://nautilustrader.io/docs/nightly/integrations/hyperliquid/#product-support)
+//! defines support levels and validation limits.
 //!
 //! # NautilusTrader
 //!
