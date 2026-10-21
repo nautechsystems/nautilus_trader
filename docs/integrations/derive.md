@@ -560,8 +560,10 @@ Single-order and bulk queries return native reports for uncached replacement cha
 restores the chain.
 
 Unbounded reconnect snapshots fail if a source fails, records are lost, or a fill has no matching
-order report. Retained historical rows with inferred precision do not fail these snapshots. Bounded
-snapshots retain valid reports and mark metadata gaps or lost records as incomplete coverage. If the
+order report. Unbounded snapshots stop at the first fill companion unavailable after fallback and
+retain the venue error as the cause, without looking up remaining companions. Retained historical
+rows with inferred precision do not fail these snapshots. Bounded snapshots retain valid reports and
+mark metadata gaps or lost records as incomplete coverage. If the
 venue changes a private history's record or page count during pagination, the adapter discards the scan and restarts it
 at most twice. Further count changes fail the request.
 
