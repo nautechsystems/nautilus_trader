@@ -397,6 +397,10 @@ The adapter omits `rb` on place and replace requests, using AX's default `rej` b
 post-only orders. Selecting `bo` (back off one tick from the opposite side) or `tbl` (best price on
 the same side) is not supported. See the [AX changelog](https://docs.architect.exchange/changelog).
 
+Sandbox crossing-order validation confirms that omitted `rb` and explicit `rej` reject with
+`post-only order would cross the book`. External orders that opt into `bo` or `tbl` report the
+adjusted limit in `p`; reconciliation uses that price. Post-only orders can fill after resting.
+
 Order-history, open-order, and WebSocket order responses retain `rb` as optional typed adapter metadata on
 `AxOrderDetail`, `AxOpenOrder`, and `AxWsOrder`. It describes the latest place or replace request and takes
 effect only when that request has `po: true`. Missing or null values remain absent. Unrecognized strings map
@@ -668,9 +672,15 @@ credentials are valid and have trading permissions.
   testing did not confirm conditional semantics. Use local order emulation when a strategy
   requires a stop-limit order.
 - **Order modification**: AX supports atomic order replacement via `POST /replace-order`. The execution client
-  maps `modify_order` to this endpoint and records the new venue order ID it returns. The adapter rejects a
-  modification locally if it carries a trigger price, because AX has no field for one. It also rejects a
-  modification if the order has no venue order ID yet.
+  maps `modify_order` to this endpoint. The HTTP response contains a proposed venue order ID; the orders
+  stream confirms whether replacement succeeds. Queries and cancels retain the working order ID until
+  the stream, a child fill, or a query confirms the replacement. A query of a replaced parent checks proposed IDs
+  and returns the confirmed replacement's status, including fills or cancellation. It leaves the result
+  unresolved when no replacement is confirmed. A cancel before confirmation targets the parent and
+  can be rejected; recovery then needs a late stream confirmation, a child fill, or an explicit query.
+  A crossing post-only replacement emits `OrderModifyRejected` with the venue reason
+  and leaves the original order working. The adapter rejects a modification locally if it carries a
+  trigger price, because AX has no field for one, or if the order has no venue order ID yet.
 - **Funding rate polling**: The data client polls `GET /funding-rates` for each subscribed instrument at
   `funding_rate_poll_interval_mins`. It requests a seven-day lookback to find a rate across weekends and
   holidays. It emits the latest rate only when it differs from the last one emitted.

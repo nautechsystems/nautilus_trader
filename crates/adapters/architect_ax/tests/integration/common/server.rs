@@ -87,6 +87,7 @@ pub(crate) struct TestServerState {
     pub whoami_fail: Arc<AtomicBool>,
     pub whoami_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub order_fill_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub order_injected_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub order_initial_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
     pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
@@ -99,10 +100,14 @@ pub(crate) struct TestServerState {
     pub preview_empty: Arc<AtomicBool>,
     pub preview_fail: Arc<AtomicBool>,
     pub preview_partial: Arc<AtomicBool>,
+    pub replace_order_response_delay: Arc<AtomicBool>,
+    pub replace_order_response_release: Arc<tokio::sync::Notify>,
+    pub replace_order_response_sent: Arc<tokio::sync::Notify>,
     pub replace_order_fail: Arc<AtomicBool>,
     pub replace_order_count: Arc<AtomicUsize>,
     pub replace_order_requests: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub replace_order_oid: Arc<tokio::sync::Mutex<Option<String>>>,
+    pub order_status_responses: Arc<tokio::sync::Mutex<Vec<(String, u16, serde_json::Value)>>>,
     pub order_status_response: Arc<tokio::sync::Mutex<Option<(u16, serde_json::Value)>>>,
     pub order_status_queries: Arc<tokio::sync::Mutex<Vec<GetOrderStatusParams>>>,
     pub open_orders_queries: Arc<tokio::sync::Mutex<Vec<GetOpenOrdersParams>>>,
@@ -141,6 +146,7 @@ impl Default for TestServerState {
             whoami_fail: Arc::new(AtomicBool::new(false)),
             whoami_payload: Arc::new(tokio::sync::Mutex::new(None)),
             order_fill_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            order_injected_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_initial_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
@@ -153,10 +159,14 @@ impl Default for TestServerState {
             preview_empty: Arc::new(AtomicBool::new(false)),
             preview_fail: Arc::new(AtomicBool::new(false)),
             preview_partial: Arc::new(AtomicBool::new(false)),
+            replace_order_response_delay: Arc::new(AtomicBool::new(false)),
+            replace_order_response_release: Arc::new(tokio::sync::Notify::new()),
+            replace_order_response_sent: Arc::new(tokio::sync::Notify::new()),
             replace_order_fail: Arc::new(AtomicBool::new(false)),
             replace_order_count: Arc::new(AtomicUsize::new(0)),
             replace_order_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             replace_order_oid: Arc::new(tokio::sync::Mutex::new(None)),
+            order_status_responses: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             open_orders_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -538,6 +548,17 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
     }
 
     loop {
+        let frames = std::mem::take(&mut *state.order_injected_events.lock().await);
+        for frame in frames {
+            if socket
+                .send(Message::Text(frame.to_string().into()))
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+
         if state.disconnect_trigger.load(Ordering::Relaxed) {
             break;
         }
@@ -815,6 +836,11 @@ async fn handle_replace_order(
         .await
         .push(payload.clone());
     state.replace_order_count.fetch_add(1, Ordering::Relaxed);
+    if state.replace_order_response_delay.load(Ordering::Relaxed) {
+        state.replace_order_response_release.notified().await;
+    }
+
+    state.replace_order_response_sent.notify_one();
     if state.replace_order_fail.load(Ordering::Relaxed) {
         return (
             axum::http::StatusCode::BAD_REQUEST,
@@ -839,13 +865,37 @@ async fn handle_order_status(
     State(state): State<TestServerState>,
     Query(params): Query<GetOrderStatusParams>,
 ) -> Response {
+    let response = {
+        let mut responses = state.order_status_responses.lock().await;
+        let index = responses
+            .iter()
+            .position(|(id, _, _)| params.order_id.as_ref() == Some(id));
+        index.map(|index| {
+            let (_, status, body) = responses[index].clone();
+            if responses
+                .iter()
+                .skip(index + 1)
+                .any(|(id, _, _)| params.order_id.as_ref() == Some(id))
+            {
+                responses.remove(index);
+            }
+
+            (status, body)
+        })
+    };
+
     state.order_status_queries.lock().await.push(params);
-    let (status, body) = state
-        .order_status_response
-        .lock()
-        .await
-        .clone()
-        .unwrap_or_else(|| (200, load_test_data("http_get_order_status.json")));
+
+    let (status, body) = match response {
+        Some(response) => response,
+        None => state
+            .order_status_response
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| (200, load_test_data("http_get_order_status.json"))),
+    };
+
     (
         axum::http::StatusCode::from_u16(status).unwrap(),
         Json(body),

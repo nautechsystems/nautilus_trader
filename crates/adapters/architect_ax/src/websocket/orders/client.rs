@@ -80,6 +80,7 @@ pub struct OrdersCaches {
     pub venue_to_client_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
     /// Maps AX cid values to client order IDs.
     pub cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
+    pub(crate) pending_modifies: Arc<DashMap<VenueOrderId, (ClientOrderId, usize, bool)>>,
 }
 
 impl Default for OrdersCaches {
@@ -88,6 +89,7 @@ impl Default for OrdersCaches {
             orders_metadata: Arc::new(DashMap::new()),
             venue_to_client_id: Arc::new(DashMap::new()),
             cid_to_client_order_id: Arc::new(DashMap::new()),
+            pending_modifies: Arc::new(DashMap::new()),
         }
     }
 }

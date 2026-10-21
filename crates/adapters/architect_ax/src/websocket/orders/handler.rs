@@ -664,6 +664,7 @@ mod tests {
             orders_metadata: handler.orders_metadata.clone(),
             venue_to_client_id: handler.venue_to_client_order_id.clone(),
             cid_to_client_order_id: Arc::new(DashMap::new()),
+            ..OrdersCaches::default()
         };
 
         caches.cid_to_client_order_id.insert(cid, client_order_id);

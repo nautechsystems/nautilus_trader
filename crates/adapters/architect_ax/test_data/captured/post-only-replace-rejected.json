@@ -1,0 +1,82 @@
+{
+  "place": {
+    "t": "p",
+    "s": "EURUSD-PERP",
+    "d": "B",
+    "p": "1.1230",
+    "q": 100,
+    "tif": "GTC",
+    "po": true,
+    "cid": 12345,
+    "tag": "NTPOStress",
+    "rb": "tbl"
+  },
+  "place_response": {
+    "rid": 1041,
+    "res": {
+      "oid": "PARENT-OID"
+    }
+  },
+  "replace_request": {
+    "oid": "PARENT-OID",
+    "p": "1.1252"
+  },
+  "replace_response": {
+    "oid": "PROPOSED-OID"
+  },
+  "events": [
+    {
+      "t": "n",
+      "ts": 1792532806,
+      "tn": 167047999,
+      "eid": "fixture-event",
+      "o": {
+        "oid": "PARENT-OID",
+        "u": "fixture-account",
+        "aid": "fixture-account",
+        "s": "EURUSD-PERP",
+        "p": "1.123",
+        "q": 100,
+        "xq": 0,
+        "rq": 100,
+        "o": "ACCEPTED",
+        "d": "B",
+        "tif": "GTC",
+        "cid": 12345,
+        "tag": "NTPOStress",
+        "po": true,
+        "rb": "tbl",
+        "ts": 1792532806,
+        "tn": 159714423
+      }
+    },
+    {
+      "t": "e",
+      "ts": 1792532808,
+      "tn": 20218560,
+      "oid": "PARENT-OID",
+      "cid": 12345,
+      "r": "post-only order would cross the book",
+      "txt": "post-only order would cross the book",
+      "o": {
+        "oid": "PARENT-OID",
+        "u": "fixture-account",
+        "aid": "fixture-account",
+        "s": "EURUSD-PERP",
+        "p": "1.123",
+        "q": 100,
+        "xq": 0,
+        "rq": 100,
+        "o": "ACCEPTED",
+        "d": "B",
+        "tif": "GTC",
+        "cid": 12345,
+        "tag": "NTPOStress",
+        "po": true,
+        "rb": "tbl",
+        "ts": 1792532806,
+        "tn": 159714423
+      }
+    }
+  ]
+}
