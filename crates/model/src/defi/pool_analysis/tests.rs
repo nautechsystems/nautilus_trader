@@ -3697,32 +3697,42 @@ fn test_exact_output_stopped_by_price_limit_quotes_partial_fill_and_rejects_exac
     );
 }
 
+const PRICE_LIMIT_ERROR_ZERO_FOR_ONE: &str =
+    "Price limit must be less than current price for zero_for_one swaps";
+const PRICE_LIMIT_ERROR_ONE_FOR_ZERO: &str =
+    "Price limit must be greater than current price for one_for_zero swaps";
+const PRICE_LIMIT_ERROR_BELOW_MIN: &str =
+    "Price limit 1 must be greater than MIN_SQRT_RATIO 4295128739";
+const PRICE_LIMIT_ERROR_AT_MAX: &str = "Price limit 1461446703485210103287273052203988822378723970342 must be less than MAX_SQRT_RATIO 1461446703485210103287273052203988822378723970342";
+
 #[rstest]
 #[case::zero_for_one_limit_above_price(
     true,
     encode_sqrt_ratio_x96(5, 2),
-    "Price limit must be less than current price for zero_for_one swaps"
+    PRICE_LIMIT_ERROR_ZERO_FOR_ONE
+)]
+#[case::zero_for_one_limit_at_price(
+    true,
+    encode_sqrt_ratio_x96(1, 1),
+    PRICE_LIMIT_ERROR_ZERO_FOR_ONE
 )]
 #[case::one_for_zero_limit_below_price(
     false,
     encode_sqrt_ratio_x96(2, 5),
-    "Price limit must be greater than current price for one_for_zero swaps"
+    PRICE_LIMIT_ERROR_ONE_FOR_ZERO
+)]
+#[case::one_for_zero_limit_at_price(
+    false,
+    encode_sqrt_ratio_x96(1, 1),
+    PRICE_LIMIT_ERROR_ONE_FOR_ZERO
 )]
 #[case::zero_for_one_limit_at_min_ratio(
     true,
     MIN_SQRT_RATIO,
     "Price limit 4295128739 must be greater than MIN_SQRT_RATIO 4295128739"
 )]
-#[case::zero_for_one_limit_below_min_ratio(
-    true,
-    U160::from(1),
-    "Price limit 1 must be greater than MIN_SQRT_RATIO 4295128739"
-)]
-#[case::one_for_zero_limit_at_max_ratio(
-    false,
-    MAX_SQRT_RATIO,
-    "Price limit 1461446703485210103287273052203988822378723970342 must be less than MAX_SQRT_RATIO 1461446703485210103287273052203988822378723970342"
-)]
+#[case::zero_for_one_limit_below_min_ratio(true, U160::from(1), PRICE_LIMIT_ERROR_BELOW_MIN)]
+#[case::one_for_zero_limit_at_max_ratio(false, MAX_SQRT_RATIO, PRICE_LIMIT_ERROR_AT_MAX)]
 fn test_quote_swap_rejects_invalid_price_limit(
     medium_fee_pool_profiler: PoolProfiler,
     #[case] zero_for_one: bool,
@@ -4225,6 +4235,206 @@ fn max_boundary_profiler() -> PoolProfiler {
         )
         .unwrap();
     profiler
+}
+
+#[rstest]
+#[case::downward(encode_sqrt_ratio_x96(1, 2))]
+#[case::equal(encode_sqrt_ratio_x96(1, 1))]
+#[case::upward(encode_sqrt_ratio_x96(2, 1))]
+fn test_process_swap_replays_zero_amount_empty_range(#[case] sqrt_price_x96: U160) {
+    let mut profiler = empty_low_fee_pool_profiler();
+    profiler.state.fee_growth_global_0 = U256::from(11);
+    profiler.state.fee_growth_global_1 = U256::from(22);
+    let tick = get_tick_at_sqrt_ratio(sqrt_price_x96);
+    let pool = Arc::clone(&profiler.pool);
+
+    let swap = PoolSwap::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool.instrument_id,
+        pool.pool_identifier,
+        1,
+        "0xdeadbeef".to_string(),
+        2,
+        3,
+        UnixNanos::from(4),
+        UnixNanos::from(5),
+        user_address(),
+        lp_address(),
+        I256::ZERO,
+        I256::ZERO,
+        sqrt_price_x96,
+        0,
+        tick,
+    );
+
+    profiler.process_swap(&swap).unwrap();
+
+    assert_eq!(profiler.state.price_sqrt_ratio_x96, sqrt_price_x96);
+    assert_eq!(profiler.state.current_tick, tick);
+    assert_eq!(profiler.tick_map.liquidity, 0);
+    assert_eq!(profiler.state.fee_growth_global_0, U256::from(11));
+    assert_eq!(profiler.state.fee_growth_global_1, U256::from(22));
+}
+
+#[rstest]
+fn test_process_swap_preserves_fee_growth_for_desynced_zero_amount_event() {
+    let mut profiler = empty_low_fee_pool_profiler();
+    profiler
+        .execute_mint(lp_address(), create_block_position(), -60, 60, 1_000)
+        .unwrap();
+    profiler.state.fee_growth_global_0 = U256::from(11);
+    profiler.state.fee_growth_global_1 = U256::from(22);
+    let sqrt_price_x96 = get_sqrt_ratio_at_tick(-30);
+    let pool = Arc::clone(&profiler.pool);
+
+    let swap = PoolSwap::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool.instrument_id,
+        pool.pool_identifier,
+        1,
+        "0xdeadbeef".to_string(),
+        2,
+        3,
+        UnixNanos::from(4),
+        UnixNanos::from(5),
+        user_address(),
+        lp_address(),
+        I256::ZERO,
+        I256::ZERO,
+        sqrt_price_x96,
+        0,
+        -30,
+    );
+
+    profiler.process_swap(&swap).unwrap();
+
+    assert_eq!(profiler.state.price_sqrt_ratio_x96, sqrt_price_x96);
+    assert_eq!(profiler.state.current_tick, -30);
+    assert_eq!(profiler.tick_map.liquidity, 0);
+    assert_eq!(profiler.state.fee_growth_global_0, U256::from(11));
+    assert_eq!(profiler.state.fee_growth_global_1, U256::from(22));
+}
+
+#[rstest]
+fn test_execute_swap_zero_amount_equal_price_preserves_fee_growth() {
+    let mut profiler = empty_low_fee_pool_profiler();
+    profiler.state.fee_growth_global_0 = U256::from(11);
+    profiler.state.fee_growth_global_1 = U256::from(22);
+
+    let swap = profiler
+        .execute_swap(
+            user_address(),
+            lp_address(),
+            create_block_position(),
+            true,
+            I256::ZERO,
+            profiler.state.price_sqrt_ratio_x96,
+        )
+        .unwrap();
+
+    assert_eq!(swap.amount0, I256::ZERO);
+    assert_eq!(swap.amount1, I256::ZERO);
+    assert_eq!(profiler.state.fee_growth_global_0, U256::from(11));
+    assert_eq!(profiler.state.fee_growth_global_1, U256::from(22));
+}
+
+#[rstest]
+#[case::below_min(true, U160::from(1), PRICE_LIMIT_ERROR_BELOW_MIN)]
+#[case::at_max(false, MAX_SQRT_RATIO, PRICE_LIMIT_ERROR_AT_MAX)]
+fn test_simulate_rejects_unreachable_price_limit_within_timeout(
+    #[case] zero_for_one: bool,
+    #[case] sqrt_price_limit_x96: U160,
+    #[case] expected_error: &str,
+) {
+    let profiler = empty_low_fee_pool_profiler();
+    let (sender, receiver) = std::sync::mpsc::channel();
+
+    let simulation = std::thread::spawn(move || {
+        let result = profiler.simulate_swap_through_ticks(
+            I256::ONE,
+            zero_for_one,
+            sqrt_price_limit_x96,
+            true,
+        );
+        sender.send(result).unwrap();
+    });
+
+    let result = receiver
+        .recv_timeout(std::time::Duration::from_secs(1))
+        .expect("Swap simulation should terminate");
+    simulation.join().unwrap();
+    let error = result.unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+}
+
+#[rstest]
+#[case::below_min(true, U160::from(1), PoolTick::MIN_TICK, PRICE_LIMIT_ERROR_BELOW_MIN)]
+#[case::at_max(false, MAX_SQRT_RATIO, PoolTick::MAX_TICK, PRICE_LIMIT_ERROR_AT_MAX)]
+#[case::wrong_direction_down(
+    true,
+    encode_sqrt_ratio_x96(2, 1),
+    get_tick_at_sqrt_ratio(encode_sqrt_ratio_x96(2, 1)),
+    PRICE_LIMIT_ERROR_ZERO_FOR_ONE
+)]
+#[case::wrong_direction_up(
+    false,
+    encode_sqrt_ratio_x96(1, 2),
+    get_tick_at_sqrt_ratio(encode_sqrt_ratio_x96(1, 2)),
+    PRICE_LIMIT_ERROR_ONE_FOR_ZERO
+)]
+fn test_mutating_swap_paths_reject_unreachable_price_limit_without_mutation(
+    #[case] zero_for_one: bool,
+    #[case] sqrt_price_x96: U160,
+    #[case] tick: i32,
+    #[case] expected_error: &str,
+) {
+    let mut profiler = empty_low_fee_pool_profiler();
+    let before = profiler.clone();
+
+    let amount0 = if zero_for_one { I256::ONE } else { -I256::ONE };
+    let amount1 = -amount0;
+    let pool = Arc::clone(&profiler.pool);
+    let execute_error = profiler
+        .execute_swap(
+            user_address(),
+            lp_address(),
+            create_block_position(),
+            zero_for_one,
+            I256::ONE,
+            sqrt_price_x96,
+        )
+        .unwrap_err();
+
+    assert_eq!(execute_error.to_string(), expected_error);
+    assert_profiler_unchanged(&profiler, &before);
+
+    let swap = PoolSwap::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool.instrument_id,
+        pool.pool_identifier,
+        1,
+        "0xdeadbeef".to_string(),
+        2,
+        3,
+        UnixNanos::from(4),
+        UnixNanos::from(5),
+        user_address(),
+        lp_address(),
+        amount0,
+        amount1,
+        sqrt_price_x96,
+        0,
+        tick,
+    );
+
+    let error = profiler.process_swap(&swap).unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+    assert_profiler_unchanged(&profiler, &before);
 }
 
 #[rstest]

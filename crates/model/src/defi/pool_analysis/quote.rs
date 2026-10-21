@@ -142,12 +142,17 @@ impl SwapQuote {
         Ok(())
     }
 
-    /// Determines swap direction from amount signs.
+    /// Determines swap direction from amount signs, or from price movement when both amounts are
+    /// zero.
     ///
     /// Returns `true` if swapping token0 for token1 (`zero_for_one`).
     #[must_use]
     pub fn zero_for_one(&self) -> bool {
-        self.amount0.is_positive()
+        if self.amount0.is_zero() && self.amount1.is_zero() {
+            self.sqrt_price_after_x96 < self.sqrt_price_before_x96
+        } else {
+            self.amount0.is_positive()
+        }
     }
 
     /// Returns the total fees paid in input token(LP fees + protocol fees).

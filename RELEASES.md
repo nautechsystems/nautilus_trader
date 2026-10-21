@@ -69,6 +69,7 @@ Released on TBD (UTC).
 - Fixed expiration settlement missing final-tick fills when position updates are deferred
 - Fixed reduce-only FOK orders canceling when liquidity covered the remaining position but not the order quantity
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
+- Fixed DeFi swap simulation and replay hanging at bounds or accepting unreachable price limits
 - Fixed SBE market data decoding panics on invalid prices and quantities
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
 - Fixed reconciliation leaving amended orders in `PendingUpdate` after working reports confirm changed terms
