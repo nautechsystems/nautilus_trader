@@ -20,17 +20,17 @@ match.
 With depth data, market-style orders walk crossed book levels. A limit-style order receives crossed
 book prices while acting as a taker and uses its limit price when acting as a maker.
 
-| Order type             | Fill behavior                                                     |
-| ---------------------- | ----------------------------------------------------------------- |
-| `MARKET`               | Walks crossed book levels as a taker.                             |
-| `MARKET_TO_LIMIT`      | Walks the book, then rests the remainder at its first fill price. |
-| `LIMIT`                | Uses crossed levels as a taker or the limit price as a maker.     |
-| `STOP_MARKET`          | Walks crossed levels after triggering.                            |
-| `STOP_LIMIT`           | Uses the limit-style rule after triggering.                       |
-| `MARKET_IF_TOUCHED`    | Walks crossed levels after triggering.                            |
-| `LIMIT_IF_TOUCHED`     | Uses the limit-style rule after triggering.                       |
-| `TRAILING_STOP_MARKET` | Walks crossed levels after activation and triggering.             |
-| `TRAILING_STOP_LIMIT`  | Uses the limit-style rule after activation and triggering.        |
+| Order type             | Fill behavior                                                 |
+| ---------------------- | ------------------------------------------------------------- |
+| `MARKET`               | Walks crossed book levels as a taker.                         |
+| `MARKET_TO_LIMIT`      | Fills the first executable level, then rests at that price.   |
+| `LIMIT`                | Uses crossed levels as a taker or the limit price as a maker. |
+| `STOP_MARKET`          | Walks crossed levels after triggering.                        |
+| `STOP_LIMIT`           | Uses the limit-style rule after triggering.                   |
+| `MARKET_IF_TOUCHED`    | Walks crossed levels after triggering.                        |
+| `LIMIT_IF_TOUCHED`     | Uses the limit-style rule after triggering.                   |
+| `TRAILING_STOP_MARKET` | Walks crossed levels after activation and triggering.         |
+| `TRAILING_STOP_LIMIT`  | Uses the limit-style rule after activation and triggering.    |
 
 A depth order can fill partially when the available crossed size is smaller than its remaining
 quantity.

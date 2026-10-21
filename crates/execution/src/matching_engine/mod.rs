@@ -349,7 +349,7 @@ impl OrderMatchingEngine {
     fn apply_liquidity_consumption(
         &mut self,
         mut fills: Vec<(Price, Quantity)>,
-        order_side: OrderSide,
+        order: &OrderAny,
         leaves_qty: Quantity,
         book_prices: Option<&[Price]>,
         trade_size: Option<QuantityRaw>,
@@ -358,11 +358,6 @@ impl OrderMatchingEngine {
         if !self.config.liquidity_consumption {
             return fills;
         }
-
-        let consumption = match order_side {
-            OrderSide::Buy => &mut self.ask_consumption,
-            OrderSide::Sell => &mut self.bid_consumption,
-        };
 
         let mut adjusted_len = 0;
 
@@ -385,38 +380,18 @@ impl OrderMatchingEngine {
                 .and_then(|bp| bp.get(fill_idx).copied())
                 .unwrap_or(price);
 
-            let book_price_raw = book_price.raw();
-            let level_size = self
-                .book
-                .get_quantity_at_level(book_price, order_side, qty.precision);
+            let adjusted_qty_raw = self.consume_book_level(
+                order.order_side(),
+                book_price,
+                qty,
+                remaining_qty,
+                journal.as_deref_mut(),
+            );
 
-            if let Some(journal) = journal.as_deref_mut() {
-                journal
-                    .levels
-                    .push((book_price_raw, consumption.get(&book_price_raw).copied()));
-            }
-
-            let (original_size, consumed) = consumption
-                .entry(book_price_raw)
-                .or_insert((level_size.raw(), 0));
-
-            // Reset consumption when book size changes (fresh data)
-            if *original_size != level_size.raw() {
-                *original_size = level_size.raw();
-                *consumed = 0;
-            }
-
-            let available = original_size.saturating_sub(*consumed);
-            if available == 0 {
-                continue;
-            }
-
-            let adjusted_qty_raw = min(min(qty.raw(), available), remaining_qty);
             if adjusted_qty_raw == 0 {
                 continue;
             }
 
-            *consumed += adjusted_qty_raw;
             remaining_qty -= adjusted_qty_raw;
             if trade_size.is_some() {
                 self.trade_consumption += adjusted_qty_raw;
@@ -425,10 +400,54 @@ impl OrderMatchingEngine {
             let adjusted_qty = Quantity::from_raw(adjusted_qty_raw, qty.precision);
             fills[adjusted_len] = (price, adjusted_qty);
             adjusted_len += 1;
+
+            if order.order_type() == OrderType::MarketToLimit && order.filled_qty().is_zero() {
+                break;
+            }
         }
 
         fills.truncate(adjusted_len);
         fills
+    }
+
+    fn consume_book_level(
+        &mut self,
+        order_side: OrderSide,
+        book_price: Price,
+        qty: Quantity,
+        remaining_qty: QuantityRaw,
+        journal: Option<&mut ConsumptionJournal>,
+    ) -> QuantityRaw {
+        let book_price_raw = book_price.raw();
+        let level_size = self
+            .book
+            .get_quantity_at_level(book_price, order_side, qty.precision);
+
+        let consumption = match order_side {
+            OrderSide::Buy => &mut self.ask_consumption,
+            OrderSide::Sell => &mut self.bid_consumption,
+        };
+
+        if let Some(journal) = journal {
+            journal
+                .levels
+                .push((book_price_raw, consumption.get(&book_price_raw).copied()));
+        }
+
+        let (original_size, consumed) = consumption
+            .entry(book_price_raw)
+            .or_insert((level_size.raw(), 0));
+
+        // Reset consumption when book size changes (fresh data)
+        if *original_size != level_size.raw() {
+            *original_size = level_size.raw();
+            *consumed = 0;
+        }
+
+        let available = original_size.saturating_sub(*consumed);
+        let adjusted_qty_raw = min(min(qty.raw(), available), remaining_qty);
+        *consumed += adjusted_qty_raw;
+        adjusted_qty_raw
     }
 
     /// Starts a journal of the liquidity consumption a FOK fill attempt changes.
@@ -471,8 +490,12 @@ impl OrderMatchingEngine {
         }
     }
 
-    /// Returns whether `fills` cannot fill a FOK order's entire leaves quantity.
-    fn is_fok_unfillable(&self, order: &OrderAny, fills: &[(Price, Quantity)]) -> bool {
+    fn is_fok_unfillable(
+        &self,
+        order: &OrderAny,
+        fills: &[(Price, Quantity)],
+        required_qty: Quantity,
+    ) -> bool {
         if order.time_in_force() != TimeInForce::Fok {
             return false;
         }
@@ -489,7 +512,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        order.leaves_qty() > total_size
+        required_qty > total_size
     }
 
     fn seed_trade_consumption(
@@ -4765,6 +4788,7 @@ impl OrderMatchingEngine {
     fn determine_limit_price_and_volume(
         &mut self,
         order: &OrderAny,
+        leaves_qty: Quantity,
         journal: Option<&mut ConsumptionJournal>,
     ) -> Vec<(Price, Quantity)> {
         match order.price() {
@@ -4794,8 +4818,6 @@ impl OrderMatchingEngine {
                     {
                         // Fill model check for MAKER at limit is already handled in fill_limit_order,
                         // don't re-check here to avoid calling is_limit_filled() twice (p² probability).
-                        let leaves_qty = order.leaves_qty();
-
                         let available_qty = if self.config.liquidity_consumption {
                             let remaining = trade_size.raw().saturating_sub(self.trade_consumption);
                             Quantity::from_raw(remaining, trade_size.precision)
@@ -4916,8 +4938,8 @@ impl OrderMatchingEngine {
 
                 self.apply_liquidity_consumption(
                     fills,
-                    order.order_side(),
-                    order.leaves_qty(),
+                    order,
+                    leaves_qty,
                     book_prices_ref,
                     self.l1_trade_size,
                     journal,
@@ -5007,6 +5029,7 @@ impl OrderMatchingEngine {
     fn determine_limit_fill_model_price_and_volume(
         &mut self,
         order: &OrderAny,
+        leaves_qty: Quantity,
         journal: Option<&mut ConsumptionJournal>,
     ) -> anyhow::Result<Vec<(Price, Quantity)>> {
         if let Some(book) = self.fill_model.get_orderbook_for_fill_simulation(
@@ -5020,7 +5043,7 @@ impl OrderMatchingEngine {
             return Ok(book.simulate_fills(&book_order));
         }
 
-        Ok(self.determine_limit_price_and_volume(order, journal))
+        Ok(self.determine_limit_price_and_volume(order, leaves_qty, journal))
     }
 
     /// Fills a market order against the current order book.
@@ -5070,14 +5093,9 @@ impl OrderMatchingEngine {
 
         let (venue_position_id, position) = self.fill_position_for_order(&order, Some(true));
 
-        if self.reduce_only_position_missing(&order, position.as_ref()) {
-            log::warn!(
-                "Canceling REDUCE_ONLY {} as would increase position",
-                order.order_type()
-            );
-            self.cancel_order(&order, None);
+        let Some(leaves_qty) = self.fill_leaves_qty(&order, position.as_ref()) else {
             return;
-        }
+        };
 
         order.set_liquidity_side(LiquiditySide::Taker);
 
@@ -5130,15 +5148,15 @@ impl OrderMatchingEngine {
 
             fills = self.apply_liquidity_consumption(
                 fills,
-                order.order_side(),
-                order.leaves_qty(),
+                &order,
+                leaves_qty,
                 None,
                 None,
                 journal.as_mut(),
             );
 
             if let Some(journal) = journal
-                && self.is_fok_unfillable(&order, &fills)
+                && self.is_fok_unfillable(&order, &fills, leaves_qty)
             {
                 self.revert_consumption_journal(journal);
             }
@@ -5289,21 +5307,23 @@ impl OrderMatchingEngine {
 
                 let (venue_position_id, position) = self.fill_position_for_order(&order, None);
 
-                if self.reduce_only_position_missing(&order, position.as_ref()) {
-                    log::warn!(
-                        "Canceling REDUCE_ONLY {} as would increase position",
-                        order.order_type()
-                    );
-                    self.cancel_order(&order, None);
+                let Some(leaves_qty) = self.fill_leaves_qty(&order, position.as_ref()) else {
                     return;
-                }
+                };
+
+                let required_qty = leaves_qty;
+                let leaves_qty = queue_allowed_raw.map_or(leaves_qty, |allowed| {
+                    Quantity::from_raw(leaves_qty.raw().min(allowed), leaves_qty.precision)
+                });
 
                 let mut journal = self.fok_consumption_journal(&order);
                 let tc_before = self.trade_consumption;
 
-                let mut fills = match self
-                    .determine_limit_fill_model_price_and_volume(&order, journal.as_mut())
-                {
+                let mut fills = match self.determine_limit_fill_model_price_and_volume(
+                    &order,
+                    leaves_qty,
+                    journal.as_mut(),
+                ) {
                     Ok(fills) => fills,
                     Err(e) => {
                         log::error!(
@@ -5340,7 +5360,7 @@ impl OrderMatchingEngine {
                 }
 
                 if let Some(journal) = journal
-                    && self.is_fok_unfillable(&order, &fills)
+                    && self.is_fok_unfillable(&order, &fills, required_qty)
                 {
                     self.revert_consumption_journal(journal);
                 }
@@ -5376,17 +5396,38 @@ impl OrderMatchingEngine {
         }
     }
 
-    fn reduce_only_position_missing(
+    fn fill_leaves_qty(
         &mut self,
         order: &OrderAny,
         position: Option<&Position>,
-    ) -> bool {
-        self.config.use_reduce_only
-            && order.is_reduce_only()
-            && position.is_none()
-            && self
-                .position_quantity_remaining(order, None)
-                .map_or(true, |quantity| quantity.is_zero())
+    ) -> Option<Quantity> {
+        if !self.config.liquidity_consumption && position.is_some() {
+            return Some(order.leaves_qty());
+        }
+
+        let leaves_qty = order
+            .quantity()
+            .saturating_sub(self.engine_filled_qty(order));
+
+        match self.reduce_only_remaining(order, position) {
+            Ok(Some(remaining)) if remaining.is_zero() => {
+                log::warn!(
+                    "Canceling REDUCE_ONLY {} as would increase position",
+                    order.order_type()
+                );
+                self.cancel_order(order, None);
+                None
+            }
+            Ok(Some(remaining)) => Some(leaves_qty.min(remaining)),
+            Ok(None) => Some(leaves_qty),
+            Err(e) => {
+                log::error!(
+                    "Cannot determine fill quantity for {}: {e}",
+                    order.client_order_id()
+                );
+                None
+            }
+        }
     }
 
     fn prepare_order_fill(&mut self, order: &mut OrderAny) -> bool {
@@ -5537,7 +5578,12 @@ impl OrderMatchingEngine {
         protection_price: Option<Price>,
         from_synthetic: bool,
     ) -> anyhow::Result<()> {
-        if self.is_fok_unfillable(order, fills) {
+        let mut reduce_only_remaining = self.reduce_only_remaining(order, position)?;
+        let required_qty = reduce_only_remaining.map_or(order.leaves_qty(), |remaining| {
+            order.leaves_qty().min(remaining)
+        });
+
+        if self.is_fok_unfillable(order, fills, required_qty) {
             self.cancel_order(order, None);
             return Ok(());
         }
@@ -5569,16 +5615,14 @@ impl OrderMatchingEngine {
         let mut total_filled = self.engine_filled_qty(order);
         let initial_total_filled = total_filled;
         let mut last_fill_px: Option<Price> = None;
-        let mut reduce_only_remaining = None;
         let mut reduce_only_filled = None;
 
-        if let Some(remaining) = self.reduce_only_remaining(order, position)? {
+        if let Some(remaining) = reduce_only_remaining {
             if remaining.is_zero() {
                 self.cancel_order(order, None);
                 return Ok(());
             }
 
-            reduce_only_remaining = Some(remaining);
             reduce_only_filled = Some(total_filled);
         }
 

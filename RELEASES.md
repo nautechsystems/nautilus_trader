@@ -57,6 +57,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking
+- Fixed reduce-only FOK orders canceling when liquidity covered the remaining position but not the order quantity
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
 - Fixed SBE market data decoding panics on invalid prices and quantities
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
