@@ -382,9 +382,6 @@ jobs:
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
-      - name: Remove obsolete Python 3.12 build cache
-        run: rm -rf /home/runner/.cache/cargo-target/py3.12
-
       - name: Common setup
         uses: $/.github/actions/common-setup
         with:

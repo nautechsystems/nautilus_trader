@@ -70,9 +70,6 @@ jobs:
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
-      - name: Remove obsolete Python performance cache
-        run: rm -rf /home/runner/.cache/cargo-target/performance-py3.12
-
       - name: Aggressive disk cleanup (pre-setup)
         if: runner.os == 'Linux' && !startsWith(runner.name, 'nautilus-ci-runner-')
         run: |
