@@ -89,6 +89,7 @@ use ustr::Ustr;
 #[derive(Clone, Default)]
 struct TestServerState {
     info_request_count: Arc<tokio::sync::Mutex<usize>>,
+    all_perp_metas_request_count: Arc<tokio::sync::Mutex<usize>>,
     last_request_type: Arc<tokio::sync::Mutex<Option<String>>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -253,6 +254,7 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
     match request_type.as_str() {
         "meta" => Json(standard_perp_meta(&state).await).into_response(),
         "allPerpMetas" => {
+            *state.all_perp_metas_request_count.lock().await += 1;
             if *state.all_perp_metas_unavailable.lock().await {
                 return (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -2982,6 +2984,66 @@ async fn test_data_client_instrument_refresh_emits_status_change_for_subscribed(
     assert_eq!(statuses[0].is_trading, Some(false));
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::disconnect(false)]
+#[case::reset(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case] reset: bool) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_data_client_config(addr);
+    config.update_instruments_interval_mins = 1;
+    config.stream_health_check_interval_secs = 0;
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    for size_precision in [4, 5] {
+        client.connect().await.unwrap();
+
+        while rx.try_recv().is_ok() {}
+        let before = *state.all_perp_metas_request_count.lock().await;
+        client.connect().await.unwrap();
+        assert_eq!(*state.all_perp_metas_request_count.lock().await, before);
+        *state.btc_size_decimals_changed.lock().await = size_precision == 4;
+
+        let refreshed = tokio::time::timeout(Duration::from_secs(70), async {
+            loop {
+                if let Some(DataEvent::Instrument(instrument)) = rx.recv().await
+                    && instrument.id() == btc_id
+                {
+                    break instrument;
+                }
+            }
+        })
+        .await
+        .expect("periodic refresh must publish the changed BTC definition");
+
+        wait_until_async(
+            || async { *state.all_perp_metas_request_count.lock().await == before + 2 },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(refreshed.size_precision(), size_precision);
+        assert_eq!(
+            refreshed
+                .info()
+                .and_then(|info| info.get_u64(ASSET_INDEX_INFO_KEY)),
+            Some(0),
+        );
+
+        if reset {
+            client.reset().unwrap();
+        }
+
+        client.disconnect().await.unwrap();
+        let stopped = *state.all_perp_metas_request_count.lock().await;
+        assert_eq!(stopped, before + 2);
+        assert!(client.is_disconnected());
+    }
 }
 
 #[rstest]

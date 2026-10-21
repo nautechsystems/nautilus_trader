@@ -3602,6 +3602,111 @@ mod tests {
     }
 
     #[rstest]
+    #[case::disconnect(false)]
+    #[case::reset(true)]
+    #[tokio::test]
+    async fn test_instrument_refresh_shutdown_drains_generation(#[case] reset: bool) {
+        let mut client = data_client_with_refresh_interval(1);
+        client.spawn_instrument_refresh().unwrap();
+        if reset {
+            client.reset().unwrap();
+            client.await_session_tasks().await.unwrap();
+        } else {
+            client.disconnect().await.unwrap();
+        }
+
+        assert!(client.cancellation_token.is_cancelled());
+        assert!(client.session_tasks.is_empty());
+        assert!(!client.session_tasks.is_open());
+        assert!(client.spawn_instrument_refresh().is_err());
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    async fn test_instrument_refresh_connected_client_keeps_one_task() {
+        let mut client = data_client_with_refresh_interval(1);
+        client.spawn_instrument_refresh().unwrap();
+        client.is_connected.store(true, Ordering::Release);
+
+        client.connect().await.unwrap();
+        client.connect().await.unwrap();
+
+        assert_eq!(client.session_tasks.len(), 1);
+        client.disconnect().await.unwrap();
+        assert!(client.session_tasks.is_empty());
+    }
+
+    #[rstest]
+    fn test_cache_instruments_replaces_complete_snapshots() {
+        let client = data_client_with_refresh_interval(0);
+        let mut original = vec![
+            perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1)),
+            perp_instrument("ETH-USD-PERP", "0.2", UnixNanos::from(1)),
+        ];
+        let mut refreshed = vec![
+            perp_instrument("BTC-USD-PERP", "0.3", UnixNanos::from(2)),
+            perp_instrument("ETH-USD-PERP", "0.4", UnixNanos::from(2)),
+        ];
+
+        for instruments in [&mut original, &mut refreshed] {
+            let InstrumentAny::CryptoPerpetual(eth) = &mut instruments[1] else {
+                unreachable!();
+            };
+
+            eth.raw_symbol = Symbol::new("ETH");
+        }
+
+        cache_instruments(
+            &original,
+            &client.instruments,
+            &client.coin_to_instrument_id,
+            &client.http_client,
+            &client.ws_client,
+        );
+        let previous = client.instruments.load();
+        cache_instruments(
+            &refreshed,
+            &client.instruments,
+            &client.coin_to_instrument_id,
+            &client.http_client,
+            &client.ws_client,
+        );
+        let current = client.instruments.load();
+
+        assert_eq!(previous.len(), 2);
+        assert_eq!(current.len(), 2);
+
+        for (old, new) in original.iter().zip(&refreshed) {
+            assert_eq!(
+                serde_json::to_value(previous.get(&old.id()).unwrap()).unwrap(),
+                serde_json::to_value(old).unwrap(),
+            );
+            assert_eq!(
+                serde_json::to_value(current.get(&new.id()).unwrap()).unwrap(),
+                serde_json::to_value(new).unwrap(),
+            );
+            assert_eq!(
+                client
+                    .coin_to_instrument_id
+                    .get_cloned(&new.raw_symbol().inner()),
+                Some(new.id()),
+            );
+            assert_eq!(
+                serde_json::to_value(
+                    client
+                        .ws_client
+                        .instruments_cache()
+                        .load()
+                        .get(&new.raw_symbol().inner())
+                        .unwrap(),
+                )
+                .unwrap(),
+                serde_json::to_value(new).unwrap(),
+            );
+        }
+    }
+
+    #[rstest]
     fn test_changed_definitions_reports_a_newly_listed_market() {
         let cached_instruments =
             cached(&[perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1))]);

@@ -1452,16 +1452,16 @@ impl HyperliquidHttpClient {
                 // `cache_alias_for_symbol` keeps the two rules co-located so
                 // every caller derives the same key.
                 //
-                // First-write-wins guards against non-canonical spot pairs that
-                // share a base token overwriting the canonical instrument; the
-                // spot loader sorts canonical pairs first so the alias resolves
-                // to the canonical one. For standard perps `base == coin`, so
-                // the alias is a no-op.
+                // Keep aliases on their original venue market while refreshing
+                // its definition, canonical spot pairs are cached first.
                 if let Some(alias_ustr) = cache_alias_for_symbol(full_symbol.as_str())
                     .map(|alias| Ustr::from(alias.as_str()))
                 {
                     let key = (alias_ustr, product_type);
-                    if alias_ustr != coin && !m.contains_key(&key) {
+                    if alias_ustr != coin
+                        && m.get(&key)
+                            .is_none_or(|cached| cached.raw_symbol() == instrument.raw_symbol())
+                    {
                         m.insert(key, instrument.clone());
                     }
                 }
@@ -5465,6 +5465,27 @@ mod tests {
             "@107",
             "base alias must point to the canonical pair, not the one cached later",
         );
+        drop(instruments_by_coin);
+
+        let InstrumentAny::CurrencyPair(mut refreshed) = canonical else {
+            unreachable!();
+        };
+
+        refreshed.price_precision = 4;
+        refreshed.price_increment = Price::from("0.0001");
+        refreshed.size_precision = 3;
+        refreshed.size_increment = Quantity::from("0.001");
+        let refreshed = InstrumentAny::CurrencyPair(refreshed);
+        client.cache_instrument(&refreshed);
+        client.cache_instrument(&non_canonical);
+
+        let resolved = client
+            .get_or_create_instrument(&Ustr::from("HYPE"), Some(HyperliquidProductType::Spot))
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&resolved).unwrap(),
+            serde_json::to_value(&refreshed).unwrap(),
+        );
     }
 
     #[rstest]
@@ -5537,6 +5558,81 @@ mod tests {
             )
             .expect("get_or_create_instrument must resolve sanitized base for HIP-3");
         assert_eq!(resolved.id(), hip3.id());
+
+        let InstrumentAny::CryptoPerpetual(mut refreshed) = hip3 else {
+            unreachable!();
+        };
+
+        refreshed.price_precision = 4;
+        refreshed.price_increment = Price::from("0.0001");
+        refreshed.size_precision = 2;
+        refreshed.size_increment = Quantity::from("0.01");
+        let refreshed = InstrumentAny::CryptoPerpetual(refreshed);
+        client.cache_instrument(&refreshed);
+
+        let resolved = client
+            .get_or_create_instrument(
+                &Ustr::from("dex:STREAMABCDxxxx"),
+                Some(HyperliquidProductType::Perp),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&resolved).unwrap(),
+            serde_json::to_value(&refreshed).unwrap(),
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "connects to Hyperliquid mainnet public instrument metadata"]
+    async fn test_live_mainnet_instrument_refresh_updates_aliases() {
+        let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+        let original = client.request_instruments().await.unwrap();
+        assert!(!original.is_empty());
+
+        for instrument in original {
+            client.cache_instrument(&instrument);
+        }
+
+        let refreshed = client.request_instruments().await.unwrap();
+        let mut spot_aliases = 0;
+        let mut perp_aliases = 0;
+
+        for instrument in &refreshed {
+            client.cache_instrument(instrument);
+            let symbol = instrument.symbol();
+            let product = HyperliquidProductType::from_symbol(symbol.as_str()).unwrap();
+            let alias = super::cache_alias_for_symbol(symbol.as_str()).unwrap();
+            let resolved = client
+                .get_or_create_instrument(&Ustr::from(alias.as_str()), Some(product))
+                .unwrap();
+
+            if resolved.raw_symbol() != instrument.raw_symbol() {
+                continue;
+            }
+
+            assert_eq!(
+                serde_json::to_value(&resolved).unwrap(),
+                serde_json::to_value(instrument).unwrap(),
+            );
+            assert_eq!(
+                client.get_price_precision(symbol.as_str()),
+                Some(instrument.price_precision()),
+            );
+
+            if alias != instrument.raw_symbol().as_str() {
+                match product {
+                    HyperliquidProductType::Spot => spot_aliases += 1,
+                    HyperliquidProductType::Perp => perp_aliases += 1,
+                    HyperliquidProductType::Outcome => {}
+                }
+            }
+        }
+
+        assert!(spot_aliases > 0);
+        println!(
+            "Validated {} refreshed definitions, {spot_aliases} spot aliases, and {perp_aliases} perp aliases",
+            refreshed.len()
+        );
     }
 
     fn perp_with_asset_index(symbol: &str, asset_index: Option<u32>) -> InstrumentAny {

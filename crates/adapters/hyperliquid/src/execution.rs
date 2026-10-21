@@ -4844,6 +4844,43 @@ mod tests {
     }
 
     #[rstest]
+    fn test_on_instrument_replaces_asset_index_and_precision() {
+        let mut client = make_execution_client();
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let mut defs = parse_perp_instruments(&meta, 0).unwrap();
+        let def = &mut defs[0];
+        let original = create_instrument_from_def(def, UnixNanos::from(1)).unwrap();
+        client.on_instrument(original.clone());
+        let cache = client.ws_client.instruments_cache();
+        let previous = cache.load();
+
+        def.asset_index = 73;
+        def.price_decimals = 3;
+        def.tick_size = Decimal::new(1, 3);
+        def.size_decimals = 4;
+        def.lot_size = Decimal::new(1, 4);
+        let refreshed = create_instrument_from_def(def, UnixNanos::from(2)).unwrap();
+        client.on_instrument(refreshed.clone());
+
+        assert_eq!(
+            client.http_client.get_asset_index(def.symbol.as_str()),
+            Some(73)
+        );
+        assert_eq!(
+            client.http_client.get_price_precision(def.symbol.as_str()),
+            Some(3)
+        );
+        assert_eq!(
+            serde_json::to_value(previous.get(&def.raw_symbol).unwrap()).unwrap(),
+            serde_json::to_value(original).unwrap(),
+        );
+        assert_eq!(
+            serde_json::to_value(cache.load().get(&def.raw_symbol).unwrap()).unwrap(),
+            serde_json::to_value(refreshed).unwrap(),
+        );
+    }
+
+    #[rstest]
     fn oid_query_attaches_the_known_client_order_id() {
         let mut report = make_status_report(None, "55030848197", OrderStatus::Accepted);
         let client_order_id = ClientOrderId::new("O-ATTACH-001");

@@ -665,11 +665,16 @@ a base token, the loader caches the canonical pair first. Thus, balances and fil
 resolve to the canonical Nautilus instrument. Any later definition whose Nautilus symbol collides with an
 earlier definition is dropped with a warning and cannot be traded.
 
-The data client then refetches the universe every `update_instruments_interval_mins` minutes:
+The data client owns one periodic instrument refresh task per connection. It waits
+`update_instruments_interval_mins` minutes after connect and after each completed pass before refetching the
+universe. Disconnect, reset, and stop cancel the task, including an in-progress fetch. Reconnecting loads the
+universe again and starts a new task.
+
+Instrument refresh behavior:
 
 - It publishes the definitions that are new or materially changed. Unchanged definitions are not republished.
-- The execution client receives those updates and registers each instrument's asset index, so a
-  market listed after startup becomes tradable without a process restart.
+- The execution client receives those updates and replaces each instrument's asset index and precision
+  mappings, so new markets and changed definitions take effect without a process restart.
 - A `RequestInstrument` or `RequestInstruments` also refetches the whole universe and publishes
   new or changed definitions the same way.
 - Set `update_instruments_interval_mins` to `0` to disable the periodic refresh. Requests and a data client
