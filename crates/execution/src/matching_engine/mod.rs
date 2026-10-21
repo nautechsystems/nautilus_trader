@@ -18,6 +18,7 @@
 pub mod config;
 pub mod ids_generator;
 pub mod inflight;
+pub mod orders;
 
 mod settlement;
 
@@ -75,11 +76,14 @@ use nautilus_model::{
         quantity::QuantityRaw,
     },
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use ustr::Ustr;
 
 use self::{
-    config::OrderMatchingEngineConfig, ids_generator::IdsGenerator, inflight::InflightOrders,
+    config::OrderMatchingEngineConfig,
+    ids_generator::IdsGenerator,
+    inflight::InflightOrders,
+    orders::{MatchingOrders, OtoCommand},
 };
 use crate::{
     matching::{MatchAction, OrderMatchingCore, RestingOrder},
@@ -126,14 +130,9 @@ pub struct OrderMatchingEngine {
     execution_bar_types: IndexMap<InstrumentId, BarType>,
     execution_bar_deltas: IndexMap<BarType, SignedDuration>,
     account_ids: IndexMap<TraderId, AccountId>,
-    cached_filled_qty: IndexMap<ClientOrderId, Quantity>,
-    pending_updates: RefCell<IndexMap<ClientOrderId, Vec<OrderUpdated>>>,
     pending_fills: IndexMap<TradeId, PendingFill>,
     post_match_order_ids: IndexSet<ClientOrderId>,
-    rejected_oto_parent_ids: RefCell<IndexSet<ClientOrderId>>,
-    pending_oto_order_ids: IndexSet<ClientOrderId>,
-    other_instrument_oto_order_ids: IndexSet<ClientOrderId>,
-    canceled_oto_order_ids: IndexSet<ClientOrderId>,
+    orders: MatchingOrders,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
     l1_trade_size: Option<QuantityRaw>,
@@ -227,14 +226,9 @@ impl OrderMatchingEngine {
             execution_bar_types: IndexMap::new(),
             execution_bar_deltas: IndexMap::new(),
             account_ids: IndexMap::new(),
-            cached_filled_qty: IndexMap::new(),
-            pending_updates: RefCell::new(IndexMap::new()),
             pending_fills: IndexMap::new(),
             post_match_order_ids: IndexSet::new(),
-            rejected_oto_parent_ids: RefCell::new(IndexSet::new()),
-            pending_oto_order_ids: IndexSet::new(),
-            other_instrument_oto_order_ids: IndexSet::new(),
-            canceled_oto_order_ids: IndexSet::new(),
+            orders: MatchingOrders::default(),
             ids_generator,
             last_trade_size: None,
             l1_trade_size: None,
@@ -281,6 +275,14 @@ impl OrderMatchingEngine {
         self.inflight_orders = orders;
     }
 
+    /// Attaches pending order state shared with this venue's other instrument engines.
+    ///
+    /// Call this before processing orders.
+    /// Cross-instrument OTO orders require the shared record and protocol in [`MatchingOrders`].
+    pub fn set_matching_orders(&mut self, orders: MatchingOrders) {
+        self.orders = orders;
+    }
+
     fn dispatch_order_event(&self, event: OrderEventAny) {
         if let Some(handler) = &self.event_handler {
             handler(event);
@@ -300,14 +302,10 @@ impl OrderMatchingEngine {
         self.execution_bar_types.clear();
         self.execution_bar_deltas.clear();
         self.account_ids.clear();
-        self.cached_filled_qty.clear();
-        self.pending_updates.get_mut().clear();
         self.pending_fills.clear();
         self.post_match_order_ids.clear();
-        self.rejected_oto_parent_ids.get_mut().clear();
-        self.pending_oto_order_ids.clear();
-        self.other_instrument_oto_order_ids.clear();
-        self.canceled_oto_order_ids.clear();
+        self.orders
+            .reset(self.instrument.id(), &self.cache.borrow());
         self.core.reset();
         self.target_bid = None;
         self.target_ask = None;
@@ -702,10 +700,15 @@ impl OrderMatchingEngine {
                     return None;
                 }
 
-                let has_pending_updates =
-                    self.pending_updates.borrow().contains_key(&client_order_id);
+                let has_pending_updates = self
+                    .orders
+                    .pending_updates
+                    .borrow()
+                    .contains_key(&client_order_id);
                 let has_pending_fills = self
+                    .orders
                     .cached_filled_qty
+                    .borrow()
                     .get(&client_order_id)
                     .is_some_and(|filled_qty| *filled_qty != order.filled_qty());
                 let snapshot;
@@ -1417,7 +1420,17 @@ impl OrderMatchingEngine {
     #[must_use]
     /// Returns the number of partial-fill counters tracked by the engine.
     pub fn cached_filled_qty_len(&self) -> usize {
-        self.cached_filled_qty.len()
+        let cache = self.cache.borrow();
+        self.orders
+            .cached_filled_qty
+            .borrow()
+            .keys()
+            .filter(|id| {
+                cache
+                    .order(id)
+                    .is_some_and(|order| order.instrument_id() == self.instrument.id())
+            })
+            .count()
     }
 
     #[must_use]
@@ -1568,7 +1581,10 @@ impl OrderMatchingEngine {
                 self.cancel_order(&order, None);
             } else {
                 self.delete_core_order(client_order_id);
-                self.cached_filled_qty.swap_remove(&client_order_id);
+                self.orders
+                    .cached_filled_qty
+                    .borrow_mut()
+                    .swap_remove(&client_order_id);
             }
         }
     }
@@ -3024,6 +3040,103 @@ impl OrderMatchingEngine {
     ///
     /// Panics if an OTO child order references a missing or non-OTO parent.
     pub fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
+        self.process_order_received(order, account_id, false);
+    }
+
+    /// Processes a contingent command routed to this instrument after its source engine returns.
+    ///
+    /// A release uses the parent's established trigger even before its fill reaches the cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a released child references a missing or non-OTO parent.
+    pub fn process_oto_command(&mut self, command: &OtoCommand) {
+        match command {
+            OtoCommand::Release {
+                client_order_id,
+                account_id,
+                ..
+            } => {
+                if self
+                    .orders
+                    .closed_oto_order_ids
+                    .borrow()
+                    .contains(client_order_id)
+                    || self
+                        .cache
+                        .borrow()
+                        .venue_order_id(client_order_id)
+                        .is_some()
+                {
+                    return;
+                }
+
+                let Some(mut order) = self.order_snapshot(*client_order_id) else {
+                    return;
+                };
+
+                if let Err(e) = self.apply_deferred_submission(&mut order, false) {
+                    log::error!("Cannot release OTO order {client_order_id}: {e}");
+                    return;
+                }
+
+                if self.contingent_order_is_closed(&order)
+                    || self.inflight_orders.contains(*client_order_id)
+                {
+                    return;
+                }
+
+                self.process_order_received(&mut order, *account_id, true);
+            }
+            OtoCommand::Resize {
+                parent_order_id,
+                quantity,
+                ..
+            } => self.process_oto_resize(*parent_order_id, *quantity),
+            OtoCommand::Cancel {
+                client_order_id,
+                cancel_contingencies,
+                excluded,
+                ..
+            } => {
+                let Some(mut order) = self.order_snapshot(*client_order_id) else {
+                    return;
+                };
+
+                if self.contingent_order_is_closed(&order) {
+                    return;
+                }
+
+                if let Err(e) = self.apply_deferred_submission(&mut order, false) {
+                    log::error!("Cannot cancel OTO order {client_order_id}: {e}");
+                    return;
+                }
+
+                self.cancel_order_excluding(&order, Some(*cancel_contingencies), excluded);
+            }
+        }
+    }
+
+    /// Resizes the OTO children of a parent matched by this engine against `quantity`.
+    ///
+    /// The venue calls this after delivering a cross-instrument release, using its `parent_order_id`
+    /// and `parent_quantity`, because the released child may have filled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a linked child order is missing from the cache.
+    pub fn process_oto_resize(&mut self, parent_order_id: ClientOrderId, quantity: Quantity) {
+        if let Some(parent) = self.order_snapshot(parent_order_id) {
+            self.update_oto_children(&parent, Some(quantity), &[]);
+        }
+    }
+
+    fn process_order_received(
+        &mut self,
+        order: &mut OrderAny,
+        account_id: AccountId,
+        released: bool,
+    ) {
         // Idempotent: OTO children may be re-routed via `fill_order`
         if self.core.order_exists(order.client_order_id()) {
             return;
@@ -3037,9 +3150,8 @@ impl OrderMatchingEngine {
             return;
         }
 
-        // Ensure expiration semantics are enforced even when no fresh market-data
-        // tick arrives for this instrument after expiry (e.g. after rotation).
-        // The order being processed is left for validation to reject rather than canceled
+        // Expiration terminalizes other resting orders even without a fresh market tick
+        // The arriving order receives its own rejection or contingent cancellation
         let ts_now = self.clock.borrow().timestamp_ns();
         self.check_instrument_expiration(
             ts_now,
@@ -3047,6 +3159,117 @@ impl OrderMatchingEngine {
             &[order.client_order_id()],
         );
 
+        if self.config.support_contingent_orders
+            && order.parent_order_id().is_some()
+            && !self.prepare_oto_submission(order, account_id)
+        {
+            return;
+        }
+
+        self.process_order_internal(order, account_id, released);
+    }
+
+    fn prepare_oto_submission(&mut self, order: &mut OrderAny, account_id: AccountId) -> bool {
+        let id = order.client_order_id();
+
+        let Some(snapshot) = self.order_snapshot(id) else {
+            return false;
+        };
+
+        if self.contingent_order_is_closed(&snapshot) {
+            return false;
+        }
+
+        *order = snapshot;
+        self.account_ids.insert(order.trader_id(), account_id);
+        self.orders.pending_oto_order_ids.borrow_mut().insert(id);
+
+        if let Err(e) = self.apply_deferred_submission(order, false) {
+            log::error!("Cannot process OTO submission {id}: {e}");
+            return false;
+        }
+
+        if let Some(command) = self.oto_submission_cancel(order) {
+            self.process_oto_command(&command);
+            return false;
+        }
+
+        self.resize_oto_order(order)
+    }
+
+    fn resize_oto_order(&mut self, order: &mut OrderAny) -> bool {
+        let Some(parent) = self.full_trigger_oto_parent(order) else {
+            return true;
+        };
+
+        if let Err(e) = self.apply_deferred_submission(order, false) {
+            log::error!("Cannot resize OTO order {}: {e}", order.client_order_id());
+            return false;
+        }
+
+        let ids = parent
+            .linked_order_ids()
+            .expect("OTO parent has linked children");
+        let filled_qty = self.engine_filled_qty(&parent);
+        let remaining = self.oto_child_remaining(order, ids, parent.quantity());
+        if remaining.is_zero() {
+            self.cancel_order(order, Some(false));
+            return false;
+        }
+
+        let parent_inverse = self
+            .cache
+            .borrow()
+            .instrument(&parent.instrument_id())
+            .is_some_and(Instrument::is_inverse);
+
+        let sizing = OtoSizing {
+            quantity: parent.quantity(),
+            filled_qty,
+            quote: parent.is_quote_quantity() && !parent_inverse,
+            reduced_to_filled: true,
+            grew: false,
+        };
+
+        self.resize_oto_child(order, &sizing, remaining);
+        if let Some(snapshot) = self.order_snapshot(order.client_order_id()) {
+            order.set_quantity(snapshot.quantity());
+            order.set_leaves_qty(snapshot.leaves_qty());
+            order.set_is_quote_quantity(snapshot.is_quote_quantity());
+        }
+
+        true
+    }
+
+    fn full_trigger_oto_parent(&self, order: &OrderAny) -> Option<OrderAny> {
+        if !self.config.support_contingent_orders || !self.config.oto_full_trigger {
+            return None;
+        }
+
+        let parent = self.order_snapshot(order.parent_order_id()?)?;
+        if parent.contingency_type() != Some(ContingencyType::Oto) {
+            return None;
+        }
+
+        let ids = parent.linked_order_ids()?;
+        if self.engine_filled_qty(&parent) < parent.quantity()
+            || !ids
+                .iter()
+                .filter_map(|id| self.order_snapshot(*id))
+                .any(|child| child.instrument_id() != parent.instrument_id())
+        {
+            return None;
+        }
+
+        Some(parent)
+    }
+
+    fn process_order_internal(
+        &mut self,
+        order: &mut OrderAny,
+        account_id: AccountId,
+        released: bool,
+    ) {
         // Validate inside a cache borrow scope, collecting any rejection
         // reason rather than emitting events while the borrow is held.
         // This avoids RefCell re-entrancy panics from synchronous event
@@ -3117,7 +3340,9 @@ impl OrderMatchingEngine {
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
                     // Parked again below while the parent has not triggered it
-                    self.pending_oto_order_ids
+                    self.orders
+                        .pending_oto_order_ids
+                        .borrow_mut()
                         .swap_remove(&order.client_order_id());
 
                     let parent_order = match self.order_snapshot(parent_order_id) {
@@ -3130,6 +3355,7 @@ impl OrderMatchingEngine {
                     // The rejection of a parent in the same command can still be deferred
                     if parent_order.status() == OrderStatus::Rejected
                         || self
+                            .orders
                             .rejected_oto_parent_ids
                             .borrow()
                             .contains(&parent_order_id)
@@ -3137,27 +3363,22 @@ impl OrderMatchingEngine {
                         break 'validate Some(
                             format!("Rejected OTO order from {parent_order_id}").into(),
                         );
-                    } else if parent_filled_qty.is_zero()
-                        || (self.config.oto_full_trigger
-                            && parent_filled_qty < parent_order.quantity())
+                    } else if !released
+                        && (parent_filled_qty.is_zero()
+                            || (self.config.oto_full_trigger
+                                && parent_filled_qty < parent_order.quantity()))
                     {
                         log::info!(
                             "Pending OTO order {} triggers from {parent_order_id}",
                             order.client_order_id(),
                         );
 
-                        // A parent on another instrument triggers the child from its own engine
-                        if parent_order.instrument_id() == self.instrument.id() {
-                            self.pending_oto_order_ids.insert(order.client_order_id());
-                        }
+                        self.orders
+                            .pending_oto_order_ids
+                            .borrow_mut()
+                            .insert(order.client_order_id());
 
                         return;
-                    }
-
-                    // This engine matches a child of another instrument that its parent releases
-                    if order.instrument_id() != self.instrument.id() {
-                        self.other_instrument_oto_order_ids
-                            .insert(order.client_order_id());
                     }
                 }
 
@@ -3467,7 +3688,8 @@ impl OrderMatchingEngine {
         }
 
         // Later snapshots show the base quantity while a deferring handler holds the event
-        self.pending_updates
+        self.orders
+            .pending_updates
             .borrow_mut()
             .entry(order.client_order_id())
             .or_default()
@@ -3519,7 +3741,9 @@ impl OrderMatchingEngine {
 
         let filled_qty = order.filled_qty();
         if !filled_qty.is_zero() {
-            self.cached_filled_qty
+            self.orders
+                .cached_filled_qty
+                .borrow_mut()
                 .insert(order.client_order_id(), filled_qty);
         }
 
@@ -3592,12 +3816,13 @@ impl OrderMatchingEngine {
         // A parked OTO child is held by this engine without being in the core
         if !self.core.order_exists(command.client_order_id)
             && !self
+                .orders
                 .pending_oto_order_ids
+                .borrow()
                 .contains(&command.client_order_id)
         {
-            // Live orders of this account that the engine does not hold, such as market order
-            // remainders and OTO children of a parent on another instrument, cancel from the
-            // cache as in `process_cancel_all`.
+            // Live orders of this account outside the core or the venue's parked OTO set,
+            // such as market-order remainders, cancel from the cache as in `process_cancel_all`.
             let order = self
                 .order_snapshot(command.client_order_id)
                 .filter(|order| {
@@ -3728,7 +3953,10 @@ impl OrderMatchingEngine {
         }
 
         self.remove_queue_position(client_order_id);
-        self.cached_filled_qty.swap_remove(&client_order_id);
+        self.orders
+            .cached_filled_qty
+            .borrow_mut()
+            .swap_remove(&client_order_id);
     }
 
     fn resync_core_entry(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
@@ -3763,7 +3991,7 @@ impl OrderMatchingEngine {
 
     fn order_snapshot(&self, client_order_id: ClientOrderId) -> Option<OrderAny> {
         let mut order = self.cache.borrow().order(&client_order_id)?.clone();
-        let mut pending = self.pending_updates.borrow_mut();
+        let mut pending = self.orders.pending_updates.borrow_mut();
         if order.is_closed() {
             pending.swap_remove(&client_order_id);
             return Some(order);
@@ -3783,9 +4011,15 @@ impl OrderMatchingEngine {
             }
         }
 
-        if let Some(filled_qty) = self.cached_filled_qty.get(&client_order_id) {
-            write_filled_qty(&mut order, *filled_qty);
-            order.set_leaves_qty(order.quantity().saturating_sub(*filled_qty));
+        if let Some(filled_qty) = self
+            .orders
+            .cached_filled_qty
+            .borrow()
+            .get(&client_order_id)
+            .copied()
+        {
+            write_filled_qty(&mut order, filled_qty);
+            order.set_leaves_qty(order.quantity().saturating_sub(filled_qty));
         }
 
         Some(order)
@@ -3793,28 +4027,36 @@ impl OrderMatchingEngine {
 
     fn purge_applied_updates(&self) {
         let cache = self.cache.borrow();
-        self.pending_updates.borrow_mut().retain(|id, updates| {
-            let Some(order) = cache.order(id) else {
-                return false;
-            };
+        self.orders
+            .pending_updates
+            .borrow_mut()
+            .retain(|id, updates| {
+                let Some(order) = cache.order(id) else {
+                    return false;
+                };
 
-            Self::retain_unapplied_updates(&order, updates);
-            !updates.is_empty()
-        });
+                Self::retain_unapplied_updates(&order, updates);
+                !updates.is_empty()
+            });
     }
 
-    fn purge_applied_rejections(&mut self) {
+    fn purge_applied_rejections(&self) {
         let cache = self.cache.borrow();
-        self.rejected_oto_parent_ids.get_mut().retain(|id| {
-            cache
-                .order(id)
-                .is_some_and(|order| order.status() != OrderStatus::Rejected)
-        });
+        self.orders
+            .rejected_oto_parent_ids
+            .borrow_mut()
+            .retain(|id| {
+                cache
+                    .order(id)
+                    .is_some_and(|order| order.status() != OrderStatus::Rejected)
+            });
     }
 
-    fn purge_applied_cancels(&mut self) {
+    fn purge_applied_oto_terminals(&self) {
         let cache = self.cache.borrow();
-        self.canceled_oto_order_ids
+        self.orders
+            .closed_oto_order_ids
+            .borrow_mut()
             .retain(|id| cache.order(id).is_some_and(|order| !order.is_closed()));
     }
 
@@ -3974,7 +4216,9 @@ impl OrderMatchingEngine {
 
         // Check for remaining quantity to rest as limit order
         let filled_qty = self
+            .orders
             .cached_filled_qty
+            .borrow()
             .get(&client_order_id)
             .copied()
             .unwrap_or_default();
@@ -4196,7 +4440,7 @@ impl OrderMatchingEngine {
         self.purge_applied_updates();
         self.purge_applied_fills();
         self.purge_applied_rejections();
-        self.purge_applied_cancels();
+        self.purge_applied_oto_terminals();
 
         // Only reset bid/ask from book when not processing trade execution
         // (preserves transient trade price override for L2/L3 books). The
@@ -4292,7 +4536,10 @@ impl OrderMatchingEngine {
                 PostMatchOrderAction::RemoveClosed => {
                     self.delete_core_order(client_order_id);
                     self.remove_queue_position(client_order_id);
-                    self.cached_filled_qty.swap_remove(&client_order_id);
+                    self.orders
+                        .cached_filled_qty
+                        .borrow_mut()
+                        .swap_remove(&client_order_id);
                     continue;
                 }
                 PostMatchOrderAction::Expire(order) => {
@@ -4364,7 +4611,7 @@ impl OrderMatchingEngine {
         self.purge_applied_updates();
         self.purge_applied_fills();
         self.purge_applied_rejections();
-        self.purge_applied_cancels();
+        self.purge_applied_oto_terminals();
     }
 
     fn fill_resting_limit_order(&mut self, client_order_id: ClientOrderId) {
@@ -4789,8 +5036,7 @@ impl OrderMatchingEngine {
             }
         };
 
-        if order.is_closed() {
-            self.purge_stale_core_entry(client_order_id);
+        if !self.prepare_order_fill(&mut order) {
             return;
         }
 
@@ -4804,8 +5050,13 @@ impl OrderMatchingEngine {
             return;
         }
 
-        if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id())
-            && filled_qty >= &order.quantity()
+        if let Some(filled_qty) = self
+            .orders
+            .cached_filled_qty
+            .borrow()
+            .get(&order.client_order_id())
+            .copied()
+            && filled_qty >= order.quantity()
         {
             log::debug!(
                 "Ignoring fill as already filled pending application of events: {:?}, {:?}, {:?}, {:?}",
@@ -4951,9 +5202,7 @@ impl OrderMatchingEngine {
     }
 
     fn fill_limit_order_with_snapshot(&mut self, mut order: OrderAny) {
-        let client_order_id = order.client_order_id();
-        if order.is_closed() {
-            self.purge_stale_core_entry(client_order_id);
+        if !self.prepare_order_fill(&mut order) {
             return;
         }
 
@@ -4969,8 +5218,14 @@ impl OrderMatchingEngine {
 
         match order.price() {
             Some(order_price) => {
-                let cached_filled_qty = self.cached_filled_qty.get(&order.client_order_id());
-                if let Some(&qty) = cached_filled_qty
+                let cached_filled_qty = self
+                    .orders
+                    .cached_filled_qty
+                    .borrow()
+                    .get(&order.client_order_id())
+                    .copied();
+
+                if let Some(qty) = cached_filled_qty
                     && qty >= order.quantity()
                 {
                     log::debug!(
@@ -5134,6 +5389,15 @@ impl OrderMatchingEngine {
                 .map_or(true, |quantity| quantity.is_zero())
     }
 
+    fn prepare_order_fill(&mut self, order: &mut OrderAny) -> bool {
+        if order.is_closed() {
+            self.purge_stale_core_entry(order.client_order_id());
+            return false;
+        }
+
+        self.resize_oto_order(order)
+    }
+
     fn fill_position_for_order(
         &mut self,
         order: &OrderAny,
@@ -5236,6 +5500,11 @@ impl OrderMatchingEngine {
             .or_else(|| {
                 order
                     .parent_order_id()
+                    .filter(|parent_id| {
+                        cache
+                            .order(parent_id)
+                            .is_some_and(|parent| parent.instrument_id() == order.instrument_id())
+                    })
                     .and_then(|parent_id| cache.position_id(&parent_id).copied())
             })
     }
@@ -5718,15 +5987,20 @@ impl OrderMatchingEngine {
     ) -> anyhow::Result<()> {
         self.check_size_precision(last_qty.precision, "fill quantity")?;
 
-        let (last_qty, new_filled_qty) =
-            if let Some(filled_qty) = self.cached_filled_qty.get(&order.client_order_id()) {
-                let leaves_qty = order.quantity().saturating_sub(*filled_qty);
-                let last_qty = min(last_qty, leaves_qty);
-                (last_qty, *filled_qty + last_qty)
-            } else {
-                let last_qty = min(last_qty, order.quantity());
-                (last_qty, last_qty)
-            };
+        let (last_qty, new_filled_qty) = if let Some(filled_qty) = self
+            .orders
+            .cached_filled_qty
+            .borrow()
+            .get(&order.client_order_id())
+            .copied()
+        {
+            let leaves_qty = order.quantity().saturating_sub(filled_qty);
+            let last_qty = min(last_qty, leaves_qty);
+            (last_qty, filled_qty + last_qty)
+        } else {
+            let last_qty = min(last_qty, order.quantity());
+            (last_qty, last_qty)
+        };
 
         if last_qty.is_zero() {
             return Ok(());
@@ -5761,7 +6035,9 @@ impl OrderMatchingEngine {
             .map(|position| self.reduce_only_order_ids(position.id))
             .unwrap_or_default();
 
-        self.cached_filled_qty
+        self.orders
+            .cached_filled_qty
+            .borrow_mut()
             .insert(order.client_order_id(), new_filled_qty);
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
@@ -5779,6 +6055,7 @@ impl OrderMatchingEngine {
         let post_fill_filled_qty = self.engine_filled_qty(order);
 
         let post_fill_quantity = self
+            .orders
             .pending_updates
             .borrow()
             .get(&order.client_order_id())
@@ -5807,141 +6084,7 @@ impl OrderMatchingEngine {
             }
         }
 
-        if self.config.support_contingent_orders
-            && let Some(contingency_type) = order.contingency_type()
-        {
-            match contingency_type {
-                ContingencyType::Oto => {
-                    if let Some(linked_orders_ids) = order.linked_order_ids() {
-                        for client_order_id in linked_orders_ids {
-                            let mut child_order = match self.order_snapshot(*client_order_id) {
-                                Some(child_order) => child_order,
-                                None => anyhow::bail!("Order {client_order_id} not found in cache"),
-                            };
-
-                            if child_order.is_closed()
-                                || child_order.leaves_qty().is_zero()
-                                || child_order.is_active_local()
-                                || self.canceled_oto_order_ids.contains(client_order_id)
-                            {
-                                continue;
-                            }
-
-                            if self.inflight_orders.contains(*client_order_id) {
-                                continue;
-                            }
-
-                            // Check if we need to index position id
-                            if let (None, Some(position_id)) = (
-                                child_order.position_id(),
-                                order.position_id().or(venue_position_id),
-                            ) {
-                                self.cache
-                                    .borrow_mut()
-                                    .add_position_id(
-                                        &position_id,
-                                        &self.venue,
-                                        client_order_id,
-                                        &child_order.strategy_id(),
-                                    )
-                                    .unwrap();
-                                log::debug!(
-                                    "Added position id {position_id} to cache for order {client_order_id}"
-                                );
-                            }
-
-                            if (!child_order.is_open())
-                                || (matches!(child_order.status(), OrderStatus::PendingUpdate)
-                                    && child_order
-                                        .previous_status()
-                                        .is_some_and(|s| matches!(s, OrderStatus::Submitted)))
-                            {
-                                let account_id = order
-                                    .account_id()
-                                    .or_else(|| self.account_ids.get(&order.trader_id()).copied())
-                                    .ok_or_else(|| {
-                                        anyhow::anyhow!(
-                                            "Account ID not found for trader {}",
-                                            order.trader_id()
-                                        )
-                                    })?;
-
-                                self.process_order(&mut child_order, account_id);
-                            }
-                        }
-                    } else {
-                        log::error!(
-                            "OTO order {} does not have linked orders",
-                            order.client_order_id()
-                        );
-                    }
-                }
-                ContingencyType::Oco => {
-                    if let Some(linked_orders_ids) = order.linked_order_ids() {
-                        for client_order_id in linked_orders_ids {
-                            let child_order = match self.order_snapshot(*client_order_id) {
-                                Some(child_order) => child_order,
-                                None => anyhow::bail!("Order {client_order_id} not found in cache"),
-                            };
-
-                            if child_order.is_closed() || child_order.is_active_local() {
-                                continue;
-                            }
-
-                            self.cancel_order(&child_order, Some(false));
-                        }
-                    } else {
-                        log::error!(
-                            "OCO order {} does not have linked orders",
-                            order.client_order_id()
-                        );
-                    }
-                }
-                ContingencyType::Ouo => {
-                    if let Some(linked_orders_ids) = order.linked_order_ids() {
-                        let mut excluded = linked_orders_ids.to_vec();
-                        excluded.push(order.client_order_id());
-
-                        for client_order_id in linked_orders_ids {
-                            let child_order = match self.order_snapshot(*client_order_id) {
-                                Some(child_order) => child_order,
-                                None => anyhow::bail!("Order {client_order_id} not found in cache"),
-                            };
-
-                            if child_order.is_active_local() {
-                                continue;
-                            }
-
-                            let child_filled_qty = self.engine_filled_qty(&child_order);
-                            if post_fill_leaves_qty.is_zero() && !child_order.is_closed() {
-                                self.cancel_order_excluding(&child_order, None, &excluded);
-                            } else if child_order.is_open()
-                                && child_filled_qty >= post_fill_leaves_qty
-                            {
-                                self.cancel_order(&child_order, Some(false));
-                            } else if post_fill_leaves_qty.non_zero()
-                                && post_fill_leaves_qty != child_order.leaves_qty()
-                            {
-                                let price = child_order.price();
-                                let trigger_price = child_order.trigger_price();
-                                self.update_order(
-                                    &child_order,
-                                    Some(post_fill_leaves_qty),
-                                    price,
-                                    trigger_price,
-                                    Some(false),
-                                );
-                            }
-                        }
-                    } else {
-                        log::error!(
-                            "OUO order {} does not have linked orders",
-                            order.client_order_id()
-                        );
-                    }
-                }
-            }
-        }
+        self.process_fill_contingencies(order, venue_position_id, post_fill_leaves_qty)?;
 
         if let Some(position) = position {
             reduce_only_order_ids.extend(self.reduce_only_order_ids(position.id));
@@ -5956,6 +6099,226 @@ impl OrderMatchingEngine {
         self.sync_reduce_only_orders(order, position, &reduce_only_order_ids)?;
 
         Ok(())
+    }
+
+    fn process_fill_contingencies(
+        &mut self,
+        order: &OrderAny,
+        position_id: Option<PositionId>,
+        leaves_qty: Quantity,
+    ) -> anyhow::Result<()> {
+        if !self.config.support_contingent_orders {
+            return Ok(());
+        }
+
+        self.queue_oto_resize(order);
+
+        match order.contingency_type() {
+            Some(ContingencyType::Oto) => {
+                self.release_oto_children_after_fill(order, position_id, leaves_qty.is_zero())?;
+            }
+            Some(ContingencyType::Oco) => self.cancel_oco_after_fill(order)?,
+            Some(ContingencyType::Ouo) => self.update_ouo_after_fill(order, leaves_qty)?,
+            None => {}
+        }
+
+        Ok(())
+    }
+
+    fn queue_oto_resize(&self, order: &OrderAny) {
+        let Some(parent) = self.full_trigger_oto_parent(order) else {
+            return;
+        };
+
+        let mut commands = self.orders.commands.borrow_mut();
+        let index = commands
+            .iter()
+            .position(|command| !matches!(command, OtoCommand::Cancel { .. }))
+            .unwrap_or(commands.len());
+        commands.insert(
+            index,
+            OtoCommand::Resize {
+                instrument_id: parent.instrument_id(),
+                parent_order_id: parent.client_order_id(),
+                quantity: parent.quantity(),
+            },
+        );
+    }
+
+    fn release_oto_children_after_fill(
+        &mut self,
+        parent: &OrderAny,
+        position_id: Option<PositionId>,
+        fully_filled: bool,
+    ) -> anyhow::Result<()> {
+        let Some(ids) = parent.linked_order_ids() else {
+            log::error!(
+                "OTO order {} does not have linked orders",
+                parent.client_order_id()
+            );
+            return Ok(());
+        };
+
+        for id in ids {
+            let mut child = self
+                .order_snapshot(*id)
+                .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
+            self.release_oto_child_after_fill(parent, &mut child, position_id, fully_filled)?;
+        }
+
+        Ok(())
+    }
+
+    fn release_oto_child_after_fill(
+        &mut self,
+        parent: &OrderAny,
+        child: &mut OrderAny,
+        position_id: Option<PositionId>,
+        fully_filled: bool,
+    ) -> anyhow::Result<()> {
+        self.apply_deferred_submission(child, false)?;
+        let id = child.client_order_id();
+        if child.is_closed()
+            || child.leaves_qty().is_zero()
+            || child.is_active_local()
+            || self.orders.closed_oto_order_ids.borrow().contains(&id)
+            || self.inflight_orders.contains(id)
+        {
+            return Ok(());
+        }
+
+        if child.instrument_id() == parent.instrument_id()
+            && let (None, Some(position_id)) =
+                (child.position_id(), parent.position_id().or(position_id))
+        {
+            self.cache
+                .borrow_mut()
+                .add_position_id(&position_id, &self.venue, &id, &child.strategy_id())
+                .unwrap();
+            log::debug!("Added position id {position_id} to cache for order {id}");
+        }
+
+        if child.is_open()
+            && !(matches!(child.status(), OrderStatus::PendingUpdate)
+                && child
+                    .previous_status()
+                    .is_some_and(|s| matches!(s, OrderStatus::Submitted)))
+        {
+            return Ok(());
+        }
+
+        let account_id = parent
+            .account_id()
+            .or_else(|| self.account_ids.get(&parent.trader_id()).copied())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Account ID not found for trader {}", parent.trader_id())
+            })?;
+
+        if !self.config.oto_full_trigger || fully_filled {
+            self.release_oto_child(child, account_id, parent, None);
+        }
+
+        Ok(())
+    }
+
+    fn oto_submission_cancel(&self, order: &OrderAny) -> Option<OtoCommand> {
+        let id = order.client_order_id();
+
+        if let Some(command) = self.orders.commands.borrow().iter().find(|command| {
+            matches!(command, OtoCommand::Cancel { client_order_id, .. } if *client_order_id == id)
+        }) {
+            return Some(command.clone());
+        }
+
+        // A prior list leg can fill while this child still awaits its deferred submission
+        let sibling_filled = order.contingency_type() == Some(ContingencyType::Oco)
+            && order.linked_order_ids().is_some_and(|ids| {
+                ids.iter().any(|id| {
+                    self.order_snapshot(*id)
+                        .is_some_and(|sibling| !self.engine_filled_qty(&sibling).is_zero())
+                })
+            });
+
+        sibling_filled.then(|| OtoCommand::Cancel {
+            instrument_id: order.instrument_id(),
+            client_order_id: id,
+            cancel_contingencies: false,
+            excluded: Vec::new(),
+        })
+    }
+
+    fn cancel_oco_after_fill(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        let Some(ids) = order.linked_order_ids() else {
+            log::error!(
+                "OCO order {} does not have linked orders",
+                order.client_order_id()
+            );
+            return Ok(());
+        };
+
+        for id in ids {
+            let child = self
+                .order_snapshot(*id)
+                .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
+
+            if child.is_closed() || child.is_active_local() {
+                continue;
+            }
+
+            self.cancel_order(&child, Some(false));
+        }
+
+        Ok(())
+    }
+
+    fn update_ouo_after_fill(
+        &mut self,
+        order: &OrderAny,
+        leaves_qty: Quantity,
+    ) -> anyhow::Result<()> {
+        let Some(ids) = order.linked_order_ids() else {
+            log::error!(
+                "OUO order {} does not have linked orders",
+                order.client_order_id()
+            );
+            return Ok(());
+        };
+
+        let mut excluded = ids.to_vec();
+        excluded.push(order.client_order_id());
+
+        for id in ids {
+            let child = self
+                .order_snapshot(*id)
+                .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
+            self.update_ouo_child_after_fill(&child, leaves_qty, &excluded);
+        }
+
+        Ok(())
+    }
+
+    fn update_ouo_child_after_fill(
+        &mut self,
+        child: &OrderAny,
+        leaves_qty: Quantity,
+        excluded: &[ClientOrderId],
+    ) {
+        if child.is_active_local()
+            || self.contingent_order_is_closed(child)
+            || self.inflight_orders.contains(child.client_order_id())
+        {
+            return;
+        }
+
+        let leaves_qty = self.quantity_for_order(child, leaves_qty);
+        let child_filled_qty = self.engine_filled_qty(child);
+        if leaves_qty.is_zero() && !child.is_closed() {
+            self.cancel_order_excluding(child, None, excluded);
+        } else if child_filled_qty >= leaves_qty {
+            self.cancel_order(child, Some(false));
+        } else if leaves_qty.non_zero() && leaves_qty != child.leaves_qty() {
+            self.update_contingent_quantity(child, leaves_qty);
+        }
     }
 
     fn reduce_only_linked_order_ids(
@@ -6226,14 +6589,23 @@ impl OrderMatchingEngine {
             .is_none_or(|order| order.is_closed())
     }
 
-    fn purge_cached_filled_qty_if_closed(&mut self, client_order_id: ClientOrderId) {
+    fn purge_cached_filled_qty_if_closed(&self, client_order_id: ClientOrderId) {
         if self.cached_order_is_closed(client_order_id) {
-            self.cached_filled_qty.swap_remove(&client_order_id);
+            self.orders
+                .cached_filled_qty
+                .borrow_mut()
+                .swap_remove(&client_order_id);
         }
     }
 
-    fn purge_closed_cached_filled_qty(&mut self) {
-        let client_order_ids: Vec<ClientOrderId> = self.cached_filled_qty.keys().copied().collect();
+    fn purge_closed_cached_filled_qty(&self) {
+        let client_order_ids: Vec<ClientOrderId> = self
+            .orders
+            .cached_filled_qty
+            .borrow()
+            .keys()
+            .copied()
+            .collect();
 
         for client_order_id in client_order_ids {
             self.purge_cached_filled_qty_if_closed(client_order_id);
@@ -6611,6 +6983,21 @@ impl OrderMatchingEngine {
 
         let cancel_contingencies = cancel_contingencies.unwrap_or(true);
 
+        if order.instrument_id() != self.instrument.id() && order.parent_order_id().is_some() {
+            let mut commands = self.orders.commands.borrow_mut();
+            if !commands.iter().any(|command| matches!(command,
+                OtoCommand::Cancel { client_order_id, .. } if *client_order_id == order.client_order_id()))
+            {
+                // A sibling fill can cancel a queued release before that release is delivered
+                commands.push_front(OtoCommand::Cancel {
+                    instrument_id: order.instrument_id(), client_order_id: order.client_order_id(),
+                    cancel_contingencies, excluded: excluded.to_vec(),
+                });
+            }
+
+            return;
+        }
+
         if order.is_active_local()
             && !matches!(
                 (order.status(), order.order_type()),
@@ -6632,21 +7019,14 @@ impl OrderMatchingEngine {
             self.delete_core_order(order.client_order_id());
         }
 
-        self.pending_oto_order_ids
+        self.orders
+            .pending_oto_order_ids
+            .borrow_mut()
             .swap_remove(&order.client_order_id());
         self.remove_queue_position(order.client_order_id());
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
         self.generate_order_canceled(order, venue_order_id);
-
-        // A canceled child still looks held until the cache applies the cancel
-        if self.config.support_contingent_orders
-            && order.parent_order_id().is_some()
-            && !self.cached_order_is_closed(order.client_order_id())
-        {
-            self.canceled_oto_order_ids.insert(order.client_order_id());
-        }
-
         if self.config.support_contingent_orders
             && order.contingency_type().is_some()
             && cancel_contingencies
@@ -6941,7 +7321,10 @@ impl OrderMatchingEngine {
         if self.core.is_limit_matched(order.order_side(), price) {
             if order.is_post_only() {
                 self.delete_core_order(client_order_id);
-                self.cached_filled_qty.swap_remove(&client_order_id);
+                self.orders
+                    .cached_filled_qty
+                    .borrow_mut()
+                    .swap_remove(&client_order_id);
                 let event = self.create_order_rejected(
                     &order,
                     format!(
@@ -7038,23 +7421,37 @@ impl OrderMatchingEngine {
                 } else {
                     let child_leaves_qty = child_order.quantity().saturating_sub(child_filled_qty);
                     if child_leaves_qty != parent_leaves_qty {
-                        let price = child_order.price();
-                        let trigger_price = child_order.trigger_price();
-                        self.update_order(
-                            &child_order,
-                            Some(parent_leaves_qty),
-                            price,
-                            trigger_price,
-                            Some(false),
-                        );
+                        self.update_contingent_quantity(&child_order, parent_leaves_qty);
                     }
                 }
             }
         }
     }
 
-    // The core holds the orders this engine accepted and `pending_oto_order_ids` the OTO children
-    // it parked, so a locally active cached status for either means their submit, and for an
+    fn update_contingent_quantity(&mut self, order: &OrderAny, quantity: Quantity) {
+        if self.contingent_order_is_closed(order)
+            || self.inflight_orders.contains(order.client_order_id())
+        {
+            return;
+        }
+
+        let quantity = self.quantity_for_order(order, quantity);
+        if quantity <= self.engine_filled_qty(order) {
+            self.cancel_order(order, Some(false));
+            return;
+        }
+
+        let price = order.price();
+        let trigger_price = order.trigger_price();
+        if order.instrument_id() == self.instrument.id() {
+            self.update_order(order, Some(quantity), price, trigger_price, Some(false));
+        } else {
+            self.generate_order_updated(order, quantity, price, trigger_price, None);
+        }
+    }
+
+    // The core holds orders this engine accepted; `pending_oto_order_ids` holds the venue's
+    // parked OTO children. A locally active cached status means their submit, and for an
     // accepted order its acceptance, went through a deferring event handler and is not applied
     // yet. Applies them to the snapshot, as `accept_order` applies its acceptance, so a
     // cancellation dispatched now follows them. `accepted_elsewhere` says the same of an order
@@ -7068,7 +7465,12 @@ impl OrderMatchingEngine {
         let accepted = self.core.order_exists(client_order_id) || accepted_elsewhere;
 
         if !order.is_active_local()
-            || !(accepted || self.pending_oto_order_ids.contains(&client_order_id))
+            || !(accepted
+                || self
+                    .orders
+                    .pending_oto_order_ids
+                    .borrow()
+                    .contains(&client_order_id))
         {
             return Ok(());
         }
@@ -7092,24 +7494,19 @@ impl OrderMatchingEngine {
         Ok(())
     }
 
-    /// Returns whether `order` works in another instrument's engine, as far as the cache shows.
-    ///
-    /// The venue routes an order to its instrument's engine, which claims its venue order ID in the
-    /// cache as it accepts it, before any event is dispatched. A cancel or fill there shows only
-    /// once its event is applied. This engine itself matches the children of another instrument
-    /// that it releases.
+    // A queued release has left this engine even before its destination claims a venue order ID
     fn works_in_another_engine(&self, order: &OrderAny) -> bool {
-        let client_order_id = order.client_order_id();
-
         order.instrument_id() != self.instrument.id()
-            && !self
-                .other_instrument_oto_order_ids
-                .contains(&client_order_id)
-            && self
-                .cache
+            && (self
+                .orders
+                .released_oto_order_ids
                 .borrow()
-                .venue_order_id(&client_order_id)
-                .is_some()
+                .contains(&order.client_order_id())
+                || self
+                    .cache
+                    .borrow()
+                    .venue_order_id(&order.client_order_id())
+                    .is_some())
     }
 
     /// Sizes the children of an OTO `parent` after it is modified to `parent_quantity`, or closes
@@ -7126,148 +7523,245 @@ impl OrderMatchingEngine {
     ///
     /// Quantities compare in the parent's units. A child still holding a quote quantity under a
     /// parent in base is compared as a base quantity, which it holds once it is resized or the
-    /// parent closes. A child working in another instrument's engine covers what that
-    /// instrument's size precision can hold.
+    /// parent closes. Each child covers what its instrument's size precision can hold.
     fn update_oto_children(
         &mut self,
         parent: &OrderAny,
         parent_quantity: Option<Quantity>,
         excluded: &[ClientOrderId],
     ) {
-        let Some(linked_order_ids) = parent.linked_order_ids() else {
+        let Some(ids) = parent.linked_order_ids() else {
             return;
         };
 
-        let parent_snapshot = self
+        let snapshot = self
             .order_snapshot(parent.client_order_id())
             .unwrap_or_else(|| parent.clone());
-        let parent_filled_qty = self.engine_filled_qty(&parent_snapshot);
-        let parent_quote = parent_snapshot.is_quote_quantity() && !self.instrument.is_inverse();
-        let reduced_to_filled = parent_quantity.is_some_and(|q| q <= parent_filled_qty);
-        let parent_quantity = parent_quantity.unwrap_or(parent_filled_qty);
-        let parent_closed = parent_quantity <= parent_filled_qty;
-        // `parent` precedes the modify, and reduce-only children track fills between modifies
-        let parent_grew = parent_quantity > parent.quantity();
-        let mut released_children = false;
+        let filled_qty = self.engine_filled_qty(&snapshot);
+        let quantity = parent_quantity.unwrap_or(filled_qty);
+        let sizing = OtoSizing {
+            quantity,
+            filled_qty,
+            quote: snapshot.is_quote_quantity() && !self.instrument.is_inverse(),
+            reduced_to_filled: parent_quantity.is_some_and(|q| q <= filled_qty),
+            // The parent input precedes the modify
+            grew: quantity > parent.quantity(),
+        };
 
-        for client_order_id in linked_order_ids {
-            if excluded.contains(client_order_id) {
+        let mut released = false;
+
+        for id in ids {
+            if excluded.contains(id) {
                 // The venue has not received this order's submit yet
                 continue;
             }
 
-            let mut child_order = match self.order_snapshot(*client_order_id) {
-                Some(order) => order,
-                None => panic!("Cannot find contingent order for {client_order_id}"),
-            };
-
-            let elsewhere = self.works_in_another_engine(&child_order);
-
-            if let Err(e) = self.apply_deferred_submission(&mut child_order, elsewhere) {
-                log::error!("Cannot update contingent order {client_order_id}: {e}");
-                continue;
-            }
-
-            if child_order.is_active_local()
-                || child_order.is_closed()
-                || self.canceled_oto_order_ids.contains(client_order_id)
-                || self.inflight_orders.contains(*client_order_id)
-            {
-                continue;
-            }
-
-            // Recounted per child, as releasing a marketable child fills it at once
-            let children_filled = linked_order_ids
-                .iter()
-                .filter_map(|id| self.order_snapshot(*id))
-                .fold(Quantity::zero(parent_quantity.precision), |acc, child| {
-                    acc + self.engine_filled_qty(&child)
-                });
-
-            let remaining = parent_quantity.saturating_sub(children_filled);
-
-            let remaining = if elsewhere {
-                // The parent's quantity can carry more decimals than the size precision of the
-                // instrument whose engine matches this child
-                let cache = self.cache.borrow();
-                cache
-                    .instrument(&child_order.instrument_id())
-                    .map_or(remaining, |instrument| {
-                        instrument
-                            .try_make_qty_from_decimal(remaining.as_decimal(), Some(true))
-                            .unwrap_or_else(|_| Quantity::zero(instrument.size_precision()))
-                    })
-            } else {
-                remaining
-            };
-
-            // A released child is in the book even before its deferred acceptance applies, or
-            // works in another instrument's engine
-            let released = self.core.order_exists(*client_order_id) || elsewhere;
-
-            // Without the full trigger the parent's first fill released every child it held, so
-            // one out of the book is already closing, though the cache may not show it yet
-            if !released && !self.config.oto_full_trigger && !parent_filled_qty.is_zero() {
-                continue;
-            }
-
-            let release = !released && reduced_to_filled && self.config.oto_full_trigger;
-            if parent_closed && ((!released && !release) || remaining.is_zero()) {
-                self.cancel_order(&child_order, Some(false));
-                continue;
-            }
-
-            if remaining.is_zero() {
-                // The parent has nothing left for this child to cover
-                continue;
-            }
-
-            let quote = child_order.is_quote_quantity();
-            if self.convert_to_parent_units(&mut child_order, parent_quote, elsewhere) {
-                let converted = quote != child_order.is_quote_quantity();
-                let mut quantity = self.engine_filled_qty(&child_order) + remaining;
-                if parent_closed || !parent_grew {
-                    quantity = quantity.min(child_order.quantity());
-                }
-
-                // A closing parent leaves a converted child in base, so that the child's own
-                // conversion cannot take it past the parent's fills
-                if quantity != child_order.quantity() || (parent_closed && converted) {
-                    // Maintenance only: a modify would re-validate prices and match the child
-                    self.generate_order_updated(
-                        &child_order,
-                        quantity,
-                        child_order.price(),
-                        child_order.trigger_price(),
-                        None,
-                    );
-                }
-            }
-
-            if release {
-                let account_id = parent
-                    .account_id()
-                    .or_else(|| self.account_ids.get(&parent.trader_id()).copied());
-
-                match (self.order_snapshot(*client_order_id), account_id) {
-                    (Some(mut child_order), Some(account_id)) => {
-                        self.process_order(&mut child_order, account_id);
-                        released_children = true;
-                    }
-                    _ => log::error!("Cannot release OTO order {client_order_id}"),
-                }
-            }
+            released |= self.update_oto_child(parent, *id, ids, &sizing);
         }
 
-        // A child released above can fill at once, leaving less for those sized before it, so
-        // size the children resting in the book again
-        if released_children {
-            let not_resting: Vec<ClientOrderId> = linked_order_ids
+        if released {
+            // Recount after an immediate fill before resizing the remaining working children
+            let not_resting: Vec<_> = ids
                 .iter()
-                .filter(|id| excluded.contains(*id) || !self.core.order_exists(**id))
+                .filter(|id| {
+                    excluded.contains(*id)
+                        || (!self.core.order_exists(**id)
+                            && !self
+                                .order_snapshot(**id)
+                                .is_some_and(|order| self.works_in_another_engine(&order)))
+                })
                 .copied()
                 .collect();
-            self.update_oto_children(parent, Some(parent_quantity), &not_resting);
+
+            self.update_oto_children(parent, Some(quantity), &not_resting);
+        }
+    }
+
+    fn update_oto_child(
+        &mut self,
+        parent: &OrderAny,
+        id: ClientOrderId,
+        ids: &[ClientOrderId],
+        sizing: &OtoSizing,
+    ) -> bool {
+        let mut child = self
+            .order_snapshot(id)
+            .unwrap_or_else(|| panic!("Cannot find contingent order for {id}"));
+        let elsewhere = self.works_in_another_engine(&child);
+        let accepted_elsewhere = elsewhere && self.cache.borrow().venue_order_id(&id).is_some();
+        if let Err(e) = self.apply_deferred_submission(&mut child, accepted_elsewhere) {
+            log::error!("Cannot update contingent order {id}: {e}");
+            return false;
+        }
+
+        if child.is_active_local()
+            || self.contingent_order_is_closed(&child)
+            || self.inflight_orders.contains(id)
+        {
+            return false;
+        }
+
+        let remaining = self.oto_child_remaining(&child, ids, sizing.quantity);
+        let released = self.core.order_exists(id) || elsewhere;
+        // Without the full trigger, an unbooked child after the first fill is already closing
+        if !released && !self.config.oto_full_trigger && !sizing.filled_qty.is_zero() {
+            return false;
+        }
+
+        let release = !released && sizing.reduced_to_filled && self.config.oto_full_trigger;
+        let parent_closed = sizing.quantity <= sizing.filled_qty;
+        if parent_closed && ((!released && !release) || remaining.is_zero()) {
+            self.cancel_order(&child, Some(false));
+            return false;
+        }
+
+        if remaining.is_zero() {
+            return false;
+        }
+
+        self.resize_oto_child(&mut child, sizing, remaining);
+
+        if !release {
+            return false;
+        }
+
+        self.release_oto_child_after_resize(parent, id, sizing.quantity)
+    }
+
+    fn contingent_order_is_closed(&self, order: &OrderAny) -> bool {
+        order.is_closed()
+            || order.leaves_qty().is_zero()
+            || self
+                .orders
+                .closed_oto_order_ids
+                .borrow()
+                .contains(&order.client_order_id())
+    }
+
+    fn oto_child_remaining(
+        &self,
+        child: &OrderAny,
+        ids: &[ClientOrderId],
+        quantity: Quantity,
+    ) -> Quantity {
+        // Recounted per child, as a release can fill it immediately
+        let filled = ids
+            .iter()
+            .filter_map(|id| self.order_snapshot(*id))
+            .fold(Quantity::zero(quantity.precision), |acc, order| {
+                acc + self.engine_filled_qty(&order)
+            });
+
+        self.quantity_for_order(child, quantity.saturating_sub(filled))
+    }
+
+    fn quantity_for_order(&self, order: &OrderAny, quantity: Quantity) -> Quantity {
+        if order.instrument_id() == self.instrument.id() {
+            let precision = self.instrument.size_precision();
+            // Keep sizes this engine accepts; only remove incompatible sibling precision.
+            if order_precision_valid(quantity.precision, precision) {
+                return quantity;
+            }
+
+            let rounded = quantity
+                .as_decimal()
+                .round_dp_with_strategy(u32::from(precision), RoundingStrategy::ToZero);
+            return Quantity::from_decimal_dp(rounded, precision)
+                .unwrap_or_else(|_| Quantity::zero(precision));
+        }
+
+        let cache = self.cache.borrow();
+        cache
+            .instrument(&order.instrument_id())
+            .map_or(quantity, |instrument| {
+                if quantity.precision <= FIXED_PRECISION
+                    && quantity.precision == instrument.size_precision()
+                    && Self::quantity_matches_precision(quantity, 0)
+                {
+                    return quantity;
+                }
+
+                instrument
+                    .try_make_qty_from_decimal(quantity.as_decimal(), Some(true))
+                    .unwrap_or_else(|_| Quantity::zero(instrument.size_precision()))
+            })
+    }
+
+    fn resize_oto_child(&self, child: &mut OrderAny, sizing: &OtoSizing, remaining: Quantity) {
+        let quote = child.is_quote_quantity();
+        let other_instrument = child.instrument_id() != self.instrument.id();
+        if !self.convert_to_parent_units(child, sizing.quote, other_instrument) {
+            return;
+        }
+
+        let converted = quote != child.is_quote_quantity();
+        let parent_closed = sizing.quantity <= sizing.filled_qty;
+        let mut quantity = self.engine_filled_qty(child) + remaining;
+        if parent_closed || !sizing.grew {
+            quantity = quantity.min(child.quantity());
+        }
+
+        // A closing parent keeps a converted child in base, preventing conversion past its fills
+        if quantity != child.quantity() || (parent_closed && converted) {
+            // Maintenance must not revalidate prices or match the child
+            self.generate_order_updated(
+                child,
+                quantity,
+                child.price(),
+                child.trigger_price(),
+                None,
+            );
+        }
+    }
+
+    fn release_oto_child_after_resize(
+        &mut self,
+        parent: &OrderAny,
+        id: ClientOrderId,
+        quantity: Quantity,
+    ) -> bool {
+        let account_id = parent
+            .account_id()
+            .or_else(|| self.account_ids.get(&parent.trader_id()).copied());
+
+        match (self.order_snapshot(id), account_id) {
+            (Some(mut child), Some(account_id)) => {
+                self.release_oto_child(&mut child, account_id, parent, Some(quantity));
+                true
+            }
+            _ => {
+                log::error!("Cannot release OTO order {id}");
+                false
+            }
+        }
+    }
+
+    fn release_oto_child(
+        &mut self,
+        child: &mut OrderAny,
+        account_id: AccountId,
+        parent: &OrderAny,
+        parent_quantity: Option<Quantity>,
+    ) {
+        if child.instrument_id() == self.instrument.id() {
+            self.process_order(child, account_id);
+        } else if self
+            .orders
+            .released_oto_order_ids
+            .borrow_mut()
+            .insert(child.client_order_id())
+        {
+            self.orders
+                .commands
+                .borrow_mut()
+                .push_back(OtoCommand::Release {
+                    instrument_id: child.instrument_id(),
+                    client_order_id: child.client_order_id(),
+                    account_id,
+                    parent_instrument_id: self.instrument.id(),
+                    parent_order_id: parent.client_order_id(),
+                    parent_quantity,
+                });
         }
     }
 
@@ -7284,12 +7778,12 @@ impl OrderMatchingEngine {
         &self,
         child: &mut OrderAny,
         parent_quote: bool,
-        elsewhere: bool,
+        other_instrument: bool,
     ) -> bool {
         let cache = self.cache.borrow();
         let instrument = cache
             .instrument(&child.instrument_id())
-            .filter(|_| elsewhere)
+            .filter(|_| other_instrument)
             .unwrap_or(&self.instrument);
         let child_quote = child.is_quote_quantity() && !instrument.is_inverse();
 
@@ -7309,7 +7803,7 @@ impl OrderMatchingEngine {
         let reference_price = child
             .price()
             .or(child.trigger_price())
-            .or(opposing_best.filter(|_| !elsewhere));
+            .or(opposing_best.filter(|_| !other_instrument));
 
         let base_quantity = reference_price.and_then(|price| {
             instrument
@@ -7327,7 +7821,9 @@ impl OrderMatchingEngine {
     }
 
     fn engine_filled_qty(&self, order: &OrderAny) -> Quantity {
-        self.cached_filled_qty
+        self.orders
+            .cached_filled_qty
+            .borrow()
             .get(&order.client_order_id())
             .copied()
             .unwrap_or(order.filled_qty())
@@ -7411,13 +7907,14 @@ impl OrderMatchingEngine {
 
     fn generate_order_rejected(&self, order: &OrderAny, reason: Ustr) {
         if order.contingency_type() == Some(ContingencyType::Oto) {
-            self.rejected_oto_parent_ids
+            self.orders
+                .rejected_oto_parent_ids
                 .borrow_mut()
                 .insert(order.client_order_id());
         }
 
         let event = self.create_order_rejected(order, reason);
-        self.dispatch_order_event(event);
+        self.dispatch_oto_terminal(order, event);
     }
 
     fn publish_order_initialized(&self, order: &OrderAny) {
@@ -7538,7 +8035,8 @@ impl OrderMatchingEngine {
             order.is_quote_quantity(),
         );
 
-        self.pending_updates
+        self.orders
+            .pending_updates
             .borrow_mut()
             .entry(order.client_order_id())
             .or_default()
@@ -7561,7 +8059,7 @@ impl OrderMatchingEngine {
             order.account_id(),
             None,
         ));
-        self.dispatch_order_event(event);
+        self.dispatch_oto_terminal(order, event);
     }
 
     fn create_order_triggered(&self, order: &OrderAny) -> OrderEventAny {
@@ -7594,7 +8092,25 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
+        self.dispatch_oto_terminal(order, event);
+    }
+
+    fn dispatch_oto_terminal(&self, order: &OrderAny, event: OrderEventAny) {
+        if self.config.support_contingent_orders && order.parent_order_id().is_some() {
+            self.orders
+                .closed_oto_order_ids
+                .borrow_mut()
+                .insert(order.client_order_id());
+        }
+
         self.dispatch_order_event(event);
+
+        if self.cached_order_is_closed(order.client_order_id()) {
+            self.orders
+                .closed_oto_order_ids
+                .borrow_mut()
+                .swap_remove(&order.client_order_id());
+        }
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -7699,6 +8215,14 @@ impl OrderMatchingEngine {
             },
         );
     }
+}
+
+struct OtoSizing {
+    quantity: Quantity,
+    filled_qty: Quantity,
+    quote: bool,
+    reduced_to_filled: bool,
+    grew: bool,
 }
 
 #[derive(Debug)]

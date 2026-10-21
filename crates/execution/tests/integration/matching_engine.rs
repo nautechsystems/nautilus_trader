@@ -42,7 +42,10 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine,
     matching_engine::{
-        OrderMatchingEngine, config::OrderMatchingEngineConfig, inflight::InflightOrders,
+        OrderMatchingEngine,
+        config::OrderMatchingEngineConfig,
+        inflight::InflightOrders,
+        orders::{MatchingOrders, OtoCommand},
     },
     models::{
         fee::{CappedOptionFeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel},
@@ -26144,10 +26147,12 @@ fn submit_entry_with_exit_on_another_instrument(
     CachingEngine,
     Rc<RefCell<Cache>>,
     TypedIntoMessageSavingHandler<OrderEventAny>,
+    MatchingOrders,
 ) {
     let (mut engine, cache, handler) = bracket_engine(instrument, config.clone());
     cache.borrow_mut().add_instrument(other.clone()).unwrap();
-    let other_engine = CachingEngine {
+
+    let mut other_engine = CachingEngine {
         engine: OrderMatchingEngine::new(
             other.clone(),
             2,
@@ -26162,10 +26167,14 @@ fn submit_entry_with_exit_on_another_instrument(
         ),
         cache: cache.clone(),
     };
+
+    let matching_orders = MatchingOrders::default();
+    engine.set_matching_orders(matching_orders.clone());
+    other_engine.set_matching_orders(matching_orders.clone());
     let mut entry = oto_entry(instrument, vec![exit.client_order_id()]);
     cache_order(&cache, exit);
     engine.process_order(&mut entry, account_id);
-    (engine, other_engine, cache, handler)
+    (engine, other_engine, cache, handler, matching_orders)
 }
 
 // Submits the cached exit to the engine matching its instrument, as the venue routes it. Its
@@ -26200,8 +26209,7 @@ fn count_exit_events(
         .count()
 }
 
-// The exit's own engine matches it when it is submitted after the entry's first fill, and the
-// entry's engine when that fill releases it. A stop holding a quote quantity is sized in base.
+// The exit's own engine matches it whether submission or a parent fill releases it
 #[rstest]
 #[case::submitted_after_fill_cancel(OrderType::Limit, false, None, "4.000")]
 #[case::submitted_after_fill_reduce(OrderType::Limit, false, Some("6.000"), "6.000")]
@@ -26224,7 +26232,8 @@ fn test_oto_entry_sizes_exit_working_on_another_instrument(
         exit.quantity(Quantity::from("1000.000"))
             .quote_quantity(true);
     }
-    let (mut engine, mut other_engine, cache, handler) =
+
+    let (mut engine, mut other_engine, cache, handler, matching_orders) =
         submit_entry_with_exit_on_another_instrument(
             &instrument,
             &other,
@@ -26245,24 +26254,29 @@ fn test_oto_entry_sizes_exit_working_on_another_instrument(
         "4.000",
         1,
     );
-
+    route_oto_releases(&matching_orders, &mut engine, &mut other_engine);
     if !submitted_before_fill {
         submit_exit_on_another_instrument(&mut other_engine, &cache, account_id, None);
     }
-    assert_eq!(engine.order_exists(exit_id), submitted_before_fill);
-    assert_eq!(other_engine.order_exists(exit_id), !submitted_before_fill);
 
-    run_with_dispatch(&mut engine, deferred, |engine| match reduce_to {
-        Some(quantity) => {
-            let modify = modify_bracket_entry(&instrument, Some(quantity), None);
-            engine.process_modify(&modify, account_id);
+    assert!(!engine.order_exists(exit_id));
+    assert!(other_engine.order_exists(exit_id));
+
+    run_with_dispatch(&mut engine, deferred, |engine| {
+        match reduce_to {
+            Some(quantity) => {
+                let modify = modify_bracket_entry(&instrument, Some(quantity), None);
+                engine.process_modify(&modify, account_id);
+            }
+            None => engine.process_cancel(&cancel_bracket_entry(&instrument), account_id),
         }
-        None => engine.process_cancel(&cancel_bracket_entry(&instrument), account_id),
+
+        route_oto_releases(&matching_orders, engine, &mut other_engine);
     });
 
     let summary = event_summary(&handler);
-    assert_eq!(engine.order_exists(exit_id), submitted_before_fill);
-    assert_eq!(other_engine.order_exists(exit_id), !submitted_before_fill);
+    assert!(!engine.order_exists(exit_id));
+    assert!(other_engine.order_exists(exit_id));
     let exit = cache.borrow().order(&exit_id).unwrap().clone();
     assert_eq!(
         exit.quantity(),
@@ -26284,16 +26298,16 @@ fn test_oto_entry_sizes_exit_working_on_another_instrument(
 }
 
 // Under the full trigger an exit on another instrument is held, in neither engine's book, until
-// the entry completes. The entry's engine releases it and sizes it by its own size precision,
-// which that instrument's finer one would exceed.
+// the entry completes. Its own engine receives the release and uses its size precision.
 #[rstest]
-#[case::cancel(false, false, OrderStatus::Canceled, "10.000")]
-#[case::reduce_to_filled(false, true, OrderStatus::Accepted, "4.000")]
-#[case::reduce_to_filled_finer_sizes(true, true, OrderStatus::Accepted, "4.000")]
+#[case::cancel(None, false, OrderStatus::Canceled, "10.000")]
+#[case::reduce_to_filled(None, true, OrderStatus::Accepted, "4.000")]
+#[case::reduce_to_filled_finer_sizes(Some(5), true, OrderStatus::Accepted, "4.000")]
+#[case::reduce_to_filled_whole_sizes(Some(0), true, OrderStatus::Accepted, "4")]
 fn test_full_trigger_entry_holds_exit_on_another_instrument(
     crypto_perpetual_ethusdt: CryptoPerpetual,
     account_id: AccountId,
-    #[case] finer_sizes: bool,
+    #[case] size_precision: Option<u8>,
     #[case] reduce_to_filled: bool,
     #[case] exit_status: OrderStatus,
     #[case] exit_quantity: &str,
@@ -26301,21 +26315,30 @@ fn test_full_trigger_entry_holds_exit_on_another_instrument(
 ) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
     let mut other = other_instrument(crypto_perpetual_ethusdt);
+    if let Some(precision) = size_precision {
+        other = crypto_perpetual_with_size_precision(
+            other,
+            precision,
+            if precision == 0 { "1" } else { "0.00001" },
+        );
+    }
 
-    if finer_sizes {
-        other = crypto_perpetual_with_size_precision(other, 5, "0.00001");
+    let mut exit = exit_on_another_instrument(&other, OrderType::Limit);
+    if size_precision == Some(0) {
+        exit.quantity(Quantity::from("10"));
     }
     let config = OrderMatchingEngineConfig {
         oto_full_trigger: true,
         ..engine_config()
     };
-    let (mut engine, mut other_engine, cache, handler) =
+
+    let (mut engine, mut other_engine, cache, handler, matching_orders) =
         submit_entry_with_exit_on_another_instrument(
             &instrument,
             &other,
             account_id,
             config,
-            &exit_on_another_instrument(&other, OrderType::Limit).build(),
+            &exit.build(),
         );
     let exit_id = ClientOrderId::from(BRACKET_TP_ID);
     submit_exit_on_another_instrument(&mut other_engine, &cache, account_id, None);
@@ -26327,6 +26350,7 @@ fn test_full_trigger_entry_holds_exit_on_another_instrument(
         "4.000",
         1,
     );
+    route_oto_releases(&matching_orders, &mut engine, &mut other_engine);
     assert!(!engine.order_exists(exit_id));
     assert!(!other_engine.order_exists(exit_id));
 
@@ -26337,13 +26361,38 @@ fn test_full_trigger_entry_holds_exit_on_another_instrument(
         } else {
             engine.process_cancel(&cancel_bracket_entry(&instrument), account_id);
         }
+
+        route_oto_releases(&matching_orders, engine, &mut other_engine);
     });
 
     let summary = event_summary(&handler);
-    assert_eq!(engine.order_exists(exit_id), reduce_to_filled);
-    assert!(!other_engine.order_exists(exit_id));
+    assert!(!engine.order_exists(exit_id));
+    assert_eq!(other_engine.order_exists(exit_id), reduce_to_filled);
     let exit = cache.borrow().order(&exit_id).unwrap().clone();
     assert_eq!(exit.status(), exit_status, "{summary:?}");
+
+    if reduce_to_filled {
+        assert_eq!(exit.quantity().precision, other.size_precision());
+    }
+
+    if !reduce_to_filled {
+        let cancels: Vec<_> = get_order_event_handler_messages(&handler)
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Canceled(cancel) if cancel.client_order_id == exit_id => {
+                    Some(cancel)
+                }
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(cancels.len(), 1);
+        assert_eq!(
+            cancels[0].venue_order_id,
+            Some(VenueOrderId::from("BINANCE-2-1"))
+        );
+    }
+
     assert_eq!(
         exit.quantity(),
         Quantity::from(exit_quantity),
@@ -26383,7 +26432,7 @@ fn test_oto_entry_sizes_exit_to_the_size_precision_of_another_instrument(
     let mut exit = exit_on_another_instrument(&other, exit_type);
     exit.quantity(Quantity::from(stop_notional.unwrap_or("10")))
         .quote_quantity(stop_notional.is_some());
-    let (mut engine, mut other_engine, cache, handler) =
+    let (mut engine, mut other_engine, cache, handler, matching_orders) =
         submit_entry_with_exit_on_another_instrument(
             &instrument,
             &other,
@@ -26400,11 +26449,13 @@ fn test_oto_entry_sizes_exit_to_the_size_precision_of_another_instrument(
         entry_filled,
         1,
     );
+    route_oto_releases(&matching_orders, &mut engine, &mut other_engine);
     submit_exit_on_another_instrument(&mut other_engine, &cache, account_id, None);
     assert!(other_engine.order_exists(exit_id));
 
     run_with_dispatch(&mut engine, deferred, |engine| {
         engine.process_cancel(&cancel_bracket_entry(&instrument), account_id);
+        route_oto_releases(&matching_orders, engine, &mut other_engine);
     });
 
     let summary = event_summary(&handler);
@@ -26420,9 +26471,7 @@ fn test_oto_entry_sizes_exit_to_the_size_precision_of_another_instrument(
     assert!(!exit.is_quote_quantity(), "{summary:?}");
 }
 
-// The entry's engine reads an exit working in another engine from the cache, which has not applied
-// that engine's deferred events. A venue order ID shows an acceptance at once, so the exit is
-// sized. A cancel does not show, so the entry still updates the exit, which ends canceled.
+// Parent sizing observes the other engine's acceptance and cancellation before cache delivery
 #[rstest]
 #[case::accepted(false, OrderStatus::Accepted)]
 #[case::canceled(true, OrderStatus::Canceled)]
@@ -26434,7 +26483,7 @@ fn test_deferred_events_on_another_instrument_then_entry_cancel(
 ) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
     let other = other_instrument(crypto_perpetual_ethusdt);
-    let (mut engine, mut other_engine, cache, handler) =
+    let (mut engine, mut other_engine, cache, handler, matching_orders) =
         submit_entry_with_exit_on_another_instrument(
             &instrument,
             &other,
@@ -26450,7 +26499,7 @@ fn test_deferred_events_on_another_instrument_then_entry_cancel(
         "4.000",
         1,
     );
-
+    route_oto_releases(&matching_orders, &mut engine, &mut other_engine);
     if exit_canceled {
         submit_exit_on_another_instrument(&mut other_engine, &cache, account_id, None);
     }
@@ -26483,10 +26532,14 @@ fn test_deferred_events_on_another_instrument_then_entry_cancel(
     let exit_id = ClientOrderId::from(BRACKET_TP_ID);
     let exit = cache.borrow().order(&exit_id).unwrap().clone();
     assert_eq!(exit.status(), exit_status, "{summary:?}");
-    assert_eq!(exit.quantity(), Quantity::from("4.000"), "{summary:?}");
+    assert_eq!(
+        exit.quantity(),
+        Quantity::from(if exit_canceled { "10.000" } else { "4.000" }),
+        "{summary:?}"
+    );
     assert_eq!(
         count_exit_events(&handler, &OrderEventType::Updated),
-        1,
+        usize::from(!exit_canceled),
         "{summary:?}"
     );
     assert_eq!(
@@ -26496,8 +26549,7 @@ fn test_deferred_events_on_another_instrument_then_entry_cancel(
     );
 }
 
-// An exit on another instrument that the entry's fill released is matched by the entry's engine,
-// so once it is out of that book it is closing, as an exit on the entry's instrument is
+// A released exit expires in its own engine before its parent cancels under deferred dispatch
 #[rstest]
 fn test_deferred_expiry_of_released_exit_on_another_instrument_then_entry_cancel(
     crypto_perpetual_ethusdt: CryptoPerpetual,
@@ -26508,7 +26560,7 @@ fn test_deferred_expiry_of_released_exit_on_another_instrument_then_entry_cancel
     let mut exit = exit_on_another_instrument(&other, OrderType::Limit);
     exit.time_in_force(TimeInForce::Gtd)
         .expire_time(UnixNanos::from(BRACKET_EXPIRE_NS));
-    let (mut engine, mut other_engine, cache, handler) =
+    let (mut engine, mut other_engine, cache, handler, matching_orders) =
         submit_entry_with_exit_on_another_instrument(
             &instrument,
             &other,
@@ -26526,18 +26578,20 @@ fn test_deferred_expiry_of_released_exit_on_another_instrument_then_entry_cancel
         "4.000",
         1,
     );
-    assert!(engine.order_exists(exit_id));
+    route_oto_releases(&matching_orders, &mut engine, &mut other_engine);
+    assert!(other_engine.order_exists(exit_id));
 
-    run_with_dispatch(&mut engine, true, |engine| {
+    run_with_dispatch(&mut other_engine, true, |other_engine| {
         close_bracket_entry(
-            engine,
-            &instrument,
+            other_engine,
+            &other,
             account_id,
             BracketEntryClose::Expire,
             "4.000",
         );
-        assert!(!engine.order_exists(exit_id));
+        assert!(!other_engine.order_exists(exit_id));
         engine.process_cancel(&cancel_bracket_entry(&instrument), account_id);
+        assert!(matching_orders.pop_command().is_none());
     });
 
     let summary = event_summary(&handler);
@@ -26547,5 +26601,25 @@ fn test_deferred_expiry_of_released_exit_on_another_instrument_then_entry_cancel
 
     for event_type in [OrderEventType::Updated, OrderEventType::Canceled] {
         assert_eq!(count_exit_events(&handler, &event_type), 0, "{summary:?}");
+    }
+}
+
+fn route_oto_releases(
+    orders: &MatchingOrders,
+    parent: &mut CachingEngine,
+    child: &mut CachingEngine,
+) {
+    while let Some(command) = orders.pop_command() {
+        assert_eq!(command.instrument_id(), child.instrument.id());
+        child.process_oto_command(&command);
+
+        if let OtoCommand::Release {
+            parent_order_id,
+            parent_quantity: Some(quantity),
+            ..
+        } = command
+        {
+            parent.process_oto_resize(parent_order_id, quantity);
+        }
     }
 }

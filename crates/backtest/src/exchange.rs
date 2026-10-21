@@ -38,7 +38,10 @@ use nautilus_core::{
 use nautilus_execution::{
     matching::RestingOrder,
     matching_engine::{
-        OrderMatchingEngine, config::OrderMatchingEngineConfig, inflight::InflightOrders,
+        OrderMatchingEngine,
+        config::OrderMatchingEngineConfig,
+        inflight::InflightOrders,
+        orders::{MatchingOrders, OtoCommand},
     },
     models::{
         fee::FeeModelHandle,
@@ -173,6 +176,7 @@ pub struct SimulatedExchange {
     message_queue: VecDeque<TradingCommand>,
     inflight_queue: BinaryHeap<InflightCommand>,
     inflight_orders: InflightOrders,
+    matching_orders: MatchingOrders,
     inflight_counter: AHashMap<UnixNanos, u32>,
     bar_execution: bool,
     bar_adaptive_high_low_ordering: bool,
@@ -263,6 +267,7 @@ impl SimulatedExchange {
             message_queue: VecDeque::new(),
             inflight_queue: BinaryHeap::new(),
             inflight_orders: InflightOrders::default(),
+            matching_orders: MatchingOrders::default(),
             inflight_counter: AHashMap::new(),
             bar_execution: config.bar_execution,
             bar_adaptive_high_low_ordering: config.bar_adaptive_high_low_ordering,
@@ -431,6 +436,8 @@ impl SimulatedExchange {
                     order.client_order_id()
                 );
             }
+
+            self.drain_oto_commands();
         }
     }
 
@@ -512,6 +519,7 @@ impl SimulatedExchange {
         }
         self.instruments.insert(instrument_id, instrument);
         matching_engine.set_inflight_orders(self.inflight_orders.clone());
+        matching_engine.set_matching_orders(self.matching_orders.clone());
         self.matching_engines.insert(instrument_id, matching_engine);
 
         log::info!("Added instrument {instrument_id} and created matching engine");
@@ -808,8 +816,12 @@ impl SimulatedExchange {
     /// Iterates all matching engines so newly submitted orders can match
     /// against the current market state.
     pub fn iterate_matching_engines(&mut self, ts_now: UnixNanos) {
-        for matching_engine in self.matching_engines.values_mut() {
-            matching_engine.iterate(ts_now, AggressorSide::NoAggressor);
+        for index in 0..self.matching_engines.len() {
+            if let Some((_, engine)) = self.matching_engines.get_index_mut(index) {
+                engine.iterate(ts_now, AggressorSide::NoAggressor);
+            }
+
+            self.drain_oto_commands();
         }
     }
 
@@ -824,6 +836,8 @@ impl SimulatedExchange {
                 matching_engine.process_instrument_expiration(ts_now);
             }
         }
+
+        self.drain_oto_commands();
     }
 
     /// Returns unprocessed instrument expirations for timer scheduling.
@@ -942,6 +956,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -974,6 +990,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1006,6 +1024,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1038,6 +1058,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1070,6 +1092,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1102,6 +1126,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1134,6 +1160,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1166,6 +1194,8 @@ impl SimulatedExchange {
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1872,6 +1902,8 @@ impl SimulatedExchange {
                 );
             }
         }
+
+        self.drain_oto_commands();
     }
 
     fn process_trading_command(&mut self, command: TradingCommand) {
@@ -1922,6 +1954,7 @@ impl SimulatedExchange {
                 }
             }
 
+            self.drain_oto_commands();
             return;
         }
 
@@ -1955,6 +1988,30 @@ impl SimulatedExchange {
             }
         } else {
             panic!("Matching engine not found for instrument {instrument_id}");
+        }
+
+        self.drain_oto_commands();
+    }
+
+    fn drain_oto_commands(&mut self) {
+        while let Some(command) = self.matching_orders.pop_command() {
+            let instrument_id = command.instrument_id();
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                engine.process_oto_command(&command);
+            } else {
+                log::error!("Cannot process OTO action: no matching engine for {instrument_id}");
+            }
+
+            if let OtoCommand::Release {
+                parent_quantity: Some(quantity),
+                parent_order_id,
+                parent_instrument_id,
+                ..
+            } = command
+                && let Some(engine) = self.matching_engines.get_mut(&parent_instrument_id)
+            {
+                engine.process_oto_resize(parent_order_id, quantity);
+            }
         }
     }
 

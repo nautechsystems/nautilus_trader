@@ -9015,3 +9015,741 @@ fn cache_market_ticks(
         }
     }
 }
+
+#[rstest]
+#[case::first_fill(false)]
+#[case::full_trigger(true)]
+fn test_cross_instrument_oto_release_uses_child_market(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] full_trigger: bool,
+    #[values(false, true)] deferred: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let InstrumentAny::CryptoPerpetual(parent) = &instrument else {
+        panic!("Expected perpetual");
+    };
+
+    let other = InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+        id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        ..parent.clone()
+    });
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.oto_full_trigger = full_trigger;
+            config.oms_type = OmsType::Hedging;
+        });
+
+    for asset in [&instrument, &other] {
+        context
+            .cache
+            .borrow_mut()
+            .add_instrument(asset.clone())
+            .unwrap();
+    }
+
+    let mut execution =
+        ExecutionEngine::new(context.test_clock.clone(), context.cache.clone(), None);
+    let events = capture_order_events(context.cache.clone(), deferred);
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    if deferred {
+        nautilus_common::live::runner::replace_exec_event_sender(tx);
+        context.client.start().unwrap();
+    }
+
+    let parent_id = ClientOrderId::from("OTO-ETH");
+    let child_id = ClientOrderId::from("OTO-BTC");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .price(Price::from("1500.00"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(other.id())
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("2.000"))
+        .price(Price::from("1000.00"))
+        .build();
+    let orders = [parent, child];
+    for order in &orders {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+
+    let parent_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("1499.00"),
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        1.into(),
+        1.into(),
+    );
+    context.client.process_quote_tick(&parent_quote).unwrap();
+    assert_eq!(events.borrow().iter().filter(|event| matches!(event, OrderEventAny::Filled(fill) if fill.client_order_id == child_id)).count(), 0);
+
+    if full_trigger {
+        context.client.process_quote_tick(&parent_quote).unwrap();
+    }
+
+    if deferred {
+        events.borrow_mut().extend(drain_order_events(&mut rx));
+
+        assert_eq!(events.borrow().iter().filter(|event| matches!(event, OrderEventAny::Filled(fill) if fill.client_order_id == child_id)).count(), 0);
+    }
+
+    let child_quote = QuoteTick::new(
+        other.id(),
+        Price::from("30000.00"),
+        Price::from("30001.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        2.into(),
+        2.into(),
+    );
+    context.client.process_quote_tick(&child_quote).unwrap();
+
+    if deferred {
+        events.borrow_mut().extend(drain_order_events(&mut rx));
+    }
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == child_id => Some(fill.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].instrument_id, other.id());
+    assert_eq!(fills[0].last_px, Price::from("1000.00"));
+    assert_eq!(fills[0].last_qty, Quantity::from("2.000"));
+    assert_eq!(fills[0].position_id, Some(PositionId::from("BINANCE-1-1")));
+
+    if deferred {
+        for event in events.borrow().iter() {
+            execution.process(event);
+        }
+
+        context.client.stop().unwrap();
+    }
+}
+
+#[rstest]
+#[case::list_oco((true, true, 1, 2, false), ("2.000", "0.000", [OrderStatus::Filled, OrderStatus::Canceled], 2, "4000.00", "7000.00"))]
+#[case::natural_full((false, false, 1, 2, false), ("2.000", "0.000", [OrderStatus::Filled, OrderStatus::Canceled], 2, "4000.00", "7000.00"))]
+#[case::natural_partial((false, false, 1, 2, false), ("1.000", "1.000", [OrderStatus::Canceled, OrderStatus::Filled], 1, "4000.00", "7000.00"))]
+#[case::list_full((true, false, 1, 2, false), ("2.000", "0.000", [OrderStatus::Filled, OrderStatus::Canceled], 2, "4000.00", "7000.00"))]
+#[case::list_partial((true, false, 1, 2, false), ("1.000", "1.000", [OrderStatus::Canceled, OrderStatus::Filled], 1, "4000.00", "7000.00"))]
+#[case::mixed_full((false, false, 0, 2, false), ("2.000", "0.000", [OrderStatus::Filled, OrderStatus::Canceled], 2, "4000.00", "7000.00"))]
+#[case::mixed_partial((false, false, 0, 2, false), ("1.000", "1.000", [OrderStatus::Canceled, OrderStatus::Filled], 1, "4000.00", "7000.00"))]
+#[case::mixed_list_full((true, false, 0, 2, false), ("2.000", "0.000", [OrderStatus::Filled, OrderStatus::Canceled], 2, "4000.00", "7000.00"))]
+#[case::mixed_list_partial((true, false, 0, 2, false), ("1.000", "1.000", [OrderStatus::Canceled, OrderStatus::Filled], 1, "4000.00", "7000.00"))]
+#[case::resting_same_book((false, false, 1, 1, true), ("2.000", "0.000", [OrderStatus::Filled, OrderStatus::Canceled], 2, "3000.00", "3000.00"))]
+fn test_cross_instrument_oto_immediate_sibling_fills(
+    trader_id: TraderId,
+    account_id: AccountId,
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] scenario: (bool, bool, usize, usize, bool),
+    #[case] expected: (&str, &str, [OrderStatus; 2], usize, &str, &str),
+    #[values(false, true)] deferred: bool,
+) {
+    let (list_marketable, oco, first_index, second_index, late_market) = scenario;
+    let (first_qty, second_qty, statuses, canceled_index, first_px, second_px) = expected;
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+
+    let instruments = [
+        instrument.clone(),
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+            id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            ..crypto_perpetual_ethusdt.clone()
+        }),
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+            id: InstrumentId::from("SOLUSDT-PERP.BINANCE"),
+            ..crypto_perpetual_ethusdt
+        }),
+    ];
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.oto_full_trigger = true;
+            config.liquidity_consumption = !late_market;
+            config.oms_type = OmsType::Hedging;
+        });
+
+    let cache = context.cache.clone();
+    for instrument in &instruments {
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+    }
+
+    let events = capture_order_events(cache.clone(), deferred);
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    if deferred {
+        nautilus_common::live::runner::replace_exec_event_sender(tx);
+        context.client.start().unwrap();
+    }
+
+    let parent_id = ClientOrderId::from("OTO-PARENT");
+    let first_id = ClientOrderId::from("OTO-FIRST");
+    let second_id = ClientOrderId::from("OTO-SECOND");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instruments[0].id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .price(Price::from("4001.00"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![first_id, second_id])
+        .build();
+    let mut orders = vec![parent];
+
+    for (index, id, sibling, price) in [
+        (first_index, first_id, second_id, "3000.00"),
+        (second_index, second_id, first_id, "3000.00"),
+    ] {
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        builder
+            .trader_id(trader_id)
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instruments[index].id())
+            .client_order_id(id)
+            .parent_order_id(parent_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("2.000"))
+            .price(Price::from(price));
+
+        if oco {
+            builder
+                .contingency_type(ContingencyType::Oco)
+                .linked_order_ids(vec![sibling]);
+        }
+
+        orders.push(builder.build());
+    }
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    let parent_quote = QuoteTick::new(
+        instruments[0].id(),
+        Price::from("4000.00"),
+        Price::from("4001.00"),
+        Quantity::from(first_qty),
+        Quantity::from("2.000"),
+        1.into(),
+        1.into(),
+    );
+
+    for (index, bid, ask, qty) in [
+        (1, "4000.00", "4001.00", first_qty),
+        (2, "7000.00", "7001.00", "2.000"),
+    ]
+    .into_iter()
+    .filter(|_| !late_market)
+    {
+        let quote = QuoteTick::new(
+            instruments[index].id(),
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from(qty),
+            Quantity::from(qty),
+            1.into(),
+            1.into(),
+        );
+        context.client.process_quote_tick(&quote).unwrap();
+    }
+
+    if list_marketable {
+        context.client.process_quote_tick(&parent_quote).unwrap();
+    }
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+
+    if !list_marketable {
+        context.client.process_quote_tick(&parent_quote).unwrap();
+    }
+
+    if late_market {
+        let quote = QuoteTick::new(
+            instruments[first_index].id(),
+            Price::from("4000.00"),
+            Price::from("4001.00"),
+            Quantity::from("2.000"),
+            Quantity::from("2.000"),
+            3.into(),
+            3.into(),
+        );
+        context.client.process_quote_tick(&quote).unwrap();
+    }
+
+    events
+        .borrow_mut()
+        .extend(drain_order_events(&mut rx).into_iter().inspect(|event| {
+            cache.borrow_mut().update_order(event).unwrap();
+        }));
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id != parent_id => Some((
+                fill.client_order_id,
+                fill.instrument_id,
+                fill.last_qty,
+                fill.last_px,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    let cancels: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Canceled(cancel) => Some((cancel.client_order_id, cancel.instrument_id)),
+            _ => None,
+        })
+        .collect();
+
+    let expected_fills: Vec<_> = [
+        (
+            first_id,
+            instruments[first_index].id(),
+            Quantity::from(first_qty),
+            Price::from(first_px),
+        ),
+        (
+            second_id,
+            instruments[second_index].id(),
+            Quantity::from(second_qty),
+            Price::from(second_px),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, _, qty, _)| !qty.is_zero())
+    .collect();
+    assert_eq!(fills, expected_fills);
+    assert_eq!(
+        cancels,
+        vec![(
+            orders[canceled_index].client_order_id(),
+            orders[canceled_index].instrument_id()
+        )]
+    );
+
+    let cache = cache.borrow();
+    let first = cache.order(&first_id).unwrap();
+    let second = cache.order(&second_id).unwrap();
+    assert_eq!(first.filled_qty(), Quantity::from(first_qty));
+    assert_eq!(second.filled_qty(), Quantity::from(second_qty));
+    assert_eq!([first.status(), second.status()], statuses);
+    drop(first);
+    drop(second);
+    drop(cache);
+
+    if deferred {
+        context.client.stop().unwrap();
+    }
+}
+
+#[rstest]
+fn test_oto_receipt_cancellation_preserves_expiration_cleanup(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let parent_instrument = make_binary_option_instrument("PARENT", "YES", "Yes", 1000);
+    let child_instrument = make_binary_option_instrument("CHILD", "YES", "Yes", 100);
+    let context = create_test_context(trader_id, account_id, child_instrument.id().venue);
+    let cache = context.cache.clone();
+    for instrument in [&parent_instrument, &child_instrument] {
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+    }
+
+    let events = capture_order_events(cache.clone(), false);
+    context.test_clock.borrow_mut().set_time(50.into());
+    let resting = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(child_instrument.id())
+        .client_order_id(ClientOrderId::from("UNRELATED"))
+        .side(OrderSide::Buy)
+        .price(Price::from("0.100"))
+        .quantity(Quantity::from("1"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(resting.clone(), None, None, false)
+        .unwrap();
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &resting,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            50.into(),
+        ))
+        .unwrap();
+    let parent_id = ClientOrderId::from("OTO-PARENT");
+    let sibling_id = ClientOrderId::from("OTO-SIBLING");
+    let child_id = ClientOrderId::from("OTO-EXPIRED");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(parent_instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("0.500"))
+        .quantity(Quantity::from("1"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![sibling_id, child_id])
+        .build();
+    let sibling = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(parent_instrument.id())
+        .client_order_id(sibling_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("0.600"))
+        .quantity(Quantity::from("1"))
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![child_id])
+        .build();
+
+    for (order, venue_id) in [(&parent, "PARENT-1"), (&sibling, "PARENT-2")] {
+        let mut cache = cache.borrow_mut();
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        cache
+            .update_order(&TestOrderEventStubs::submitted(order, account_id))
+            .unwrap();
+        cache
+            .update_order(&TestOrderEventStubs::accepted(
+                order,
+                account_id,
+                VenueOrderId::from(venue_id),
+            ))
+            .unwrap();
+        let fill = TestOrderEventStubs::filled(
+            order,
+            &parent_instrument,
+            None,
+            None,
+            order.price(),
+            Some(Quantity::from("1")),
+            None,
+            None,
+            Some(51.into()),
+            Some(account_id),
+        );
+        cache.update_order(&fill).unwrap();
+    }
+
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(child_instrument.id())
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("0.600"))
+        .quantity(Quantity::from("1"))
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![sibling_id])
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(child.clone(), None, None, false)
+        .unwrap();
+    context.test_clock.borrow_mut().set_time(200.into());
+    context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &child,
+            trader_id,
+            Some(context.client.client_id()),
+            None,
+            UUID4::new(),
+            200.into(),
+        ))
+        .unwrap();
+
+    let terminals: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Canceled(cancel) => Some((cancel.client_order_id, cancel.instrument_id)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        terminals,
+        vec![
+            (resting.client_order_id(), child_instrument.id()),
+            (child_id, child_instrument.id())
+        ]
+    );
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&resting.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cache.borrow().order(&child_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(context.client.matching_engine_count(), 0);
+    assert!(cache.borrow().instrument(&child_instrument.id()).is_none());
+}
+
+fn capture_order_events(
+    cache: Rc<RefCell<Cache>>,
+    deferred: bool,
+) -> Rc<RefCell<Vec<OrderEventAny>>> {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let captured = events.clone();
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::exec_engine_process(),
+        TypedIntoHandler::from(move |event: OrderEventAny| {
+            if !deferred {
+                cache.borrow_mut().update_order(&event).unwrap();
+            }
+
+            captured.borrow_mut().push(event);
+        }),
+    );
+
+    events
+}
+
+#[rstest]
+#[case::direct("direct")]
+#[case::instrument_update("instrument_update")]
+#[case::instrument_close("instrument_close")]
+fn test_cross_instrument_oto_cancel_does_not_replay_cached_market(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] cause: &str,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let InstrumentAny::CryptoPerpetual(parent) = &instrument else {
+        panic!("Expected perpetual");
+    };
+
+    let other = InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+        id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        ..parent.clone()
+    });
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.oto_full_trigger = true;
+        });
+
+    for asset in [&instrument, &other] {
+        context
+            .cache
+            .borrow_mut()
+            .add_instrument(asset.clone())
+            .unwrap();
+    }
+
+    let events = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    context.client.start().unwrap();
+
+    let parent_id = ClientOrderId::from("OTO-CANCEL-PARENT");
+    let child_id = ClientOrderId::from("OTO-CANCEL-CHILD");
+    let resting_id = ClientOrderId::from("RESTING");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1500.01"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(other.id())
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1000.00"))
+        .build();
+
+    for order in [&parent, &child] {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &[parent, child],
+        ))
+        .unwrap();
+    events
+        .borrow_mut()
+        .extend(apply_order_events_from_channel(&context.cache, &mut rx));
+
+    let resting = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(other.id())
+        .client_order_id(resting_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("2000.00"))
+        .build();
+    submit_to_client(&context, trader_id, &resting);
+    events
+        .borrow_mut()
+        .extend(apply_order_events_from_channel(&context.cache, &mut rx));
+    context
+        .cache
+        .borrow_mut()
+        .add_quote(QuoteTick::new(
+            other.id(),
+            Price::from("30000.00"),
+            Price::from("30001.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            1.into(),
+            1.into(),
+        ))
+        .unwrap();
+
+    match cause {
+        "direct" => {
+            let parent = context.cache.borrow().try_order_owned(&parent_id).unwrap();
+            mark_pending_cancel(&context.cache, &parent, trader_id, 2.into());
+            context
+                .client
+                .cancel_order(cancel_command(
+                    context.client.client_id(),
+                    trader_id,
+                    &parent,
+                    2.into(),
+                ))
+                .unwrap();
+        }
+        "instrument_update" => {
+            let InstrumentAny::CryptoPerpetual(parent) = &instrument else {
+                unreachable!();
+            };
+
+            context
+                .client
+                .on_instrument(InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+                    price_precision: 1,
+                    price_increment: Price::from("0.1"),
+                    ..parent.clone()
+                }));
+        }
+        "instrument_close" => {
+            publish_expired_close(&context.test_clock, &instrument, Price::from("1500.00"), 2);
+        }
+        _ => unreachable!(),
+    }
+
+    events
+        .borrow_mut()
+        .extend(apply_order_events_from_channel(&context.cache, &mut rx));
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        0
+    );
+    assert_eq!(
+        context.cache.borrow().order(&resting_id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    assert_eq!(
+        context
+            .cache
+            .borrow()
+            .order(&resting_id)
+            .unwrap()
+            .filled_qty(),
+        Quantity::from("0.000")
+    );
+    assert_eq!(
+        context.cache.borrow().order(&parent_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        context.cache.borrow().order(&child_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    context.client.stop().unwrap();
+}

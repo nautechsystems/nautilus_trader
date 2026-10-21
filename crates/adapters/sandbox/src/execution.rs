@@ -43,7 +43,11 @@ use nautilus_common::{
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, WeakCell};
 use nautilus_execution::{
     client::core::ExecutionClientCore,
-    matching_engine::{OrderMatchingEngine, inflight::InflightOrders},
+    matching_engine::{
+        OrderMatchingEngine,
+        inflight::InflightOrders,
+        orders::{MatchingOrders, OtoCommand},
+    },
     models::{fee::FeeModelHandle, fill::FillModelHandle, latency::LatencyModel},
 };
 use nautilus_model::{
@@ -183,6 +187,7 @@ impl SandboxExecutionClient {
                 event_handler: None,
                 inbound_queue: BinaryHeap::new(),
                 inflight_orders: InflightOrders::default(),
+                matching_orders: MatchingOrders::default(),
                 inbound_seq: 0,
                 client_id: core.client_id,
                 account_id: core.account_id,
@@ -480,6 +485,8 @@ impl SandboxExecutionClient {
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine.process_quote_tick(quote);
         }
+
+        inner.drain_oto_commands();
         Ok(())
     }
 
@@ -507,6 +514,8 @@ impl SandboxExecutionClient {
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine.process_trade_tick(trade);
         }
+
+        inner.drain_oto_commands();
         Ok(())
     }
 
@@ -534,6 +543,8 @@ impl SandboxExecutionClient {
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine.process_bar(bar);
         }
+
+        inner.drain_oto_commands();
         Ok(())
     }
 
@@ -553,6 +564,8 @@ impl SandboxExecutionClient {
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine.process_order_book_deltas(deltas)?;
         }
+
+        inner.drain_oto_commands();
         Ok(())
     }
 
@@ -632,6 +645,8 @@ impl ExecutionClient for SandboxExecutionClient {
         {
             log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
         }
+
+        inner.drain_oto_commands();
     }
 
     fn get_account(&self) -> Option<AccountAny> {
@@ -929,6 +944,7 @@ struct SandboxInner {
     /// Inbound commands deferred by latency, ordered as a min-heap by due time.
     inbound_queue: BinaryHeap<DelayedCommand>,
     inflight_orders: InflightOrders,
+    matching_orders: MatchingOrders,
     /// Monotonic sequence providing FIFO tie-breaking for deferred commands sharing a due time, so
     /// no queued command can be overtaken by one enqueued after it.
     inbound_seq: u64,
@@ -1042,6 +1058,7 @@ impl SandboxInner {
             }
 
             engine.set_inflight_orders(self.inflight_orders.clone());
+            engine.set_matching_orders(self.matching_orders.clone());
             self.matching_engines.insert(instrument_id, engine);
         }
     }
@@ -1061,6 +1078,8 @@ impl SandboxInner {
                 engine.process_quote_tick(quote);
             }
         }
+
+        self.drain_oto_commands();
     }
 
     fn process_trade_tick(&mut self, trade: &TradeTick) {
@@ -1082,6 +1101,8 @@ impl SandboxInner {
                 engine.process_trade_tick(trade);
             }
         }
+
+        self.drain_oto_commands();
     }
 
     fn process_bar(&mut self, bar: &Bar) {
@@ -1103,6 +1124,8 @@ impl SandboxInner {
                 engine.process_bar(bar);
             }
         }
+
+        self.drain_oto_commands();
     }
 
     fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
@@ -1118,6 +1141,8 @@ impl SandboxInner {
                 log::error!("Error processing order book deltas: {e}");
             }
         }
+
+        self.drain_oto_commands();
     }
 
     fn process_instrument_status(&mut self, status: &InstrumentStatus) {
@@ -1157,6 +1182,8 @@ impl SandboxInner {
                 "Ignoring instrument close for {instrument_id}: no existing matching engine",
             );
         }
+
+        self.drain_oto_commands();
     }
 
     fn is_expired_now(&self, instrument_id: InstrumentId) -> bool {
@@ -1470,6 +1497,7 @@ impl SandboxInner {
             self.sync_expired_cleanup(instrument_id);
         }
 
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1517,7 +1545,34 @@ impl SandboxInner {
             self.sync_expired_cleanup_many(&cleanup_instrument_ids);
         }
 
+        self.drain_oto_commands();
         unresolved
+    }
+
+    fn drain_oto_commands(&mut self) {
+        while let Some(command) = self.matching_orders.pop_command() {
+            let instrument_id = command.instrument_id();
+            if self.ensure_engine_for(instrument_id) {
+                if matches!(command, OtoCommand::Release { .. }) {
+                    self.seed_cached_market_data(instrument_id);
+                }
+
+                if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                    engine.process_oto_command(&command);
+                }
+            }
+
+            if let OtoCommand::Release {
+                parent_quantity: Some(quantity),
+                parent_order_id,
+                parent_instrument_id,
+                ..
+            } = command
+                && let Some(engine) = self.matching_engines.get_mut(&parent_instrument_id)
+            {
+                engine.process_oto_resize(parent_order_id, quantity);
+            }
+        }
     }
 
     /// Rejects a single leg of `cmd` the venue could not accept, leaving its siblings untouched.
@@ -1577,6 +1632,8 @@ impl SandboxInner {
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_modify(cmd, account_id);
         }
+
+        self.drain_oto_commands();
     }
 
     fn apply_batch_modify_orders(&mut self, cmd: &BatchModifyOrders) {
@@ -1584,6 +1641,8 @@ impl SandboxInner {
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_batch_modify(cmd, account_id);
         }
+
+        self.drain_oto_commands();
     }
 
     fn apply_cancel_order(&mut self, cmd: &CancelOrder) {
@@ -1591,6 +1650,8 @@ impl SandboxInner {
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_cancel(cmd, account_id);
         }
+
+        self.drain_oto_commands();
     }
 
     fn apply_cancel_all_orders(&mut self, cmd: &CancelAllOrders) {
@@ -1600,6 +1661,8 @@ impl SandboxInner {
         } else {
             log::debug!("No open orders to cancel for {instrument_id}: no matching engine");
         }
+
+        self.drain_oto_commands();
     }
 
     fn apply_batch_cancel_orders(&mut self, cmd: &BatchCancelOrders) {
@@ -1607,6 +1670,8 @@ impl SandboxInner {
         if let Some(engine) = self.matching_engines.get_mut(&cmd.instrument_id) {
             engine.process_batch_cancel(cmd, account_id);
         }
+
+        self.drain_oto_commands();
     }
 
     /// Enqueues a trading command to be applied after its inbound latency elapses, as backtest

@@ -1642,13 +1642,13 @@ fn test_pending_modify_updates_acknowledge_individually_and_reset() {
     let snapshot = engine.order_snapshot(id).unwrap();
     assert_eq!(snapshot.quantity(), Quantity::from("2.000"));
     assert_eq!(snapshot.price(), Some(Price::from("100.00")));
-    assert_eq!(engine.pending_updates.borrow()[&id].len(), 1);
+    assert_eq!(engine.orders.pending_updates.borrow()[&id].len(), 1);
     cache
         .borrow_mut()
         .update_order(&pending.borrow()[1])
         .unwrap();
     engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
-    assert!(engine.pending_updates.borrow().is_empty());
+    assert!(engine.orders.pending_updates.borrow().is_empty());
     engine.process_modify(
         &ModifyOrder::new(
             order.trader_id(),
@@ -1672,7 +1672,7 @@ fn test_pending_modify_updates_acknowledge_individually_and_reset() {
         Quantity::from("3.000")
     );
     engine.reset();
-    assert!(engine.pending_updates.borrow().is_empty());
+    assert!(engine.orders.pending_updates.borrow().is_empty());
     assert_eq!(
         engine.order_snapshot(id).unwrap().quantity(),
         Quantity::from("2.000")
@@ -1752,7 +1752,11 @@ fn test_process_order_parks_oto_child_until_parent_rejected(
     assert_eq!(engine.order_exists(parent_id), !parent_rejected);
     assert!(!engine.order_exists(child_id));
     assert_eq!(
-        engine.pending_oto_order_ids.contains(&child_id),
+        engine
+            .orders
+            .pending_oto_order_ids
+            .borrow()
+            .contains(&child_id),
         !parent_rejected
     );
     assert_eq!(
@@ -1834,18 +1838,30 @@ fn test_process_order_rejects_oto_child_of_deferred_parent_rejection_until_purge
             .all(|event| matches!(event, OrderEventAny::Rejected(_)))
     );
     assert_eq!(events[1].client_order_id(), child_id);
-    assert!(!engine.pending_oto_order_ids.contains(&child_id));
+    assert!(
+        !engine
+            .orders
+            .pending_oto_order_ids
+            .borrow()
+            .contains(&child_id)
+    );
 
     // Kept until the cache shows the rejection
     engine.iterate(UnixNanos::from(1), AggressorSide::NoAggressor);
-    assert!(engine.rejected_oto_parent_ids.borrow().contains(&parent_id));
+    assert!(
+        engine
+            .orders
+            .rejected_oto_parent_ids
+            .borrow()
+            .contains(&parent_id)
+    );
 
     for event in &events {
         cache.borrow_mut().update_order(event).unwrap();
     }
 
     engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
-    assert!(engine.rejected_oto_parent_ids.borrow().is_empty());
+    assert!(engine.orders.rejected_oto_parent_ids.borrow().is_empty());
 }
 
 #[rstest]
@@ -2267,7 +2283,7 @@ fn test_l2_custom_book_order_lifecycle(
     }
 
     if expected_qty.is_zero() {
-        assert!(engine.cached_filled_qty.is_empty());
+        assert!(engine.orders.cached_filled_qty.borrow().is_empty());
         assert!(engine.pending_fills.is_empty());
         assert_eq!(
             engine
@@ -2425,7 +2441,7 @@ fn test_l2_custom_book_empty_market_before_acceptance(
     assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
     assert!(engine.bid_consumption.is_empty());
     assert!(engine.ask_consumption.is_empty());
-    assert!(engine.cached_filled_qty.is_empty());
+    assert!(engine.orders.cached_filled_qty.borrow().is_empty());
 }
 
 fn set_custom_fill_book(engine: &mut OrderMatchingEngine, size: &str, outside_limit: bool) {
@@ -5040,7 +5056,13 @@ fn test_parent_modify_does_not_resize_canceled_oto_child() {
         engine.cache.borrow().order(&child_id).unwrap().status(),
         OrderStatus::Canceled
     );
-    assert!(!engine.canceled_oto_order_ids.contains(&child_id));
+    assert!(
+        !engine
+            .orders
+            .closed_oto_order_ids
+            .borrow()
+            .contains(&child_id)
+    );
     events.borrow_mut().clear();
     engine.process_modify(
         &ModifyOrder::new(
