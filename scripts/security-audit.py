@@ -45,6 +45,7 @@ VULNERABILITY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 CARGO_AUDIT_DENIES = frozenset({"unmaintained", "unsound", "warnings", "yanked"})
 CARGO_DENY_CHECKS = frozenset({"advisories", "bans", "licenses", "sources"})
 NODE_FULL_MODES = frozenset({"gate", "off", "report"})
+CONNECTION_RETRIES = 3
 
 
 class AuditError(Exception):
@@ -120,6 +121,7 @@ class StepOptions:
     cwd: Path | None = None
     report: bool = False
     gate: bool = True
+    retry_on: str | None = None
 
 
 DEFAULT_STEP_OPTIONS = StepOptions()
@@ -466,18 +468,30 @@ def _run_process(
     *,
     root: Path,
     cwd: Path | None = None,
+    retry_on: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(  # noqa: S603
-            args,
-            cwd=cwd or root,
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except OSError as error:
-        raise AuditError(f"could not execute {args[0]}: {error}") from error
+    retry = 0
+    while True:
+        try:
+            result = subprocess.run(  # noqa: S603
+                args,
+                cwd=cwd or root,
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError as error:
+            raise AuditError(f"could not execute {args[0]}: {error}") from error
+        if (
+            result.returncode == 0
+            or retry_on is None
+            or retry_on not in result.stderr
+            or retry == CONNECTION_RETRIES
+        ):
+            return result
+        retry += 1
+        _write(f"retry {retry}/{CONNECTION_RETRIES}: {retry_on}")
 
 
 def _output(result: subprocess.CompletedProcess[str]) -> str:
@@ -575,7 +589,7 @@ def _run_step(
     options: StepOptions = DEFAULT_STEP_OPTIONS,
 ) -> None:
     _write(f"run  {label}")
-    result = _run_process(args, root=context.root, cwd=options.cwd)
+    result = _run_process(args, root=context.root, cwd=options.cwd, retry_on=options.retry_on)
     output = _output(result)
     if output and (options.report or result.returncode != 0):
         _write(output, error=result.returncode != 0)
@@ -673,6 +687,8 @@ def _run_python_audit(context: Context, audit: PythonAudit) -> None:
             f"pip-audit=={context.versions['pip-audit']}",
             "--",
             "pip-audit",
+            "--timeout",
+            "30",
             "--cache-dir",
             str(cache),
             "--progress-spinner",
@@ -684,7 +700,12 @@ def _run_python_audit(context: Context, audit: PythonAudit) -> None:
         ]
         for vulnerability in audit.ignores:
             args.extend(("--ignore-vuln", vulnerability))
-        _run_step(context, f"pip-audit {audit.project.as_posix()}", args)
+        _run_step(
+            context,
+            f"pip-audit {audit.project.as_posix()}",
+            args,
+            options=StepOptions(retry_on="Could not connect to PyPI's vulnerability feed"),
+        )
 
 
 def _run_python(context: Context, policy: AuditPolicy) -> list[str]:

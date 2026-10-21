@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "59494bb07d605082c4d2ec5c649932ea83177669"
+revision = "8df90825c489bee566008e17aae01d2258092fba"
 manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -134,7 +134,7 @@ executable = true
 [[file]]
 artifact = "security-audit"
 path = "scripts/security-audit.py"
-sha256 = "19e3739aed79265c576125f73c72a3a171947193cae8b99f70d56745d306f2fb"
+sha256 = "c22b368bb0b3c1a9549aa8192fad7320dcfc328c1d6f7753a6ae67024267ba1f"
 executable = false
 
 [[file]]
