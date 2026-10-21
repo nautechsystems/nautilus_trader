@@ -386,8 +386,7 @@ pub(crate) mod serial_tests {
     #[derive(Clone, Copy, Debug)]
     enum LifecycleClientBehavior {
         Connects,
-        ConnectError,
-        ConnectAndDisconnectError,
+        ConnectError(bool),
         ConnectPending,
         ReadinessPending,
         ConnectDelayedReadinessPending,
@@ -746,8 +745,7 @@ pub(crate) mod serial_tests {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
 
             match self.behavior {
-                LifecycleClientBehavior::ConnectError
-                | LifecycleClientBehavior::ConnectAndDisconnectError => {
+                LifecycleClientBehavior::ConnectError(_) => {
                     anyhow::bail!("simulated data client connect failure")
                 }
                 LifecycleClientBehavior::ConnectPending => {
@@ -772,10 +770,7 @@ pub(crate) mod serial_tests {
                 .disconnect_attempted
                 .store(true, Ordering::Relaxed);
 
-            if matches!(
-                self.behavior,
-                LifecycleClientBehavior::ConnectAndDisconnectError
-            ) {
+            if matches!(self.behavior, LifecycleClientBehavior::ConnectError(true)) {
                 anyhow::bail!("simulated data client disconnect failure");
             }
 
@@ -995,8 +990,7 @@ pub(crate) mod serial_tests {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
 
             match self.behavior {
-                LifecycleClientBehavior::ConnectError
-                | LifecycleClientBehavior::ConnectAndDisconnectError => {
+                LifecycleClientBehavior::ConnectError(_) => {
                     anyhow::bail!("simulated execution client connect failure")
                 }
                 LifecycleClientBehavior::ConnectPending => {
@@ -1021,10 +1015,7 @@ pub(crate) mod serial_tests {
                 .disconnect_attempted
                 .store(true, Ordering::Relaxed);
 
-            if matches!(
-                self.behavior,
-                LifecycleClientBehavior::ConnectAndDisconnectError
-            ) {
+            if matches!(self.behavior, LifecycleClientBehavior::ConnectError(true)) {
                 anyhow::bail!("simulated execution client disconnect failure");
             }
 
@@ -2339,11 +2330,7 @@ pub(crate) mod serial_tests {
         #[case] data_fails: bool,
         #[case] disconnect_fails: bool,
     ) {
-        let failing_behavior = if disconnect_fails {
-            LifecycleClientBehavior::ConnectAndDisconnectError
-        } else {
-            LifecycleClientBehavior::ConnectError
-        };
+        let failing_behavior = LifecycleClientBehavior::ConnectError(disconnect_fails);
         let (data_behavior, exec_behavior) = if data_fails {
             (failing_behavior, LifecycleClientBehavior::Connects)
         } else {

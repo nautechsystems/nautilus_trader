@@ -17,7 +17,18 @@
 
 use std::time::Duration;
 
+use nautilus_network::retry::RetryConfig;
 use rand::RngExt;
+
+/// Returns HTTP retry defaults with attempt timeouts enforced by the HTTP client.
+pub(crate) fn http_retry_config() -> RetryConfig {
+    RetryConfig {
+        jitter_ms: 1_000,
+        operation_timeout_ms: None,
+        max_elapsed_ms: Some(180_000),
+        ..RetryConfig::default()
+    }
+}
 
 /// Computes the auto-load retry sleep duration for `attempt`.
 ///

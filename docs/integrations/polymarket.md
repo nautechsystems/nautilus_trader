@@ -2374,7 +2374,8 @@ jitter. It does not query CLOB `GET /markets/{cid}` to classify hydration.
 Tune the cadence with `auto_load_max_retries` (default 12), `auto_load_retry_delay_initial_secs` (default
 5.0), and `auto_load_retry_delay_max_secs` (default 15.0). The default retry delays total approximately three
 minutes. HTTP requests and rate-limit waits add to elapsed time. Set `auto_load_max_retries=0` to disable
-retry.
+these auto-load retries. Each Gamma HTTP request still uses the separate `max_retries` and HTTP retry
+delay settings on `PolymarketDataClientConfig`.
 
 Five-minute markets, such as Up/Down crypto markets, can expire before the venue supplies usable
 CLOB metadata. Account for that delay or raise the retry cap. After the retry budget is exhausted,
@@ -2736,6 +2737,9 @@ Class/struct: `PolymarketDataClientConfig`.
 | `api_key`, `api_secret`, `passphrase` | `None`    | CLOB L2 credentials for PolyBolt price channels; fall back to `POLYMARKET_*` variables.       |
 | `proxy_url`                           | `None`    | HTTP or HTTPS proxy for every data transport.                                                 |
 | `http_timeout_secs`                   | `60`      | HTTP timeout in seconds.                                                                      |
+| `max_retries`                         | `3`       | Maximum retries per Gamma HTTP request; `0` disables these retries.                           |
+| `retry_delay_initial_ms`              | `1,000`   | Initial Gamma HTTP retry delay in milliseconds.                                               |
+| `retry_delay_max_ms`                  | `10,000`  | Maximum exponential delay; a venue `Retry-After` minimum can exceed it.                       |
 | `ws_timeout_secs`                     | `30`      | Positive WebSocket timeout in seconds per connection attempt, including reconnects.           |
 | `ws_max_subscriptions`                | `200`     | Per-connection subscription cap; the market pool shards across connections at this bound.     |
 | `update_instruments_interval_mins`    | `60`      | Instrument catalog refresh interval in minutes; pass `None` to disable it.                    |
@@ -2746,7 +2750,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `compute_effective_deltas`            | `false`   | Emit net snapshot changes when prior book state exists.                                       |
 | `auto_load_missing_instruments`       | `true`    | Load unknown instruments for supported requests and subscriptions.                            |
 | `auto_load_debounce_ms`               | `100`     | Window in milliseconds for coalescing concurrent auto-load requests.                          |
-| `auto_load_max_retries`               | `12`      | Retry transient Gamma loads with missing CLOB metadata or fetch failures; `0` disables retry. |
+| `auto_load_max_retries`               | `12`      | Retry Gamma loads with missing CLOB metadata or fetch failures; `0` disables auto-load retry. |
 | `auto_load_retry_delay_initial_secs`  | `5.0`     | Initial auto-load retry delay in seconds.                                                     |
 | `auto_load_retry_delay_max_secs`      | `15.0`    | Maximum auto-load retry delay in seconds.                                                     |
 | `resolve_poll_enabled`                | `true`    | Poll expired watched conditions for resolution.                                               |
@@ -2853,6 +2857,22 @@ reconciliation must also set `load_ids`.
 The adapter uses the Gamma market and event keyset endpoints. It validates filters before
 the first HTTP request, follows `next_cursor`, and applies the endpoint page ceilings of 100 markets
 and 500 events.
+
+Gamma reads retry transport errors, timeouts, and HTTP 425, 429, and 5xx responses. The data client's
+`max_retries`, `retry_delay_initial_ms`, and `retry_delay_max_ms` control these retries. Defaults allow
+three retries with backoff doubling from 1 to 10 seconds and up to 1 second of jitter. `http_timeout_secs`
+bounds each attempt (default 60 seconds); all attempts and waits share a 180-second budget. The node's
+startup connection timeout can end a request earlier.
+
+For HTTP 429 and 503, `Retry-After` sets the minimum delay, which can exceed `retry_delay_max_ms`.
+Slug batches honor the latest retry deadline across failed requests.
+If the required delay exceeds the remaining budget, the request returns the venue error without waiting.
+Permanent errors such as HTTP 400 or 401 fail without retry. A failed page is retried with the same cursor,
+retaining completed pages in memory; exhausting retries does not retain progress for a later invocation.
+
+Raw Gamma clients and `PolymarketDataLoader` Gamma requests use the same retry defaults with their
+supplied request timeout (`timeout_secs` defaults to 10 seconds in the Python loader). A custom
+`RetryConfig` supplied to the Rust `PolymarketGammaHttpClient` is honored.
 
 ##### Market keyset fields
 

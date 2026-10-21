@@ -285,6 +285,7 @@ mod tests {
                 Error::Http {
                     status: actual,
                     message,
+                    ..
                 } => {
                     assert_eq!(*actual, status);
                     assert_eq!(message, "Polygon RPC request failed");

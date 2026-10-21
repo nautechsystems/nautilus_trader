@@ -28,7 +28,6 @@ use nautilus_model::{
     enums::{AccountType, OmsType},
     identifiers::{ClientId, TraderId},
 };
-use nautilus_network::retry::RetryConfig;
 #[cfg(test)]
 use nautilus_network::websocket::proxy::ProxyUrl;
 
@@ -106,16 +105,7 @@ impl PolymarketDataClientFactory {
         let gamma_client = PolymarketGammaHttpClient::new_with_proxy(
             Some(polymarket_config.gamma_url()),
             polymarket_config.http_timeout_secs,
-            RetryConfig {
-                max_retries: 10,
-                initial_delay_ms: 5_000,
-                max_delay_ms: 30_000,
-                backoff_factor: 1.5,
-                jitter_ms: 2_000,
-                operation_timeout_ms: Some(30_000),
-                immediate_first: true,
-                max_elapsed_ms: Some(300_000),
-            },
+            polymarket_config.retry_config(),
             proxy_url.clone(),
         )?;
 
@@ -270,8 +260,14 @@ pub(crate) async fn spawn_rejecting_proxy(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
 
+    use axum::{Json, Router, http::StatusCode, routing::get};
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use nautilus_common::{
         cache::Cache,
@@ -287,7 +283,7 @@ mod tests {
     use crate::{
         common::credential::Credential,
         config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
-        http::clob::PolymarketClobHttpClient,
+        http::{clob::PolymarketClobHttpClient, error::Error},
     };
 
     #[derive(Debug)]
@@ -314,6 +310,98 @@ mod tests {
             .as_any()
             .downcast_ref::<PolymarketDataClientConfig>();
         assert!(downcasted.is_some());
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[tokio::test]
+    async fn data_factory_uses_configured_gamma_retries(#[case] max_retries: u32) {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&requests);
+        let router = Router::new().route(
+            "/tags",
+            get(move || {
+                count.fetch_add(1, Ordering::Relaxed);
+                async { StatusCode::SERVICE_UNAVAILABLE }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(data_tx);
+        let config = PolymarketDataClientConfig {
+            base_url_gamma: Some(format!("http://{addr}")),
+            api_key: Some("fixture-key".into()),
+            api_secret: Some("Zml4dHVyZQ==".into()),
+            passphrase: Some("fixture-passphrase".into()),
+            max_retries,
+            retry_delay_initial_ms: 1,
+            retry_delay_max_ms: 1,
+            ..PolymarketDataClientConfig::default()
+        };
+        let client = PolymarketDataClientFactory::create_client(POLYMARKET, &config).unwrap();
+
+        let error = client
+            .provider()
+            .http_client()
+            .request_tags()
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error.downcast_ref::<Error>(),
+            Some(Error::Http { status: 503, .. })
+        ));
+        assert_eq!(requests.load(Ordering::Relaxed), max_retries as usize + 1);
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn data_factory_preserves_configured_gamma_timeout() {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let received = Arc::clone(&started);
+        let router = Router::new().route(
+            "/tags",
+            get(move || {
+                let received = Arc::clone(&received);
+                async move {
+                    received.notify_one();
+                    tokio::time::sleep(Duration::from_secs(70)).await;
+                    Json(Vec::<String>::new())
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(data_tx);
+        let config = PolymarketDataClientConfig {
+            base_url_gamma: Some(format!("http://{addr}")),
+            api_key: Some("fixture-key".into()),
+            api_secret: Some("Zml4dHVyZQ==".into()),
+            passphrase: Some("fixture-passphrase".into()),
+            http_timeout_secs: 90,
+            max_retries: 0,
+            ..PolymarketDataClientConfig::default()
+        };
+        let client = PolymarketDataClientFactory::create_client(POLYMARKET, &config).unwrap();
+        let http_client = client.provider().http_client().clone();
+        let request = tokio::spawn(async move { http_client.request_tags().await });
+        started.notified().await;
+
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::task::yield_now().await;
+        assert!(!request.is_finished());
+        tokio::time::advance(Duration::from_secs(9)).await;
+        tokio::time::resume();
+
+        assert!(request.await.unwrap().unwrap().is_empty());
+        server.abort();
     }
 
     #[rstest]
@@ -430,6 +518,7 @@ mod tests {
             base_url_reference_prices: Some("wss://polybolt.fixture/ws".to_string()),
             proxy_url: Some(proxy_url.clone().into()),
             http_timeout_secs: 2,
+            max_retries: 0,
             ..PolymarketDataClientConfig::default()
         };
         let client = PolymarketDataClientFactory::create_client(POLYMARKET, &config).unwrap();

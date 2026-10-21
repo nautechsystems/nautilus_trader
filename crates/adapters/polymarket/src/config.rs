@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use nautilus_common::config::{ConfigError, ConfigResult, check_range, check_unique_values};
@@ -27,6 +27,8 @@ use nautilus_core::{datetime::SECONDS_IN_MINUTE, string::secret::SecretString};
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::{
+    backoff::ExponentialBackoff,
+    retry::RetryConfig,
     transport::TransportError,
     websocket::{TransportBackend, proxy::ProxyUrl},
 };
@@ -36,6 +38,7 @@ use crate::{
     common::{
         credential::{Credential, credential_env_vars},
         enums::{PolymarketSignatureType, PolymarketSignerType},
+        retry::http_retry_config,
         urls,
     },
     filters::InstrumentFilter,
@@ -376,6 +379,15 @@ pub struct PolymarketDataClientConfig {
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
+    /// Maximum retries for Gamma HTTP requests. Set to `0` for a single attempt.
+    #[builder(default = RetryConfig::default().max_retries)]
+    pub max_retries: u32,
+    /// Initial Gamma HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().initial_delay_ms)]
+    pub retry_delay_initial_ms: u64,
+    /// Maximum exponential Gamma HTTP retry delay in milliseconds.
+    #[builder(default = RetryConfig::default().max_delay_ms)]
+    pub retry_delay_max_ms: u64,
     /// Timeout in seconds per market and reference-price WebSocket connection attempt,
     /// including reconnects, and for sends waiting for reconnection. Must be positive;
     /// keep it above the 5-second maximum reconnect backoff.
@@ -414,7 +426,8 @@ pub struct PolymarketDataClientConfig {
     pub auto_load_debounce_ms: u64,
     /// Maximum retry attempts on transient auto-load failures (markets in the CLOB
     /// hydration window that return empty `clob_token_ids` from Gamma, or that are
-    /// absent from the bulk response). Set to `0` to disable retry.
+    /// absent from the bulk response). Set to `0` to disable auto-load retries;
+    /// Gamma HTTP requests still use `max_retries`.
     #[builder(default = 12)]
     pub auto_load_max_retries: u32,
     /// Initial delay (seconds) between transient auto-load retries; backed off
@@ -464,6 +477,9 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketDataClientConfig {
     base_url_gamma: Option<String>,
     base_url_data_api: Option<String>,
     http_timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_initial_ms: u64,
+    retry_delay_max_ms: u64,
     ws_timeout_secs: u64,
     ws_max_subscriptions: usize,
     update_instruments_interval_mins: Option<u64>,
@@ -502,12 +518,12 @@ impl PolymarketDataClientConfig {
         Self::default()
     }
 
-    /// Validates the WebSocket timeout and instrument selections.
+    /// Validates connection settings and instrument selections.
     ///
     /// # Errors
     ///
-    /// Returns an error if the WebSocket timeout is zero, nested instrument selections contain
-    /// duplicates, or Gamma filters are invalid.
+    /// Returns an error if the WebSocket timeout is zero, retry backoff settings are invalid,
+    /// nested instrument selections contain duplicates, or Gamma filters are invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
         check_range(
             "ws_timeout_secs",
@@ -515,11 +531,29 @@ impl PolymarketDataClientConfig {
             "must be positive",
         )?;
 
+        let retry = self.retry_config();
+        ExponentialBackoff::new(
+            Duration::from_millis(retry.initial_delay_ms),
+            Duration::from_millis(retry.max_delay_ms),
+            retry.backoff_factor,
+            retry.jitter_ms,
+            retry.immediate_first,
+        )?;
+
         if let Some(config) = &self.instrument_config {
             config.validate()?;
         }
 
         Ok(())
+    }
+
+    pub(crate) fn retry_config(&self) -> RetryConfig {
+        RetryConfig {
+            max_retries: self.max_retries,
+            initial_delay_ms: self.retry_delay_initial_ms,
+            max_delay_ms: self.retry_delay_max_ms,
+            ..http_retry_config()
+        }
     }
 
     /// Returns the validated proxy URL, if configured.
@@ -893,6 +927,9 @@ mod tests {
     fn data_config_book_sync_defaults_match_documented_values() {
         let config = PolymarketDataClientConfig::default();
 
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.retry_delay_initial_ms, 1_000);
+        assert_eq!(config.retry_delay_max_ms, 10_000);
         assert_eq!(config.book_snapshot_timeout_secs, 10);
         assert_eq!(config.book_stale_check_interval_secs, 5);
         assert_eq!(
@@ -917,6 +954,9 @@ mod tests {
         let config: PolymarketDataClientConfig = toml::from_str(
             "
 http_timeout_secs = 30
+max_retries = 5
+retry_delay_initial_ms = 25
+retry_delay_max_ms = 100
 ws_max_subscriptions = 50
 update_instruments_interval_mins = 5
 subscribe_new_markets = true
@@ -933,6 +973,12 @@ resolve_poll_max_wait_secs = 1800
         assert!(config.instrument_config.is_none());
         assert!(config.filters.is_empty());
         assert_eq!(config.http_timeout_secs, 30);
+        let retry = config.retry_config();
+        assert_eq!(retry.max_retries, 5);
+        assert_eq!(retry.initial_delay_ms, 25);
+        assert_eq!(retry.max_delay_ms, 100);
+        assert_eq!(retry.operation_timeout_ms, None);
+        assert_eq!(retry.max_elapsed_ms, Some(180_000));
         assert_eq!(config.ws_max_subscriptions, 50);
         assert_eq!(config.update_instruments_interval_mins, Some(5));
         assert!(config.subscribe_new_markets);

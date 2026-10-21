@@ -30,7 +30,7 @@ use ahash::AHashMap;
 use axum::{
     Router,
     body::Bytes,
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, HeaderName, Method, StatusCode, Uri},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
@@ -228,8 +228,17 @@ fn create_gamma_client(addr: &SocketAddr) -> PolymarketGammaRawHttpClient {
 }
 
 fn create_gamma_domain_client(addr: &SocketAddr) -> PolymarketGammaHttpClient {
-    PolymarketGammaHttpClient::new(Some(format!("http://{addr}")), 5, RetryConfig::default())
-        .unwrap()
+    PolymarketGammaHttpClient::new(Some(format!("http://{addr}")), 5, gamma_retry_config()).unwrap()
+}
+
+fn gamma_retry_config() -> RetryConfig {
+    RetryConfig {
+        max_retries: 2,
+        initial_delay_ms: 1,
+        max_delay_ms: 1,
+        jitter_ms: 0,
+        ..RetryConfig::default()
+    }
 }
 
 fn gamma_market_with_slug(slug: &str, condition_id: &str, token_ids: [&str; 2]) -> Value {
@@ -757,14 +766,17 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/public-search", get(handle_public_search))
         .route("/v2/positions", get(handle_data_api_positions))
         .route("/v2/trades", get(handle_data_api_trades))
-        .route("/health", get(handle_health))
         .with_state(state)
 }
 
 async fn start_mock_server(state: TestServerState) -> SocketAddr {
+    start_mock_router(create_test_router(state)).await
+}
+
+async fn start_mock_router(router: Router) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let router = create_test_router(state);
+    let router = router.route("/health", get(handle_health));
     tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
 
     wait_until_async(
@@ -847,6 +859,7 @@ async fn test_get_version_preserves_http_error() {
         Error::Http {
             status: 503,
             ref message,
+            ..
         } if message == "version unavailable"
     ));
 }
@@ -1011,7 +1024,7 @@ async fn test_authenticated_requests_reject_redirects(
             result.unwrap();
         } else {
             assert!(
-                matches!(result, Err(Error::Http { status: actual, message }) if actual == status && message == "redirect refused")
+                matches!(result, Err(Error::Http { status: actual, message, .. }) if actual == status && message == "redirect refused")
             );
         }
     }
@@ -1954,6 +1967,7 @@ async fn test_gamma_http_error_preserves_status_and_clean_reason() {
         Error::Http {
             status: 403,
             message,
+            ..
         } if message == "Gamma request forbidden"
     ));
     assert!(error.is_auth_error());
@@ -3891,6 +3905,373 @@ async fn test_load_ids_preserves_caller_filters_in_each_chunk() {
 }
 
 #[rstest]
+#[case::markets(false)]
+#[case::events(true)]
+#[tokio::test]
+async fn test_gamma_pagination_retries_failed_page(
+    #[case] events: bool,
+    #[values(425, 429, 503)] status: u16,
+) {
+    let status = StatusCode::from_u16(status).unwrap();
+    let market_a = gamma_market_with_slug(
+        "retry-page-a",
+        "0xcondition_retry_page_a",
+        ["91000000000000000001", "91000000000000000002"],
+    );
+    let market_b = gamma_market_with_slug(
+        "retry-page-b",
+        "0xcondition_retry_page_b",
+        ["92000000000000000001", "92000000000000000002"],
+    );
+    let (first, second) = if events {
+        (
+            json!({"events": [gamma_event_with_markets("retry-event-a", &[market_a])], "next_cursor": "page-2"}),
+            json!({"events": [gamma_event_with_markets("retry-event-b", &[market_b])]}),
+        )
+    } else {
+        (
+            json!({"markets": [market_a], "next_cursor": "page-2"}),
+            json!({"markets": [market_b]}),
+        )
+    };
+    let queries: QueryPairLog = Arc::default();
+    let requests = Arc::clone(&queries);
+    let router = Router::new().fallback(move |uri: Uri| {
+        let requests = Arc::clone(&requests);
+        let first = first.clone();
+        let second = second.clone();
+        async move {
+            let mut requests = requests.lock().await;
+            requests.push(query_pairs(&uri));
+            match requests.len() {
+                1 => Json(first).into_response(),
+                2 => (status, "temporarily unavailable").into_response(),
+                _ => Json(second).into_response(),
+            }
+        }
+    });
+    let addr = start_mock_router(router).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let instruments = if events {
+        client
+            .request_instruments_by_event_params(GetGammaEventsParams::default())
+            .await
+    } else {
+        client
+            .request_instruments_by_params(GetGammaMarketsParams::default())
+            .await
+    }
+    .unwrap();
+
+    let ids: Vec<_> = instruments.iter().map(Instrument::id).collect();
+    assert_eq!(
+        ids,
+        vec![
+            InstrumentId::from("0xcondition_retry_page_a-91000000000000000001.POLYMARKET"),
+            InstrumentId::from("0xcondition_retry_page_a-91000000000000000002.POLYMARKET"),
+            InstrumentId::from("0xcondition_retry_page_b-92000000000000000001.POLYMARKET"),
+            InstrumentId::from("0xcondition_retry_page_b-92000000000000000002.POLYMARKET"),
+        ]
+    );
+    let queries = queries.lock().await;
+    let cursors: Vec<_> = queries
+        .iter()
+        .map(|pairs| {
+            pairs
+                .iter()
+                .find(|(key, _)| key == "after_cursor")
+                .map(|(_, value)| value.as_str())
+        })
+        .collect();
+    assert_eq!(cursors, vec![None, Some("page-2"), Some("page-2")]);
+}
+
+#[rstest]
+#[case::transient(StatusCode::SERVICE_UNAVAILABLE, 3)]
+#[case::bad_request(StatusCode::BAD_REQUEST, 1)]
+#[case::unauthorized(StatusCode::UNAUTHORIZED, 1)]
+#[case::malformed_response(StatusCode::OK, 1)]
+#[tokio::test]
+async fn test_gamma_request_retry_budget(
+    #[case] status: StatusCode,
+    #[case] expected_attempts: usize,
+    #[values("markets", "events", "tags", "slugs")] operation: &str,
+) {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let count = Arc::clone(&requests);
+    let router = Router::new().fallback(move || {
+        count.fetch_add(1, Ordering::Relaxed);
+        async move { (status, Json(json!({"error": "request failed"}))) }
+    });
+    let addr = start_mock_router(router).await;
+    let client = create_gamma_domain_client(&addr);
+
+    let result = match operation {
+        "markets" => client
+            .request_markets_by_params(GetGammaMarketsParams::default())
+            .await
+            .map(|_| ()),
+        "events" => client
+            .request_instruments_by_event_params(GetGammaEventsParams::default())
+            .await
+            .map(|_| ()),
+        "tags" => client.request_tags().await.map(|_| ()),
+        "slugs" => client
+            .request_instruments_by_slugs_with_retry(vec!["test-slug".to_string()])
+            .await
+            .map(|_| ()),
+        _ => unreachable!(),
+    };
+
+    assert!(result.is_err());
+    assert_eq!(requests.load(Ordering::Relaxed), expected_attempts);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_gamma_invalid_retry_config_does_not_send_request() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = PolymarketGammaHttpClient::new(
+        Some(format!("http://{addr}")),
+        5,
+        RetryConfig {
+            backoff_factor: 0.5,
+            ..gamma_retry_config()
+        },
+    )
+    .unwrap();
+
+    let error = client
+        .request_markets_by_params(GetGammaMarketsParams::default())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error.downcast_ref::<Error>(),
+        Some(Error::BadRequest(_))
+    ));
+    assert!(state.gamma_markets_query_log.lock().await.is_empty());
+}
+
+#[rstest]
+#[case::http_error(false, 2)]
+#[case::timeout(true, 2)]
+#[case::timeout_exhausted(true, 0)]
+#[tokio::test]
+async fn test_gamma_tags_retry(#[case] timeout: bool, #[case] max_retries: u32) {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let count = Arc::clone(&requests);
+    let router = Router::new().fallback(move || {
+        let attempt = count.fetch_add(1, Ordering::Relaxed);
+        async move {
+            if attempt == 0 {
+                if timeout {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                } else {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                }
+            }
+            Json(json!([{"id": "84", "label": "Crypto", "slug": "crypto"}])).into_response()
+        }
+    });
+    let addr = start_mock_router(router).await;
+    let client = PolymarketGammaHttpClient::new(
+        Some(format!("http://{addr}")),
+        5,
+        RetryConfig {
+            max_retries,
+            operation_timeout_ms: Some(300),
+            max_elapsed_ms: Some(2_000),
+            ..gamma_retry_config()
+        },
+    )
+    .unwrap();
+
+    let result = client.request_tags().await;
+
+    if max_retries == 0 {
+        assert!(matches!(
+            result.unwrap_err().downcast_ref::<Error>(),
+            Some(Error::Timeout)
+        ));
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
+    } else {
+        let tags = result.unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].id, "84");
+        assert_eq!(requests.load(Ordering::Relaxed), 2);
+    }
+}
+
+#[rstest]
+#[case::rate_limit(StatusCode::TOO_MANY_REQUESTS)]
+#[case::service_unavailable(StatusCode::SERVICE_UNAVAILABLE)]
+#[tokio::test]
+async fn test_gamma_retry_after_exceeding_budget_does_not_retry(#[case] status: StatusCode) {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let count = Arc::clone(&requests);
+    let router = Router::new().fallback(move || {
+        count.fetch_add(1, Ordering::Relaxed);
+        async move { (status, [("retry-after", "60")], "temporarily unavailable") }
+    });
+    let addr = start_mock_router(router).await;
+    let client = PolymarketGammaHttpClient::new(
+        Some(format!("http://{addr}")),
+        5,
+        RetryConfig {
+            max_elapsed_ms: Some(1_000),
+            ..gamma_retry_config()
+        },
+    )
+    .unwrap();
+
+    let error = client.request_tags().await.unwrap_err();
+    let error = error.downcast_ref::<Error>().unwrap();
+
+    assert_eq!(error.retry_after(), Some(Duration::from_secs(60)));
+    assert!(error.is_submit_outcome_unknown());
+    assert!(matches!(
+        (status.as_u16(), error),
+        (429, Error::RateLimit { .. }) | (503, Error::Http { status: 503, .. })
+    ));
+    assert_eq!(requests.load(Ordering::Relaxed), 1);
+}
+
+#[rstest]
+#[case::rate_limit(StatusCode::TOO_MANY_REQUESTS, None)]
+#[case::service_unavailable(StatusCode::SERVICE_UNAVAILABLE, None)]
+#[case::timeout(StatusCode::SERVICE_UNAVAILABLE, Some(100))]
+#[tokio::test]
+async fn test_gamma_slug_retry_after_is_honored_across_batch(
+    #[case] status: StatusCode,
+    #[case] operation_timeout_ms: Option<u64>,
+    #[values(false, true)] hint_first: bool,
+) {
+    let queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let requests = Arc::clone(&queries);
+    let router = Router::new().fallback(move |Query(params): Query<HashMap<String, String>>| {
+        let requests = Arc::clone(&requests);
+        async move {
+            let slug = params.get("slug").unwrap();
+            requests.lock().await.push(slug.clone());
+
+            if slug == "pending" {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+
+            if slug == "hinted" {
+                (status, [("retry-after", "60")], "hinted failure").into_response()
+            } else {
+                (StatusCode::SERVICE_UNAVAILABLE, "unhinted failure").into_response()
+            }
+        }
+    });
+    let addr = start_mock_router(router).await;
+    let client = PolymarketGammaHttpClient::new(
+        Some(format!("http://{addr}")),
+        5,
+        RetryConfig {
+            operation_timeout_ms,
+            max_elapsed_ms: Some(1_000),
+            ..gamma_retry_config()
+        },
+    )
+    .unwrap();
+    let mut slugs = if hint_first {
+        vec!["hinted".to_string(), "unhinted".to_string()]
+    } else {
+        vec!["unhinted".to_string(), "hinted".to_string()]
+    };
+
+    if operation_timeout_ms.is_some() {
+        slugs.push("pending".to_string());
+    }
+
+    let error = client
+        .request_instruments_by_slugs_with_retry(slugs)
+        .await
+        .unwrap_err();
+
+    if operation_timeout_ms.is_some() {
+        assert_eq!(error.to_string(), "timeout");
+    } else {
+        assert!(error.to_string().ends_with(if hint_first {
+            ": hinted failure"
+        } else {
+            ": unhinted failure"
+        }));
+    }
+    let mut slugs = queries.lock().await;
+    slugs.sort_unstable();
+    assert_eq!(
+        *slugs,
+        if operation_timeout_ms.is_some() {
+            vec!["hinted", "pending", "unhinted"]
+        } else {
+            vec!["hinted", "unhinted"]
+        }
+    );
+}
+
+#[rstest]
+#[case::rate_limit(StatusCode::TOO_MANY_REQUESTS)]
+#[case::service_unavailable(StatusCode::SERVICE_UNAVAILABLE)]
+#[tokio::test]
+async fn test_gamma_slug_retry_after_recovers_after_batch_timeout(#[case] status: StatusCode) {
+    let requests = Arc::new(tokio::sync::Mutex::new(HashMap::<String, Vec<_>>::new()));
+    let received = Arc::clone(&requests);
+    let router = Router::new().fallback(move |Query(params): Query<HashMap<String, String>>| {
+        let received = Arc::clone(&received);
+        async move {
+            let slug = params.get("slug").unwrap();
+            let mut requests = received.lock().await;
+            let times = requests.entry(slug.clone()).or_default();
+            times.push(std::time::Instant::now());
+            let first = times.len() == 1;
+            drop(requests);
+
+            if first {
+                if slug == "hinted" {
+                    return (status, [("retry-after", "1")], "hinted failure").into_response();
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+
+            let market = gamma_market_with_slug(slug, &format!("0x{slug}"), ["101", "102"]);
+            Json(vec![market]).into_response()
+        }
+    });
+    let addr = start_mock_router(router).await;
+    let client = PolymarketGammaHttpClient::new(
+        Some(format!("http://{addr}")),
+        5,
+        RetryConfig {
+            operation_timeout_ms: Some(100),
+            max_elapsed_ms: Some(2_000),
+            ..gamma_retry_config()
+        },
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments_by_slugs_with_retry(vec!["hinted".to_string(), "pending".to_string()])
+        .await
+        .unwrap();
+
+    assert_eq!(instruments.len(), 4);
+    let requests = requests.lock().await;
+    let hinted_at = requests["hinted"][0];
+    assert_eq!(requests.len(), 2);
+
+    for times in requests.values() {
+        assert_eq!(times.len(), 2);
+        assert!(times[1].duration_since(hinted_at) >= Duration::from_secs(1));
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_fetch_gamma_markets_paginated_uses_100_per_page() {
     let state = TestServerState::default();
@@ -5058,6 +5439,7 @@ async fn test_data_api_http_error_preserves_status_and_clean_reason() {
         Error::Http {
             status: 404,
             message,
+            ..
         } if message == "Data API market not found"
     ));
     assert!(!error.is_retryable());

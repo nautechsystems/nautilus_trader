@@ -18,13 +18,12 @@
 use std::{
     cell::RefCell,
     collections::HashSet,
-    future::{Future, poll_fn},
+    future::Future,
     pin::pin,
     rc::Rc,
     str::FromStr,
     sync::Once,
     task::{Context, Poll, Waker},
-    time::Duration,
 };
 
 use ahash::AHashSet;
@@ -49,7 +48,6 @@ use nautilus_common::{
         },
         switchboard,
     },
-    testing::wait_until,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
@@ -24614,7 +24612,6 @@ struct LifecycleExecutionClient {
     error_message: Option<&'static str>,
     calls: Rc<RefCell<Vec<(ClientId, &'static str)>>>,
     connected: bool,
-    yield_connect: bool,
 }
 
 impl LifecycleExecutionClient {
@@ -24713,18 +24710,7 @@ impl ExecutionClient for LifecycleExecutionClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         let result = self.record("connect");
 
-        if self.yield_connect {
-            let mut pending = true;
-            poll_fn(|cx| {
-                if std::mem::take(&mut pending) {
-                    cx.waker().wake_by_ref();
-                    Poll::Pending
-                } else {
-                    Poll::Ready(())
-                }
-            })
-            .await;
-        }
+        futures::pending!();
 
         result.map_err(|e| e.context("provider context"))?;
         self.connected = true;
@@ -24758,7 +24744,6 @@ fn test_execution_engine_connect_returns_failed_client_ids(mut execution_engine:
                 error_message,
                 calls: Rc::clone(&calls),
                 connected: false,
-                yield_connect: true,
             }))
             .unwrap();
     }
@@ -24768,15 +24753,7 @@ fn test_execution_engine_connect_returns_failed_client_ids(mut execution_engine:
         assert!(connect.as_mut().now_or_never().is_none());
         assert_eq!(calls.borrow().len(), 3, "clients must connect concurrently");
 
-        let mut result = None;
-        wait_until(
-            || {
-                result = connect.as_mut().now_or_never();
-                result.is_some()
-            },
-            Duration::from_secs(1),
-        );
-        result.unwrap().unwrap_err()
+        poll_to_completion(connect).unwrap_err()
     };
 
     assert_eq!(
@@ -24813,7 +24790,6 @@ fn test_execution_client_lifecycle_logging(
                 error_message: error,
                 calls: Rc::clone(&calls),
                 connected: false,
-                yield_connect: false,
             }))
             .unwrap();
     }
@@ -24923,7 +24899,6 @@ fn test_execution_command_logging(
             error_message,
             calls: Rc::clone(&calls),
             connected: false,
-            yield_connect: false,
         }))
         .unwrap();
 

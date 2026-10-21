@@ -25,8 +25,9 @@
 //! - `condition_ids=` accepts at most 100 IDs per request, so `load_ids` for
 //!   larger sets chunks the request and unions the responses.
 
-use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
+use std::{collections::HashMap, result::Result as StdResult, sync::Arc, time::Duration};
 
+use nautilus_common::live::dst;
 use nautilus_core::{
     UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -37,12 +38,13 @@ use nautilus_network::{
     retry::{RetryConfig, RetryManager},
     websocket::proxy::ProxyUrl,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, value::RawValue};
 
 use crate::{
-    common::urls::gamma_api_url,
+    common::{retry::http_retry_config, urls::gamma_api_url},
     filters::set_market_closed,
     http::{
         error::{Error, Result, decode_response},
@@ -50,7 +52,7 @@ use crate::{
         pagination::{Completion, CursorProtocol, FetchOutcome, Paginator, WindowedCollect},
         parse::{create_instrument_from_def, enrich_market_fee_schedule, parse_gamma_market},
         query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
-        rate_limits::POLYMARKET_GAMMA_REST_QUOTA,
+        rate_limits::{HEADER_RETRY_AFTER, POLYMARKET_GAMMA_REST_QUOTA},
     },
 };
 
@@ -65,11 +67,12 @@ enum GammaStop {
 /// Provides a raw HTTP client for the Polymarket Gamma API.
 ///
 /// Handles HTTP transport for fetching market data from the public Gamma API.
-/// No authentication is required.
+/// Retries transient failures per request. No authentication is required.
 #[derive(Debug, Clone)]
 pub struct PolymarketGammaRawHttpClient {
     client: HttpClient,
     base_url: String,
+    retry_manager: Arc<RetryManager<Error>>,
 }
 
 impl PolymarketGammaRawHttpClient {
@@ -95,6 +98,7 @@ impl PolymarketGammaRawHttpClient {
         Ok(Self {
             client: HttpClient::builder()
                 .headers(Self::default_headers())
+                .header_keys(vec![HEADER_RETRY_AFTER.to_string()])
                 .default_quota(*POLYMARKET_GAMMA_REST_QUOTA)
                 .timeout_secs(timeout_secs)
                 .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
@@ -103,6 +107,7 @@ impl PolymarketGammaRawHttpClient {
                 .unwrap_or_else(|| gamma_api_url().to_string())
                 .trim_end_matches('/')
                 .to_string(),
+            retry_manager: Arc::new(RetryManager::new(http_retry_config())),
         })
     }
 
@@ -122,17 +127,49 @@ impl PolymarketGammaRawHttpClient {
         path: &str,
         params: Option<&P>,
     ) -> Result<T> {
-        let url = self.url(path);
-        let response = self
-            .client
-            .request_with_params(Method::GET, url, params, None, None, None, None)
-            .await
-            .map_err(Error::from_http_client)?;
-
-        decode_response(&response)
+        // Bound the layout of retry futures nested inside instrument discovery
+        Box::pin(
+            self.retry_manager
+                .invocation(
+                    path,
+                    || async {
+                        let url = self.url(path);
+                        let response = self
+                            .client
+                            .request_with_params(Method::GET, url, params, None, None, None, None)
+                            .await
+                            .map_err(Error::from_http_client)?;
+                        decode_response(&response)
+                    },
+                    Error::is_retryable,
+                    Error::from_retry_error,
+                )
+                .retry_delay(&Error::retry_after)
+                .execute(),
+        )
+        .await
     }
 
     async fn send_get_query_map<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: Option<&HashMap<String, Vec<String>>>,
+    ) -> Result<T> {
+        Box::pin(
+            self.retry_manager
+                .invocation(
+                    path,
+                    || self.send_get_query_map_once(path, params),
+                    Error::is_retryable,
+                    Error::from_retry_error,
+                )
+                .retry_delay(&Error::retry_after)
+                .execute(),
+        )
+        .await
+    }
+
+    async fn send_get_query_map_once<T: DeserializeOwned>(
         &self,
         path: &str,
         params: Option<&HashMap<String, Vec<String>>>,
@@ -435,7 +472,6 @@ pub(crate) fn flatten_event_markets(events: Vec<GammaEvent>) -> Vec<GammaMarket>
 pub struct PolymarketGammaHttpClient {
     inner: Arc<PolymarketGammaRawHttpClient>,
     clock: &'static AtomicTime,
-    retry_manager: Arc<RetryManager<Error>>,
 }
 
 impl PolymarketGammaHttpClient {
@@ -463,14 +499,13 @@ impl PolymarketGammaHttpClient {
         retry_config: RetryConfig,
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
+        let mut inner =
+            PolymarketGammaRawHttpClient::new_with_proxy(gamma_base_url, timeout_secs, proxy_url)?;
+        inner.retry_manager = Arc::new(RetryManager::new(retry_config));
+
         Ok(Self {
-            inner: Arc::new(PolymarketGammaRawHttpClient::new_with_proxy(
-                gamma_base_url,
-                timeout_secs,
-                proxy_url,
-            )?),
+            inner: Arc::new(inner),
             clock: get_atomic_clock_realtime(),
-            retry_manager: Arc::new(RetryManager::new(retry_config)),
         })
     }
 
@@ -616,14 +651,27 @@ impl PolymarketGammaHttpClient {
         let inner = Arc::clone(&self.inner);
         let ts_init = self.clock.get_time_ns();
 
+        // The batch returns one error, but every response constrains the next attempt
+        let started = dst::time::Instant::now();
+        let retry_deadline = Mutex::new(None::<Duration>);
+        let remaining_retry_delay = || {
+            retry_deadline
+                .lock()
+                .map(|deadline| deadline.saturating_sub(started.elapsed()))
+        };
+
         let mut markets: Vec<GammaMarket> = self
+            .inner
             .retry_manager
             .invocation(
                 "gamma_fetch_by_slugs",
                 || {
                     let inner = Arc::clone(&inner);
                     let slugs = slugs.clone();
+                    let retry_deadline = &retry_deadline;
                     async move {
+                        *retry_deadline.lock() = None;
+
                         let futures = slugs.into_iter().map(|slug| {
                             let inner = Arc::clone(&inner);
                             async move {
@@ -631,10 +679,22 @@ impl PolymarketGammaHttpClient {
                                     slug: Some(vec![slug.clone()]),
                                     ..Default::default()
                                 };
-                                inner
-                                    .get_gamma_markets(params)
+
+                                let query_params = gamma_markets_query_params(params)?;
+
+                                // The outer policy also retries indexing lag; keep one retry owner
+                                let raw: Box<RawValue> = inner
+                                    .send_get_query_map_once("/markets", Some(&query_params))
                                     .await
-                                    .map(|markets| (slug, markets))
+                                    .inspect_err(|e| {
+                                        if let Some(delay) = e.retry_after() {
+                                            let deadline = started.elapsed().saturating_add(delay);
+                                            let mut latest = retry_deadline.lock();
+                                            *latest =
+                                                Some(latest.unwrap_or_default().max(deadline));
+                                        }
+                                    })?;
+                                parse_gamma_markets_response(&raw).map(|markets| (slug, markets))
                             }
                         });
 
@@ -658,8 +718,9 @@ impl PolymarketGammaHttpClient {
                     }
                 },
                 |e| e.is_retryable(),
-                |e| Error::transport(e.to_string()),
+                Error::from_retry_error,
             )
+            .retry_delay(&|_| remaining_retry_delay())
             .execute()
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;

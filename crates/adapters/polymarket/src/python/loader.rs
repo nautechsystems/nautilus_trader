@@ -31,7 +31,6 @@ use nautilus_model::{
     data::TradeTick,
     instruments::{BinaryOption, InstrumentAny},
 };
-use nautilus_network::retry::RetryConfig;
 use pyo3::{
     conversion::IntoPyObjectExt,
     prelude::*,
@@ -42,6 +41,7 @@ use serde_json::{Value, json};
 
 use super::extract_string_map;
 use crate::{
+    common::retry::http_retry_config,
     http::{
         clob::PolymarketClobPublicClient,
         data_api::PolymarketDataApiHttpClient,
@@ -405,7 +405,7 @@ fn gamma_client(
     base_url: Option<String>,
     timeout_secs: u64,
 ) -> PyResult<PolymarketGammaHttpClient> {
-    PolymarketGammaHttpClient::new(base_url, timeout_secs, RetryConfig::default())
+    PolymarketGammaHttpClient::new(base_url, timeout_secs, http_retry_config())
         .map_err(to_pyruntime_err)
 }
 
@@ -1163,7 +1163,7 @@ mod tests {
         let gamma = PolymarketGammaHttpClient::new(
             Some(format!("http://{address}")),
             5,
-            RetryConfig::default(),
+            http_retry_config(),
         )
         .expect("valid test client");
         let clob = PolymarketClobPublicClient::new(Some(format!("http://{address}")), 5).unwrap();

@@ -156,10 +156,10 @@ where
 
     /// Returns a builder for a retry-managed invocation.
     ///
-    /// Set `retry_delay` to derive a minimum delay from an operation error. The retry loop uses the
-    /// greater of this minimum and the configured exponential backoff. Retry delays do not consume
-    /// the per-operation timeout. If the effective delay cannot fit within the remaining elapsed
-    /// budget, the original operation error is returned.
+    /// Set `retry_delay` to derive a minimum delay from an operation error, including a mapped
+    /// operation timeout. The retry loop uses the greater of this minimum and the configured
+    /// exponential backoff. Retry delays do not consume the per-operation timeout. If the effective
+    /// delay cannot fit within the remaining elapsed budget, the original operation error is returned.
     ///
     /// Set `cancellation_token` to cancel the operation. Cancellation is checked at three points:
     ///
@@ -307,7 +307,7 @@ where
                 attempt_future.await
             }?;
 
-            let (e, minimum_delay, timed_out) = match result {
+            let (e, timed_out) = match result {
                 Ok(Ok(success)) => {
                     if attempt > 0 {
                         log::trace!(
@@ -318,18 +318,15 @@ where
 
                     return Ok(success);
                 }
-                Ok(Err(e)) => {
-                    let minimum_delay = retry_delay(&e);
-                    (e, minimum_delay, false)
-                }
+                Ok(Err(e)) => (e, false),
                 Err(_) => (
                     create_error(RetryError::OperationTimeout {
                         timeout_ms: self.config.operation_timeout_ms.unwrap_or(0),
                     }),
-                    None,
                     true,
                 ),
             };
+            let minimum_delay = retry_delay(&e);
 
             if !should_retry(&e) {
                 if timed_out {
@@ -726,12 +723,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case::error(false, 200)]
+    #[case::timeout(true, 250)]
     #[cfg_attr(
         not(all(feature = "simulation", madsim)),
         tokio::test(start_paused = true)
     )]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-    async fn test_error_retry_delay_runs_outside_operation_timeout() {
+    async fn test_error_retry_delay_runs_outside_operation_timeout(
+        #[case] timeout: bool,
+        #[case] expected_elapsed_ms: u64,
+    ) {
         let config = RetryConfig {
             max_retries: 1,
             initial_delay_ms: 10,
@@ -755,13 +757,17 @@ mod tests {
                     let attempts = Arc::clone(&attempts_clone);
                     async move {
                         if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                            if timeout {
+                                std::future::pending::<()>().await;
+                            }
+
                             Err(TestError::Retryable("rate limit".to_string()))
                         } else {
                             Ok(42)
                         }
                     }
                 },
-                should_retry_test_error,
+                |_| true,
                 create_test_error,
             )
             .retry_delay(&|_| Some(Duration::from_millis(200)))
@@ -770,12 +776,13 @@ mod tests {
 
         assert_eq!(result.unwrap(), 42);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        let expected_elapsed = Duration::from_millis(expected_elapsed_ms);
         #[cfg(not(all(feature = "simulation", madsim)))]
-        assert_eq!(start.elapsed(), Duration::from_millis(200));
+        assert_eq!(start.elapsed(), expected_elapsed);
         #[cfg(all(feature = "simulation", madsim))]
         assert!(
-            start.elapsed() >= Duration::from_millis(200)
-                && start.elapsed() < Duration::from_millis(201)
+            start.elapsed() >= expected_elapsed
+                && start.elapsed() < expected_elapsed + Duration::from_millis(1)
         );
     }
 

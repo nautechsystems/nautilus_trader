@@ -224,9 +224,7 @@ fn validate_provider_config(config: &PolymarketInstrumentProviderConfig) -> PyRe
 }
 
 fn validate_data_config(config: &PolymarketDataClientConfig) -> PyResult<()> {
-    if let Some(instrument_config) = config.instrument_config.as_ref() {
-        validate_provider_config(instrument_config)?;
-    }
+    config.validate().map_err(to_pyvalue_err)?;
     config
         .validated_proxy_url()
         .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket proxy URL: {e}")))?;
@@ -356,6 +354,18 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<u64>())
         .transpose()?
         .unwrap_or(default.http_timeout_secs);
+    let max_retries = getattr_optional(obj, "max_retries")?
+        .map(|value| value.extract::<u32>())
+        .transpose()?
+        .unwrap_or(default.max_retries);
+    let retry_delay_initial_ms = getattr_optional(obj, "retry_delay_initial_ms")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.retry_delay_initial_ms);
+    let retry_delay_max_ms = getattr_optional(obj, "retry_delay_max_ms")?
+        .map(|value| value.extract::<u64>())
+        .transpose()?
+        .unwrap_or(default.retry_delay_max_ms);
     let ws_timeout_secs = getattr_optional(obj, "ws_timeout_secs")?
         .map(|value| value.extract::<u64>())
         .transpose()?
@@ -454,6 +464,9 @@ fn extract_data_config_from_pyobject(
         passphrase,
         proxy_url,
         http_timeout_secs,
+        max_retries,
+        retry_delay_initial_ms,
+        retry_delay_max_ms,
         ws_timeout_secs,
         ws_max_subscriptions,
         update_instruments_interval_mins,
@@ -706,6 +719,11 @@ mod tests {
                 .unwrap();
             config_kwargs.set_item("ws_timeout_secs", 41).unwrap();
             config_kwargs.set_item("ws_max_subscriptions", 512).unwrap();
+            config_kwargs.set_item("max_retries", 5).unwrap();
+            config_kwargs
+                .set_item("retry_delay_initial_ms", 250)
+                .unwrap();
+            config_kwargs.set_item("retry_delay_max_ms", 2000).unwrap();
             config_kwargs
                 .set_item("auto_load_missing_instruments", true)
                 .unwrap();
@@ -792,6 +810,9 @@ mod tests {
             );
             assert_eq!(rust_config.ws_timeout_secs, 41);
             assert_eq!(rust_config.ws_max_subscriptions, 512);
+            assert_eq!(rust_config.max_retries, 5);
+            assert_eq!(rust_config.retry_delay_initial_ms, 250);
+            assert_eq!(rust_config.retry_delay_max_ms, 2000);
             assert_eq!(
                 rust_config
                     .proxy_url
@@ -870,6 +891,41 @@ mod tests {
                     .expect("u64 threshold"),
                 9
             );
+        });
+    }
+
+    #[rstest]
+    #[case::zero_initial(0, 1000)]
+    #[case::max_below_initial(1000, 500)]
+    #[case::overflow(1000, u64::MAX)]
+    fn data_config_rejects_invalid_http_retry_policy(
+        #[case] initial_ms: u64,
+        #[case] max_ms: u64,
+        #[values(false, true)] native: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("retry_delay_initial_ms", initial_ms)
+                .unwrap();
+            kwargs.set_item("retry_delay_max_ms", max_ms).unwrap();
+            let cls = if native {
+                py.get_type::<PolymarketDataClientConfig>().into_any()
+            } else {
+                py.import("types")
+                    .unwrap()
+                    .getattr("SimpleNamespace")
+                    .unwrap()
+            };
+
+            let e = cls
+                .call((), Some(&kwargs))
+                .and_then(|obj| extract_data_config_from_pyobject(py, &obj.unbind()))
+                .unwrap_err();
+
+            assert!(e.is_instance_of::<PyValueError>(py));
+            assert!(e.to_string().contains("delay_"));
         });
     }
 
@@ -1040,6 +1096,9 @@ mod tests {
                 .expect("extract rust config");
 
             assert_eq!(rust_config.update_instruments_interval_mins, None);
+            assert_eq!(rust_config.max_retries, 3);
+            assert_eq!(rust_config.retry_delay_initial_ms, 1000);
+            assert_eq!(rust_config.retry_delay_max_ms, 10000);
         });
     }
 

@@ -23,7 +23,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use nautilus_network::ratelimiter::quota::Quota;
+use jiff::Timestamp;
+use nautilus_network::{
+    http::parse_retry_after as parse_http_retry_after, ratelimiter::quota::Quota,
+};
 use parking_lot::Mutex as BlockingMutex;
 use tokio::{
     sync::Mutex,
@@ -473,17 +476,15 @@ fn parse_warning(headers: &HashMap<String, String>) -> bool {
 }
 
 fn parse_retry_after(headers: &HashMap<String, String>) -> Option<Duration> {
-    let seconds = parse_number(headers, HEADER_RETRY_AFTER, false)?;
-    let Ok(duration) = Duration::try_from_secs_f64(seconds) else {
-        log::warn!("Invalid Polymarket rate-limit header {HEADER_RETRY_AFTER}={seconds:?}");
-        return None;
-    };
+    let value = headers.get(HEADER_RETRY_AFTER)?;
+    let duration = parse_http_retry_after(value, Timestamp::now())
+        .or_else(|| Duration::try_from_secs_f64(value.parse().ok()?).ok())
+        .filter(|duration| Instant::now().checked_add(*duration).is_some());
 
-    if Instant::now().checked_add(duration).is_none() {
-        log::warn!("Invalid Polymarket rate-limit header {HEADER_RETRY_AFTER}={seconds:?}");
-        return None;
+    if duration.is_none() {
+        log::warn!("Invalid Polymarket rate-limit header {HEADER_RETRY_AFTER}={value:?}");
     }
-    Some(duration)
+    duration
 }
 
 fn reset_wait(reset: Option<f64>) -> Option<Duration> {
@@ -705,6 +706,17 @@ mod tests {
             "Polymarket rate limit warning: endpoint=/orders, token_cost=8, tier=Gold, \
              remaining=-2.5, reset=1786100000"
         );
+    }
+
+    #[rstest]
+    fn test_retry_after_http_date() {
+        let headers = RateLimitHeaders::parse(&header_map(&[(
+            HEADER_RETRY_AFTER,
+            "Sun, 06 Nov 1994 08:49:37 GMT",
+        )]));
+
+        assert_eq!(headers.retry_after, Some(Duration::ZERO));
+        assert_eq!(headers.retry_after_ms(), Some(0));
     }
 
     #[rstest]

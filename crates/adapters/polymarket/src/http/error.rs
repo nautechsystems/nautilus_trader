@@ -17,9 +17,14 @@
 
 use std::time::Duration;
 
-use nautilus_network::http::{HttpClientError, HttpResponse, StatusCode};
+use nautilus_network::{
+    http::{HttpClientError, HttpResponse, StatusCode},
+    retry::RetryError,
+};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
+
+use crate::http::rate_limits::RateLimitHeaders;
 
 const ORDER_VERSION_MISMATCH: &str = "order_version_mismatch";
 const ORDER_VERSION_MISMATCH_REASON: &str =
@@ -72,7 +77,11 @@ pub enum Error {
     Decode(String),
 
     #[error("HTTP error {status}: {message}")]
-    Http { status: u16, message: String },
+    Http {
+        status: u16,
+        message: String,
+        retry_after_ms: Option<u64>,
+    },
 
     #[error("URL parse error: {0}")]
     UrlParse(#[from] url::ParseError),
@@ -152,6 +161,7 @@ impl Error {
         Self::Http {
             status,
             message: message.into(),
+            retry_after_ms: None,
         }
     }
 
@@ -174,6 +184,14 @@ impl Error {
         match error {
             HttpClientError::TimeoutError(_) => Self::Timeout,
             error => Self::transport(format!("HTTP client error: {error}")),
+        }
+    }
+
+    pub(crate) fn from_retry_error(e: RetryError) -> Self {
+        match e {
+            RetryError::OperationTimeout { .. } => Self::Timeout,
+            e @ RetryError::InvalidConfiguration { .. } => Self::bad_request(e.to_string()),
+            e => Self::transport(e.to_string()),
         }
     }
 
@@ -214,10 +232,9 @@ impl Error {
     #[must_use]
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
-            Self::RateLimit {
-                retry_after_ms: Some(retry_after_ms),
-                ..
-            } => Some(Duration::from_millis(*retry_after_ms)),
+            Self::RateLimit { retry_after_ms, .. } | Self::Http { retry_after_ms, .. } => {
+                retry_after_ms.map(Duration::from_millis)
+            }
             _ => None,
         }
     }
@@ -258,10 +275,12 @@ pub(crate) fn decode_response<T: DeserializeOwned>(response: &HttpResponse) -> R
     if response.status.is_success() {
         serde_json::from_slice(&response.body).map_err(Error::Serde)
     } else {
-        Err(Error::from_status_code(
-            response.status.as_u16(),
-            &response.body,
-        ))
+        let mut e = Error::from_status_code(response.status.as_u16(), &response.body);
+        if let Error::RateLimit { retry_after_ms, .. } | Error::Http { retry_after_ms, .. } = &mut e
+        {
+            *retry_after_ms = RateLimitHeaders::parse(&response.headers).retry_after_ms();
+        }
+        Err(e)
     }
 }
 

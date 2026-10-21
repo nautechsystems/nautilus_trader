@@ -470,6 +470,7 @@ fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
 }
 
 #[rstest]
+#[case::none(vec![])]
 #[case::one(vec!["FIRST"])]
 #[case::multiple(vec!["FIRST", "SECOND"])]
 #[tokio::test]
@@ -489,21 +490,15 @@ async fn test_data_engine_connect_returns_failed_client_ids(
         data_engine.register_client(adapter, None);
     }
 
-    let e = data_engine.connect().await.unwrap_err();
-
-    assert_eq!(
-        e.to_string(),
-        format!("Failed to connect data clients: {}", client_ids.join(", ")),
-    );
-}
-
-#[rstest]
-#[tokio::test]
-#[expect(clippy::await_holding_refcell_ref)] // Single-threaded test
-async fn test_data_engine_connect_succeeds_without_clients(
-    #[from(data_engine)] data_engine: Rc<RefCell<DataEngine>>,
-) {
-    data_engine.borrow_mut().connect().await.unwrap();
+    let result = data_engine.connect().await;
+    if client_ids.is_empty() {
+        result.unwrap();
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Failed to connect data clients: {}", client_ids.join(", ")),
+        );
+    }
 }
 
 #[rstest]
