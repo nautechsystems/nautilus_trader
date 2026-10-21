@@ -219,6 +219,8 @@ struct TestServerState {
     next_send_tx_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_nonce: Arc<AtomicI64>,
     next_nonce_requested: tokio::sync::broadcast::Sender<i64>,
+    next_nonce_response_ready: tokio::sync::broadcast::Sender<i64>,
+    next_nonce_response_delay_ms: Arc<AtomicU64>,
     send_tx_completed: tokio::sync::broadcast::Sender<()>,
     inbox_tx: tokio::sync::broadcast::Sender<String>,
     close_after_next_frame: Arc<AtomicBool>,
@@ -235,6 +237,7 @@ impl Default for TestServerState {
     fn default() -> Self {
         let (inbox_tx, _) = tokio::sync::broadcast::channel(64);
         let (next_nonce_requested, _) = tokio::sync::broadcast::channel(16);
+        let (next_nonce_response_ready, _) = tokio::sync::broadcast::channel(16);
         let (send_tx_completed, _) = tokio::sync::broadcast::channel(64);
         let (tx_response_started, _) = tokio::sync::broadcast::channel(16);
 
@@ -278,6 +281,8 @@ impl Default for TestServerState {
             next_send_tx_ack: Arc::new(tokio::sync::Mutex::new(None)),
             next_nonce: Arc::new(AtomicI64::new(TEST_NEXT_NONCE)),
             next_nonce_requested,
+            next_nonce_response_ready,
+            next_nonce_response_delay_ms: Arc::new(AtomicU64::new(0)),
             send_tx_completed,
             inbox_tx,
             close_after_next_frame: Arc::new(AtomicBool::new(false)),
@@ -334,15 +339,14 @@ async fn next_nonce(State(state): State<Arc<TestServerState>>) -> Response {
     // Tests can advance the venue baseline independently of acknowledgements
     let nonce = state.next_nonce.load(Ordering::Acquire);
     let _ = state.next_nonce_requested.send(nonce);
-    (
-        StatusCode::OK,
-        json!({
-            "code": 200,
-            "nonce": nonce,
-        })
-        .to_string(),
-    )
-        .into_response()
+    let delay_ms = state.next_nonce_response_delay_ms.load(Ordering::Acquire);
+    if delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+
+    let body = json!({"code": 200, "nonce": nonce}).to_string();
+    let _ = state.next_nonce_response_ready.send(nonce);
+    (StatusCode::OK, body).into_response()
 }
 
 async fn maker_only_api_keys(
@@ -9698,11 +9702,18 @@ async fn test_acknowledged_modify_unavailable_retains_outcome() {
 }
 
 #[rstest]
+#[case::immediate_nonce_refresh(0)]
+#[case::delayed_nonce_refresh(3_200)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes() {
+async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
+    #[case] nonce_delay_ms: u64,
+) {
     let (addr, state) = start_server().await;
     let registry = SocketReconnectRegistry::default();
-    let (mut client, mut rx, cache) = registry.scope(|| build_client(addr));
+    let mut config = build_config(addr);
+    // Keep old lookups in flight through both the nonce refresh and resumed-send waits
+    config.http_timeout_secs = 15;
+    let (mut client, mut rx, cache) = registry.scope(|| build_client_with(config));
     client.connect().await.unwrap();
     let mut modifies = Vec::new();
 
@@ -9773,7 +9784,11 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes()
     assert_eq!(blocked_nonces, vec![first_nonce, first_nonce + 1]);
 
     assert_eq!(state.send_txs().await.len(), 17);
+    let mut nonce_responses = state.next_nonce_response_ready.subscribe();
     state.next_nonce.store(first_nonce + 15, Ordering::Release);
+    state
+        .next_nonce_response_delay_ms
+        .store(nonce_delay_ms, Ordering::Release);
     let handle = registry
         .handle(client_id(), Ustr::from("lighter-user-streams"))
         .unwrap();
@@ -9781,6 +9796,12 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes()
         handle.request_reconnect(),
         SocketReconnectRequestOutcome::Accepted
     );
+    let nonce = tokio::time::timeout(Duration::from_secs(5), nonce_responses.recv())
+        .await
+        .expect("post-reconnect nonce response ready")
+        .expect("nonce response notification");
+    assert_eq!(nonce, first_nonce + 15);
+    // Keep nonce lookup latency outside the resumed-send deadline
     await_send_tx_count(&state, 18).await;
     state.tx_response_blocked.store(false, Ordering::Release);
     state.tx_response_release.notify_waiters();
