@@ -4492,6 +4492,253 @@ fn test_l1_opposite_orders_share_cached_trade_liquidity() {
 }
 
 #[rstest]
+#[case::zero("0.000", 0)]
+#[case::one("0.001", 1)]
+#[case::two("0.002", 2)]
+#[case::three("0.003", 3)]
+#[case::four("0.004", 4)]
+fn test_flat_bar_processes_allocated_volume(
+    #[values("LAST", "MID")] price_type: &str,
+    #[case] volume: &str,
+    #[case] increments: usize,
+    #[values(false, true)] liquidity_consumption: bool,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, liquidity_consumption, false);
+    engine.book.reset();
+    engine.core.reset();
+    engine.config.bar_execution = true;
+    let id = ClientOrderId::from("FLAT-BAR");
+    let price = Price::from("100.00");
+    let order_qty = Quantity::from("0.005");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(id)
+        .side(OrderSide::Buy)
+        .price(price)
+        .quantity(order_qty)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    events.borrow_mut().clear();
+    let bar_type =
+        BarType::from(format!("ETHUSDT-PERP.BINANCE-1-MINUTE-{price_type}-EXTERNAL").as_str());
+    let volume = Quantity::from(volume);
+    engine.process_bar(&Bar::new(
+        bar_type,
+        price,
+        price,
+        price,
+        price,
+        volume,
+        2.into(),
+        2.into(),
+    ));
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let market_price = (increments > 0).then_some(price);
+    let market_size = (increments > 0).then_some(Quantity::from("0.001"));
+    let cache = engine.cache.borrow();
+    let cached = cache.order(&id).unwrap();
+
+    let fill_count = if liquidity_consumption {
+        increments.min(1)
+    } else {
+        increments
+    };
+
+    let filled_qty = if fill_count == 0 {
+        Quantity::zero(3)
+    } else if liquidity_consumption {
+        Quantity::from("0.001")
+    } else {
+        volume
+    };
+
+    assert_eq!(engine.instrument.size_increment(), Quantity::from("0.001"));
+    assert_eq!(engine.core.last, Some(price));
+    assert_eq!(engine.core.bid, market_price);
+    assert_eq!(engine.core.ask, market_price);
+    assert_eq!(engine.book.best_bid_price(), market_price);
+    assert_eq!(engine.book.best_ask_price(), market_price);
+    assert_eq!(engine.book.best_bid_size(), market_size);
+    assert_eq!(engine.book.best_ask_size(), market_size);
+    assert_eq!(
+        fills,
+        vec![(id, price, Quantity::from("0.001")); fill_count]
+    );
+    assert_eq!(cached.filled_qty(), filled_qty);
+    assert_eq!(cached.leaves_qty(), order_qty - filled_qty);
+    assert_eq!(
+        cached.status(),
+        if increments == 0 {
+            OrderStatus::Accepted
+        } else {
+            OrderStatus::PartiallyFilled
+        }
+    );
+    assert!(engine.fill_at_market);
+}
+
+#[rstest]
+fn test_later_flat_bar_processes_repeated_price_legs(#[values("LAST", "MID")] price_type: &str) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
+    engine.config.bar_execution = true;
+    let price = Price::from("100.00");
+    let bar_type =
+        BarType::from(format!("ETHUSDT-PERP.BINANCE-1-MINUTE-{price_type}-EXTERNAL").as_str());
+
+    let mut bar = Bar::new(
+        bar_type,
+        price,
+        price,
+        price,
+        price,
+        Quantity::from("0.004"),
+        2.into(),
+        2.into(),
+    );
+    engine.process_bar(&bar);
+    let id = ClientOrderId::from("LATER-FLAT-BAR");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(id)
+        .side(OrderSide::Buy)
+        .price(price)
+        .quantity(Quantity::from("0.006"))
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    assert_eq!(
+        engine.cache.borrow().order(&id).unwrap().filled_qty(),
+        Quantity::from("0.001")
+    );
+    events.borrow_mut().clear();
+    bar.ts_event = 3.into();
+    bar.ts_init = 3.into();
+    engine.process_bar(&bar);
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let cache = engine.cache.borrow();
+    let cached = cache.order(&id).unwrap();
+
+    assert_eq!(fills, vec![(id, price, Quantity::from("0.001")); 4]);
+    assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(cached.filled_qty(), Quantity::from("0.005"));
+    assert_eq!(cached.leaves_qty(), Quantity::from("0.001"));
+    assert_eq!(engine.book.best_bid_price(), Some(price));
+    assert_eq!(engine.book.best_ask_price(), Some(price));
+    assert_eq!(engine.book.best_bid_size(), Some(Quantity::from("0.001")));
+    assert_eq!(engine.book.best_ask_size(), Some(Quantity::from("0.001")));
+    assert!(engine.fill_at_market);
+}
+
+#[rstest]
+#[case::one("0.001")]
+#[case::two("0.002")]
+fn test_flat_bar_stop_fills_at_open(
+    #[values("LAST", "MID")] price_type: &str,
+    #[values(false, true)] first_bar: bool,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[case] volume: &str,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
+    engine.book.reset();
+    engine.core.reset();
+    engine.config.bar_execution = true;
+    let bar_type =
+        BarType::from(format!("ETHUSDT-PERP.BINANCE-1-MINUTE-{price_type}-EXTERNAL").as_str());
+
+    if !first_bar {
+        let price = Price::from("100.00");
+        engine.process_bar(&Bar::new(
+            bar_type,
+            price,
+            price,
+            price,
+            price,
+            Quantity::from("0.004"),
+            2.into(),
+            2.into(),
+        ));
+    }
+
+    let (trigger_price, open_price) = match side {
+        OrderSide::Buy => (Price::from("105.00"), Price::from("110.00")),
+        OrderSide::Sell => (Price::from("95.00"), Price::from("90.00")),
+    };
+
+    let id = ClientOrderId::from("FLAT-STOP");
+    let order_qty = Quantity::from("0.001");
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(id)
+        .side(side)
+        .trigger_price(trigger_price)
+        .quantity(order_qty)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    events.borrow_mut().clear();
+    engine.process_bar(&Bar::new(
+        bar_type,
+        open_price,
+        open_price,
+        open_price,
+        open_price,
+        Quantity::from(volume),
+        3.into(),
+        3.into(),
+    ));
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((
+                fill.client_order_id,
+                fill.order_side,
+                fill.last_px,
+                fill.last_qty,
+                fill.liquidity_side,
+            )),
+            _ => None,
+        })
+        .collect();
+
+    let cache = engine.cache.borrow();
+    let cached = cache.order(&id).unwrap();
+
+    assert_eq!(
+        fills,
+        vec![(id, side, open_price, order_qty, LiquiditySide::Taker)]
+    );
+    assert_eq!(cached.status(), OrderStatus::Filled);
+    assert_eq!(cached.filled_qty(), order_qty);
+    assert_eq!(cached.leaves_qty(), Quantity::zero(3));
+    assert!(engine.fill_at_market);
+}
+
+#[rstest]
 fn test_bar_gap_stop_fills_at_open() {
     let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
     engine.config.bar_execution = true;

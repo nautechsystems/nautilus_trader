@@ -2053,7 +2053,7 @@ impl OrderMatchingEngine {
         };
 
         // Open: fill at market price (gap from previous bar)
-        if self.core.last.is_none() {
+        if sizes.open.is_positive() || self.core.last.is_none_or(|last| bar.open != last) {
             self.fill_at_market = true;
 
             if !self.process_bar_trade_tick(
@@ -2062,19 +2062,6 @@ impl OrderMatchingEngine {
                 sizes.open,
                 aggressor_side,
                 "bar open trade tick",
-            ) {
-                return;
-            }
-        } else if self.core.last.is_some_and(|last| bar.open != last) {
-            // Gap between previous close and this bar's open
-            self.fill_at_market = true;
-
-            if !self.process_bar_trade_tick(
-                bar,
-                bar.open,
-                sizes.open,
-                aggressor_side,
-                "bar gap-open trade tick",
             ) {
                 return;
             }
@@ -2091,10 +2078,7 @@ impl OrderMatchingEngine {
             self.process_bar_high(bar, sizes.high);
         }
 
-        // Close: fill at trigger price (market moving through prices)
-        if self.core.last.is_some_and(|last| bar.close != last) {
-            self.fill_at_market = false;
-
+        if sizes.close.is_positive() || self.core.last.is_some_and(|last| bar.close != last) {
             let aggressor_side = if bar.close > self.core.last.unwrap() {
                 AggressorSide::Buy
             } else {
@@ -2116,9 +2100,7 @@ impl OrderMatchingEngine {
     }
 
     fn process_bar_high(&mut self, bar: &Bar, size: Quantity) {
-        if self.core.last.is_some_and(|last| bar.high > last) {
-            self.fill_at_market = false;
-
+        if size.is_positive() || self.core.last.is_some_and(|last| bar.high > last) {
             self.process_bar_trade_tick(
                 bar,
                 bar.high,
@@ -2130,9 +2112,7 @@ impl OrderMatchingEngine {
     }
 
     fn process_bar_low(&mut self, bar: &Bar, size: Quantity) {
-        if self.core.last.is_some_and(|last| bar.low < last) {
-            self.fill_at_market = false;
-
+        if size.is_positive() || self.core.last.is_some_and(|last| bar.low < last) {
             self.process_bar_trade_tick(
                 bar,
                 bar.low,
@@ -2151,6 +2131,11 @@ impl OrderMatchingEngine {
         aggressor_side: AggressorSide,
         context: &str,
     ) -> bool {
+        // Preserve gap pricing across repeated open prices, including zero-size open legs
+        if price != bar.open {
+            self.fill_at_market = false;
+        }
+
         if size.is_zero() {
             self.core.set_last_raw(price);
             return true;

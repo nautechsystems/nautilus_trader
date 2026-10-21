@@ -58,6 +58,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking
 - Fixed reduce-only FOK orders canceling when liquidity covered the remaining position but not the order quantity
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
