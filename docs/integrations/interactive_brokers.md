@@ -197,6 +197,10 @@ handshake or startup error consumes an attempt and retries instead of ending rec
 resets open subscription channels by delivering a connection-reset error to each. On exhaustion the transport
 shuts down and the adapter reports disconnected.
 
+Both data and execution client configs accept `max_reconnect_attempts`. `None` keeps ibapi's default of
+20 attempts; `0` disables automatic reconnect retries. Clients with the same `(host, port, client_id)`
+share a connection and use the first creator's setting. Set the same value on clients that share a connection.
+
 Each data stream then waits for the transport, subscribes again, and retries failed resubscriptions with a
 delay. One generic stream driver owns this lifecycle policy for every stream type, so recovery behavior cannot
 drift between quotes, trades, depth, bars, greeks, and index prices. Market-data farm notices use the same
