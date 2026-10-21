@@ -442,18 +442,18 @@ ExecTesterConfig::builder()
 
 Test limit order submission, acceptance, and behavior across time-in-force options.
 
-| TC     | Name                      | Description                                      | Skip when |
-| ------ | ------------------------- | ------------------------------------------------ | --------- |
-| TC-E10 | Limit BUY GTC             | Place GTC limit buy below TOB, verify accepted.  | Never.    |
-| TC-E11 | Limit SELL GTC            | Place GTC limit sell above TOB, verify accepted. | Never.    |
-| TC-E12 | Limit BUY and SELL pair   | Both sides simultaneously, verify both accepted. | Never.    |
-| TC-E13 | Limit IOC aggressive fill | Limit IOC at aggressive price, expect fill.      | No IOC.   |
-| TC-E14 | Limit IOC passive no fill | Limit IOC away from market, expect cancel.       | No IOC.   |
-| TC-E15 | Limit FOK fill            | Limit FOK at aggressive price, expect fill.      | No FOK.   |
-| TC-E16 | Limit FOK no fill         | Limit FOK away from market, expect cancel.       | No FOK.   |
-| TC-E17 | Limit GTD                 | Limit with expiry time, verify accepted.         | No GTD.   |
-| TC-E18 | Limit GTD expiry          | Verify documented terminal event at expiry.      | No GTD.   |
-| TC-E19 | Limit DAY                 | Limit with DAY TIF, verify accepted.             | No DAY.   |
+| TC     | Name                      | Description                                         | Skip when |
+| ------ | ------------------------- | --------------------------------------------------- | --------- |
+| TC-E10 | Limit BUY GTC             | Place GTC limit buy below TOB, verify accepted.     | Never.    |
+| TC-E11 | Limit SELL GTC            | Place GTC limit sell above TOB, verify accepted.    | Never.    |
+| TC-E12 | Limit BUY and SELL pair   | Both sides simultaneously, verify both accepted.    | Never.    |
+| TC-E13 | Limit IOC aggressive fill | Limit IOC at aggressive price, expect fill.         | No IOC.   |
+| TC-E14 | Limit IOC passive no fill | Verify cancel or documented no-liquidity rejection. | No IOC.   |
+| TC-E15 | Limit FOK fill            | Limit FOK at aggressive price, expect fill.         | No FOK.   |
+| TC-E16 | Limit FOK no fill         | Verify cancel or documented no-liquidity rejection. | No FOK.   |
+| TC-E17 | Limit GTD                 | Limit with expiry time, verify accepted.            | No GTD.   |
+| TC-E18 | Limit GTD expiry          | Verify documented terminal event at expiry.         | No GTD.   |
+| TC-E19 | Limit DAY                 | Limit with DAY TIF, verify accepted.                | No DAY.   |
 
 ### TC-E10: Limit BUY GTC - submit and accept
 
@@ -590,18 +590,21 @@ ExecTesterConfig::builder()
 
 ### TC-E14: Limit IOC passive - no fill
 
-| Field              | Value                                                                         |
-| ------------------ | ----------------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                         |
-| **Action**         | Submit a limit buy IOC well below the market (passive price).                 |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                          |
-| **Skip when**      | Adapter does not support IOC TIF.                                             |
+| Field              | Value                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                   |
+| **Action**         | Submit a limit buy IOC well below the market (passive price).                           |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted`; then acceptance/cancel or documented rejection. |
+| **Pass criteria**  | No fill; `Canceled`, or `Rejected` with the adapter-documented no-liquidity reason.     |
+| **Skip when**      | Adapter does not support IOC TIF.                                                       |
 
 **Considerations**:
 
-- The venue should cancel the unfilled IOC order. Verify `OrderCanceled` (not `OrderExpired` or
-  `OrderRejected`).
+- The default outcome is `OrderAccepted` -> `OrderCanceled`. If the venue explicitly rejects the
+  order for no liquidity, verify the adapter-documented `OrderSubmitted` -> `OrderRejected` sequence,
+  exact rejection reason, and zero filled quantity in both Rust and Python. Other rejection reasons
+  and `OrderExpired` do not pass this case.
+  Preserve an explicit venue rejection rather than synthesizing acceptance or cancellation.
 
 ### TC-E15: Limit FOK fill
 
@@ -619,13 +622,17 @@ ExecTesterConfig::builder()
 
 ### TC-E16: Limit FOK no fill
 
-| Field              | Value                                                                         |
-| ------------------ | ----------------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                         |
-| **Action**         | Submit a limit buy FOK at passive price (well below market).                  |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                          |
-| **Skip when**      | Adapter does not support FOK TIF.                                             |
+| Field              | Value                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                   |
+| **Action**         | Submit a limit buy FOK at passive price (well below market).                            |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted`; then acceptance/cancel or documented rejection. |
+| **Pass criteria**  | No fill; `Canceled`, or `Rejected` with the adapter-documented no-liquidity reason.     |
+| **Skip when**      | Adapter does not support FOK TIF.                                                       |
+
+**Considerations**:
+
+- Apply the same adapter-specific no-liquidity checks as [TC-E14](#tc-e14-limit-ioc-passive---no-fill).
 
 ### TC-E17: Limit GTD - submit and accept
 

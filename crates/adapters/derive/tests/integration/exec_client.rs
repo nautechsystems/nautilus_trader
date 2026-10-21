@@ -3105,6 +3105,112 @@ async fn test_submit_order_jsonrpc_rejection_emits_order_rejected() {
 }
 
 #[rstest]
+#[case::ioc(TimeInForce::Ioc, "ioc")]
+#[case::fok(TimeInForce::Fok, "fok")]
+#[tokio::test]
+async fn test_submit_order_no_liquidity_rejects_ioc_and_fok(
+    #[case] time_in_force: TimeInForce,
+    #[case] wire_time_in_force: &str,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *ws_state.order_reply.lock().await = Some(
+        serde_json::from_str(include_str!(
+            "../../test_data/common/ws_order_zero_liquidity.json"
+        ))
+        .unwrap(),
+    );
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-ZERO-LIQUIDITY");
+    let mut order = build_limit_order_with_time_in_force(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Price::from("3000.00"),
+        Quantity::from("0.123"),
+        time_in_force,
+        false,
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+
+    let mut events = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = tc
+                .rx
+                .recv()
+                .await
+                .expect("execution event channel closed before no-liquidity rejection");
+
+            if let ExecutionEvent::Order(event) = event
+                && event.client_order_id() == client_order_id
+            {
+                let rejected = matches!(event, OrderEventAny::Rejected(_));
+                events.push(event);
+
+                if rejected {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .expect("no-liquidity rejection");
+
+    tc.client.disconnect().await.unwrap();
+    while let Ok(event) = tc.rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event
+            && event.client_order_id() == client_order_id
+        {
+            events.push(event);
+        }
+    }
+
+    for event in &events {
+        order.apply(event.clone()).unwrap();
+    }
+
+    let requests = ws_state.submitted_orders.lock().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["time_in_force"], wire_time_in_force);
+    assert_eq!(requests[0]["limit_price"], "3000.00");
+    assert_eq!(requests[0]["amount"], "0.123");
+    assert_eq!(
+        events
+            .iter()
+            .map(OrderEventAny::event_type)
+            .collect::<Vec<_>>(),
+        [OrderEventType::Submitted, OrderEventType::Rejected],
+    );
+
+    let OrderEventAny::Rejected(rejected) = &events[1] else {
+        unreachable!();
+    };
+
+    assert_eq!(rejected.trader_id, order.trader_id());
+    assert_eq!(rejected.strategy_id, order.strategy_id());
+    assert_eq!(rejected.instrument_id, instrument_id);
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.account_id, AccountId::from("DERIVE-001"));
+    assert_eq!(
+        rejected.reason.as_str(),
+        "11009: Zero liquidity for market or IOC/FOK order",
+    );
+    assert!(!rejected.due_post_only);
+    assert!(!rejected.reconciliation);
+    assert_eq!(order.status(), OrderStatus::Rejected);
+    assert_eq!(order.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(order.venue_order_id(), None);
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_submit_order_post_only_cross_jsonrpc_sets_due_post_only() {
     let rest_state = RestState::default();

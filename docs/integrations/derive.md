@@ -785,6 +785,14 @@ exposes post-only as a `time_in_force` value, so `post_only` cannot combine with
 | `AT_THE_OPEN`  | -         | -            | *Not supported by Derive*. |
 | `AT_THE_CLOSE` | -         | -            | *Not supported by Derive*. |
 
+For passive IOC and FOK limits with no liquidity within the limit price, Derive returns
+[`11009: Zero liquidity for market or IOC/FOK order`](https://docs.derive.xyz/error-codes).
+In execution test cases [TC-E14](../developer_guide/spec_exec_testing.md#tc-e14-limit-ioc-passive---no-fill)
+and [TC-E16](../developer_guide/spec_exec_testing.md#tc-e16-limit-fok-no-fill), both Rust and Python must observe
+`OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`, terminal status `Rejected`, zero filled
+quantity, and that exact rejection reason. An unrelated rejection does not pass. The adapter preserves
+the venue rejection without emitting `OrderAccepted` or `OrderCanceled`.
+
 #### Spot reduce-only orders
 
 Derive spot has no position concept, so a reduce-only spot order can never reduce anything. The venue always
