@@ -3611,12 +3611,7 @@ async fn test_get_public_search() {
 async fn test_request_instruments_by_event_params() {
     let state = TestServerState::default();
 
-    let market = gamma_market_with_slug(
-        "evt-param-mkt",
-        "0xcondition_evt_param_inst",
-        ["92000000000000000001", "92000000000000000002"],
-    );
-    let event = gamma_event_with_markets("evt-param-test", &[market]);
+    let event = load_json("gamma_event.json")[0].clone();
     *state.gamma_events_response.lock().await = Some(json!([event]));
 
     let addr = start_mock_server(state.clone()).await;
@@ -3630,7 +3625,18 @@ async fn test_request_instruments_by_event_params() {
         .await
         .unwrap();
 
-    assert_eq!(instruments.len(), 2);
+    assert_eq!(instruments.len(), 4);
+    let shared_event = instruments[0].info().unwrap().get("gamma_event").unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(shared_event.as_str().unwrap()).unwrap(),
+        event
+    );
+    let cloned = instruments[0].clone();
+    for instrument in instruments.iter().chain([&cloned]) {
+        let info = instrument.info().unwrap();
+        assert!(std::ptr::eq(info.get("gamma_event").unwrap(), shared_event));
+        assert_eq!(info.get_bool("closed"), Some(false));
+    }
 }
 
 #[rstest]

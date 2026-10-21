@@ -1340,7 +1340,10 @@ Live instruments retain the complete received Gamma market JSON string in `info[
 unknown fields and nested events, tags, and series when returned by Gamma. Event-based discovery also
 retains the enclosing response in `info["gamma_event"]`, including its full `markets` array.
 
-This event snapshot repeats for each outcome instrument, so events with many markets increase metadata size.
+Outcome instruments discovered from the same event snapshot share its JSON allocation, including across cache clones.
+Rust callers can borrow the string with `info.get_str("gamma_event")` and iterate with `info.borrowed_entries()`.
+Indexing, `&Params` iteration, and the read-only `IndexMap` interface materialize and cache owned values.
+Python values and serialized contents stay the same; deserialization does not retain allocation sharing.
 The existing normalized metadata keys remain available, including `token_id`, `condition_id`, `market_id`,
 and `event_id` when known.
 
