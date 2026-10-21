@@ -3718,12 +3718,15 @@ impl OrderMatchingEngine {
     /// unset so the fee model has a liquidity side to key on, and seeds
     /// `cached_filled_qty` with the existing filled quantity so subsequent fills
     /// stop at the remaining leaves.
+    ///
+    /// Skips closed orders, orders with no remaining leaves, and OTO children whose
+    /// rejection, cancellation, or expiry is not yet applied to the cache.
     pub fn restore_open_order(&mut self, order: &OrderAny, account_id: AccountId) {
         if self.core.order_exists(order.client_order_id()) {
             return;
         }
 
-        if order.is_closed() {
+        if self.contingent_order_is_closed(order) {
             return;
         }
 

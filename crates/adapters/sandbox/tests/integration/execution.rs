@@ -10049,3 +10049,170 @@ fn test_cross_instrument_oto_cancel_does_not_replay_cached_market(
     );
     context.client.stop().unwrap();
 }
+
+#[rstest]
+#[case::running(false)]
+#[case::restart(true)]
+fn test_deferred_oto_child_cancel_survives_parent_fill(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] restart: bool,
+    #[values(false, true)] cross_instrument: bool,
+    #[values(false, true)] full_trigger: bool,
+    #[values(false, true)] pending_cancel: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let InstrumentAny::CryptoPerpetual(parent_instrument) = &instrument else {
+        panic!("Expected perpetual");
+    };
+
+    let child_instrument = if cross_instrument {
+        InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+            id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            ..parent_instrument.clone()
+        })
+    } else {
+        instrument.clone()
+    };
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.oto_full_trigger = full_trigger;
+        });
+
+    for asset in [&instrument, &child_instrument] {
+        context
+            .cache
+            .borrow_mut()
+            .add_instrument(asset.clone())
+            .unwrap();
+    }
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let parent_id = ClientOrderId::from("OTO-PARENT");
+    let child_id = ClientOrderId::from("OTO-CANCELED-CHILD");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .price(Price::from("1500.00"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(child_instrument.id())
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("2.000"))
+        .price(Price::from("2000.00"))
+        .build();
+
+    for order in [&parent, &child] {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &[parent, child],
+        ))
+        .unwrap();
+    let mut events = apply_order_events_from_channel(&context.cache, &mut rx);
+    let child = context.cache.borrow().try_order_owned(&child_id).unwrap();
+    if pending_cancel {
+        mark_pending_cancel(&context.cache, &child, trader_id, 1.into());
+    }
+
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id,
+            &child,
+            1.into(),
+        ))
+        .unwrap();
+
+    let expected_status = if pending_cancel {
+        OrderStatus::PendingCancel
+    } else {
+        OrderStatus::Submitted
+    };
+
+    assert_eq!(
+        context.cache.borrow().order(&child_id).unwrap().status(),
+        expected_status
+    );
+
+    if restart {
+        context.client.stop().unwrap();
+        context.client.start().unwrap();
+    }
+
+    let parent_quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("1499.00"),
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        2.into(),
+        2.into(),
+    );
+
+    for _ in 0..2 {
+        context.client.process_quote_tick(&parent_quote).unwrap();
+    }
+
+    let child_quote = QuoteTick::new(
+        child_instrument.id(),
+        Price::from("30000.00"),
+        Price::from("30001.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        3.into(),
+        3.into(),
+    );
+    context.client.process_quote_tick(&child_quote).unwrap();
+    events.extend(apply_order_events_from_channel(&context.cache, &mut rx));
+    let child_kinds: Vec<_> = events
+        .iter()
+        .filter(|event| event.client_order_id() == child_id)
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(child_kinds, vec!["submitted", "canceled"]);
+
+    let parent_fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == parent_id => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        parent_fills,
+        vec![(Price::from("1500.00"), Quantity::from("1.000")); 2]
+    );
+    assert_eq!(
+        context.cache.borrow().order(&child_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    context.client.stop().unwrap();
+}
