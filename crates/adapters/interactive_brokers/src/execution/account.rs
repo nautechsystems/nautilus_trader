@@ -30,6 +30,7 @@ use ibapi::{
     prelude::{StreamExt, SubscriptionItemStreamExt},
     subscriptions::{FilterDataStream, Subscription},
 };
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     live::runner::get_exec_event_sender,
@@ -78,7 +79,7 @@ type AccountSummaryStream = FilterDataStream<Subscription<AccountSummaryResult>>
 struct AccountSummaryAccumulator {
     balances: Vec<AccountSummaryBalance>,
     margins: Vec<MarginBalance>,
-    info: Params,
+    info: IndexMap<String, serde_json::Value>,
 }
 
 /// Subscribe to account summary and parse to balances and margins.
@@ -269,7 +270,11 @@ async fn account_snapshot(
     Ok((
         balances,
         margins,
-        if info.is_empty() { None } else { Some(info) },
+        if info.is_empty() {
+            None
+        } else {
+            Some(Params::new(info))
+        },
     ))
 }
 
@@ -278,7 +283,7 @@ async fn account_snapshot(
 async fn merge_account_updates_snapshot(
     client: &Arc<Client>,
     raw_account_id: &str,
-    info: &mut Params,
+    info: &mut IndexMap<String, serde_json::Value>,
 ) -> anyhow::Result<()> {
     let account = IbAccountId(raw_account_id.to_string());
     let subscription = client
@@ -303,7 +308,11 @@ async fn merge_account_updates_snapshot(
     Ok(())
 }
 
-fn merge_account_value(info: &mut Params, raw_account_id: &str, value: &AccountValue) {
+fn merge_account_value(
+    info: &mut IndexMap<String, serde_json::Value>,
+    raw_account_id: &str,
+    value: &AccountValue,
+) {
     if value
         .account
         .as_deref()
@@ -828,6 +837,7 @@ mod tests {
         accounts::{AccountSummary, AccountSummaryResult, AccountValue},
         orders::ExecutionSide,
     };
+    use indexmap::IndexMap;
     use nautilus_core::Params;
     use nautilus_model::{
         identifiers::AccountId,
@@ -1195,7 +1205,7 @@ mod tests {
         #[case] account: Option<&str>,
         #[case] expected_inserted: bool,
     ) {
-        let mut info = Params::new();
+        let mut info = IndexMap::new();
 
         merge_account_value(
             &mut info,
@@ -1203,6 +1213,7 @@ mod tests {
             &account_value(account, "PostExpirationExcess", "-326492.00"),
         );
 
+        let info = Params::new(info);
         assert_eq!(
             info.get_str("PostExpirationExcess"),
             expected_inserted.then_some("-326492.00"),
@@ -1211,11 +1222,10 @@ mod tests {
 
     #[rstest]
     fn test_merge_account_value_keeps_summary_tags_and_overwrites_same_key() {
-        let mut info = Params::new();
-        info.insert(
+        let mut info = IndexMap::from([(
             AccountSummaryTags::TOTAL_CASH_VALUE.to_string(),
             serde_json::Value::from("1000.00"),
-        );
+        )]);
 
         merge_account_value(
             &mut info,
@@ -1232,6 +1242,7 @@ mod tests {
             ),
         );
 
+        let info = Params::new(info);
         assert_eq!(info.len(), 2);
         assert_eq!(info.get_str("TotalCashValue"), Some("1250.50"));
         assert_eq!(info.get_str("PostExpirationMargin"), Some("391668.36"));

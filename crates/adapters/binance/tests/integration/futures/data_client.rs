@@ -190,10 +190,12 @@ fn stale_depth_update(state: &DataTestServerState, stream: &str) -> serde_json::
 }
 
 fn liquidation_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesLiquidation",
@@ -203,10 +205,12 @@ fn liquidation_data_type_for_instrument(instrument_id: InstrumentId) -> DataType
 }
 
 fn open_interest_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesOpenInterest",
@@ -219,14 +223,18 @@ fn open_interest_hist_data_type_for_instrument(
     instrument_id: InstrumentId,
     period: &str,
 ) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
-    );
-    metadata.insert(
-        "period".to_string(),
-        serde_json::Value::String(period.to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "instrument_id".to_string(),
+                serde_json::Value::String(instrument_id.to_string()),
+            ),
+            (
+                "period".to_string(),
+                serde_json::Value::String(period.to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesOpenInterestHist",
@@ -236,23 +244,29 @@ fn open_interest_hist_data_type_for_instrument(
 }
 
 fn binance_bar_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
+    let metadata = Params::new(
+        [(
+            "bar_type".to_string(),
+            serde_json::Value::String(bar_type.to_string()),
+        )]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
 
 fn binance_bar_item_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
-    );
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(bar_type.instrument_id().to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "bar_type".to_string(),
+                serde_json::Value::String(bar_type.to_string()),
+            ),
+            (
+                "instrument_id".to_string(),
+                serde_json::Value::String(bar_type.instrument_id().to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
@@ -4850,10 +4864,12 @@ async fn test_unsubscribe_custom_ticker_for_instrument_sends_stream_unsubscribe(
 }
 
 fn ticker_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesTicker",

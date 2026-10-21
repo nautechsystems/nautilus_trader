@@ -5544,10 +5544,9 @@ mod tests {
         let usd = Currency::new("USD", 8, 0, "USD", CurrencyType::Crypto);
         let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
         let ts = get_atomic_clock_realtime().get_time_ns();
+
         let info = asset_index.map(|asset_index| {
-            let mut info = Params::new();
-            info.insert(ASSET_INDEX_INFO_KEY.to_string(), asset_index.into());
-            info
+            Params::new([(ASSET_INDEX_INFO_KEY.to_string(), asset_index.into())].into())
         });
 
         InstrumentAny::CryptoPerpetual(

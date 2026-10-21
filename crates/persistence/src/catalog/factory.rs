@@ -262,13 +262,12 @@ mod tests {
     ];
 
     fn params(entries: &[(&str, Value)]) -> Params {
-        let mut params = Params::new();
-
-        for (key, value) in entries {
-            params.insert((*key).to_string(), value.clone());
-        }
-
-        params
+        Params::new(
+            entries
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), value.clone()))
+                .collect(),
+        )
     }
 
     #[rstest]

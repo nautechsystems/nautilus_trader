@@ -696,7 +696,7 @@ fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -
     }
 
     insert_price_scale(&mut map, definition, price_precision);
-    (!map.is_empty()).then(|| Params::from_index_map(map))
+    (!map.is_empty()).then(|| Params::new(map))
 }
 
 /// Builds the `info` of a tokenized pair: the wire price scale alone, when it differs from the
@@ -707,7 +707,7 @@ fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -
 fn price_scale_info(definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
     let mut map = IndexMap::new();
     insert_price_scale(&mut map, definition, price_precision);
-    (!map.is_empty()).then(|| Params::from_index_map(map))
+    (!map.is_empty()).then(|| Params::new(map))
 }
 
 /// Records `pair_decimals` under [`KRAKEN_PAIR_DECIMALS_KEY`] when it is finer than

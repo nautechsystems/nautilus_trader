@@ -187,23 +187,27 @@ mod tests {
 
     #[rstest]
     fn test_params_pydict_roundtrip() {
-        let mut params = Params::new();
-        params.insert("null".to_string(), Value::Null);
-        params.insert("enabled".to_string(), json!(true));
-        params.insert(
-            "name".to_string(),
-            json!("Nautilus \u{65e5}\u{672c}\u{8a9e}"),
-        );
-        params.insert("signed".to_string(), json!(-7));
-        params.insert("unsigned".to_string(), json!(42_u64));
-        params.insert("signed_min".to_string(), json!(i64::MIN));
-        params.insert("unsigned_max".to_string(), json!(u64::MAX));
-        params.insert("ratio".to_string(), json!(2.5));
-        params.insert("large_float".to_string(), json!(2_f64.powi(65)));
-        params.insert("levels".to_string(), json!([1, "two", false]));
-        params.insert(
-            "nested".to_string(),
-            json!({"venue": "SIM", "limits": [i64::MIN, u64::MAX]}),
+        let params = Params::new(
+            [
+                ("null".to_string(), Value::Null),
+                ("enabled".to_string(), json!(true)),
+                (
+                    "name".to_string(),
+                    json!("Nautilus \u{65e5}\u{672c}\u{8a9e}"),
+                ),
+                ("signed".to_string(), json!(-7)),
+                ("unsigned".to_string(), json!(42_u64)),
+                ("signed_min".to_string(), json!(i64::MIN)),
+                ("unsigned_max".to_string(), json!(u64::MAX)),
+                ("ratio".to_string(), json!(2.5)),
+                ("large_float".to_string(), json!(2_f64.powi(65))),
+                ("levels".to_string(), json!([1, "two", false])),
+                (
+                    "nested".to_string(),
+                    json!({"venue": "SIM", "limits": [i64::MIN, u64::MAX]}),
+                ),
+            ]
+            .into(),
         );
 
         Python::initialize();

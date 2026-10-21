@@ -3989,8 +3989,7 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_returns_both_when_key_absent() {
-        let mut params = Params::new();
-        params.insert("other_key".to_string(), json!("value"));
+        let params = Params::new([("other_key".to_string(), json!("value"))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
@@ -4001,18 +4000,19 @@ mod tests {
     #[case("black_scholes", OKXGreeksType::Bs)]
     #[case("price_adjusted", OKXGreeksType::Pa)]
     fn parse_conventions_accepts_single_string(#[case] raw: &str, #[case] expected: OKXGreeksType) {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!(raw));
+        let params = Params::new([("greeks_convention".to_string(), json!(raw))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(expected));
     }
 
     #[rstest]
     fn parse_conventions_accepts_list_of_strings() {
-        let mut params = Params::new();
-        params.insert(
-            "greeks_convention".to_string(),
-            json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
+        let params = Params::new(
+            [(
+                "greeks_convention".to_string(),
+                json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
+            )]
+            .into(),
         );
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
@@ -4020,18 +4020,20 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_accepts_single_entry_list() {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]));
+        let params =
+            Params::new([("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Pa));
     }
 
     #[rstest]
     fn parse_conventions_deduplicates_list_entries() {
-        let mut params = Params::new();
-        params.insert(
-            "greeks_convention".to_string(),
-            json!(["BLACK_SCHOLES", "black_scholes"]),
+        let params = Params::new(
+            [(
+                "greeks_convention".to_string(),
+                json!(["BLACK_SCHOLES", "black_scholes"]),
+            )]
+            .into(),
         );
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Bs));
@@ -4039,10 +4041,12 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_skips_unknown_list_entries() {
-        let mut params = Params::new();
-        params.insert(
-            "greeks_convention".to_string(),
-            json!(["BOGUS", "PRICE_ADJUSTED"]),
+        let params = Params::new(
+            [(
+                "greeks_convention".to_string(),
+                json!(["BOGUS", "PRICE_ADJUSTED"]),
+            )]
+            .into(),
         );
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Pa));
@@ -4050,8 +4054,7 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_falls_back_to_both_on_all_unknown() {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!(["BOGUS"]));
+        let params = Params::new([("greeks_convention".to_string(), json!(["BOGUS"]))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
@@ -4062,16 +4065,14 @@ mod tests {
     #[case(json!(true))]
     #[case(json!({"nested": "object"}))]
     fn parse_conventions_falls_back_on_non_string_value(#[case] value: serde_json::Value) {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), value);
+        let params = Params::new([("greeks_convention".to_string(), value)].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
 
     #[rstest]
     fn parse_conventions_falls_back_on_unknown_single_string() {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!("BOGUS"));
+        let params = Params::new([("greeks_convention".to_string(), json!("BOGUS"))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
@@ -4755,8 +4756,7 @@ mod tests {
     fn definitions_match_detects_info_changes() {
         let pair = currency_pair_btcusdt();
         let mut changed = pair.clone();
-        let mut info = Params::new();
-        info.insert("okx_rpi_min_level".to_string(), json!(5));
+        let info = Params::new([("okx_rpi_min_level".to_string(), json!(5))].into());
         changed.info = Some(info);
 
         assert!(!instrument_definitions_match(

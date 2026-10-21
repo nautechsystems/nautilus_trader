@@ -1442,8 +1442,7 @@ mod streaming_tests {
     fn test_configured_catalog_error_names_rejected_param() {
         let directory = tempdir().unwrap();
         let path = directory.path().to_string_lossy().into_owned();
-        let mut params = Params::new();
-        params.insert("batch_size".to_string(), serde_json::json!(1024));
+        let params = Params::new([("batch_size".to_string(), serde_json::json!(1024))].into());
 
         let config = KernelConfig {
             catalogs: vec![

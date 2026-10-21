@@ -1984,7 +1984,7 @@ mod tests {
     fn params_with(key: &str, val: serde_json::Value) -> Params {
         let mut map = indexmap::IndexMap::new();
         map.insert(key.to_owned(), val);
-        Params::from_index_map(map)
+        Params::new(map)
     }
 
     #[tokio::test]

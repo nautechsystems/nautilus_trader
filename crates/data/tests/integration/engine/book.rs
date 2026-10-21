@@ -2004,8 +2004,7 @@ fn test_managed_book_rejects_incompatible_configuration(
         0 => cmd.book_type = BookType::L3_MBO,
         1 => cmd.depth = NonZeroUsize::new(50),
         2 => {
-            let mut params = Params::new();
-            params.insert("rpi".into(), serde_json::json!(true));
+            let params = Params::new([("rpi".into(), serde_json::json!(true))].into());
             cmd.params = Some(params);
         }
         3 => cmd.client_id = Some(ClientId::new("OTHER")),
@@ -2237,8 +2236,7 @@ fn test_unmanaged_depth_rejects_conflicting_feed_configuration(
         1 => command.depth = NonZeroUsize::new(1),
         2 => command.depth = NonZeroUsize::new(6),
         3 => {
-            let mut params = Params::new();
-            params.insert("rpi".into(), serde_json::json!(true));
+            let params = Params::new([("rpi".into(), serde_json::json!(true))].into());
             command.params = Some(params);
         }
         _ => unreachable!(),

@@ -76,6 +76,7 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures-util = { workspace = true }
+indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }

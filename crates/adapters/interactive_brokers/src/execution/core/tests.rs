@@ -1873,10 +1873,12 @@ fn modify_changes_only_requested_fields_of_the_open_order(
         ..Default::default()
     };
 
-    let mut params = Params::new();
-    params.insert(
-        MODIFY_TRAILING_OFFSET_PARAM.to_string(),
-        serde_json::json!(2.5),
+    let params = Params::new(
+        [(
+            MODIFY_TRAILING_OFFSET_PARAM.to_string(),
+            serde_json::json!(2.5),
+        )]
+        .into(),
     );
 
     let cmd = ModifyOrder::new(
@@ -6018,12 +6020,17 @@ fn create_magnified_zc_future() -> InstrumentAny {
         currency: IBCurrency::from("USD"),
         ..Default::default()
     };
-    let mut info = Params::new();
-    info.insert(
-        "contract".to_string(),
-        crate::common::contract_to_json_value(&contract),
+
+    let info = Params::new(
+        [
+            (
+                "contract".to_string(),
+                crate::common::contract_to_json_value(&contract),
+            ),
+            ("priceMagnifier".to_string(), serde_json::Value::from(100)),
+        ]
+        .into(),
     );
-    info.insert("priceMagnifier".to_string(), serde_json::Value::from(100));
     let instrument = FuturesContract::builder()
         .instrument_id(InstrumentId::from("ZCZ6.CBOT"))
         .raw_symbol(Symbol::from("ZCZ6"))
@@ -6384,12 +6391,16 @@ fn seed_instruments_from_cache_adds_instruments_loaded_by_data_client() {
         ..Default::default()
     };
 
-    let mut info = Params::new();
-    info.insert(
-        String::from("contract"),
-        crate::common::contracts::contract_to_json_value(&contract),
+    let info = Params::new(
+        [
+            (
+                String::from("contract"),
+                crate::common::contracts::contract_to_json_value(&contract),
+            ),
+            (String::from("priceMagnifier"), serde_json::Value::from(1)),
+        ]
+        .into(),
     );
-    info.insert(String::from("priceMagnifier"), serde_json::Value::from(1));
     let instrument: InstrumentAny = CurrencyPair::builder()
         .instrument_id(instrument_id)
         .raw_symbol(Symbol::from("AAPL"))

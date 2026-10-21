@@ -4364,10 +4364,12 @@ mod tests {
     #[case::override_to_spot_isolated("spot_isolated", OKXTradeMode::SpotIsolated)]
     #[case::case_insensitive("CROSS", OKXTradeMode::Cross)]
     fn test_td_mode_param_override(#[case] td_mode_value: &str, #[case] expected: OKXTradeMode) {
-        let mut params = Params::new();
-        params.insert(
-            "td_mode".to_string(),
-            Value::String(td_mode_value.to_string()),
+        let params = Params::new(
+            [(
+                "td_mode".to_string(),
+                Value::String(td_mode_value.to_string()),
+            )]
+            .into(),
         );
 
         let result = get_param_as_string(Some(&params), "td_mode")
@@ -4378,8 +4380,8 @@ mod tests {
 
     #[rstest]
     fn test_td_mode_param_invalid_falls_through() {
-        let mut params = Params::new();
-        params.insert("td_mode".to_string(), Value::String("invalid".to_string()));
+        let params =
+            Params::new([("td_mode".to_string(), Value::String("invalid".to_string()))].into());
 
         let result = get_param_as_string(Some(&params), "td_mode")
             .and_then(|s| s.parse::<OKXTradeMode>().ok());
@@ -4396,8 +4398,8 @@ mod tests {
 
     #[rstest]
     fn test_close_fraction_present_sets_reduce_only_true() {
-        let mut params = Params::new();
-        params.insert("close_fraction".to_string(), Value::String("1".to_string()));
+        let params =
+            Params::new([("close_fraction".to_string(), Value::String("1".to_string()))].into());
         let params = Some(params);
 
         let close_fraction = get_param_as_string(params.as_ref(), "close_fraction");
@@ -4764,8 +4766,7 @@ mod tests {
         );
 
         if algo_type == OKXAlgoOrderType::Conditional {
-            let mut params = Params::new();
-            params.insert("close_fraction".into(), Value::String("1".into()));
+            let params = Params::new([("close_fraction".into(), Value::String("1".into()))].into());
             submit.params = Some(params);
         }
 
@@ -6145,8 +6146,8 @@ mod tests {
             .trigger_price(Price::from("123.45"))
             .quantity(Quantity::from("2"))
             .build();
-        let mut params = Params::new();
-        params.insert("close_fraction".to_string(), Value::String("1".to_string()));
+        let params =
+            Params::new([("close_fraction".to_string(), Value::String("1".to_string()))].into());
         assert_eq!(
             client.order_position_side(&order, Some(&params)),
             Some(expected)
@@ -6592,8 +6593,7 @@ mod tests {
         );
 
         if transport == "close_fraction" {
-            let mut params = Params::new();
-            params.insert("close_fraction".into(), Value::String("1".into()));
+            let params = Params::new([("close_fraction".into(), Value::String("1".into()))].into());
             command.params = Some(params);
         }
 
@@ -6885,8 +6885,8 @@ mod tests {
 
         if margin_conflict {
             command.position_id = None;
-            let mut params = Params::new();
-            params.insert("td_mode".to_string(), Value::String("cross".to_string()));
+            let params =
+                Params::new([("td_mode".to_string(), Value::String("cross".to_string()))].into());
             command.params = Some(params);
         }
 
@@ -6968,8 +6968,8 @@ mod tests {
 
         if margin_conflict {
             command.position_id = None;
-            let mut params = Params::new();
-            params.insert("td_mode".to_string(), Value::String("cross".to_string()));
+            let params =
+                Params::new([("td_mode".to_string(), Value::String("cross".to_string()))].into());
             command.params = Some(params);
         }
 

@@ -1131,11 +1131,8 @@ mod tests {
         };
 
         let mut cmd = modify_trigger_cmd();
-        cmd.params = trailing_offset.map(|offset| {
-            let mut params = Params::new();
-            params.insert(MODIFY_TRAILING_OFFSET_PARAM.to_string(), offset);
-            params
-        });
+        cmd.params = trailing_offset
+            .map(|offset| Params::new([(MODIFY_TRAILING_OFFSET_PARAM.to_string(), offset)].into()));
 
         InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(
             &cmd,
@@ -1237,8 +1234,8 @@ mod tests {
         let mut cmd = modify_trigger_cmd();
         cmd.instrument_id = InstrumentId::from("AAPL.XNAS");
         cmd.trigger_price = Some(Price::from("4.8125"));
-        let mut params = Params::new();
-        params.insert(MODIFY_TRAILING_OFFSET_PARAM.to_string(), trailing_offset);
+        let params =
+            Params::new([(MODIFY_TRAILING_OFFSET_PARAM.to_string(), trailing_offset)].into());
         cmd.params = Some(params);
 
         InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(

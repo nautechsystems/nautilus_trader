@@ -19,6 +19,7 @@
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use axum::http::StatusCode;
+use indexmap::IndexMap;
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
@@ -26,7 +27,7 @@ use nautilus_common::{
     msgbus::{self, TypedHandler},
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{
     SocketReconnectRequestOutcome,
     testing::{ExecutionHarness, RoutedKind},
@@ -2868,14 +2869,12 @@ fn seed_taker_fee_schedule(execution: &ExecutionHarness) {
         panic!("expected binary option harness instrument");
     };
 
-    binary
-        .info
-        .as_mut()
-        .expect("harness instrument info")
-        .insert(
-            "fee_schedule".into(),
-            json!({"exponent": "1", "rate": "0.02", "takerOnly": true, "rebateRate": "0"}),
-        );
+    let mut info = IndexMap::clone(binary.info.as_ref().expect("harness instrument info"));
+    info.insert(
+        "fee_schedule".into(),
+        json!({"exponent": "1", "rate": "0.02", "takerOnly": true, "rebateRate": "0"}),
+    );
+    binary.info = Some(Params::new(info));
     execution
         .cache()
         .borrow_mut()

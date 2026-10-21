@@ -1802,10 +1802,13 @@ mod tests {
     ) {
         let mut binary = binary_option();
         binary.currency = Currency::pUSD();
-        let mut info = nautilus_core::Params::new();
-        info.insert(
-            "fee_schedule".into(),
-            serde_json::json!({"rate": "0.07", "exponent": exponent}),
+
+        let info = nautilus_core::Params::new(
+            [(
+                "fee_schedule".into(),
+                serde_json::json!({"rate": "0.07", "exponent": exponent}),
+            )]
+            .into(),
         );
         binary.info = Some(info);
         let instrument = InstrumentAny::BinaryOption(binary);
@@ -1825,8 +1828,7 @@ mod tests {
         let mut binary = binary_option();
 
         if let Some(value) = value {
-            let mut info = nautilus_core::Params::new();
-            info.insert("min_order_size".into(), value);
+            let info = nautilus_core::Params::new([("min_order_size".into(), value)].into());
             binary.info = Some(info);
         }
         InstrumentAny::BinaryOption(binary)

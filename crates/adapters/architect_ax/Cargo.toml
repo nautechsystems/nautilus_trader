@@ -73,6 +73,7 @@ dashmap = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
+indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }

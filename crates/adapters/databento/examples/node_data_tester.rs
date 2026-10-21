@@ -88,9 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Databento applies the price-precision override through subscription params.
     let subscribe_params = PRICE_PRECISION.map(|price_precision| {
-        let mut params = Params::new();
-        params.insert(PRICE_PRECISION_PARAM.to_string(), json!(price_precision));
-        params
+        Params::new([(PRICE_PRECISION_PARAM.to_string(), json!(price_precision))].into())
     });
 
     let tester_config = DataTesterConfig::builder()

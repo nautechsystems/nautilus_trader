@@ -776,8 +776,8 @@ async fn test_option_chain_reference_price_response(
         UnixNanos::from(1_743_120_000_000_000_000),
     );
     let instrument_id = InstrumentId::from("BTC-28MAR25-90000-C.DERIBIT");
-    let mut params = Params::new();
-    params.insert("venue-error".to_string(), json!(venue_error));
+    let params = Params::new([("venue-error".to_string(), json!(venue_error))].into());
+
     let request = RequestOptionChainReferencePrice::new(
         series_id,
         instrument_id,
@@ -1001,8 +1001,7 @@ async fn test_data_client_subscribe_combo_legs_expands_trade_channels() {
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let subscribe = SubscribeTrades::new(
         instrument_id,
@@ -1069,8 +1068,7 @@ async fn test_data_client_subscribe_combo_legs_delivers_parent_and_leg_trades() 
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let subscribe = SubscribeTrades::new(
         instrument_id,
@@ -1162,8 +1160,7 @@ async fn test_data_client_subscribe_combo_legs_repeated_unsubscribes_last_refere
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let first_command_id = UUID4::new();
     let first_subscribe = SubscribeTrades::new(
@@ -1288,11 +1285,9 @@ async fn test_data_client_subscribe_combo_legs_requires_opt_in(#[case] opt_in: O
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let params = opt_in.map(|value| {
-        let mut params = Params::new();
-        params.insert("subscribe_combo_legs".to_string(), json!(value));
-        params
-    });
+
+    let params = opt_in
+        .map(|value| Params::new([("subscribe_combo_legs".to_string(), json!(value))].into()));
 
     let command_id = UUID4::new();
     let subscribe = SubscribeTrades::new(
@@ -1360,8 +1355,7 @@ async fn test_data_client_subscribe_combo_legs_after_lazy_loading_combo() {
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let subscribe = SubscribeTrades::new(
         instrument_id,
@@ -1940,14 +1934,18 @@ async fn test_data_client_emits_instruments_on_connect() {
 }
 
 fn book_summary_data_type(currency: &str, kind: &str) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "currency".to_string(),
-        serde_json::Value::String(currency.to_string()),
-    );
-    metadata.insert(
-        "kind".to_string(),
-        serde_json::Value::String(kind.to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "currency".to_string(),
+                serde_json::Value::String(currency.to_string()),
+            ),
+            (
+                "kind".to_string(),
+                serde_json::Value::String(kind.to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new(
         "DeribitBookSummary",
@@ -2105,10 +2103,12 @@ async fn test_data_client_request_book_summaries_defaults_kind_and_uppercases_cu
     while rx.try_recv().is_ok() {}
 
     // Selector-only: lowercase currency, omit kind, no catalog identifier.
-    let mut metadata = Params::new();
-    metadata.insert(
-        "currency".to_string(),
-        serde_json::Value::String("eth".to_string()),
+    let metadata = Params::new(
+        [(
+            "currency".to_string(),
+            serde_json::Value::String("eth".to_string()),
+        )]
+        .into(),
     );
     let request_data_type = DataType::new("DeribitBookSummary", Some(metadata), None);
 

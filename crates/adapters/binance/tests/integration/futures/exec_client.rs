@@ -6976,24 +6976,21 @@ fn add_stop_market_order_to_cache(
 }
 
 fn close_position_params() -> Params {
-    let mut params = Params::new();
-    params.insert("close_position".to_string(), json!(true));
-    params
+    Params::new([("close_position".to_string(), json!(true))].into())
 }
 
 fn rpi_params() -> Params {
-    let mut params = Params::new();
-    params.insert("rpi".to_string(), json!(true));
-    params
+    Params::new([("rpi".to_string(), json!(true))].into())
 }
 
 fn algo_order_query_params() -> Params {
-    let mut params = Params::new();
-    params.insert(
-        BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM.to_string(),
-        json!(true),
-    );
-    params
+    Params::new(
+        [(
+            BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM.to_string(),
+            json!(true),
+        )]
+        .into(),
+    )
 }
 
 fn add_reduce_only_limit_order_to_cache(
@@ -7940,10 +7937,12 @@ async fn test_submit_order_with_price_match_sends_price_match_and_omits_price() 
         .add_order(order_any.clone(), None, None, false)
         .unwrap();
 
-    let mut params = Params::new();
-    params.insert(
-        "price_match".to_string(),
-        serde_json::Value::String("OPPONENT_5".to_string()),
+    let params = Params::new(
+        [(
+            "price_match".to_string(),
+            serde_json::Value::String("OPPONENT_5".to_string()),
+        )]
+        .into(),
     );
 
     let submit_cmd = SubmitOrder::new(

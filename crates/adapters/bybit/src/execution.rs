@@ -2745,8 +2745,8 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
 
-        let mut params = Params::new();
-        params.insert("order_iv".to_string(), serde_json::json!({ "bad": true }));
+        let params =
+            Params::new([("order_iv".to_string(), serde_json::json!({ "bad": true }))].into());
 
         client
             .modify_order(modify_command(

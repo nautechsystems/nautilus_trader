@@ -898,10 +898,12 @@ fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str
 }
 
 fn spot_ticker_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceSpotTicker",
@@ -911,23 +913,29 @@ fn spot_ticker_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn binance_bar_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
+    let metadata = Params::new(
+        [(
+            "bar_type".to_string(),
+            serde_json::Value::String(bar_type.to_string()),
+        )]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
 
 fn binance_bar_item_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
-    );
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(bar_type.instrument_id().to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "bar_type".to_string(),
+                serde_json::Value::String(bar_type.to_string()),
+            ),
+            (
+                "instrument_id".to_string(),
+                serde_json::Value::String(bar_type.instrument_id().to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }

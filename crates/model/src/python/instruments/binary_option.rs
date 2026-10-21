@@ -447,10 +447,13 @@ mod tests {
     #[rstest]
     fn test_dict_round_trip(mut binary_option: BinaryOption) {
         binary_option.event_id = Some("event-123".into());
-        let mut info = nautilus_core::Params::new();
-        info.insert(
-            "gamma_market".to_string(),
-            "0.1234567890123456789012345678".into(),
+
+        let info = nautilus_core::Params::new(
+            [(
+                "gamma_market".to_string(),
+                "0.1234567890123456789012345678".into(),
+            )]
+            .into(),
         );
         binary_option.info = Some(info);
         Python::initialize();

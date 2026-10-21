@@ -17,7 +17,7 @@
 
 use std::fmt::Debug;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::instruments::{BinaryOption, Instrument, InstrumentAny};
 
 use crate::{
@@ -280,9 +280,9 @@ pub(crate) fn binary_market_closed(instrument: &BinaryOption) -> Option<bool> {
 }
 
 pub(crate) fn set_market_closed(instrument: &mut BinaryOption, closed: bool) {
-    let mut info = instrument.info.clone().unwrap_or_default();
+    let mut info = instrument.info.as_deref().cloned().unwrap_or_default();
     info.insert(MARKET_CLOSED_KEY.to_string(), closed.into());
-    instrument.info = Some(info);
+    instrument.info = Some(Params::new(info));
 }
 
 /// Returns whether `instrument` is past its expiration without Gamma reporting it still open.

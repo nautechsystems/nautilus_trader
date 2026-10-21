@@ -502,7 +502,7 @@ mod tests {
             UnixNanos::default(),
             Some(Currency::USD()),
         )
-        .with_info(Some(Params::from_index_map(info)))
+        .with_info(Some(Params::new(info)))
     }
 
     #[rstest]
@@ -821,7 +821,7 @@ mod tests {
         let mut other_info = IndexMap::new();
         other_info.insert("different".to_string(), json!(1_u64));
         let other = AccountState {
-            info: Some(Params::from_index_map(other_info)),
+            info: Some(Params::new(other_info)),
             ..base.clone()
         };
         assert_eq!(base, other);

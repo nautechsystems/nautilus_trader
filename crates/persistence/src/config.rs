@@ -740,8 +740,7 @@ mod tests {
 
     #[rstest]
     fn data_catalog_config_preserves_backend_params() {
-        let mut params = Params::new();
-        params.insert("snapshot_id".to_string(), json!(1024));
+        let params = Params::new([("snapshot_id".to_string(), json!(1024))].into());
         let config = DataCatalogConfig::new(
             "/data/catalog".to_string(),
             Some("file".to_string()),
@@ -916,8 +915,7 @@ read_only = true
 
     #[rstest]
     fn data_catalog_config_connect_config_carries_protocol_options_settings_and_params() {
-        let mut params = Params::new();
-        params.insert("snapshot_id".to_string(), json!(1024));
+        let params = Params::new([("snapshot_id".to_string(), json!(1024))].into());
         let config = DataCatalogConfig::builder()
             .path("bucket/catalog".to_string())
             .fs_protocol("s3".to_string())
@@ -1018,8 +1016,7 @@ read_only = true
 
     #[rstest]
     fn streaming_config_builder_preserves_promotion_options_and_params() {
-        let mut params = Params::new();
-        params.insert("batch_size".to_string(), json!(512));
+        let params = Params::new([("batch_size".to_string(), json!(512))].into());
         let config = StreamingConfig::builder()
             .writer_path("/data/stream".to_string())
             .catalog(local_catalog())

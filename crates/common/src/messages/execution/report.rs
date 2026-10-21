@@ -394,9 +394,7 @@ mod tests {
     }
 
     fn params() -> Params {
-        let mut params = Params::new();
-        params.insert("depth".into(), "10".into());
-        params
+        Params::new([("depth".into(), "10".into())].into())
     }
 
     #[rstest]

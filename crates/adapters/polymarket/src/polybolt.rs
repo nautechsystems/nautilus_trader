@@ -2407,27 +2407,28 @@ mod tests {
     const TWAP_OBSERVATION_TS: u64 = 1791355667000;
 
     fn crypto_data_type(symbol: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), json!(symbol));
+        let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
         DataType::new(POLYMARKET_CRYPTO_PRICE_TYPE_NAME, Some(metadata), None)
     }
 
     fn equity_data_type(symbol: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), json!(symbol));
+        let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
         DataType::new(POLYMARKET_EQUITY_PRICE_TYPE_NAME, Some(metadata), None)
     }
 
     fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), json!(symbol));
-        metadata.insert("window_seconds".to_string(), json!(window_seconds));
+        let metadata = Params::new(
+            [
+                ("symbol".to_string(), json!(symbol)),
+                ("window_seconds".to_string(), json!(window_seconds)),
+            ]
+            .into(),
+        );
         DataType::new(POLYMARKET_CRYPTO_TWAP_TYPE_NAME, Some(metadata), None)
     }
 
     fn crypto_twap_data_type_without_window(symbol: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), json!(symbol));
+        let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
         DataType::new(POLYMARKET_CRYPTO_TWAP_TYPE_NAME, Some(metadata), None)
     }
 

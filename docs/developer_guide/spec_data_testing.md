@@ -1112,8 +1112,7 @@ DataTesterConfig::builder()
 use nautilus_core::Params;
 use serde_json::json;
 
-let mut subscribe_params = Params::new();
-subscribe_params.insert("key".to_string(), json!("value"));
+let subscribe_params = Params::new([("key".to_string(), json!("value"))].into());
 
 DataTesterConfig::builder()
     .client_id(client_id)
@@ -1145,8 +1144,7 @@ DataTesterConfig::builder()
 use nautilus_core::Params;
 use serde_json::json;
 
-let mut request_params = Params::new();
-request_params.insert("key".to_string(), json!("value"));
+let request_params = Params::new([("key".to_string(), json!("value"))].into());
 
 DataTesterConfig::builder()
     .client_id(client_id)

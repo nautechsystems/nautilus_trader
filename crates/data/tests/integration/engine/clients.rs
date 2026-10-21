@@ -838,8 +838,8 @@ fn test_data_subscription_logging(
 
     let mut adapter = DataClientAdapter::new(client_id, None, true, true, Box::new(client));
     let instrument_id = InstrumentId::from("SYN.SYN");
-    let mut params = Params::default();
-    params.insert("token".to_string(), serde_json::json!("SYN-command-secret"));
+    let params =
+        Params::new([("token".to_string(), serde_json::json!("SYN-command-secret"))].into());
     let subscribe_id = UUID4::new();
     let unsubscribe_id = UUID4::new();
     adapter.execute_subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
@@ -919,8 +919,8 @@ fn test_defi_subscription_logging(
     };
 
     let mut adapter = DataClientAdapter::new(client_id, None, true, true, Box::new(client));
-    let mut params = Params::default();
-    params.insert("token".to_string(), serde_json::json!("SYN-command-secret"));
+    let params =
+        Params::new([("token".to_string(), serde_json::json!("SYN-command-secret"))].into());
     let subscribe_id = UUID4::new();
     let unsubscribe_id = UUID4::new();
     adapter.execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks::new(
@@ -1099,8 +1099,10 @@ impl DataClient for UnsupportedDataClient {
 #[rstest]
 fn test_unimplemented_command_logging_omits_parameters() {
     capture_connection_logs();
-    let mut params = nautilus_core::Params::default();
-    params.insert("api_key".to_string(), serde_json::json!("SYN-secret"));
+
+    let params = nautilus_core::Params::new(
+        [("api_key".to_string(), serde_json::json!("SYN-secret"))].into(),
+    );
 
     let request = RequestQuotes {
         instrument_id: InstrumentId::from("SYN.SYN"),

@@ -1741,11 +1741,9 @@ fn test_subscription_facade_sends_exact_command_matrix(
         strikes_below: 11,
     };
     let snapshot_interval_ms = Some(1_003);
-    let mut params = Params::new();
-    params.insert("matrix".to_string(), serde_json::json!(23));
+    let params = Params::new([("matrix".to_string(), serde_json::json!(23))].into());
     let caller_client_id = ClientId::from("CALLER-MATRIX-CLIENT");
-    let mut caller_params = Params::new();
-    caller_params.insert("matrix".to_string(), serde_json::json!(29));
+    let caller_params = Params::new([("matrix".to_string(), serde_json::json!(29))].into());
 
     for (client_id, params) in [
         (client_id, params.clone()),
@@ -2125,16 +2123,12 @@ fn test_release_subscriptions_emits_retained_unsubscribe_commands(
         Ustr::from("USD"),
         UnixNanos::from(1_721_174_400_000_000_000),
     );
-    let mut data_params = Params::new();
-    data_params.insert("data-route".to_string(), serde_json::json!(31));
-    let mut book_params = Params::new();
-    book_params.insert("book-route".to_string(), serde_json::json!(37));
-    let mut bar_params = Params::new();
-    bar_params.insert("bar-route".to_string(), serde_json::json!(41));
-    let mut chain_params = Params::new();
-    chain_params.insert("chain-route".to_string(), serde_json::json!(43));
-    let mut remaining_params = Params::new();
-    remaining_params.insert("remaining-route".to_string(), serde_json::json!(47));
+    let data_params = Params::new([("data-route".to_string(), serde_json::json!(31))].into());
+    let book_params = Params::new([("book-route".to_string(), serde_json::json!(37))].into());
+    let bar_params = Params::new([("bar-route".to_string(), serde_json::json!(41))].into());
+    let chain_params = Params::new([("chain-route".to_string(), serde_json::json!(43))].into());
+    let remaining_params =
+        Params::new([("remaining-route".to_string(), serde_json::json!(47))].into());
 
     actor.subscribe_data(
         data_type.clone(),
@@ -2505,10 +2499,8 @@ fn test_duplicate_subscription_keeps_first_identity(
     );
     let first_client_id = ClientId::from("FIRST-QUOTE-CLIENT");
     let second_client_id = ClientId::from("SECOND-QUOTE-CLIENT");
-    let mut first_params = Params::new();
-    first_params.insert("route".to_string(), serde_json::json!(53));
-    let mut second_params = Params::new();
-    second_params.insert("route".to_string(), serde_json::json!(59));
+    let first_params = Params::new([("route".to_string(), serde_json::json!(53))].into());
+    let second_params = Params::new([("route".to_string(), serde_json::json!(59))].into());
 
     actor.subscribe_quotes(
         audusd_sim.id,
@@ -2741,8 +2733,7 @@ fn test_local_custom_subscription_upgrades_to_client_backed(
     let data_type = DataType::new(TestActorCustomData::type_name_static(), None, None);
     let topic = get_custom_topic(&data_type);
     let client_id = ClientId::new("CUSTOM-DATA-CLIENT");
-    let mut params = Params::new();
-    params.insert("source".to_string(), serde_json::json!("remote"));
+    let params = Params::new([("source".to_string(), serde_json::json!("remote"))].into());
 
     actor.subscribe_data(data_type.clone(), None, None);
     assert!(saver.get_messages().is_empty());
@@ -2978,9 +2969,7 @@ fn test_book_depth_facade_sends_subscribe_and_unsubscribe_commands(
 }
 
 fn parent_params() -> Params {
-    let mut params = Params::new();
-    params.insert(PARAMS_IS_PARENT.to_string(), serde_json::json!(true));
-    params
+    Params::new([(PARAMS_IS_PARENT.to_string(), serde_json::json!(true))].into())
 }
 
 #[rstest]
@@ -3725,8 +3714,7 @@ fn test_request_facade_sends_exact_command_matrix(
     let limit = NonZeroUsize::new(17);
     let depth = NonZeroUsize::new(19);
     let bar_type = BarType::from_str(&format!("{instrument_id}-3-MINUTE-LAST-EXTERNAL")).unwrap();
-    let mut params = Params::new();
-    params.insert("matrix".to_string(), serde_json::json!(23));
+    let params = Params::new([("matrix".to_string(), serde_json::json!(23))].into());
 
     let data_id = actor
         .request_data(
@@ -4992,11 +4980,9 @@ fn test_defi_subscription_facade_sends_exact_command_matrix(
     let (_, _, instrument_id, _) = defi_event_context();
     let chain = Blockchain::Arbitrum;
     let client_id = ClientId::from("DEFI-MATRIX-CLIENT");
-    let mut params = Params::new();
-    params.insert("matrix".to_string(), serde_json::json!(29));
+    let params = Params::new([("matrix".to_string(), serde_json::json!(29))].into());
 
-    let mut duplicate_params = Params::new();
-    duplicate_params.insert("matrix".to_string(), serde_json::json!(31));
+    let duplicate_params = Params::new([("matrix".to_string(), serde_json::json!(31))].into());
 
     for (client_id, params) in [
         (client_id, params.clone()),
@@ -5170,8 +5156,7 @@ fn test_release_subscriptions_emits_every_defi_unsubscribe_shape(
     let (_, _, instrument_id, _) = defi_event_context();
     let chain = Blockchain::Arbitrum;
     let client_id = ClientId::from("RETAINED-DEFI-CLIENT");
-    let mut params = Params::new();
-    params.insert("defi-route".to_string(), serde_json::json!(47));
+    let params = Params::new([("defi-route".to_string(), serde_json::json!(47))].into());
 
     actor.subscribe_blocks(chain, Some(client_id), Some(params.clone()));
     actor.subscribe_pool(instrument_id, Some(client_id), Some(params.clone()));

@@ -2091,8 +2091,7 @@ mod tests {
 
     #[rstest]
     fn test_price_precision_from_params() {
-        let mut params = Params::new();
-        params.insert(PRICE_PRECISION_PARAM.to_string(), json!(5));
+        let params = Params::new([(PRICE_PRECISION_PARAM.to_string(), json!(5))].into());
 
         let price_precision = price_precision_from_params(Some(&params)).unwrap();
 
@@ -2101,10 +2100,12 @@ mod tests {
 
     #[rstest]
     fn test_price_precision_from_params_rejects_out_of_range_value() {
-        let mut params = Params::new();
-        params.insert(
-            PRICE_PRECISION_PARAM.to_string(),
-            json!(u64::from(u8::MAX) + 1),
+        let params = Params::new(
+            [(
+                PRICE_PRECISION_PARAM.to_string(),
+                json!(u64::from(u8::MAX) + 1),
+            )]
+            .into(),
         );
 
         let result = price_precision_from_params(Some(&params));
@@ -2124,8 +2125,8 @@ mod tests {
             OrderBookDelta::clear(child_b, 2, UnixNanos::from(2_000), UnixNanos::from(2_000)),
             OrderBookDelta::clear(child_a, 3, UnixNanos::from(3_000), UnixNanos::from(3_000)),
         ];
-        let mut params = Params::new();
-        params.insert(PRICE_PRECISION_PARAM.to_string(), json!(5));
+        let params = Params::new([(PRICE_PRECISION_PARAM.to_string(), json!(5))].into());
+
         let response = BookDeltasResponse::new(
             correlation_id,
             client_id,
@@ -2226,8 +2227,7 @@ mod tests {
 
     #[rstest]
     fn test_schema_from_params_accepts_allowed_value() {
-        let mut params = Params::new();
-        params.insert(SCHEMA_PARAM.to_string(), json!("tbbo"));
+        let params = Params::new([(SCHEMA_PARAM.to_string(), json!("tbbo"))].into());
 
         let schema = schema_from_params(Some(&params), dbn::Schema::Mbp1, QUOTE_SCHEMAS).unwrap();
 
@@ -2236,8 +2236,7 @@ mod tests {
 
     #[rstest]
     fn test_schema_from_params_rejects_disallowed_value() {
-        let mut params = Params::new();
-        params.insert(SCHEMA_PARAM.to_string(), json!("mbo"));
+        let params = Params::new([(SCHEMA_PARAM.to_string(), json!("mbo"))].into());
 
         let result = schema_from_params(Some(&params), dbn::Schema::Mbp1, QUOTE_SCHEMAS);
 
@@ -2249,9 +2248,7 @@ mod tests {
     #[case::trades(SubscribeKind::Trades)]
     fn test_invalid_subscribe_params_do_not_create_feed_handler(#[case] kind: SubscribeKind) {
         let mut client = test_data_client();
-        let mut params = Params::new();
-        params.insert(SCHEMA_PARAM.to_string(), json!("definition"));
-
+        let params = Params::new([(SCHEMA_PARAM.to_string(), json!("definition"))].into());
         let result = match kind {
             SubscribeKind::Quotes => client.subscribe_quotes(subscribe_quotes_cmd(Some(params))),
             SubscribeKind::Trades => client.subscribe_trades(subscribe_trades_cmd(Some(params))),
@@ -2437,8 +2434,8 @@ mod tests {
     #[rstest]
     fn test_subscribe_custom_data_rejects_metadata() {
         let mut client = test_data_client();
-        let mut metadata = Params::new();
-        metadata.insert("venue".to_string(), json!("GLBX"));
+        let metadata = Params::new([("venue".to_string(), json!("GLBX"))].into());
+
         let command = SubscribeCustomData::new(
             Some(ClientId::from("DATABENTO-TEST")),
             None,

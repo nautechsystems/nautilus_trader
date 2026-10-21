@@ -462,10 +462,13 @@ fn test_calculate_commission_returns_fee_in_quote_currency(
     let (client, _rx, _cache) = create_test_execution_client("127.0.0.1:1".parse().unwrap());
     let mut binary = nautilus_model::instruments::stubs::binary_option();
     binary.currency = Currency::pUSD();
-    let mut info = Params::new();
-    info.insert(
-        "fee_schedule".into(),
-        json!({"rate": "0.07", "exponent": "2"}),
+
+    let info = Params::new(
+        [(
+            "fee_schedule".into(),
+            json!({"rate": "0.07", "exponent": "2"}),
+        )]
+        .into(),
     );
     binary.info = Some(info);
     let instrument = InstrumentAny::BinaryOption(binary);
@@ -12951,7 +12954,7 @@ fn replace_fee_schedule(
         panic!("expected binary option test instrument");
     };
 
-    let mut info = binary.info.take().unwrap_or_default();
+    let mut info = binary.info.as_deref().cloned().unwrap_or_default();
     info.insert(
         "fee_schedule".into(),
         json!({
@@ -12961,7 +12964,7 @@ fn replace_fee_schedule(
             "rebateRate": "0",
         }),
     );
-    binary.info = Some(info);
+    binary.info = Some(Params::new(info));
     cache.borrow_mut().add_instrument(instrument).unwrap();
 }
 
@@ -12974,7 +12977,8 @@ fn set_min_order_size(
     let InstrumentAny::BinaryOption(binary) = &mut instrument else {
         panic!("expected binary option test instrument");
     };
-    let mut info = binary.info.take().unwrap_or_default();
+
+    let mut info = binary.info.as_deref().cloned().unwrap_or_default();
 
     match min_order_size {
         Some(value) => {
@@ -12984,7 +12988,8 @@ fn set_min_order_size(
             info.shift_remove("min_order_size");
         }
     }
-    binary.info = Some(info);
+
+    binary.info = Some(Params::new(info));
     cache.borrow_mut().add_instrument(instrument).unwrap();
 }
 

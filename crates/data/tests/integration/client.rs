@@ -240,8 +240,7 @@ fn test_custom_data_unsubscription_retries_after_client_failure(
     );
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let data_type = DataType::new("RetryType", None, None);
-    let mut params = Params::new();
-    params.insert("route".to_string(), serde_json::json!(37));
+    let params = Params::new([("route".to_string(), serde_json::json!(37))].into());
     adapter.execute_subscribe(SubscribeCommand::Data(SubscribeCustomData::new(
         Some(client_id),
         Some(venue),
@@ -888,10 +887,8 @@ fn test_custom_data_unsubscribe_keeps_client_subscription_when_subscribers_remai
     ));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let data_type = DataType::new("SharedType", None, None);
-    let mut first_params = Params::new();
-    first_params.insert("owner".to_string(), serde_json::json!(1));
-    let mut second_params = Params::new();
-    second_params.insert("owner".to_string(), serde_json::json!(2));
+    let first_params = Params::new([("owner".to_string(), serde_json::json!(1))].into());
+    let second_params = Params::new([("owner".to_string(), serde_json::json!(2))].into());
     let first_subscribe = SubscribeCommand::Data(SubscribeCustomData::new(
         Some(client_id),
         Some(venue),
@@ -2096,8 +2093,7 @@ fn test_defi_blocks_release_after_final_owner(
     ));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let chain = Blockchain::Arbitrum;
-    let mut first_params = Params::new();
-    first_params.insert("owner".to_string(), serde_json::json!(1));
+    let first_params = Params::new([("owner".to_string(), serde_json::json!(1))].into());
 
     for params in [Some(first_params.clone()), None] {
         adapter.execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
@@ -2219,8 +2215,7 @@ fn test_defi_blocks_unsubscription_retries_after_client_failure(
     );
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let chain = Blockchain::Arbitrum;
-    let mut params = Params::new();
-    params.insert("route".to_string(), serde_json::json!(41));
+    let params = Params::new([("route".to_string(), serde_json::json!(41))].into());
     adapter.execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
         chain,
         client_id: Some(client_id),

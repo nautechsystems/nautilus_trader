@@ -769,8 +769,8 @@ mod tests {
     #[rstest]
     fn test_contract_with_order_exchange_param_overrides_exchange() {
         let contract = contract_with_exchange("SMART");
-        let mut params = Params::new();
-        params.insert("exchange".to_string(), Value::String("IEX".to_string()));
+        let params =
+            Params::new([("exchange".to_string(), Value::String("IEX".to_string()))].into());
 
         let updated = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
             contract.clone(),
@@ -785,7 +785,7 @@ mod tests {
     #[rstest]
     fn test_contract_with_order_exchange_param_keeps_contract_without_exchange() {
         let contract = contract_with_exchange("SMART");
-        let params = Params::new();
+        let params = Params::empty();
 
         let updated = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
             contract,
@@ -799,8 +799,7 @@ mod tests {
     #[rstest]
     fn test_contract_with_order_exchange_param_keeps_contract_with_empty_exchange() {
         let contract = contract_with_exchange("SMART");
-        let mut params = Params::new();
-        params.insert("exchange".to_string(), Value::String(String::new()));
+        let params = Params::new([("exchange".to_string(), Value::String(String::new()))].into());
 
         let updated = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
             contract,
@@ -814,8 +813,7 @@ mod tests {
     #[rstest]
     fn test_contract_with_order_exchange_param_rejects_non_string_exchange() {
         let contract = contract_with_exchange("SMART");
-        let mut params = Params::new();
-        params.insert("exchange".to_string(), Value::Bool(true));
+        let params = Params::new([("exchange".to_string(), Value::Bool(true))].into());
 
         let err = InteractiveBrokersExecutionClient::contract_with_order_exchange_param(
             contract,

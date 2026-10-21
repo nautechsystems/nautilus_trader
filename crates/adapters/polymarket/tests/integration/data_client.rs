@@ -347,11 +347,15 @@ fn create_router(state: TestServerState) -> Router {
 }
 
 fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
-    metadata.insert(
-        "window_seconds".to_string(),
-        Value::Number(window_seconds.into()),
+    let metadata = Params::new(
+        [
+            ("symbol".to_string(), Value::String(symbol.to_string())),
+            (
+                "window_seconds".to_string(),
+                Value::Number(window_seconds.into()),
+            ),
+        ]
+        .into(),
     );
     DataType::new("PolymarketCryptoTwap", Some(metadata), None)
 }
@@ -509,8 +513,7 @@ async fn test_subscribe_reference_price_authenticates_sends_exact_channel_and_em
     let data_type = match window_seconds {
         Some(window) => crypto_twap_data_type(symbol, window),
         None => {
-            let mut metadata = Params::new();
-            metadata.insert("symbol".to_string(), json!(symbol));
+            let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
             DataType::new(type_name, Some(metadata), None)
         }
     };

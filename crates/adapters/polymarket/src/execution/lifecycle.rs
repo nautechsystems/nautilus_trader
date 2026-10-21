@@ -2003,8 +2003,8 @@ mod tests {
             )
         };
 
-        let mut info = nautilus_core::Params::new();
-        info.insert("neg_risk".to_string(), Value::Bool(neg_risk));
+        let info =
+            nautilus_core::Params::new([("neg_risk".to_string(), Value::Bool(neg_risk))].into());
         binary.info = Some(info);
 
         InstrumentAny::BinaryOption(binary)

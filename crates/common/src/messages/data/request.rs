@@ -506,8 +506,7 @@ mod tests {
     }
 
     fn join_request() -> RequestJoin {
-        let mut params = Params::new();
-        params.insert("venue".into(), "SIM".into());
+        let params = Params::new([("venue".into(), "SIM".into())].into());
 
         RequestJoin::new(
             leg_request_ids(),

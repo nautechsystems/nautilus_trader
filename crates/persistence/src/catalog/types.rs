@@ -1045,8 +1045,7 @@ mod tests {
 
     #[rstest]
     fn instrument_and_record_query_builders_set_every_field() {
-        let mut params = Params::new();
-        params.insert("only_last".to_string(), false.into());
+        let params = Params::new([("only_last".to_string(), false.into())].into());
 
         let instrument_query = CatalogInstrumentQuery::new()
             .with_instrument_ids(Some(vec!["AUD/USD.SIM".to_string()]))
@@ -1175,11 +1174,8 @@ mod tests {
         #[case] only_last: Option<bool>,
         #[case] expected: &[(&str, u64)],
     ) {
-        let params = only_last.map(|only_last| {
-            let mut params = Params::new();
-            params.insert("only_last".to_string(), only_last.into());
-            params
-        });
+        let params = only_last
+            .map(|only_last| Params::new([("only_last".to_string(), only_last.into())].into()));
 
         let filtered = filter_instrument_query_result(
             vec![ethusdt_at(3), audusd_at(6)],

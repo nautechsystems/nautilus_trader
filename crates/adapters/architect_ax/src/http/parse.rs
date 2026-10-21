@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use jiff::tz::Offset;
 use nautilus_core::{Params, UUID4, datetime::datetime_to_unix_nanos, nanos::UnixNanos};
 use nautilus_model::{
@@ -222,8 +223,7 @@ pub fn parse_instrument(
         definition.maintenance_margin_pct,
     )?;
 
-    let mut info = Params::new();
-
+    let mut info = IndexMap::new();
     if let Some(ref desc) = definition.description {
         info.insert("description".to_string(), json!(desc));
     }
@@ -328,7 +328,7 @@ pub fn parse_instrument(
             .maybe_min_quantity(min_quantity)
             .margin_init(margin_init)
             .margin_maint(margin_maint)
-            .info(info)
+            .info(Params::new(info))
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -355,7 +355,7 @@ pub fn parse_instrument(
         .maybe_min_quantity(min_quantity)
         .margin_init(margin_init)
         .margin_maint(margin_maint)
-        .info(info)
+        .info(Params::new(info))
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()

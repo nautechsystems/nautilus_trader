@@ -500,7 +500,7 @@ pub(super) fn params() -> Params {
 pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
     let populated = mode != 0;
     let empty = mode == 2;
-    let parameters = populated.then(|| if empty { Params::new() } else { params() });
+    let parameters = populated.then(|| if empty { Params::empty() } else { params() });
     let mut book = OrderBook::new(InstrumentId::from("BTCUSDT.BINANCE"), BookType::L3_MBO);
 
     if !empty {

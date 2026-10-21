@@ -2395,9 +2395,7 @@ mod tests {
         Python::initialize();
 
         let params = parameter.map(|value| {
-            let mut params = Params::default();
-            params.insert("limit".to_owned(), serde_json::Value::from(value));
-            params
+            Params::new([("limit".to_owned(), serde_json::Value::from(value))].into())
         });
 
         let command = SubscribeBookDepth::new(

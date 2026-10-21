@@ -2978,8 +2978,7 @@ class Runtime:
                 command.correlation_id = Some(nautilus_core::UUID4::new());
                 command.causation_id = Some(nautilus_core::UUID4::new());
                 command.log_receipt_level = LogLevel::Debug;
-                let mut params = Params::default();
-                params.insert("probe".to_owned(), serde_json::Value::from(17));
+                let params = Params::new([("probe".to_owned(), serde_json::Value::from(17))].into());
                 command.params = Some(params);
                 let first = $report;
                 let mut second = first.clone();

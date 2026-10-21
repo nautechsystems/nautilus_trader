@@ -183,7 +183,7 @@ fn arrow_custom_data_supports_manual_model_implementations() {
         optional_small_signed: None,
         optional_label: Some("native".to_string()),
         optional_instrument_id: Some(InstrumentId::from("ETHUSDT.BINANCE")),
-        optional_params: Some(Params::new()),
+        optional_params: Some(Params::empty()),
         optional_timestamp: Some(UnixNanos::from(150)),
         payload: vec![0, 1, 2, 255],
         ts_event: UnixNanos::from(100),
@@ -318,8 +318,9 @@ fn arrow_custom_data_supports_manual_model_implementations() {
 #[rstest]
 fn arrow_custom_data_round_trips_all_optional_some_fields() {
     ensure_custom_data_registered::<ManualCustomData>();
-    let mut optional_params = Params::new();
-    optional_params.insert("source".to_string(), serde_json::json!("unit-test"));
+    let optional_params =
+        Params::new([("source".to_string(), serde_json::json!("unit-test"))].into());
+
     let original = ManualCustomData {
         values: vec![("optional".to_string(), 11)],
         curve: vec![3.0, 4.0],

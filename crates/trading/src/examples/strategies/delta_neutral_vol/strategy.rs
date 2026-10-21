@@ -245,10 +245,12 @@ impl DeltaNeutralVol {
                  + SELL {contracts} x {put_id} @ iv={put_entry_iv:.4} (offset={offset})",
             );
 
-            let mut call_params = Params::new();
-            call_params.insert(
-                self.config.iv_param_key.clone(),
-                json!(call_entry_iv.to_string()),
+            let call_params = Params::new(
+                [(
+                    self.config.iv_param_key.clone(),
+                    json!(call_entry_iv.to_string()),
+                )]
+                .into(),
             );
 
             self.submit_entry_order(
@@ -260,10 +262,12 @@ impl DeltaNeutralVol {
                 Some(call_params),
             )?;
 
-            let mut put_params = Params::new();
-            put_params.insert(
-                self.config.iv_param_key.clone(),
-                json!(put_entry_iv.to_string()),
+            let put_params = Params::new(
+                [(
+                    self.config.iv_param_key.clone(),
+                    json!(put_entry_iv.to_string()),
+                )]
+                .into(),
             );
 
             self.submit_entry_order(

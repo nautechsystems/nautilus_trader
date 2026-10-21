@@ -541,10 +541,12 @@ impl BinanceFuturesDataClient {
     }
 
     fn liquidation_data_type(instrument_id: InstrumentId) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "instrument_id".to_string(),
-            serde_json::Value::String(instrument_id.to_string()),
+        let metadata = Params::new(
+            [(
+                "instrument_id".to_string(),
+                serde_json::Value::String(instrument_id.to_string()),
+            )]
+            .into(),
         );
         DataType::new(
             "BinanceFuturesLiquidation",
@@ -3049,10 +3051,12 @@ fn unsubscribe_ticker(
 }
 
 fn ticker_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesTicker",
@@ -3062,10 +3066,12 @@ fn ticker_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn mark_price_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesMarkPriceUpdate",

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
+
 use super::{
     BAR_AGGREGATOR_PRIORITY, BarAggregatorSubscription, BarBarHandler, BarQuoteHandler,
     BarTradeHandler, BarType, BarsResponse, ClientId, Context, ContinuousFutureRequest,
@@ -256,7 +258,7 @@ impl DataEngine {
             return;
         };
 
-        let mut params = state.parent.params.unwrap_or_default();
+        let mut params = state.parent.params.as_deref().cloned().unwrap_or_default();
         if state.data_count != 0 {
             params.insert(
                 "data_count".to_string(),
@@ -272,7 +274,7 @@ impl DataEngine {
             Some(state.start_ns),
             Some(state.end_ns),
             self.clock.borrow().timestamp_ns(),
-            Some(params),
+            Some(Params::new(params)),
         ));
         self.response(response);
     }
@@ -970,12 +972,15 @@ fn build_continuous_future_unsubscribe_command(
     correlation_id: UUID4,
     ts_init: UnixNanos,
 ) -> DataCommand {
-    let mut child_params = parent_params.cloned().unwrap_or_default();
+    let mut child_params = parent_params
+        .map(|params| IndexMap::clone(params))
+        .unwrap_or_default();
     child_params.shift_remove("continuous_future_transitions");
     child_params.shift_remove("continuous_future_adjustment_mode");
     child_params.shift_remove("last_post_instrument_id");
     child_params.shift_remove("first_pre_instrument_id");
     child_params.shift_remove("bar_types");
+    let child_params = Params::new(child_params);
     let command_id = UUID4::new();
     let child_venue = Some(segment_instrument_id.venue);
 

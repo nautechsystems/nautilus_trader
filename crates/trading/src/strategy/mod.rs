@@ -4160,10 +4160,12 @@ mod tests {
             .submit_order_list(no_params_orders, None, None, None)
             .unwrap();
 
-        let mut params = Params::new();
-        params.insert(
-            "routing_hint".to_string(),
-            Value::String("prefer_batch".to_string()),
+        let params = Params::new(
+            [(
+                "routing_hint".to_string(),
+                Value::String("prefer_batch".to_string()),
+            )]
+            .into(),
         );
         let param_orders = vec![
             make_initialized_market_order("O-20250208-LIST-003"),
@@ -5288,10 +5290,12 @@ mod tests {
             cache.build_index();
         }
 
-        let mut params = Params::new();
-        params.insert(
-            "routing_hint".to_string(),
-            Value::String("broad_cancel".to_string()),
+        let params = Params::new(
+            [(
+                "routing_hint".to_string(),
+                Value::String("broad_cancel".to_string()),
+            )]
+            .into(),
         );
         strategy
             .cancel_all_orders(
@@ -5409,10 +5413,12 @@ mod tests {
         add_order_to_cache(&strategy, &sell_order);
         strategy.core.cache_rc().borrow_mut().build_index();
 
-        let mut params = Params::new();
-        params.insert(
-            "routing_hint".to_string(),
-            Value::String("strategy_only".to_string()),
+        let params = Params::new(
+            [(
+                "routing_hint".to_string(),
+                Value::String("strategy_only".to_string()),
+            )]
+            .into(),
         );
         strategy
             .cancel_all_orders(

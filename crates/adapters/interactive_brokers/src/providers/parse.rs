@@ -19,6 +19,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use ibapi::contracts::SecurityType;
+use indexmap::IndexMap;
 use jiff::{
     Timestamp,
     civil::DateTime,
@@ -40,7 +41,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::common::{
-    contract_to_params,
+    contract_to_json_value,
     enums::{IbOptionRight, IbSecurityType},
 };
 
@@ -253,23 +254,13 @@ fn ib_contract_info(details: &ibapi::contracts::ContractDetails) -> nautilus_cor
         "priceMagnifier".to_string(),
         serde_json::Value::from(details.price_magnifier),
     );
-    info
+    nautilus_core::Params::new(info)
 }
 
-fn ib_contract_info_for_contract(contract: &ibapi::contracts::Contract) -> nautilus_core::Params {
-    let mut info = nautilus_core::Params::new();
-    let mut contract_map = serde_json::Map::new();
-    let contract_params = contract_to_params(contract);
-
-    for (key, value) in &contract_params {
-        contract_map.insert(key.clone(), value.clone());
-    }
-
-    info.insert(
-        "contract".to_string(),
-        serde_json::Value::Object(contract_map),
-    );
-    info
+fn ib_contract_info_for_contract(
+    contract: &ibapi::contracts::Contract,
+) -> IndexMap<String, serde_json::Value> {
+    IndexMap::from([("contract".to_string(), contract_to_json_value(contract))])
 }
 
 fn sec_type_to_asset_class(sec_type: &str) -> AssetClass {
@@ -1152,7 +1143,9 @@ pub fn parse_option_spread_instrument_id(
     timestamp_ns: Option<UnixNanos>,
 ) -> anyhow::Result<OptionSpread> {
     let mut spread = parse_spread_instrument_id(instrument_id, leg_contract_details, timestamp_ns)?;
-    spread.info = bag_contract.map(ib_contract_info_for_contract);
+    spread.info = bag_contract
+        .map(ib_contract_info_for_contract)
+        .map(nautilus_core::Params::new);
     Ok(spread)
 }
 
@@ -1200,7 +1193,11 @@ pub fn parse_futures_spread_instrument_id(
         .lot_size(Quantity::new(1.0, 0))
         .margin_init(Decimal::ZERO)
         .margin_maint(Decimal::ZERO)
-        .maybe_info(bag_contract.map(ib_contract_info_for_contract))
+        .maybe_info(
+            bag_contract
+                .map(ib_contract_info_for_contract)
+                .map(nautilus_core::Params::new),
+        )
         .ts_event(timestamp)
         .ts_init(timestamp)
         .build()?)

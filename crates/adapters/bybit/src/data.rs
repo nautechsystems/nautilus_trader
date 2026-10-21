@@ -2494,10 +2494,12 @@ pub(crate) mod tests {
     }
 
     fn liquidation_data_type(instrument_id: InstrumentId, identifier: Option<&str>) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "instrument_id".to_string(),
-            serde_json::Value::String(instrument_id.to_string()),
+        let metadata = Params::new(
+            [(
+                "instrument_id".to_string(),
+                serde_json::Value::String(instrument_id.to_string()),
+            )]
+            .into(),
         );
 
         DataType::new(

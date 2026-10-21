@@ -2058,7 +2058,7 @@ fn emit_order_rejected(
 mod tests {
     use futures_util::FutureExt;
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
-    use nautilus_core::time::AtomicTime;
+    use nautilus_core::{Params, time::AtomicTime};
     use nautilus_live::execution::context::OrderIdentity;
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide, OrderStatus},
@@ -2135,12 +2135,12 @@ mod tests {
         };
 
         binary.outcome = Some(Ustr::from(outcome.as_str()));
-        let mut info = binary.info.take().unwrap_or_default();
+        let mut info = binary.info.as_deref().cloned().unwrap_or_default();
         info.insert(
             "condition_id".to_string(),
             serde_json::Value::String(market.to_string()),
         );
-        binary.info = Some(info);
+        binary.info = Some(Params::new(info));
         instrument
     }
 
@@ -2156,7 +2156,8 @@ mod tests {
         let InstrumentAny::BinaryOption(binary) = instrument else {
             panic!("expected binary option test instrument");
         };
-        let mut info = binary.info.take().unwrap_or_default();
+
+        let mut info = binary.info.as_deref().cloned().unwrap_or_default();
         info.insert(
             "fee_schedule".into(),
             serde_json::json!({
@@ -2166,7 +2167,7 @@ mod tests {
                 "rebateRate": "0",
             }),
         );
-        binary.info = Some(info);
+        binary.info = Some(Params::new(info));
     }
 
     fn test_emitter() -> ExecutionEventEmitter {

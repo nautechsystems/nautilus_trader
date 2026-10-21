@@ -159,9 +159,13 @@ fn measure_format(config: &Run<'_>) {
         causation_id: Some(UUID4::new()),
     });
 
-    let mut scalar_params = nautilus_core::Params::new();
-    scalar_params.insert("post_only".into(), Value::Bool(true));
-    scalar_params.insert("route".into(), Value::from("external"));
+    let scalar_params = nautilus_core::Params::new(
+        [
+            ("post_only".into(), Value::Bool(true)),
+            ("route".into(), Value::from("external")),
+        ]
+        .into(),
+    );
 
     let cancel = TradingCommand::CancelOrder(CancelOrder {
         trader_id: TraderId::from("TRADER-1"),

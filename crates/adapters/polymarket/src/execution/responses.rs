@@ -1196,7 +1196,7 @@ fn handle_fok_rest_status(
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
-    use nautilus_core::{UnixNanos, collections::AtomicMap};
+    use nautilus_core::{Params, UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
         events::{OrderCanceled, order::spec::OrderFillVoidedSpec},
@@ -1268,7 +1268,8 @@ mod tests {
         let InstrumentAny::BinaryOption(binary) = instrument else {
             panic!("expected binary option test instrument");
         };
-        let mut info = binary.info.take().unwrap_or_default();
+
+        let mut info = binary.info.as_deref().cloned().unwrap_or_default();
         info.insert(
             "fee_schedule".into(),
             serde_json::json!({
@@ -1278,7 +1279,7 @@ mod tests {
                 "rebateRate": "0",
             }),
         );
-        binary.info = Some(info);
+        binary.info = Some(Params::new(info));
     }
 
     fn bind_instrument_to_trade(

@@ -679,12 +679,12 @@ fn config(rest_addr: SocketAddr, ws_addr: SocketAddr) -> DeriveDataClientConfig 
 }
 
 fn params(values: &[(&str, Value)]) -> Params {
-    let mut params = Params::new();
-    for (key, value) in values {
-        params.insert((*key).to_string(), value.clone());
-    }
-
-    params
+    Params::new(
+        values
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), value.clone()))
+            .collect(),
+    )
 }
 
 fn subscribe_quotes(instrument_id: InstrumentId, params: Option<Params>) -> SubscribeQuotes {

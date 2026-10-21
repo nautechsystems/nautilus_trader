@@ -150,8 +150,7 @@ impl DataActor for GreeksTester {
         let bs_only = GreeksConvention::BlackScholes.to_string();
 
         for (instrument_id, _, _) in bs_slice {
-            let mut params = Params::new();
-            params.insert("greeks_convention".to_string(), json!(bs_only));
+            let params = Params::new([("greeks_convention".to_string(), json!(bs_only))].into());
             self.subscribe_option_greeks(*instrument_id, Some(client_id), Some(params));
             self.subscribed_instruments.push(*instrument_id);
         }
@@ -159,8 +158,7 @@ impl DataActor for GreeksTester {
         let pa_only = GreeksConvention::PriceAdjusted.to_string();
 
         for (instrument_id, _, _) in pa_slice {
-            let mut params = Params::new();
-            params.insert("greeks_convention".to_string(), json!(pa_only));
+            let params = Params::new([("greeks_convention".to_string(), json!(pa_only))].into());
             self.subscribe_option_greeks(*instrument_id, Some(client_id), Some(params));
             self.subscribed_instruments.push(*instrument_id);
         }

@@ -367,6 +367,7 @@ pub(crate) fn pause_resolve_watch_entries(
 #[cfg(test)]
 mod tests {
     use ahash::AHashSet;
+    use indexmap::IndexMap;
     use nautilus_core::{DurationNanos, Params, UUID4};
     use nautilus_model::{
         enums::{OrderSide, PositionSide},
@@ -436,11 +437,10 @@ mod tests {
                 binary.expiration_ns = expiration_ns;
             }
 
-            let mut info = Params::new();
-            info.insert(
+            let mut info = IndexMap::from([(
                 "token_id".to_string(),
                 serde_json::Value::String(raw_symbol.to_string()),
-            );
+            )]);
 
             if let Some(market_slug) = seed_ctx.market_slug {
                 info.insert(
@@ -463,7 +463,7 @@ mod tests {
                 );
             }
 
-            binary.info = Some(info);
+            binary.info = Some(Params::new(info));
         }
 
         instruments.insert(inst.id(), inst.clone());

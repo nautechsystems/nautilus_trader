@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(feature = "streaming")]
+use indexmap::IndexMap;
+
 use super::*;
 
 #[fixture]
@@ -202,17 +205,22 @@ impl DataClient for FailingRequestDataClient {
 }
 
 pub(super) fn parent_params() -> Params {
-    let mut params = Params::new();
-    params.insert(PARAMS_IS_PARENT.to_string(), json!(true));
-    params
+    Params::new([(PARAMS_IS_PARENT.to_string(), json!(true))].into())
 }
 
+#[cfg_attr(
+    feature = "streaming",
+    allow(
+        clippy::needless_pass_by_value,
+        reason = "returns owned params when streaming is disabled"
+    )
+)]
 pub(super) fn client_subscription_params(params: Params) -> Params {
     #[cfg(feature = "streaming")]
     {
-        let mut params = params;
+        let mut params = IndexMap::clone(&params);
         params.insert("start_ns".to_string(), Value::Null);
-        params
+        Params::new(params)
     }
 
     #[cfg(not(feature = "streaming"))]

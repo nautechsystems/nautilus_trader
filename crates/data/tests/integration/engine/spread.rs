@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
+
 use super::*;
 
 #[rstest]
@@ -481,10 +483,12 @@ fn test_spread_quotes_release_after_final_owner_with_first_route(
     let spread_id = spread.id();
     let (leg_a, leg_b) = generic_futures_spread_legs();
     data_engine.process(&InstrumentAny::FuturesSpread(spread) as &dyn Any);
-    let mut first_params = spread_quote_params();
+    let mut first_params = IndexMap::clone(&spread_quote_params());
     first_params.insert("owner".to_string(), serde_json::json!(1));
-    let mut second_params = spread_quote_params();
+    let first_params = Params::new(first_params);
+    let mut second_params = IndexMap::clone(&spread_quote_params());
     second_params.insert("owner".to_string(), serde_json::json!(2));
+    let second_params = Params::new(second_params);
 
     for params in [first_params.clone(), second_params.clone()] {
         data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(

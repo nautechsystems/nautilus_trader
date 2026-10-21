@@ -1398,6 +1398,7 @@ mod tests {
         routing::get,
     };
     use futures_util::StreamExt;
+    use indexmap::IndexMap;
     use jiff::{SignedDuration, Timestamp, tz::Offset};
     use nautilus_common::{
         clients::DataClient,
@@ -1772,11 +1773,10 @@ mod tests {
                 binary.expiration_ns = expiration_ns;
             }
 
-            let mut info = Params::new();
-            info.insert(
+            let mut info = IndexMap::from([(
                 "token_id".to_string(),
                 serde_json::Value::String(raw_symbol.to_string()),
-            );
+            )]);
 
             if let Some(market_slug) = seed_ctx.market_slug {
                 info.insert(
@@ -1813,7 +1813,8 @@ mod tests {
             if let Some(closed) = seed_ctx.market_closed {
                 info.insert("closed".to_string(), closed.into());
             }
-            binary.info = Some(info);
+
+            binary.info = Some(Params::new(info));
         }
 
         cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &inst);
@@ -2954,9 +2955,9 @@ mod tests {
             .track_subscribe(DataType::new(
                 "PolymarketCryptoPrice",
                 Some({
-                    let mut metadata = Params::new();
-                    metadata.insert("symbol".to_string(), Value::String("btcusd".to_string()));
-                    metadata
+                    Params::new(
+                        [("symbol".to_string(), Value::String("btcusd".to_string()))].into(),
+                    )
                 }),
                 None,
             ))
@@ -3014,9 +3015,9 @@ mod tests {
             .track_subscribe(DataType::new(
                 "PolymarketCryptoPrice",
                 Some({
-                    let mut metadata = Params::new();
-                    metadata.insert("symbol".to_string(), Value::String("btcusd".to_string()));
-                    metadata
+                    Params::new(
+                        [("symbol".to_string(), Value::String("btcusd".to_string()))].into(),
+                    )
                 }),
                 None,
             ))
@@ -3066,9 +3067,9 @@ mod tests {
             .track_subscribe(DataType::new(
                 "PolymarketCryptoPrice",
                 Some({
-                    let mut metadata = Params::new();
-                    metadata.insert("symbol".to_string(), Value::String("btcusd".to_string()));
-                    metadata
+                    Params::new(
+                        [("symbol".to_string(), Value::String("btcusd".to_string()))].into(),
+                    )
                 }),
                 None,
             ))
@@ -4997,10 +4998,12 @@ mod tests {
             );
         }
 
-        let mut params = Params::new();
-        params.insert(
-            "condition_ids".to_string(),
-            serde_json::json!(["0xCOND-A", "0xCOND-B"]),
+        let params = Params::new(
+            [(
+                "condition_ids".to_string(),
+                serde_json::json!(["0xCOND-A", "0xCOND-B"]),
+            )]
+            .into(),
         );
         let request = RequestCustomData::new(
             ClientId::from("POLYMARKET"),
@@ -5115,10 +5118,12 @@ mod tests {
         );
         pause_resolve_watch_entries(&client.resolve_poll_watchlist, &["0xCOND-REQ".to_string()]);
 
-        let mut params = Params::new();
-        params.insert(
-            "instrument_ids".to_string(),
-            serde_json::json!(["BTCUSDT-PERP.BINANCE"]),
+        let params = Params::new(
+            [(
+                "instrument_ids".to_string(),
+                serde_json::json!(["BTCUSDT-PERP.BINANCE"]),
+            )]
+            .into(),
         );
         let request = RequestCustomData::new(
             ClientId::from("POLYMARKET"),
@@ -8879,10 +8884,12 @@ mod tests {
         assert!(client.subscriptions.ws_open_tokens.is_empty());
         assert!(data_rx.try_recv().is_err());
 
-        let mut params = Params::new();
-        params.insert(
-            "condition_id".to_string(),
-            Value::String(TEST_CONDITION_ID.to_string()),
+        let params = Params::new(
+            [(
+                "condition_id".to_string(),
+                Value::String(TEST_CONDITION_ID.to_string()),
+            )]
+            .into(),
         );
         client
             .request_data(RequestCustomData::new(

@@ -432,14 +432,18 @@ mod tests {
         binary.expiration_ns =
             UnixNanos::from(clock.get_time_ns().as_u64().saturating_sub(1_000_000_000));
 
-        let mut info = nautilus_core::Params::new();
-        info.insert(
-            "token_id".to_string(),
-            serde_json::Value::String(raw_symbol.to_string()),
-        );
-        info.insert(
-            "condition_id".to_string(),
-            serde_json::Value::String(condition_id.to_string()),
+        let info = nautilus_core::Params::new(
+            [
+                (
+                    "token_id".to_string(),
+                    serde_json::Value::String(raw_symbol.to_string()),
+                ),
+                (
+                    "condition_id".to_string(),
+                    serde_json::Value::String(condition_id.to_string()),
+                ),
+            ]
+            .into(),
         );
         binary.info = Some(info);
 

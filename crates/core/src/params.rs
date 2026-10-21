@@ -18,13 +18,13 @@
 //! This module provides a centralized definition of [`Params`] as a generic storage
 //! solution for `serde_json::Value` data, along with Python bindings.
 
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Newtype wrapper for generic parameter storage.
+/// Immutable generic parameter storage.
 ///
 /// This represents a map of string keys to JSON values, used for passing
 /// adapter-specific configuration, metadata, and any generic key-value data.
@@ -34,6 +34,27 @@ use serde_json::Value;
 ///
 /// `Params` uses `IndexMap` to preserve insertion order, which is important for
 /// consistent serialization and debugging.
+///
+/// Build an owned map before calling [`Self::new`]. To derive different
+/// parameters, use `IndexMap::clone(&params)`, edit the map, and construct a new `Params`.
+///
+/// The compiler rejects mutation, including nested JSON values:
+///
+/// ```compile_fail
+/// use nautilus_core::Params;
+///
+/// let mut params = Params::empty();
+/// params.insert("key".to_string(), serde_json::json!(1));
+/// ```
+///
+/// ```compile_fail
+/// use nautilus_core::Params;
+///
+/// let mut params = Params::new(
+///     [("nested".to_string(), serde_json::json!({"value": 1}))].into(),
+/// );
+/// params["nested"]["value"] = serde_json::json!(2);
+/// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Params(IndexMap<String, Value>);
@@ -41,13 +62,13 @@ pub struct Params(IndexMap<String, Value>);
 impl Params {
     /// Creates an empty `Params` map.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
         Self(IndexMap::new())
     }
 
     /// Creates `Params` from an `IndexMap`.
     #[must_use]
-    pub fn from_index_map(map: IndexMap<String, Value>) -> Self {
+    pub fn new(map: IndexMap<String, Value>) -> Self {
         Self(map)
     }
 
@@ -120,12 +141,6 @@ impl Deref for Params {
     }
 }
 
-impl DerefMut for Params {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl<'a> IntoIterator for &'a Params {
     type Item = (&'a String, &'a Value);
     type IntoIter = indexmap::map::Iter<'a, String, Value>;
@@ -161,14 +176,17 @@ mod tests {
     use super::Params;
 
     fn create_test_params() -> Params {
-        let mut params = Params::new();
-        params.insert("u64_val".to_string(), json!(42u64));
-        params.insert("i64_val".to_string(), json!(-100i64));
-        params.insert("usize_val".to_string(), json!(5u64));
-        params.insert("str_val".to_string(), json!("hello"));
-        params.insert("bool_val".to_string(), json!(true));
-        params.insert("f64_val".to_string(), json!(2.5));
-        params
+        Params::new(
+            [
+                ("u64_val".to_string(), json!(42u64)),
+                ("i64_val".to_string(), json!(-100i64)),
+                ("usize_val".to_string(), json!(5u64)),
+                ("str_val".to_string(), json!("hello")),
+                ("bool_val".to_string(), json!(true)),
+                ("f64_val".to_string(), json!(2.5)),
+            ]
+            .into(),
+        )
     }
 
     #[rstest]
@@ -193,9 +211,13 @@ mod tests {
 
     #[rstest]
     fn test_params_ref_get_usize_respects_target_width() {
-        let mut params = Params::new();
-        params.insert("u32_max".to_string(), json!(u32::MAX));
-        params.insert("u32_overflow".to_string(), json!(4_294_967_296_u64));
+        let params = Params::new(
+            [
+                ("u32_max".to_string(), json!(u32::MAX)),
+                ("u32_overflow".to_string(), json!(4_294_967_296_u64)),
+            ]
+            .into(),
+        );
 
         assert_eq!(params.get_usize("u32_max"), Some(4_294_967_295_usize));
         #[cfg(target_pointer_width = "32")]

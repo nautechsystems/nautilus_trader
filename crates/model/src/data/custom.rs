@@ -574,7 +574,7 @@ mod tests {
     #[rstest]
     fn test_custom_data_roundtrip(
         #[values(false, true)] msgpack: bool,
-        #[values(None, Some(Params::new()), Some(serde_json::from_value(json!({"key": [1, {"nested": true}]})).unwrap()))]
+        #[values(None, Some(Params::empty()), Some(serde_json::from_value(json!({"key": [1, {"nested": true}]})).unwrap()))]
         metadata: Option<Params>,
         #[values(None, Some("TEST.SIM".to_string()))] identifier: Option<String>,
     ) {

@@ -471,8 +471,7 @@ mod tests {
 
     #[rstest]
     fn group_custom_data_by_type_groups_by_identifier_and_metadata() {
-        let mut metadata = Params::new();
-        metadata.insert("source".to_string(), "replay".into());
+        let metadata = Params::new([("source".to_string(), "replay".into())].into());
         let data = [
             test_custom("A", 1, 1, None),
             test_custom("B", 2, 2, None),
@@ -506,8 +505,7 @@ mod tests {
     #[rstest]
     #[case::identifier(test_custom("B", 2, 2, None))]
     #[case::metadata({
-        let mut metadata = Params::new();
-        metadata.insert("source".to_string(), "replay".into());
+        let metadata = Params::new([("source".to_string(), "replay".into())].into());
         test_custom("A", 2, 2, Some(metadata))
     })]
     fn prepare_custom_data_batch_rejects_mixed_data_types(#[case] other: CustomData) {

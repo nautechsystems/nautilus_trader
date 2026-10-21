@@ -525,12 +525,13 @@ fn create_test_config(addr: SocketAddr) -> BybitDataClientConfig {
 
 fn liquidation_data_type(instrument_id: Option<&str>, identifier: Option<&str>) -> DataType {
     let metadata = instrument_id.map(|instrument_id| {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "instrument_id".to_string(),
-            Value::String(instrument_id.to_string()),
-        );
-        metadata
+        Params::new(
+            [(
+                "instrument_id".to_string(),
+                Value::String(instrument_id.to_string()),
+            )]
+            .into(),
+        )
     });
 
     DataType::new(
@@ -658,8 +659,8 @@ async fn test_option_chain_reference_price_response(
         UnixNanos::from(1_743_120_000_000_000_000),
     );
     let instrument_id = InstrumentId::from("BTC-28MAR25-90000-C-OPTION.BYBIT");
-    let mut params = Params::new();
-    params.insert("test-case".to_string(), json!(ret_code));
+    let params = Params::new([("test-case".to_string(), json!(ret_code))].into());
+
     let request = RequestOptionChainReferencePrice::new(
         series_id,
         instrument_id,

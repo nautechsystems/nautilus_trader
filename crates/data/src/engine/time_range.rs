@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use nautilus_common::messages::data::{
     BarsResponse, BookDeltasResponse, BookDepthResponse, DataResponse, FundingRatesResponse,
     QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestCommand,
@@ -299,7 +300,10 @@ impl DataEngine {
         self.time_range_pipeline_parent_request_id
             .retain(|_, p_id| *p_id != parent_id);
 
-        let mut params = request_params(&state.parent).cloned().unwrap_or_default();
+        let mut params = request_params(&state.parent)
+            .map(|params| IndexMap::clone(params))
+            .unwrap_or_default();
+
         if state.data_count != 0 {
             params.insert(
                 "data_count".to_string(),
@@ -311,7 +315,7 @@ impl DataEngine {
             parent_id,
             &state,
             self.clock.borrow().timestamp_ns(),
-            Some(params),
+            Some(Params::new(params)),
         ) else {
             log::error!("Cannot emit empty time-range response for parent {parent_id}");
             return;
@@ -560,10 +564,10 @@ fn time_range_child_request(
 }
 
 fn time_range_child_params(params: Option<&Params>) -> Option<Params> {
-    let mut params = params.cloned()?;
+    let mut params = IndexMap::clone(params?);
     params.shift_remove(TIME_RANGE_GENERATOR);
     remove_request_bar_aggregation_params(&mut params);
-    Some(params)
+    Some(Params::new(params))
 }
 
 fn empty_time_range_parent_response(

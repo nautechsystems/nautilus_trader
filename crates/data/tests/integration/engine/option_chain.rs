@@ -173,10 +173,8 @@ fn test_external_option_chain_releases_after_final_owner(
     let mut data_engine = DataEngine::new(clock, cache, Some(config));
     let topic = format!("commands.data.{client_id}");
     let series_id = make_series_id();
-    let mut first_params = Params::new();
-    first_params.insert("owner".to_string(), serde_json::json!(1));
-    let mut second_params = Params::new();
-    second_params.insert("owner".to_string(), serde_json::json!(2));
+    let first_params = Params::new([("owner".to_string(), serde_json::json!(1))].into());
+    let second_params = Params::new([("owner".to_string(), serde_json::json!(2))].into());
 
     let subscribe = |command_id, strike, params| {
         SubscribeCommand::OptionChain(SubscribeOptionChain::new(
@@ -262,10 +260,8 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
     let edited_topic = format!("commands.data.{edited_client_id}");
     let series_id = make_series_id();
     let owner_id = UUID4::new();
-    let mut initial_params = Params::new();
-    initial_params.insert("route".to_string(), serde_json::json!(1));
-    let mut edited_params = Params::new();
-    edited_params.insert("route".to_string(), serde_json::json!(2));
+    let initial_params = Params::new([("route".to_string(), serde_json::json!(1))].into());
+    let edited_params = Params::new([("route".to_string(), serde_json::json!(2))].into());
     let (initial_unsubscribe_handler, initial_unsubscribe_saver) =
         get_any_saving_handler::<UnsubscribeCommand>(None);
     let (edited_subscribe_handler, edited_subscribe_saver) =

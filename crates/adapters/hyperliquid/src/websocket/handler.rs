@@ -234,9 +234,7 @@ impl AllMidsDataTypeCache {
 
         self.projected.extend(self.dexes.iter().map(|dex| {
             let metadata = dex.as_ref().map(|dex| {
-                let mut metadata = Params::new();
-                metadata.insert("dex".to_owned(), serde_json::Value::String(dex.clone()));
-                metadata
+                Params::new([("dex".to_owned(), serde_json::Value::String(dex.clone()))].into())
             });
             DataType::new("HyperliquidAllMids", metadata, None)
         }));
@@ -1445,10 +1443,12 @@ impl FeedHandler {
     }
 
     fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "instrument_id".to_string(),
-            serde_json::Value::String(instrument_id.to_string()),
+        let metadata = Params::new(
+            [(
+                "instrument_id".to_string(),
+                serde_json::Value::String(instrument_id.to_string()),
+            )]
+            .into(),
         );
         DataType::new(
             "HyperliquidOpenInterest",
@@ -1458,10 +1458,12 @@ impl FeedHandler {
     }
 
     fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "instrument_id".to_string(),
-            serde_json::Value::String(instrument_id.to_string()),
+        let metadata = Params::new(
+            [(
+                "instrument_id".to_string(),
+                serde_json::Value::String(instrument_id.to_string()),
+            )]
+            .into(),
         );
         DataType::new(
             "HyperliquidPublicTrade",
@@ -1525,10 +1527,12 @@ impl FeedHandler {
     }
 
     fn twap_history_data_type(user: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "user".to_string(),
-            serde_json::Value::String(user.to_string()),
+        let metadata = Params::new(
+            [(
+                "user".to_string(),
+                serde_json::Value::String(user.to_string()),
+            )]
+            .into(),
         );
         DataType::new(
             "HyperliquidTwapHistory",
@@ -1538,10 +1542,12 @@ impl FeedHandler {
     }
 
     fn twap_slice_fill_data_type(user: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "user".to_string(),
-            serde_json::Value::String(user.to_string()),
+        let metadata = Params::new(
+            [(
+                "user".to_string(),
+                serde_json::Value::String(user.to_string()),
+            )]
+            .into(),
         );
         DataType::new(
             "HyperliquidTwapSliceFill",

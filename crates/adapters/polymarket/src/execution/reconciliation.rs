@@ -2358,6 +2358,7 @@ pub(crate) fn normalize_terminal_order_report_quantity(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::Params;
     use nautilus_model::{
         data::InstrumentClose,
         enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -2495,7 +2496,7 @@ mod tests {
             panic!("expected binary option test instrument");
         };
 
-        let mut info = binary.info.take().unwrap_or_default();
+        let mut info = binary.info.as_deref().cloned().unwrap_or_default();
         info.insert(
             "fee_schedule".into(),
             serde_json::json!({
@@ -2505,7 +2506,7 @@ mod tests {
                 "rebateRate": "0",
             }),
         );
-        binary.info = Some(info);
+        binary.info = Some(Params::new(info));
         InstrumentAny::BinaryOption(binary)
     }
 

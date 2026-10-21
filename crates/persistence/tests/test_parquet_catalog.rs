@@ -15,6 +15,7 @@
 
 use std::{collections::HashMap, fmt::Display, fs, io::Write, str::FromStr, sync::Arc};
 
+use indexmap::IndexMap;
 use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
@@ -117,8 +118,7 @@ fn generic_record_batch_i32_values(batch: &arrow::record_batch::RecordBatch) -> 
 #[rstest]
 fn write_records_trait_writes_parquet_record_batches() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
-    let mut params = Params::new();
-    params.insert("identifier".to_string(), json!("AUD/USD.SIM"));
+    let params = Params::new([("identifier".to_string(), json!("AUD/USD.SIM"))].into());
 
     CatalogWriter::write_records(
         &mut catalog,
@@ -2003,9 +2003,14 @@ fn test_rust_write_empty_order_book_depths() {
 #[rstest]
 fn test_rust_write_and_read_account_state() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
-    let mut info = Params::new();
-    info.insert("total_wallet_balance".to_string(), json!("1000.00000001"));
-    info.insert("can_trade".to_string(), json!(true));
+
+    let info = Params::new(
+        [
+            ("total_wallet_balance".to_string(), json!("1000.00000001")),
+            ("can_trade".to_string(), json!(true)),
+        ]
+        .into(),
+    );
     let account_states = vec![
         AccountState::new(
             AccountId::from("SIM-001"),
@@ -2031,8 +2036,7 @@ fn test_rust_write_and_read_account_state() {
     let metadata = account_states[0].metadata();
     let batch = AccountState::encode_batch(&metadata, &account_states).unwrap();
 
-    let mut params = Params::new();
-    params.insert("identifier".to_string(), json!("SIM-001"));
+    let params = Params::new([("identifier".to_string(), json!("SIM-001"))].into());
     CatalogWriter::write_records(
         &mut catalog,
         NautilusRecordType::AccountState,
@@ -5169,16 +5173,24 @@ fn test_rust_custom_data_roundtrip_with_params_field() {
 
     let data_type = DataType::new("RustTestParamsCustomData", None, None);
 
-    let mut params_a = Params::new();
-    params_a.insert("key".to_string(), json!("alpha"));
-    params_a.insert("count".to_string(), json!(1_u64));
-    params_a.insert("enabled".to_string(), json!(true));
+    let params_a = Params::new(
+        [
+            ("key".to_string(), json!("alpha")),
+            ("count".to_string(), json!(1_u64)),
+            ("enabled".to_string(), json!(true)),
+        ]
+        .into(),
+    );
 
-    let mut params_b = Params::new();
-    params_b.insert("key".to_string(), json!("beta"));
-    params_b.insert(
-        "nested".to_string(),
-        json!({"level": 2, "tags": ["x", "y"]}),
+    let params_b = Params::new(
+        [
+            ("key".to_string(), json!("beta")),
+            (
+                "nested".to_string(),
+                json!({"level": 2, "tags": ["x", "y"]}),
+            ),
+        ]
+        .into(),
     );
 
     let original_data = [
@@ -5865,8 +5877,7 @@ fn test_list_data_types_maps_record_and_instrument_directories() {
         Some(Currency::USD()),
     )];
     let batch = AccountState::encode_batch(&account_states[0].metadata(), &account_states).unwrap();
-    let mut params = Params::new();
-    params.insert("identifier".to_string(), json!("SIM-001"));
+    let params = Params::new([("identifier".to_string(), json!("SIM-001"))].into());
     CatalogWriter::write_records(
         &mut catalog,
         NautilusRecordType::AccountState,
@@ -6441,10 +6452,14 @@ fn test_instrument_roundtrip_with_info_params() {
     // Params serialization/deserialization is correct.
     let (_temp_dir, catalog) = create_temp_catalog();
 
-    let mut info = Params::new();
-    info.insert("venue_extra".to_string(), json!("custom_value"));
-    info.insert("count".to_string(), json!(42_u64));
-    info.insert("enabled".to_string(), json!(true));
+    let info = Params::new(
+        [
+            ("venue_extra".to_string(), json!("custom_value")),
+            ("count".to_string(), json!(42_u64)),
+            ("enabled".to_string(), json!(true)),
+        ]
+        .into(),
+    );
 
     let instrument_id = InstrumentId::from("AUD/USD.SIM");
     let currency_pair = CurrencyPair::build_checked(
@@ -6513,16 +6528,16 @@ fn test_write_instruments_appends_time_series_versions_for_same_instrument() {
     let base_info = base.info.clone().unwrap_or_default();
 
     let mut instrument_v1 = base.clone();
-    let mut info_v1 = base_info.clone();
+    let mut info_v1 = IndexMap::clone(&base_info);
     info_v1.insert("venue_extra".to_string(), json!("v1"));
-    instrument_v1.info = Some(info_v1);
+    instrument_v1.info = Some(Params::new(info_v1));
     instrument_v1.ts_event = UnixNanos::from(1_000);
     instrument_v1.ts_init = UnixNanos::from(1_000);
 
     let mut instrument_v2 = base;
-    let mut info_v2 = base_info;
+    let mut info_v2 = IndexMap::clone(&base_info);
     info_v2.insert("venue_extra".to_string(), json!("v2"));
-    instrument_v2.info = Some(info_v2);
+    instrument_v2.info = Some(Params::new(info_v2));
     instrument_v2.ts_event = UnixNanos::from(2_000);
     instrument_v2.ts_init = UnixNanos::from(2_000);
 
@@ -7376,8 +7391,7 @@ fn test_instrument_update_query_excludes_pre_start_snapshot() {
         ],
     )
     .unwrap();
-    let mut params = Params::new();
-    params.insert("only_last".to_string(), serde_json::Value::Bool(false));
+    let params = Params::new([("only_last".to_string(), serde_json::Value::Bool(false))].into());
 
     let data: Vec<Data> = CatalogReader::query_batch(
         &mut catalog,

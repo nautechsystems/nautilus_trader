@@ -31,10 +31,12 @@ use rust_decimal::Decimal;
 use tempfile::TempDir;
 
 fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidPublicTrade",
@@ -44,10 +46,12 @@ fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn twap_user_data_type(type_name: &str, user: &str) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "user".to_string(),
-        serde_json::Value::String(user.to_string()),
+    let metadata = Params::new(
+        [(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        )]
+        .into(),
     );
     DataType::new(type_name, Some(metadata), Some(user.to_string()))
 }

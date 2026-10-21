@@ -265,8 +265,7 @@ impl SubscriptionFixture {
     }
 
     fn subscribe(&mut self, actor: usize) -> Params {
-        let mut params = Params::new();
-        params.insert("route".to_string(), serde_json::json!(actor + 37));
+        let params = Params::new([("route".to_string(), serde_json::json!(actor + 37))].into());
         self.actors[actor].subscribe_data(
             self.data_type.clone(),
             Some(self.client_id),

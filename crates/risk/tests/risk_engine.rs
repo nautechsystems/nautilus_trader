@@ -4610,9 +4610,7 @@ fn add_position_for_account(
 }
 
 fn close_position_params(close_position: bool) -> Params {
-    let mut params = Params::new();
-    params.insert(PARAMS_CLOSE_POSITION.to_string(), close_position.into());
-    params
+    Params::new([(PARAMS_CLOSE_POSITION.to_string(), close_position.into())].into())
 }
 
 fn reducing_order(
@@ -14766,14 +14764,17 @@ fn test_spot_notional_fields_ignore_metadata(
     pair.info = match metadata {
         "absent" => None,
         "null" => {
-            let mut info = Params::new();
-            info.insert("notional_rules".to_owned(), Default::default());
+            let info = Params::new([("notional_rules".to_owned(), Default::default())].into());
             Some(info)
         }
         "conflicting" => {
-            let mut info = Params::new();
-            info.insert("min_notional".to_owned(), "1000".into());
-            info.insert("max_notional".to_owned(), "1".into());
+            let info = Params::new(
+                [
+                    ("min_notional".to_owned(), "1000".into()),
+                    ("max_notional".to_owned(), "1".into()),
+                ]
+                .into(),
+            );
             Some(info)
         }
         _ => unreachable!(),

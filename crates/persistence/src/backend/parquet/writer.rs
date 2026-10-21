@@ -1057,8 +1057,7 @@ mod tests {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest").join("run-1");
         let mut catalog = local_catalog(&directory);
-        let mut params = Params::new();
-        params.insert("compression".to_string(), serde_json::json!(0));
+        let params = Params::new([("compression".to_string(), serde_json::json!(0))].into());
         catalog.params = Some(params);
 
         let config = WriterConnectConfig::new(staging.to_string_lossy(), Some(catalog));

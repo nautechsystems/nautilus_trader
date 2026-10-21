@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601};
 use nautilus_model::{
@@ -519,10 +520,11 @@ fn build_outcome_info(
     side_name: Option<&str>,
     parent_question: Option<&OutcomeQuestion>,
 ) -> Params {
-    let mut info = Params::new();
+    let mut info = IndexMap::from([
+        ("outcome_index".into(), json!(market.outcome)),
+        ("outcome_side".into(), json!(side)),
+    ]);
 
-    info.insert("outcome_index".into(), json!(market.outcome));
-    info.insert("outcome_side".into(), json!(side));
     if let Some(name) = side_name {
         info.insert("side_name".into(), Value::String(name.to_string()));
     }
@@ -565,7 +567,7 @@ fn build_outcome_info(
         }
     }
 
-    info
+    Params::new(info)
 }
 
 fn pow10_neg(decimals: u32) -> Decimal {
@@ -792,10 +794,10 @@ const HYPERLIQUID_MIN_ORDER_NOTIONAL: Decimal = Decimal::TEN;
 /// and `InstrumentAny` is the only instrument shape published on the message bus.
 /// Carrying the index here lets the execution client register a market discovered
 /// after its own bootstrap without refetching venue metadata.
-fn info_with_asset_index(info: Option<Params>, asset_index: u32) -> Params {
+fn info_with_asset_index(info: Option<IndexMap<String, Value>>, asset_index: u32) -> Params {
     let mut info = info.unwrap_or_default();
     info.insert(ASSET_INDEX_INFO_KEY.to_string(), json!(asset_index));
-    info
+    Params::new(info)
 }
 
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
@@ -827,7 +829,7 @@ pub fn create_instrument_from_def(
             let base_currency = get_currency(&def.base);
             let quote_currency = get_currency(&def.quote);
             let min_notional = Some(min_order_notional(quote_currency)?);
-            let info = serde_json::from_str::<Params>(&def.raw_data).ok();
+            let info = serde_json::from_str::<IndexMap<String, Value>>(&def.raw_data).ok();
             let info = info_with_asset_index(info, def.asset_index);
 
             Some(InstrumentAny::CurrencyPair(
@@ -887,6 +889,8 @@ pub fn create_instrument_from_def(
         HyperliquidMarketType::Outcome => {
             let outcome = def.outcome.as_ref()?;
             let currency = get_outcome_currency(&def.quote);
+            let info = outcome.info.as_deref().cloned();
+            let info = info_with_asset_index(info, def.asset_index);
 
             Some(InstrumentAny::BinaryOption(
                 BinaryOption::builder()
@@ -902,7 +906,7 @@ pub fn create_instrument_from_def(
                     .size_increment(size_increment)
                     .maybe_outcome(outcome.side_name)
                     .maybe_description(outcome.description)
-                    .info(info_with_asset_index(outcome.info.clone(), def.asset_index))
+                    .info(info)
                     .ts_event(ts_init)
                     .ts_init(ts_init)
                     .build()

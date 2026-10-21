@@ -208,8 +208,9 @@ mod tests {
 
     #[rstest::rstest]
     fn test_log_context_omits_custom_metadata() {
-        let mut metadata = nautilus_core::Params::default();
-        metadata.insert("token".to_string(), serde_json::json!("SYN-secret"));
+        let metadata = nautilus_core::Params::new(
+            [("token".to_string(), serde_json::json!("SYN-secret"))].into(),
+        );
 
         let data_type = DataType::new(
             "CustomTicks",

@@ -18,6 +18,7 @@
 use std::{convert::TryFrom, str::FromStr};
 
 use anyhow::Context;
+use indexmap::IndexMap;
 pub use nautilus_core::serialization::{
     deserialize_decimal_or_zero, deserialize_optional_decimal_or_zero,
     deserialize_optional_decimal_str, deserialize_string_to_u8,
@@ -409,6 +410,7 @@ pub fn parse_spot_instrument(
         "margin_trading".to_string(),
         serde_json::Value::Bool(margin_trading_supported),
     );
+    let info = Params::new(info);
 
     let asset_class = definition
         .symbol_type
@@ -531,7 +533,8 @@ pub fn parse_linear_instrument(
         None,
         definition.full_name.as_deref(),
         definition.market_region.as_deref(),
-    );
+    )
+    .map(Params::new);
 
     let asset_class = definition
         .symbol_type
@@ -718,7 +721,7 @@ pub fn parse_inverse_instrument(
         "lotSizeFilter.minNotionalValue",
     )?;
 
-    let info = build_instrument_info(definition.symbol_type, None, None, None);
+    let info = build_instrument_info(definition.symbol_type, None, None, None).map(Params::new);
 
     match definition.contract_type {
         BybitContractType::InversePerpetual => {
@@ -790,14 +793,13 @@ fn build_instrument_info(
     xstock_multiplier: Option<&str>,
     full_name: Option<&str>,
     market_region: Option<&str>,
-) -> Option<Params> {
+) -> Option<IndexMap<String, serde_json::Value>> {
     let symbol_type = symbol_type?;
     let value = symbol_type.as_str()?;
-    let mut info = Params::new();
-    info.insert(
+    let mut info = IndexMap::from([(
         "symbol_type".to_string(),
         serde_json::Value::String(value.to_string()),
-    );
+    )]);
 
     if symbol_type == BybitSymbolType::Xstocks
         && let Some(multiplier) = xstock_multiplier.filter(|value| !value.is_empty())
@@ -2688,11 +2690,12 @@ mod tests {
     }
 
     fn params_from(pairs: &[(&str, serde_json::Value)]) -> Params {
-        let mut p = Params::new();
-        for (k, v) in pairs {
-            p.insert(k.to_string(), v.clone());
-        }
-        p
+        Params::new(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        )
     }
 
     #[rstest]
@@ -2707,7 +2710,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_tp_sl_params_empty_returns_defaults() {
-        let p = Params::new();
+        let p = Params::empty();
         let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
         assert!(!result.is_leverage);
         assert!(!result.has_tp_sl());

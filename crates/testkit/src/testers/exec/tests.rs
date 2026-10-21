@@ -1127,8 +1127,7 @@ fn test_config_with_use_quote_quantity() {
 #[rstest]
 fn test_config_with_order_params() {
     use serde_json::Value;
-    let mut params = Params::new();
-    params.insert("key".to_string(), Value::String("value".to_string()));
+    let params = Params::new([("key".to_string(), Value::String("value".to_string()))].into());
     let config = ExecTesterConfig::builder()
         .order_params(params.clone())
         .build()
@@ -1308,8 +1307,7 @@ fn test_submit_limit_order_with_order_params(
     instrument: InstrumentAny,
 ) {
     use serde_json::Value;
-    let mut params = Params::new();
-    params.insert("tdMode".to_string(), Value::String("cross".to_string()));
+    let params = Params::new([("tdMode".to_string(), Value::String("cross".to_string()))].into());
     config.order_params = Some(params);
     let cache = create_cache_with_instrument(&instrument);
     let mut tester = ExecTester::new(config);

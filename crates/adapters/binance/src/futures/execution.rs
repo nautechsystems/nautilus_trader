@@ -28,6 +28,7 @@ use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
@@ -406,7 +407,8 @@ impl BinanceFuturesExecutionClient {
             margins.push(MarginBalance::new(initial, maintenance, None));
         }
 
-        let mut info = Params::new();
+        let mut info = IndexMap::new();
+
         let mut push_decimal = |key: &str, val: Option<Decimal>| {
             if let Some(decimal) = val {
                 info.insert(
@@ -430,7 +432,12 @@ impl BinanceFuturesExecutionClient {
         push_decimal("total_cross_unpnl", account_info.total_cross_un_pnl);
         push_decimal("available_balance", account_info.available_balance);
         push_decimal("max_withdraw_amount", account_info.max_withdraw_amount);
-        let info = if info.is_empty() { None } else { Some(info) };
+
+        let info = if info.is_empty() {
+            None
+        } else {
+            Some(Params::new(info))
+        };
 
         AccountState::new(
             account_id,

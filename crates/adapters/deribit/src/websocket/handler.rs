@@ -1931,10 +1931,13 @@ impl DeribitWsFeedHandler {
                             match serde_json::from_str::<DeribitVolatilityIndexMsg>(data.get()) {
                                 Ok(msg) => {
                                     let ts_event = UnixNanos::from(msg.timestamp * 1_000_000);
-                                    let mut metadata = nautilus_core::Params::new();
-                                    metadata.insert(
-                                        "index_name".to_string(),
-                                        serde_json::Value::String(msg.index_name.clone()),
+
+                                    let metadata = nautilus_core::Params::new(
+                                        [(
+                                            "index_name".to_string(),
+                                            serde_json::Value::String(msg.index_name.clone()),
+                                        )]
+                                        .into(),
                                     );
                                     let data_type = DataType::new(
                                         "DeribitVolatilityIndex",

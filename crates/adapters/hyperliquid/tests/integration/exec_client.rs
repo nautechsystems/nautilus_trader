@@ -9056,8 +9056,7 @@ async fn test_submit_market_order_uses_resolved_slippage_from_params() {
         .add_order(order.clone(), None, None, false)
         .unwrap();
 
-    let mut params = Params::new();
-    params.insert("market_order_slippage_bps".to_string(), json!(2000u64));
+    let params = Params::new([("market_order_slippage_bps".to_string(), json!(2000u64))].into());
     client
         .submit_order(make_submit_cmd_with_params(&order, params))
         .unwrap();

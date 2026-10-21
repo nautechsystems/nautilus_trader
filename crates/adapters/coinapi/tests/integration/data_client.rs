@@ -2006,9 +2006,7 @@ fn nanos(timestamp: &str) -> UnixNanos {
 }
 
 fn params() -> Params {
-    let mut params = Params::new();
-    params.insert("tag".into(), serde_json::json!("history"));
-    params
+    Params::new([("tag".into(), serde_json::json!("history"))].into())
 }
 
 fn minute_bar_type() -> BarType {

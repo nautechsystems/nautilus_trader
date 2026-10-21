@@ -542,8 +542,7 @@ that meet its trading rules.
 ```rust tab="Rust"
 use nautilus_core::params::Params;
 
-let mut params = Params::new();
-params.insert("rpi".to_string(), true.into());
+let params = Params::new([("rpi".to_string(), true.into())].into());
 self.submit_order(order, None, None, Some(params))?;
 ```
 

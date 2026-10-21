@@ -757,10 +757,12 @@ fn create_data_client_config(addr: SocketAddr) -> HyperliquidDataClientConfig {
 }
 
 fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidOpenInterest",
@@ -770,10 +772,12 @@ fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidPublicTrade",
@@ -783,10 +787,12 @@ fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn twap_history_data_type(user: &str) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "user".to_string(),
-        serde_json::Value::String(user.to_string()),
+    let metadata = Params::new(
+        [(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidTwapHistory",
@@ -796,10 +802,12 @@ fn twap_history_data_type(user: &str) -> DataType {
 }
 
 fn twap_slice_fill_data_type(user: &str) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "user".to_string(),
-        serde_json::Value::String(user.to_string()),
+    let metadata = Params::new(
+        [(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidTwapSliceFill",
@@ -3271,10 +3279,13 @@ async fn test_data_client_request_public_trades() {
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     let data_type = DataType::new("HyperliquidPublicTrade", Some(metadata), None);
     client

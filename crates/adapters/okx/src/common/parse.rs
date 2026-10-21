@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 pub use nautilus_core::serialization::{
     deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
@@ -1747,43 +1748,44 @@ fn spread_settlement_currency(
 }
 
 fn build_spread_info(definition: &OKXSpread) -> Params {
-    let mut info = Params::new();
-    info.insert(
-        "okx_sprd_id".to_string(),
-        serde_json::json!(definition.sprd_id),
-    );
-    info.insert(
-        "okx_sprd_type".to_string(),
-        serde_json::json!(spread_type_literal(definition.sprd_type)),
-    );
-    info.insert(
-        "okx_spread_state".to_string(),
-        serde_json::json!(spread_state_literal(definition.state)),
-    );
-    info.insert(
-        "okx_base_ccy".to_string(),
-        serde_json::json!(definition.base_ccy),
-    );
-    info.insert(
-        "okx_sz_ccy".to_string(),
-        serde_json::json!(definition.sz_ccy),
-    );
-    info.insert(
-        "okx_quote_ccy".to_string(),
-        serde_json::json!(definition.quote_ccy),
-    );
-    info.insert(
-        "okx_list_time".to_string(),
-        serde_json::json!(definition.list_time),
-    );
-    info.insert(
-        "okx_exp_time".to_string(),
-        serde_json::json!(definition.exp_time),
-    );
-    info.insert(
-        "okx_u_time".to_string(),
-        serde_json::json!(definition.u_time),
-    );
+    let mut info = IndexMap::from([
+        (
+            "okx_sprd_id".to_string(),
+            serde_json::json!(definition.sprd_id),
+        ),
+        (
+            "okx_sprd_type".to_string(),
+            serde_json::json!(spread_type_literal(definition.sprd_type)),
+        ),
+        (
+            "okx_spread_state".to_string(),
+            serde_json::json!(spread_state_literal(definition.state)),
+        ),
+        (
+            "okx_base_ccy".to_string(),
+            serde_json::json!(definition.base_ccy),
+        ),
+        (
+            "okx_sz_ccy".to_string(),
+            serde_json::json!(definition.sz_ccy),
+        ),
+        (
+            "okx_quote_ccy".to_string(),
+            serde_json::json!(definition.quote_ccy),
+        ),
+        (
+            "okx_list_time".to_string(),
+            serde_json::json!(definition.list_time),
+        ),
+        (
+            "okx_exp_time".to_string(),
+            serde_json::json!(definition.exp_time),
+        ),
+        (
+            "okx_u_time".to_string(),
+            serde_json::json!(definition.u_time),
+        ),
+    ]);
 
     let legs = definition
         .legs
@@ -1800,7 +1802,7 @@ fn build_spread_info(definition: &OKXSpread) -> Params {
         .collect::<Vec<_>>();
     info.insert("okx_spread_legs".to_string(), serde_json::json!(legs));
 
-    info
+    Params::new(info)
 }
 
 fn spread_type_literal(spread_type: OKXSpreadType) -> &'static str {
@@ -2018,7 +2020,7 @@ impl InstrumentParser for SpotInstrumentParser {
 
         // Parse multiplier as product of ct_mult and ct_val
         let multiplier = parse_multiplier_product(definition)?;
-        let info = build_price_limit_info(definition);
+        let info = build_price_limit_info(definition).map(Params::new);
 
         let instrument = CurrencyPair::builder()
             .instrument_id(common.instrument_id)
@@ -2179,7 +2181,7 @@ pub fn parse_swap_instrument(
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
     let min_price = None; // TBD
-    let info = build_price_limit_info(definition);
+    let info = build_price_limit_info(definition).map(Params::new);
 
     let instrument = CryptoPerpetual::builder()
         .instrument_id(instrument_id)
@@ -2370,11 +2372,13 @@ fn build_futures_info(definition: &OKXInstrument) -> Option<Params> {
         );
     }
 
-    (!info.is_empty()).then_some(info)
+    (!info.is_empty()).then(|| Params::new(info))
 }
 
-fn build_price_limit_info(definition: &OKXInstrument) -> Option<Params> {
-    let mut info = Params::new();
+fn build_price_limit_info(
+    definition: &OKXInstrument,
+) -> Option<IndexMap<String, serde_json::Value>> {
+    let mut info = IndexMap::new();
 
     insert_non_empty_info(
         &mut info,
@@ -2417,7 +2421,7 @@ fn build_price_limit_info(definition: &OKXInstrument) -> Option<Params> {
     (!info.is_empty()).then_some(info)
 }
 
-fn insert_non_empty_info(info: &mut Params, key: &str, value: &str) {
+fn insert_non_empty_info(info: &mut IndexMap<String, serde_json::Value>, key: &str, value: &str) {
     if !value.is_empty() {
         info.insert(
             key.to_string(),

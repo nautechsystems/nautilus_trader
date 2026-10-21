@@ -522,8 +522,7 @@ mod tests {
 
     #[rstest]
     fn trading_command_params_expose_the_inner_params() {
-        let mut params = Params::new();
-        params.insert("reduce_only".into(), "true".into());
+        let params = Params::new([("reduce_only".into(), "true".into())].into());
 
         let command = TradingCommand::QueryOrder(QueryOrder::new(
             TraderId::from("TRADER-001"),

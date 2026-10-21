@@ -1715,11 +1715,7 @@ async fn test_exec_client_submit_order_sends_configured_smp_type(
         .add_order(order, None, Some(client_id), false)
         .unwrap();
 
-    let params = param.map(|value| {
-        let mut params = Params::new();
-        params.insert("smp_type".to_string(), json!(value));
-        params
-    });
+    let params = param.map(|value| Params::new([("smp_type".to_string(), json!(value))].into()));
 
     let command = SubmitOrder::new(
         trader_id,
@@ -2632,9 +2628,13 @@ async fn test_exec_client_demo_submit_tp_trigger_price_emits_order_denied() {
         .add_order(order, None, Some(client_id), false)
         .unwrap();
 
-    let mut params = Params::new();
-    params.insert("take_profit".to_string(), json!("3000"));
-    params.insert("tp_trigger_price".to_string(), json!("2950"));
+    let params = Params::new(
+        [
+            ("take_profit".to_string(), json!("3000")),
+            ("tp_trigger_price".to_string(), json!("2950")),
+        ]
+        .into(),
+    );
 
     let cmd = SubmitOrder::new(
         trader_id,

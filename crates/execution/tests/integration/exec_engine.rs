@@ -1823,10 +1823,12 @@ fn test_cancel_all_orders_fans_out_with_one_resolved_client_and_shared_lineage()
         cache.build_index();
     }
 
-    let mut params = Params::new();
-    params.insert(
-        "routing_hint".to_string(),
-        Value::String("cancel_all".to_string()),
+    let params = Params::new(
+        [(
+            "routing_hint".to_string(),
+            Value::String("cancel_all".to_string()),
+        )]
+        .into(),
     );
     let command_id = UUID4::new();
     let correlation_id = UUID4::new();

@@ -135,10 +135,12 @@ pub(crate) fn custom_data_with_instrument(
     value: Arc<dyn CustomDataTrait>,
     instrument_id: InstrumentId,
 ) -> CustomData {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     let data_type = DataType::new(
         value.type_name(),
@@ -619,10 +621,13 @@ impl BetfairDataClient {
                                         race_id, market_id, rrc, ts_event, ts_init,
                                     ) {
                                         let selection_id = rrc.id.unwrap_or(0);
-                                        let mut metadata = Params::new();
-                                        metadata.insert(
-                                            "selection_id".to_string(),
-                                            serde_json::Value::Number(selection_id.into()),
+
+                                        let metadata = Params::new(
+                                            [(
+                                                "selection_id".to_string(),
+                                                serde_json::Value::Number(selection_id.into()),
+                                            )]
+                                            .into(),
                                         );
                                         let value: Arc<dyn CustomDataTrait> = Arc::new(runner);
                                         let data_type =
@@ -644,10 +649,13 @@ impl BetfairDataClient {
 
                                 let progress =
                                     parse_race_progress(race_id, market_id, rpc, ts_event, ts_init);
-                                let mut metadata = Params::new();
-                                metadata.insert(
-                                    "race_id".to_string(),
-                                    serde_json::Value::String(race_id.to_string()),
+
+                                let metadata = Params::new(
+                                    [(
+                                        "race_id".to_string(),
+                                        serde_json::Value::String(race_id.to_string()),
+                                    )]
+                                    .into(),
                                 );
                                 let value: Arc<dyn CustomDataTrait> = Arc::new(progress);
                                 let data_type =
@@ -671,10 +679,12 @@ impl BetfairDataClient {
                             if let Some(cricket) =
                                 parse_cricket_match(cricket_change, ts_event, ts_init)
                             {
-                                let mut metadata = Params::new();
-                                metadata.insert(
-                                    "event_id".to_string(),
-                                    serde_json::Value::String(cricket.event_id.clone()),
+                                let metadata = Params::new(
+                                    [(
+                                        "event_id".to_string(),
+                                        serde_json::Value::String(cricket.event_id.clone()),
+                                    )]
+                                    .into(),
                                 );
                                 let value: Arc<dyn CustomDataTrait> = Arc::new(cricket);
                                 let data_type =

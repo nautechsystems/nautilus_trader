@@ -329,7 +329,7 @@ fn test_shared_internal_bars_retry_failed_source(
     assert_eq!(command.ts_init, UnixNanos::from(1));
     assert_eq!(command.correlation_id, Some(first_command_id));
     #[cfg(feature = "streaming")]
-    let expected_params = Some(client_subscription_params(Params::new()));
+    let expected_params = Some(client_subscription_params(Params::empty()));
     #[cfg(not(feature = "streaming"))]
     let expected_params = None;
     assert_eq!(command.params, expected_params);

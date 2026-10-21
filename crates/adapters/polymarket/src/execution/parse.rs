@@ -860,6 +860,7 @@ pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
 
 #[cfg(test)]
 mod tests {
+    use indexmap::IndexMap;
     use nautilus_execution::models::fee::{FeeModel, ProbabilityPriceFeeModel};
     use nautilus_model::{
         enums::{OrderSide, OrderType},
@@ -1933,12 +1934,11 @@ mod tests {
     #[rstest]
     fn test_fee_exponent_preserves_exact_metadata_and_rejects_invalid_metadata() {
         let mut binary = binary_option();
-        let mut info = nautilus_core::Params::new();
-        info.insert(
+        let mut info = IndexMap::from([(
             "fee_schedule".into(),
             serde_json::json!({"exponent": "1.234567890123456789012345678"}),
-        );
-        binary.info = Some(info.clone());
+        )]);
+        binary.info = Some(nautilus_core::Params::new(info.clone()));
         assert_eq!(
             instrument_fee_exponent(&InstrumentAny::BinaryOption(binary.clone())).unwrap(),
             dec!(1.234567890123456789012345678)
@@ -1953,11 +1953,11 @@ mod tests {
                 "fee_schedule".into(),
                 serde_json::json!({"exponent": value}),
             );
-            binary.info = Some(info.clone());
+            binary.info = Some(nautilus_core::Params::new(info.clone()));
             assert!(instrument_fee_exponent(&InstrumentAny::BinaryOption(binary.clone())).is_err());
         }
         info.insert("fee_schedule".into(), serde_json::json!({"exponent": 2}));
-        binary.info = Some(info);
+        binary.info = Some(nautilus_core::Params::new(info));
         assert_eq!(
             instrument_fee_exponent(&InstrumentAny::BinaryOption(binary)).unwrap(),
             dec!(2)
@@ -2129,9 +2129,9 @@ mod tests {
         assert_eq!(instrument_taker_fee(&bare).unwrap(), Decimal::ZERO);
 
         let mut binary = binary_option();
-        let mut info = nautilus_core::Params::new();
-        info.insert("fee_schedule".into(), serde_json::json!({"exponent": "1"}));
-        binary.info = Some(info.clone());
+        let mut info =
+            IndexMap::from([("fee_schedule".into(), serde_json::json!({"exponent": "1"}))]);
+        binary.info = Some(nautilus_core::Params::new(info.clone()));
         let missing = instrument_taker_fee(&InstrumentAny::BinaryOption(binary.clone()))
             .expect_err("a present schedule must include a rate");
         assert!(missing.to_string().contains("missing rate"), "{missing}");
@@ -2140,7 +2140,7 @@ mod tests {
             "fee_schedule".into(),
             serde_json::json!({"rate": "-0.01", "exponent": "1"}),
         );
-        binary.info = Some(info);
+        binary.info = Some(nautilus_core::Params::new(info));
         let negative = instrument_taker_fee(&InstrumentAny::BinaryOption(binary))
             .expect_err("a negative rate must be rejected");
         assert!(

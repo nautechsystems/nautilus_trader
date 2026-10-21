@@ -511,15 +511,20 @@ impl DeribitDataClient {
     }
 
     fn book_summary_data_type(currency: &str, kind: Option<&str>) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "currency".to_string(),
-            serde_json::Value::String(currency.to_string()),
-        );
         let kind = kind.unwrap_or("option");
-        metadata.insert(
-            "kind".to_string(),
-            serde_json::Value::String(kind.to_string()),
+
+        let metadata = Params::new(
+            [
+                (
+                    "currency".to_string(),
+                    serde_json::Value::String(currency.to_string()),
+                ),
+                (
+                    "kind".to_string(),
+                    serde_json::Value::String(kind.to_string()),
+                ),
+            ]
+            .into(),
         );
         DataType::new(
             Self::BOOK_SUMMARY_TYPE_NAME,

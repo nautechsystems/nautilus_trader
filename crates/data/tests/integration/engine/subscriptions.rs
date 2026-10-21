@@ -1642,10 +1642,8 @@ fn test_external_client_releases_after_final_owner(
 
     let mut data_engine = DataEngine::new(clock, cache, Some(config));
     let topic = format!("commands.data.{client_id}");
-    let mut first_params = Params::new();
-    first_params.insert("owner".to_string(), serde_json::json!(1));
-    let mut second_params = Params::new();
-    second_params.insert("owner".to_string(), serde_json::json!(2));
+    let first_params = Params::new([("owner".to_string(), serde_json::json!(1))].into());
+    let second_params = Params::new([("owner".to_string(), serde_json::json!(2))].into());
     let first_subscribe = SubscribeCommand::Quotes(SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),

@@ -933,14 +933,14 @@ mod tests {
     }
 
     fn polybolt_crypto_data_type(symbol: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
+        let metadata =
+            Params::new([("symbol".to_string(), Value::String(symbol.to_string()))].into());
         DataType::new("PolymarketCryptoPrice", Some(metadata), None)
     }
 
     fn polybolt_equity_data_type(symbol: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
+        let metadata =
+            Params::new([("symbol".to_string(), Value::String(symbol.to_string()))].into());
         DataType::new("PolymarketEquityPrice", Some(metadata), None)
     }
 
@@ -973,14 +973,18 @@ mod tests {
         binary.activation_ns = UnixNanos::default();
         binary.expiration_ns = expiration_ns;
 
-        let mut info = Params::new();
-        info.insert(
-            "token_id".to_string(),
-            serde_json::Value::String(raw_symbol.to_string()),
-        );
-        info.insert(
-            "condition_id".to_string(),
-            serde_json::Value::String(condition_id.to_string()),
+        let info = Params::new(
+            [
+                (
+                    "token_id".to_string(),
+                    serde_json::Value::String(raw_symbol.to_string()),
+                ),
+                (
+                    "condition_id".to_string(),
+                    serde_json::Value::String(condition_id.to_string()),
+                ),
+            ]
+            .into(),
         );
         binary.info = Some(info);
 

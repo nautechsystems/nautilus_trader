@@ -91,12 +91,16 @@ mod tests {
 
     #[rstest]
     fn test_account_state_round_trip(cash_account_state: AccountState) {
-        let mut info = Params::new();
-        info.insert(
-            "total_wallet_balance".to_string(),
-            json!("1525000.00000001"),
+        let info = Params::new(
+            [
+                (
+                    "total_wallet_balance".to_string(),
+                    json!("1525000.00000001"),
+                ),
+                ("can_trade".to_string(), json!(true)),
+            ]
+            .into(),
         );
-        info.insert("can_trade".to_string(), json!(true));
         let state = cash_account_state.with_info(Some(info));
         let metadata = state.metadata();
         let batch = AccountState::encode_batch(&metadata, std::slice::from_ref(&state)).unwrap();

@@ -4574,8 +4574,7 @@ mod tests {
         command.client_id = Some(ClientId::from("EXECUTION-RELEASE"));
         command.position_id = Some(PositionId::from("P-RELEASE"));
         command.exec_algorithm_id = order.exec_algorithm_id();
-        let mut params = Params::new();
-        params.insert("release-param".to_string(), "preserved".into());
+        let params = Params::new([("release-param".to_string(), "preserved".into())].into());
         command.params = Some(params);
         command.ts_init = UnixNanos::from(123);
         command.correlation_id = Some(UUID4::new());

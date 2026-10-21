@@ -934,8 +934,7 @@ mod tests {
     fn test_encode_decode_round_trip_equity_all_fields() {
         use nautilus_core::Params;
 
-        let mut info = Params::new();
-        info.insert("sector".to_string(), serde_json::json!("technology"));
+        let info = Params::new([("sector".to_string(), serde_json::json!("technology"))].into());
 
         let equity = Equity::builder()
             .instrument_id(InstrumentId::from("AAPL.NASDAQ"))
@@ -984,9 +983,14 @@ mod tests {
     fn test_instrument_info_uses_nullable_utf8_json() {
         let absent = equity_aapl();
         let mut populated = absent.clone();
-        let mut info = nautilus_core::Params::new();
-        info.insert("enabled".to_string(), serde_json::json!(true));
-        info.insert("source".to_string(), serde_json::json!("unit-test"));
+
+        let info = nautilus_core::Params::new(
+            [
+                ("enabled".to_string(), serde_json::json!(true)),
+                ("source".to_string(), serde_json::json!("unit-test")),
+            ]
+            .into(),
+        );
         populated.info = Some(info);
         let instruments = [
             InstrumentAny::Equity(populated.clone()),
@@ -1101,9 +1105,8 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip_binary_option_all_fields() {
-        let mut info = Params::new();
         let raw = "0.1234567890123456789012345678";
-        info.insert("gamma_market".to_string(), serde_json::json!(raw));
+        let info = Params::new([("gamma_market".to_string(), serde_json::json!(raw))].into());
         let option = BinaryOption::builder()
             .instrument_id(InstrumentId::from("ELECTION.POLYMARKET"))
             .raw_symbol(Symbol::from("ELECTION"))

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
+
 use super::*;
 
 #[rstest]
@@ -881,7 +883,7 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
     );
     assert!(!first_child_params_ref.contains_key("continuous_future_transitions"));
     assert!(!first_child_params_ref.contains_key("bar_types"));
-    let mut first_response_params = first_child.params.clone().unwrap();
+    let mut first_response_params = IndexMap::clone(first_child.params.as_ref().unwrap());
     first_response_params.insert("data_count".to_string(), json!(7));
 
     data_engine.response(DataResponse::Trades(TradesResponse::new(
@@ -892,7 +894,7 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
         Some(UnixNanos::from(0)),
         Some(UnixNanos::from(9)),
         UnixNanos::from(1),
-        Some(first_response_params),
+        Some(Params::new(first_response_params)),
     )));
 
     assert!(response_saver.get_messages().is_empty());
@@ -902,7 +904,7 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
     assert_eq!(second_child.instrument_id, post_instrument_id);
     assert_eq!(second_child.start.map(|dt| dt.as_nanosecond()), Some(10));
     assert_eq!(second_child.end.map(|dt| dt.as_nanosecond()), Some(20));
-    let mut second_response_params = second_child.params.clone().unwrap();
+    let mut second_response_params = IndexMap::clone(second_child.params.as_ref().unwrap());
     second_response_params.insert("data_count".to_string(), json!(8));
     data_engine.response(DataResponse::Trades(TradesResponse::new(
         second_child.request_id,
@@ -912,7 +914,7 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
         Some(UnixNanos::from(10)),
         Some(UnixNanos::from(20)),
         UnixNanos::from(11),
-        Some(second_response_params),
+        Some(Params::new(second_response_params)),
     )));
 
     let cached_bar = cache.borrow().bar(&target_bar_type).copied().unwrap();

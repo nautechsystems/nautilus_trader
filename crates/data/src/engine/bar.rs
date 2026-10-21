@@ -942,6 +942,7 @@ impl Debug for BarAggregatorSubscription {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use indexmap::IndexMap;
     use jiff::Timestamp;
     use nautilus_common::{
         cache::Cache,
@@ -991,31 +992,34 @@ mod tests {
             Some(config),
         );
         let bar_type = BarType::from("AUD/USD.SIM-1-DAY-LAST-INTERNAL");
-        let mut params = nautilus_core::Params::default();
-        params.insert(
+        let mut params = IndexMap::from([(
             "skip_first_non_full_bar".to_owned(),
             serde_json::json!(false),
-        );
+        )]);
 
         if let Some(zone) = override_zone {
             params.insert("time_zone".to_owned(), serde_json::json!(zone));
         }
 
-        let mut cmd = SubscribeBars::new(
+        let cmd = SubscribeBars::new(
             bar_type,
             None,
             Some(bar_type.instrument_id().venue),
             UUID4::new(),
             UnixNanos::default(),
             None,
-            Some(params),
+            Some(nautilus_core::Params::new(params)),
         );
         engine.subscribe_bars(&cmd).unwrap();
         engine.subscribe_bars(&cmd).unwrap();
-        cmd.params
-            .as_mut()
-            .unwrap()
-            .insert("time_zone".to_owned(), serde_json::json!("Asia/Tokyo"));
+        let mut params = IndexMap::clone(cmd.params.as_ref().unwrap());
+        params.insert("time_zone".to_owned(), serde_json::json!("Asia/Tokyo"));
+
+        let cmd = SubscribeBars {
+            params: Some(nautilus_core::Params::new(params)),
+            ..cmd
+        };
+
         let e = engine.subscribe_bars(&cmd).unwrap_err();
 
         // Request-local instances can use another zone without replacing the live instance
@@ -1071,8 +1075,7 @@ mod tests {
         #[case] value: serde_json::Value,
         #[case] expected: &str,
     ) {
-        let mut params = nautilus_core::Params::default();
-        params.insert("time_zone".to_owned(), value);
+        let params = nautilus_core::Params::new([("time_zone".to_owned(), value)].into());
         assert_eq!(
             time_zone_from_params(Some(&params))
                 .unwrap_err()
@@ -1094,7 +1097,7 @@ mod tests {
         engine
             .create_bar_aggregator_for_key(bar_type, None, None, None)
             .unwrap();
-        let mut params: nautilus_core::Params = serde_json::from_value(serde_json::json!({
+        let params: nautilus_core::Params = serde_json::from_value(serde_json::json!({
             "bar_types": [bar_type.to_string()], "update_subscriptions": true,
             "time_zone": "America/New_York"
         }))
@@ -1106,7 +1109,9 @@ mod tests {
         let error = engine
             .prepare_request_bar_aggregators_from_state(id, &state)
             .unwrap_err();
+        let mut params = IndexMap::clone(&params);
         params.insert("update_subscriptions".to_owned(), serde_json::json!(false));
+        let params = nautilus_core::Params::new(params);
         let state = request_bar_aggregation_from_params(Some(&params))
             .unwrap()
             .unwrap();

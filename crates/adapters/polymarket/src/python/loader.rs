@@ -17,8 +17,10 @@
 
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_core::{
+    Params,
     datetime::datetime_to_unix_nanos,
     python::{
         IntoPyObjectNautilusExt, params::value_to_pyobject, to_pyruntime_err, to_pyvalue_err,
@@ -523,9 +525,11 @@ fn build_loader_from_details(
         };
 
     // Fetched snapshots can reveal outcomes that were unknown during the historical period
-    if let Some(info) = instrument.info.as_mut() {
+    if let Some(info) = instrument.info.as_ref() {
+        let mut info = IndexMap::clone(info);
         info.shift_remove("gamma_market");
         info.shift_remove("gamma_event");
+        instrument.info = Some(Params::new(info));
     }
 
     let resolution_metadata = resolution_metadata(&market, details);

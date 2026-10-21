@@ -491,11 +491,15 @@ mod tests {
 
     #[rstest]
     fn parse_condition_ids_supports_single_multi_and_dedup() {
-        let mut params = Params::new();
-        params.insert("condition_id".to_string(), serde_json::json!("0xCOND-A"));
-        params.insert(
-            "condition_ids".to_string(),
-            serde_json::json!(["0xCOND-B", "0xCOND-A", "0xCOND-B"]),
+        let params = Params::new(
+            [
+                ("condition_id".to_string(), serde_json::json!("0xCOND-A")),
+                (
+                    "condition_ids".to_string(),
+                    serde_json::json!(["0xCOND-B", "0xCOND-A", "0xCOND-B"]),
+                ),
+            ]
+            .into(),
         );
 
         let parsed = parse_condition_ids_from_request_params(&Some(params));
@@ -504,8 +508,8 @@ mod tests {
 
     #[rstest]
     fn parse_condition_ids_accepts_single_condition_ids_string() {
-        let mut params = Params::new();
-        params.insert("condition_ids".to_string(), serde_json::json!("0xCOND-A"));
+        let params =
+            Params::new([("condition_ids".to_string(), serde_json::json!("0xCOND-A"))].into());
 
         let parsed = parse_condition_ids_from_request_params(&Some(params));
         assert_eq!(parsed, vec!["0xCOND-A".to_string()]);
@@ -513,14 +517,16 @@ mod tests {
 
     #[rstest]
     fn parse_condition_ids_ignores_non_polymarket_instrument_ids() {
-        let mut params = Params::new();
-        params.insert(
-            "instrument_ids".to_string(),
-            serde_json::json!([
-                "0xCOND-A-0xTOKENA.POLYMARKET",
-                "BTCUSDT-PERP.BINANCE",
-                "ETHUSDT-PERP.BINANCE"
-            ]),
+        let params = Params::new(
+            [(
+                "instrument_ids".to_string(),
+                serde_json::json!([
+                    "0xCOND-A-0xTOKENA.POLYMARKET",
+                    "BTCUSDT-PERP.BINANCE",
+                    "ETHUSDT-PERP.BINANCE"
+                ]),
+            )]
+            .into(),
         );
 
         let parsed = parse_condition_ids_from_request_params(&Some(params));

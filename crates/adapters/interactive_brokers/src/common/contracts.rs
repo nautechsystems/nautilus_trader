@@ -149,15 +149,12 @@ pub fn contract_to_json_value(contract: &Contract) -> Value {
 
 #[must_use]
 pub fn contract_to_params(contract: &Contract) -> Params {
-    let mut params = Params::new();
+    let map = match contract_to_json_value(contract) {
+        Value::Object(map) => map.into_iter().collect(),
+        _ => Default::default(),
+    };
 
-    if let Value::Object(map) = contract_to_json_value(contract) {
-        for (key, value) in map {
-            params.insert(key, value);
-        }
-    }
-
-    params
+    Params::new(map)
 }
 
 fn security_type_to_code(security_type: &SecurityType) -> String {

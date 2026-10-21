@@ -950,14 +950,18 @@ mod tests {
                 UnixNanos::from(42_u64),
             );
 
-            let mut metadata = Params::new();
-            metadata.insert(
-                "instrument_id".to_string(),
-                serde_json::Value::String("BTCUSDT-PERP.BINANCE".to_string()),
-            );
-            metadata.insert(
-                "period".to_string(),
-                serde_json::Value::String("5m".to_string()),
+            let metadata = Params::new(
+                [
+                    (
+                        "instrument_id".to_string(),
+                        serde_json::Value::String("BTCUSDT-PERP.BINANCE".to_string()),
+                    ),
+                    (
+                        "period".to_string(),
+                        serde_json::Value::String("5m".to_string()),
+                    ),
+                ]
+                .into(),
             );
 
             let custom = CustomData::new(

@@ -513,10 +513,15 @@ mod serial_tests {
     async fn test_currency_pair_info_survives_cache_restore() {
         let mut database = get_test_pg_cache_database().await.unwrap();
         let mut pair = currency_pair_ethusdt();
-        let mut info = Params::new();
-        info.insert("raw_symbol".to_owned(), serde_json::Value::from("ETHUSDT"));
-        info.insert("z".to_owned(), serde_json::Value::from(1e16));
-        info.insert("a".to_owned(), serde_json::Value::from(2));
+
+        let info = Params::new(
+            [
+                ("raw_symbol".to_owned(), serde_json::Value::from("ETHUSDT")),
+                ("z".to_owned(), serde_json::Value::from(1e16)),
+                ("a".to_owned(), serde_json::Value::from(2)),
+            ]
+            .into(),
+        );
         pair.info = Some(info.clone());
         let instrument = pair.into_any();
         database
@@ -1795,7 +1800,8 @@ mod serial_tests {
             "a".to_string() => serde_json::Value::String("1".to_string()),
             "b".to_string() => serde_json::Value::String("2".to_string()),
         };
-        let params = Params::from_index_map(metadata);
+        let params = Params::new(metadata);
+
         let data_type = DataType::new(
             "RustTestCustomData",
             Some(params),

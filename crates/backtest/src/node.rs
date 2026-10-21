@@ -698,10 +698,13 @@ fn dispatch_batch_query(
             min_opt(config.end_time(), end),
         )
         .with_where_clause(config.filter_expr().map(str::to_string));
-    let mut params = Params::new();
-    params.insert(
-        "optimize_file_loading".to_string(),
-        config.optimize_file_loading().into(),
+
+    let params = Params::new(
+        [(
+            "optimize_file_loading".to_string(),
+            config.optimize_file_loading().into(),
+        )]
+        .into(),
     );
     query.params = Some(params);
     let mut session = catalog.query_batch_session(&query, None)?;

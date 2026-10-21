@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashMap;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::messages::data::{
     BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataResponse,
@@ -146,11 +147,14 @@ impl DataEngine {
         let start_ns = last_timestamp.map_or(Value::Null, |last_timestamp| {
             Value::from(last_timestamp.saturating_add(1))
         });
-        let mut params = params.cloned().unwrap_or_else(Params::new);
+
+        let mut params = params
+            .map(|params| IndexMap::clone(params))
+            .unwrap_or_default();
 
         params.insert("start_ns".to_string(), start_ns);
 
-        params
+        Params::new(params)
     }
 
     fn catalog_last_timestamp(
@@ -1149,9 +1153,11 @@ fn build_book_depth_catalog_response(
 }
 
 fn catalog_response_params(existing: Option<&Params>) -> Params {
-    let mut params = existing.cloned().unwrap_or_else(Params::new);
+    let mut params = existing
+        .map(|params| IndexMap::clone(params))
+        .unwrap_or_default();
     params.insert(PARAM_UPDATE_CATALOG.to_string(), Value::Bool(false));
-    params
+    Params::new(params)
 }
 
 fn custom_data_from_query_result(data: DataBatch) -> anyhow::Result<Vec<CustomData>> {

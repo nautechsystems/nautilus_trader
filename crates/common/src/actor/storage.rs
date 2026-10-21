@@ -176,13 +176,12 @@ mod tests {
 
     #[rstest]
     fn metadata_charges_keys_and_nested_values() {
-        let mut values = Params::default();
         let mut key = String::with_capacity(41);
         key.push_str("key");
         let mut value = String::with_capacity(83);
         value.push_str("payload");
         let contents = key.capacity() + value.capacity();
-        values.insert(key, Value::String(value));
+        let values = Params::new([(key, Value::String(value))].into());
         assert_eq!(
             params(&values),
             values.capacity() * size_of::<(usize, String, Value)>() + contents

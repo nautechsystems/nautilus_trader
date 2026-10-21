@@ -2687,6 +2687,7 @@ mod tests {
         sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     };
 
+    use indexmap::IndexMap;
     use nautilus_common::config::ConfigError;
     use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
@@ -2902,8 +2903,9 @@ mod tests {
     }
 
     fn create_contract_info(contract: &Contract, price_magnifier: Option<i32>) -> Params {
-        let mut info = Params::new();
-        info.insert(String::from("contract"), contract_to_json_value(contract));
+        let mut info =
+            IndexMap::from([(String::from("contract"), contract_to_json_value(contract))]);
+
         if let Some(price_magnifier) = price_magnifier {
             info.insert(
                 String::from("priceMagnifier"),
@@ -2911,7 +2913,7 @@ mod tests {
             );
         }
 
-        info
+        Params::new(info)
     }
 
     #[tokio::test]
