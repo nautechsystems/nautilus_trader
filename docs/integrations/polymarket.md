@@ -975,7 +975,12 @@ Ambiguous failures include:
 | No `orderID` and no reason                                                                | Remains `Submitted`         | The response does not prove rejection.    |
 | Any ambiguous failure                                                                     | Remains `Submitted`         | The adapter cannot determine the outcome. |
 | Definitive retry error after an earlier ambiguous attempt                                 | Remains `Submitted`         | The earlier attempt may have succeeded.   |
-| Failure before `POST /order`, such as a failed pUSD balance lookup                        | `OrderDenied`               | The adapter did not submit the order.     |
+| Local failure before `OrderSubmitted`, including market-order preparation                 | `OrderDenied`               | The adapter did not enter submission.     |
+| Local failure after `OrderSubmitted` proving no POST was sent                             | `OrderRejected`             | The adapter entered submission.           |
+
+Market-order preparation includes balance and book lookups, price and fee checks, signing, and order-ID
+calculation. Preparation failures emit `OrderDenied` without `OrderSubmitted` or `POST /order`. After
+preparation succeeds, the adapter emits `OrderSubmitted` before it attempts the POST.
 
 Local denials format the strategy-facing reason from `OrderDeniedReason`. The leading token is the
 stable code, such as `VALIDATION_FAILED` or `UNSUPPORTED_ORDER_TYPE`.
@@ -2721,36 +2726,41 @@ are the programmatic `filters` and `new_market_filter` trait objects on
 
 Class/struct: `PolymarketDataClientConfig`.
 
-| Option                                 | Default    | Description                                                                                   |
-| -------------------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
-| `instrument_config`                    | `None`     | Bootstrap scope, passed as `PolymarketInstrumentProviderConfig`.                              |
-| `filters`                              | `[]`       | Rust-only instrument filters applied during loading and discovery.                            |
-| `base_url_http`, `base_url_ws`         | `None`     | Override the CLOB HTTP or WebSocket endpoint.                                                 |
-| `base_url_gamma`, `base_url_data_api`  | `None`     | Override the Gamma or Data API endpoint.                                                      |
-| `base_url_reference_prices`            | `None`     | Override the PolyBolt reference-price endpoint.                                               |
-| `api_key`, `api_secret`, `passphrase`  | `None`     | CLOB L2 credentials for PolyBolt price channels; fall back to `POLYMARKET_*` variables.       |
-| `proxy_url`                            | `None`     | HTTP or HTTPS proxy for every data transport.                                                 |
-| `http_timeout_secs`, `ws_timeout_secs` | `60`, `30` | HTTP and WebSocket timeout in seconds.                                                        |
-| `ws_max_subscriptions`                 | `200`      | Per-connection subscription cap; the market pool shards across connections at this bound.     |
-| `update_instruments_interval_mins`     | `60`       | Instrument catalog refresh interval in minutes; pass `None` to disable it.                    |
-| `subscribe_new_markets`                | `false`    | Subscribe to discovery and resolution events; also enables `best_bid_ask` quote ticks.        |
-| `new_market_filter`                    | `None`     | Rust-only filter applied to newly discovered markets before instrument emission.              |
-| `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                        |
-| `drop_quotes_missing_side`             | `true`     | Drop quotes that do not contain both a bid and an ask.                                        |
-| `compute_effective_deltas`             | `false`    | Emit net snapshot changes when prior book state exists.                                       |
-| `auto_load_missing_instruments`        | `true`     | Load unknown instruments for supported requests and subscriptions.                            |
-| `auto_load_debounce_ms`                | `100`      | Window in milliseconds for coalescing concurrent auto-load requests.                          |
-| `auto_load_max_retries`                | `12`       | Retry transient Gamma loads with missing CLOB metadata or fetch failures; `0` disables retry. |
-| `auto_load_retry_delay_initial_secs`   | `5.0`      | Initial auto-load retry delay in seconds.                                                     |
-| `auto_load_retry_delay_max_secs`       | `15.0`     | Maximum auto-load retry delay in seconds.                                                     |
-| `resolve_poll_enabled`                 | `true`     | Poll expired watched conditions for resolution.                                               |
-| `resolve_poll_interval_secs`           | `30`       | Resolution polling interval in seconds.                                                       |
-| `resolve_poll_grace_secs`              | `10`       | Delay in seconds after expiry before polling begins.                                          |
-| `resolve_poll_max_wait_secs`           | `1,800`    | Pause automatic polling after this many seconds from expiration.                              |
-| `transport_backend`                    | `Sockudo`  | WebSocket transport implementation.                                                           |
-| `book_snapshot_timeout_secs`           | `10`       | Maximum snapshot wait in seconds after reconnect or during recovery; `0` disables deadlines.  |
-| `book_stale_check_interval_secs`       | `5`        | Book feed staleness check interval in seconds.                                                |
-| `book_stale_threshold_secs`            | `0`        | Maximum book feed silence in seconds before reporting stale; `0` disables the monitor.        |
+| Option                                | Default   | Description                                                                                   |
+| ------------------------------------- | --------- | --------------------------------------------------------------------------------------------- |
+| `instrument_config`                   | `None`    | Bootstrap scope, passed as `PolymarketInstrumentProviderConfig`.                              |
+| `filters`                             | `[]`      | Rust-only instrument filters applied during loading and discovery.                            |
+| `base_url_http`, `base_url_ws`        | `None`    | Override the CLOB HTTP or WebSocket endpoint.                                                 |
+| `base_url_gamma`, `base_url_data_api` | `None`    | Override the Gamma or Data API endpoint.                                                      |
+| `base_url_reference_prices`           | `None`    | Override the PolyBolt reference-price endpoint.                                               |
+| `api_key`, `api_secret`, `passphrase` | `None`    | CLOB L2 credentials for PolyBolt price channels; fall back to `POLYMARKET_*` variables.       |
+| `proxy_url`                           | `None`    | HTTP or HTTPS proxy for every data transport.                                                 |
+| `http_timeout_secs`                   | `60`      | HTTP timeout in seconds.                                                                      |
+| `ws_timeout_secs`                     | `30`      | Positive WebSocket timeout in seconds per connection attempt, including reconnects.           |
+| `ws_max_subscriptions`                | `200`     | Per-connection subscription cap; the market pool shards across connections at this bound.     |
+| `update_instruments_interval_mins`    | `60`      | Instrument catalog refresh interval in minutes; pass `None` to disable it.                    |
+| `subscribe_new_markets`               | `false`   | Subscribe to discovery and resolution events; also enables `best_bid_ask` quote ticks.        |
+| `new_market_filter`                   | `None`    | Rust-only filter applied to newly discovered markets before instrument emission.              |
+| `new_market_fetch_max_concurrency`    | `8`       | Bound concurrent market fetches from discovery events.                                        |
+| `drop_quotes_missing_side`            | `true`    | Drop quotes that do not contain both a bid and an ask.                                        |
+| `compute_effective_deltas`            | `false`   | Emit net snapshot changes when prior book state exists.                                       |
+| `auto_load_missing_instruments`       | `true`    | Load unknown instruments for supported requests and subscriptions.                            |
+| `auto_load_debounce_ms`               | `100`     | Window in milliseconds for coalescing concurrent auto-load requests.                          |
+| `auto_load_max_retries`               | `12`      | Retry transient Gamma loads with missing CLOB metadata or fetch failures; `0` disables retry. |
+| `auto_load_retry_delay_initial_secs`  | `5.0`     | Initial auto-load retry delay in seconds.                                                     |
+| `auto_load_retry_delay_max_secs`      | `15.0`    | Maximum auto-load retry delay in seconds.                                                     |
+| `resolve_poll_enabled`                | `true`    | Poll expired watched conditions for resolution.                                               |
+| `resolve_poll_interval_secs`          | `30`      | Resolution polling interval in seconds.                                                       |
+| `resolve_poll_grace_secs`             | `10`      | Delay in seconds after expiry before polling begins.                                          |
+| `resolve_poll_max_wait_secs`          | `1,800`   | Pause automatic polling after this many seconds from expiration.                              |
+| `transport_backend`                   | `Sockudo` | WebSocket transport implementation.                                                           |
+| `book_snapshot_timeout_secs`          | `10`      | Maximum snapshot wait in seconds after reconnect or during recovery; `0` disables deadlines.  |
+| `book_stale_check_interval_secs`      | `5`       | Book feed staleness check interval in seconds.                                                |
+| `book_stale_threshold_secs`           | `0`       | Maximum book feed silence in seconds before reporting stale; `0` disables the monitor.        |
+
+`ws_timeout_secs` applies to market and PolyBolt WebSockets. It also bounds sends waiting for
+reconnection. Use a value above the 5-second maximum reconnect backoff. Each connection attempt
+starts a new timeout, so the total connection time can exceed this value.
 
 ### Execution client options
 

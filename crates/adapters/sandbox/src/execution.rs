@@ -237,7 +237,6 @@ impl SandboxExecutionClient {
 
         let inner_weak = WeakCell::from(Rc::downgrade(&self.inner));
         let venue = self.config.venue;
-        let account_id = self.core.borrow().account_id;
 
         let deltas_handler = {
             let inner = inner_weak.clone();
@@ -308,24 +307,8 @@ impl SandboxExecutionClient {
 
         let position_handler = {
             TypedHandler::from(move |event: &PositionEvent| {
-                let PositionEvent::PositionClosed(position_closed) = event else {
-                    return;
-                };
-
-                if position_closed.instrument_id.venue == venue
-                    && position_closed.account_id == account_id
-                    && let Some(inner_rc) = inner_weak.upgrade()
-                {
-                    // ExecutionEngine updates the cached position state before publishing
-                    // PositionClosed, so this retry observes the post-settlement cache view.
-                    if let Ok(mut inner) = inner_rc.try_borrow_mut() {
-                        inner.sync_expired_cleanup(position_closed.instrument_id);
-                    } else {
-                        log::debug!(
-                            "Skipping immediate expired cleanup retry for {} due to active sandbox borrow",
-                            position_closed.instrument_id,
-                        );
-                    }
+                if let Some(inner_rc) = inner_weak.upgrade() {
+                    SandboxInner::on_position_event(&inner_rc, event);
                 }
             })
         };
@@ -1213,6 +1196,14 @@ impl SandboxInner {
             return;
         }
 
+        if self
+            .matching_engines
+            .get_mut(&instrument_id)
+            .is_some_and(OrderMatchingEngine::has_pending_fills)
+        {
+            return;
+        }
+
         let has_open_positions = self.cache.borrow().has_positions_open(
             Some(&self.config.venue),
             Some(&instrument_id),
@@ -1237,9 +1228,8 @@ impl SandboxInner {
         }
     }
 
-    // Quote-only instruments may never receive event-driven cleanup. Retain expired engines with
-    // open positions because this path cannot settle them. Open orders must also remain because
-    // `Cache::purge_instrument_skip_order_guard` requires callers to terminalize order state first
+    // Retain open-order engines until terminal events apply, otherwise retry settlement
+    // when a synchronous position callback could not borrow the sandbox.
     fn sweep_expired_engines(&mut self) {
         let expired_ids: Vec<InstrumentId> = self
             .matching_engines
@@ -1250,7 +1240,17 @@ impl SandboxInner {
             })
             .collect();
 
-        self.sync_expired_cleanup_many(&expired_ids);
+        let ts_now = self.clock.borrow().timestamp_ns();
+
+        for instrument_id in expired_ids {
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                engine.process_instrument_expiration(ts_now);
+            }
+
+            self.sync_expired_cleanup(instrument_id);
+        }
+
+        self.drain_oto_commands();
     }
 
     /// Routes a deferred [`TradingCommand`] to its venue-side apply helper.
@@ -1770,6 +1770,30 @@ impl SandboxInner {
     fn on_instrument_close(inner: &Rc<RefCell<Self>>, close: &InstrumentClose) {
         Self::drain_inbound(inner);
         inner.borrow_mut().process_instrument_close(close);
+    }
+
+    fn on_position_event(inner: &Rc<RefCell<Self>>, event: &PositionEvent) {
+        let instrument_id = event.instrument_id();
+
+        let Ok(mut inner) = inner.try_borrow_mut() else {
+            log::debug!(
+                "Skipping immediate expiration retry for {instrument_id} due to active sandbox borrow",
+            );
+            return;
+        };
+
+        if instrument_id.venue != inner.config.venue || event.account_id() != inner.account_id {
+            return;
+        }
+
+        // Position events observe the cache after the fill has been applied
+        let ts_now = inner.clock.borrow().timestamp_ns();
+        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
+            engine.process_instrument_expiration(ts_now);
+        }
+
+        inner.sync_expired_cleanup(instrument_id);
+        inner.drain_oto_commands();
     }
 
     /// Applies every inbound command whose latency has elapsed, in `(due_ns, seq)` order, then

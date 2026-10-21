@@ -8255,21 +8255,33 @@ async fn test_mass_status_recovers_order_omitted_from_history(
 #[rstest]
 #[tokio::test]
 async fn test_mass_status_unavailable_companion_remains_incomplete(
-    #[values(None, Some(10_000_000))] lookback: Option<u64>,
+    #[values(None, Some(30), Some(10_000_000))] lookback: Option<u64>,
 ) {
     let state = RestState::default();
     *state.open_orders_response.lock().await =
         json!({"orders": [], "subaccount_id": TEST_SUBACCOUNT});
-    *state.positions_response.lock().await =
-        json!({"positions": [], "subaccount_id": TEST_SUBACCOUNT});
+    *state.positions_response.lock().await = json!({
+        "positions": [sample_position_json("ETH-PERP", "0.75")],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
     *state.order_history_response.lock().await = json!({
         "orders": [], "pagination": {"count": 0, "num_pages": 0}, "subaccount_id": TEST_SUBACCOUNT,
     });
     *state.trade_history_response.lock().await = json!({
         "trades": [sample_trade_json("missing-first", "ord-missing", "ETH-PERP"),
-                   sample_trade_json("missing-second", "ord-missing", "ETH-PERP")],
-        "pagination": {"count": 2, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
+                   sample_trade_json("missing-second", "ord-missing", "ETH-PERP"),
+                   sample_trade_json("missing-third", "ord-missing-later", "ETH-PERP")],
+        "pagination": {"count": 3, "num_pages": 1}, "subaccount_id": TEST_SUBACCOUNT,
     });
+    let timestamp = get_atomic_clock_realtime().get_time_ms() as i64 - 1_000;
+
+    for trade in state.trade_history_response.lock().await["trades"]
+        .as_array_mut()
+        .unwrap()
+    {
+        trade["timestamp"] = json!(timestamp);
+    }
+
     *state.get_order_response.lock().await = json!({
         "id": 1, "error": {"code": 11006, "message": "Does not exist", "data": null},
     });
@@ -8278,24 +8290,54 @@ async fn test_mass_status_unavailable_companion_remains_incomplete(
     let result = tc.client.generate_mass_status(lookback).await;
     tc.client.disconnect().await.unwrap();
 
-    if lookback.is_some() {
+    if let Some(minutes) = lookback {
         let mass = result.unwrap().unwrap();
         assert!(!mass.reports_complete());
+        assert_eq!(
+            mass.lookback_start(),
+            Some(
+                mass.ts_init
+                    .saturating_sub(DurationNanos::try_from_mins(minutes).unwrap())
+            )
+        );
         assert!(mass.order_reports().is_empty());
+        assert_eq!(mass.position_reports().len(), 1);
+        let positions = &mass.position_reports()[&InstrumentId::from("ETH-PERP.DERIVE")];
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].position_side, PositionSide::Long);
+        assert_eq!(positions[0].signed_decimal_qty, dec!(0.75));
+        assert_eq!(mass.fill_reports().len(), 2);
         let fills = &mass.fill_reports()[&VenueOrderId::from("ord-missing")];
         assert_eq!(fills.len(), 2);
         assert_eq!(fills[0].trade_id, TradeId::from("missing-first"));
         assert_eq!(fills[1].trade_id, TradeId::from("missing-second"));
+        let later_fills = &mass.fill_reports()[&VenueOrderId::from("ord-missing-later")];
+        assert_eq!(later_fills.len(), 1);
+        assert_eq!(later_fills[0].trade_id, TradeId::from("missing-third"));
     } else {
+        let error = result.unwrap_err();
         assert_eq!(
-            result.unwrap_err().to_string(),
+            error.to_string(),
             "incomplete unbounded Derive report coverage"
         );
+        assert!(matches!(
+            error.downcast_ref::<DeriveHttpError>(),
+            Some(DeriveHttpError::JsonRpc { code: 11006, .. })
+        ));
     }
 
+    let mut expected_calls =
+        vec![json!({"subaccount_id": TEST_SUBACCOUNT, "order_id": "ord-missing"})];
+
+    if lookback.is_some() {
+        expected_calls
+            .push(json!({"subaccount_id": TEST_SUBACCOUNT, "order_id": "ord-missing-later"}));
+    }
+
+    assert_eq!(*state.get_order_calls.lock().await, expected_calls);
     assert_eq!(
-        *state.get_order_calls.lock().await,
-        vec![json!({"subaccount_id": TEST_SUBACCOUNT, "order_id": "ord-missing"})],
+        state.order_history_calls.lock().await.len(),
+        expected_calls.len() + 1
     );
 }
 

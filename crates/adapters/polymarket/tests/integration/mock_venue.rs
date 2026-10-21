@@ -188,6 +188,7 @@ pub(super) struct TestServerState {
     pub(super) orders_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) orders_get_count: Arc<AtomicUsize>,
     pub(super) book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) book_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) single_order_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     pub(super) single_order_response_statuses: Arc<tokio::sync::Mutex<VecDeque<StatusCode>>>,
     pub(super) single_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -279,6 +280,7 @@ impl Default for TestServerState {
             trades_response_by_id: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             trades_filter_after: Arc::new(AtomicBool::new(false)),
             positions_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            book_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             book_response: Arc::new(tokio::sync::Mutex::new(Some(json!({
                 "bids": [
                     {"price": "0.48", "size": "100.00"},
@@ -787,11 +789,12 @@ async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Re
 
 async fn handle_get_book(State(state): State<TestServerState>, uri: Uri) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
+    let status = *state.book_response_status.lock().await;
     let resp = state.book_response.lock().await;
-    match resp.as_ref() {
-        Some(v) => Json(v.clone()).into_response(),
-        None => (StatusCode::OK, Json(json!({"bids": [], "asks": []}))).into_response(),
-    }
+    let body = resp
+        .clone()
+        .unwrap_or_else(|| json!({"bids": [], "asks": []}));
+    (status, Json(body)).into_response()
 }
 
 async fn handle_get_fee_rate(

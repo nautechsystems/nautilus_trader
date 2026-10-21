@@ -11,6 +11,11 @@
 The `nautilus-hyperliquid` crate provides client bindings (HTTP & WebSocket) and data
 models for the official **Hyperliquid API**.
 
+Market data and trading cover perpetual futures, HIP-3 builder-deployed perpetuals, spot markets,
+and experimental HIP-4 outcome markets. See the integration guide's
+[product support table](https://nautilustrader.io/docs/nightly/integrations/hyperliquid/#product-support)
+for support levels and validation limits.
+
 ## NautilusTrader
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native

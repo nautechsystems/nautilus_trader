@@ -471,6 +471,7 @@ fn book_flags(is_snapshot: bool, processed: usize, total_levels: usize) -> u8 {
 /// status with `filled_base_amount > 0`. The mapping promotes such an order
 /// to [`OrderStatus::PartiallyFilled`] so downstream consumers do not need to
 /// re-derive it.
+/// Working and filled order quantities exclude amounts netted by self-trade prevention.
 ///
 /// # Errors
 ///
@@ -499,7 +500,7 @@ pub fn parse_ws_order_status_report(
         nautilus_time_in_force(order.time_in_force, order.order_expiry);
     let post_only = order.time_in_force == LighterOrderTimeInForce::PostOnly;
 
-    let quantity = quantity_from_decimal(order.initial_base_amount, instrument.size_precision())?;
+    let quantity = lighter_order_quantity(order, instrument.size_precision())?;
     let filled_qty = quantity_from_decimal(order.filled_base_amount, instrument.size_precision())?;
     let mut order_status = nautilus_order_status(order.status, &filled_qty);
     if order_status == OrderStatus::Accepted
@@ -743,7 +744,7 @@ pub(crate) fn lighter_order_shape(
     instrument: &InstrumentAny,
     order_type: OrderType,
 ) -> anyhow::Result<OrderShapeSnapshot> {
-    let quantity = quantity_from_decimal(order.initial_base_amount, instrument.size_precision())?;
+    let quantity = lighter_order_quantity(order, instrument.size_precision())?;
     let price = if LIMIT_ORDER_TYPES.contains(&order_type) {
         parse_optional_price(order.price, instrument.price_precision())?
     } else {
@@ -759,6 +760,24 @@ pub(crate) fn lighter_order_shape(
         price,
         trigger_price,
     })
+}
+
+fn lighter_order_quantity(order: &LighterOrder, precision: u8) -> anyhow::Result<Quantity> {
+    let mut amount = order.initial_base_amount;
+
+    // Reduce lowers remaining without a fill; cancellations also zero remaining
+    if !order.status.is_terminal() || order.status == LighterOrderStatus::Filled {
+        let effective = order
+            .filled_base_amount
+            .checked_add(order.remaining_base_amount)
+            .context("Lighter order quantity overflow")?;
+
+        if effective > Decimal::ZERO && effective < amount {
+            amount = effective;
+        }
+    }
+
+    quantity_from_decimal(amount, precision)
 }
 
 /// Build a typed order event from a Lighter `account_orders` payload, using
@@ -954,6 +973,9 @@ pub(crate) fn parse_lighter_order_updated(
         identity.normalize_shape(lighter_order_shape(order, instrument, identity.order_type)?);
     let ts_event = parse_optional_order_timestamp(order.updated_at)?;
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
+
+    // A late reduction must close an order whose final fill is already applied
+    let reconciliation = shape.quantity.as_decimal() < order.initial_base_amount;
     Ok(OrderUpdated::new(
         trader_id,
         identity.strategy_id,
@@ -963,7 +985,7 @@ pub(crate) fn parse_lighter_order_updated(
         UUID4::new(),
         ts_event,
         ts_init,
-        false,
+        reconciliation,
         Some(venue_order_id),
         Some(account_id),
         shape.price,
@@ -3361,5 +3383,168 @@ mod tests {
         .unwrap();
 
         assert!(filled.is_none());
+    }
+
+    #[rstest]
+    #[case::unchanged(
+        LighterOrderStatus::Open,
+        "0.0027",
+        "0.0027",
+        "0.0000",
+        "0.0027",
+        OrderStatus::Accepted
+    )]
+    #[case::partial_fill(
+        LighterOrderStatus::Open,
+        "0.0027",
+        "0.0001",
+        "0.0026",
+        "0.0027",
+        OrderStatus::PartiallyFilled
+    )]
+    #[case::modify(
+        LighterOrderStatus::Open,
+        "0.0001",
+        "0.0001",
+        "0.0000",
+        "0.0001",
+        OrderStatus::Accepted
+    )]
+    #[case::reduce(
+        LighterOrderStatus::Open,
+        "0.0027",
+        "0.0001",
+        "0.0000",
+        "0.0001",
+        OrderStatus::Accepted
+    )]
+    #[case::reduce_after_fill(
+        LighterOrderStatus::Open,
+        "0.0027",
+        "0.0001",
+        "0.0001",
+        "0.0002",
+        OrderStatus::PartiallyFilled
+    )]
+    #[case::reduce_filled(
+        LighterOrderStatus::Filled,
+        "0.0027",
+        "0.0000",
+        "0.0001",
+        "0.0001",
+        OrderStatus::Filled
+    )]
+    #[case::canceled(
+        LighterOrderStatus::Canceled,
+        "0.0027",
+        "0.0000",
+        "0.0000",
+        "0.0027",
+        OrderStatus::Canceled
+    )]
+    #[case::partial_canceled(
+        LighterOrderStatus::Canceled,
+        "0.0027",
+        "0.0000",
+        "0.0001",
+        "0.0027",
+        OrderStatus::Canceled
+    )]
+    #[case::self_trade_canceled(
+        LighterOrderStatus::CanceledSelfTrade,
+        "0.0027",
+        "0.0000",
+        "0.0001",
+        "0.0027",
+        OrderStatus::Canceled
+    )]
+    #[case::expired(
+        LighterOrderStatus::CanceledExpired,
+        "0.0027",
+        "0.0000",
+        "0.0000",
+        "0.0027",
+        OrderStatus::Expired
+    )]
+    #[case::rejected(
+        LighterOrderStatus::CanceledPostOnly,
+        "0.0027",
+        "0.0000",
+        "0.0000",
+        "0.0027",
+        OrderStatus::Rejected
+    )]
+    #[case::held(
+        LighterOrderStatus::Pending,
+        "0.0000",
+        "0.0000",
+        "0.0000",
+        "0.0000",
+        OrderStatus::Accepted
+    )]
+    #[case::held_remaining(
+        LighterOrderStatus::Pending,
+        "0.0000",
+        "0.0027",
+        "0.0000",
+        "0.0000",
+        OrderStatus::Accepted
+    )]
+    #[case::zero_remaining(
+        LighterOrderStatus::Open,
+        "0.0027",
+        "0.0000",
+        "0.0000",
+        "0.0027",
+        OrderStatus::Accepted
+    )]
+    fn test_self_trade_reduce_quantity(
+        #[case] status: LighterOrderStatus,
+        #[case] initial: &str,
+        #[case] remaining: &str,
+        #[case] filled: &str,
+        #[case] expected: &str,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let instrument = create_test_instrument();
+        let mut order = stub_order(status);
+        order.initial_base_amount = Decimal::from_str(initial).unwrap();
+        order.remaining_base_amount = Decimal::from_str(remaining).unwrap();
+        order.filled_base_amount = Decimal::from_str(filled).unwrap();
+        let report =
+            parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(7))
+                .unwrap();
+        let shape = lighter_order_shape(&order, &instrument, OrderType::Limit).unwrap();
+        let update = parse_lighter_order_updated(
+            &order,
+            &instrument,
+            &test_identity(),
+            test_cloid(),
+            account_id(),
+            test_trader_id(),
+            UnixNanos::from(7),
+        )
+        .unwrap();
+
+        assert_eq!(report.quantity, Quantity::from(expected));
+        assert_eq!(report.filled_qty, Quantity::from(filled));
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(shape.quantity, Quantity::from(expected));
+        assert_eq!(update.quantity, Quantity::from(expected));
+        assert_eq!(
+            update.reconciliation,
+            Decimal::from_str(expected).unwrap() < order.initial_base_amount
+        );
+    }
+
+    #[rstest]
+    fn test_self_trade_reduce_quantity_overflow() {
+        let mut order = stub_order(LighterOrderStatus::Open);
+        order.filled_base_amount = Decimal::MAX;
+        order.remaining_base_amount = Decimal::ONE;
+
+        let error = lighter_order_quantity(&order, 4).unwrap_err();
+
+        assert_eq!(error.to_string(), "Lighter order quantity overflow");
     }
 }

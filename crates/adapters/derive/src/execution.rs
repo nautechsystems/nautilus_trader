@@ -3374,7 +3374,12 @@ impl DeriveReconciliationContext {
             .map(|report| report.venue_order_id)
             .collect();
         let companions = self
-            .collect_companion_order_records(&history, &open.reports, &fill_reports)
+            .collect_companion_order_records(
+                &history,
+                &open.reports,
+                &fill_reports,
+                start.is_some(),
+            )
             .await?;
         reports_complete &= companions.complete;
         records_complete &= companions.records_complete;
@@ -3671,6 +3676,7 @@ impl DeriveReconciliationContext {
         history: &CollectedReports<DeriveOrder>,
         open: &[DeriveOrder],
         fills: &[FillReport],
+        allow_partial: bool,
     ) -> anyhow::Result<CollectedReports<DeriveOrder>> {
         if !history.records_complete {
             return Ok(CollectedReports {
@@ -3727,6 +3733,12 @@ impl DeriveReconciliationContext {
                                     matches!(cause, DeriveHttpError::JsonRpc { code: 11006, .. })
                                 }) =>
                         {
+                            if !allow_partial {
+                                return Err(
+                                    e.context("incomplete unbounded Derive report coverage")
+                                );
+                            }
+
                             records_complete = false;
                             queried_orders.insert(fill.venue_order_id, None);
                             log::warn!(

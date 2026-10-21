@@ -31,7 +31,9 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_common::{live::sender::EventSender, messages::DataEvent};
-use nautilus_core::{UnixNanos, string::secret::SecretString, time::AtomicTime};
+use nautilus_core::{
+    UnixNanos, datetime::MILLISECONDS_IN_SECOND, string::secret::SecretString, time::AtomicTime,
+};
 use nautilus_live::{
     SocketControl,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
@@ -84,7 +86,6 @@ const POLYBOLT_CLOSE_CODE_DRAINING: u16 = 4003;
 /// Venue close code: policy violation; do not reconnect blindly.
 const POLYBOLT_CLOSE_CODE_POLICY_VIOLATION: u16 = 4008;
 const POLYBOLT_DRAIN_RECONNECT_MAX_DELAY_MS: u64 = 10_000;
-const POLYBOLT_RECONNECT_TIMEOUT_MS: u64 = 15_000;
 const POLYBOLT_RECONNECT_DELAY_INITIAL_MS: u64 = 250;
 const POLYBOLT_RECONNECT_DELAY_MAX_MS: u64 = 5_000;
 const POLYBOLT_RECONNECT_JITTER_MS: u64 = 200;
@@ -177,6 +178,7 @@ struct PolymarketPolyBoltFeedInner {
     url: String,
     proxy_url: Option<ProxyUrl>,
     transport_backend: TransportBackend,
+    connect_timeout_ms: u64,
     clock: &'static AtomicTime,
     data_sender: EventSender<DataEvent>,
     socket_sink: Option<SocketStateSink>,
@@ -406,6 +408,7 @@ struct SnapshotPointRaw {
 }
 
 impl PolymarketPolyBoltFeed {
+    #[allow(clippy::too_many_arguments, reason = "feed transport configuration")]
     pub(crate) fn new_with_proxy_and_socket_control(
         url: String,
         transport_backend: TransportBackend,
@@ -414,6 +417,7 @@ impl PolymarketPolyBoltFeed {
         proxy_url: Option<ProxyUrl>,
         socket_control: Option<SocketControl>,
         credential: Option<Credential>,
+        connect_timeout_secs: u64,
     ) -> Self {
         Self::new_inner(
             url,
@@ -424,6 +428,7 @@ impl PolymarketPolyBoltFeed {
             None,
             socket_control,
             credential,
+            connect_timeout_secs,
         )
     }
 
@@ -437,6 +442,7 @@ impl PolymarketPolyBoltFeed {
         socket_sink: Option<SocketStateSink>,
         socket_control: Option<SocketControl>,
         credential: Option<Credential>,
+        connect_timeout_secs: u64,
     ) -> Self {
         let task_owner = Arc::new(PolyBoltTaskSlots {
             message: tokio::sync::Mutex::new(TaskSlot::new()),
@@ -449,6 +455,7 @@ impl PolymarketPolyBoltFeed {
                 url,
                 proxy_url,
                 transport_backend,
+                connect_timeout_ms: connect_timeout_secs.saturating_mul(MILLISECONDS_IN_SECOND),
                 clock,
                 data_sender,
                 socket_sink,
@@ -1320,7 +1327,7 @@ impl PolymarketPolyBoltFeed {
             headers,
             heartbeat_interval_secs: None,
             heartbeat_payload: None,
-            connect_timeout_ms: Some(POLYBOLT_RECONNECT_TIMEOUT_MS),
+            connect_timeout_ms: Some(self.inner.connect_timeout_ms),
             reconnect_delay_initial_ms: Some(POLYBOLT_RECONNECT_DELAY_INITIAL_MS),
             reconnect_delay_max_ms: Some(POLYBOLT_RECONNECT_DELAY_MAX_MS),
             reconnect_backoff_factor: Some(2.0),
@@ -2315,6 +2322,7 @@ pub(crate) mod testing {
                 state_sink,
                 None,
                 Some(fixture_credential()),
+                15,
             )
         }
     }
@@ -2623,6 +2631,29 @@ mod tests {
     }
 
     #[rstest]
+    #[case::default(30, 30_000)]
+    #[case::custom(43, 43_000)]
+    #[case::large(u64::MAX, u64::MAX)]
+    fn reference_price_connection_timeout(#[case] timeout_secs: u64, #[case] expected_ms: u64) {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketPolyBoltFeed::new_with_proxy_and_socket_control(
+            "ws://localhost/polybolt".to_string(),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx.into(),
+            None,
+            None,
+            Some(fixture_credential()),
+            timeout_secs,
+        );
+
+        assert_eq!(
+            feed.websocket_config().connect_timeout_ms,
+            Some(expected_ms)
+        );
+    }
+
+    #[rstest]
     fn feed_retains_proxy_url_without_debug_exposure() {
         const PROXY_URL: &str = "http://polybolt-user:polybolt-proxy-secret@127.0.0.1:18089";
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2640,10 +2671,7 @@ mod tests {
         assert_eq!(config.url, "ws://polybolt.example/ws");
         assert_eq!(config.heartbeat_interval_secs, None);
         assert_eq!(config.heartbeat_payload, None);
-        assert_eq!(
-            config.connect_timeout_ms,
-            Some(POLYBOLT_RECONNECT_TIMEOUT_MS)
-        );
+        assert_eq!(config.connect_timeout_ms, Some(15_000));
         assert_eq!(
             config.reconnect_delay_initial_ms,
             Some(POLYBOLT_RECONNECT_DELAY_INITIAL_MS)
@@ -2776,6 +2804,7 @@ mod tests {
             None,
             None,
             None,
+            15,
         );
 
         let error = feed
@@ -4047,7 +4076,7 @@ mod tests {
                     headers: vec![],
                     heartbeat_interval_secs: None,
                     heartbeat_payload: None,
-                    connect_timeout_ms: Some(POLYBOLT_RECONNECT_TIMEOUT_MS),
+                    connect_timeout_ms: Some(15_000),
                     reconnect_delay_initial_ms: Some(POLYBOLT_RECONNECT_DELAY_INITIAL_MS),
                     reconnect_delay_max_ms: Some(POLYBOLT_RECONNECT_DELAY_MAX_MS),
                     reconnect_backoff_factor: Some(2.0),
@@ -4712,6 +4741,7 @@ mod tests {
             None,
             Some(socket_factory.control(crate::websocket::POLYBOLT_STREAMS_ENDPOINT)),
             Some(fixture_credential()),
+            15,
         );
         assert!(
             feed.track_subscribe(crypto_data_type("btcusd"))

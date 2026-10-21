@@ -74,11 +74,12 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{
-        BarType, BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
+        BarType, BookOrder, CustomData, Data, DataType, InstrumentStatus, OrderBookDelta,
+        OrderBookDeltas, QuoteTick,
     },
-    enums::{BookAction, BookType, OrderSide, RecordFlag},
+    enums::{BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
     identifiers::InstrumentId,
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
 use nautilus_network::http::HttpClient;
@@ -93,6 +94,8 @@ type MarketQueries = Arc<Mutex<Vec<MarketQuery>>>;
 
 #[derive(Clone)]
 struct DataTestServerState {
+    exchange_info_requests:
+        Option<tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<Response>>>,
     depth_failures_before_success: usize,
     depth_requests: Arc<AtomicUsize>,
     depth_response_delay: Duration,
@@ -118,6 +121,7 @@ struct DataTestServerState {
 impl Default for DataTestServerState {
     fn default() -> Self {
         Self {
+            exchange_info_requests: None,
             depth_failures_before_success: 0,
             depth_requests: Arc::new(AtomicUsize::new(0)),
             depth_response_delay: Duration::ZERO,
@@ -824,7 +828,15 @@ fn create_data_test_router(state: DataTestServerState) -> Router {
         .route("/dapi/v1/ping", get(|| async { json_response(&json!({})) }))
         .route(
             "/fapi/v1/exchangeInfo",
-            get(|| async { json_response(&load_fixture("exchange_info_usdm.json")) }),
+            get(|State(state): State<DataTestServerState>| async move {
+                if let Some(requests) = state.exchange_info_requests {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    requests.send(tx).unwrap();
+                    return rx.await.unwrap();
+                }
+
+                json_response(&load_fixture("exchange_info_usdm.json"))
+            }),
         )
         .route(
             "/dapi/v1/exchangeInfo",
@@ -5156,4 +5168,163 @@ fn expected_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDeltas {
     );
 
     OrderBookDeltas::new(quote.instrument_id, vec![bid, ask])
+}
+
+#[rstest]
+#[case::poll_first(true)]
+#[case::refresh_first(false)]
+#[tokio::test]
+async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool) {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_data_test_server_with_state(DataTestServerState {
+        exchange_info_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let config = BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        product_type: BinanceProductType::UsdM,
+        instrument_status_poll_secs: if poll_first { 1 } else { 2 },
+        instrument_refresh_interval_secs: if poll_first { 2 } else { 1 },
+        ..Default::default()
+    };
+
+    let mut client =
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
+            .unwrap();
+
+    let response = |symbol: &str, base: &str, halt: bool| {
+        let mut info = load_fixture("exchange_info_usdm.json");
+        let mut instrument = info["symbols"][0].clone();
+        instrument["symbol"] = json!(symbol);
+        instrument["pair"] = json!(symbol);
+        instrument["baseAsset"] = json!(base);
+        instrument["status"] = json!(if halt { "HALT" } else { "TRADING" });
+        info["symbols"] = json!([instrument]);
+        json_response(&info)
+    };
+
+    let serve_initial = async {
+        for _ in 0..2 {
+            let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            request.send(response("BTCUSDT", "BTC", false)).unwrap();
+        }
+    };
+
+    let (connected, ()) = tokio::join!(client.connect(), serve_initial);
+    connected.unwrap();
+
+    if !poll_first {
+        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
+    }
+
+    let blocked = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Hold the older response through the other task's next scheduled update
+    let overlapping = tokio::time::timeout(Duration::from_millis(1500), requests.recv()).await;
+    assert!(overlapping.is_err(), "overlapping exchange info request");
+
+    let (symbol, base) = if poll_first {
+        ("BTCUSDT", "BTC")
+    } else {
+        ("ETHUSDT", "ETH")
+    };
+
+    blocked.send(response(symbol, base, true)).unwrap();
+
+    if poll_first {
+        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
+    }
+
+    let status = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    status.send(response("ETHUSDT", "ETH", false)).unwrap();
+
+    // The next request proves that the preceding update has published its snapshot
+    let next = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    next.send(response("ETHUSDT", "ETH", false)).unwrap();
+    tokio::select! {
+        result = client.disconnect() => result.unwrap(),
+        () = async {
+            while let Some(request) = requests.recv().await {
+                let _ = request.send(response("ETHUSDT", "ETH", false));
+            }
+        } => panic!("exchange info request channel closed before disconnect"),
+    }
+
+    let btc = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let eth = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut statuses = Vec::new();
+    let mut instruments = Vec::new();
+
+    while let Ok(event) = events.try_recv() {
+        match event {
+            DataEvent::InstrumentStatus(status) => statuses.push(status),
+            DataEvent::Instrument(instrument) => instruments.push(instrument.id()),
+            _ => {}
+        }
+    }
+
+    let changes = if poll_first {
+        vec![
+            (btc, MarketStatusAction::Halt),
+            (eth, MarketStatusAction::Trading),
+            (btc, MarketStatusAction::NotAvailableForTrading),
+        ]
+    } else {
+        vec![
+            (eth, MarketStatusAction::Halt),
+            (btc, MarketStatusAction::NotAvailableForTrading),
+            (eth, MarketStatusAction::Trading),
+        ]
+    };
+
+    let expected = changes
+        .into_iter()
+        .zip(&statuses)
+        .map(|((id, action), status)| {
+            InstrumentStatus::new(
+                id,
+                action,
+                status.ts_event,
+                status.ts_event,
+                None,
+                None,
+                Some(action == MarketStatusAction::Trading),
+                None,
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(statuses.len(), 3);
+    assert_eq!(statuses, expected);
+    assert!(instruments.len() >= 2);
+    assert_eq!(instruments[0], btc);
+    assert!(instruments[1..].iter().all(|id| *id == eth));
 }

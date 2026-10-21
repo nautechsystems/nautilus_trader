@@ -376,7 +376,9 @@ pub struct PolymarketDataClientConfig {
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// WebSocket timeout in seconds.
+    /// Timeout in seconds per market and reference-price WebSocket connection attempt,
+    /// including reconnects, and for sends waiting for reconnection. Must be positive;
+    /// keep it above the 5-second maximum reconnect backoff.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
     #[builder(default = crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS)]
@@ -500,13 +502,19 @@ impl PolymarketDataClientConfig {
         Self::default()
     }
 
-    /// Validates that configured selections contain no duplicates.
+    /// Validates the WebSocket timeout and instrument selections.
     ///
     /// # Errors
     ///
-    /// Returns an error if nested instrument selections contain duplicates or Gamma filters
-    /// are invalid.
+    /// Returns an error if the WebSocket timeout is zero, nested instrument selections contain
+    /// duplicates, or Gamma filters are invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
+        check_range(
+            "ws_timeout_secs",
+            self.ws_timeout_secs > 0,
+            "must be positive",
+        )?;
+
         if let Some(config) = &self.instrument_config {
             config.validate()?;
         }

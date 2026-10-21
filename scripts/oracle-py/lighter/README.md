@@ -37,12 +37,16 @@ python3 generate_oracle.py \
     --signer /tmp/lighter-python/lighter/signers/lighter-signer-linux-amd64.so \
     --out ../../../crates/adapters/lighter/test_data/signing_tx_oracle.json \
     --auth-out ../../../crates/adapters/lighter/test_data/signing_auth_token_oracle.json \
-    --grouped-out ../../../crates/adapters/lighter/test_data/signing_grouped_tx_oracle.json
+    --grouped-out ../../../crates/adapters/lighter/test_data/signing_grouped_tx_oracle.json \
+    --self-trade-out ../../../crates/adapters/lighter/test_data/signing_self_trade_tx_oracle.json
 ```
 
 `--grouped-out` optionally writes the grouped fixture to the supplied path, covering OTO, OCO, and
 OTOCO with empty and populated transaction attributes. For every fixture, use the signer at the
 pinned `UPSTREAM_REVISION` in `generate_oracle.py`.
+
+`--self-trade-out` optionally writes every permitted self-trade behavior/equality pair, with and
+without zero-fee integrator attribution. Default-valued modes do not contribute to the attribute hash.
 
 `--auth-out` is optional. When set, the script also drives the signer's
 `CreateAuthToken` against fixed `(deadline, account_index, api_key_index)`

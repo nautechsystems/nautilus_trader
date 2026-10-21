@@ -77,7 +77,7 @@ use nautilus_model::{
     },
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
-        stubs::{binary_option, crypto_perpetual_ethusdt},
+        stubs::{binary_option, crypto_perpetual_ethusdt, futures_contract_es},
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
@@ -2926,6 +2926,302 @@ fn test_instrument_close_finalizes_expired_engine_without_open_state(
     );
 
     harness.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_expiration_retries_after_final_tick_position_update(
+    trader_id: TraderId,
+    account_id: AccountId,
+    #[values(false, true)] retry_on_sweep: bool,
+) {
+    let expiry = UnixNanos::from(100);
+    let instrument =
+        InstrumentAny::FuturesContract(futures_contract_es(Some(0.into()), Some(expiry)));
+    let (mut context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        instrument.id().venue,
+        &instrument,
+        None,
+    );
+    let mut state = margin_account_state();
+    state.account_id = account_id;
+    context
+        .cache
+        .borrow_mut()
+        .add_account(MarginAccount::new(state, false).into())
+        .unwrap();
+    let mut execution =
+        ExecutionEngine::new(context.test_clock.clone(), context.cache.clone(), None);
+    execution.register_oms_type(StrategyId::from("S-001"), OmsType::Netting);
+    context
+        .client
+        .process_quote_tick(&QuoteTick::new(
+            instrument.id(),
+            Price::from("4.00"),
+            Price::from("5.00"),
+            Quantity::from(10),
+            Quantity::from(10),
+            1.into(),
+            1.into(),
+        ))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("FINAL-TICK"))
+        .side(OrderSide::Buy)
+        .price(Price::from("3.00"))
+        .quantity(Quantity::from(2))
+        .build();
+    submit_to_client(&context, trader_id, &order);
+
+    for event in drain_order_events(&mut rx) {
+        execution.process(&event);
+    }
+
+    context.test_clock.borrow_mut().set_time(expiry);
+    context
+        .client
+        .process_quote_tick(&QuoteTick::new(
+            instrument.id(),
+            Price::from("2.00"),
+            Price::from("3.00"),
+            Quantity::from(10),
+            Quantity::from(10),
+            expiry,
+            expiry,
+        ))
+        .unwrap();
+    let final_events = drain_order_events(&mut rx);
+
+    let [OrderEventAny::Filled(open)] = final_events.as_slice() else {
+        panic!("Expected final-tick fill, received {final_events:?}");
+    };
+
+    assert_eq!(open.client_order_id, order.client_order_id());
+    assert_eq!(open.last_qty, Quantity::from(2));
+    assert_eq!(open.last_px, Price::from("3.00"));
+    assert_eq!(context.client.matching_engine_count(), 1);
+
+    if retry_on_sweep {
+        context
+            .cache
+            .borrow_mut()
+            .update_order(&final_events[0])
+            .unwrap();
+        let mut fill = open.clone();
+        fill.position_id = Some(PositionId::new(format!(
+            "{}-{}",
+            instrument.id(),
+            order.strategy_id()
+        )));
+        let position = Position::new(&instrument, fill);
+        context
+            .cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        let timers = context
+            .test_clock
+            .borrow_mut()
+            .advance_time(60_000_000_001.into(), true);
+        let handlers = context.test_clock.borrow().match_handlers(timers);
+        for handler in handlers {
+            handler.run();
+        }
+    } else {
+        execution.process(&final_events[0]);
+    }
+
+    let settlement = drain_order_events(&mut rx);
+
+    let [
+        OrderEventAny::Accepted(accepted),
+        OrderEventAny::Filled(close),
+    ] = settlement.as_slice()
+    else {
+        panic!("Expected one settlement, received {settlement:?}");
+    };
+
+    assert_eq!(close.client_order_id, accepted.client_order_id);
+    assert!(close.client_order_id.as_str().starts_with("EXPIRATION-"));
+    assert_eq!(close.order_side, OrderSide::Sell);
+    assert_eq!(close.last_qty, Quantity::from(2));
+    assert_eq!(close.last_px, Price::from("2.00"));
+    assert_eq!(context.client.matching_engine_count(), 1);
+
+    for event in &settlement {
+        execution.process(event);
+    }
+
+    let timers = context
+        .test_clock
+        .borrow_mut()
+        .advance_time(120_000_000_001.into(), true);
+    let handlers = context.test_clock.borrow().match_handlers(timers);
+    for handler in handlers {
+        handler.run();
+    }
+
+    assert!(drain_order_events(&mut rx).is_empty());
+    assert_eq!(
+        context
+            .cache
+            .borrow()
+            .positions_open(None, None, None, None, None)
+            .len(),
+        0
+    );
+    assert_eq!(context.client.matching_engine_count(), 0);
+    assert!(
+        context
+            .cache
+            .borrow()
+            .instrument(&instrument.id())
+            .is_none()
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_position_expiration_drains_cross_instrument_cancellation(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    let expiry = UnixNanos::from(100);
+    let contract = futures_contract_es(Some(0.into()), Some(expiry));
+    let mut other_contract = contract.clone();
+    other_contract.id = InstrumentId::from("OTHER.GLBX");
+    other_contract.expiration_ns = 1_000_000_000_000.into();
+    let instrument = InstrumentAny::FuturesContract(contract);
+    let other = InstrumentAny::FuturesContract(other_contract);
+    let (mut context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        instrument.id().venue,
+        &instrument,
+        None,
+    );
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(other.clone())
+        .unwrap();
+    let mut state = margin_account_state();
+    state.account_id = account_id;
+    context
+        .cache
+        .borrow_mut()
+        .add_account(MarginAccount::new(state, false).into())
+        .unwrap();
+    let mut execution =
+        ExecutionEngine::new(context.test_clock.clone(), context.cache.clone(), None);
+    execution.register_oms_type(StrategyId::from("S-001"), OmsType::Netting);
+
+    for asset in [&instrument, &other] {
+        context
+            .client
+            .process_quote_tick(&QuoteTick::new(
+                asset.id(),
+                Price::from("4.00"),
+                Price::from("5.00"),
+                Quantity::from(10),
+                Quantity::from(10),
+                1.into(),
+                1.into(),
+            ))
+            .unwrap();
+    }
+
+    let parent_id = ClientOrderId::from("PARENT");
+    let local_id = ClientOrderId::from("LOCAL");
+    let remote_id = ClientOrderId::from("REMOTE");
+    let parent = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(2))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![local_id, remote_id])
+        .build();
+    let local = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(local_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("7.00"))
+        .quantity(Quantity::from(2))
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![remote_id])
+        .build();
+    let remote = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(other.id())
+        .client_order_id(remote_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("8.00"))
+        .quantity(Quantity::from(2))
+        .contingency_type(ContingencyType::Oco)
+        .linked_order_ids(vec![local_id])
+        .build();
+
+    for order in [&parent, &local, &remote] {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &[parent, local, remote],
+        ))
+        .unwrap();
+    let events = drain_order_events(&mut rx);
+    context.test_clock.borrow_mut().set_time(expiry);
+
+    for event in &events {
+        execution.process(event);
+    }
+
+    let expiration = apply_order_events_from_channel(&context.cache, &mut rx);
+
+    let canceled: Vec<_> = expiration
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Canceled(event) => Some(event.client_order_id),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(canceled, vec![local_id, remote_id]);
+    assert_eq!(
+        context.cache.borrow().order(&remote_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    context
+        .client
+        .process_quote_tick(&QuoteTick::new(
+            other.id(),
+            Price::from("9.00"),
+            Price::from("10.00"),
+            Quantity::from(10),
+            Quantity::from(10),
+            101.into(),
+            101.into(),
+        ))
+        .unwrap();
+    assert!(drain_order_events(&mut rx).is_empty());
+    context.client.stop().unwrap();
 }
 
 #[rstest]

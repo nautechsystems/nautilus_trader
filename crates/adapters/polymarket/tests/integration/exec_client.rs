@@ -11957,33 +11957,277 @@ async fn test_submit_market_order_ambiguous_retry_then_fak_no_match_remains_unkn
 }
 
 #[rstest]
+#[case::buy(OrderSide::Buy, true)]
+#[case::sell(OrderSide::Sell, false)]
 #[tokio::test]
-async fn test_submit_market_order_rejected_empty_book() {
+async fn test_submit_market_order_denied_empty_book(
+    #[case] side: OrderSide,
+    #[case] quote_quantity: bool,
+) {
     let state = TestServerState::default();
-    // Override book response with empty asks
     *state.book_response.lock().await = Some(json!({"bids": [], "asks": []}));
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
-
-    let order = make_market_order("O-MKT-EMPTY", instrument_id, OrderSide::Buy, true);
+    let order = make_market_order("O-MKT-EMPTY", instrument_id, side, quote_quantity);
     cache
         .borrow_mut()
         .add_order(order.clone(), None, None, false)
         .unwrap();
-    let cmd = make_submit_cmd(&order, instrument_id);
 
-    client.submit_order(cmd).unwrap();
-
-    // Empty book should cause rejection
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .unwrap()
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
         .unwrap();
-    assert_order_event(event, "Rejected");
+
+    let denied = assert_order_event(recv_execution_event(&mut rx).await, "Denied");
+    assert_eq!(denied.client_order_id(), order.client_order_id());
+    assert_eq!(
+        order_event_reason(&denied),
+        OrderDeniedReason::ValidationFailed {
+            detail: "Market price calculation failed: Empty order book: no liquidity available for market order".to_string(),
+        }.to_string()
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[case::book_fetch(
+    StatusCode::BAD_REQUEST,
+    "missing book",
+    "Failed to fetch order book: HTTP error 400: missing book"
+)]
+#[case::book_unavailable(
+    StatusCode::SERVICE_UNAVAILABLE,
+    "book unavailable",
+    "Failed to fetch order book: HTTP error 503: book unavailable"
+)]
+#[tokio::test]
+async fn test_submit_market_order_denied_book_fetch_failure(
+    #[case] status: StatusCode,
+    #[case] message: &str,
+    #[case] expected_detail: &str,
+) {
+    let state = TestServerState::default();
+    *state.book_response_status.lock().await = status;
+    *state.book_response.lock().await = Some(json!({"error": message}));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_market_order("O-MKT-BOOK-FAILURE", instrument_id, OrderSide::Sell, false);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(recv_execution_event(&mut rx).await, "Denied");
+    assert_eq!(denied.client_order_id(), order.client_order_id());
+    assert_eq!(
+        order_event_reason(&denied),
+        OrderDeniedReason::ValidationFailed {
+            detail: expected_detail.to_string(),
+        }
+        .to_string()
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_denied_decode_error_is_bounded() {
+    let state = TestServerState::default();
+    *state.book_response.lock().await = Some(json!({"bids": "x".repeat(1024), "asks": []}));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_market_order(
+        "O-MKT-DECODE-FAILURE",
+        instrument_id,
+        OrderSide::Sell,
+        false,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(recv_execution_event(&mut rx).await, "Denied");
+    let expected_detail = format!(
+        "Failed to fetch order book: serde error: invalid type: string \"{} ... [truncated]",
+        "x".repeat(433),
+    );
+    assert_eq!(denied.client_order_id(), order.client_order_id());
+    assert_eq!(
+        order_event_reason(&denied),
+        OrderDeniedReason::ValidationFailed {
+            detail: expected_detail,
+        }
+        .to_string()
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[case::zero_balance("0", Quantity::from("10"), "market-buy balance must be positive")]
+#[case::sub_cent(
+    "100000000",
+    Quantity::from("0.009"),
+    "Failed to build market order: Polymarket market BUY amount 0.009 pUSD truncates to zero at 2 decimal places"
+)]
+#[tokio::test]
+async fn test_submit_market_order_denied_preparation_failure(
+    #[case] balance: &str,
+    #[case] quantity: Quantity,
+    #[case] expected_detail: &str,
+) {
+    let state = TestServerState::default();
+    state.balance_response.lock().await["balance"] = Value::String(balance.to_string());
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_market_order_with_quantity("O-MKT-PREPARE-FAILURE", instrument_id, quantity);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(recv_execution_event(&mut rx).await, "Denied");
+    assert_eq!(denied.client_order_id(), order.client_order_id());
+    assert_eq!(
+        order_event_reason(&denied),
+        OrderDeniedReason::ValidationFailed {
+            detail: expected_detail.to_string(),
+        }
+        .to_string()
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_submitted_before_post_response() {
+    let state = TestServerState::default();
+    state.order_request_gate.enable();
+    *state.order_response.lock().await = Some(constructed_order_response("live"));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_market_order("O-MKT-SUBMITTED", instrument_id, OrderSide::Sell, false);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    wait_until_async(
+        || async { state.order_request_gate.started() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let submitted = assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_eq!(submitted.client_order_id(), order.client_order_id());
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    state.order_request_gate.release();
+    let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+    assert_eq!(accepted.client_order_id(), order.client_order_id());
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_market_order_executes_cancel_deferred_during_post() {
+    let state = TestServerState::default();
+    *state.book_response.lock().await = Some(json!({
+        "bids": [{"price": "0.48", "size": "100.00"}],
+        "asks": [{"price": "0.50", "size": "100.00"}]
+    }));
+    *state.order_response.lock().await = Some(constructed_order_response("live"));
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": [DEFAULT_ACCEPTED_ORDER_ID],
+        "not_canceled": {}
+    }));
+    state.order_request_gate.enable();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 2);
+    let mut order = make_market_order("O-MKT-DEFERRED-CANCEL", instrument_id, OrderSide::Buy, true);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    wait_until_async(
+        || async { state.order_request_gate.started() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    submit_and_pending_cancel(&cache, &mut order);
+    client
+        .cancel_order(make_cancel_cmd("O-MKT-DEFERRED-CANCEL", instrument_id))
+        .unwrap();
+    let before_release = *state.cancel_delete_count.lock().await;
+    state.order_request_gate.release();
+    let updated = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    cache.borrow_mut().update_order(&updated).unwrap();
+    let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+    order = cache.borrow_mut().update_order(&accepted).unwrap();
+    wait_until_async(
+        || async { *state.cancel_delete_count.lock().await == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(before_release, 0);
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    assert_eq!(order.quantity(), Quantity::from("20.00"));
+    assert!(!order.is_quote_quantity());
+    assert_eq!(
+        order.venue_order_id(),
+        Some(VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+    );
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    assert_eq!(*state.cancel_delete_count.lock().await, 1);
+    assert_eq!(
+        state.last_body.lock().await.clone(),
+        Some(json!({"orderID": DEFAULT_ACCEPTED_ORDER_ID}))
+    );
+    assert_no_execution_event(&mut rx).await;
 }
 
 // The CLOB rejects a killed FOK with HTTP 400 and a structured body, so the strategy must receive
@@ -11997,7 +12241,7 @@ async fn test_submit_market_order_rejected_reason_carries_venue_error_text() {
         "error": "order couldn't be fully filled. FOK orders are fully filled or killed.",
         "orderID": "0x3776d59db9ea1e4bbedf33f6f79ca677cfa6c93c2a44801f5a10516d822cc502",
     }));
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
@@ -12020,12 +12264,15 @@ async fn test_submit_market_order_rejected_reason_carries_venue_error_text() {
         .submit_order(make_submit_cmd(&order, instrument_id))
         .unwrap();
 
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
     let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
 
     assert_eq!(
         order_event_reason(&rejected),
         "order couldn't be fully filled. FOK orders are fully filled or killed."
     );
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    assert_no_execution_event(&mut rx).await;
 }
 
 #[rstest]

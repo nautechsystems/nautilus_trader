@@ -76,6 +76,7 @@ struct PoolInner {
     transport_backend: TransportBackend,
     subscribe_new_markets: bool,
     max_subscriptions: usize,
+    connect_timeout_secs: Mutex<Option<u64>>,
     // Serializes routing and shard growth; held across the async wire sends.
     wire_mutex: tokio::sync::Mutex<()>,
     // Never locked across an await, so routing futures stay `Send`.
@@ -203,6 +204,11 @@ impl PolymarketMarketConnectionPool {
                 proxy_url,
             )),
         }
+    }
+
+    pub(crate) fn with_connect_timeout(self, timeout_secs: u64) -> Self {
+        *self.inner.connect_timeout_secs.lock() = Some(timeout_secs);
+        self
     }
 
     /// Configures socket state reporting and reconnect control for every connection in the pool.
@@ -555,6 +561,7 @@ impl PoolInner {
             transport_backend,
             subscribe_new_markets,
             max_subscriptions,
+            connect_timeout_secs: Mutex::new(None),
             wire_mutex: tokio::sync::Mutex::new(()),
             state: Mutex::new(PoolState::default()),
             out_tx: Mutex::new(None),
@@ -813,6 +820,12 @@ impl PoolInner {
             self.transport_backend,
             self.proxy_url.clone(),
         );
+
+        let client = match *self.connect_timeout_secs.lock() {
+            Some(timeout_secs) => client.with_connect_timeout(timeout_secs),
+            None => client,
+        };
+
         let factory = self.socket_factory.lock().clone();
 
         if let Some(factory) = factory {
@@ -997,6 +1010,7 @@ mod tests {
     };
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use nautilus_model::identifiers::ClientId;
+    use nautilus_network::transport::TransportError;
     use parking_lot::{Condvar, Mutex as TestMutex};
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
@@ -1249,6 +1263,39 @@ mod tests {
     fn zero_max_subscriptions_clamps_to_default() {
         let inner = PoolInner::new(None, TransportBackend::default(), false, 0);
         assert_eq!(inner.max_subscriptions, WS_DEFAULT_SUBSCRIPTIONS);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn secondary_market_connection_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move {
+            let mut connections = Vec::new();
+
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                connections.push(stream);
+            }
+        });
+
+        let pool =
+            PolymarketMarketConnectionPool::new(Some(url), false, TransportBackend::default(), 1)
+                .with_connect_timeout(1);
+        let mut ws_client = pool.inner.market_client(false, PRIMARY_SHARD_ID + 1);
+
+        let error = tokio::time::timeout(Duration::from_secs(20), ws_client.connect())
+            .await
+            .expect("secondary shard must use the configured connection timeout")
+            .unwrap_err();
+        server.abort();
+
+        assert!(
+            matches!(error.downcast_ref::<TransportError>(),
+                Some(TransportError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut),
+            "{error:#}",
+        );
     }
 
     #[rstest]

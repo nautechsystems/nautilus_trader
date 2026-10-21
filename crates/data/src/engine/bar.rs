@@ -585,10 +585,7 @@ impl DataEngine {
                 self.execute(DataCommand::Subscribe(source_command));
             }
 
-            log::warn!(
-                "Aggregator for {} is currently in use, subscription can't be started",
-                cmd.bar_type,
-            );
+            log::debug!("Reusing running bar aggregator for {}", cmd.bar_type);
             return Ok(());
         }
 

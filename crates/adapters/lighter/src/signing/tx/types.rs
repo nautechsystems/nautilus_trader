@@ -26,7 +26,10 @@
 //! vectors enforce.
 
 use crate::{
-    common::enums::{LighterGroupingType, LighterTxType},
+    common::enums::{
+        LighterGroupingType, LighterSelfTradeBehaviorMode, LighterSelfTradeEqualityMode,
+        LighterTxType,
+    },
     signing::{
         field::Fp,
         hash::{HASH_OUT, hash_no_pad, hash_two_to_one},
@@ -44,14 +47,15 @@ const ATTR_TYPE_INTEGRATOR_ACCOUNT_INDEX: u8 = 1;
 const ATTR_TYPE_INTEGRATOR_TAKER_FEE: u8 = 2;
 const ATTR_TYPE_INTEGRATOR_MAKER_FEE: u8 = 3;
 const ATTR_TYPE_SKIP_NONCE: u8 = 4;
+const ATTR_TYPE_CANCEL_ALL_MARKET_INDEX: u8 = 5;
+const ATTR_TYPE_SELF_TRADE_BEHAVIOR_MODE: u8 = 6;
+const ATTR_TYPE_SELF_TRADE_EQUALITY_MODE: u8 = 7;
+const NIL_MARKET_INDEX: i64 = 255;
 
 /// Per-transaction L2 attributes.
 ///
-/// The fields map to the upstream `AttributeTypeInteg*` discriminants. A
-/// transaction whose attributes are all zero emits no aggregated attribute
-/// hash and the body hash is the signed hash directly; populating any field
-/// switches the encoder onto the aggregation path defined alongside
-/// [`super::sign_tx`].
+/// Default-valued attributes do not contribute to the signed hash. Explicit
+/// self-trade defaults are still emitted in JSON and count toward the four-attribute limit.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct L2TxAttributes {
     /// Integrator account index.
@@ -62,24 +66,90 @@ pub struct L2TxAttributes {
     pub integrator_maker_fee: u32,
     /// `1` to instruct the sequencer to skip nonce bookkeeping for this tx.
     pub skip_nonce: u8,
+    /// Cancel-all market attribute; `None` or `255` does not contribute to the hash.
+    /// `CancelAllOrdersTxInfo` does not carry this attribute.
+    pub cancel_all_market_index: Option<i64>,
+    /// Self-trade action; `None` leaves the venue default in force.
+    pub self_trade_behavior_mode: Option<LighterSelfTradeBehaviorMode>,
+    /// Self-trade account scope; `None` leaves the venue default in force.
+    pub self_trade_equality_mode: Option<LighterSelfTradeEqualityMode>,
 }
 
 impl L2TxAttributes {
-    /// Returns true when no attribute slot is populated. Encoders short-circuit
-    /// to the body hash on empty attributes, matching the upstream `IsEmpty`
-    /// contract on `txtypes.L2TxAttributes`.
+    /// Returns true when no attribute contributes to the hash.
+    ///
+    /// Explicit nil values can still occupy JSON entries. Encoders use only
+    /// the body hash when this returns true, matching upstream `IsEmpty`.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.integrator_account_index == 0
             && self.integrator_taker_fee == 0
             && self.integrator_maker_fee == 0
             && self.skip_nonce == 0
+            && self
+                .cancel_all_market_index
+                .is_none_or(|v| v == NIL_MARKET_INDEX)
+            && self
+                .self_trade_behavior_mode
+                .is_none_or(|v| v == LighterSelfTradeBehaviorMode::default())
+            && self
+                .self_trade_equality_mode
+                .is_none_or(|v| v == LighterSelfTradeEqualityMode::default())
+    }
+
+    /// Checks attribute capacity and the venue's self-trade restrictions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The transaction exceeds the attribute limit.
+    /// - The cancel-all market index is invalid.
+    /// - Non-default self-trade modes combine with non-zero integrator fees.
+    /// - Reduce behavior combines with master-account equality.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let count = usize::from(self.integrator_account_index != 0)
+            + usize::from(self.integrator_taker_fee != 0)
+            + usize::from(self.integrator_maker_fee != 0)
+            + usize::from(self.skip_nonce != 0)
+            + usize::from(self.cancel_all_market_index.is_some())
+            + usize::from(self.self_trade_behavior_mode.is_some())
+            + usize::from(self.self_trade_equality_mode.is_some());
+        anyhow::ensure!(
+            count <= NB_ATTRIBUTES_PER_TX,
+            "Lighter permits at most {NB_ATTRIBUTES_PER_TX} transaction attributes"
+        );
+
+        if let Some(index) = self.cancel_all_market_index {
+            anyhow::ensure!(
+                (0..1_i64 << 48).contains(&index),
+                "invalid Lighter cancel-all market index {index}"
+            );
+        }
+
+        let has_self_trade = self
+            .self_trade_behavior_mode
+            .is_some_and(|v| v != LighterSelfTradeBehaviorMode::default())
+            || self
+                .self_trade_equality_mode
+                .is_some_and(|v| v != LighterSelfTradeEqualityMode::default());
+        anyhow::ensure!(
+            !has_self_trade || (self.integrator_taker_fee == 0 && self.integrator_maker_fee == 0),
+            "Lighter self-trade modes cannot combine with non-zero integrator fees"
+        );
+        anyhow::ensure!(
+            self.self_trade_behavior_mode != Some(LighterSelfTradeBehaviorMode::Reduce)
+                || self.self_trade_equality_mode
+                    != Some(LighterSelfTradeEqualityMode::MasterAccountIndex),
+            "Lighter reduce self-trade behavior cannot combine with master-account equality"
+        );
+        Ok(())
     }
 
     /// Returns the (type, value) pairs in the same ascending order
     /// `getNormalizedTypes` produces upstream, padded with zeros to
     /// [`NB_ATTRIBUTES_PER_TX`] entries.
-    pub(super) fn normalized_pairs(&self) -> [(u8, u64); NB_ATTRIBUTES_PER_TX] {
+    pub(super) fn normalized_pairs(&self) -> anyhow::Result<[(u8, u64); NB_ATTRIBUTES_PER_TX]> {
+        self.validate()?;
         let mut filled = [(0u8, 0u64); NB_ATTRIBUTES_PER_TX];
         let mut i = 0;
         let mut push = |ty: u8, val: u64| {
@@ -101,7 +171,31 @@ impl L2TxAttributes {
             u64::from(self.integrator_maker_fee),
         );
         push(ATTR_TYPE_SKIP_NONCE, u64::from(self.skip_nonce));
-        filled
+
+        if let Some(index) = self
+            .cancel_all_market_index
+            .filter(|v| *v != NIL_MARKET_INDEX)
+        {
+            filled[i] = (ATTR_TYPE_CANCEL_ALL_MARKET_INDEX, index as u64);
+            i += 1;
+        }
+
+        if let Some(mode) = self
+            .self_trade_behavior_mode
+            .filter(|v| *v != LighterSelfTradeBehaviorMode::default())
+        {
+            filled[i] = (ATTR_TYPE_SELF_TRADE_BEHAVIOR_MODE, u64::from(mode as u8));
+            i += 1;
+        }
+
+        if let Some(mode) = self
+            .self_trade_equality_mode
+            .filter(|v| *v != LighterSelfTradeEqualityMode::default())
+        {
+            filled[i] = (ATTR_TYPE_SELF_TRADE_EQUALITY_MODE, u64::from(mode as u8));
+        }
+
+        Ok(filled)
     }
 }
 
@@ -785,6 +879,7 @@ mod tests {
             integrator_taker_fee: 50,
             integrator_maker_fee: 20,
             skip_nonce: 1,
+            ..Default::default()
         },
         [(1, 100), (2, 50), (3, 20), (4, 1)],
     )]
@@ -794,6 +889,7 @@ mod tests {
             integrator_taker_fee: 0,
             integrator_maker_fee: 100,
             skip_nonce: 0,
+            ..Default::default()
         },
         [(1, 723_813), (3, 100), (0, 0), (0, 0)],
     )]
@@ -809,7 +905,155 @@ mod tests {
         #[case] attrs: L2TxAttributes,
         #[case] expected: [(u8, u64); NB_ATTRIBUTES_PER_TX],
     ) {
-        assert_eq!(attrs.normalized_pairs(), expected);
+        assert_eq!(attrs.normalized_pairs().unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::market_zero(Some(0), [(5, 0), (0, 0), (0, 0), (0, 0)], false)]
+    #[case::market_other(Some(4098), [(5, 4098), (0, 0), (0, 0), (0, 0)], false)]
+    #[case::market_nil(Some(255), [(0, 0); NB_ATTRIBUTES_PER_TX], true)]
+    #[case::market_absent(None, [(0, 0); NB_ATTRIBUTES_PER_TX], true)]
+    fn cancel_all_market_attribute_normalization(
+        #[case] index: Option<i64>,
+        #[case] expected: [(u8, u64); NB_ATTRIBUTES_PER_TX],
+        #[case] empty: bool,
+    ) {
+        let attrs = L2TxAttributes {
+            cancel_all_market_index: index,
+            ..Default::default()
+        };
+
+        assert_eq!(attrs.normalized_pairs().unwrap(), expected);
+        assert_eq!(attrs.is_empty(), empty);
+    }
+
+    #[rstest]
+    #[case(-1)]
+    #[case(1_i64 << 48)]
+    fn cancel_all_market_attribute_rejects_out_of_range(#[case] index: i64) {
+        let attrs = L2TxAttributes {
+            cancel_all_market_index: Some(index),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            attrs.validate().unwrap_err().to_string(),
+            format!("invalid Lighter cancel-all market index {index}")
+        );
+    }
+
+    #[rstest]
+    #[case(
+        LighterSelfTradeBehaviorMode::ExpireMaker,
+        LighterSelfTradeEqualityMode::AccountIndex,
+        true
+    )]
+    #[case(
+        LighterSelfTradeBehaviorMode::ExpireMaker,
+        LighterSelfTradeEqualityMode::MasterAccountIndex,
+        true
+    )]
+    #[case(
+        LighterSelfTradeBehaviorMode::ExpireTaker,
+        LighterSelfTradeEqualityMode::AccountIndex,
+        true
+    )]
+    #[case(
+        LighterSelfTradeBehaviorMode::ExpireTaker,
+        LighterSelfTradeEqualityMode::MasterAccountIndex,
+        true
+    )]
+    #[case(
+        LighterSelfTradeBehaviorMode::CancelBoth,
+        LighterSelfTradeEqualityMode::AccountIndex,
+        true
+    )]
+    #[case(
+        LighterSelfTradeBehaviorMode::CancelBoth,
+        LighterSelfTradeEqualityMode::MasterAccountIndex,
+        true
+    )]
+    #[case(
+        LighterSelfTradeBehaviorMode::Reduce,
+        LighterSelfTradeEqualityMode::AccountIndex,
+        true
+    )]
+    #[case(
+        LighterSelfTradeBehaviorMode::Reduce,
+        LighterSelfTradeEqualityMode::MasterAccountIndex,
+        false
+    )]
+    fn self_trade_attribute_combinations(
+        #[case] behavior: LighterSelfTradeBehaviorMode,
+        #[case] equality: LighterSelfTradeEqualityMode,
+        #[case] valid: bool,
+    ) {
+        let attrs = L2TxAttributes {
+            integrator_account_index: 723_813,
+            self_trade_behavior_mode: Some(behavior),
+            self_trade_equality_mode: Some(equality),
+            ..Default::default()
+        };
+
+        assert_eq!(attrs.validate().is_ok(), valid);
+    }
+
+    #[rstest]
+    #[case::taker(17, 0)]
+    #[case::maker(0, 29)]
+    fn self_trade_attribute_rejects_nonzero_fees(
+        #[case] taker: u32,
+        #[case] maker: u32,
+        #[values(false, true)] equality_only: bool,
+    ) {
+        let attrs = L2TxAttributes {
+            integrator_account_index: 723_813,
+            integrator_taker_fee: taker,
+            integrator_maker_fee: maker,
+            self_trade_behavior_mode: (!equality_only)
+                .then_some(LighterSelfTradeBehaviorMode::ExpireTaker),
+            self_trade_equality_mode: equality_only
+                .then_some(LighterSelfTradeEqualityMode::MasterAccountIndex),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            attrs.validate().unwrap_err().to_string(),
+            "Lighter self-trade modes cannot combine with non-zero integrator fees"
+        );
+    }
+
+    #[rstest]
+    fn attribute_capacity_counts_explicit_defaults() {
+        let attrs = L2TxAttributes {
+            integrator_account_index: 723_813,
+            skip_nonce: 1,
+            cancel_all_market_index: Some(255),
+            self_trade_behavior_mode: Some(LighterSelfTradeBehaviorMode::ExpireMaker),
+            self_trade_equality_mode: Some(LighterSelfTradeEqualityMode::AccountIndex),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            attrs.normalized_pairs().unwrap_err().to_string(),
+            "Lighter permits at most 4 transaction attributes"
+        );
+    }
+
+    #[rstest]
+    fn self_trade_normalization_preserves_attribute_order() {
+        let attrs = L2TxAttributes {
+            integrator_account_index: 723_813,
+            skip_nonce: 1,
+            self_trade_behavior_mode: Some(LighterSelfTradeBehaviorMode::CancelBoth),
+            self_trade_equality_mode: Some(LighterSelfTradeEqualityMode::MasterAccountIndex),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            attrs.normalized_pairs().unwrap(),
+            [(1, 723_813), (4, 1), (6, 2), (7, 1)]
+        );
     }
 
     #[rstest]

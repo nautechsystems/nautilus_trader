@@ -186,7 +186,9 @@ impl PolymarketDataClient {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let socket_factory = SocketControlFactory::new(client_id, Some(*POLYMARKET_VENUE));
-        let ws_client = ws_client.with_socket_factory(socket_factory.clone());
+        let ws_client = ws_client
+            .with_connect_timeout(config.ws_timeout_secs)
+            .with_socket_factory(socket_factory.clone());
         let polybolt_socket_control = Some(socket_factory.control(POLYBOLT_STREAMS_ENDPOINT));
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone())?;
@@ -207,6 +209,7 @@ impl PolymarketDataClient {
 
         let polybolt_url = config.reference_prices_url();
         let polybolt_transport_backend = config.transport_backend;
+        let ws_timeout_secs = config.ws_timeout_secs;
         let polybolt_data_sender = data_sender.clone();
 
         let tasks = TaskGroup::new();
@@ -259,6 +262,7 @@ impl PolymarketDataClient {
                 proxy_url.clone(),
                 polybolt_socket_control.clone(),
                 polybolt_credential.clone(),
+                ws_timeout_secs,
             ),
             polybolt_socket_control,
             polybolt_credential,

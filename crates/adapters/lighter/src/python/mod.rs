@@ -140,7 +140,7 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
         skip_nonce: 0,
     };
 
-    let l2_signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k());
+    let l2_signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k())?;
     let tx_info_str = TxInfoJson::approve_integrator(&tx, &l2_signed, "");
     let request = LighterSendTxRequest::new(tx.tx_type() as u8, tx_info_str);
     let response = http.send_tx(&request).await?;

@@ -46,7 +46,7 @@ use super::{
     },
     reports::{fetch_collateral_balance_pusd, get_pusd_currency},
     responses::{
-        check_fok_status, confirm_modify_replacement, emit_market_order_submitted,
+        check_fok_status, confirm_modify_replacement, emit_market_order_quantity_update,
         emit_signed_base_quantity_update, fok_check_order_id, handle_batch_order_responses,
         handle_order_response, handle_single_order_response, handle_unknown_submit_result,
         reject_submit_order,
@@ -333,8 +333,8 @@ impl PolymarketExecutionClient {
                 None
             };
 
-            match submitter
-                .submit_market_order(MarketOrderSubmitRequest {
+            let submission = match submitter
+                .prepare_market_order_submission(MarketOrderSubmitRequest {
                     token_id,
                     side,
                     amount,
@@ -346,9 +346,26 @@ impl PolymarketExecutionClient {
                 })
                 .await
             {
+                Ok(submission) => submission,
+                Err(e) => {
+                    let detail = e
+                        .downcast_ref::<InvalidMarketPriceError>()
+                        .map_or_else(|| e.to_string(), ToString::to_string);
+                    let detail = sanitize_error_text(&detail);
+                    emitter.emit_order_denied(
+                        &order,
+                        &OrderDeniedReason::ValidationFailed { detail }.to_string(),
+                    );
+                    return Ok(());
+                }
+            };
+
+            emitter.emit_order_submitted(&order);
+
+            match submitter.post_market_order_submission(submission).await {
                 Ok(result) => {
                     let mut order = order;
-                    emit_market_order_submitted(
+                    emit_market_order_quantity_update(
                         &mut order,
                         is_quote_qty,
                         side,
@@ -421,7 +438,7 @@ impl PolymarketExecutionClient {
                 Err(e) => {
                     if let Some(unknown) = e.downcast_ref::<UnknownSubmitError>() {
                         let mut order = order;
-                        emit_market_order_submitted(
+                        emit_market_order_quantity_update(
                             &mut order,
                             is_quote_qty,
                             side,
@@ -467,15 +484,6 @@ impl PolymarketExecutionClient {
                             )
                             .await;
                         }
-                    } else if let Some(invalid_price) = e.downcast_ref::<InvalidMarketPriceError>()
-                    {
-                        emitter.emit_order_denied(
-                            &order,
-                            &OrderDeniedReason::ValidationFailed {
-                                detail: invalid_price.to_string(),
-                            }
-                            .to_string(),
-                        );
                     } else {
                         let failure = e.downcast_ref::<HttpError>().map_or_else(
                             || CommandFailure::not_sent(e.to_string()),

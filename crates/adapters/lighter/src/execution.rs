@@ -99,9 +99,10 @@ use crate::{
         deployment,
         enums::{
             LighterAccountTier, LighterGroupingType, LighterPositionMarginMode, LighterProductType,
-            LighterTxStatus, LighterTxType,
+            LighterSelfTradeBehaviorMode, LighterSelfTradeEqualityMode, LighterTxStatus,
+            LighterTxType,
         },
-        parse::{parse_price_from_ticks, parse_quantity_from_ticks},
+        parse::{parse_price_from_ticks, parse_quantity_from_ticks, quantity_from_decimal},
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
         symbol::{MarketRegistry, product_type_from_instrument_id},
     },
@@ -876,7 +877,7 @@ impl LighterExecutionClient {
             self.config.chain_id(),
             &credential.private_key()?,
             fresh_k(),
-        );
+        )?;
 
         let tx_info = TxInfoJson::approve_integrator(&tx, &signed, "");
 
@@ -1631,7 +1632,9 @@ impl LighterExecutionClient {
         &self,
         order: &OrderAny,
         slippage_bps: u32,
+        params: Option<&Params>,
     ) -> anyhow::Result<CreateOrderPlan> {
+        let attributes = self.resolve_create_attributes(params)?;
         let instrument_id = order.instrument_id();
         let market_index = self.registry.market_index(&instrument_id).ok_or_else(|| {
             anyhow::anyhow!("no Lighter market_index registered for instrument {instrument_id}")
@@ -1738,13 +1741,42 @@ impl LighterExecutionClient {
             time_in_force: tif as u8,
             trigger_price: trigger_price_ticks,
             order_expiry,
+            attributes,
         })
+    }
+
+    fn resolve_create_attributes(&self, params: Option<&Params>) -> anyhow::Result<L2TxAttributes> {
+        let mut attributes = integrator_attributes(self.integrator_account_index());
+
+        let behavior = match params.and_then(|p| p.get("self_trade_behavior_mode")) {
+            Some(value) => value
+                .as_str()
+                .context("Lighter self_trade_behavior_mode must be a string")?
+                .parse::<LighterSelfTradeBehaviorMode>()
+                .context("invalid Lighter self_trade_behavior_mode")?,
+            None => LighterSelfTradeBehaviorMode::default(),
+        };
+
+        let equality = match params.and_then(|p| p.get("self_trade_equality_mode")) {
+            Some(value) => value
+                .as_str()
+                .context("Lighter self_trade_equality_mode must be a string")?
+                .parse::<LighterSelfTradeEqualityMode>()
+                .context("invalid Lighter self_trade_equality_mode")?,
+            None => LighterSelfTradeEqualityMode::default(),
+        };
+
+        attributes.self_trade_behavior_mode = Some(behavior);
+        attributes.self_trade_equality_mode = Some(equality);
+        attributes.validate()?;
+        Ok(attributes)
     }
 
     fn prepare_create_group_plan(
         &self,
         orders: &[OrderAny],
         slippage_bps: u32,
+        params: Option<&Params>,
     ) -> anyhow::Result<CreateGroupPlan> {
         let (grouping_type, indices) = grouped_order_indices(orders)?;
         let mut plans = Vec::with_capacity(indices.len());
@@ -1764,7 +1796,7 @@ impl LighterExecutionClient {
                 !is_lighter_spot_order(order, instrument.as_ref()),
                 "Lighter grouped orders require perpetual markets"
             );
-            plans.push(self.prepare_create_order_plan(order, slippage_bps)?);
+            plans.push(self.prepare_create_order_plan(order, slippage_bps, params)?);
         }
 
         prepare_group_bodies(grouping_type, &mut plans, self.config.use_gtd)?;
@@ -2219,6 +2251,17 @@ impl LighterExecutionClient {
             instrument.size_precision(),
         );
 
+        // Lighter amendments retain previously netted amounts in their initial size
+        let reduced_qty = self
+            .dispatch
+            .order_identity(&cmd.client_order_id)
+            .map_or(Decimal::ZERO, |identity| identity.reduced_qty());
+        let reduced_qty = quantity_from_decimal(reduced_qty, instrument.size_precision())?;
+        let reduced_amount = quantity_to_ticks(&reduced_qty, instrument.size_precision())?;
+        let base_amount = base_amount
+            .checked_add(reduced_amount)
+            .context("Lighter modified quantity overflow")?;
+
         let trigger_price_ticks = match new_trigger.filter(|_| !triggered) {
             Some(trigger) if !trigger.is_zero() => price_to_ticks(&trigger, price_precision)?,
             _ => 0,
@@ -2337,7 +2380,7 @@ impl LighterExecutionClient {
             self.config.chain_id(),
             &credential.private_key()?,
             fresh_k(),
-        );
+        )?;
 
         let tx_info_str = TxInfoJson::update_leverage(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
@@ -2865,6 +2908,7 @@ struct CreateOrderPlan {
     time_in_force: u8,
     trigger_price: u32,
     order_expiry: i64,
+    attributes: L2TxAttributes,
 }
 
 impl CreateOrderPlan {
@@ -3191,7 +3235,7 @@ impl FanoutDispatchContext {
         let tx = CreateOrderTxInfo {
             context,
             order: plan.order_info(client_order_index),
-            attributes: integrator_attributes(self.integrator_account_index),
+            attributes: plan.attributes,
         };
 
         let signed = sign_tx(
@@ -3199,7 +3243,7 @@ impl FanoutDispatchContext {
             self.chain_id,
             &self.credential.private_key()?,
             fresh_k(),
-        );
+        )?;
 
         let tx_info =
             serde_json::value::RawValue::from_string(TxInfoJson::create_order(&tx, &signed))
@@ -3250,7 +3294,7 @@ impl FanoutDispatchContext {
             context: reserved.context,
             grouping_type: plan.grouping_type,
             orders: bodies,
-            attributes: integrator_attributes(self.integrator_account_index),
+            attributes: plan.orders[0].attributes,
         };
 
         let signed = sign_tx(
@@ -3258,7 +3302,7 @@ impl FanoutDispatchContext {
             self.chain_id,
             &self.credential.private_key()?,
             fresh_k(),
-        );
+        )?;
         let tx_info = serde_json::value::RawValue::from_string(TxInfoJson::create_grouped_orders(
             &tx, &signed,
         ))
@@ -3380,7 +3424,7 @@ impl FanoutDispatchContext {
             self.chain_id,
             &self.credential.private_key()?,
             fresh_k(),
-        );
+        )?;
 
         let tx_info_str = TxInfoJson::modify_order(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
@@ -3430,7 +3474,7 @@ impl FanoutDispatchContext {
             self.chain_id,
             &self.credential.private_key()?,
             fresh_k(),
-        );
+        )?;
 
         let tx_info =
             serde_json::value::RawValue::from_string(TxInfoJson::cancel_order(&tx, &signed))
@@ -4330,10 +4374,14 @@ fn confirm_modify_order(
         .get(&identity.instrument_id)
         .context("missing modified order instrument")?;
     let shape = lighter_order_shape(order, &instrument, identity.order_type)?;
+    let mut requested_shape = shape.clone();
+    requested_shape.quantity =
+        quantity_from_decimal(order.initial_base_amount, instrument.size_precision())?;
     anyhow::ensure!(
-        context.dispatch.pending_modify_shape(&cloid).as_ref() == Some(&shape),
+        context.dispatch.pending_modify_shape(&cloid).as_ref() == Some(&requested_shape),
         "Lighter executed modification shape is not available yet"
     );
+    identity.record_reduction(order.initial_base_amount - shape.quantity.as_decimal());
     let updated = parse_lighter_order_updated(
         order,
         &instrument,
@@ -4425,6 +4473,22 @@ fn dispatch_deferred_order(
 
     let ts_init = get_atomic_clock_realtime().get_time_ns();
 
+    if order.status == crate::common::enums::LighterOrderStatus::Filled {
+        dispatch_owned_order(
+            order,
+            &instrument,
+            &identity,
+            cloid,
+            VenueOrderId::new(&order.order_id),
+            dispatch,
+            emitter,
+            emitter.account_id(),
+            emitter.trader_id(),
+            ts_init,
+        );
+        return;
+    }
+
     let context = OpenFrameContext {
         accepted_already_emitted: dispatch.accepted_was_emitted(&cloid),
         triggered_already_emitted: dispatch.triggered_was_emitted(&cloid),
@@ -4454,11 +4518,6 @@ fn dispatch_deferred_order(
         ),
         Ok(None) => {}
         Err(e) => log::error!("Failed to parse deferred Lighter order for {cloid}: {e}"),
-    }
-
-    if order.status == crate::common::enums::LighterOrderStatus::Filled {
-        dispatch.clear_pending_order_action(&cloid);
-        dispatch.retire_order_identity(&cloid);
     }
 }
 
@@ -5590,7 +5649,8 @@ impl ExecutionClient for LighterExecutionClient {
         }
 
         let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
-        let plan = match self.prepare_create_order_plan(&order, slippage_bps) {
+
+        let plan = match self.prepare_create_order_plan(&order, slippage_bps, cmd.params.as_ref()) {
             Ok(plan) => plan,
             Err(e) => {
                 let reason = OrderDeniedReason::ValidationFailed {
@@ -5625,7 +5685,11 @@ impl ExecutionClient for LighterExecutionClient {
 
         if orders.iter().any(is_grouped_order) {
             let result = self
-                .prepare_create_group_plan(&orders, self.resolve_slippage_bps(cmd.params.as_ref()))
+                .prepare_create_group_plan(
+                    &orders,
+                    self.resolve_slippage_bps(cmd.params.as_ref()),
+                    cmd.params.as_ref(),
+                )
                 .and_then(|plan| {
                     let context = self.fanout_dispatch_context(credential)?;
                     self.spawn_task("submit_grouped_orders", async move {
@@ -5671,7 +5735,7 @@ impl ExecutionClient for LighterExecutionClient {
                 continue;
             }
 
-            match self.prepare_create_order_plan(&order, slippage_bps) {
+            match self.prepare_create_order_plan(&order, slippage_bps, cmd.params.as_ref()) {
                 Ok(plan) => plans.push(plan),
                 Err(e) => {
                     let reason = OrderDeniedReason::ValidationFailed {
@@ -6026,6 +6090,11 @@ impl ExecutionClient for LighterExecutionClient {
                                 order.client_order_index,
                                 report.order_status.is_closed(),
                             );
+                            dispatch.record_order_reduction(
+                                order.client_order_index,
+                                report.venue_order_id,
+                                order.initial_base_amount - report.quantity.as_decimal(),
+                            );
                         }
 
                         let report = lookup.finish(&dispatch, parsed);
@@ -6208,6 +6277,11 @@ impl ExecutionClient for LighterExecutionClient {
                     parsed.0.venue_order_id,
                     order.client_order_index,
                     parsed.0.order_status.is_closed(),
+                );
+                self.dispatch.record_order_reduction(
+                    order.client_order_index,
+                    parsed.0.venue_order_id,
+                    order.initial_base_amount - parsed.0.quantity.as_decimal(),
                 );
             }
 
@@ -6757,6 +6831,7 @@ struct LighterReportClient {
 #[derive(Default)]
 struct OrderReportSweep {
     orders: Vec<(i64, OrderStatusReport)>,
+    reductions: AHashMap<VenueOrderId, Decimal>,
     markets: BTreeSet<i64>,
     error: Option<anyhow::Error>,
     partial: bool,
@@ -6905,6 +6980,11 @@ impl LighterReportClient {
                     active_errors.push(detail);
                     continue;
                 };
+
+                let reduced_qty = order.initial_base_amount - report.quantity.as_decimal();
+                if reduced_qty > Decimal::ZERO {
+                    sweep.reductions.insert(report.venue_order_id, reduced_qty);
+                }
 
                 sweep.orders.push((order.client_order_index, report));
             }
@@ -7337,6 +7417,15 @@ fn finish_order_reports(
             client_order_index,
             report.order_status.is_closed(),
         );
+
+        if let Some(reduced_qty) = sweep.reductions.get(&report.venue_order_id) {
+            dispatch.record_order_reduction(
+                client_order_index,
+                report.venue_order_id,
+                *reduced_qty,
+            );
+        }
+
         let report = dispatch.translate_order_cloid(report);
         let report = dispatch.preserve_pending_order_status(report);
         if report
@@ -8261,10 +8350,29 @@ fn dispatch_owned_order(
     };
 
     let prior_shape = dispatch.snapshot_for(&cloid);
+    identity.record_reduction(order.initial_base_amount - current_shape.quantity.as_decimal());
+    let shape_changed = prior_shape.map_or_else(
+        || current_shape.quantity.as_decimal() < order.initial_base_amount,
+        |previous| {
+            identity.normalize_shape(previous) != identity.normalize_shape(current_shape.clone())
+        },
+    );
 
-    let shape_changed = prior_shape.is_some_and(|previous| {
-        identity.normalize_shape(previous) != identity.normalize_shape(current_shape.clone())
-    });
+    if shape_changed
+        && !dispatch.accepted_was_emitted(&cloid)
+        && (is_live_status || order.status == crate::common::enums::LighterOrderStatus::Filled)
+    {
+        ensure_accepted_emitted(
+            cloid,
+            venue_order_id,
+            identity,
+            account_id,
+            trader_id,
+            emitter,
+            dispatch,
+            ts_init,
+        );
+    }
 
     let fresh_trigger = is_order_triggered(order)
         && TRIGGERABLE_ORDER_TYPES.contains(&identity.order_type)
@@ -11086,7 +11194,7 @@ mod tests {
 
         let before_ms = (client.clock.get_time_ns().as_u64() / 1_000_000) as i64;
         let plan = client
-            .prepare_create_order_plan(&order, 0)
+            .prepare_create_order_plan(&order, 0, None)
             .expect("managed GTD plan must validate");
         let after_ms = (client.clock.get_time_ns().as_u64() / 1_000_000) as i64;
 
@@ -11460,7 +11568,7 @@ mod tests {
         let instrument = register_test_instrument(&client, &cache);
         let mut orders = test_native_group(instrument, grouping);
         orders.reverse();
-        let plan = client.prepare_create_group_plan(&orders, 50).unwrap();
+        let plan = client.prepare_create_group_plan(&orders, 50, None).unwrap();
         let context = client
             .fanout_dispatch_context(client.credential.as_ref().unwrap())
             .unwrap();
@@ -11632,7 +11740,7 @@ mod tests {
                 .build();
         }
 
-        let result = client.prepare_create_group_plan(&orders, 50);
+        let result = client.prepare_create_group_plan(&orders, 50, None);
         if matching {
             let plan = result.unwrap();
             assert_eq!(
@@ -11661,7 +11769,10 @@ mod tests {
             LighterGroupingType::OneTriggersOneCancelsTheOther,
         );
         orders[1].set_quantity(Quantity::from("0.2000"));
-        let error = client.prepare_create_group_plan(&orders, 50).err().unwrap();
+        let error = client
+            .prepare_create_group_plan(&orders, 50, None)
+            .err()
+            .unwrap();
         assert_eq!(
             error.to_string(),
             "Lighter group quantities must match before parent-fill sizing"
@@ -11678,7 +11789,10 @@ mod tests {
             LighterGroupingType::OneTriggersOneCancelsTheOther,
         );
         orders[1] = orders[2].clone();
-        let error = client.prepare_create_group_plan(&orders, 50).err().unwrap();
+        let error = client
+            .prepare_create_group_plan(&orders, 50, None)
+            .err()
+            .unwrap();
         assert_eq!(
             error.to_string(),
             "Lighter groups require unique client order IDs"
@@ -11694,7 +11808,7 @@ mod tests {
             instrument,
             LighterGroupingType::OneTriggersOneCancelsTheOther,
         );
-        let plan = client.prepare_create_group_plan(&orders, 50).unwrap();
+        let plan = client.prepare_create_group_plan(&orders, 50, None).unwrap();
         let context = client
             .fanout_dispatch_context(client.credential.as_ref().unwrap())
             .unwrap();
@@ -11759,6 +11873,7 @@ mod tests {
         child.trigger_status = LighterTriggerStatus::Na;
         child.trigger_price = Decimal::ZERO;
         child.initial_base_amount = Decimal::from_str("0.0400").unwrap();
+        child.remaining_base_amount = child.initial_base_amount;
         let activated = parse_http_order_to_report(
             &child,
             &client.registry,
@@ -11895,7 +12010,7 @@ mod tests {
             instrument,
             LighterGroupingType::OneTriggersOneCancelsTheOther,
         );
-        let group = client.prepare_create_group_plan(&orders, 50).unwrap();
+        let group = client.prepare_create_group_plan(&orders, 50, None).unwrap();
         let context = client
             .fanout_dispatch_context(client.credential.as_ref().unwrap())
             .unwrap();
@@ -14503,6 +14618,144 @@ mod tests {
     }
 
     #[rstest]
+    #[case("expire_maker", "account_index", 0, 0)]
+    #[case("expire_maker", "master_account_index", 0, 1)]
+    #[case("expire_taker", "account_index", 1, 0)]
+    #[case("EXPIRE_TAKER", "MASTER_ACCOUNT_INDEX", 1, 1)]
+    #[case("cancel_both", "account_index", 2, 0)]
+    #[case("cancel_both", "master_account_index", 2, 1)]
+    #[case("reduce", "account_index", 3, 0)]
+    fn resolve_self_trade_params(
+        #[case] behavior: &str,
+        #[case] equality: &str,
+        #[case] expected_behavior: u8,
+        #[case] expected_equality: u8,
+    ) {
+        let (client, _cache, _rx) = create_execution_client();
+        let params: Params = serde_json::from_value(serde_json::json!({
+            "self_trade_behavior_mode": behavior,
+            "self_trade_equality_mode": equality,
+        }))
+        .unwrap();
+
+        let attrs = client.resolve_create_attributes(Some(&params)).unwrap();
+
+        assert_eq!(
+            attrs,
+            L2TxAttributes {
+                self_trade_behavior_mode: Some(
+                    serde_json::from_value(serde_json::json!(expected_behavior)).unwrap()
+                ),
+                self_trade_equality_mode: Some(
+                    serde_json::from_value(serde_json::json!(expected_equality)).unwrap()
+                ),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[rstest]
+    fn resolve_self_trade_defaults_are_explicit() {
+        let (client, _cache, _rx) = create_execution_client();
+        let attrs = client.resolve_create_attributes(None).unwrap();
+
+        assert_eq!(
+            attrs,
+            L2TxAttributes {
+                self_trade_behavior_mode: Some(LighterSelfTradeBehaviorMode::ExpireMaker),
+                self_trade_equality_mode: Some(LighterSelfTradeEqualityMode::AccountIndex),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[rstest]
+    #[case(serde_json::json!({"self_trade_behavior_mode": "unknown"}), "invalid Lighter self_trade_behavior_mode")]
+    #[case(serde_json::json!({"self_trade_equality_mode": "unknown"}), "invalid Lighter self_trade_equality_mode")]
+    #[case(serde_json::json!({"self_trade_behavior_mode": 1}), "Lighter self_trade_behavior_mode must be a string")]
+    #[case(serde_json::json!({"self_trade_equality_mode": null}), "Lighter self_trade_equality_mode must be a string")]
+    #[case(serde_json::json!({"self_trade_behavior_mode": "reduce", "self_trade_equality_mode": "master_account_index"}), "Lighter reduce self-trade behavior cannot combine with master-account equality")]
+    fn resolve_self_trade_rejects_invalid_params(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        let (client, _cache, _rx) = create_execution_client();
+        let params: Params = serde_json::from_value(value).unwrap();
+
+        let error = client.resolve_create_attributes(Some(&params)).unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[rstest]
+    #[case::single(false, false)]
+    #[case::list(true, false)]
+    #[case::group(true, true)]
+    #[tokio::test]
+    async fn submit_self_trade_invalid_combination_denies_before_dispatch(
+        #[case] list: bool,
+        #[case] grouped: bool,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+
+        let orders = if grouped {
+            test_native_group(
+                instrument,
+                LighterGroupingType::OneTriggersOneCancelsTheOther,
+            )
+        } else {
+            vec![test_limit_order(
+                &mut factory,
+                instrument,
+                "O-SELF-TRADE-INVALID",
+            )]
+        };
+
+        for order in &orders {
+            cache_order(&cache, order.clone());
+        }
+
+        let params: Params = serde_json::from_value(serde_json::json!({
+            "self_trade_behavior_mode": "reduce",
+            "self_trade_equality_mode": "master_account_index",
+        }))
+        .unwrap();
+
+        if list {
+            let mut command = submit_order_list_command(&orders, "OL-SELF-TRADE-INVALID");
+            command.params = Some(params);
+            client.submit_order_list(command).unwrap();
+        } else {
+            let mut command = SubmitOrder::from_order(
+                &orders[0],
+                trader_id(),
+                Some(client_id()),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            );
+            command.params = Some(params);
+            client.submit_order(command).unwrap();
+        }
+
+        for order in &orders {
+            match recv_order_event(&mut rx).await {
+                OrderEventAny::Denied(event) => {
+                    assert_eq!(event.client_order_id, order.client_order_id());
+                    assert!(event.reason.contains("Lighter reduce self-trade behavior cannot combine with master-account equality"));
+                }
+                event => panic!("expected OrderDenied, was {event:?}"),
+            }
+        }
+
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[rstest]
     fn integrator_attributes_leave_testnet_orders_unattributed() {
         assert_eq!(integrator_attributes(None), L2TxAttributes::default());
     }
@@ -15014,6 +15267,7 @@ mod tests {
         triggered.status = LighterOrderStatus::Open;
         triggered.trigger_status = LighterTriggerStatus::Ready;
         triggered.initial_base_amount = Decimal::from_str("0.0075").unwrap();
+        triggered.remaining_base_amount = triggered.initial_base_amount;
         triggered.price = Decimal::from_str("2400.00").unwrap();
         triggered.trigger_price = Decimal::from_str("2390.00").unwrap();
 
@@ -15412,7 +15666,10 @@ mod tests {
     #[rstest]
     #[case::order_first(false)]
     #[case::trade_first(true)]
-    fn quantity_amend_immediate_fill_orders_update_before_fill(#[case] trade_first: bool) {
+    fn quantity_amend_immediate_fill_orders_update_before_fill(
+        #[case] trade_first: bool,
+        #[values(false, true)] reduced: bool,
+    ) {
         let mut rig = dispatcher_rig("AMEND-FILL");
         let mut cached = OrderTestBuilder::new(OrderType::Limit)
             .trader_id(trader_id())
@@ -15491,7 +15748,8 @@ mod tests {
         let mut trade = dispatcher_test_trade(&rig, true);
         trade.bid_id = frame.order_index;
         trade.bid_id_str = Some(frame.order_id.clone());
-        trade.size = Decimal::from_str("0.0100").unwrap();
+        let expected_qty = Quantity::from(if reduced { "0.0040" } else { "0.0100" });
+        trade.size = expected_qty.as_decimal();
         trade.usd_amount = trade.size * trade.price;
 
         if trade_first {
@@ -15517,7 +15775,7 @@ mod tests {
         }
 
         frame.status = LighterOrderStatus::Filled;
-        frame.initial_base_amount = trade.size;
+        frame.initial_base_amount = Decimal::from_str("0.0100").unwrap();
         frame.remaining_base_amount = Decimal::ZERO;
         frame.filled_base_amount = trade.size;
         frame.price = Decimal::from_str("2400.00").unwrap();
@@ -15562,7 +15820,7 @@ mod tests {
         };
 
         assert_eq!(update.client_order_id, rig.cloid);
-        assert_eq!(update.quantity, Quantity::from("0.0100"));
+        assert_eq!(update.quantity, expected_qty);
         assert_eq!(update.price, Some(Price::from("2400.00")));
         assert_eq!(update.trigger_price, None);
 
@@ -15571,7 +15829,7 @@ mod tests {
         };
 
         assert_eq!(fill.trade_id, parse_lighter_trade_id(&trade).unwrap());
-        assert_eq!(fill.last_qty, Quantity::from("0.0100"));
+        assert_eq!(fill.last_qty, expected_qty);
         assert_eq!(fill.last_px, Price::from("2352.73"));
 
         for event in events {
@@ -15582,8 +15840,8 @@ mod tests {
             cached.apply(event).unwrap();
         }
 
-        assert_eq!(cached.quantity(), Quantity::from("0.0100"));
-        assert_eq!(cached.filled_qty(), Quantity::from("0.0100"));
+        assert_eq!(cached.quantity(), expected_qty);
+        assert_eq!(cached.filled_qty(), expected_qty);
         assert_eq!(cached.price(), Some(Price::from("2400.00")));
         assert_eq!(cached.status(), OrderStatus::Filled);
         dispatch_lighter_order(
@@ -17494,6 +17752,30 @@ mod tests {
         });
     }
 
+    #[rstest]
+    #[case(serde_json::json!({"self_trade_behavior_mode": "reduce"}), LighterSelfTradeBehaviorMode::Reduce, LighterSelfTradeEqualityMode::AccountIndex)]
+    #[case(serde_json::json!({"self_trade_equality_mode": "master_account_index"}), LighterSelfTradeBehaviorMode::ExpireMaker, LighterSelfTradeEqualityMode::MasterAccountIndex)]
+    #[case(serde_json::json!({"market_order_slippage_bps": 37}), LighterSelfTradeBehaviorMode::ExpireMaker, LighterSelfTradeEqualityMode::AccountIndex)]
+    fn resolve_self_trade_partial_params(
+        #[case] value: serde_json::Value,
+        #[case] behavior: LighterSelfTradeBehaviorMode,
+        #[case] equality: LighterSelfTradeEqualityMode,
+    ) {
+        let (client, _cache, _rx) = create_execution_client();
+        let params: Params = serde_json::from_value(value).unwrap();
+
+        let attrs = client.resolve_create_attributes(Some(&params)).unwrap();
+
+        assert_eq!(
+            attrs,
+            L2TxAttributes {
+                self_trade_behavior_mode: Some(behavior),
+                self_trade_equality_mode: Some(equality),
+                ..Default::default()
+            }
+        );
+    }
+
     fn enqueue_cancel(
         client: &LighterExecutionClient,
         instrument_id: InstrumentId,
@@ -18291,7 +18573,7 @@ mod tests {
 
         let credential = test_credential();
         let plan = client
-            .prepare_create_order_plan(&order, 0)
+            .prepare_create_order_plan(&order, 0, None)
             .expect("prepare must validate");
         let prepared = client
             .fanout_dispatch_context(&credential)
@@ -20872,5 +21154,286 @@ mod tests {
             vec![&report.trade_id]
         );
         assert!(drain_events(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    #[case::immediate(false, false, 1)]
+    #[case::deferred(false, true, 1)]
+    #[case::repeated(false, false, 16)]
+    #[case::deferred_repeated(false, true, 16)]
+    #[case::first_frame(true, false, 1)]
+    fn self_trade_reduce_updates_cache_and_reports(
+        #[case] first_frame: bool,
+        #[case] deferred: bool,
+        #[case] repeats: usize,
+    ) {
+        let (mut rig, cache, mut engine, mut frame) = reduce_order_replay();
+        let mut events = Vec::new();
+
+        if !first_frame {
+            dispatch_reduce_frame(&rig, &frame, false);
+            if !deferred {
+                events.extend(consume_reduce_events(&mut rig, &mut engine));
+            }
+        }
+
+        frame.remaining_base_amount = Decimal::from_str("0.0001").unwrap();
+        frame.updated_at += 1_000;
+        for _ in 0..repeats {
+            dispatch_reduce_frame(&rig, &frame, false);
+            if !deferred {
+                events.extend(consume_reduce_events(&mut rig, &mut engine));
+            }
+        }
+
+        events.extend(consume_reduce_events(&mut rig, &mut engine));
+        let order = cache.borrow().order(&rig.cloid).unwrap().clone();
+        let report = rig.dispatch.translate_order_cloid(
+            parse_http_order_to_report(
+                &frame,
+                &rig.registry,
+                account_id(),
+                UnixNanos::from(5),
+                &rig.dispatch,
+            )
+            .unwrap(),
+        );
+        engine.reconcile_order_status_report(&report);
+        engine.reconcile_order_status_report(&report);
+        let reconciled = cache.borrow().order(&rig.cloid).unwrap().clone();
+        rig.dispatch = WsDispatchState::new();
+        rig.dispatch
+            .seed_order_restorations(vec![reconciled.clone()]);
+        dispatch_reduce_frame(&rig, &frame, false);
+        let replayed = consume_reduce_events(&mut rig, &mut engine);
+
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], OrderEventAny::Accepted(_)));
+
+        let OrderEventAny::Updated(update) = &events[1] else {
+            panic!("expected quantity update");
+        };
+
+        assert_eq!(update.quantity, Quantity::from("0.0001"));
+        assert!(update.reconciliation);
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), Quantity::from("0.0001"));
+        assert_eq!(order.leaves_qty(), Quantity::from("0.0001"));
+        assert_eq!(order.filled_qty(), Quantity::from("0.0000"));
+        assert_eq!(report.quantity, Quantity::from("0.0001"));
+        assert_eq!(report.filled_qty, Quantity::from("0.0000"));
+        assert_eq!(reconciled, order);
+        assert!(replayed.is_empty());
+    }
+
+    #[rstest]
+    #[case::frame_first(false, false, false)]
+    #[case::trade_first(true, false, false)]
+    #[case::reduced_then_frame(false, true, false)]
+    #[case::reduced_then_trade(true, true, false)]
+    #[case::deferred_frame(false, false, true)]
+    #[case::deferred_trade(true, false, true)]
+    fn self_trade_reduce_final_fill_ordering(
+        #[case] trade_first: bool,
+        #[case] reduced_open: bool,
+        #[case] deferred: bool,
+        #[values(false, true)] first_frame: bool,
+    ) {
+        let (mut rig, cache, mut engine, mut frame) = reduce_order_replay();
+        if !first_frame {
+            dispatch_reduce_frame(&rig, &frame, false);
+            consume_reduce_events(&mut rig, &mut engine);
+        }
+
+        frame.remaining_base_amount = Decimal::from_str("0.0001").unwrap();
+        frame.updated_at += 1_000;
+        if reduced_open {
+            dispatch_reduce_frame(&rig, &frame, false);
+            consume_reduce_events(&mut rig, &mut engine);
+        }
+
+        let mut trade = dispatcher_test_trade(&rig, true);
+        trade.bid_id = frame.order_index;
+        trade.bid_id_str = Some(frame.order_id.clone());
+        trade.size = Decimal::from_str("0.0001").unwrap();
+        trade.usd_amount = trade.size * trade.price;
+        frame.status = LighterOrderStatus::Filled;
+        frame.remaining_base_amount = Decimal::ZERO;
+        frame.filled_base_amount = trade.size;
+        frame.filled_quote_amount = trade.usd_amount;
+        frame.updated_at += 1_000;
+
+        if trade_first {
+            dispatch_lighter_trade(
+                &trade,
+                &rig.dispatch,
+                &rig.emitter,
+                &rig.registry,
+                account_id(),
+                trader_id(),
+                Some(TEST_ACCOUNT_INDEX_I64),
+                UnixNanos::from(3),
+            );
+            consume_reduce_events(&mut rig, &mut engine);
+        }
+
+        dispatch_reduce_frame(&rig, &frame, deferred);
+        consume_reduce_events(&mut rig, &mut engine);
+
+        if !trade_first {
+            dispatch_lighter_trade(
+                &trade,
+                &rig.dispatch,
+                &rig.emitter,
+                &rig.registry,
+                account_id(),
+                trader_id(),
+                Some(TEST_ACCOUNT_INDEX_I64),
+                UnixNanos::from(4),
+            );
+            consume_reduce_events(&mut rig, &mut engine);
+        }
+
+        let order = cache.borrow().order(&rig.cloid).unwrap().clone();
+
+        assert_eq!(order.quantity(), Quantity::from("0.0001"));
+        assert_eq!(order.filled_qty(), Quantity::from("0.0001"));
+        assert_eq!(order.leaves_qty(), Quantity::from("0.0000"));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(
+            order.trade_ids(),
+            vec![&parse_lighter_trade_id(&trade).unwrap()]
+        );
+    }
+
+    #[rstest]
+    #[case::stream(false)]
+    #[case::report(true)]
+    fn self_trade_reduce_cancellation_remains_canceled(#[case] report: bool) {
+        let (mut rig, cache, mut engine, mut frame) = reduce_order_replay();
+        dispatch_reduce_frame(&rig, &frame, false);
+        consume_reduce_events(&mut rig, &mut engine);
+        frame.remaining_base_amount = Decimal::from_str("0.0001").unwrap();
+        frame.updated_at += 1_000;
+        dispatch_reduce_frame(&rig, &frame, false);
+        consume_reduce_events(&mut rig, &mut engine);
+        frame.status = LighterOrderStatus::Canceled;
+        frame.remaining_base_amount = Decimal::ZERO;
+        frame.updated_at += 1_000;
+
+        if report {
+            let report = rig.dispatch.translate_order_cloid(
+                parse_http_order_to_report(
+                    &frame,
+                    &rig.registry,
+                    account_id(),
+                    UnixNanos::from(5),
+                    &rig.dispatch,
+                )
+                .unwrap(),
+            );
+            engine.reconcile_order_status_report(&report);
+        } else {
+            dispatch_reduce_frame(&rig, &frame, false);
+            consume_reduce_events(&mut rig, &mut engine);
+        }
+
+        let order = cache.borrow().order(&rig.cloid).unwrap().clone();
+
+        assert_eq!(order.status(), OrderStatus::Canceled);
+        assert_eq!(order.filled_qty(), Quantity::from("0.0000"));
+        assert!(order.trade_ids().is_empty());
+        assert_eq!(
+            order.quantity(),
+            Quantity::from(if report { "0.0027" } else { "0.0001" })
+        );
+    }
+
+    fn reduce_order_replay() -> (
+        DispatcherRig,
+        Rc<RefCell<Cache>>,
+        ExecutionEngine,
+        LighterOrder,
+    ) {
+        let rig = dispatcher_rig("REDUCE-REPLAY");
+        let mut frame = dispatcher_test_order(&rig, LighterOrderStatus::Open);
+        frame.initial_base_amount = Decimal::from_str("0.0027").unwrap();
+        frame.remaining_base_amount = frame.initial_base_amount;
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id())
+            .strategy_id(strategy_id())
+            .instrument_id(rig.instrument_id)
+            .client_order_id(rig.cloid)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.0027"))
+            .price(Price::from("2352.74"))
+            .build();
+        rig.dispatch.register_create_identity(&order).unwrap();
+        rig.dispatch
+            .mark_order_submission(&rig.cloid, TEST_SUBMISSION_NONCE);
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_instrument(
+                LIGHTER_INSTRUMENT_CACHE
+                    .get(&rig.instrument_id)
+                    .unwrap()
+                    .value()
+                    .clone(),
+            )
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id()), false)
+            .unwrap();
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::default()));
+        let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+        engine.process(&OrderEventAny::Submitted(OrderSubmitted::new(
+            trader_id(),
+            strategy_id(),
+            rig.instrument_id,
+            rig.cloid,
+            account_id(),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        )));
+        (rig, cache, engine, frame)
+    }
+
+    fn dispatch_reduce_frame(rig: &DispatcherRig, frame: &LighterOrder, deferred: bool) {
+        if deferred {
+            dispatch_deferred_order(rig.cloid, frame, &rig.dispatch, &rig.emitter);
+        } else {
+            dispatch_lighter_order(
+                frame,
+                &rig.dispatch,
+                &rig.emitter,
+                &rig.registry,
+                account_id(),
+                trader_id(),
+                UnixNanos::from(3),
+            );
+        }
+    }
+
+    fn consume_reduce_events(
+        rig: &mut DispatcherRig,
+        engine: &mut ExecutionEngine,
+    ) -> Vec<OrderEventAny> {
+        let mut orders = Vec::new();
+
+        for event in drain_events(&mut rig.rx) {
+            match event {
+                ExecutionEvent::Order(event) => {
+                    engine.process(&event);
+                    orders.push(event);
+                }
+                ExecutionEvent::Report(report) => engine.reconcile_execution_report(&report),
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+
+        orders
     }
 }

@@ -1494,6 +1494,7 @@ fn cancel_tx_hash(info: &Value, chain_id: u32) -> String {
     };
 
     compute_tx_hash(&tx, chain_id)
+        .unwrap()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>()
@@ -1537,6 +1538,13 @@ fn order_tx_hash(kind: u8, info: &Value, chain_id: u32) -> String {
         integrator_taker_fee: attrs["2"].as_u64().unwrap_or(0) as u32,
         integrator_maker_fee: attrs["3"].as_u64().unwrap_or(0) as u32,
         skip_nonce: attrs["4"].as_u64().unwrap_or(0) as u8,
+        cancel_all_market_index: attrs["5"].as_i64(),
+        self_trade_behavior_mode: attrs
+            .get("6")
+            .map(|v| serde_json::from_value(v.clone()).unwrap()),
+        self_trade_equality_mode: attrs
+            .get("7")
+            .map(|v| serde_json::from_value(v.clone()).unwrap()),
     };
 
     let hash = match kind {
@@ -1558,7 +1566,8 @@ fn order_tx_hash(kind: u8, info: &Value, chain_id: u32) -> String {
                 },
             },
             chain_id,
-        ),
+        )
+        .unwrap(),
         28 => compute_tx_hash(
             &CreateGroupedOrdersTxInfo {
                 context,
@@ -1583,7 +1592,8 @@ fn order_tx_hash(kind: u8, info: &Value, chain_id: u32) -> String {
                     .collect(),
             },
             chain_id,
-        ),
+        )
+        .unwrap(),
         17 => compute_tx_hash(
             &ModifyOrderTxInfo {
                 context,
@@ -1595,7 +1605,8 @@ fn order_tx_hash(kind: u8, info: &Value, chain_id: u32) -> String {
                 trigger_price: info["TriggerPrice"].as_u64().unwrap() as u32,
             },
             chain_id,
-        ),
+        )
+        .unwrap(),
         _ => panic!("unsupported batch transaction type {kind}"),
     };
 
@@ -2378,8 +2389,24 @@ mod serial_tests {
 async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
     #[case] environment: LighterEnvironment,
     #[case] account_type: Option<u8>,
-    #[case] expected_attributes: Value,
+    #[case] mut expected_attributes: Value,
+    #[values(false, true)] override_modes: bool,
 ) {
+    if expected_attributes.is_null() {
+        expected_attributes = json!({});
+    }
+
+    expected_attributes["6"] = json!(u8::from(override_modes));
+    expected_attributes["7"] = json!(u8::from(override_modes));
+
+    let params = override_modes.then(|| {
+        serde_json::from_value(json!({
+            "self_trade_behavior_mode": "expire_taker",
+            "self_trade_equality_mode": "master_account_index",
+        }))
+        .unwrap()
+    });
+
     let (addr, state) = start_server().await;
     *state.account_type.lock().await = account_type;
     let mut config = build_config(addr);
@@ -2398,7 +2425,9 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
     );
     cache_order(&cache, order.clone());
 
-    client.submit_order(submit_command(&order)).expect("submit");
+    let mut command = submit_command(&order);
+    command.params = params;
+    client.submit_order(command).expect("submit");
 
     // The optimistic OrderSubmitted is emitted synchronously from the
     // dispatch path; it must precede any venue ack on the channel.
@@ -2439,8 +2468,24 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_order_list_shares_correlated_transport_batch(
     #[case] environment: LighterEnvironment,
-    #[case] expected_attributes: Value,
+    #[case] mut expected_attributes: Value,
+    #[values(false, true)] override_modes: bool,
 ) {
+    if expected_attributes.is_null() {
+        expected_attributes = json!({});
+    }
+
+    expected_attributes["6"] = json!(u8::from(override_modes));
+    expected_attributes["7"] = json!(u8::from(override_modes));
+
+    let params = override_modes.then(|| {
+        serde_json::from_value(json!({
+            "self_trade_behavior_mode": "expire_taker",
+            "self_trade_equality_mode": "master_account_index",
+        }))
+        .unwrap()
+    });
+
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
@@ -2469,7 +2514,8 @@ async fn test_submit_order_list_shares_correlated_transport_batch(
     cache_order(&cache, order_a.clone());
     cache_order(&cache, order_b.clone());
 
-    let command = submit_order_list_command(&[order_a.clone(), order_b.clone()], "OL-NATIVE");
+    let mut command = submit_order_list_command(&[order_a.clone(), order_b.clone()], "OL-NATIVE");
+    command.params = params;
     client.submit_order_list(command).expect("submit list");
 
     let submitted_a = next_order_event(&mut rx, Duration::from_secs(2))
@@ -9989,9 +10035,16 @@ async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
 #[case::accepted(false)]
 #[case::rejected(true)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(#[case] rejected: bool) {
+async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
+    #[case] rejected: bool,
+    #[values(false, true)] override_modes: bool,
+    #[values(LighterEnvironment::Testnet, LighterEnvironment::Mainnet)]
+    environment: LighterEnvironment,
+) {
     let (addr, state) = start_server().await;
-    let (mut client, mut rx, cache) = build_client(addr);
+    let mut config = build_config(addr);
+    config.environment = environment;
+    let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
     let mut factory = OrderFactory::new(
@@ -10028,12 +10081,17 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(#[case] rej
             Some(json!({"code": 21727, "message": "invalid client order index"}));
     }
 
-    client
-        .submit_order_list(submit_order_list_command(
-            &orders,
-            orders[0].order_list_id().unwrap().as_str(),
-        ))
-        .unwrap();
+    let mut command =
+        submit_order_list_command(&orders, orders[0].order_list_id().unwrap().as_str());
+    command.params = override_modes.then(|| {
+        serde_json::from_value(json!({
+            "self_trade_behavior_mode": "expire_taker",
+            "self_trade_equality_mode": "master_account_index",
+        }))
+        .unwrap()
+    });
+
+    client.submit_order_list(command).unwrap();
 
     for order in &orders {
         match next_order_event(&mut rx, Duration::from_secs(2))
@@ -10053,6 +10111,14 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(#[case] rej
         serde_json::from_str(frames[0]["data"]["tx_types"].as_str().unwrap()).unwrap();
     let infos = batch_tx_infos(&frames[0]);
     let body = &infos[0];
+    let mut expected_attributes =
+        json!({"6": u8::from(override_modes), "7": u8::from(override_modes)});
+
+    if environment == LighterEnvironment::Mainnet {
+        expected_attributes["1"] = json!(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX);
+    }
+
+    assert_eq!(body["L2TxAttributes"], expected_attributes);
     let legs = body["Orders"].as_array().unwrap();
     let indices: Vec<_> = legs
         .iter()
@@ -10678,6 +10744,120 @@ async fn shutdown_gap_fill_reconciles_without_duplicate_late_live_delivery() {
     assert!(
         duplicate.is_none(),
         "reconciled fill must not be delivered again as live: {duplicate:?}"
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::price(None, 100)]
+#[case::quantity(Some(Quantity::from("0.0075")), 125)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_modify_reduce_remainder_after_http_restoration(
+    #[case] quantity: Option<Quantity>,
+    #[case] expected_base: i64,
+    #[values(false, true)] worker: bool,
+    #[values(false, true)] bulk: bool,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let order = make_limit_order(
+        "REDUCE-RESTORED",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let cloid = order.client_order_id();
+    let venue = VenueOrderId::from("281476929510301");
+    cache_order(&cache, order);
+    let accepted = OrderEventAny::Accepted(OrderAccepted::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        cloid,
+        venue,
+        account_id(),
+        UUID4::new(),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+        false,
+    ));
+    cache.borrow_mut().update_order(&accepted).unwrap();
+
+    for remaining in ["0.0050", "0.0075"] {
+        let mut row = http_order_fixture(venue.as_str(), cloid.as_str(), "open", "0.0000");
+        row["initial_base_amount"] = json!("0.0100");
+        row["remaining_base_amount"] = json!(remaining);
+        *state.active_orders_response.lock().await = Some(http_orders_payload(&[row], None));
+
+        let report = if bulk {
+            let command = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::from(4),
+                true,
+                Some(eth_perp_id()),
+                None,
+                None,
+                None,
+                None,
+            );
+            let mut reports = generate_order_status_reports(&client, &command, worker)
+                .await
+                .unwrap();
+            assert_eq!(reports.len(), 1);
+            reports.remove(0)
+        } else {
+            let command = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::from(4),
+                Some(eth_perp_id()),
+                Some(cloid),
+                Some(venue),
+                None,
+                None,
+            );
+            generate_order_status_report(&client, &command, worker)
+                .await
+                .unwrap()
+                .unwrap()
+        };
+
+        assert_eq!(report.quantity, Quantity::from(remaining));
+        assert_eq!(report.filled_qty, Quantity::from("0.0000"));
+        assert_eq!(report.client_order_id, Some(cloid));
+    }
+
+    client
+        .modify_order(ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            cloid,
+            Some(venue),
+            quantity,
+            Some(Price::from("2400.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::from(5),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, 1).await;
+    let frames = state.send_txs().await;
+    let info = send_tx_info(&frames[0]);
+
+    assert_eq!(send_tx_type(&frames[0]), 17);
+    assert_eq!(info["Index"], 281_476_929_510_301_i64);
+    assert_eq!(info["BaseAmount"], expected_base);
+    assert_eq!(info["Price"], 240_000);
+    assert_eq!(
+        cache.borrow().order(&cloid).unwrap().quantity(),
+        Quantity::from("0.0050")
     );
     client.disconnect().await.unwrap();
 }

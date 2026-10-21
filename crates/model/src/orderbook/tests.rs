@@ -894,6 +894,37 @@ fn test_book_simulate_fills_routes_to_opposite_ladder(
 }
 
 #[rstest]
+#[case::buy(OrderSide::Buy, OrderSide::Sell, "101.00", "102.00")]
+#[case::sell(OrderSide::Sell, OrderSide::Buy, "99.00", "98.00")]
+fn test_book_simulate_fills_caps_large_liquidity_to_remainder(
+    #[case] order_side: OrderSide,
+    #[case] resting_side: OrderSide,
+    #[case] first_price: &str,
+    #[case] second_price: &str,
+) {
+    let instrument_id = InstrumentId::from("AAPL.XNAS");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    let maximum = Quantity::from_raw_checked(QUANTITY_RAW_MAX, 0).unwrap();
+    let resting = [
+        BookOrder::new(resting_side, Price::from(first_price), Quantity::from(1), 1),
+        BookOrder::new(resting_side, Price::from(second_price), maximum, 2),
+    ];
+
+    for order in resting {
+        book.add(order, 0, order.order_id, order.order_id.into());
+    }
+
+    let order = BookOrder::new(order_side, Price::from(second_price), Quantity::from(2), 3);
+    let fills = book.simulate_fills(&order);
+    let expected = vec![
+        (Price::from(first_price), Quantity::from(1)),
+        (Price::from(second_price), Quantity::from(1)),
+    ];
+
+    assert_eq!(fills, expected);
+}
+
+#[rstest]
 fn test_book_apply_depth(stub_depth10: OrderBookDepth) {
     let depth = stub_depth10;
     let instrument_id = InstrumentId::from("AAPL.XNAS");

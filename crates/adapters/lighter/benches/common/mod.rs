@@ -158,6 +158,7 @@ pub(crate) fn fp5_inputs() -> (Fp5, Fp5) {
 
 pub(crate) fn fixed_signed_tx() -> SignedTx {
     sign_tx(&create_order_tx(), CHAIN_ID, &fixed_sk(), fixed_k())
+        .expect("benchmark transaction attributes are valid")
 }
 
 // ----- Data / exec pipeline fixtures --------------------------------------
