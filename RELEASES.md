@@ -79,6 +79,7 @@ Released on TBD (UTC).
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
 - Fixed Architect AX special-fill reconciliation, fill-history windows, and cached flat-position recovery
 - Fixed Architect AX position-report requests dropping flat rows and skipping invalid rows
+- Fixed Binance Spot and Futures overlapping instrument-status updates losing or duplicating changes
 - Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot account balances panicking or skipping an unrepresentable amount
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu

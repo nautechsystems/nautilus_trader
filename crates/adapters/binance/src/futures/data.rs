@@ -140,6 +140,7 @@ pub struct BinanceFuturesDataClient {
     shutdown_errors: Vec<String>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+    instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     book_sync: BookSyncTracker,
     book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
     book_unsubscribes_pending: Arc<AtomicMap<InstrumentId, Vec<BookDrain>>>,
@@ -283,6 +284,7 @@ impl BinanceFuturesDataClient {
             shutdown_errors: Vec::new(),
             instruments: Arc::new(AtomicMap::new()),
             status_cache: Arc::new(AtomicMap::new()),
+            instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_sync,
             book_subscriptions: Arc::new(AtomicMap::new()),
             book_unsubscribes_pending: Arc::new(AtomicMap::new()),
@@ -410,12 +412,14 @@ impl BinanceFuturesDataClient {
         provider: &crate::config::BinanceInstrumentProviderConfig,
         instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         status_cache: &Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+        instrument_update_lock: &tokio::sync::Mutex<()>,
         ws: &BinanceFuturesWebSocketClient,
         ws_public: &BinanceFuturesWebSocketClient,
         sender: &EventSender<DataEvent>,
         clock: &'static AtomicTime,
         emit_status_changes: bool,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let _guard = instrument_update_lock.lock().await;
         let instruments = http
             .request_instruments_with_config(provider)
             .await
@@ -1211,6 +1215,7 @@ impl DataClient for BinanceFuturesDataClient {
             &self.config.instrument_provider,
             &self.instruments,
             &self.status_cache,
+            &self.instrument_update_lock,
             &self.ws_client,
             &self.ws_public_client,
             &self.data_sender,
@@ -1352,6 +1357,7 @@ impl DataClient for BinanceFuturesDataClient {
                 let poll_sender = self.data_sender.clone();
                 let poll_instruments = self.instruments.clone();
                 let poll_status_cache = self.status_cache.clone();
+                let poll_update_lock = self.instrument_update_lock.clone();
                 let poll_cancel = self.cancellation_token.clone();
                 let poll_clock = self.clock;
 
@@ -1363,6 +1369,8 @@ impl DataClient for BinanceFuturesDataClient {
                     loop {
                         tokio::select! {
                             _ = interval.tick() => {
+                                let _guard = poll_update_lock.lock().await;
+
                                 match poll_http.request_symbol_statuses().await {
                                     Ok(symbol_statuses) => {
                                         let ts = poll_clock.get_time_ns();
@@ -1412,6 +1420,7 @@ impl DataClient for BinanceFuturesDataClient {
                 let provider = self.config.instrument_provider.clone();
                 let instruments = self.instruments.clone();
                 let statuses = self.status_cache.clone();
+                let update_lock = self.instrument_update_lock.clone();
                 let ws = self.ws_client.clone();
                 let ws_public = self.ws_public_client.clone();
                 let sender = self.data_sender.clone();
@@ -1430,6 +1439,7 @@ impl DataClient for BinanceFuturesDataClient {
                                     &provider,
                                     &instruments,
                                     &statuses,
+                                    &update_lock,
                                     &ws,
                                     &ws_public,
                                     &sender,

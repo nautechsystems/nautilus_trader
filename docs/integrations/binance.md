@@ -1119,11 +1119,14 @@ info (e.g. after delisting or contract expiry), the adapter emits
 
 Status polling does not reload instrument definitions. The separate `instrument_refresh_interval_secs` task
 performs a complete filtered catalog load. It atomically replaces the data-client and WebSocket lookup maps.
-Then it sends the refreshed instruments to the data engine and updates the status snapshot. It also refreshes
+Then it updates the status snapshot and sends the refreshed instruments to the data engine. It also refreshes
 the execution client precision cache.
 
 The default full refresh interval is 3,600 seconds. Set it to `0` to disable it. Disconnect cancels the task,
 and reconnect starts one replacement task with a new cancellation token.
+
+Catalog refreshes and status polls serialize their requests and snapshot updates so overlapping responses
+cannot overwrite newer statuses or duplicate `InstrumentStatus` events. Each task keeps its own polling interval.
 
 ### Status mapping
 
