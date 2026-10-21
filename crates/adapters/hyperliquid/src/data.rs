@@ -625,9 +625,8 @@ impl HyperliquidDataClient {
                                 }
                             }
                         } else {
-                            // Connection closed or error
                             log::debug!("WebSocket next_event returned None, stream closed");
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            break;
                         }
                     }
                 }
@@ -2549,6 +2548,7 @@ async fn request_bars_from_http(
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use nautilus_common::live::runner::set_data_event_sender;
     use nautilus_model::{
         data::{
@@ -2565,7 +2565,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::{consts::HYPERLIQUID_CLIENT_ID, testing::load_test_data};
+    use crate::common::{
+        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_WS_URL},
+        testing::load_test_data,
+    };
 
     fn btc_perp_id() -> InstrumentId {
         InstrumentId::from("BTC-PERP.HYPERLIQUID")
@@ -3514,6 +3517,67 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    #[rstest]
+    #[case::disconnect(false, None)]
+    #[case::reset_then_disconnect(true, None)]
+    #[ignore = "connects to Hyperliquid mainnet public market data"]
+    #[case::mainnet(false, Some(HYPERLIQUID_WS_URL))]
+    #[tokio::test]
+    async fn test_ws_consumer_exits_when_handler_output_closes(
+        #[case] reset: bool,
+        #[case] url: Option<&str>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(_)) = socket.next().await {}
+        });
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let url = url.map_or_else(|| format!("ws://{addr}"), str::to_owned);
+
+        let mut client = HyperliquidDataClient::new(
+            *HYPERLIQUID_CLIENT_ID,
+            HyperliquidDataClientConfig {
+                base_url_ws: Some(url),
+                ..HyperliquidDataClientConfig::default()
+            },
+        )
+        .unwrap();
+
+        client.spawn_ws().await.unwrap();
+        assert_eq!(client.session_tasks.len(), 1);
+
+        client.ws_client.disconnect().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !client.session_tasks.all_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("consumer must exit when handler output closes without cancellation");
+
+        assert!(!client.cancellation_token.is_cancelled());
+        assert!(client.session_tasks.all_finished());
+        assert!(client.pending_tasks.is_empty());
+
+        if reset {
+            client.reset().unwrap();
+        }
+
+        client.disconnect().await.unwrap();
+
+        assert!(client.session_tasks.is_empty());
+        assert!(client.pending_tasks.is_empty());
+        assert!(client.is_disconnected());
+        server.abort();
+        let _ = server.await;
     }
 
     #[tokio::test]

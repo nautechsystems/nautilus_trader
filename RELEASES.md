@@ -81,6 +81,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid USD class transfers to return an explicit unsupported-action error before signing
 - Fixed Hyperliquid WebSocket readiness being published before handler initialization
 - Fixed Hyperliquid private WebSocket parse errors exposing account data in logs
+- Fixed Hyperliquid data client consumption loop remaining active after its WebSocket handler closes
 - Fixed Interactive Brokers small-lot entry prices after commission rounding (#5327), thanks @bebop23
 - Fixed Interactive Brokers futures expiry times blocking market data (#5318), thanks @chaneyka1
 - Fixed Interactive Brokers quote sizes dropped by float rounding (#5318), thanks @chaneyka1
