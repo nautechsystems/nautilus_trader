@@ -6967,3 +6967,65 @@ async fn test_run_order_update_stream_stops_when_bind_fails_with_shutdown() {
         "no retry after a bind failed with a shutdown"
     );
 }
+
+#[rstest]
+fn seed_instruments_from_cache_adds_a_spreads_legs() {
+    let (client, _rx, cache) = create_test_execution_client();
+    let legs = [
+        (InstrumentId::from("AAPL.NASDAQ"), 265598),
+        (InstrumentId::from("MSFT.NASDAQ"), 272093),
+    ];
+
+    for (leg_id, contract_id) in legs {
+        let contract = Contract {
+            contract_id,
+            symbol: IBSymbol::from(leg_id.symbol.as_str()),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("SMART"),
+            currency: IBCurrency::from("USD"),
+            ..Default::default()
+        };
+        let info = Params::new(
+            [
+                (
+                    String::from("contract"),
+                    crate::common::contracts::contract_to_json_value(&contract),
+                ),
+                (String::from("priceMagnifier"), serde_json::Value::from(1)),
+            ]
+            .into(),
+        );
+        let instrument: InstrumentAny = CurrencyPair::builder()
+            .instrument_id(leg_id)
+            .raw_symbol(Symbol::from(leg_id.symbol.as_str()))
+            .base_currency(Currency::from("EUR"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from(1))
+            .maybe_info(Some(info))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
+            .into();
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+    }
+    let spread_id =
+        crate::common::spreads::create_spread_instrument_id(&[(legs[0].0, 1), (legs[1].0, -1)])
+            .unwrap();
+
+    client.seed_instruments_from_cache([spread_id]);
+
+    for (leg_id, contract_id) in legs {
+        assert_eq!(
+            client
+                .instrument_provider
+                .resolve_contract_for_instrument(leg_id)
+                .unwrap()
+                .contract_id,
+            contract_id
+        );
+    }
+}
