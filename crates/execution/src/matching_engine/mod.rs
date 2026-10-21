@@ -160,7 +160,6 @@ pub struct OrderMatchingEngine {
     expiration_processed: bool,
     option_settlement_failed: bool,
     option_settlement_warning: Option<&'static str>,
-    option_expiration_orders_canceled: bool,
 }
 
 impl Debug for OrderMatchingEngine {
@@ -256,7 +255,6 @@ impl OrderMatchingEngine {
             expiration_processed: false,
             option_settlement_failed: false,
             option_settlement_warning: None,
-            option_expiration_orders_canceled: false,
         }
     }
 
@@ -339,7 +337,6 @@ impl OrderMatchingEngine {
         self.expiration_processed = false;
         self.option_settlement_failed = false;
         self.option_settlement_warning = None;
-        self.option_expiration_orders_canceled = false;
         self.fill_at_market = true;
         self.ids_generator.reset();
 
@@ -2649,8 +2646,9 @@ impl OrderMatchingEngine {
 
     /// Processes an instrument close event.
     ///
-    /// For `ContractExpired` close types, stores the close and triggers expiration
-    /// processing which cancels all open orders and closes all open positions.
+    /// For `ContractExpired` close types, stores the close and cancels open orders.
+    /// Positions settle at the close price once generated fills appear in cached positions.
+    /// Callers retry with `process_instrument_expiration` after deferred updates apply.
     pub fn process_instrument_close(&mut self, close: InstrumentClose) {
         if close.instrument_id != self.instrument.id() {
             log::warn!(
@@ -2667,6 +2665,9 @@ impl OrderMatchingEngine {
     }
 
     /// Processes instrument expiration at the given timestamp.
+    ///
+    /// Settlement waits until generated fills appear in cached positions. Callers retry
+    /// after deferred order and position updates have been applied.
     pub fn process_instrument_expiration(&mut self, timestamp_ns: UnixNanos) {
         self.check_instrument_expiration(timestamp_ns, false, &[]);
     }
@@ -2675,6 +2676,12 @@ impl OrderMatchingEngine {
     #[must_use]
     pub const fn is_expiration_processed(&self) -> bool {
         self.expiration_processed
+    }
+
+    /// Returns whether tracked fills still await acknowledgement in cached positions.
+    pub fn has_pending_fills(&mut self) -> bool {
+        self.purge_applied_fills();
+        !self.pending_fills.is_empty()
     }
 
     fn requires_pending_resolution(&self) -> bool {
@@ -2706,12 +2713,9 @@ impl OrderMatchingEngine {
         };
 
         for client_order_id in expiration_order_ids {
-            let order = {
-                let cache = self.cache.borrow();
-                cache.order(&client_order_id).map(|order| order.clone())
-            };
-
-            if let Some(order) = order {
+            if let Some(order) = self.order_snapshot(client_order_id)
+                && !self.contingent_order_is_closed(&order)
+            {
                 self.cancel_order_excluding(&order, None, excluded);
             }
         }
@@ -2758,18 +2762,17 @@ impl OrderMatchingEngine {
             return;
         }
 
+        self.enter_pending_resolution(excluded);
+
+        // Final-tick fills can reach the position cache after their order events
+        if self.has_pending_fills() {
+            return;
+        }
+
         if matches!(
             self.instrument,
             InstrumentAny::OptionContract(_) | InstrumentAny::CryptoOption(_)
         ) {
-            // `iterate` matches resting orders ahead of this check, so enter
-            // pending resolution at the first trigger. Latched because a queuing
-            // handler leaves the cached status behind the cancellation dispatch.
-            if !self.option_expiration_orders_canceled {
-                self.option_expiration_orders_canceled = true;
-                self.enter_pending_resolution(excluded);
-            }
-
             // The expiry timer settles after all same-timestamp market data,
             // while order cancellation and market closure still happen inline.
             if defer_settlement
@@ -2804,7 +2807,6 @@ impl OrderMatchingEngine {
         self.pending_resolution = false;
         let close = self.instrument_close.take();
         log::info!("{} reached expiration", self.instrument.id());
-        self.cancel_open_orders_for_expiration(excluded);
 
         let instrument_id = self.instrument.id();
 
@@ -3298,18 +3300,6 @@ impl OrderMatchingEngine {
                 );
             }
 
-            if self.market_status != MarketStatus::Open {
-                break 'validate Some(
-                    format!(
-                        "Market {} is {}, cannot accept order {}",
-                        self.instrument.id(),
-                        self.market_status,
-                        order.client_order_id()
-                    )
-                    .into(),
-                );
-            }
-
             // Check for instrument expiration or activation
             if self.instrument.has_expiration() {
                 if let Some(activation_ns) = self.instrument.activation_ns()
@@ -3341,6 +3331,18 @@ impl OrderMatchingEngine {
             if self.expiration_processed {
                 break 'validate Some(
                     format!("Contract {} has expired", self.instrument.id()).into(),
+                );
+            }
+
+            if self.market_status != MarketStatus::Open {
+                break 'validate Some(
+                    format!(
+                        "Market {} is {}, cannot accept order {}",
+                        self.instrument.id(),
+                        self.market_status,
+                        order.client_order_id()
+                    )
+                    .into(),
                 );
             }
 
@@ -5945,12 +5947,13 @@ impl OrderMatchingEngine {
         let cache = self.cache.borrow();
         let cash_cache = self.restricts_short_selling().then_some(&*cache);
         self.pending_fills.retain(|trade_id, fill| {
-            let previous_position_id = cash_cache.and(fill.position_id);
-            fill.position_id = cash_cache
-                .and_then(|cache| cache.position_id(&fill.client_order_id).copied())
+            let previous_position_id = fill.position_id;
+            fill.position_id = cache
+                .position_id(&fill.client_order_id)
+                .copied()
                 .or_else(|| {
                     fill.position_id
-                        .filter(|id| cash_cache.is_none_or(|cache| cache.position(id).is_some()))
+                        .filter(|id| cache.position(id).is_some())
                 })
                 .or_else(|| cache.position_id(&fill.client_order_id).copied())
                 .or_else(|| {
@@ -8194,7 +8197,9 @@ impl OrderMatchingEngine {
     }
 
     fn record_pending_fill(&mut self, fill: &OrderFilled) {
-        if (!self.config.use_reduce_only && !self.restricts_short_selling())
+        if (!self.config.use_reduce_only
+            && !self.restricts_short_selling()
+            && !self.instrument.has_expiration())
             || self.instrument.is_spread()
         {
             return;

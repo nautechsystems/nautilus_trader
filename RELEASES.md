@@ -30,6 +30,7 @@ Released on TBD (UTC).
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
 - Changed direct `OrderMatchingEngine` use: share `MatchingOrders` and drain commands for cross-instrument OTO orders
+- Changed `OrderMatchingEngine` expiration to wait for queued fills; retry `process_instrument_expiration` afterward
 - Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
 - Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
@@ -65,6 +66,7 @@ Released on TBD (UTC).
 
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking
+- Fixed expiration settlement missing final-tick fills when position updates are deferred
 - Fixed reduce-only FOK orders canceling when liquidity covered the remaining position but not the order quantity
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
 - Fixed SBE market data decoding panics on invalid prices and quantities
