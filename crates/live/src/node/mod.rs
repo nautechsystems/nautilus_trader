@@ -486,7 +486,7 @@ impl LiveNode {
         // Connect data clients first and flush instrument events into cache
         if let Err(e) = self.connect_data_phase(connection_deadline).await {
             return self
-                .abort_startup_with_error("Data client connection timed out", e)
+                .abort_startup_with_error("Data client connection failed", e)
                 .await;
         }
 
@@ -503,7 +503,7 @@ impl LiveNode {
 
         if let Err(e) = self.connect_exec_clients(connection_deadline).await {
             return self
-                .abort_startup_with_error("Execution client connection timed out", e)
+                .abort_startup_with_error("Execution client connection failed", e)
                 .await;
         }
 
@@ -1216,7 +1216,7 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             let result = self
-                .abort_startup_with_error("Data client connection timed out", e)
+                .abort_startup_with_error("Data client connection failed", e)
                 .await;
             Self::drain_channels(
                 &mut time_evt_rx,
@@ -1278,7 +1278,7 @@ impl LiveNode {
             Ok(status) => status,
             Err(e) => {
                 let result = self
-                    .abort_startup_with_error("Execution client connection timed out", e)
+                    .abort_startup_with_error("Execution client connection failed", e)
                     .await;
                 Self::drain_channels(
                     &mut time_evt_rx,
@@ -2284,14 +2284,14 @@ impl LiveNode {
         let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
         dst::time::timeout(remaining, self.kernel.connect_data_clients())
             .await
-            .map_err(|_| anyhow::anyhow!("data-connect timeout"))
+            .map_err(|_| anyhow::anyhow!("data-connect timeout"))?
     }
 
     async fn connect_exec_clients(&mut self, deadline: dst::time::Instant) -> anyhow::Result<()> {
         let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
         dst::time::timeout(remaining, self.kernel.connect_exec_clients())
             .await
-            .map_err(|_| anyhow::anyhow!("exec-connect timeout"))
+            .map_err(|_| anyhow::anyhow!("exec-connect timeout"))?
     }
 
     /// Connects execution clients and checks all engines are connected.

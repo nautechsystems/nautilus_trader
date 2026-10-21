@@ -637,9 +637,11 @@ impl DataEngine {
 
     /// Connects all registered data clients concurrently.
     ///
-    /// Connection failures are logged but do not prevent the node from running.
-    /// Logs identify the client but omit provider error text, which can contain credentials.
-    pub async fn connect(&mut self) {
+    /// # Errors
+    ///
+    /// Returns an error if any client fails to connect. The error identifies failed clients but omits
+    /// provider error text, which can contain credentials.
+    pub async fn connect(&mut self) -> anyhow::Result<()> {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
@@ -651,10 +653,18 @@ impl DataEngine {
 
         let results = join_all(futures).await;
 
-        for (client_id, result) in results {
-            if result.is_err() {
-                log::error!("Failed to connect data client {client_id}: connection failed");
-            }
+        let failed_clients: Vec<_> = results
+            .into_iter()
+            .filter_map(|(client_id, result)| result.err().map(|_| client_id.to_string()))
+            .collect();
+
+        if failed_clients.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Failed to connect data clients: {}",
+                failed_clients.join(", ")
+            )
         }
     }
 

@@ -470,23 +470,40 @@ fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
 }
 
 #[rstest]
+#[case::one(vec!["FIRST"])]
+#[case::multiple(vec!["FIRST", "SECOND"])]
 #[tokio::test]
-#[expect(clippy::await_holding_refcell_ref)] // Single-threaded test
-async fn test_data_engine_connect_continues_with_failing_client(
-    #[from(data_engine)] data_engine: Rc<RefCell<DataEngine>>,
+async fn test_data_engine_connect_returns_failed_client_ids(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    #[case] client_ids: Vec<&str>,
 ) {
-    let mut data_engine = data_engine.borrow_mut();
-
-    let client_id = ClientId::from("FAILING_CLIENT");
+    let mut data_engine = DataEngine::new(clock, cache, None);
     let venue = Venue::from("TEST");
     let error_message = "Authentication failed: invalid API key";
 
-    let client = FailingMockDataClient::new(client_id, Some(venue), error_message);
-    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
-    data_engine.register_client(adapter, None);
+    for client_id in &client_ids {
+        let client_id = ClientId::from(*client_id);
+        let client = FailingMockDataClient::new(client_id, Some(venue), error_message);
+        let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+        data_engine.register_client(adapter, None);
+    }
 
-    // Connect logs errors but does not fail
-    data_engine.connect().await;
+    let e = data_engine.connect().await.unwrap_err();
+
+    assert_eq!(
+        e.to_string(),
+        format!("Failed to connect data clients: {}", client_ids.join(", ")),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+#[expect(clippy::await_holding_refcell_ref)] // Single-threaded test
+async fn test_data_engine_connect_succeeds_without_clients(
+    #[from(data_engine)] data_engine: Rc<RefCell<DataEngine>>,
+) {
+    data_engine.borrow_mut().connect().await.unwrap();
 }
 
 #[rstest]
@@ -506,7 +523,9 @@ async fn test_data_engine_connect_succeeds_with_working_client(
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, None);
 
-    data_engine.connect().await;
+    data_engine.connect().await.unwrap();
+
+    assert!(data_engine.check_connected());
 }
 
 #[rstest]
@@ -565,17 +584,19 @@ async fn test_data_engine_connect_omits_provider_errors(
 
     take_connection_logs();
 
-    tokio::time::timeout(std::time::Duration::from_secs(1), data_engine.connect())
+    let e = tokio::time::timeout(std::time::Duration::from_secs(1), data_engine.connect())
         .await
-        .expect("clients must connect concurrently");
+        .expect("clients must connect concurrently")
+        .unwrap_err();
 
     assert_eq!(
-        take_connection_logs(),
-        vec![(
-            Level::Error,
-            "Failed to connect data client FAILING_CLIENT: connection failed".to_string(),
-        )],
+        e.to_string(),
+        "Failed to connect data clients: FAILING_CLIENT",
     );
+    assert_eq!(format!("{e:#}"), e.to_string());
+    assert_eq!(e.chain().count(), 1);
+    assert!(!format!("{e:?}").contains("SYN-"));
+    assert_eq!(take_connection_logs(), vec![]);
     assert!(
         data_engine
             .get_client(Some(&working_id), None)
@@ -680,7 +701,8 @@ impl DataClient for ConnectionDataClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         self.barrier.wait().await;
 
-        self.record("connect")?;
+        self.record("connect")
+            .map_err(|e| e.context("provider context"))?;
         self.connected = true;
         Ok(())
     }

@@ -386,6 +386,8 @@ pub(crate) mod serial_tests {
     #[derive(Clone, Copy, Debug)]
     enum LifecycleClientBehavior {
         Connects,
+        ConnectError,
+        ConnectAndDisconnectError,
         ConnectPending,
         ReadinessPending,
         ConnectDelayedReadinessPending,
@@ -744,6 +746,10 @@ pub(crate) mod serial_tests {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
 
             match self.behavior {
+                LifecycleClientBehavior::ConnectError
+                | LifecycleClientBehavior::ConnectAndDisconnectError => {
+                    anyhow::bail!("simulated data client connect failure")
+                }
                 LifecycleClientBehavior::ConnectPending => {
                     std::future::pending::<anyhow::Result<()>>().await
                 }
@@ -765,6 +771,13 @@ pub(crate) mod serial_tests {
             self.state
                 .disconnect_attempted
                 .store(true, Ordering::Relaxed);
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::ConnectAndDisconnectError
+            ) {
+                anyhow::bail!("simulated data client disconnect failure");
+            }
 
             if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
                 return std::future::pending::<anyhow::Result<()>>().await;
@@ -982,6 +995,10 @@ pub(crate) mod serial_tests {
             self.state.connect_attempted.store(true, Ordering::Relaxed);
 
             match self.behavior {
+                LifecycleClientBehavior::ConnectError
+                | LifecycleClientBehavior::ConnectAndDisconnectError => {
+                    anyhow::bail!("simulated execution client connect failure")
+                }
                 LifecycleClientBehavior::ConnectPending => {
                     std::future::pending::<anyhow::Result<()>>().await
                 }
@@ -1003,6 +1020,13 @@ pub(crate) mod serial_tests {
             self.state
                 .disconnect_attempted
                 .store(true, Ordering::Relaxed);
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::ConnectAndDisconnectError
+            ) {
+                anyhow::bail!("simulated execution client disconnect failure");
+            }
 
             if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
                 return std::future::pending::<anyhow::Result<()>>().await;
@@ -2298,6 +2322,92 @@ pub(crate) mod serial_tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Not running"));
+    }
+
+    #[rstest]
+    #[case::data(true, false)]
+    #[case::exec(false, false)]
+    #[case::data_cleanup_error(true, true)]
+    #[case::exec_cleanup_error(false, true)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_client_connect_error_aborts_startup(
+        #[values(false, true)] run: bool,
+        #[case] data_fails: bool,
+        #[case] disconnect_fails: bool,
+    ) {
+        let failing_behavior = if disconnect_fails {
+            LifecycleClientBehavior::ConnectAndDisconnectError
+        } else {
+            LifecycleClientBehavior::ConnectError
+        };
+        let (data_behavior, exec_behavior) = if data_fails {
+            (failing_behavior, LifecycleClientBehavior::Connects)
+        } else {
+            (LifecycleClientBehavior::Connects, failing_behavior)
+        };
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "ClientConnectErrorNode",
+            data_behavior,
+            exec_behavior,
+        );
+        let actor_start_count = Rc::new(Cell::new(0));
+        node.add_actor(PositionStartupActor {
+            core: DataActorCore::new(DataActorConfig::default()),
+            start_count: actor_start_count.clone(),
+        })
+        .unwrap();
+        let handle = node.handle();
+        let started_at = dst::time::Instant::now();
+
+        let result = dst::time::timeout(Duration::from_millis(200), async {
+            if run {
+                node.run().await
+            } else {
+                node.start().await
+            }
+        })
+        .await
+        .expect("startup should finish within the lifecycle timeout");
+        let elapsed = started_at.elapsed();
+        let e = result.expect_err("startup should fail on a client connection error");
+        let (client_type, client_id) = if data_fails {
+            ("data", "LIFECYCLE-DATA")
+        } else {
+            ("execution", "LIFECYCLE-EXEC")
+        };
+        let startup_error = format!("Failed to connect {client_type} clients: {client_id}");
+        let expected = if disconnect_fails {
+            format!(
+                "{startup_error}; failed to finalize startup abort: \
+                 Failed to disconnect {client_type} clients: {client_id}"
+            )
+        } else {
+            startup_error
+        };
+
+        assert_eq!(e.to_string(), expected);
+        assert!(!format!("{e:#}").contains("simulated"));
+        assert!(!format!("{e:?}").contains("simulated"));
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "connection error consumed the 50ms connection budget: {elapsed:?}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert_eq!(actor_start_count.get(), 0);
+        assert!(data_state.connect_attempted.load(Ordering::Relaxed));
+        assert_eq!(
+            exec_state.connect_attempted.load(Ordering::Relaxed),
+            !data_fails
+        );
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!data_state.connected.load(Ordering::Relaxed));
+        assert!(!exec_state.connected.load(Ordering::Relaxed));
     }
 
     #[rstest]

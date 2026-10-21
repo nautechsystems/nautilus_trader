@@ -18,15 +18,17 @@
 use std::{
     cell::RefCell,
     collections::HashSet,
-    future::Future,
+    future::{Future, poll_fn},
     pin::pin,
     rc::Rc,
     str::FromStr,
     sync::Once,
     task::{Context, Poll, Waker},
+    time::Duration,
 };
 
 use ahash::AHashSet;
+use futures::FutureExt;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::{Cache, CacheSnapshotRef},
@@ -47,6 +49,7 @@ use nautilus_common::{
         },
         switchboard,
     },
+    testing::wait_until,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
@@ -24611,6 +24614,7 @@ struct LifecycleExecutionClient {
     error_message: Option<&'static str>,
     calls: Rc<RefCell<Vec<(ClientId, &'static str)>>>,
     connected: bool,
+    yield_connect: bool,
 }
 
 impl LifecycleExecutionClient {
@@ -24707,8 +24711,22 @@ impl ExecutionClient for LifecycleExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        self.record("connect")
-            .map_err(|e| e.context("provider context"))?;
+        let result = self.record("connect");
+
+        if self.yield_connect {
+            let mut pending = true;
+            poll_fn(|cx| {
+                if std::mem::take(&mut pending) {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                } else {
+                    Poll::Ready(())
+                }
+            })
+            .await;
+        }
+
+        result.map_err(|e| e.context("provider context"))?;
         self.connected = true;
         Ok(())
     }
@@ -24718,6 +24736,60 @@ impl ExecutionClient for LifecycleExecutionClient {
         self.connected = false;
         Ok(())
     }
+}
+
+#[rstest]
+fn test_execution_engine_connect_succeeds_without_clients(mut execution_engine: ExecutionEngine) {
+    poll_to_completion(execution_engine.connect()).unwrap();
+}
+
+#[rstest]
+fn test_execution_engine_connect_returns_failed_client_ids(mut execution_engine: ExecutionEngine) {
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    for (client_id, error_message) in [
+        (ClientId::from("FIRST"), Some("password=SYN-password")),
+        (ClientId::from("SECOND"), Some("token=SYN-token")),
+        (ClientId::from("WORKING"), None),
+    ] {
+        execution_engine
+            .register_client(Box::new(LifecycleExecutionClient {
+                client_id,
+                error_message,
+                calls: Rc::clone(&calls),
+                connected: false,
+                yield_connect: true,
+            }))
+            .unwrap();
+    }
+
+    let e = {
+        let mut connect = pin!(execution_engine.connect());
+        assert!(connect.as_mut().now_or_never().is_none());
+        assert_eq!(calls.borrow().len(), 3, "clients must connect concurrently");
+
+        let mut result = None;
+        wait_until(
+            || {
+                result = connect.as_mut().now_or_never();
+                result.is_some()
+            },
+            Duration::from_secs(1),
+        );
+        result.unwrap().unwrap_err()
+    };
+
+    assert_eq!(
+        e.to_string(),
+        "Failed to connect execution clients: FIRST, SECOND",
+    );
+    assert!(
+        execution_engine
+            .get_client(&ClientId::from("WORKING"))
+            .unwrap()
+            .is_connected()
+    );
+    assert!(!execution_engine.check_connected());
 }
 
 #[rstest]
@@ -24741,23 +24813,25 @@ fn test_execution_client_lifecycle_logging(
                 error_message: error,
                 calls: Rc::clone(&calls),
                 connected: false,
+                yield_connect: false,
             }))
             .unwrap();
     }
 
     take_reconciliation_logs();
-    poll_to_completion(execution_engine.connect());
+    let result = poll_to_completion(execution_engine.connect());
 
-    let expected = if error_message.is_some() {
-        vec![(
-            Level::Error,
-            "Failed to connect execution client FIRST: connection failed".to_string(),
-        )]
+    if error_message.is_some() {
+        let e = result.unwrap_err();
+        assert_eq!(e.to_string(), "Failed to connect execution clients: FIRST");
+        assert_eq!(format!("{e:#}"), e.to_string());
+        assert_eq!(e.chain().count(), 1);
+        assert!(!format!("{e:?}").contains("SYN-"));
     } else {
-        vec![]
-    };
+        result.unwrap();
+    }
 
-    assert_eq!(take_reconciliation_logs(), expected);
+    assert_eq!(take_reconciliation_logs(), vec![]);
     assert_eq!(execution_engine.check_connected(), error_message.is_none());
 
     for (operation, action) in [
@@ -24849,6 +24923,7 @@ fn test_execution_command_logging(
             error_message,
             calls: Rc::clone(&calls),
             connected: false,
+            yield_connect: false,
         }))
         .unwrap();
 
