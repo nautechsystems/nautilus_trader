@@ -5478,7 +5478,6 @@ fn test_rust_custom_data_roundtrip_with_hashmap_price_field() {
 /// (`type_name` + identifier + metadata).
 /// Same `type_name` with different identifiers must produce separate batches and be readable back.
 #[rstest]
-#[ignore = "Slow regression test (>120s) for custom data identifier batching; run manually when changing catalog custom data write/query paths"]
 fn test_write_data_enum_mixed_custom_data_identifiers() {
     use std::sync::Arc;
 
