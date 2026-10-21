@@ -222,7 +222,7 @@ pub(super) fn reject_submit_order(
 }
 
 #[expect(clippy::too_many_arguments)]
-pub(super) fn emit_market_order_submitted(
+pub(super) fn emit_market_order_quantity_update(
     order: &mut OrderAny,
     is_quote_qty: bool,
     side: OrderSide,
@@ -233,8 +233,6 @@ pub(super) fn emit_market_order_submitted(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
-    emitter.emit_order_submitted(order);
-
     if !update_quantity || expected_base_qty.is_zero() {
         return;
     }
@@ -2574,7 +2572,8 @@ mod tests {
         let order_contexts = OrderContextRegistry::default();
         let pending_cancels = PendingCancelTracker::default();
 
-        emit_market_order_submitted(
+        emitter.emit_order_submitted(&order);
+        emit_market_order_quantity_update(
             &mut order,
             false,
             OrderSide::Sell,
@@ -3162,7 +3161,8 @@ mod tests {
         fill.order_side = OrderSide::Sell;
         fill_tracker.buffer_fill_for_test(venue_order_id, fill);
 
-        emit_market_order_submitted(
+        emitter.emit_order_submitted(&order);
+        emit_market_order_quantity_update(
             &mut order,
             true,
             OrderSide::Buy,
@@ -3265,7 +3265,8 @@ mod tests {
             .unwrap();
 
         let (emitter, mut receiver) = test_emitter();
-        emit_market_order_submitted(
+        emitter.emit_order_submitted(&order);
+        emit_market_order_quantity_update(
             &mut order,
             true,
             OrderSide::Buy,
@@ -3695,7 +3696,8 @@ mod tests {
             .unwrap();
 
         let (emitter, mut receiver) = test_emitter();
-        emit_market_order_submitted(
+        emitter.emit_order_submitted(&order);
+        emit_market_order_quantity_update(
             &mut order,
             true,
             OrderSide::Buy,

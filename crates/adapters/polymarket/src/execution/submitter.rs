@@ -57,7 +57,7 @@ use crate::{
 
 /// Fee-adjustment context for market BUYs sized to the user's pUSD balance.
 ///
-/// When supplied to [`OrderSubmitter::submit_market_order`] alongside
+/// When supplied to [`OrderSubmitter::prepare_market_order_submission`] alongside
 /// `OrderSide::Buy`, the submitter shrinks `amount` so `amount + fees`
 /// fits within `user_pusd_balance`, mirroring the SDK behavior. SELL
 /// orders ignore this context.
@@ -135,24 +135,23 @@ impl OrderSubmitter {
         }
     }
 
-    /// Fetches order book, calculates crossing price, builds and posts a market order.
+    /// Fetches the book, calculates the crossing price, and signs a market order.
     ///
     /// Converts Nautilus side to Polymarket side, walks the appropriate book side
-    /// to find the crossing price, then builds and submits a FAK or FOK order.
-    /// The book fetch is not retried (stale on retry); only the final POST is retried.
+    /// to find the crossing price, then builds a FAK or FOK order.
+    /// The book fetch is not retried; only the final POST is retried.
     ///
-    /// The second return value is the order's signed base quantity (shares for
-    /// BUY, the original `amount` for SELL). For BUY this is derived from the
+    /// The submission carries the signed base quantity. For BUY this is derived from the
     /// signed `taker_amount` so quote-to-base conversion matches what the venue
     /// can fill (single crossing price), not the multi-level book walk total.
     ///
     /// `request.fee_context`, when supplied with `OrderSide::Buy`, is used to shrink
     /// `amount` for taker fees before signing so balance-sized BUYs are not
     /// rejected by the venue. SELL ignores the context.
-    pub(crate) async fn submit_market_order(
+    pub(crate) async fn prepare_market_order_submission(
         &self,
         request: MarketOrderSubmitRequest,
-    ) -> anyhow::Result<MarketOrderSubmitResult> {
+    ) -> anyhow::Result<SignedMarketOrderSubmission> {
         let MarketOrderSubmitRequest {
             token_id,
             side,
@@ -225,6 +224,25 @@ impl OrderSubmitter {
         let expected_venue_order_id = self
             .order_builder
             .expected_order_id(&poly_order, neg_risk)?;
+        Ok(SignedMarketOrderSubmission {
+            order: poly_order,
+            order_type,
+            expected_base_qty: signed_base_qty,
+            expected_venue_order_id,
+        })
+    }
+
+    pub(crate) async fn post_market_order_submission(
+        &self,
+        submission: SignedMarketOrderSubmission,
+    ) -> anyhow::Result<MarketOrderSubmitResult> {
+        let SignedMarketOrderSubmission {
+            order: poly_order,
+            order_type,
+            expected_base_qty: signed_base_qty,
+            expected_venue_order_id,
+        } = submission;
+        let time_in_force = TimeInForce::from(order_type);
         self.settlement
             .note_order_submitted(expected_venue_order_id);
 
@@ -643,6 +661,14 @@ pub(super) struct CancelOrdersError {
     pub(super) error: Error,
     pub(super) failed_range: Range<usize>,
     pub(super) attempted_end: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct SignedMarketOrderSubmission {
+    order: PolymarketOrder,
+    order_type: PolymarketOrderType,
+    expected_base_qty: Decimal,
+    expected_venue_order_id: VenueOrderId,
 }
 
 fn submit_outcome_is_unknown(error: &Error, earlier_attempt_unknown: bool) -> bool {

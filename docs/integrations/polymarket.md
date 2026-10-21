@@ -975,7 +975,12 @@ Ambiguous failures include:
 | No `orderID` and no reason                                                                | Remains `Submitted`         | The response does not prove rejection.    |
 | Any ambiguous failure                                                                     | Remains `Submitted`         | The adapter cannot determine the outcome. |
 | Definitive retry error after an earlier ambiguous attempt                                 | Remains `Submitted`         | The earlier attempt may have succeeded.   |
-| Failure before `POST /order`, such as a failed pUSD balance lookup                        | `OrderDenied`               | The adapter did not submit the order.     |
+| Local failure before `OrderSubmitted`, including market-order preparation                 | `OrderDenied`               | The adapter did not enter submission.     |
+| Local failure after `OrderSubmitted` proving no POST was sent                             | `OrderRejected`             | The adapter entered submission.           |
+
+Market-order preparation includes balance and book lookups, price and fee checks, signing, and order-ID
+calculation. Preparation failures emit `OrderDenied` without `OrderSubmitted` or `POST /order`. After
+preparation succeeds, the adapter emits `OrderSubmitted` before it attempts the POST.
 
 Local denials format the strategy-facing reason from `OrderDeniedReason`. The leading token is the
 stable code, such as `VALIDATION_FAILED` or `UNSUPPORTED_ORDER_TYPE`.
