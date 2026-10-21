@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 
 use super::user_data::{
     BinanceSpotAccountPositionMsg, BinanceSpotBalanceUpdateMsg, BinanceSpotExecutionReport,
+    BinanceSpotListStatus,
 };
 use crate::spot::http::{
     models::{
@@ -174,6 +175,8 @@ pub enum BinanceSpotWsTradingMessage {
     UserDataSubscriptionRejected(String),
     /// Order execution report from user data stream.
     ExecutionReport(Box<BinanceSpotExecutionReport>),
+    /// Order-list lifecycle update from user data stream.
+    ListStatus(BinanceSpotListStatus),
     /// Account position update from user data stream.
     AccountPosition(BinanceSpotAccountPositionMsg),
     /// Balance update from user data stream.

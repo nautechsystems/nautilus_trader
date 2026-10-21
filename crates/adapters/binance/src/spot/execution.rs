@@ -53,8 +53,7 @@ use nautilus_model::{
         OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
     instruments::Instrument,
     orders::{Order, OrderAny},
@@ -72,7 +71,7 @@ use super::websocket::trading::{
         parse_spot_account_position, parse_spot_exec_report_to_fill,
         parse_spot_exec_report_to_order_status,
     },
-    user_data::{BinanceSpotExecutionReport, BinanceSpotExecutionType},
+    user_data::{BinanceSpotExecutionReport, BinanceSpotExecutionType, BinanceSpotListStatus},
 };
 use crate::{
     common::{
@@ -84,14 +83,14 @@ use crate::{
         },
         credential::resolve_credentials,
         dispatch::{
-            OrderIdentity, PendingOperation, PendingRequest, WsDispatchState,
+            OrderIdentity, OrderListIdentity, PendingOperation, PendingRequest, WsDispatchState,
             ensure_accepted_emitted,
         },
         encoder::{decode_client_order_id, encode_broker_id},
         enums::{BinanceEnvironment, BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
         failure::{classify_spot_http_failure, classify_venue_failure, sanitize_reason},
         parse::{
-            parse_micros_or_init, parse_millis_or_init, parse_required_decimal,
+            parse_micros, parse_micros_or_init, parse_millis_or_init, parse_required_decimal,
             parse_required_price_at_precision, parse_required_quantity_at_precision,
         },
         urls::{get_http_base_url_with_us, get_spot_user_stream_url},
@@ -1860,18 +1859,18 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         }
 
         let event_emitter = self.emitter.clone();
-        let trader_id = self.core.trader_id;
         let account_id = self.core.account_id;
         let clock = self.clock;
         let http_client = self.http_client.clone();
         let dispatch_state = self.dispatch_state.clone();
 
+        let lifecycle_lock = self.lifecycle_lock.clone();
         self.spawn_task("submit_order_list_http", async move {
             if let Err(e) = submit_spot_order_list(&http_client, &params).await {
+                let _lifecycle_guard = lifecycle_lock.lock();
                 handle_spot_order_list_submit_error(
                     &event_emitter,
                     &dispatch_state,
-                    trader_id,
                     account_id,
                     clock,
                     &orders,
@@ -2640,6 +2639,15 @@ fn dispatch_ws_trading_message(
                 ts_init,
             );
         }
+        BinanceSpotWsTradingMessage::ListStatus(status) => {
+            dispatch_list_status(
+                &status,
+                emitter,
+                account_id,
+                dispatch_state,
+                clock.get_time_ns(),
+            );
+        }
         BinanceSpotWsTradingMessage::AccountPosition(position) => {
             let ts_init = clock.get_time_ns();
             match parse_spot_account_position(&position, account_id, ts_init) {
@@ -2856,6 +2864,143 @@ fn prepare_cancel_order(
         order_list,
     });
     Ok(())
+}
+
+fn dispatch_list_status(
+    status: &BinanceSpotListStatus,
+    emitter: &ExecutionEventEmitter,
+    account_id: AccountId,
+    state: &WsDispatchState,
+    ts_init: UnixNanos,
+) {
+    let Ok(ts_event) = parse_micros(status.transaction_time_us, "list transaction time") else {
+        return;
+    };
+
+    let executing = status.list_status_type == SbeListStatusType::ExecStarted
+        && status.list_order_status == SbeListOrderStatus::Executing;
+    let rejected = status.list_status_type == SbeListStatusType::Response
+        && status.list_order_status == SbeListOrderStatus::Reject
+        && !status.reject_reason.trim().is_empty()
+        && status.reject_reason != "NONE";
+
+    if !executing && !rejected {
+        return;
+    }
+
+    for child in &status.orders {
+        let Ok(client_order_id) =
+            decode_client_order_id(&child.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)
+        else {
+            continue;
+        };
+
+        let identity = state
+            .order_identities
+            .get(&client_order_id)
+            .map(|entry| entry.clone());
+
+        let Some(identity) = identity else {
+            continue;
+        };
+
+        if identity.instrument_id.symbol.as_str() != child.symbol.as_str() {
+            log::warn!(
+                "Ignoring list {} child {client_order_id} with mismatched instrument",
+                status.order_list_id
+            );
+            continue;
+        }
+
+        if rejected {
+            reject_spot_list_child(
+                emitter,
+                state,
+                account_id,
+                client_order_id,
+                &status.reject_reason,
+                ts_event,
+                ts_init,
+            );
+            continue;
+        }
+
+        let venue_order_id = VenueOrderId::new(child.order_id.to_string());
+        if let Some(list) = state.order_lists.get(&client_order_id) {
+            if list.order_list_id != status.order_list_id || list.venue_order_id != venue_order_id {
+                log::warn!("Ignoring conflicting list identity for {client_order_id}");
+            }
+
+            continue;
+        }
+
+        let execution_report_seen =
+            state.has_emitted_accepted(&client_order_id) || state.has_filled(&client_order_id);
+        if !state.has_emitted_accepted(&client_order_id) {
+            state.insert_accepted(client_order_id);
+
+            let accepted = OrderAccepted::new(
+                emitter.trader_id(),
+                identity.strategy_id,
+                identity.instrument_id,
+                client_order_id,
+                venue_order_id,
+                account_id,
+                UUID4::new(),
+                ts_event,
+                ts_init,
+                false,
+            );
+            emitter.send_order_event(OrderEventAny::Accepted(accepted));
+        }
+
+        state.order_lists.insert(
+            client_order_id,
+            OrderListIdentity {
+                order_list_id: status.order_list_id,
+                venue_order_id,
+                execution_report_seen,
+            },
+        );
+    }
+}
+
+fn reject_spot_list_child(
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    account_id: AccountId,
+    client_order_id: ClientOrderId,
+    reason: &str,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) {
+    if state.has_emitted_accepted(&client_order_id) || state.has_filled(&client_order_id) {
+        return;
+    }
+
+    let Some((_, identity)) = state.order_identities.remove(&client_order_id) else {
+        return;
+    };
+
+    state
+        .pending_requests
+        .retain(|_, request| request.client_order_id != client_order_id);
+    state.cleanup_terminal(client_order_id);
+
+    let rejected = OrderRejected::new(
+        emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        client_order_id,
+        account_id,
+        Ustr::from(reason),
+        UUID4::new(),
+        ts_event,
+        ts_init,
+        false,
+        false,
+    );
+    emitter.send_order_event(OrderEventAny::Rejected(rejected));
 }
 
 fn dispatch_order_list_canceled(
@@ -3165,7 +3310,6 @@ async fn submit_spot_order_list(
 fn handle_spot_order_list_submit_error(
     event_emitter: &ExecutionEventEmitter,
     dispatch_state: &WsDispatchState,
-    trader_id: TraderId,
     account_id: AccountId,
     clock: &'static AtomicTime,
     orders: &[OrderAny],
@@ -3180,23 +3324,17 @@ fn handle_spot_order_list_submit_error(
             // request-scoped rejection or a proven unsent request applies to every child
             let ts_now = clock.get_time_ns();
             let reason = format!("submit-order-list-error: {}", sanitize_reason(&reason));
+
             for order in orders {
-                let client_order_id = order.client_order_id();
-                dispatch_state.cleanup_terminal(client_order_id);
-                let rejected = OrderRejected::new(
-                    trader_id,
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    client_order_id,
+                reject_spot_list_child(
+                    event_emitter,
+                    dispatch_state,
                     account_id,
-                    reason.clone().into(),
-                    UUID4::new(),
+                    order.client_order_id(),
+                    &reason,
                     ts_now,
                     ts_now,
-                    false,
-                    false,
                 );
-                event_emitter.send_order_event(OrderEventAny::Rejected(rejected));
             }
         }
     }
@@ -3528,6 +3666,17 @@ fn dispatch_tracked_execution_report(
                 None
             };
 
+            let first_list_report =
+                state
+                    .order_lists
+                    .get_mut(&client_order_id)
+                    .is_some_and(|mut list| {
+                        let first =
+                            !list.execution_report_seen && list.venue_order_id == venue_order_id;
+                        list.execution_report_seen = true;
+                        first
+                    });
+
             let changed = !identity.is_quote_quantity
                 && state.record_order_update(
                     client_order_id,
@@ -3538,7 +3687,7 @@ fn dispatch_tracked_execution_report(
                 );
 
             if state.has_emitted_accepted(&client_order_id) {
-                if !changed {
+                if !changed || first_list_report {
                     return;
                 }
                 let updated = OrderUpdated::new(
@@ -4526,6 +4675,569 @@ mod tests {
             },
         );
         dispatch_state
+    }
+
+    fn create_list_status_state(status: &BinanceSpotListStatus) -> (Cache, WsDispatchState) {
+        let mut cache = Cache::default();
+        let state = WsDispatchState::default();
+
+        for child in &status.orders {
+            let client_order_id = ClientOrderId::from(child.client_order_id.as_str());
+            let mut order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(TraderId::from("TESTER-001"))
+                .strategy_id(StrategyId::from("TEST-STRATEGY"))
+                .client_order_id(client_order_id)
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("0.001000"))
+                .price(Price::from("50000.00"))
+                .build();
+            order
+                .apply(TestOrderEventStubs::submitted(
+                    &order,
+                    AccountId::from("BINANCE-001"),
+                ))
+                .unwrap();
+            state.order_identities.insert(
+                client_order_id,
+                OrderIdentity {
+                    instrument_id: order.instrument_id(),
+                    strategy_id: order.strategy_id(),
+                    order_side: order.order_side(),
+                    order_type: order.order_type(),
+                    price: order.price(),
+                    quantity: order.quantity(),
+                    is_quote_quantity: false,
+                    venue_position_id: None,
+                },
+            );
+
+            cache.add_order(order, None, None, false).unwrap();
+        }
+
+        (cache, state)
+    }
+
+    fn list_status_fixture(rejected: bool) -> BinanceSpotListStatus {
+        let name = if rejected { "rejected" } else { "executing" };
+        let bytes = crate::common::testing::load_fixture_bytes(&format!(
+            "spot/user_data_sbe/list_status_{name}.sbe"
+        ));
+        crate::spot::websocket::trading::decode_sbe::decode_list_status(&bytes).unwrap()
+    }
+
+    #[rstest]
+    #[case::list_before_report(false)]
+    #[case::report_before_list(true)]
+    fn test_dispatch_list_status_acceptance_ordering(
+        #[case] report_first: bool,
+        #[values(false, true)] filled: bool,
+    ) {
+        let status = list_status_fixture(false);
+        let (mut cache, state) = create_list_status_state(&status);
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let client = create_test_http_client(clock);
+        let account_id = AccountId::from("BINANCE-001");
+        let ts_init = UnixNanos::from(1_734_300_000_999_888_000u64);
+        let seen = Arc::new(Mutex::new(FifoCache::new()));
+        let json = crate::common::testing::load_fixture_string(
+            "spot/user_data_json/execution_report_new.json",
+        );
+
+        let reports: Vec<_> = status
+            .orders
+            .iter()
+            .map(|child| {
+                let mut report: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+                report.symbol = child.symbol;
+                report.order_id = child.order_id;
+                report.client_order_id = child.client_order_id.clone();
+                report.original_qty = "0.001000".to_owned();
+                report.price = "50000.00".to_owned();
+                report.stop_price = "0".to_owned();
+                report
+            })
+            .collect();
+
+        let dispatch = |report: &BinanceSpotExecutionReport| {
+            dispatch_execution_report(
+                report, &emitter, &client, account_id, false, &state, &seen, ts_init,
+            );
+        };
+
+        if report_first {
+            dispatch(&reports[0]);
+        }
+
+        dispatch_list_status(&status, &emitter, account_id, &state, ts_init);
+        dispatch_list_status(&status, &emitter, account_id, &state, ts_init);
+
+        for report in &reports {
+            dispatch(report);
+            dispatch(report);
+        }
+
+        for (index, report) in reports.iter().enumerate() {
+            let mut terminal = report.clone();
+
+            terminal.execution_type = if filled {
+                BinanceSpotExecutionType::Trade
+            } else {
+                BinanceSpotExecutionType::Canceled
+            };
+
+            terminal.order_status = if filled {
+                BinanceOrderStatus::Filled
+            } else {
+                BinanceOrderStatus::Canceled
+            };
+
+            terminal.last_filled_qty = "0.001000".to_owned();
+            terminal.cumulative_filled_qty = "0.001000".to_owned();
+            terminal.last_filled_price = "50000.00".to_owned();
+            terminal.trade_id = 9000 + index as i64;
+            terminal.commission = "0.00000100".to_owned();
+            terminal.commission_asset = Some(Ustr::from("BTC"));
+            dispatch(&terminal);
+        }
+
+        dispatch_list_status(&status, &emitter, account_id, &state, ts_init);
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 4);
+
+        for (index, event) in events.iter().enumerate() {
+            let ExecutionEvent::Order(event) = event else {
+                panic!("Expected order event");
+            };
+
+            if index < 2 {
+                let OrderEventAny::Accepted(accepted) = event else {
+                    panic!("Expected acceptance");
+                };
+
+                assert_eq!(
+                    accepted.client_order_id.as_str(),
+                    status.orders[index].client_order_id
+                );
+                assert_eq!(
+                    accepted.venue_order_id.as_str(),
+                    status.orders[index].order_id.to_string()
+                );
+                assert_eq!(accepted.account_id, account_id);
+                assert_eq!(accepted.trader_id, TraderId::from("TESTER-001"));
+                assert_eq!(accepted.ts_init, ts_init);
+                assert_eq!(
+                    accepted.ts_event,
+                    if report_first && index == 0 {
+                        UnixNanos::from_millis_checked(reports[0].event_time).unwrap()
+                    } else {
+                        UnixNanos::from_micros_checked(status.transaction_time_us).unwrap()
+                    }
+                );
+                assert_eq!(accepted.strategy_id, StrategyId::from("TEST-STRATEGY"));
+                assert_eq!(
+                    accepted.instrument_id,
+                    InstrumentId::from("BTCUSDT.BINANCE")
+                );
+                assert!(!accepted.reconciliation);
+            } else {
+                assert_eq!(
+                    event.client_order_id().as_str(),
+                    status.orders[index - 2].client_order_id
+                );
+                assert!(matches!(event, OrderEventAny::Filled(_)) == filled);
+            }
+
+            cache.update_order(event).unwrap();
+        }
+
+        for child in &status.orders {
+            let cid = ClientOrderId::from(child.client_order_id.as_str());
+            let venue_id = VenueOrderId::from(child.order_id.to_string());
+            let order = cache.order(&cid).unwrap();
+            assert_eq!(
+                order.status(),
+                if filled {
+                    OrderStatus::Filled
+                } else {
+                    OrderStatus::Canceled
+                }
+            );
+            assert_eq!(order.venue_order_id(), Some(venue_id));
+            assert_eq!(order.account_id(), Some(account_id));
+            assert_eq!(cache.client_order_id(&venue_id), Some(&cid));
+            assert!(!state.has_emitted_accepted(&cid));
+            assert!(!state.has_filled(&cid));
+        }
+
+        assert!(state.order_identities.is_empty());
+        assert!(state.order_lists.is_empty());
+        assert!(state.pending_requests.is_empty());
+    }
+
+    #[rstest]
+    #[case::list_first(false)]
+    #[case::http_first(true)]
+    fn test_dispatch_list_status_rejection_once(#[case] http_first: bool) {
+        let status = list_status_fixture(true);
+        let (mut cache, state) = create_list_status_state(&status);
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+
+        let orders: Vec<_> = status
+            .orders
+            .iter()
+            .map(|child| {
+                cache
+                    .order(&ClientOrderId::from(child.client_order_id.as_str()))
+                    .unwrap()
+                    .clone()
+            })
+            .collect();
+
+        for child in &status.orders {
+            state.pending_requests.insert(
+                child.client_order_id.clone(),
+                PendingRequest {
+                    client_order_id: ClientOrderId::from(child.client_order_id.as_str()),
+                    venue_order_id: None,
+                    operation: PendingOperation::Place,
+                },
+            );
+        }
+
+        let http_reject = || {
+            let error = BinanceSpotHttpError::BinanceError {
+                code: -2010,
+                message: "INSUFFICIENT_BALANCES".to_owned(),
+                status: 400,
+                retry_after: None,
+            };
+
+            assert!(
+                handle_spot_order_list_submit_error(
+                    &emitter,
+                    &state,
+                    AccountId::from("BINANCE-001"),
+                    clock,
+                    &orders,
+                    error
+                )
+                .is_err()
+            );
+        };
+
+        if http_first {
+            http_reject();
+        }
+
+        for _ in 0..2 {
+            dispatch_list_status(
+                &status,
+                &emitter,
+                AccountId::from("BINANCE-001"),
+                &state,
+                clock.get_time_ns(),
+            );
+        }
+
+        if !http_first {
+            http_reject();
+        }
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 2);
+
+        for (index, event) in events.iter().enumerate() {
+            let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+                panic!("Expected rejection");
+            };
+
+            assert_eq!(
+                rejected.client_order_id.as_str(),
+                status.orders[index].client_order_id
+            );
+            assert_eq!(
+                rejected.reason.as_str(),
+                if http_first {
+                    "submit-order-list-error: Binance error -2010 (HTTP 400): INSUFFICIENT_BALANCES"
+                } else {
+                    "INSUFFICIENT_BALANCES"
+                }
+            );
+            assert_eq!(rejected.trader_id, TraderId::from("TESTER-001"));
+            assert_eq!(rejected.strategy_id, StrategyId::from("TEST-STRATEGY"));
+            assert_eq!(
+                rejected.instrument_id,
+                InstrumentId::from("BTCUSDT.BINANCE")
+            );
+            assert_eq!(rejected.account_id, AccountId::from("BINANCE-001"));
+            assert!(!rejected.reconciliation);
+            assert!(!rejected.due_post_only);
+            cache
+                .update_order(&OrderEventAny::Rejected(rejected.clone()))
+                .unwrap();
+        }
+
+        for child in &status.orders {
+            assert_eq!(
+                cache
+                    .order(&ClientOrderId::from(child.client_order_id.as_str()))
+                    .unwrap()
+                    .status(),
+                OrderStatus::Rejected
+            );
+        }
+
+        assert!(state.order_identities.is_empty());
+        assert!(state.pending_requests.is_empty());
+        assert!(state.order_lists.is_empty());
+    }
+
+    #[rstest]
+    fn test_dispatch_list_status_untracked_and_aggregate_terminal() {
+        let mut status = list_status_fixture(false);
+        let (_cache, state) = create_list_status_state(&status);
+        let first = ClientOrderId::from(status.orders[0].client_order_id.as_str());
+        let second = ClientOrderId::from(status.orders[1].client_order_id.as_str());
+        state.order_identities.remove(&second);
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+        status.list_status_type = SbeListStatusType::AllDone;
+        status.list_order_status = SbeListOrderStatus::AllDone;
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+        status.list_status_type = SbeListStatusType::Response;
+        status.list_order_status = SbeListOrderStatus::Reject;
+        status.reject_reason = "INSUFFICIENT_BALANCES".to_owned();
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], ExecutionEvent::Order(OrderEventAny::Accepted(event)) if event.client_order_id == first)
+        );
+        assert!(state.order_identities.contains_key(&first));
+        assert!(!state.order_identities.contains_key(&second));
+        assert_eq!(state.order_lists.len(), 1);
+    }
+
+    #[rstest]
+    fn test_dispatch_list_status_rejection_after_execution_report() {
+        let status = list_status_fixture(true);
+        let (mut cache, state) = create_list_status_state(&status);
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let client = create_test_http_client(clock);
+        let seen = Arc::new(Mutex::new(FifoCache::new()));
+        let json = crate::common::testing::load_fixture_string(
+            "spot/user_data_json/execution_report_new.json",
+        );
+        let first = &status.orders[0];
+        let mut report: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        report.symbol = first.symbol;
+        report.order_id = first.order_id;
+        report.client_order_id = first.client_order_id.clone();
+        report.execution_type = BinanceSpotExecutionType::Rejected;
+        report.order_status = BinanceOrderStatus::Rejected;
+        report.reject_reason = "INSUFFICIENT_BALANCES".to_owned();
+        dispatch_execution_report(
+            &report,
+            &emitter,
+            &client,
+            AccountId::from("BINANCE-001"),
+            false,
+            &state,
+            &seen,
+            clock.get_time_ns(),
+        );
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 2);
+
+        for (index, event) in events.iter().enumerate() {
+            let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+                panic!("Expected rejection");
+            };
+
+            assert_eq!(
+                rejected.client_order_id.as_str(),
+                status.orders[index].client_order_id
+            );
+            assert_eq!(rejected.reason.as_str(), "INSUFFICIENT_BALANCES");
+            cache
+                .update_order(&OrderEventAny::Rejected(rejected.clone()))
+                .unwrap();
+        }
+
+        assert!(state.order_identities.is_empty());
+        assert!(state.order_lists.is_empty());
+        assert!(state.pending_requests.is_empty());
+
+        for child in &status.orders {
+            assert_eq!(
+                cache
+                    .order(&ClientOrderId::from(child.client_order_id.as_str()))
+                    .unwrap()
+                    .status(),
+                OrderStatus::Rejected
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_list_status_acceptance_survives_fifo_turnover() {
+        let status = list_status_fixture(false);
+        let (_cache, state) = create_list_status_state(&status);
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+
+        for index in 0..10_001 {
+            state.insert_accepted(ClientOrderId::from(format!("unrelated-{index}")));
+        }
+
+        for child in &status.orders {
+            let cid = ClientOrderId::from(child.client_order_id.as_str());
+            let identity = state.order_identities.get(&cid).unwrap().clone();
+            ensure_accepted_emitted(
+                cid,
+                AccountId::from("BINANCE-001"),
+                VenueOrderId::from(child.order_id.to_string()),
+                &identity,
+                &emitter,
+                &state,
+                clock.get_time_ns(),
+            );
+        }
+
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+
+        for child in &status.orders {
+            let cid = ClientOrderId::from(child.client_order_id.as_str());
+            assert!(state.has_emitted_accepted(&cid));
+            let list = state.order_lists.get(&cid).unwrap();
+            assert_eq!(list.order_list_id, status.order_list_id);
+            assert_eq!(list.venue_order_id.as_str(), child.order_id.to_string());
+            assert!(!list.execution_report_seen);
+        }
+
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 2);
+
+        for (index, event) in events.iter().enumerate() {
+            assert!(
+                matches!(event, ExecutionEvent::Order(OrderEventAny::Accepted(event)) if event.client_order_id.as_str() == status.orders[index].client_order_id)
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_list_status_preserves_replacement_update() {
+        let status = list_status_fixture(false);
+        let (mut cache, state) = create_list_status_state(&status);
+        let clock = get_atomic_clock_realtime();
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let client = create_test_http_client(clock);
+        let seen = Arc::new(Mutex::new(FifoCache::new()));
+        dispatch_list_status(
+            &status,
+            &emitter,
+            AccountId::from("BINANCE-001"),
+            &state,
+            clock.get_time_ns(),
+        );
+        let json = crate::common::testing::load_fixture_string(
+            "spot/user_data_json/execution_report_new.json",
+        );
+        let child = &status.orders[0];
+        let mut report: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        report.client_order_id = child.client_order_id.clone();
+        report.symbol = child.symbol;
+        report.order_id = child.order_id + 1;
+        report.original_qty = "0.002000".to_owned();
+        report.price = "49999.00".to_owned();
+        report.stop_price = "0".to_owned();
+        dispatch_execution_report(
+            &report,
+            &emitter,
+            &client,
+            AccountId::from("BINANCE-001"),
+            false,
+            &state,
+            &seen,
+            clock.get_time_ns(),
+        );
+        let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert_eq!(events.len(), 3);
+
+        for event in &events {
+            let ExecutionEvent::Order(event) = event else {
+                panic!("Expected order event");
+            };
+
+            cache.update_order(event).unwrap();
+        }
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = &events[2] else {
+            panic!("Expected replacement update");
+        };
+
+        assert_eq!(updated.client_order_id.as_str(), child.client_order_id);
+        assert_eq!(updated.quantity, Quantity::from("0.002000"));
+        assert_eq!(updated.price, Some(Price::from("49999.00")));
+        assert_eq!(
+            updated.venue_order_id,
+            Some(VenueOrderId::from(report.order_id.to_string()))
+        );
+        let order = cache.order(&updated.client_order_id).unwrap();
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), updated.quantity);
+        assert_eq!(order.price(), updated.price);
+        assert_eq!(order.venue_order_id(), updated.venue_order_id);
     }
 
     fn create_cancel_order_list_response(

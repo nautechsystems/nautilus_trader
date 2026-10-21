@@ -444,6 +444,11 @@ Spot is unaffected. See the Binance
 | Bracket orders     | -    | -            | -            | *Planned*. Currently denied at submission.   |
 | Conditional orders | ✓    | ✓            | ✓            | Stop and market-if-touched orders.           |
 
+For Binance Global Spot, SBE list-status events supply a missing `OrderAccepted` with the venue order ID
+for tracked children when a list starts executing. A list rejection with a venue reason supplies
+`OrderRejected` for children that have not been accepted or filled. Child execution reports drive fills,
+cancellations, expirations, and other terminal states.
+
 ### Order parameters
 
 Customize individual orders by supplying a `params` dictionary when calling

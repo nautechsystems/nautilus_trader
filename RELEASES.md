@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `Money::from_decimal_exact` and `Money::from_str_exact` for fractional amounts beyond currency precision
 - Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
 - Added accumulation of fractional `Money` commissions beyond currency precision
+- Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
