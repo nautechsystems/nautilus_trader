@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
+- Added Lighter self-trade behavior and account-scope order params with explicit defaults
 - Added OKX trading-account bills and archive queries (#5352), thanks @silarin
 - Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
 
@@ -43,6 +44,8 @@ Released on TBD (UTC).
 - Changed Interactive Brokers magnified price units; follow the adapter upgrade guide (#5322), thanks @chaneyka1
 - Changed Interactive Brokers execution config literals; add `base_currency: None` (#5322), thanks @chaneyka1
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
+- Changed Lighter `compute_tx_hash` and `sign_tx` to return `Result`; handle invalid transaction attributes
+- Changed Lighter `L2TxAttributes` literals; add the new fields or use `..Default::default()`
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
 

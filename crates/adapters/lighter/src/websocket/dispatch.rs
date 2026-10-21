@@ -114,6 +114,7 @@ struct OrderIdentityBinding {
     trigger_price: Option<Price>,
     publication: Option<OrderPublication>,
     child_fills: Option<ChildFillBaseline>,
+    reduced_qty: Decimal,
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +210,17 @@ impl OrderIdentity {
         }
 
         shape
+    }
+
+    pub(crate) fn reduced_qty(&self) -> Decimal {
+        self.binding.lock().reduced_qty
+    }
+
+    pub(crate) fn record_reduction(&self, quantity: Decimal) {
+        let mut binding = self.binding.lock();
+
+        // Older HTTP snapshots cannot undo cumulative self-trade reductions
+        binding.reduced_qty = binding.reduced_qty.max(quantity);
     }
 
     pub(crate) fn child_fill_baseline(&self) -> Option<ChildFillBaseline> {
@@ -1971,6 +1983,19 @@ impl WsDispatchState {
         }
 
         self.retired_orders.cloid_for_venue(index, venue_order_id)
+    }
+
+    pub(crate) fn record_order_reduction(
+        &self,
+        index: i64,
+        venue_order_id: VenueOrderId,
+        quantity: Decimal,
+    ) {
+        if let Some(cloid) = self.resolve_client_order_index_for_venue(index, venue_order_id)
+            && let Some(identity) = self.order_identity(&cloid)
+        {
+            identity.record_reduction(quantity);
+        }
     }
 
     /// Substitute a numeric venue cloid only when its venue order is bound.

@@ -53,6 +53,10 @@ TX_TYPE_L2_APPROVE_INTEGRATOR = 45
 GROUPING_TYPE_OTO = 1
 GROUPING_TYPE_OCO = 2
 GROUPING_TYPE_OTOCO = 3
+SELF_TRADE_BEHAVIOR_EXPIRE_MAKER = 0
+SELF_TRADE_BEHAVIOR_REDUCE = 3
+SELF_TRADE_EQUALITY_ACCOUNT_INDEX = 0
+SELF_TRADE_EQUALITY_MASTER_ACCOUNT_INDEX = 1
 
 
 class SignedTxResponse(ctypes.Structure):
@@ -316,8 +320,8 @@ def gen_create_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         fields["integrator_account_index"],
         fields["integrator_taker_fee"],
         fields["integrator_maker_fee"],
-        0,  # default self-trade behavior: expire maker
-        0,  # default self-trade equality: account index
+        fields.get("self_trade_behavior_mode", SELF_TRADE_BEHAVIOR_EXPIRE_MAKER),
+        fields.get("self_trade_equality_mode", SELF_TRADE_EQUALITY_ACCOUNT_INDEX),
         fields["skip_nonce"],
         ctx["nonce"],
         ctx["api_key_index"],
@@ -354,8 +358,8 @@ def gen_modify_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         fields["integrator_account_index"],
         fields["integrator_taker_fee"],
         fields["integrator_maker_fee"],
-        0,  # default self-trade behavior: expire maker
-        0,  # default self-trade equality: account index
+        fields.get("self_trade_behavior_mode", SELF_TRADE_BEHAVIOR_EXPIRE_MAKER),
+        fields.get("self_trade_equality_mode", SELF_TRADE_EQUALITY_ACCOUNT_INDEX),
         fields["skip_nonce"],
         ctx["nonce"],
         0,  # NIL_ORDER_VERSION: not a hash element, selects unversioned modify
@@ -587,6 +591,11 @@ def main() -> int:
         help="optional output path for the auth-token oracle fixture",
     )
     parser.add_argument("--grouped-out", type=Path, help="optional grouped-order oracle fixture")
+    parser.add_argument(
+        "--self-trade-out",
+        type=Path,
+        help="optional self-trade attribute oracle fixture",
+    )
     args = parser.parse_args()
 
     lib = setup_lib(args.signer)
@@ -636,6 +645,22 @@ def main() -> int:
         json.dump(payload, f, indent=2)
         f.write("\n")
     print(f"wrote {len(vectors)} vectors to {args.out}")
+
+    if args.self_trade_out is not None:
+        create_fields = next(v["fields"] for v in vectors if v["kind"] == "create_order")
+        self_trade_payload = {
+            **payload,
+            "vectors": build_self_trade_vectors(lib, base_ctx, create_fields),
+        }
+        args.self_trade_out.parent.mkdir(parents=True, exist_ok=True)
+        args.self_trade_out.write_text(
+            json.dumps(self_trade_payload, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(
+            f"wrote {len(self_trade_payload['vectors'])} self-trade vectors "
+            f"to {args.self_trade_out}",
+        )
 
     if args.grouped_out is not None:
         payload["vectors"] = build_grouped_tx_vectors(lib, base_ctx)
@@ -1085,6 +1110,33 @@ def build_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     )
 
     vectors.extend(_widened_tx_vectors(lib, base_ctx, create_fields, modify_fields))
+
+    return vectors
+
+
+def build_self_trade_vectors(lib: ctypes.CDLL, base_ctx: dict, create_fields: dict) -> list[dict]:
+    """
+    Generate every permitted self-trade attribute pair with zero integrator fees.
+    """
+    vectors: list[dict] = []
+    for behavior in range(SELF_TRADE_BEHAVIOR_REDUCE + 1):
+        for equality in range(SELF_TRADE_EQUALITY_MASTER_ACCOUNT_INDEX + 1):
+            if (
+                behavior == SELF_TRADE_BEHAVIOR_REDUCE
+                and equality == SELF_TRADE_EQUALITY_MASTER_ACCOUNT_INDEX
+            ):
+                continue
+            for integrator in (0, 723_813):
+                fields = {
+                    **create_fields,
+                    "integrator_account_index": integrator,
+                    "self_trade_behavior_mode": behavior,
+                    "self_trade_equality_mode": equality,
+                }
+                ctx = {**base_ctx, "nonce": 50 + len(vectors)}
+                vectors.append(
+                    build_vector("create_order", ctx, fields, gen_create_order(lib, ctx, fields)),
+                )
 
     return vectors
 

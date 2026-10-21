@@ -682,6 +682,54 @@ pub enum LighterGroupingType {
     OneTriggersOneCancelsTheOther = 3,
 }
 
+/// Lighter's action when an order would self-trade.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumString,
+    Serialize_repr,
+    Deserialize_repr,
+)]
+#[repr(u8)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+pub enum LighterSelfTradeBehaviorMode {
+    #[default]
+    ExpireMaker = 0,
+    ExpireTaker = 1,
+    CancelBoth = 2,
+    Reduce = 3,
+}
+
+/// Lighter's account scope for self-trade prevention.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumString,
+    Serialize_repr,
+    Deserialize_repr,
+)]
+#[repr(u8)]
+#[strum(serialize_all = "snake_case", ascii_case_insensitive)]
+pub enum LighterSelfTradeEqualityMode {
+    #[default]
+    AccountIndex = 0,
+    MasterAccountIndex = 1,
+}
+
 /// Lighter cancel-all-orders time-in-force.
 #[derive(
     Copy, Clone, Debug, Display, PartialEq, Eq, Hash, AsRefStr, Serialize_repr, Deserialize_repr,

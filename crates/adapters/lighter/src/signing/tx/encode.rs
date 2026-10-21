@@ -58,22 +58,25 @@ pub const TX_HASH_BYTES: usize = 40;
 /// are populated; otherwise returns the body hash directly. The 40-byte LE
 /// encoding is the venue-side `tx_hash` and the message [`PrivateKey::sign`]
 /// consumes.
-#[must_use]
-pub fn compute_tx_hash<T: LighterTx>(tx: &T, chain_id: u32) -> [u8; TX_HASH_BYTES] {
-    compute_tx_hash_fp5(tx, chain_id).to_le_bytes()
+///
+/// # Errors
+///
+/// Returns an error if the transaction attributes violate venue restrictions.
+pub fn compute_tx_hash<T: LighterTx>(tx: &T, chain_id: u32) -> anyhow::Result<[u8; TX_HASH_BYTES]> {
+    Ok(compute_tx_hash_fp5(tx, chain_id)?.to_le_bytes())
 }
 
-fn compute_tx_hash_fp5<T: LighterTx>(tx: &T, chain_id: u32) -> Fp5 {
+fn compute_tx_hash_fp5<T: LighterTx>(tx: &T, chain_id: u32) -> anyhow::Result<Fp5> {
+    let attrs = tx.attributes();
+    let pairs = attrs.normalized_pairs()?;
     let body_elems = tx.hash_elements(chain_id);
     let body_digest = hash_to_quintic_extension(&body_elems);
-
-    let attrs = tx.attributes();
     if attrs.is_empty() {
-        return body_digest;
+        return Ok(body_digest);
     }
 
-    let attr_digest = hash_attributes(&attrs);
-    hash_two_to_quintic(body_digest, attr_digest)
+    let attr_digest = hash_attributes(&pairs);
+    Ok(hash_two_to_quintic(body_digest, attr_digest))
 }
 
 /// Hash the attribute table into an `Fp5` digest.
@@ -81,8 +84,7 @@ fn compute_tx_hash_fp5<T: LighterTx>(tx: &T, chain_id: u32) -> Fp5 {
 /// Mirrors `txtypes.L2TxAttributes.Hash`: emit the normalized
 /// `(type, value)` pairs over [`NB_ATTRIBUTES_PER_TX`] slots, then run the
 /// length-2N preimage through [`hash_to_quintic_extension`].
-fn hash_attributes(attrs: &L2TxAttributes) -> Fp5 {
-    let pairs = attrs.normalized_pairs();
+fn hash_attributes(pairs: &[(u8, u64); NB_ATTRIBUTES_PER_TX]) -> Fp5 {
     let mut elems = [Fp::ZERO; NB_ATTRIBUTES_PER_TX * 2];
     for (i, (ty, val)) in pairs.iter().enumerate() {
         elems[i * 2] = Fp::from_u64_reduce(u64::from(*ty));
@@ -97,20 +99,23 @@ fn hash_attributes(attrs: &L2TxAttributes) -> Fp5 {
 /// `k` MUST be drawn from a cryptographic RNG and used at most once per key;
 /// see [`PrivateKey::sign`] for the full nonce contract. The wire signature is
 /// laid out as `s_le || e_le`.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error if the transaction attributes violate venue restrictions.
 pub fn sign_tx<T: LighterTx>(
     tx: &T,
     chain_id: u32,
     sk: &PrivateKey,
     k: crate::signing::curve::Scalar,
-) -> SignedTx {
-    let hashed_msg = compute_tx_hash_fp5(tx, chain_id);
+) -> anyhow::Result<SignedTx> {
+    let hashed_msg = compute_tx_hash_fp5(tx, chain_id)?;
     let sig = sk.sign(hashed_msg, k);
-    SignedTx {
+    Ok(SignedTx {
         tx_hash: hashed_msg.to_le_bytes(),
         sig,
         sig_bytes: sig.to_le_bytes(),
-    }
+    })
 }
 
 /// Outcome of [`sign_tx`]: the deterministic message hash plus the
@@ -140,9 +145,8 @@ impl SignedTx {
 
 /// JSON renderer for the L2 tx_info wire payload.
 ///
-/// Field order and base64-encoded `Sig` match the upstream Go marshaling so
-/// the resulting string is byte-equivalent (modulo the random `Sig`) to what
-/// the closed signer emits, and is what the sequencer expects on `sendTx`.
+/// Field order and base64-encoded `Sig` match upstream Go marshaling for `sendTx`.
+/// Unlike the official signer, explicit nil-valued attributes remain in JSON.
 #[derive(Debug)]
 pub struct TxInfoJson;
 
@@ -346,10 +350,14 @@ fn write_sig(out: &mut String, signed: &SignedTx) {
     out.push_str("\",");
 }
 
-// Match upstream marshaling: nil-valued attributes are omitted, and a fully
-// empty Create/Modify attribute map is encoded as null.
+// Explicit optional attributes stay on the wire even when nil for hashing,
+// a map without any entries is encoded as null.
 fn write_attributes_with_integrator(out: &mut String, attrs: &L2TxAttributes) {
-    if attrs.is_empty() {
+    if attrs.is_empty()
+        && attrs.self_trade_behavior_mode.is_none()
+        && attrs.self_trade_equality_mode.is_none()
+        && attrs.cancel_all_market_index.is_none()
+    {
         out.push_str("\"L2TxAttributes\":null");
         return;
     }
@@ -371,6 +379,19 @@ fn write_attributes_with_integrator(out: &mut String, attrs: &L2TxAttributes) {
     if attrs.skip_nonce != 0 {
         write_attr_pair(out, &mut first, "4", u64::from(attrs.skip_nonce));
     }
+
+    if let Some(index) = attrs.cancel_all_market_index {
+        write_attr_pair(out, &mut first, "5", index as u64);
+    }
+
+    if let Some(mode) = attrs.self_trade_behavior_mode {
+        write_attr_pair(out, &mut first, "6", u64::from(mode as u8));
+    }
+
+    if let Some(mode) = attrs.self_trade_equality_mode {
+        write_attr_pair(out, &mut first, "7", u64::from(mode as u8));
+    }
+
     out.push('}');
 }
 
@@ -477,7 +498,146 @@ mod tests {
             integrator_taker_fee: fields["integrator_taker_fee"].as_u64().unwrap_or(0) as u32,
             integrator_maker_fee: fields["integrator_maker_fee"].as_u64().unwrap_or(0) as u32,
             skip_nonce: fields["skip_nonce"].as_u64().unwrap_or(0) as u8,
+            cancel_all_market_index: None,
+            self_trade_behavior_mode: fields
+                .get("self_trade_behavior_mode")
+                .filter(|v| v.as_u64() != Some(0))
+                .map(|v| serde_json::from_value(v.clone()).unwrap()),
+            self_trade_equality_mode: fields
+                .get("self_trade_equality_mode")
+                .filter(|v| v.as_u64() != Some(0))
+                .map(|v| serde_json::from_value(v.clone()).unwrap()),
         }
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(0, 1)]
+    #[case(1, 0)]
+    #[case(1, 1)]
+    #[case(2, 0)]
+    #[case(2, 1)]
+    #[case(3, 0)]
+    fn self_trade_signer_matches_oracle(#[case] behavior: u64, #[case] equality: u64) {
+        let suite: OracleFile = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/signing_self_trade_tx_oracle.json",
+        )))
+        .unwrap();
+
+        let vectors: Vec<_> = suite
+            .vectors
+            .iter()
+            .filter(|v| {
+                v.fields["self_trade_behavior_mode"] == behavior
+                    && v.fields["self_trade_equality_mode"] == equality
+            })
+            .collect();
+
+        assert_eq!(vectors.len(), 2);
+
+        for vector in vectors {
+            let tx = expect_create_order(vector);
+            let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk));
+            let signed = signed_with_fixture_k(vector, &sk, |k| {
+                sign_tx(&tx, vector.chain_id, &sk, k).unwrap()
+            });
+
+            let json = TxInfoJson::create_order(&tx, &signed);
+
+            assert_hash_matches(&tx, vector);
+            assert_oracle_sig_verifies(&tx, vector);
+            assert_round_trip_sign(&tx, vector);
+            assert_eq!(redact_sig(&json), redact_sig(&vector.tx_info));
+        }
+    }
+
+    #[rstest]
+    #[case::without_integrator(false)]
+    #[case::with_integrator(true)]
+    fn explicit_self_trade_defaults_are_on_wire_but_not_in_hash(#[case] integrator: bool) {
+        let suite: OracleFile = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/signing_self_trade_tx_oracle.json",
+        )))
+        .unwrap();
+
+        let vector = suite
+            .vectors
+            .iter()
+            .find(|v| {
+                v.fields["self_trade_behavior_mode"] == 0
+                    && v.fields["self_trade_equality_mode"] == 0
+                    && (v.fields["integrator_account_index"].as_u64().unwrap() != 0) == integrator
+            })
+            .unwrap();
+
+        let mut tx = expect_create_order(vector);
+        tx.attributes.self_trade_behavior_mode = Some(Default::default());
+        tx.attributes.self_trade_equality_mode = Some(Default::default());
+        let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk));
+        let signed = signed_with_fixture_k(vector, &sk, |k| {
+            sign_tx(&tx, vector.chain_id, &sk, k).unwrap()
+        });
+
+        let json: serde_json::Value =
+            serde_json::from_str(&TxInfoJson::create_order(&tx, &signed)).unwrap();
+        let mut expected: serde_json::Value = serde_json::from_str(&vector.tx_info).unwrap();
+        if expected["L2TxAttributes"].is_null() {
+            expected["L2TxAttributes"] = serde_json::json!({});
+        }
+
+        expected["L2TxAttributes"]["6"] = serde_json::json!(0);
+        expected["L2TxAttributes"]["7"] = serde_json::json!(0);
+
+        assert_eq!(bytes_to_hex(&signed.tx_hash), vector.tx_hash);
+        assert_eq!(json["L2TxAttributes"], expected["L2TxAttributes"]);
+        assert_eq!(tx.attributes.is_empty(), !integrator);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(255)]
+    #[case(4098)]
+    fn cancel_all_market_attribute_json(#[case] index: i64) {
+        let attrs = L2TxAttributes {
+            cancel_all_market_index: Some(index),
+            ..Default::default()
+        };
+
+        let mut json = String::new();
+
+        write_attributes_with_integrator(&mut json, &attrs);
+
+        assert_eq!(json, format!("\"L2TxAttributes\":{{\"5\":{index}}}"));
+    }
+
+    #[rstest]
+    fn signing_rejects_invalid_self_trade_attributes() {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).unwrap();
+        let vector = &suite.vectors[0];
+        let mut tx = expect_create_order(vector);
+        tx.attributes.self_trade_behavior_mode =
+            Some(crate::common::enums::LighterSelfTradeBehaviorMode::Reduce);
+        tx.attributes.self_trade_equality_mode =
+            Some(crate::common::enums::LighterSelfTradeEqualityMode::MasterAccountIndex);
+        let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk));
+        let k = Scalar::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk));
+        let expected =
+            "Lighter reduce self-trade behavior cannot combine with master-account equality";
+
+        assert_eq!(
+            compute_tx_hash(&tx, vector.chain_id)
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+        assert_eq!(
+            sign_tx(&tx, vector.chain_id, &sk, k)
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
     }
 
     fn expect_create_order(v: &OracleVector) -> CreateOrderTxInfo {
@@ -559,7 +719,7 @@ mod tests {
     }
 
     fn assert_hash_matches<T: LighterTx>(tx: &T, v: &OracleVector) {
-        let got = compute_tx_hash(tx, v.chain_id);
+        let got = compute_tx_hash(tx, v.chain_id).unwrap();
         assert_eq!(
             bytes_to_hex(&got),
             v.tx_hash,
@@ -577,7 +737,7 @@ mod tests {
 
         let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
         let pk = sk.public_key();
-        let tx_hash = compute_tx_hash(tx, v.chain_id);
+        let tx_hash = compute_tx_hash(tx, v.chain_id).unwrap();
         let hashed = Fp5::try_from_le_bytes(tx_hash).expect("oracle hash must be canonical");
 
         assert!(
@@ -599,7 +759,7 @@ mod tests {
         assert!(!k.is_zero(), "{}: derived k must be non-zero", v.kind);
         assert!(k.is_canonical(), "{}: derived k must be canonical", v.kind,);
 
-        let signed = sign_tx(tx, v.chain_id, &sk, k);
+        let signed = sign_tx(tx, v.chain_id, &sk, k).unwrap();
         assert_eq!(
             bytes_to_hex(&signed.tx_hash),
             v.tx_hash,
@@ -692,13 +852,17 @@ mod tests {
             vector.chain_id,
             &PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk)),
             Scalar::ONE,
-        );
+        )
+        .unwrap();
         assert_eq!(
             redact_sig(&TxInfoJson::create_grouped_orders(&tx, &signed)),
             redact_sig(&vector.tx_info)
         );
         tx.orders.swap(0, 1);
-        assert_ne!(compute_tx_hash(&tx, vector.chain_id), signed.tx_hash);
+        assert_ne!(
+            compute_tx_hash(&tx, vector.chain_id).unwrap(),
+            signed.tx_hash
+        );
     }
 
     #[rstest]
@@ -803,7 +967,8 @@ mod tests {
         for v in suite.vectors.iter().filter(|v| v.kind == "create_order") {
             let tx = expect_create_order(v);
             let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let signed =
+                signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k).unwrap());
             let json = TxInfoJson::create_order(&tx, &signed);
             assert_eq!(
                 redact_sig(&json),
@@ -844,7 +1009,8 @@ mod tests {
         for v in suite.vectors.iter().filter(|v| v.kind == "cancel_order") {
             let tx = expect_cancel_order(v);
             let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let signed =
+                signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k).unwrap());
             let json = TxInfoJson::cancel_order(&tx, &signed);
             assert_eq!(
                 redact_sig(&json),
@@ -860,7 +1026,8 @@ mod tests {
         for v in suite.vectors.iter().filter(|v| v.kind == "modify_order") {
             let tx = expect_modify_order(v);
             let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let signed =
+                signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k).unwrap());
             let json = TxInfoJson::modify_order(&tx, &signed);
             assert_eq!(
                 redact_sig(&json),
@@ -900,7 +1067,8 @@ mod tests {
         {
             let tx = expect_cancel_all_orders(v);
             let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let signed =
+                signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k).unwrap());
             let json = TxInfoJson::cancel_all_orders(&tx, &signed);
             assert_eq!(
                 redact_sig(&json),
@@ -984,7 +1152,8 @@ mod tests {
         for v in suite.vectors.iter().filter(|v| v.kind == "update_leverage") {
             let tx = expect_update_leverage(v);
             let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let signed =
+                signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k).unwrap());
             let json = TxInfoJson::update_leverage(&tx, &signed);
             assert_eq!(
                 redact_sig(&json),
@@ -1004,7 +1173,8 @@ mod tests {
         {
             let tx = expect_approve_integrator(v);
             let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let signed =
+                signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k).unwrap());
             let json = TxInfoJson::approve_integrator(&tx, &signed, "");
             assert_eq!(
                 redact_sig(&json),
@@ -1073,6 +1243,7 @@ mod tests {
                     integrator_taker_fee,
                     integrator_maker_fee,
                     skip_nonce,
+                    ..Default::default()
                 }
             },
         )
@@ -1092,7 +1263,7 @@ mod tests {
         /// `compute_tx_hash` is deterministic over identical input.
         #[rstest]
         fn prop_compute_tx_hash_deterministic(tx in arb_create_order(), chain_id in any::<u32>()) {
-            prop_assert_eq!(compute_tx_hash(&tx, chain_id), compute_tx_hash(&tx, chain_id));
+            prop_assert_eq!(compute_tx_hash(&tx, chain_id).unwrap(), compute_tx_hash(&tx, chain_id).unwrap());
         }
 
         /// Empty attributes short-circuit through the body-only branch:
@@ -1104,7 +1275,7 @@ mod tests {
             chain_id in any::<u32>(),
         ) {
             tx.attributes = L2TxAttributes::default();
-            let from_pipeline = compute_tx_hash(&tx, chain_id);
+            let from_pipeline = compute_tx_hash(&tx, chain_id).unwrap();
             let from_body =
                 hash_to_quintic_extension(&tx.hash_elements(chain_id)).to_le_bytes();
             prop_assert_eq!(from_pipeline, from_body);
@@ -1127,8 +1298,9 @@ mod tests {
                 integrator_taker_fee: 0,
                 integrator_maker_fee: 0,
                 skip_nonce: 1,
+                ..Default::default()
             };
-            let from_pipeline = compute_tx_hash(&tx, chain_id);
+            let from_pipeline = compute_tx_hash(&tx, chain_id).unwrap();
             let expected = explicit_tx_hash(&tx, chain_id);
             prop_assert_eq!(from_pipeline, expected);
         }
@@ -1146,7 +1318,7 @@ mod tests {
         let result = if attrs.is_empty() {
             body_digest
         } else {
-            let pairs = attrs.normalized_pairs();
+            let pairs = attrs.normalized_pairs().unwrap();
             let mut elems = [Fp::from_u64_reduce(0); NB_ATTRIBUTES_PER_TX * 2];
             for (i, (ty, val)) in pairs.iter().enumerate() {
                 elems[i * 2] = Fp::from_u64_reduce(u64::from(*ty));
@@ -1309,7 +1481,7 @@ mod tests {
             tx in arb_create_order(),
             chain_id in any::<u32>(),
         ) {
-            prop_assert_eq!(compute_tx_hash(&tx, chain_id), explicit_tx_hash(&tx, chain_id));
+            prop_assert_eq!(compute_tx_hash(&tx, chain_id).unwrap(), explicit_tx_hash(&tx, chain_id));
         }
 
         /// `sign_tx` followed by `verify` succeeds for any well-formed
@@ -1323,11 +1495,11 @@ mod tests {
         ) {
             let private_key = PrivateKey::from_scalar(sk);
             let pk = private_key.public_key();
-            let signed = sign_tx(&tx, chain_id, &private_key, k);
+            let signed = sign_tx(&tx, chain_id, &private_key, k).unwrap();
 
             // Recomputing the hash through `compute_tx_hash` must match
             // the value returned by `sign_tx`.
-            prop_assert_eq!(signed.tx_hash, compute_tx_hash(&tx, chain_id));
+            prop_assert_eq!(signed.tx_hash, compute_tx_hash(&tx, chain_id).unwrap());
 
             let hashed = Fp5::try_from_le_bytes(signed.tx_hash)
                 .expect("tx hash must encode a canonical Fp5");
@@ -1350,7 +1522,7 @@ mod tests {
             skip_nonce: 1,
         };
         let sk = PrivateKey::from_le_bytes_reduce([0x42; SCALAR_BYTES]);
-        let signed = sign_tx(&tx, 300, &sk, Scalar::ONE);
+        let signed = sign_tx(&tx, 300, &sk, Scalar::ONE).unwrap();
         let json = TxInfoJson::cancel_order(&tx, &signed);
         assert!(
             json.ends_with(",\"L2TxAttributes\":{\"4\":1}}"),

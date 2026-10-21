@@ -51,7 +51,7 @@
 //! On Lighter Mainnet, create and modify order transactions from the execution client carry the
 //! NautilusTrader integrator account index in `L2TxAttributes` across all account tiers, including
 //! Standard. Maker and taker integrator fees are zero. Lighter Testnet and both Robinhood environments
-//! leave `L2TxAttributes` empty.
+//! omit integrator attributes.
 //!
 //! Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to
 //! Lighter Mainnet orders. During startup, the execution client submits the required zero-fee
