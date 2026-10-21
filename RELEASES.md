@@ -91,6 +91,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
+- Fixed Derive startup stalls when loading large instrument listings
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed Hyperliquid funding history truncation and latest-row limits (#5343), thanks @dxwil
 - Fixed Hyperliquid builder-fee commands treating invalid `HYPERLIQUID_TESTNET` values as mainnet
