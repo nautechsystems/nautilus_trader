@@ -107,6 +107,7 @@ Released on TBD (UTC).
 - Fixed Lighter read retries ignoring `Retry-After` response headers
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX external limit orders missing amendment confirmations
+- Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket auto-load retrying filter-rejected instruments and logging false missing-market errors
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails

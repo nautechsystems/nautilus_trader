@@ -92,6 +92,28 @@ if [ "$RUN_STATUS" -ne 0 ]; then
 fi
 rg -Fq "All DST conventions are valid" "$valid_case/output.txt"
 
+biased_case="$CASE_ROOT/biased"
+create_case "$biased_case"
+{
+  printf '%s\n' \
+    'pub async fn deterministic() {' \
+    '    tokio::select! {' \
+    '        biased;'
+  # Exceed the pipe buffer so an early grep match can interrupt the writer.
+  printf '        // %131072s\n' ''
+  printf '%s\n' \
+    '        _ = ready() => {}' \
+    '    }' \
+    '}'
+} > "$biased_case/crates/common/src/lib.rs"
+run_hook "$biased_case"
+if [ "$RUN_STATUS" -ne 0 ]; then
+  echo "Expected DST convention hook to accept biased select with a long following line"
+  cat "$biased_case/output.txt"
+  exit 1
+fi
+rg -Fq "All DST conventions are valid" "$biased_case/output.txt"
+
 invalid_case="$CASE_ROOT/invalid"
 create_case "$invalid_case"
 printf '%s\n' \

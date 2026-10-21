@@ -807,6 +807,15 @@ pub fn dispatch_ws_message(
                         if !is_ambiguous {
                             state.pending_cancels.remove(key);
                         }
+
+                        emit_send_failed_cancel(
+                            &failure,
+                            state,
+                            emitter,
+                            clock,
+                            client_order_id,
+                            None,
+                        );
                     }
                     Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
                         if !is_ambiguous {
@@ -2573,6 +2582,37 @@ fn emit_send_failed_modify(
     );
 }
 
+pub(crate) fn emit_send_failed_cancel(
+    failure: &CommandFailure,
+    state: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+) {
+    let (CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason)) = failure else {
+        return;
+    };
+
+    let Some(ident) = state.order_identity(client_order_id) else {
+        return;
+    };
+
+    let venue_order_id = state
+        .order_venue_binding(client_order_id)
+        .map(|(venue_order_id, _)| venue_order_id)
+        .or(venue_order_id);
+
+    emitter.emit_order_cancel_rejected_event(
+        ident.strategy_id,
+        ident.instrument_id,
+        client_order_id,
+        venue_order_id,
+        reason,
+        clock.get_time_ns(),
+    );
+}
+
 #[derive(Debug, Clone)]
 pub struct AlgoCancelContext {
     pub client_order_id: ClientOrderId,
@@ -2679,6 +2719,7 @@ mod tests {
         orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Price, Quantity},
     };
+    use nautilus_network::error::SendError;
     use rstest::rstest;
 
     use super::*;
@@ -4472,6 +4513,171 @@ mod tests {
                 assert!(!state.order_identities.contains_key(&client_order_id));
                 assert!(!state.order_contexts.contains_key(&client_order_id));
             }
+        }
+    }
+
+    #[rstest]
+    fn cancel_send_failure_prefers_current_venue_binding() {
+        let state = WsDispatchState::default();
+        let client_order_id = ClientOrderId::from("O-rebound-cancel");
+        let identity = test_algo_context(client_order_id).identity;
+        state.order_identities.insert(client_order_id, identity);
+        state.bind_order(client_order_id, VenueOrderId::from("current-venue"));
+        let (emitter, mut receiver) = test_execution_emitter();
+
+        emit_send_failed_cancel(
+            &CommandFailure::NotSent("handler closed".to_string()),
+            &state,
+            &emitter,
+            get_atomic_clock_realtime(),
+            client_order_id,
+            Some(VenueOrderId::from("stale-venue")),
+        );
+        let events = drain_execution_events(&mut receiver);
+
+        assert_eq!(events.len(), 1);
+
+        let ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) = &events[0] else {
+            panic!("Expected cancel rejection, received {:?}", events[0]);
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(
+            event.venue_order_id,
+            Some(VenueOrderId::from("current-venue"))
+        );
+        assert_eq!(event.instrument_id, identity.instrument_id);
+        assert_eq!(event.strategy_id, identity.strategy_id);
+        assert_eq!(event.reason.as_str(), "handler closed");
+    }
+
+    #[rstest]
+    #[case::no_client(OKXWsError::NoActiveClient, false)]
+    #[case::connection_changed(OKXWsError::TransportSend(SendError::ConnectionChanged), false)]
+    #[case::timeout(OKXWsError::TransportSend(SendError::Timeout), false)]
+    #[case::write_timeout(OKXWsError::TransportSend(SendError::WriteTimeout), true)]
+    #[case::broken_pipe(OKXWsError::TransportSend(SendError::BrokenPipe("reset".to_string())), true)]
+    fn cancel_send_failure_resolves_only_definitely_unsent_orders(
+        #[values(
+            OKXWsOperation::CancelOrder,
+            OKXWsOperation::BatchCancelOrders,
+            OKXWsOperation::MassCancel,
+            OKXWsOperation::CancelAlgos
+        )]
+        op: OKXWsOperation,
+        #[case] error: OKXWsError,
+        #[case] ambiguous: bool,
+    ) {
+        let state = WsDispatchState::default();
+        let client_order_ids = [
+            ClientOrderId::from("O-cancel-first"),
+            ClientOrderId::from("O-cancel-second"),
+        ];
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let strategy_id = StrategyId::from("S-CANCEL-FAILURE");
+        let reason = error.to_string();
+
+        for (index, client_order_id) in client_order_ids.into_iter().enumerate() {
+            state.order_identities.insert(
+                client_order_id,
+                OrderIdentity {
+                    client_order_id,
+                    instrument_id,
+                    strategy_id,
+                    order_side: OrderSide::Sell,
+                    order_type: OrderType::Limit,
+                },
+            );
+
+            state.bind_order(
+                client_order_id,
+                VenueOrderId::from(format!("cancel-venue-{index}")),
+            );
+            state.pending_cancels.insert(
+                client_order_id.to_string(),
+                PendingOrderInfo {
+                    trader_id: TraderId::from("TRADER-001"),
+                    strategy_id,
+                    instrument_id,
+                },
+            );
+        }
+
+        let clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(123_456))));
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            AccountId::from("OKX-001"),
+            AccountType::Margin,
+            None,
+        );
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        dispatch_ws_message(
+            OKXWsMessage::SendFailed {
+                request_id: "cancel-failure".to_string(),
+                client_order_ids: client_order_ids.to_vec(),
+                op: Some(op),
+                error,
+            },
+            &emitter,
+            &state,
+            AccountId::from("OKX-001"),
+            AccountType::Margin,
+            &AtomicMap::new(),
+            &mut FeeCache::new(),
+            &mut FilledQtyCache::new(),
+            &mut AHashMap::new(),
+            clock,
+        );
+
+        let events = drain_execution_events(&mut receiver);
+
+        assert_eq!(events.len(), if ambiguous { 0 } else { 2 });
+
+        for (index, client_order_id) in client_order_ids.into_iter().enumerate() {
+            assert_eq!(
+                state.pending_cancels.contains_key(client_order_id.as_str()),
+                ambiguous
+            );
+            assert_eq!(
+                state.order_identity(client_order_id),
+                Some(OrderIdentity {
+                    client_order_id,
+                    instrument_id,
+                    strategy_id,
+                    order_side: OrderSide::Sell,
+                    order_type: OrderType::Limit,
+                })
+            );
+            assert_eq!(
+                state.order_venue_binding(client_order_id),
+                Some((VenueOrderId::from(format!("cancel-venue-{index}")), false))
+            );
+
+            if ambiguous {
+                continue;
+            }
+
+            let ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) = &events[index] else {
+                panic!("Expected cancel rejection, received {:?}", events[index]);
+            };
+
+            assert_eq!(event.trader_id, TraderId::from("TRADER-001"));
+            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.instrument_id, instrument_id);
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(
+                event.venue_order_id,
+                Some(VenueOrderId::from(format!("cancel-venue-{index}")))
+            );
+            assert_eq!(event.account_id, Some(AccountId::from("OKX-001")));
+            assert_eq!(event.reason.as_str(), reason);
+            assert_eq!(event.ts_event, UnixNanos::from(123_456));
+            assert_eq!(event.ts_init, UnixNanos::from(123_456));
+            assert_eq!(event.causation_id, None);
+            assert!(!event.reconciliation);
         }
     }
 

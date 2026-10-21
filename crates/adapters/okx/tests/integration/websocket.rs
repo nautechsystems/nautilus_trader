@@ -61,7 +61,10 @@ use nautilus_okx::{
     },
     http::client::OKXResponse,
     websocket::{
-        client::OKXWebSocketClient, enums::OKXWsChannel, error::OKXWsError, messages::OKXWsMessage,
+        client::OKXWebSocketClient,
+        enums::{OKXWsChannel, OKXWsOperation},
+        error::OKXWsError,
+        messages::OKXWsMessage,
     },
 };
 use rstest::rstest;
@@ -916,8 +919,12 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
     client.close().await.expect("close failed");
 }
 
+#[rstest]
+#[case::submit(OKXWsOperation::Order)]
+#[case::cancel(OKXWsOperation::CancelOrder)]
+#[case::amend(OKXWsOperation::AmendOrder)]
 #[tokio::test]
-async fn test_submit_order_during_reconnect_is_not_replayed() {
+async fn test_order_operations_during_reconnect_are_not_replayed(#[case] op: OKXWsOperation) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -947,59 +954,93 @@ async fn test_submit_order_during_reconnect_is_not_replayed() {
     .await;
 
     let client_order_id = ClientOrderId::from("Oreconnectnoreplay000001");
-    client
-        .submit_order(
-            TraderId::from("TRADER-001"),
-            StrategyId::from("STRATEGY-001"),
-            InstrumentId::from("BTC-USDT.OKX"),
-            OKXTradeMode::Cross,
-            client_order_id,
-            OrderSide::Sell,
-            OrderType::Market,
-            Quantity::from("0.001"),
-            None,
-            None,
-            None,
-            Some(false),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .expect("submit order command failed");
+
+    match op {
+        OKXWsOperation::Order => client
+            .submit_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                InstrumentId::from("BTC-USDT.OKX"),
+                OKXTradeMode::Cross,
+                client_order_id,
+                OrderSide::Sell,
+                OrderType::Market,
+                Quantity::from("0.001"),
+                None,
+                None,
+                None,
+                Some(false),
+                Some(false),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("submit order command failed"),
+
+        OKXWsOperation::CancelOrder => client
+            .cancel_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                InstrumentId::from("BTC-USDT.OKX"),
+                Some(client_order_id),
+                Some(VenueOrderId::from("70001")),
+            )
+            .await
+            .expect("cancel order command failed"),
+        OKXWsOperation::AmendOrder => client
+            .modify_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                InstrumentId::from("BTC-USDT.OKX"),
+                Some(client_order_id),
+                Some(Price::from("105000")),
+                None,
+                Some(VenueOrderId::from("70001")),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("amend order command failed"),
+        _ => unreachable!("unexpected order operation"),
+    }
 
     let stream = client.stream();
     pin_mut!(stream);
     tokio::time::sleep(Duration::from_millis(100)).await;
     state.reject_upgrades.store(false, Ordering::Relaxed);
 
-    let (failed_order_ids, error) = tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            let message = stream.next().await.expect("stream ended");
+    let (failed_order_ids, failed_op, error) =
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let message = stream.next().await.expect("stream ended");
 
-            if let OKXWsMessage::SendFailed {
-                client_order_ids,
-                error,
-                ..
-            } = message
-                && client_order_ids.contains(&client_order_id)
-            {
-                return (client_order_ids, error);
+                if let OKXWsMessage::SendFailed {
+                    client_order_ids,
+                    op,
+                    error,
+                    ..
+                } = message
+                    && client_order_ids.contains(&client_order_id)
+                {
+                    return (client_order_ids, op, error);
+                }
             }
-        }
-    })
-    .await
-    .expect("missing stale-connection send failure");
+        })
+        .await
+        .expect("missing stale-connection send failure");
 
     assert_eq!(failed_order_ids, vec![client_order_id]);
+    assert_eq!(failed_op, Some(op));
     assert!(matches!(
         error,
         OKXWsError::TransportSend(SendError::ConnectionChanged)

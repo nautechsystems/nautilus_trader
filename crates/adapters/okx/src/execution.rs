@@ -99,8 +99,9 @@ use crate::{
         client::OKXWebSocketClient,
         dispatch::{
             AlgoCancelContext, AlgoOrderState, WsDispatchState, dispatch_ws_message,
-            emit_algo_cancel_rejections, format_order_response_reason,
+            emit_algo_cancel_rejections, emit_send_failed_cancel, format_order_response_reason,
         },
+        error::OKXWsError,
         messages::OKXWsMessage,
         parse::{FeeCache, FilledQtyCache, OrderStateSnapshot},
     },
@@ -793,6 +794,9 @@ impl OKXExecutionClient {
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
 
         let ws_private = self.ws_private.clone();
+        let state = Arc::clone(&self.ws_dispatch_state);
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
         let mut command = cmd.clone();
         command.venue_order_id = self
             .ws_dispatch_state
@@ -812,14 +816,28 @@ impl OKXExecutionClient {
                 .await;
 
             if let Err(e) = result {
-                emit_cancel_failure(
-                    classify_okx_ws_failure(&e),
-                    None,
-                    command.client_order_id,
-                    command.instrument_id,
-                    command.strategy_id,
-                    command.venue_order_id,
-                );
+                let failure = classify_okx_ws_failure(&e);
+
+                if matches!(e, OKXWsError::HandlerUnavailable(_)) {
+                    emit_send_failed_cancel(
+                        &failure,
+                        &state,
+                        &emitter,
+                        clock,
+                        command.client_order_id,
+                        command.venue_order_id,
+                    );
+                } else {
+                    emit_cancel_failure(
+                        failure,
+                        None,
+                        command.client_order_id,
+                        command.instrument_id,
+                        command.strategy_id,
+                        command.venue_order_id,
+                    );
+                }
+
                 return Err(anyhow::Error::new(e).context("cancel order failed"));
             }
 
@@ -2546,10 +2564,37 @@ impl ExecutionClient for OKXExecutionClient {
 
         if !regular_payload.is_empty() {
             let ws_private = self.ws_private.clone();
+            let state = Arc::clone(&self.ws_dispatch_state);
+            let emitter = self.emitter.clone();
+            let clock = self.clock;
             self.spawn_task("batch_cancel_orders", async move {
-                for batch in regular_payload.chunks(20) {
+                const BATCH_SIZE: usize = 20;
+
+                for (index, batch) in regular_payload.chunks(BATCH_SIZE).enumerate() {
                     if let Err(e) = ws_private.batch_cancel_orders(batch.to_vec()).await {
-                        log_batch_cancel_failure(classify_okx_ws_failure(&e), batch.len());
+                        let failure = classify_okx_ws_failure(&e);
+
+                        if matches!(e, OKXWsError::HandlerUnavailable(_)) {
+                            for (_, client_order_id, venue_order_id) in
+                                &regular_payload[index * BATCH_SIZE..]
+                            {
+                                let Some(client_order_id) = client_order_id else {
+                                    continue;
+                                };
+
+                                emit_send_failed_cancel(
+                                    &failure,
+                                    &state,
+                                    &emitter,
+                                    clock,
+                                    *client_order_id,
+                                    *venue_order_id,
+                                );
+                            }
+                        } else {
+                            log_batch_cancel_failure(failure, batch.len());
+                        }
+
                         return Err(anyhow::Error::new(e).context("batch cancel orders failed"));
                     }
                 }
@@ -5826,6 +5871,127 @@ mod tests {
             )),
             "ambiguous algo submit failure should not emit OrderRejected: {events:?}",
         );
+    }
+
+    #[rstest]
+    #[case::single(1, false)]
+    #[case::batch(23, true)]
+    #[tokio::test]
+    async fn closed_handler_rejects_every_unsent_cancel(#[case] count: usize, #[case] batch: bool) {
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let strategy_id = StrategyId::from("S-CLOSED-HANDLER");
+        client
+            .ws_private
+            .cache_inst_id_code(Ustr::from("BTC-USDT"), 10459);
+        let mut cancels = Vec::new();
+
+        for index in 0..count {
+            let client_order_id = ClientOrderId::from(format!("OCLOSED{index}"));
+            let venue_order_id = VenueOrderId::from(format!("closed-venue-{index}"));
+            let mut order = OrderTestBuilder::new(OrderType::Limit)
+                .client_order_id(client_order_id)
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .side(OrderSide::Sell)
+                .quantity(Quantity::from("0.005"))
+                .price(Price::from("110000"))
+                .build();
+            let accepted =
+                TestOrderEventStubs::accepted(&order, client.core.account_id, venue_order_id);
+            order.apply(accepted).unwrap();
+            cache
+                .borrow_mut()
+                .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+                .unwrap();
+
+            if index % 2 == 0 {
+                client.ws_dispatch_state.bind_order(
+                    client_order_id,
+                    VenueOrderId::from(format!("authoritative-venue-{index}")),
+                );
+            }
+
+            cancels.push(CancelOrder::new(
+                TraderId::from("TESTER-001"),
+                Some(*OKX_CLIENT_ID),
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                Some(venue_order_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ));
+        }
+
+        if batch {
+            let command = BatchCancelOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*OKX_CLIENT_ID),
+                strategy_id,
+                instrument_id,
+                cancels.clone(),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            );
+            client.batch_cancel_orders(command).unwrap();
+        } else {
+            client.cancel_order(cancels[0].clone()).unwrap();
+        }
+
+        wait_until_async(
+            || async { client.pending_tasks.all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        terminate_tasks(&client.pending_tasks, "test execution client")
+            .await
+            .unwrap();
+        let events: Vec<_> = std::iter::from_fn(|| event_rx.try_recv().ok()).collect();
+
+        assert_eq!(events.len(), count);
+
+        for (index, (event, cancel)) in events.iter().zip(cancels).enumerate() {
+            let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event else {
+                panic!("Expected cancel rejection, received {event:?}");
+            };
+
+            assert_eq!(rejected.trader_id, client.core.trader_id);
+            assert_eq!(rejected.strategy_id, strategy_id);
+            assert_eq!(rejected.instrument_id, instrument_id);
+            assert_eq!(rejected.client_order_id, cancel.client_order_id);
+
+            let expected_venue_order_id = if index % 2 == 0 {
+                Some(VenueOrderId::from(format!("authoritative-venue-{index}")))
+            } else {
+                cancel.venue_order_id
+            };
+
+            assert_eq!(rejected.venue_order_id, expected_venue_order_id);
+            assert_eq!(rejected.account_id, Some(client.core.account_id));
+            assert_eq!(
+                rejected.reason.as_str(),
+                "Handler not available: channel closed"
+            );
+            assert!(!rejected.reconciliation);
+            assert_eq!(rejected.causation_id, None);
+            assert_eq!(
+                cache
+                    .borrow()
+                    .order(&cancel.client_order_id)
+                    .unwrap()
+                    .status(),
+                OrderStatus::Accepted
+            );
+        }
+
+        assert!(client.ws_private.pending_cancels.is_empty());
     }
 
     #[rstest]

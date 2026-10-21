@@ -358,12 +358,19 @@ impl OKXWsFeedHandler {
                                 log::debug!("Failed to send message: error={e}");
 
                                 if let Some(request_id) = request_id {
-                                    self.pending_messages.push_back(OKXWsMessage::SendFailed {
+                                    let message = OKXWsMessage::SendFailed {
                                         request_id,
                                         client_order_ids,
                                         op,
                                         error: e,
-                                    });
+                                    };
+
+                                    if self.send(message).is_err() {
+                                        if !self.is_stopped() {
+                                            log::error!("Failed to forward WebSocket send failure: receiver dropped");
+                                        }
+                                        return None;
+                                    }
                                 }
                             }
                         }
@@ -1001,6 +1008,127 @@ mod tests {
 
         assert!(debug.contains(REDACTED));
         assert!(!debug.contains(payload));
+    }
+
+    #[rstest]
+    #[case::submit(OKXWsOperation::Order)]
+    #[case::cancel(OKXWsOperation::CancelOrder)]
+    #[case::amend(OKXWsOperation::AmendOrder)]
+    #[tokio::test]
+    async fn send_failure_returns_without_inbound_frame(#[case] op: OKXWsOperation) {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        let client_order_id = ClientOrderId::from("O-disconnected");
+        cmd_tx
+            .send(HandlerCommand::Send {
+                payload: String::new(),
+                rate_limit_keys: None,
+                request_id: Some("disconnected-request".to_string()),
+                client_order_ids: vec![client_order_id],
+                op: Some(op.clone()),
+            })
+            .unwrap();
+
+        let message = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::select! {
+                message = out_rx.recv() => message,
+                message = handler.next() => panic!("Unexpected handler return: {message:?}"),
+            }
+        })
+        .await
+        .expect("send failure must not wait for an inbound frame");
+
+        let Some(OKXWsMessage::SendFailed {
+            request_id,
+            client_order_ids,
+            op: failed_op,
+            error,
+        }) = message
+        else {
+            panic!("Expected send failure, received {message:?}");
+        };
+
+        assert_eq!(request_id, "disconnected-request");
+        assert_eq!(client_order_ids, vec![client_order_id]);
+        assert_eq!(failed_op, Some(op));
+        assert!(matches!(error, OKXWsError::NoActiveClient));
+    }
+
+    #[tokio::test]
+    async fn send_failures_preserve_raw_message_fairness() {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+
+        for request_id in ["first-cancel", "second-cancel"] {
+            cmd_tx
+                .send(HandlerCommand::Send {
+                    payload: String::new(),
+                    rate_limit_keys: None,
+                    request_id: Some(request_id.to_string()),
+                    client_order_ids: vec![ClientOrderId::from("O-disconnected")],
+                    op: Some(OKXWsOperation::CancelOrder),
+                })
+                .unwrap();
+        }
+
+        raw_tx
+            .send(Message::Text(RECONNECTED.to_string().into()))
+            .unwrap();
+
+        raw_tx
+            .send(Message::Text(RECONNECTED.to_string().into()))
+            .unwrap();
+
+        let messages = tokio::time::timeout(Duration::from_secs(1), async {
+            for _ in 0..2 {
+                let message = handler.next().await.expect("raw message");
+                handler.send(message).unwrap();
+            }
+
+            [
+                out_rx.recv().await,
+                out_rx.recv().await,
+                out_rx.recv().await,
+                out_rx.recv().await,
+            ]
+        })
+        .await
+        .expect("failures and reconnect must arrive without more input");
+
+        assert!(
+            matches!(&messages[0], Some(OKXWsMessage::SendFailed { request_id, .. })
+            if request_id == "first-cancel")
+        );
+        assert!(matches!(messages[1], Some(OKXWsMessage::Reconnected)));
+        assert!(
+            matches!(&messages[2], Some(OKXWsMessage::SendFailed { request_id, .. })
+            if request_id == "second-cancel")
+        );
+        assert!(matches!(messages[3], Some(OKXWsMessage::Reconnected)));
+        assert!(handler.pending_messages.is_empty());
+        assert!(handler.cmd_rx.is_empty());
     }
 
     #[tokio::test]
