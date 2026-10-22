@@ -318,6 +318,7 @@ pub async fn get_or_connect(
     port: u16,
     client_id: i32,
     connection_timeout_secs: u64,
+    max_reconnect_attempts: Option<u32>,
 ) -> anyhow::Result<SharedClientHandle> {
     let key = ConnectionKey(host.to_string(), port, client_id);
     let registry = Arc::clone(&REGISTRY);
@@ -334,7 +335,11 @@ pub async fn get_or_connect(
             log::debug!(
                 "Establishing shared IB connection to {address} with timeout {connect_timeout:?}"
             );
-            tokio::time::timeout(connect_timeout, Client::connect(&address, client_id))
+            let mut builder = Client::builder().address(address).client_id(client_id);
+            if let Some(attempts) = max_reconnect_attempts {
+                builder = builder.max_reconnect_attempts(attempts);
+            }
+            tokio::time::timeout(connect_timeout, builder.connect())
                 .await
                 .map_err(|_| {
                     anyhow::anyhow!(
@@ -646,7 +651,7 @@ mod tests {
         let mut errors = Vec::new();
         for _ in 0..2 {
             errors.push(
-                get_or_connect("127.0.0.1", port, 917, 1)
+                get_or_connect("127.0.0.1", port, 917, 1, None)
                     .await
                     .unwrap_err()
                     .to_string(),
