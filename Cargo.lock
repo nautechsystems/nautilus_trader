@@ -6543,6 +6543,7 @@ dependencies = [
  "bytes",
  "codspeed-criterion-compat",
  "dashmap",
+ "flate2",
  "futures-util",
  "h2",
  "http",
