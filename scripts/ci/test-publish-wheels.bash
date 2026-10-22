@@ -546,11 +546,19 @@ MOCK
   cat > "${mock_bin}/curl" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" != "-fsSLo" || "${3:-}" != "${PUBLISH_WHEELS_INDEX_URL%/}/nautilus-trader/" ]]; then
+if [[ "${1:-}" != "--connect-timeout" || "${2:-}" != "10" ||
+  "${3:-}" != "--max-time" || "${4:-}" != "60" ||
+  "${5:-}" != "-fsSLo" || "${7:-}" != "${PUBLISH_WHEELS_INDEX_URL%/}/nautilus-trader/" ]]; then
   echo "Unexpected curl invocation: $*" >&2
   exit 96
 fi
-/bin/cp "${MOCK_R2_ROOT:?}/index.html" "$2"
+printf '%s\n' "$*" >> "${MOCK_UV_LOG:?}.curl"
+if [[ "${MOCK_CURL_TIMEOUT:-}" == "always" ]] ||
+  { [[ "${MOCK_CURL_TIMEOUT:-}" == "once" ]] && [[ ! -f "${MOCK_UV_LOG}.curl-timed-out" ]]; }; then
+  touch "${MOCK_UV_LOG}.curl-timed-out"
+  exit 28
+fi
+/bin/cp "${MOCK_R2_ROOT:?}/index.html" "$6"
 MOCK
 
   cat > "${mock_bin}/uv" << 'MOCK'
@@ -558,14 +566,21 @@ MOCK
 set -euo pipefail
 printf '%s\n' "$*" >> "${MOCK_UV_LOG:?}"
 if [[ "${1:-}" == "venv" ]]; then
+  [[ -z "${UV_HTTP_TIMEOUT:-}" && -z "${UV_HTTP_RETRIES:-}" ]] || exit 98
   destination="${@: -1}"
   mkdir -p "${destination}/bin"
+elif [[ "${1:-} ${2:-}" == "pip install" ]]; then
+  [[ "${UV_NO_CACHE:-}" == "1" && "${UV_HTTP_TIMEOUT:-}" == "120" && "${UV_HTTP_RETRIES:-}" == "5" ]] || exit 99
+  if [[ "${MOCK_UV_INSTALL_FAIL:-}" == "true" ]]; then
+    exit 100
+  fi
 fi
 MOCK
 
   cat > "${mock_bin}/sleep" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$*" >> "${MOCK_UV_LOG:?}.sleep"
 exit 0
 MOCK
 
@@ -617,6 +632,7 @@ run_transaction() {
   : > "${case_dir}/uv.log"
   (
     cd "$case_dir"
+    unset UV_HTTP_TIMEOUT UV_HTTP_RETRIES
     export AWS_ACCESS_KEY_ID=''
     export AWS_SECRET_ACCESS_KEY=''
     export AWS_SESSION_TOKEN=''
@@ -942,6 +958,50 @@ test_publication_transaction() {
   assert_absent "${extra}/r2/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl"
 }
 
+test_public_verification_failures() {
+  local version="2.0.0rc3.dev20260803+451"
+  local case_dir
+  local mode
+  local output
+  local status
+  local old="nautilus_trader-2.0.0rc3.dev20260802+400-cp313-cp313-manylinux_2_34_x86_64.whl"
+
+  for mode in once always install; do
+    case_dir="${work_dir}/public-verification-${mode}"
+    output="${case_dir}/output"
+    prepare_transaction "$case_dir" "$version"
+    if [[ "$mode" == "once" ]]; then
+      MOCK_CURL_TIMEOUT=once \
+        run_expect_success "$output" run_transaction "$case_dir" "$version"
+      [[ "$(wc -l < "${case_dir}/uv.log.curl" | tr -d ' ')" == "2" ]] ||
+        fail "Public index timeout must recover on the second request"
+      assert_line "${case_dir}/uv.log.sleep" "2"
+      assert_absent "${case_dir}/r2/${old}"
+    elif [[ "$mode" == "always" ]]; then
+      MOCK_CURL_TIMEOUT=always \
+        run_expect_failure "$output" run_transaction "$case_dir" "$version"
+      [[ "$(wc -l < "${case_dir}/uv.log.curl" | tr -d ' ')" == "5" ]] ||
+        fail "Public index timeout must stop after five requests"
+      [[ "$(cat "${case_dir}/uv.log.sleep")" == $'2\n4\n8\n16' ]] ||
+        fail "Public index retries must use exponential backoff"
+      [[ ! -s "${case_dir}/uv.log" ]] || fail "Public index failure reached installation validation"
+      assert_file "${case_dir}/r2/${old}"
+    else
+      if MOCK_UV_INSTALL_FAIL=true run_transaction "$case_dir" "$version" > "$output" 2>&1; then
+        status=0
+      else
+        status=$?
+      fi
+      [[ "$status" == "100" ]] || fail "Installation failure returned ${status}, expected 100"
+      [[ "$(wc -l < "${case_dir}/uv.log.curl" | tr -d ' ')" == "1" ]] ||
+        fail "Installation failure must follow one successful index request"
+      [[ "$(wc -l < "${case_dir}/uv.log" | tr -d ' ')" == "2" ]] ||
+        fail "Installation must run once after creating its environment"
+      assert_file "${case_dir}/r2/${old}"
+    fi
+  done
+}
+
 create_r2_mocks "${work_dir}/r2-bin"
 
 test_policy_and_version
@@ -950,6 +1010,7 @@ test_sha256_portability
 test_artifact_matrix
 test_stable_retention_plan
 test_publication_transaction
+test_public_verification_failures
 test_overlapping_publication
 test_index_write_failures
 test_index_preconditions
