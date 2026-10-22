@@ -34,8 +34,8 @@
 //! - **Data commands**: subscribe/unsubscribe requests to data clients.
 //!
 //! Both `AsyncRunner::run` and `LiveNode::run` use a `biased;` select with
-//! system and execution branches polled ahead of data branches. Within each
-//! channel pair, events are polled before commands.
+//! system and execution branches polled ahead of data branches. System and
+//! execution events precede their commands. Timer and data channels rotate when busy.
 //!
 //! The runner can drive the event loop in two ways:
 //!
@@ -230,6 +230,7 @@ pub(crate) enum PendingRunnerEvent {
 
 pub struct AsyncRunner {
     channels: AsyncRunnerChannels,
+    dispatch_priority: DispatchPriority,
     time_evt_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<TimeEventMessage>>,
     system_evt_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<SystemEvent>>,
     system_cmd_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<SystemCommand>>,
@@ -298,6 +299,7 @@ impl AsyncRunner {
                 data_evt_rx,
                 data_cmd_rx,
             },
+            dispatch_priority: DispatchPriority::default(),
             time_evt_tx,
             system_evt_tx,
             system_cmd_tx,
@@ -444,6 +446,10 @@ impl AsyncRunner {
 
         loop {
             let callbacks_pending = drain_callbacks().await?;
+            let (poll_time, poll_data) = self.dispatch_priority.enabled(
+                self.channels.data_evt_rx.is_empty(),
+                self.channels.data_cmd_rx.is_empty(),
+            );
 
             tokio::select! {
                 biased;
@@ -453,7 +459,8 @@ impl AsyncRunner {
                     return Ok(());
                 },
                 () = std::future::ready(()), if callbacks_pending => {},
-                Some(handler) = self.channels.time_evt_rx.recv() => {
+                Some(handler) = self.channels.time_evt_rx.recv(), if poll_time => {
+                    self.dispatch_priority = DispatchPriority::DataEvent;
                     let _ = Self::handle_time_event(handler);
                 },
                 Some(event) = self.channels.system_evt_rx.recv() => {
@@ -468,10 +475,12 @@ impl AsyncRunner {
                 Some(cmd) = self.channels.exec_cmd_rx.recv() => {
                     Self::handle_trading_command(cmd);
                 },
-                Some(evt) = self.channels.data_evt_rx.recv() => {
+                Some(evt) = self.channels.data_evt_rx.recv(), if poll_data => {
+                    self.dispatch_priority = DispatchPriority::DataCommand;
                     Self::dispatch_data_event(evt);
                 },
                 Some(cmd) = self.channels.data_cmd_rx.recv() => {
+                    self.dispatch_priority = DispatchPriority::Time;
                     Self::handle_data_command(cmd);
                 },
                 else => {
@@ -630,6 +639,25 @@ impl AsyncRunner {
     }
 }
 
+/// Rotates timer and data service while skipping empty channels.
+#[derive(Debug, Default)]
+pub(crate) enum DispatchPriority {
+    #[default]
+    Time,
+    DataEvent,
+    DataCommand,
+}
+
+impl DispatchPriority {
+    pub(crate) fn enabled(&self, data_empty: bool, commands_empty: bool) -> (bool, bool) {
+        match self {
+            Self::Time => (true, true),
+            Self::DataEvent => (data_empty && commands_empty, true),
+            Self::DataCommand => (commands_empty, commands_empty),
+        }
+    }
+}
+
 #[cfg(feature = "node")]
 impl AsyncRunner {
     pub(crate) fn poll_pending(&mut self, mut process: impl FnMut(PendingRunnerEvent)) -> usize {
@@ -692,10 +720,15 @@ impl AsyncRunner {
     }
 
     pub(crate) async fn recv(&mut self) -> Option<PendingRunnerEvent> {
+        let (poll_time, poll_data) = self.dispatch_priority.enabled(
+            self.channels.data_evt_rx.is_empty(),
+            self.channels.data_cmd_rx.is_empty(),
+        );
         tokio::select! {
             biased;
 
-            Some(message) = self.channels.time_evt_rx.recv() => {
+            Some(message) = self.channels.time_evt_rx.recv(), if poll_time => {
+                self.dispatch_priority = DispatchPriority::DataEvent;
                 Some(PendingRunnerEvent::TimeEvent(message))
             }
             Some(event) = self.channels.system_evt_rx.recv() => {
@@ -710,10 +743,12 @@ impl AsyncRunner {
             Some(command) = self.channels.exec_cmd_rx.recv() => {
                 Some(PendingRunnerEvent::ExecCommand(command))
             }
-            Some(event) = self.channels.data_evt_rx.recv() => {
+            Some(event) = self.channels.data_evt_rx.recv(), if poll_data => {
+                self.dispatch_priority = DispatchPriority::DataCommand;
                 Some(PendingRunnerEvent::DataEvent(event))
             }
             Some(command) = self.channels.data_cmd_rx.recv() => {
+                self.dispatch_priority = DispatchPriority::Time;
                 Some(PendingRunnerEvent::DataCommand(command))
             }
             else => None,
@@ -1003,6 +1038,7 @@ mod tests {
                 data_evt_rx,
                 data_cmd_rx,
             },
+            dispatch_priority: DispatchPriority::default(),
             time_evt_tx,
             system_evt_tx,
             system_cmd_tx,
@@ -1199,6 +1235,111 @@ mod tests {
             runner.recv().await,
             Some(PendingRunnerEvent::SystemCommand(_))
         ));
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    #[case::timers_and_data(true, true)]
+    #[case::timers_only(true, false)]
+    #[case::data_only(false, true)]
+    #[tokio::test]
+    async fn test_runner_data_progress_under_load(
+        #[case] timers: bool,
+        #[case] data: bool,
+        #[values(false, true)] receive: bool,
+    ) {
+        let mut runner = AsyncRunner::new();
+        let stop = runner.signal_tx.clone();
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+            if event.ts_init == UnixNanos::from(8) {
+                stop.send(()).unwrap();
+            }
+        }));
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let observed = received.clone();
+        let stop = runner.signal_tx.clone();
+        msgbus::register_data_endpoint(
+            MessagingSwitchboard::data_engine_process_data(),
+            TypedIntoHandler::from(move |event| {
+                let Data::Quote(quote) = event else {
+                    panic!("Expected quote")
+                };
+                observed.borrow_mut().push(quote.ts_init);
+                if !timers && quote.ts_init == UnixNanos::from(8) {
+                    stop.send(()).unwrap();
+                }
+            }),
+        );
+        let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
+            client_id: Some(ClientId::from("TEST")),
+            venue: None,
+            data_type: DataType::new("QuoteTick", None, None),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            correlation_id: None,
+            params: None,
+        }));
+
+        // Stop halfway through a ready backlog, before starvation can disappear by draining it
+        for timestamp in 1..=16 {
+            if timers {
+                let event = TimeEvent::new(
+                    "fairness".into(),
+                    UUID4::new(),
+                    timestamp.into(),
+                    timestamp.into(),
+                );
+                runner
+                    .time_evt_tx
+                    .send(TimeEventMessage::new(event, callback.clone()).into())
+                    .unwrap();
+            }
+
+            if data {
+                let mut quote = test_quote();
+                quote.ts_init = timestamp.into();
+                runner
+                    .data_evt_tx
+                    .send(DataEvent::Data(Data::Quote(quote)).into())
+                    .unwrap();
+            }
+            runner.data_cmd_tx.send(command.clone().into()).unwrap();
+        }
+
+        if receive {
+            while runner.signal_rx.try_recv().is_err() {
+                match runner.recv().await.unwrap() {
+                    PendingRunnerEvent::TimeEvent(event) => {
+                        let _ = AsyncRunner::handle_time_event(event);
+                    }
+                    PendingRunnerEvent::DataEvent(event) => AsyncRunner::dispatch_data_event(event),
+                    PendingRunnerEvent::DataCommand(command) => {
+                        AsyncRunner::handle_data_command(command);
+                    }
+                    _ => panic!("Unexpected runner event"),
+                }
+            }
+        } else {
+            runner.run().await.unwrap();
+        }
+
+        assert!((1..16).contains(&runner.channels.data_cmd_rx.len()));
+
+        if data {
+            let received = received.borrow();
+            assert!(!received.is_empty());
+            assert_eq!(
+                *received,
+                (1..=received.len() as u64)
+                    .map(UnixNanos::from)
+                    .collect::<Vec<_>>()
+            );
+            assert!(!runner.channels.data_evt_rx.is_empty());
+        }
+
+        if timers {
+            assert_eq!(runner.channels.time_evt_rx.len(), 8);
+        }
     }
 
     #[rstest]

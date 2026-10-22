@@ -137,7 +137,7 @@ use crate::{
             ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
         },
     },
-    runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
+    runner::{AsyncRunner, AsyncRunnerChannels, DispatchPriority, PendingRunnerEvent},
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
 };
 
@@ -1591,6 +1591,7 @@ impl LiveNode {
             .as_ref()
             .map(|config| QueueMonitor::new(config, metrics.snapshot()));
         let mut dispatches_since_yield = 0usize;
+        let mut dispatch_priority = DispatchPriority::default();
 
         let dispatch_result = loop {
             let callbacks_pending = match drain_callbacks().await {
@@ -1611,6 +1612,8 @@ impl LiveNode {
             let shutdown_deadline = self.shutdown_deadline;
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
             let is_running = self.state() == NodeState::Running;
+            let (poll_time, poll_data) =
+                dispatch_priority.enabled(data_evt_rx.is_empty(), data_cmd_rx.is_empty());
 
             tokio::select! {
                 biased;
@@ -1851,7 +1854,8 @@ impl LiveNode {
                 // ordered ahead of data events so a strategy action (cancel,
                 // submit, etc.) is not delayed behind a market data backlog
                 // when the biased select polls receivers each iteration.
-                Some(handler) = time_evt_rx.recv() => {
+                Some(handler) = time_evt_rx.recv(), if poll_time => {
+                    dispatch_priority = DispatchPriority::DataEvent;
                     let dispatch_start = dst::time::Instant::now();
                     let dispatched = AsyncRunner::handle_time_event(handler);
 
@@ -1939,7 +1943,8 @@ impl LiveNode {
                         metrics_start,
                     );
                 }
-                Some(evt) = data_evt_rx.recv() => {
+                Some(evt) = data_evt_rx.recv(), if poll_data => {
+                    dispatch_priority = DispatchPriority::DataCommand;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1955,6 +1960,7 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = data_cmd_rx.recv() => {
+                    dispatch_priority = DispatchPriority::Time;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -4631,6 +4637,59 @@ mod tests {
         assert_eq!(events[0].ts_init, events[0].ts_event);
         drop(events);
         msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[tokio::test]
+    async fn test_run_data_progress_under_timer_load() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("FairDispatchNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let snapshot = Rc::new(RefCell::new(None));
+        let observed = snapshot.clone();
+        let stop = handle.clone();
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+            if event.ts_init == UnixNanos::from(8) {
+                *observed.borrow_mut() = Some(stop.metrics_snapshot());
+                stop.stop();
+            }
+        }));
+
+        let drive = async {
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+
+            for timestamp in 1..=16 {
+                nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
+                    TimeEvent::new(
+                        "fairness".into(),
+                        UUID4::new(),
+                        timestamp.into(),
+                        timestamp.into(),
+                    ),
+                    callback.clone(),
+                ));
+                get_data_event_sender().send(stub_data_event()).unwrap();
+            }
+            nautilus_common::runner::get_data_cmd_sender().execute(stub_data_command());
+        };
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let (result, ()) = tokio::join!(node.run(), drive);
+            result.unwrap();
+        })
+        .await
+        .unwrap();
+
+        // Sample in the running loop, before shutdown or the final drain can mask starvation
+        let snapshot = snapshot.borrow().unwrap();
+        assert_eq!(snapshot.time_events.dispatched, 7);
+        assert!(snapshot.data_events.dispatched > 0);
+        assert_eq!(snapshot.data_commands.dispatched, 1);
     }
 
     #[rstest]
