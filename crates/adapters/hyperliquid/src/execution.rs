@@ -2109,10 +2109,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         cmd: &GenerateFillReports,
     ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
         let client = self.report_client();
+        let core = self.core.clone();
         let command = cmd.clone();
         Some(ExecutionReportTask::new(
             async move { client?.collect_fill_reports(command).await },
-            Ok,
+            move |reports| Ok(finish_fill_reports(&core, reports)),
         ))
     }
 
@@ -2158,7 +2159,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        self.report_client()?.collect_fill_reports(cmd).await
+        let reports = self.report_client()?.collect_fill_reports(cmd).await?;
+        Ok(finish_fill_reports(&self.core, reports))
     }
 
     async fn generate_position_status_reports(
@@ -2449,6 +2451,20 @@ impl HyperliquidReportClient {
         log::debug!("Generated {} position status reports", reports.len());
         Ok(reports)
     }
+}
+
+fn finish_fill_reports(
+    core: &ExecutionClientCore,
+    mut reports: Vec<FillReport>,
+) -> Vec<FillReport> {
+    let cache = core.cache();
+
+    // Unmapped fills must still match retained position fills after their order is purged
+    for report in &mut reports {
+        report.client_order_id = cache.client_order_id(&report.venue_order_id).copied();
+    }
+
+    reports
 }
 
 enum CollectedOrderReport {
@@ -3434,21 +3450,26 @@ async fn collect_query_order_fills(
         }
     }
 
-    let sweep = http_client.fill_reports_from_response(fills.clone(), None)?;
+    let mut sweep = http_client.fill_reports_from_response(fills.clone(), None)?;
     if !sweep.complete {
         anyhow::bail!("fill history could not be fully resolved or parsed");
     }
 
-    for (raw, parsed) in fills.iter().zip(&sweep.reports) {
-        if raw.oid == oid
-            && (raw.sz != parsed.last_qty.as_decimal()
-                || raw.px != parsed.last_px.as_decimal()
-                || raw.fee != parsed.commission.as_decimal())
+    for (raw, parsed) in fills.iter().zip(&mut sweep.reports) {
+        if raw.oid != oid {
+            continue;
+        }
+
+        if raw.sz != parsed.last_qty.as_decimal()
+            || raw.px != parsed.last_px.as_decimal()
+            || raw.fee != parsed.commission.as_decimal()
         {
             anyhow::bail!(
                 "fill quantity, price, or commission loses precision for venue order {oid}"
             );
         }
+
+        parsed.client_order_id = Some(context.identity.client_order_id);
     }
 
     validate_query_order_fills(sweep.reports, report, context)

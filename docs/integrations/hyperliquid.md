@@ -1245,6 +1245,16 @@ are detected and tracked as external orders. They appear in order status reports
 reconciliation.
 :::
 
+Bulk `HyperliquidHttpClient` order and fill reports preserve the raw venue CLOID as `client_order_id` when present.
+Startup mass status carries these reports unchanged. Reconciliation matches them to cached orders by venue order ID,
+so retained orders keep their native client order IDs.
+
+`GenerateFillReports` replaces the raw CLOID with the cached client order ID for the venue order ID.
+If no cached order maps that venue order ID, `GenerateFillReports` leaves `client_order_id` unset.
+
+The adapter derives CLOIDs by hashing Nautilus client order IDs. Without a retained cache, startup uses the raw
+CLOID for external orders and cannot reconstruct the original IDs.
+
 ### Modify as cancel-replace
 
 Hyperliquid implements order modification as a **cancel-replace**. The `modify` action on the
