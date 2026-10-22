@@ -5632,6 +5632,9 @@ impl Cache {
         let mut flip = None;
         let mut corrected_source = None;
 
+        // Keep ordered fill checks linear in each position's replay history
+        let mut replay_offsets = AHashMap::new();
+
         for event in order.events() {
             let OrderEventAny::Filled(fill) = event else {
                 continue;
@@ -5647,9 +5650,8 @@ impl Cache {
             }
 
             if source.as_ref().is_some_and(|source| {
-                source.replay_events.iter().any(|event| {
-                    matches!(event, PositionReplayEvent::Filled(fragment) if fragment == fill)
-                })
+                let offset = replay_offsets.entry(source_id).or_default();
+                Self::replay_contains_fill(&source.replay_events, fill, offset)
             }) {
                 continue;
             }
@@ -5704,6 +5706,22 @@ impl Cache {
         }
 
         Ok(flip)
+    }
+
+    fn replay_contains_fill(
+        events: &[PositionReplayEvent],
+        fill: &OrderFilled,
+        offset: &mut usize,
+    ) -> bool {
+        let matches_fill = |event: &PositionReplayEvent| matches!(event, PositionReplayEvent::Filled(fragment) if fragment == fill);
+
+        if let Some(index) = events[*offset..].iter().position(matches_fill) {
+            *offset += index + 1;
+            return true;
+        }
+
+        // Repeated or reordered fills can still match before the cursor
+        events[..*offset].iter().any(matches_fill)
     }
 
     fn hedging_flip_destination(

@@ -3941,6 +3941,90 @@ fn test_try_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
+#[case::ordered(vec![0, 1, 2], vec![1, 2, 3])]
+#[case::reversed(vec![2, 1, 0], vec![3, 3, 3])]
+#[case::reordered(vec![1, 0, 2, 1], vec![2, 2, 3, 3])]
+#[case::repeated(vec![0, 0, 1, 2], vec![1, 1, 2, 3])]
+fn test_replay_contains_fill_with_retained_history(
+    #[case] queries: Vec<usize>,
+    #[case] expected_offsets: Vec<usize>,
+) {
+    let fills = ["T-REPLAY-1", "T-REPLAY-2", "T-REPLAY-3"].map(|id| {
+        OrderFilledSpec::builder()
+            .trade_id(TradeId::from(id))
+            .build()
+    });
+
+    let events = fills.clone().map(PositionReplayEvent::Filled);
+    let mut offset = 0;
+    let results: Vec<_> = queries
+        .into_iter()
+        .map(|index| {
+            let found = Cache::replay_contains_fill(&events, &fills[index], &mut offset);
+            (found, offset)
+        })
+        .collect();
+
+    let expected: Vec<_> = expected_offsets
+        .into_iter()
+        .map(|offset| (true, offset))
+        .collect();
+
+    assert_eq!(results, expected);
+}
+
+#[rstest]
+fn test_replay_contains_fill_missing_event_preserves_cursor() {
+    let fill = OrderFilledSpec::builder().build();
+    let mut missing = fill.clone();
+    missing.trade_id = TradeId::from("T-MISSING");
+    let events = [PositionReplayEvent::Filled(fill.clone())];
+    let mut offset = 0;
+
+    let missing_before = Cache::replay_contains_fill(&events, &missing, &mut offset);
+    let offset_before = offset;
+    let found = Cache::replay_contains_fill(&events, &fill, &mut offset);
+    let missing_after = Cache::replay_contains_fill(&events, &missing, &mut offset);
+
+    assert!(!missing_before);
+    assert_eq!(offset_before, 0);
+    assert!(found);
+    assert!(!missing_after);
+    assert_eq!(offset, 1);
+}
+
+#[rstest]
+fn test_replay_contains_fill_requires_full_event_match(
+    #[values("quantity", "price", "commission", "causation", "info")] field: &str,
+    #[values(0, 1)] mut offset: usize,
+) {
+    let fill = OrderFilledSpec::builder()
+        .commission(Money::from("0.47 USD"))
+        .info(IndexMap::from([(
+            Ustr::from("source"),
+            Ustr::from("original"),
+        )]))
+        .build();
+    let mut changed = fill.clone();
+    match field {
+        "quantity" => changed.last_qty = Quantity::from(99_999),
+        "price" => changed.last_px = Price::from("1.00001"),
+        "commission" => changed.commission = Some(Money::from("0.13 USD")),
+        "causation" => changed.causation_id = Some(UUID4::new()),
+        "info" => changed.info.as_mut().unwrap()[&Ustr::from("source")] = Ustr::from("corrected"),
+        _ => unreachable!(),
+    }
+
+    let events = [PositionReplayEvent::Filled(fill)];
+    let expected_offset = offset;
+
+    let found = Cache::replay_contains_fill(&events, &changed, &mut offset);
+
+    assert!(!found);
+    assert_eq!(offset, expected_offset);
+}
+
+#[rstest]
 fn test_position_mut_returns_none_for_missing_position(mut cache: Cache) {
     let position_id = PositionId::from("P-MISSING");
     assert!(cache.position_mut(&position_id).is_none());

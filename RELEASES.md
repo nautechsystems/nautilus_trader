@@ -167,6 +167,7 @@ Released on TBD (UTC).
 
 - Improved Dockerfile linting to run Hadolint without Docker
 - Optimized JSON and MessagePack decoding and custom data response encoding
+- Optimized virtual hedging fill-history checks during execution and reconciliation
 - Standardized Architect AX owned execution report tasks
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc
 - Upgraded `cargo-codspeed` tool to v5.0.3
