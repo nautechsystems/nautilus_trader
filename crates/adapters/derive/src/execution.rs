@@ -709,7 +709,7 @@ impl DeriveExecutionClient {
                 .await
                 .context("failed to enable Derive cancel-on-disconnect")?;
 
-            time::timeout(CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT, async {
+            let confirmation = time::timeout(CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT, async {
                 loop {
                     let settings: AccountSettings = self
                         .http_client
@@ -726,9 +726,9 @@ impl DeriveExecutionClient {
 
                     time::sleep(Duration::from_millis(250)).await;
                 }
-            })
-            .await
-            .with_context(|| {
+            });
+
+            Box::pin(confirmation).await.with_context(|| {
                 format!(
                     "Derive cancel-on-disconnect was not confirmed within {} seconds",
                     CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT.as_secs(),

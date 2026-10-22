@@ -3001,7 +3001,7 @@ async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case]
     let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
     let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
 
-    for size_precision in [4, 5] {
+    for (size_precision, request_refresh) in [(4, true), (5, false)] {
         client.connect().await.unwrap();
 
         while rx.try_recv().is_ok() {}
@@ -3009,6 +3009,11 @@ async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case]
         client.connect().await.unwrap();
         assert_eq!(*state.all_perp_metas_request_count.lock().await, before);
         *state.btc_size_decimals_changed.lock().await = size_precision == 4;
+
+        // Only the post-reconnect refresh needs to wait for the periodic timer
+        if request_refresh {
+            client.request_instruments(instruments_request()).unwrap();
+        }
 
         let refreshed = tokio::time::timeout(Duration::from_secs(70), async {
             loop {
