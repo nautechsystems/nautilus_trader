@@ -199,12 +199,7 @@ macro_rules! define_builtin_data_dispatch {
                     let deltas = data.iter().flat_map(|batch| batch.deltas.iter().copied()).collect::<Vec<_>>();
                     catalog.write_grouped_to_parquet(&deltas, start, end, skip_disjoint_check)
                 }
-                DataBatch::Custom(data) => {
-                    for group in group_custom_data_by_type(data.as_ref()) {
-                        catalog.write_custom_data_refs_batch(&group, start, end, skip_disjoint_check)?;
-                    }
-                    Ok(())
-                }
+                DataBatch::Custom(data) => catalog.write_custom_data_groups(data.as_ref(), start, end, skip_disjoint_check),
                 DataBatch::Instrument(data) => catalog.write_instruments(data.as_ref().to_vec()).map(|_| ()),
                 $(DataBatch::$batch(data) => catalog.write_grouped_to_parquet(data.as_ref(), start, end, skip_disjoint_check),)+
                 _ => anyhow::bail!("Unsupported catalog data batch: {}", batch.data_type_name()),
