@@ -4249,7 +4249,10 @@ impl OrderMatchingEngine {
             .copied()
             .unwrap_or_default();
         let leaves_qty = order.quantity().saturating_sub(filled_qty);
-        if leaves_qty.is_zero() || order.time_in_force() == TimeInForce::Fok {
+        if leaves_qty.is_zero()
+            || order.time_in_force() == TimeInForce::Fok
+            || (order.time_in_force() == TimeInForce::Ioc && filled_qty.is_zero())
+        {
             self.purge_cached_filled_qty_if_closed(client_order_id);
             return;
         }
@@ -5741,12 +5744,12 @@ impl OrderMatchingEngine {
             }
         }
 
-        if initial_market_to_limit {
+        let filled_in_loop = total_filled > initial_total_filled;
+        if initial_market_to_limit && filled_in_loop {
             return Ok(());
         }
 
         let leaves_remaining = total_filled < order.quantity();
-        let filled_in_loop = total_filled > initial_total_filled;
 
         if order.time_in_force() == TimeInForce::Ioc && leaves_remaining {
             self.cancel_order(order, None);
