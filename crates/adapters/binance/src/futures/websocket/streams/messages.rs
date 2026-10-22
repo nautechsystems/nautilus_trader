@@ -559,6 +559,9 @@ pub struct AccountUpdateData {
     /// Position updates.
     #[serde(rename = "P", default)]
     pub positions: Vec<PositionUpdate>,
+    /// Symbol associated with a funding-fee update, when provided.
+    #[serde(rename = "S", default)]
+    pub symbol: Option<Ustr>,
 }
 
 /// Account update reason type.
@@ -1069,8 +1072,76 @@ pub struct BinanceFuturesListenKeyExpiredMsg {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    #[case(
+        include_str!("../../../../test_data/futures/user_data_json/account_update_funding_fee_usdm.json"),
+        "BTCUSDT",
+        "USDT",
+        [1786060800001, 1786060800000],
+        [dec!(1024.12345678), dec!(1010.87654321), dec!(-0.01234567)]
+    )]
+    #[case(
+        include_str!("../../../../test_data/futures/user_data_json/account_update_funding_fee_coinm.json"),
+        "BTCUSD_PERP",
+        "BTC",
+        [1786089600002, 1786089600000],
+        [dec!(1.23456789), dec!(1.12345678), dec!(0.00001234)]
+    )]
+    fn test_account_update_funding_fee_symbol(
+        #[case] payload: &str,
+        #[case] symbol: &str,
+        #[case] asset: &str,
+        #[case] times: [i64; 2],
+        #[case] balances: [Decimal; 3],
+    ) {
+        let msg: BinanceFuturesAccountUpdateMsg = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(msg.event_type, "ACCOUNT_UPDATE");
+        assert_eq!(msg.event_time, times[0]);
+        assert_eq!(msg.transaction_time, times[1]);
+        assert_eq!(msg.account.reason, AccountUpdateReason::FundingFee);
+        assert_eq!(msg.account.symbol, Some(Ustr::from(symbol)));
+        assert_eq!(msg.account.balances.len(), 1);
+        assert_eq!(msg.account.positions.len(), 0);
+        let balance = &msg.account.balances[0];
+        assert_eq!(balance.asset, Ustr::from(asset));
+        assert_eq!(balance.wallet_balance, balances[0]);
+        assert_eq!(balance.cross_wallet_balance, balances[1]);
+        assert_eq!(balance.balance_change, Some(balances[2]));
+    }
+
+    #[rstest]
+    #[case(include_str!("../../../../test_data/futures/user_data_json/account_update.json"), 1, 3)]
+    #[case(include_str!("../../../../test_data/futures/user_data_json/account_update_bnfcr.json"), 1, 0)]
+    fn test_account_update_without_symbol(
+        #[case] payload: &str,
+        #[case] balances: usize,
+        #[case] positions: usize,
+    ) {
+        let msg: BinanceFuturesAccountUpdateMsg = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(msg.account.reason, AccountUpdateReason::Order);
+        assert_eq!(msg.account.symbol, None);
+        assert_eq!(msg.account.balances.len(), balances);
+        assert_eq!(msg.account.positions.len(), positions);
+    }
+
+    #[rstest]
+    #[case(include_str!("../../../../test_data/futures/user_data_json/account_update_funding_fee_usdm.json"))]
+    #[case(include_str!("../../../../test_data/futures/user_data_json/account_update_funding_fee_coinm.json"))]
+    fn test_account_update_funding_fee_without_symbol(#[case] payload: &str) {
+        let mut payload: serde_json::Value = serde_json::from_str(payload).unwrap();
+        payload["a"].as_object_mut().unwrap().remove("S");
+
+        let msg: BinanceFuturesAccountUpdateMsg = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(msg.account.reason, AccountUpdateReason::FundingFee);
+        assert_eq!(msg.account.symbol, None);
+    }
 
     #[rstest]
     fn test_account_update_reason_adl_deserializes() {
