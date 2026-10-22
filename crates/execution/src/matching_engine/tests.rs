@@ -1865,6 +1865,78 @@ fn test_process_order_rejects_oto_child_of_deferred_parent_rejection_until_purge
 }
 
 #[rstest]
+#[case::cache_closed(false, false)]
+#[case::cache_missing(true, false)]
+#[case::engine_reset(false, true)]
+fn test_deferred_canceled_oto_child_lifecycle(#[case] cache_missing: bool, #[case] reset: bool) {
+    let (mut engine, _) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.support_contingent_orders = true;
+    let child_id = ClientOrderId::from("OTO-CANCELED-CHILD");
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(child_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("7.000"))
+        .price(Price::from("1600.00"))
+        .parent_order_id(ClientOrderId::from("OTO-PARENT"))
+        .submit(true)
+        .build();
+    engine
+        .cache
+        .borrow_mut()
+        .add_order(child.clone(), None, None, false)
+        .unwrap();
+    let deferred = Rc::new(RefCell::new(Vec::new()));
+    let handler_deferred = deferred.clone();
+    engine.set_event_handler(Rc::new(move |event| {
+        handler_deferred.borrow_mut().push(event);
+    }));
+
+    engine.cancel_order(&child, Some(false));
+    for timestamp in [2, 3] {
+        engine.iterate(UnixNanos::from(timestamp), AggressorSide::NoAggressor);
+        assert_eq!(
+            engine.cache.borrow().order(&child_id).unwrap().status(),
+            OrderStatus::Submitted
+        );
+        assert_eq!(
+            engine
+                .orders
+                .closed_oto_order_ids
+                .borrow()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![child_id]
+        );
+    }
+
+    let events = deferred.borrow().clone();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type(), OrderEventType::Canceled);
+    assert_eq!(events[0].client_order_id(), child_id);
+
+    if reset {
+        engine.reset();
+    } else {
+        if cache_missing {
+            engine.cache.borrow_mut().reset();
+            assert!(!engine.cache.borrow().order_exists(&child_id));
+        } else {
+            engine.cache.borrow_mut().update_order(&events[0]).unwrap();
+            assert_eq!(
+                engine.cache.borrow().order(&child_id).unwrap().status(),
+                OrderStatus::Canceled
+            );
+        }
+
+        engine.iterate(UnixNanos::from(4), AggressorSide::NoAggressor);
+    }
+
+    assert!(engine.orders.closed_oto_order_ids.borrow().is_empty());
+}
+
+#[rstest]
 fn test_post_match_order_action_does_not_clone_closed_order() {
     let order = post_match_closed_limit_order();
     let clone_count = Cell::new(0);

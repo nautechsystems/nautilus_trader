@@ -26172,6 +26172,107 @@ fn test_reduce_only_resize_gives_quote_quantity_exits_base_quantity(
     assert_eq!(sl.filled_qty(), Quantity::from("6.000"), "{summary:?}");
 }
 
+#[rstest]
+fn test_deferred_reduce_only_resize_keeps_quote_stop_in_base(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] cancel_entry: bool,
+) {
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, engine_config());
+    let orders = quote_quantity_oto_orders(&instrument_eth_usdt, ["1000.000", "30000.000"], true);
+    submit_orders(&mut engine, account_id, orders);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+
+    run_with_dispatch(&mut engine, true, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "6.000",
+            1,
+        );
+
+        // The resize is queued while the cache still holds the original quote quantity
+        {
+            let cache = cache.borrow();
+            let sl = cache.order(&sl_id).unwrap();
+            assert_eq!(sl.quantity(), Quantity::from("1000.000"));
+            assert!(sl.is_quote_quantity());
+        }
+
+        if cancel_entry {
+            engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+        }
+
+        let bid = book_delta(
+            &instrument_eth_usdt,
+            BookAction::Add,
+            OrderSide::Buy,
+            "50.00",
+            "20.000",
+            2,
+        );
+        engine.process_order_book_delta(&bid).unwrap();
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+
+    let updates: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(update) if update.client_order_id == sl_id => {
+                Some((update.quantity, update.is_quote_quantity))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == sl_id => {
+                Some((fill.last_qty, fill.last_px))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(updates, vec![(Quantity::from("6.000"), false)]);
+    assert_eq!(fills, vec![(Quantity::from("6.000"), Price::from("50.00"))]);
+
+    if cancel_entry {
+        let resize = events
+            .iter()
+            .position(|event| {
+                event.client_order_id() == sl_id && event.event_type() == OrderEventType::Updated
+            })
+            .unwrap();
+
+        let cancel = events
+            .iter()
+            .position(|event| {
+                event.client_order_id() == ClientOrderId::from(BRACKET_ENTRY_ID)
+                    && event.event_type() == OrderEventType::Canceled
+            })
+            .unwrap();
+
+        assert!(resize < cancel);
+    }
+
+    let cache = cache.borrow();
+    let sl = cache.order(&sl_id).unwrap();
+    assert_eq!(sl.status(), OrderStatus::Filled);
+    assert_eq!(sl.quantity(), Quantity::from("6.000"));
+    assert_eq!(sl.filled_qty(), Quantity::from("6.000"));
+    assert_eq!(sl.leaves_qty(), Quantity::from("0.000"));
+    assert!(!sl.is_quote_quantity());
+
+    if cancel_entry {
+        assert_bracket_entry(&cache, OrderStatus::Canceled, "6.000");
+    }
+}
+
 // The limit exit's conversion, and the entry's own when it is submitted in the batch, have not
 // reached the cache when the cancel sizes the exits. The entry converts once.
 #[rstest]
