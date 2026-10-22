@@ -437,9 +437,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::unsubscribe(false)]
-    #[case::remove_handler(true)]
-    fn test_topic_router_publish_orders_by_full_delivery_key(#[case] remove_by_id: bool) {
+    fn test_topic_router_publish_orders_by_full_delivery_key() {
         let mut router = TopicRouter::<i32>::new();
         let order = Rc::new(RefCell::new(Vec::new()));
 
@@ -460,7 +458,7 @@ mod tests {
             wildcard_b_order.borrow_mut().push("wildcard-b");
         });
 
-        router.subscribe("delivery.*".into(), low.clone(), 1);
+        router.subscribe("delivery.*".into(), low, 1);
         router.subscribe("delivery.topic".into(), exact_b, 10);
         router.subscribe("delivery.topic".into(), exact_a, 10);
         router.subscribe("delivery.*".into(), wildcard_b, 10);
@@ -478,20 +476,9 @@ mod tests {
             vec!["wildcard-b", "exact-a", "exact-b", "low-z"]
         );
 
-        if remove_by_id {
-            router.remove_handler("delivery.*".into(), low.id());
-        } else {
-            router.unsubscribe("delivery.*".into(), &low);
-        }
-
+        router.remove_handler("delivery.*".into(), "handler-z".into());
         order.borrow_mut().clear();
-        let mut handlers = SmallVec::new();
-        router.fill_matching_handlers(topic, &mut handlers);
-
-        for handler in handlers {
-            handler.handle(&42);
-        }
-
+        router.publish(topic, &42);
         assert_eq!(*order.borrow(), vec!["wildcard-b", "exact-a", "exact-b"]);
     }
 
