@@ -446,7 +446,7 @@ impl AsyncRunner {
 
         loop {
             let callbacks_pending = drain_callbacks().await?;
-            let (poll_time, poll_data) = self.dispatch_priority.enabled(
+            let (poll_time, poll_data) = self.dispatch_priority.next_poll(
                 self.channels.data_evt_rx.is_empty(),
                 self.channels.data_cmd_rx.is_empty(),
             );
@@ -460,7 +460,7 @@ impl AsyncRunner {
                 },
                 () = std::future::ready(()), if callbacks_pending => {},
                 Some(handler) = self.channels.time_evt_rx.recv(), if poll_time => {
-                    self.dispatch_priority = DispatchPriority::DataEvent;
+                    self.dispatch_priority.skip_time = true;
                     let _ = Self::handle_time_event(handler);
                 },
                 Some(event) = self.channels.system_evt_rx.recv() => {
@@ -476,11 +476,11 @@ impl AsyncRunner {
                     Self::handle_trading_command(cmd);
                 },
                 Some(evt) = self.channels.data_evt_rx.recv(), if poll_data => {
-                    self.dispatch_priority = DispatchPriority::DataCommand;
+                    self.dispatch_priority.skip_data = true;
                     Self::dispatch_data_event(evt);
                 },
                 Some(cmd) = self.channels.data_cmd_rx.recv() => {
-                    self.dispatch_priority = DispatchPriority::Time;
+                    self.dispatch_priority = DispatchPriority::default();
                     Self::handle_data_command(cmd);
                 },
                 else => {
@@ -639,22 +639,18 @@ impl AsyncRunner {
     }
 }
 
-/// Rotates timer and data service while skipping empty channels.
+/// Alternates data events and commands, yielding timer polling for at most one selection.
 #[derive(Debug, Default)]
-pub(crate) enum DispatchPriority {
-    #[default]
-    Time,
-    DataEvent,
-    DataCommand,
+pub(crate) struct DispatchPriority {
+    pub(crate) skip_time: bool,
+    pub(crate) skip_data: bool,
 }
 
 impl DispatchPriority {
-    pub(crate) fn enabled(&self, data_empty: bool, commands_empty: bool) -> (bool, bool) {
-        match self {
-            Self::Time => (true, true),
-            Self::DataEvent => (data_empty && commands_empty, true),
-            Self::DataCommand => (commands_empty, commands_empty),
-        }
+    pub(crate) fn next_poll(&mut self, data_empty: bool, commands_empty: bool) -> (bool, bool) {
+        let poll_time = !self.skip_time || (data_empty && commands_empty);
+        self.skip_time = false;
+        (poll_time, !self.skip_data || commands_empty)
     }
 }
 
@@ -720,7 +716,7 @@ impl AsyncRunner {
     }
 
     pub(crate) async fn recv(&mut self) -> Option<PendingRunnerEvent> {
-        let (poll_time, poll_data) = self.dispatch_priority.enabled(
+        let (poll_time, poll_data) = self.dispatch_priority.next_poll(
             self.channels.data_evt_rx.is_empty(),
             self.channels.data_cmd_rx.is_empty(),
         );
@@ -728,7 +724,7 @@ impl AsyncRunner {
             biased;
 
             Some(message) = self.channels.time_evt_rx.recv(), if poll_time => {
-                self.dispatch_priority = DispatchPriority::DataEvent;
+                self.dispatch_priority.skip_time = true;
                 Some(PendingRunnerEvent::TimeEvent(message))
             }
             Some(event) = self.channels.system_evt_rx.recv() => {
@@ -744,11 +740,11 @@ impl AsyncRunner {
                 Some(PendingRunnerEvent::ExecCommand(command))
             }
             Some(event) = self.channels.data_evt_rx.recv(), if poll_data => {
-                self.dispatch_priority = DispatchPriority::DataCommand;
+                self.dispatch_priority.skip_data = true;
                 Some(PendingRunnerEvent::DataEvent(event))
             }
             Some(command) = self.channels.data_cmd_rx.recv() => {
-                self.dispatch_priority = DispatchPriority::Time;
+                self.dispatch_priority = DispatchPriority::default();
                 Some(PendingRunnerEvent::DataCommand(command))
             }
             else => None,
@@ -1239,13 +1235,15 @@ mod tests {
 
     #[cfg(feature = "node")]
     #[rstest]
-    #[case::timers_and_data(true, true)]
-    #[case::timers_only(true, false)]
-    #[case::data_only(false, true)]
+    #[case::timers_and_data(true, true, false)]
+    #[case::timers_only(true, false, false)]
+    #[case::data_only(false, true, false)]
+    #[case::execution_backlog(true, true, true)]
     #[tokio::test]
-    async fn test_runner_data_progress_under_load(
+    async fn test_runner_dispatch_progress_under_load(
         #[case] timers: bool,
         #[case] data: bool,
+        #[case] execution: bool,
         #[values(false, true)] receive: bool,
     ) {
         let mut runner = AsyncRunner::new();
@@ -1258,6 +1256,12 @@ mod tests {
         let received = Rc::new(std::cell::Cell::new(0_u64));
         let observed = received.clone();
         let stop = runner.signal_tx.clone();
+        let exec_event = || {
+            ExecutionEvent::Order(OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder().build(),
+            ))
+        };
+        let exec_tx = runner.exec_evt_tx.clone();
         msgbus::register_data_endpoint(
             MessagingSwitchboard::data_engine_process_data(),
             TypedIntoHandler::from(move |event| {
@@ -1266,6 +1270,9 @@ mod tests {
                 };
                 observed.set(observed.get() + 1);
                 assert_eq!(quote.ts_init.as_u64(), observed.get());
+                // Execution between data events must not restart the data rotation
+                exec_tx.send(exec_event().into()).unwrap();
+
                 if !timers && quote.ts_init == UnixNanos::from(8) {
                     stop.send(()).unwrap();
                 }
@@ -1299,6 +1306,10 @@ mod tests {
                     .send(DataEvent::Data(Data::Quote(quote)).into())
                     .unwrap();
             }
+
+            if execution {
+                runner.exec_evt_tx.send(exec_event().into()).unwrap();
+            }
             runner.data_cmd_tx.send(command.clone().into()).unwrap();
         }
 
@@ -1312,6 +1323,7 @@ mod tests {
                     PendingRunnerEvent::DataCommand(command) => {
                         AsyncRunner::handle_data_command(command);
                     }
+                    PendingRunnerEvent::ExecEvent(event) => AsyncRunner::dispatch_exec_event(event),
                     _ => panic!("Unexpected runner event"),
                 }
             }
@@ -1319,11 +1331,16 @@ mod tests {
             runner.run().await.unwrap();
         }
 
-        assert!((1..16).contains(&runner.channels.data_cmd_rx.len()));
+        if execution {
+            assert!((1..16).contains(&runner.channels.exec_evt_rx.len()));
+            assert_eq!(received.get(), 0);
+        } else {
+            assert!((1..16).contains(&runner.channels.data_cmd_rx.len()));
 
-        if data {
-            assert!(received.get() > 0);
-            assert!(!runner.channels.data_evt_rx.is_empty());
+            if data {
+                assert!(received.get() > 0);
+                assert!(!runner.channels.data_evt_rx.is_empty());
+            }
         }
 
         if timers {

@@ -1613,7 +1613,7 @@ impl LiveNode {
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
             let is_running = self.state() == NodeState::Running;
             let (poll_time, poll_data) =
-                dispatch_priority.enabled(data_evt_rx.is_empty(), data_cmd_rx.is_empty());
+                dispatch_priority.next_poll(data_evt_rx.is_empty(), data_cmd_rx.is_empty());
 
             tokio::select! {
                 biased;
@@ -1855,7 +1855,7 @@ impl LiveNode {
                 // submit, etc.) is not delayed behind a market data backlog
                 // when the biased select polls receivers each iteration.
                 Some(handler) = time_evt_rx.recv(), if poll_time => {
-                    dispatch_priority = DispatchPriority::DataEvent;
+                    dispatch_priority.skip_time = true;
                     let dispatch_start = dst::time::Instant::now();
                     let dispatched = AsyncRunner::handle_time_event(handler);
 
@@ -1944,7 +1944,7 @@ impl LiveNode {
                     );
                 }
                 Some(evt) = data_evt_rx.recv(), if poll_data => {
-                    dispatch_priority = DispatchPriority::DataCommand;
+                    dispatch_priority.skip_data = true;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1960,7 +1960,7 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = data_cmd_rx.recv() => {
-                    dispatch_priority = DispatchPriority::Time;
+                    dispatch_priority = DispatchPriority::default();
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -4639,8 +4639,9 @@ mod tests {
         msgbus::get_message_bus().borrow_mut().dispose();
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_run_data_progress_under_timer_load() {
+    async fn test_run_dispatch_progress_under_load(#[values(false, true)] execution: bool) {
         let config = LiveNodeConfig {
             delay_post_stop: Duration::ZERO,
             ..Default::default()
@@ -4653,8 +4654,14 @@ mod tests {
                 // Check progress before shutdown can drain the queues
                 let snapshot = stop.metrics_snapshot();
                 assert_eq!(snapshot.time_events.dispatched, 7);
-                assert!(snapshot.data_events.dispatched > 0);
-                assert_eq!(snapshot.data_commands.dispatched, 1);
+
+                if execution {
+                    assert!((1..16).contains(&snapshot.exec_events.dispatched));
+                    assert_eq!(snapshot.data_events.dispatched, 0);
+                } else {
+                    assert!(snapshot.data_events.dispatched > 0);
+                    assert_eq!(snapshot.data_commands.dispatched, 1);
+                }
                 stop.stop();
             }
         }));
@@ -4668,6 +4675,10 @@ mod tests {
                     callback.clone(),
                 ));
                 get_data_event_sender().send(stub_data_event()).unwrap();
+
+                if execution {
+                    get_exec_event_sender().send(stub_exec_event()).unwrap();
+                }
             }
             nautilus_common::runner::get_data_cmd_sender().execute(stub_data_command());
         };
