@@ -1432,7 +1432,7 @@ pub(crate) mod serial_tests {
         ) -> anyhow::Result<Vec<OrderStatusReport>> {
             let task = self.order_report_task();
             task.collection.await;
-            task.result.await
+            (task.finish)()
         }
 
         async fn generate_order_status_report(

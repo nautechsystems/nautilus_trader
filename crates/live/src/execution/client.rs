@@ -201,7 +201,7 @@ impl LiveExecutionClient {
 
         self.report_task.borrow_mut().spawn(task.collection)?;
         self.join_report_task().await?;
-        let result = task.result.await;
+        let result = (task.finish)();
         self.flush_pending_instruments();
         result
     }
@@ -837,28 +837,28 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn pending_continuation_keeps_admission_until_collector_releases() {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
-        let (started_sender, started) = tokio::sync::oneshot::channel();
+    async fn synchronous_continuation_keeps_admission_until_collector_releases() {
+        let client = Rc::new(LiveExecutionClient::new(Box::new(ReportExecutionClient)));
+        let client_for_finish = Rc::clone(&client);
 
         let task = ExecutionReportTask {
             collection: Box::pin(async {}),
-            result: Box::pin(async move {
-                started_sender.send(()).unwrap();
-                std::future::pending::<anyhow::Result<usize>>().await
+            finish: Box::new(move || {
+                let mut overlapping = Box::pin(
+                    client_for_finish
+                        .collect_report(ExecutionReportTask::new(async { Ok(71) }, Ok)),
+                );
+                let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+
+                let std::task::Poll::Ready(result) = overlapping.as_mut().poll(&mut context) else {
+                    panic!("overlapping collection was not rejected");
+                };
+
+                result
             }),
         };
 
-        let mut collection = Box::pin(client.collect_report(task));
-        tokio::select! {
-            result = &mut collection => panic!("continuation unexpectedly returned: {result:?}"),
-            started = started => { started.unwrap(); },
-        }
-        let rejected = client
-            .collect_report(ExecutionReportTask::new(async { Ok(71) }, Ok))
-            .await
-            .unwrap_err();
-        drop(collection);
+        let rejected = client.collect_report(task).await.unwrap_err();
         let next = client
             .collect_report(ExecutionReportTask::new(async { Ok(73) }, Ok))
             .await
@@ -869,6 +869,7 @@ mod tests {
         );
         assert_eq!(next, 73);
         assert!(!client.report_collecting.get());
+        assert!(client.report_task.borrow().is_none());
     }
 
     #[tokio::test(flavor = "current_thread")]

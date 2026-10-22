@@ -7306,7 +7306,7 @@ async fn test_generate_order_status_report_preserves_pending_modify(
     let collected = if worker {
         let task = client.generate_order_status_report_task(&cmd).unwrap();
         tokio::spawn(task.collection).await.unwrap();
-        Some(task.result)
+        Some(task.finish)
     } else {
         None
     };
@@ -7330,8 +7330,8 @@ async fn test_generate_order_status_report_preserves_pending_modify(
         .expect("modify_order");
     await_send_tx_count(&state, 1).await;
 
-    let report = if let Some(result) = collected {
-        result.await
+    let report = if let Some(finish) = collected {
+        finish()
     } else {
         client.generate_order_status_report(&cmd).await
     }
@@ -7993,7 +7993,7 @@ async fn run_report_collection<T: 'static>(task: ExecutionReportTask<T>) -> anyh
     .expect("collection worker");
 
     assert_eq!(std::thread::current().id(), core_thread);
-    task.result.await
+    (task.finish)()
 }
 
 async fn generate_order_status_report(
@@ -8198,17 +8198,17 @@ async fn test_fill_report_task_finalizes_against_current_live_delivery(
 
     if stop {
         client.reset().unwrap();
-        let error = task.result.await.unwrap_err();
+        let error = (task.finish)().unwrap_err();
         assert_eq!(error.to_string(), "Lighter report session stopped");
         client.disconnect().await.unwrap();
         return;
     }
 
     let result = if discard {
-        drop(task.result);
+        drop(task.finish);
         None
     } else {
-        Some(task.result)
+        Some(task.finish)
     };
 
     state.push_frame(&json!({"type":"update/account_all_trades", "channel":format!("account_all_trades:{TEST_ACCOUNT_INDEX}"), "trades":{"0":[trade]}}));
@@ -8225,8 +8225,8 @@ async fn test_fill_report_task_finalizes_against_current_live_delivery(
 
     assert_eq!(report.trade_id, TradeId::from("19209006906"));
 
-    if let Some(result) = result {
-        assert_eq!(result.await.unwrap(), Vec::<FillReport>::new());
+    if let Some(finish) = result {
+        assert_eq!(finish().unwrap(), Vec::<FillReport>::new());
     }
 
     client.disconnect().await.unwrap();
@@ -8256,7 +8256,7 @@ async fn test_position_report_task_reads_snapshot_at_finish() {
     state.push_frame(&snapshot);
     next_event_matching(&mut rx, Duration::from_secs(2), |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Position(report)) if report.position_side == PositionSide::Short)).await.unwrap();
     let expected = client.generate_position_status_reports(&cmd).await.unwrap();
-    let actual = task.result.await.unwrap();
+    let actual = (task.finish)().unwrap();
     assert_eq!(actual.len(), 1);
     assert_eq!(actual[0].quantity, Quantity::from("1.5000"));
     assert_eq!(actual[0].position_side, PositionSide::Short);
@@ -8305,7 +8305,7 @@ async fn test_fill_report_task_keeps_owned_instruments_during_update() {
         .unwrap();
     drop(response);
     worker.await.unwrap();
-    let reports = task.result.await.unwrap();
+    let reports = (task.finish)().unwrap();
     let updated = client.generate_fill_reports(cmd).await.unwrap();
     assert_eq!(reports.len(), 1);
     assert_eq!(updated.len(), 1);
@@ -8344,7 +8344,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_order_status_report_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         1 => {
             let cmd = GenerateOrderStatusReports::new(
@@ -8360,7 +8360,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_order_status_reports_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         2 => {
             let cmd = GenerateFillReports::new(
@@ -8376,7 +8376,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_fill_reports_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         3 => {
             let cmd = GeneratePositionStatusReports::new(
@@ -8391,7 +8391,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_position_status_reports_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         _ => unreachable!(),
     };
@@ -8452,7 +8452,7 @@ async fn test_bulk_report_task_records_discovered_markets_only_at_finish(
         client.reset().unwrap();
     }
 
-    let result = task.result.await;
+    let result = (task.finish)();
 
     if stop {
         assert_eq!(
@@ -8543,7 +8543,7 @@ async fn test_bulk_report_task_restores_identity_from_current_cache() {
             false,
         )))
         .unwrap();
-    let reports = task.result.await.unwrap();
+    let reports = (task.finish)().unwrap();
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].client_order_id, Some(client_order_id));
     assert_eq!(reports[0].venue_order_id, venue_order_id);

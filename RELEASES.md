@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Removed Hyperliquid `Secrets::from_file` and `from_json`; use `from_private_key` or `from_env`
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
+- Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
 - Changed `Money` display and decimal conversion to retain finer digits; round to currency precision explicitly
 - Changed `Money` deserialization to reject excess precision instead of rounding; round inputs before loading

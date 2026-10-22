@@ -1071,6 +1071,23 @@ signature change does not add test-clock support to those adapters.
 Custom Rust cache database adapters used with live orders must implement the batch `index_order_clients`
 operation. The default trait implementation rejects non-empty claims.
 
+### Execution report tasks
+
+For Rust report-task callers, replace `task.result.await` with `(task.finish)()` on the core thread.
+**Join the collection worker first.** An early call consumes `finish` and discards later collection results.
+
+- `collection`: worker-safe HTTP requests, pagination, decoding, and report construction.
+- `finish`: synchronous finalization using current core state; it cannot suspend.
+
+With `ExecutionReportTask::new`, `finish` propagates collection errors without calling the continuation.
+It returns an error if collection is unfinished or stopped without a result.
+
+For struct literals, replace the result future with `finish: Box<dyn FnOnce() -> anyhow::Result<T>>`
+and implement the same checks.
+
+Dropping `finish` does not cancel collection. Its owner must still join or abort the worker.
+Node report handling and inline collection (`generate_*_task` returning `None`) are unchanged.
+
 ### Tokio runtime
 
 For `set_runtime`, use `Builder::new_multi_thread().enable_all()`; current-thread runtimes are rejected.

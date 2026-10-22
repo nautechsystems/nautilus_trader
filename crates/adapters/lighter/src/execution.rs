@@ -9719,7 +9719,7 @@ mod tests {
         let result = if worker {
             let task = client.generate_order_status_report_task(&command).unwrap();
             task.collection.await;
-            task.result.await
+            (task.finish)()
         } else {
             client.generate_order_status_report(&command).await
         };
@@ -20917,7 +20917,7 @@ mod tests {
             .generate_position_status_reports_task(&command)
             .unwrap();
         worker.collection.await;
-        let worker = worker.result.await;
+        let worker = (worker.finish)();
         assert!(mass.position_reports().is_empty());
         assert!(!mass.reports_complete());
         assert!(direct.is_err());

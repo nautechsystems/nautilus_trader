@@ -5040,7 +5040,7 @@ async fn run_report_task<T>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
     .await
     .unwrap();
 
-    task.result.await
+    (task.finish)()
 }
 
 async fn generate_order_report(
@@ -10474,7 +10474,7 @@ async fn test_generate_fill_reports_resolves_cached_client_order_id(
     let receipt = if worker {
         let task = client.generate_fill_reports_task(&cmd).unwrap();
         tokio::spawn(task.collection).await.unwrap();
-        Some(task.result)
+        Some(task.finish)
     } else {
         None
     };
@@ -10490,8 +10490,8 @@ async fn test_generate_fill_reports_resolves_cached_client_order_id(
             .unwrap();
     }
 
-    let reports = if let Some(receipt) = receipt {
-        receipt.await.unwrap()
+    let reports = if let Some(finish) = receipt {
+        finish().unwrap()
     } else {
         generate_fills(&client, cmd, false).await.unwrap()
     };
@@ -12351,10 +12351,10 @@ async fn test_report_tasks_match_inline_fields() {
     }
 
     drop(cache_borrow);
-    let worker_single = single_task.result.await.unwrap().unwrap();
-    let worker_orders = orders_task.result.await.unwrap();
-    let worker_fills = fills_task.result.await.unwrap();
-    let worker_positions = positions_task.result.await.unwrap();
+    let worker_single = (single_task.finish)().unwrap().unwrap();
+    let worker_orders = (orders_task.finish)().unwrap();
+    let worker_fills = (fills_task.finish)().unwrap();
+    let worker_positions = (positions_task.finish)().unwrap();
 
     assert_eq!(inline_orders.len(), 1);
     assert_eq!(inline_fills.len(), 1);
@@ -12438,7 +12438,7 @@ async fn test_order_report_task_finishes_with_current_modify_state(
         dispatch.record_venue_order_id(coid, VenueOrderId::from("102"));
     }
 
-    let result = task.result.await;
+    let result = (task.finish)();
 
     if suppressed {
         assert_eq!(
@@ -12510,7 +12510,7 @@ async fn test_order_report_task_finishes_accepted_with_current_binding(
     let current_oid = VenueOrderId::from(if superseded { "103" } else { "101" });
     dispatch.record_venue_order_id(coid, current_oid);
     dispatch.mark_pending_modify(coid, current_oid, Quantity::from("0.2"));
-    let result = task.result.await;
+    let result = (task.finish)();
 
     if superseded {
         assert_eq!(
@@ -12588,7 +12588,7 @@ async fn test_order_report_task_defers_cached_older_triggered_leg() {
     dispatch.record_venue_order_id(coid, newer_oid);
     state.info_release.notify_one();
     worker.await.unwrap();
-    let result = task.result.await;
+    let result = (task.finish)();
     let requests = state.info_requests.lock().await;
     let oid_queries: Vec<_> = requests
         .iter()
@@ -12632,7 +12632,7 @@ async fn test_report_task_observes_instrument_update_during_collection() {
     client.on_instrument(instrument);
     state.info_release.notify_one();
     worker.await.unwrap();
-    let report = task.result.await.unwrap().unwrap();
+    let report = (task.finish)().unwrap().unwrap();
     assert_eq!(report.quantity.precision, 5);
     assert_eq!(report.price.unwrap().precision, 2);
     assert_eq!(report.venue_order_id, VenueOrderId::from("101"));
@@ -12867,7 +12867,7 @@ async fn test_canceled_report_task_never_promotes_replacement() {
     worker.abort();
     assert!(worker.await.unwrap_err().is_cancelled());
     assert_eq!(
-        task.result.await.unwrap_err().to_string(),
+        (task.finish)().unwrap_err().to_string(),
         "report collection stopped without a result"
     );
     assert_eq!(
