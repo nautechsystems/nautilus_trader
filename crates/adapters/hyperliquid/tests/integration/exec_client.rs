@@ -692,6 +692,9 @@ async fn handle_exchange(
             }))
             .into_response()
         }
+        Some("scheduleCancel") => {
+            Json(load_json("schedule_cancel.json")["success"].clone()).into_response()
+        }
         Some("modify") => Json(json!({
             "status": "ok",
             "response": {
@@ -2355,6 +2358,45 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
 
     let account = AccountAny::Margin(MarginAccount::new(account_state, true));
     cache.borrow_mut().add_account(account).unwrap();
+}
+
+#[tokio::test]
+async fn test_execution_schedule_cancel_arm_replace_clear() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+    let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ms();
+
+    for time in [Some(now + 60_000), Some(now + 120_000), None] {
+        client.schedule_cancel(time).await.unwrap();
+
+        let expected = match time {
+            Some(time) => json!({"type": "scheduleCancel", "time": time}),
+            None => json!({"type": "scheduleCancel"}),
+        };
+
+        assert_eq!(*state.last_exchange_action.lock().await, Some(expected));
+    }
+
+    assert_eq!(*state.exchange_request_count.lock().await, 3);
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn test_execution_schedule_cancel_rejection() {
+    let state = TestServerState::default();
+    state.reject_next_order.store(true, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    let error = client.schedule_cancel(None).await.unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("Order rejected: insufficient margin")
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
 }
 
 #[rstest]

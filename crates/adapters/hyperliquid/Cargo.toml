@@ -227,6 +227,12 @@ path = "examples/chained_modify_smoke.rs"
 required-features = ["examples"]
 doc = false
 
+# Run with `cargo run --example hyperliquid-scheduled-cancel --package nautilus-hyperliquid -- testnet`.
+[[example]]
+name = "hyperliquid-scheduled-cancel"
+path = "examples/scheduled_cancel.rs"
+doc = false
+
 # Public market-data validation; explicitly connects to Hyperliquid mainnet.
 # Run with `cargo test --package nautilus-hyperliquid --features examples --test hyperliquid-book-stress -- --timeout 10 --rounds 12`
 [[test]]

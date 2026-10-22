@@ -34,18 +34,23 @@ use axum::{
     routing::post,
 };
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
+use nautilus_core::hex;
 use nautilus_hyperliquid::{
     HyperliquidHttpClient,
-    common::enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
+    common::{
+        credential::{EvmPrivateKey, VaultAddress},
+        enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
+    },
     http::{
         client::HYPERLIQUID_FUNDING_HISTORY_MAX_LIMIT,
         error::Error,
         models::{
-            Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
-            PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
+            Cloid, HyperliquidExchangeAction, HyperliquidExchangeResponse, HyperliquidFills,
+            HyperliquidL2Book, OutcomeMeta, PerpMeta, PerpMetaAndCtxs, SpotMeta, SpotMetaAndCtxs,
         },
         query::{InfoRequest, InfoRequestParams},
     },
+    signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, nonce::TimeNonce},
 };
 use nautilus_model::{
     accounts::{Account, MarginAccount},
@@ -57,6 +62,8 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, Method};
+#[cfg(feature = "python")]
+use pyo3::{prelude::*, types::PyDict};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -65,6 +72,7 @@ use serde_json::{Value, json};
 struct TestServerState {
     request_count: Arc<tokio::sync::Mutex<usize>>,
     last_request_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    exchange_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     rate_limit_after: Arc<AtomicUsize>,
     frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     frontend_open_orders_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
@@ -85,6 +93,7 @@ impl Default for TestServerState {
         Self {
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
             last_request_body: Arc::new(tokio::sync::Mutex::new(None)),
+            exchange_response: Arc::new(tokio::sync::Mutex::new(None)),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             frontend_open_orders_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
@@ -369,6 +378,10 @@ async fn handle_exchange(
             })),
         )
             .into_response();
+    }
+
+    if let Some(response) = state.exchange_response.lock().await.clone() {
+        return Json(response).into_response();
     }
 
     Json(json!({
@@ -3423,5 +3436,221 @@ async fn test_request_order_status_report_fails_closed_on_unconvertible_closed_o
     assert!(
         matches!(err, Error::BadRequest(ref message) if message.contains("Failed to parse order status report for oid 55555")),
         "unexpected error: {err}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_schedule_cancel_arm_replace_clear(
+    #[values(HyperliquidEnvironment::Mainnet, HyperliquidEnvironment::Testnet)]
+    environment: HyperliquidEnvironment,
+) {
+    let fixture = load_json("schedule_cancel.json");
+    let state = TestServerState::default();
+    *state.exchange_response.lock().await = Some(fixture["success"].clone());
+    let addr = start_mock_server(state.clone()).await;
+    let vault = "0x1111111111111111111111111111111111111111";
+    // Public Hardhat default account used by the signing fixtures
+    let private_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    let mut client =
+        HyperliquidHttpClient::from_credentials(private_key, Some(vault), environment, 60, None)
+            .unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ms();
+    let key = EvmPrivateKey::new(private_key).unwrap();
+    let signer = HyperliquidEip712Signer::new(&key).unwrap();
+    let vault_address = VaultAddress::parse(vault).unwrap();
+    let mut previous_nonce = 0;
+
+    for (case_index, time) in [Some(now + 60_000), Some(now + 120_000), None]
+        .into_iter()
+        .enumerate()
+    {
+        client.schedule_cancel(time).await.unwrap();
+        let request = state.last_request_body.lock().await.clone().unwrap();
+
+        let case = &fixture["cases"][case_index];
+        let fixture_json = case["json"].as_str().unwrap();
+        let fixture_action: HyperliquidExchangeAction = serde_json::from_str(fixture_json).unwrap();
+        let mut expected_bytes = hex::decode(case["msgpack"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_string(&fixture_action).unwrap(),
+            fixture_json
+        );
+        assert_eq!(
+            rmp_serde::to_vec_named(&fixture_action).unwrap(),
+            expected_bytes
+        );
+
+        let mut expected_action: Value = serde_json::from_str(fixture_json).unwrap();
+        if let Some(time) = time {
+            expected_action["time"] = json!(time);
+            let offset = expected_bytes.len() - 8;
+            expected_bytes[offset..].copy_from_slice(&time.to_be_bytes());
+        }
+
+        let nonce = request["nonce"].as_u64().unwrap();
+        let action = HyperliquidExchangeAction::ScheduleCancel { time };
+        assert_eq!(rmp_serde::to_vec_named(&action).unwrap(), expected_bytes);
+
+        let signature = signer
+            .sign(&SignRequest {
+                action: None,
+                action_bytes: Some(expected_bytes),
+                time_nonce: TimeNonce::from_millis(i128::from(nonce)),
+                action_type: HyperliquidActionType::L1,
+                is_testnet: environment == HyperliquidEnvironment::Testnet,
+                vault_address: Some(vault_address),
+                expires_after: None,
+            })
+            .unwrap()
+            .signature;
+
+        assert_eq!(
+            request,
+            json!({
+                "action": expected_action,
+                "nonce": nonce,
+                "signature": signature,
+                "vaultAddress": vault,
+            })
+        );
+        assert!(nonce > previous_nonce);
+        previous_nonce = nonce;
+    }
+
+    assert_eq!(*state.request_count.lock().await, 3);
+}
+
+#[rstest]
+#[case(0, "Scheduled cancel time too soon")]
+#[case(1, "Scheduled cancel not permitted")]
+#[case(2, "Schedule cancel failed")]
+#[case(3, "Unexpected schedule cancel acknowledgement")]
+#[case(4, "invalid type")]
+#[case(5, "Unexpected schedule cancel acknowledgement")]
+#[case(6, "Cannot set scheduled cancel time until enough volume traded")]
+#[tokio::test]
+async fn test_schedule_cancel_rejection(#[case] index: usize, #[case] message: &str) {
+    let fixture = load_json("schedule_cancel.json");
+    let state = TestServerState::default();
+    *state.exchange_response.lock().await = Some(fixture["rejections"][index].clone());
+    let addr = start_mock_server(state.clone()).await;
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+
+    let error = client.schedule_cancel(None).await.unwrap_err();
+
+    assert!(error.to_string().contains(message), "{error}");
+    assert_eq!(*state.request_count.lock().await, 1);
+}
+
+#[tokio::test]
+async fn test_schedule_cancel_invalid_time_does_not_send() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+
+    let error = client.schedule_cancel(Some(0)).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "bad request: Schedule cancel time must be at least 5000 ms after the current time"
+    );
+    assert_eq!(*state.request_count.lock().await, 0);
+}
+
+#[tokio::test]
+async fn test_schedule_cancel_clear_without_credentials_does_not_send() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+
+    let error = client.schedule_cancel(None).await.unwrap_err();
+
+    let Error::Auth(message) = error else {
+        panic!("Expected authentication error, received {error}");
+    };
+
+    assert_eq!(message, "credentials required for exchange operations");
+    assert_eq!(*state.request_count.lock().await, 0);
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_python_schedule_cancel(#[case] rejected: bool) {
+    let fixture = load_json("schedule_cancel.json");
+    let state = TestServerState::default();
+
+    let response = if rejected {
+        &fixture["rejections"][0]
+    } else {
+        &fixture["success"]
+    };
+
+    *state.exchange_response.lock().await = Some(response.clone());
+    let addr = start_mock_server(state.clone()).await;
+    let mut client = HyperliquidHttpClient::from_credentials(
+        "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        None,
+        HyperliquidEnvironment::Mainnet,
+        60,
+        None,
+    )
+    .unwrap();
+    client.set_base_exchange_url(format!("http://{addr}/exchange"));
+    let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ms();
+    Python::initialize();
+    Python::attach(|py| {
+        let locals = PyDict::new(py);
+        locals
+            .set_item("client", Py::new(py, client).unwrap())
+            .unwrap();
+        locals.set_item("deadline", now + 60_000).unwrap();
+        locals.set_item("rejected", rejected).unwrap();
+        py.run(
+            c"import asyncio
+async def check():
+
+    if rejected:
+        try:
+            await client.schedule_cancel(deadline)
+        except ValueError as e:
+            assert 'Scheduled cancel time too soon' in str(e)
+        else:
+            raise AssertionError('Expected venue rejection')
+        return
+    assert await client.schedule_cancel(deadline) is None
+    assert await client.schedule_cancel(deadline + 60_000) is None
+    assert await client.schedule_cancel(None) is None
+    assert await client.schedule_cancel() is None
+    try:
+        await client.schedule_cancel(0)
+    except ValueError as e:
+        assert '5000 ms' in str(e)
+    else:
+        raise AssertionError('Expected local timestamp rejection')
+asyncio.run(check())",
+            Some(&locals),
+            None,
+        )
+        .unwrap();
+    });
+
+    assert_eq!(
+        *state.request_count.lock().await,
+        if rejected { 1 } else { 4 }
     );
 }

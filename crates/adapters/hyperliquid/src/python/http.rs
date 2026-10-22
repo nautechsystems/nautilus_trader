@@ -877,6 +877,36 @@ impl HyperliquidHttpClient {
         })
     }
 
+    /// Arms, replaces, or clears the account-wide scheduled cancellation of all open orders.
+    ///
+    /// `time` is a Unix timestamp in milliseconds, at least five seconds after the local
+    /// clock when called. `None` clears the schedule. Allow extra time for rate limiting,
+    /// network latency, and clock skew. The venue can still reject a delayed request.
+    /// The schedule remains at the venue after disconnect or process exit; this method
+    /// does not start a refresh loop or close positions.
+    /// Convert Nautilus nanosecond timestamps to milliseconds before passing them here.
+    /// The venue requires $1,000,000 trading volume and permits at most ten schedule triggers
+    /// per day, resetting the trigger count at 00:00 UTC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The timestamp is less than five seconds ahead of the local clock.
+    /// - Credentials are missing or the request fails.
+    /// - The venue rejects the action or returns an unexpected acknowledgement.
+    #[pyo3(name = "schedule_cancel", signature = (time=None))]
+    fn py_schedule_cancel<'py>(
+        &self,
+        py: Python<'py>,
+        time: Option<u64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client.schedule_cancel(time).await.map_err(to_pyvalue_err)?;
+            Ok(Python::attach(|py| py.None()))
+        })
+    }
+
     /// Split an HIP-4 outcome's quote tokens into matched Yes and No side tokens.
     ///
     /// Submits a `userOutcome` exchange action with the `splitOutcome` operation:

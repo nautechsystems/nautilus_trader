@@ -127,6 +127,18 @@ pub struct HyperliquidExecutionClient {
 }
 
 impl HyperliquidExecutionClient {
+    /// Arms, replaces, or clears the account-wide scheduled cancellation of all open orders.
+    ///
+    /// See [`HyperliquidHttpClient::schedule_cancel`] for timestamp and lifecycle requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`HyperliquidHttpClient::schedule_cancel`] fails.
+    pub async fn schedule_cancel(&self, time: Option<u64>) -> anyhow::Result<()> {
+        self.http_client.schedule_cancel(time).await?;
+        Ok(())
+    }
+
     /// Returns a reference to the configuration.
     pub fn config(&self) -> &HyperliquidExecutionClientConfig {
         &self.config

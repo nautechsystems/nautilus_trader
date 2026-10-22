@@ -1,0 +1,69 @@
+{
+  "source": "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#schedule-cancel-dead-mans-switch",
+  "provenance": "Synthetic scheduled-cancel actions from the documented exchange contract. MessagePack vectors independently constructed with Python standard-library integer packing. All responses except the eligibility rejection are synthetic. The eligibility rejection follows an observed venue response with account-specific traded volume replaced by zero. No account data.",
+  "cases": [
+    {
+      "name": "arm",
+      "json": "{\"type\":\"scheduleCancel\",\"time\":1900000000000}",
+      "msgpack": "82a474797065ae7363686564756c6543616e63656ca474696d65cf000001ba60d33800"
+    },
+    {
+      "name": "replace",
+      "json": "{\"type\":\"scheduleCancel\",\"time\":1900000060000}",
+      "msgpack": "82a474797065ae7363686564756c6543616e63656ca474696d65cf000001ba60d42260"
+    },
+    {
+      "name": "clear",
+      "json": "{\"type\":\"scheduleCancel\"}",
+      "msgpack": "81a474797065ae7363686564756c6543616e63656c"
+    }
+  ],
+  "success": {
+    "status": "ok",
+    "response": {
+      "type": "default"
+    }
+  },
+  "rejections": [
+    {
+      "status": "err",
+      "response": "Scheduled cancel time too soon"
+    },
+    {
+      "error": "Scheduled cancel not permitted"
+    },
+    {
+      "status": "pending",
+      "response": {
+        "type": "default"
+      }
+    },
+    {
+      "status": "ok",
+      "response": {
+        "type": "unknown"
+      }
+    },
+    {
+      "status": "ok",
+      "response": null
+    },
+    {
+      "status": "ok",
+      "response": {
+        "type": "cancel",
+        "data": {
+          "statuses": [
+            {
+              "error": "Schedule rejected"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "status": "err",
+      "response": "Cannot set scheduled cancel time until enough volume traded. Required: $1000000. Traded: $0."
+    }
+  ]
+}

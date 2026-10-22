@@ -1255,6 +1255,74 @@ If no cached order maps that venue order ID, `GenerateFillReports` leaves `clien
 The adapter derives CLOIDs by hashing Nautilus client order IDs. Without a retained cache, startup uses the raw
 CLOID for external orders and cannot reconstruct the original IDs.
 
+### Scheduled cancellation
+
+`HyperliquidHttpClient.schedule_cancel(time)` arms or replaces the venue's
+[dead man's switch](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#schedule-cancel-dead-mans-switch).
+Pass a Unix timestamp in **milliseconds**, at least five seconds in the future, with extra time for
+rate limiting, network latency, and clock skew. Convert Nautilus nanosecond timestamps to milliseconds
+before passing them. Omit `time` or pass `None` to clear the schedule.
+
+:::warning
+Expiry cancels every open order for the signed account, including orders placed outside NautilusTrader.
+An API wallet acts for its master account; a configured vault address targets that vault or subaccount.
+Scheduled cancellation does not close positions.
+:::
+
+Venue `scheduledCancel` order updates map to Nautilus `CANCELED` status.
+
+The venue requires $1,000,000 trading volume to use this operation. At most ten schedules can trigger
+per day; the trigger count resets at 00:00 UTC. Sending a new `time` before the current deadline replaces it.
+The adapter does not refresh it automatically.
+
+:::warning[Live validation]
+Live testing has not verified successful arming, replacement, clearing, or expiry.
+The venue rejected mainnet test requests because the account did not meet the trading-volume requirement.
+If this feature fails or behaves unexpectedly,
+[report the issue on GitHub](https://github.com/nautechsystems/nautilus_trader/issues).
+:::
+
+The schedule remains active at the venue across disconnects, stops, and process restarts. On startup,
+replace the existing deadline or clear it according to your strategy. After a transport failure, the venue
+may have applied the request: replace it with a fresh deadline or clear it and check the acknowledgement.
+
+For a running node, use a separate HTTP client. Independent clients maintain separate nonce counters, so
+use a dedicated API wallet for scheduled-cancel requests to avoid collisions with the execution client.
+Configure its master account address as described in [Agent wallets](#agent-wallets). Hyperliquid's
+[nonce guidance](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/nonces-and-api-wallets)
+explains why each signing process needs its own API wallet.
+
+Outside a running node, call this from an async task with credentials configured:
+
+```python
+import time
+
+from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
+from nautilus_trader.adapters.hyperliquid import HyperliquidHttpClient
+
+client = HyperliquidHttpClient(environment=HyperliquidEnvironment.TESTNET)
+deadline_ms = time.time_ns() // 1_000_000 + 60_000
+await client.schedule_cancel(deadline_ms)  # Arm
+await client.schedule_cancel(deadline_ms + 60_000)  # Replace
+await client.schedule_cancel()  # Clear
+```
+
+Rust exposes the same operation as `HyperliquidHttpClient::schedule_cancel(Option<u64>)` and
+`HyperliquidExecutionClient::schedule_cancel(Option<u64>)`. The concrete execution-client method is
+available when you own that client directly and uses its signer and nonce counter;
+node integrations use the HTTP client above.
+
+The [scheduled-cancel example](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/hyperliquid/examples/scheduled_cancel.rs)
+refuses to proceed if it finds open orders, arms and replaces a deadline, then attempts to clear it
+even if an update fails. Configure [API credentials](#api-credentials) for the chosen environment.
+If the signing key belongs to an API wallet, set `HYPERLIQUID_ACCOUNT_ADDRESS` to the master account
+as described in [Agent wallets](#agent-wallets). The example uses testnet by default.
+Run it from the repository root with:
+
+```bash
+cargo run --example hyperliquid-scheduled-cancel --package nautilus-hyperliquid -- testnet
+```
+
 ### Modify as cancel-replace
 
 Hyperliquid implements order modification as a **cancel-replace**. The `modify` action on the

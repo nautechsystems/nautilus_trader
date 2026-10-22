@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
+- Added Hyperliquid scheduled cancellation (dead man's switch)
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added Interactive Brokers `max_reconnect_attempts` configuration (#5392), thanks @tradatious

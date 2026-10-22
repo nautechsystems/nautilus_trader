@@ -96,12 +96,12 @@ use crate::{
             HyperliquidExchangeOrderKind, HyperliquidExchangeOrderResponseData,
             HyperliquidExchangeOrderStatus, HyperliquidExchangePlaceOrderRequest,
             HyperliquidExchangeRequest, HyperliquidExchangeResponse,
-            HyperliquidExchangeSplitOutcomeParams, HyperliquidExchangeTif, HyperliquidExchangeTpSl,
-            HyperliquidExchangeTriggerParams, HyperliquidExchangeUserOutcomeOp, HyperliquidFills,
-            HyperliquidFundingHistoryEntry, HyperliquidL2Book, HyperliquidMeta,
-            HyperliquidOrderStatus, HyperliquidOrderStatusEntry, HyperliquidRecentTrade,
-            OutcomeMeta, PerpDex, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK,
-            SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidExchangeResponseData, HyperliquidExchangeSplitOutcomeParams,
+            HyperliquidExchangeTif, HyperliquidExchangeTpSl, HyperliquidExchangeTriggerParams,
+            HyperliquidExchangeUserOutcomeOp, HyperliquidFills, HyperliquidFundingHistoryEntry,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus,
+            HyperliquidOrderStatusEntry, HyperliquidRecentTrade, OutcomeMeta, PerpDex, PerpMeta,
+            PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
             DEFAULT_OUTCOME_QUOTE_CURRENCY, HyperliquidInstrumentDef, create_instrument_from_def,
@@ -2366,6 +2366,51 @@ impl HyperliquidHttpClient {
         }
     }
 
+    /// Arms, replaces, or clears the account-wide scheduled cancellation of all open orders.
+    ///
+    /// `time` is a Unix timestamp in milliseconds, at least five seconds after the local
+    /// clock when called. `None` clears the schedule. Allow extra time for rate limiting,
+    /// network latency, and clock skew. The venue can still reject a delayed request.
+    /// The schedule remains at the venue after disconnect or process exit; this method
+    /// does not start a refresh loop or close positions.
+    /// Convert Nautilus nanosecond timestamps to milliseconds before passing them here.
+    /// The venue requires $1,000,000 trading volume and permits at most ten schedule triggers
+    /// per day, resetting the trigger count at 00:00 UTC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The timestamp is less than five seconds ahead of the local clock.
+    /// - Credentials are missing or the request fails.
+    /// - The venue rejects the action or returns an unexpected acknowledgement.
+    pub async fn schedule_cancel(&self, time: Option<u64>) -> Result<()> {
+        if let Some(time) = time {
+            validate_schedule_cancel_time(time, self.clock.get_time_ms())?;
+        }
+
+        let action = HyperliquidExchangeAction::ScheduleCancel { time };
+        let response = self.inner.post_action_exec(&action).await?;
+        match response {
+            HyperliquidExchangeResponse::Status { status, response }
+                if status == RESPONSE_STATUS_OK =>
+            {
+                let data = serde_json::from_value::<HyperliquidExchangeResponseData>(response)
+                    .map_err(Error::Serde)?;
+
+                if matches!(data, HyperliquidExchangeResponseData::Default) {
+                    Ok(())
+                } else {
+                    Err(Error::bad_request(
+                        "Unexpected schedule cancel acknowledgement",
+                    ))
+                }
+            }
+            response => Err(Error::bad_request(format!(
+                "Schedule cancel failed: {response:?}"
+            ))),
+        }
+    }
+
     /// Split an HIP-4 outcome's quote tokens into matched Yes and No side tokens.
     ///
     /// Submits a `userOutcome` exchange action with the `splitOutcome` operation:
@@ -4295,6 +4340,16 @@ fn cache_coin_aliases(
     }
 }
 
+fn validate_schedule_cancel_time(time: u64, now: u64) -> Result<()> {
+    if time.checked_sub(now).is_none_or(|delay| delay < 5_000) {
+        return Err(Error::bad_request(
+            "Schedule cancel time must be at least 5000 ms after the current time",
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -4335,6 +4390,7 @@ mod tests {
 
     use super::{
         HyperliquidHttpClient, HyperliquidRawHttpClient, RETRY_AFTER_HEADER, resolve_perp_dex_name,
+        validate_schedule_cancel_time,
     };
     use crate::{
         common::{
@@ -4355,6 +4411,18 @@ mod tests {
 
     const TEST_PRIVATE_KEY: &str =
         "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    #[rstest]
+    #[case(10_000, 9_999, false)]
+    #[case(10_000, 10_000, false)]
+    #[case(10_000, 14_999, false)]
+    #[case(10_000, 15_000, true)]
+    #[case(10_000, 15_001, true)]
+    #[case(u64::MAX - 4_999, u64::MAX, false)]
+    #[case(u64::MAX - 5_000, u64::MAX, true)]
+    fn test_schedule_cancel_timestamp(#[case] now: u64, #[case] time: u64, #[case] valid: bool) {
+        assert_eq!(validate_schedule_cancel_time(time, now).is_ok(), valid);
+    }
 
     #[rstest]
     fn test_usd_class_transfer_rejected_without_credentials(
@@ -5239,21 +5307,28 @@ mod tests {
     }
 
     #[rstest]
-    fn test_set_account_address_clears_override() {
+    #[case(None)]
+    #[case(Some("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))]
+    fn test_set_account_address_clears_override(#[case] vault_address: Option<&str>) {
         let mut client = HyperliquidHttpClient::from_resolved_credentials(
             Some(TEST_PRIVATE_KEY.to_string()),
-            None,
+            vault_address,
             Some("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
             HyperliquidEnvironment::Mainnet,
             60,
             None,
         )
         .unwrap();
-        let signer_address = client.inner.get_account_address().unwrap();
+
+        let expected_address = match vault_address {
+            Some(vault) => vault.to_string(),
+            None => client.get_user_address().unwrap(),
+        };
+
         client.set_account_address(None).unwrap();
 
         assert_eq!(client.account_address, None);
-        assert_eq!(client.get_account_address().unwrap(), signer_address);
+        assert_eq!(client.get_account_address().unwrap(), expected_address);
     }
 
     #[rstest]
