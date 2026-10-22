@@ -619,10 +619,6 @@ impl AsyncRunner {
                     MessagingSwitchboard::portfolio_update_account(),
                     account,
                 );
-                msgbus::publish_account_state(
-                    format!("events.account.{}", account.account_id).into(),
-                    account,
-                );
             }
         }
     }
@@ -2373,6 +2369,28 @@ mod tests {
         };
         use nautilus_portfolio::Portfolio;
 
+        // Native logging tests use nextest's per-test process isolation.
+        struct AccountLogCapture(std::sync::Mutex<Vec<String>>);
+
+        impl log::Log for AccountLogCapture {
+            fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+                metadata.level() == log::Level::Info
+                    && metadata.target() == "nautilus_portfolio::portfolio"
+            }
+
+            fn log(&self, record: &log::Record<'_>) {
+                if self.enabled(record.metadata()) {
+                    self.0.lock().unwrap().push(record.args().to_string());
+                }
+            }
+
+            fn flush(&self) {}
+        }
+
+        static LOGS: AccountLogCapture = AccountLogCapture(std::sync::Mutex::new(Vec::new()));
+        log::set_logger(&LOGS).unwrap();
+        log::set_max_level(log::LevelFilter::Info);
+
         msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::new(
             TraderId::from("TESTER-001"),
             UUID4::new(),
@@ -2399,7 +2417,7 @@ mod tests {
                 .push((event.event_id, account.events().len()));
         });
 
-        // Even a subscriber ahead of Portfolio's topic handler must see applied state
+        // Subscribers must see applied state regardless of their topic priority
         msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), Some(20));
         let scoped = Rc::new(RefCell::new(Vec::new()));
         let scoped_received = scoped.clone();
@@ -2441,7 +2459,17 @@ mod tests {
             if account_id == "SIM-001" {
                 expected_scoped.push(event.event_id);
             }
+            let expected_log = format!("Updated {event}");
             AsyncRunner::handle_exec_event(ExecutionEvent::Account(event));
+            assert_eq!(
+                LOGS.0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|line| **line == expected_log)
+                    .count(),
+                1
+            );
         }
         assert_eq!(*observed.borrow(), expected);
         assert_eq!(*scoped.borrow(), expected_scoped);
@@ -2464,6 +2492,69 @@ mod tests {
         );
         msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
         msgbus::unsubscribe_account_state("events.account.SIM-001".into(), &scoped_handler);
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    #[case::cash_update(AccountType::Cash, true)]
+    #[case::wallet_initial(AccountType::Wallet, false)]
+    #[case::wallet_update(AccountType::Wallet, true)]
+    fn test_rejected_account_event_is_not_published(
+        #[case] account_type: AccountType,
+        #[case] existing_account: bool,
+    ) {
+        use nautilus_common::msgbus::{MessageBus, TypedHandler};
+        use nautilus_model::types::{AccountBalance, Currency};
+        use nautilus_portfolio::Portfolio;
+
+        msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut portfolio = Portfolio::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache.clone(),
+            None,
+        );
+        let state = |amount: &str| {
+            AccountState::new(
+                AccountId::from("SIM-001"),
+                account_type,
+                vec![AccountBalance::new(
+                    Money::from(amount),
+                    Money::zero(Currency::USD()),
+                    Money::from(amount),
+                )],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+                (account_type != AccountType::Wallet).then_some(Currency::USD()),
+            )
+        };
+        let initial = state("100.00 USD");
+
+        if existing_account {
+            portfolio.update_account(&initial);
+        }
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let handler = TypedHandler::from({
+            let received = received.clone();
+            move |event: &AccountState| received.borrow_mut().push(event.clone())
+        });
+        msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), None);
+        AsyncRunner::handle_exec_event(ExecutionEvent::Account(state("-1.00 USD")));
+        assert!(received.borrow().is_empty());
+        let cache = cache.borrow();
+
+        if existing_account {
+            assert_eq!(
+                cache.account(&initial.account_id).unwrap().last_event(),
+                Some(initial)
+            );
+        } else {
+            assert!(cache.account(&initial.account_id).is_none());
+        }
+        msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
     }
 
     #[tokio::test]

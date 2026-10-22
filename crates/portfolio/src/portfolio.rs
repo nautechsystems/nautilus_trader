@@ -317,17 +317,18 @@ impl Portfolio {
 
         let update_order_handler = {
             let cache = Rc::clone(cache);
+            let clock = Rc::clone(clock);
             let inner = WeakCell::clone(&inner_weak);
             TypedHandler::from(move |event: &OrderEventAny| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
-                    on_order_event(&cache, &inner_rc, event);
+                    on_order_event(&cache, &clock, &inner_rc, config, event);
                 }
             })
         };
 
         let endpoint = MessagingSwitchboard::portfolio_update_account();
-        msgbus::register_account_state_endpoint(endpoint, update_account_handler.clone());
+        msgbus::register_account_state_endpoint(endpoint, update_account_handler);
 
         let update_order_endpoint_handler = {
             let cache = Rc::clone(cache);
@@ -369,11 +370,6 @@ impl Portfolio {
         msgbus::subscribe_position_events(
             "events.position.*".into(),
             update_position_handler,
-            Some(10),
-        );
-        msgbus::subscribe_account_state(
-            "events.account.*".into(),
-            update_account_handler,
             Some(10),
         );
     }
@@ -3892,7 +3888,7 @@ fn update_order(
 
     if let Some(account_state) = account_state {
         if publish_account_state {
-            record_and_publish_account_state(inner, &account_state);
+            update_account(clock, cache, inner, config, &account_state);
         }
     } else {
         log::debug!("Added pending calculation for {}", instrument.id());
@@ -3910,7 +3906,9 @@ fn take_or_clone_account(cache: &Rc<RefCell<Cache>>, account_id: AccountId) -> O
 
 fn on_order_event(
     cache: &Rc<RefCell<Cache>>,
+    clock: &Rc<RefCell<dyn Clock>>,
     inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
     event: &OrderEventAny,
 ) {
     if let OrderEventAny::Filled(order_filled) = event {
@@ -3954,7 +3952,7 @@ fn on_order_event(
         .and_then(|account| account.last_event());
 
     if let Some(account_state) = account_state {
-        record_and_publish_account_state(inner, &account_state);
+        update_account(clock, cache, inner, config, &account_state);
     }
 }
 
@@ -4082,21 +4080,9 @@ fn update_position(
                 .is_some_and(|event_id| *event_id == account_state.event_id);
 
         if !already_published {
-            record_and_publish_account_state(inner, &account_state);
+            update_account(clock, cache, inner, config, &account_state);
         }
     }
-}
-
-fn record_and_publish_account_state(
-    inner: &Rc<RefCell<PortfolioState>>,
-    account_state: &AccountState,
-) {
-    let account_id = account_state.account_id;
-    inner
-        .borrow_mut()
-        .last_published_account_states
-        .insert(account_id, account_state.event_id);
-    msgbus::publish_account_state(format!("events.account.{account_id}").into(), account_state);
 }
 
 /// Recalculates the margin account for `instrument_id` from the currently open positions.
@@ -4305,6 +4291,11 @@ fn update_account(
     drop(inner_ref);
 
     register_equity_curve_account(clock, cache, inner, config, event.account_id);
+    inner
+        .borrow_mut()
+        .last_published_account_states
+        .insert(event.account_id, event.event_id);
+    msgbus::publish_account_state(format!("events.account.{}", event.account_id).into(), event);
 }
 
 fn equity_curve_timer_name(account_id: AccountId) -> String {
