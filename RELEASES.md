@@ -90,6 +90,7 @@ Released on TBD (UTC).
 - Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed simulated venues matching cross-instrument OTO children with their parent's market and execution state
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
+- Fixed non-ASCII signal topics to use Unicode titlecase mappings
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
 - Fixed `RetryManager` skipping minimum retry delays after operation timeouts (#5406), thanks @imbolc
 - Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
