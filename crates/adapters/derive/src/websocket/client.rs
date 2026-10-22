@@ -67,9 +67,9 @@ use super::{
         ticker_subscribe_params, trades_subscribe_params,
     },
     messages::{
-        DeriveWsChannel, WsLoginParams, WsLoginResult, WsSubscribeParams, WsSubscribeResult,
-        WsUnsubscribeParams, WsUnsubscribeResult, methods, orderbook_channel, ticker_channel,
-        trades_channel,
+        DeriveWsChannel, WsLoginParams, WsLoginResult, WsSetCancelOnDisconnectParams,
+        WsSetCancelOnDisconnectResult, WsSubscribeParams, WsSubscribeResult, WsUnsubscribeParams,
+        WsUnsubscribeResult, methods, orderbook_channel, ticker_channel, trades_channel,
     },
 };
 use crate::{
@@ -779,6 +779,56 @@ impl DeriveWebSocketClient {
             request_timeout: self.request_timeout,
             rate_limiter: Arc::clone(&self.rate_limiter),
         }
+    }
+
+    /// Enables or disables Derive's persisted, wallet-wide cancel-on-disconnect setting.
+    ///
+    /// Requires `Trade(All)` scope across all subaccounts. The venue only cancels the dropped
+    /// connection's `mmp: true` orders and RFQ quotes; trigger and algo orders are excluded.
+    /// The stored setting applies to each connection at login and persists until disabled.
+    /// This client never toggles it automatically. Before relying on a change, wait for an
+    /// acknowledgement and a matching account read, then disconnect and reconnect affected
+    /// clients. Do not assume a change affects existing connections.
+    /// See <https://docs.derive.xyz/trading/cancel-on-disconnect>.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - Authentication fails.
+    /// - The response is rejected or malformed.
+    /// - The transport fails or the request times out.
+    ///
+    /// A timeout, lost response, or malformed response leaves the setting uncertain; coordinate
+    /// other clients and reassert the intended value before relying on it. Account reads can
+    /// lag an acknowledged WebSocket change.
+    pub async fn set_cancel_on_disconnect(&self, enabled: bool) -> Result<()> {
+        let creds = self
+            .credentials
+            .as_ref()
+            .ok_or_else(|| DeriveWsError::MissingCredentials {
+                operation: methods::PRIVATE_SET_CANCEL_ON_DISCONNECT.to_string(),
+            })?;
+
+        self.execution_handle()
+            .require_authenticated(methods::PRIVATE_SET_CANCEL_ON_DISCONNECT)
+            .await?;
+
+        let params = WsSetCancelOnDisconnectParams {
+            wallet: creds.wallet_address.clone(),
+            enabled,
+        };
+
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let _: WsSetCancelOnDisconnectResult = send_request_typed(
+            &self.rate_limiter,
+            &cmd_tx,
+            methods::PRIVATE_SET_CANCEL_ON_DISCONNECT,
+            &params,
+            self.request_timeout,
+        )
+        .await?;
+        Ok(())
     }
 
     /// Returns a cloneable handle for issuing signed `private/*` trading

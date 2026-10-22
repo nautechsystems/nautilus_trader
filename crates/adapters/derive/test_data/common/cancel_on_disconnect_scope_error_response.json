@@ -1,0 +1,10 @@
+{
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Trade(All) scope required",
+    "data": {
+      "scope": "Trade(All)"
+    }
+  }
+}

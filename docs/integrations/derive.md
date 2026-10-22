@@ -720,6 +720,36 @@ Size the trigger offset to comfortably exceed expected price movement during sub
 spurious `11051` rejections.
 :::
 
+#### Cancel on disconnect
+
+The low-level Rust `DeriveWebSocketClient::set_cancel_on_disconnect(enabled)` toggles wallet-wide
+[cancel-on-disconnect (COD)](https://docs.derive.xyz/trading/cancel-on-disconnect) for the authenticated
+wallet. Only `"ok"` confirms success; venue errors and malformed responses propagate.
+
+- **Permission**: requires `trade:all` (`Trade(All)`) across all subaccounts. The onboarding keys
+  restricted to `trade:orderbook:all` do not qualify.
+- **Persistence**: the stored setting applies to each connection at login and persists until disabled. Connect,
+  reconnect, and shutdown never toggle it. Coordinate clients sharing the wallet.
+
+A timeout, lost reply, or malformed reply leaves the setting uncertain. Coordinate other clients
+and reassert the intended value. Before relying on any change:
+
+1. Wait until `private/get_account` reports `cancel_on_disconnect` matching the acknowledged value
+   within your operational deadline. Account reads can lag the acknowledgement.
+1. Call `disconnect()` then `connect()` on each affected client. Do not assume a change affects
+   existing connections.
+
+:::warning
+COD cancels only the dropped connection's `mmp: true` orders and RFQ quotes. Non-MMP, trigger, and algo
+orders remain outside its protection. `DeriveExecutionClient` leaves MMP disabled, so COD does not
+protect its ordinary orders.
+
+For eligible orders, obtain this WebSocket client's `execution_handle()` and call
+`DeriveWsExecutionHandle::submit_order` with `mmp: Some(true)`. Order conversion leaves MMP disabled;
+set the flag explicitly and sign with a [lifetime of at most 15 minutes](#signature-expiry).
+Retain explicit cancellation and shutdown procedures.
+:::
+
 #### Bulk cancellation
 
 ##### Selection and routing
