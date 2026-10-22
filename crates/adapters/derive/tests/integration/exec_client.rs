@@ -122,6 +122,10 @@ const TEST_TRADE_MODULE_ADDRESS: &str = "0x000000000000000000000000000000000000b
 
 #[derive(Clone, Default)]
 struct RestState {
+    get_account_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    cancel_on_disconnect: Arc<AtomicBool>,
+    get_account_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
+    get_account_lag_reads: Arc<AtomicUsize>,
     get_subaccount_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     get_order_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     open_orders_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -147,6 +151,10 @@ struct RestState {
 
 #[derive(Clone)]
 struct WsState {
+    cancel_on_disconnect: Arc<AtomicBool>,
+    cancel_on_disconnect_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    cancel_on_disconnect_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
+    login_cancel_on_disconnect: Arc<tokio::sync::Mutex<Vec<bool>>>,
     connection_count: Arc<AtomicUsize>,
     request_methods: Arc<tokio::sync::Mutex<Vec<Vec<String>>>>,
     login_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -189,6 +197,10 @@ impl Default for WsState {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
 
         Self {
+            cancel_on_disconnect: Arc::new(AtomicBool::new(false)),
+            cancel_on_disconnect_calls: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            cancel_on_disconnect_reply: Arc::new(tokio::sync::Mutex::new(None)),
+            login_cancel_on_disconnect: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             connection_count: Arc::new(AtomicUsize::new(0)),
             request_methods: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             login_frames: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -470,11 +482,37 @@ async fn handle_get_instrument(
     (StatusCode::OK, Json(json!({"id": 1, "result": result}))).into_response()
 }
 
+async fn handle_get_account(State(state): State<RestState>, body: axum::body::Bytes) -> Response {
+    let params: Value = serde_json::from_slice(&body).unwrap();
+    state.get_account_calls.lock().await.push(params);
+    let override_reply = state.get_account_reply.lock().await.clone();
+
+    let lagging = state
+        .get_account_lag_reads
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok();
+
+    let reply = override_reply.unwrap_or_else(|| {
+        let mut reply: Value = serde_json::from_str(include_str!(
+            "../../test_data/common/cancel_on_disconnect_account_response.json"
+        ))
+        .unwrap();
+        reply["result"]["cancel_on_disconnect"] =
+            json!(!lagging && state.cancel_on_disconnect.load(Ordering::SeqCst));
+        reply
+    });
+
+    (StatusCode::OK, Json(reply)).into_response()
+}
+
 async fn start_rest_server(state: RestState) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = Router::new()
         .route("/health", get(handle_rest_health))
+        .route("/private/get_account", post(handle_get_account))
         .route("/private/get_subaccount", post(handle_get_subaccount))
         .route("/private/get_order", post(handle_get_order))
         .route("/private/get_open_orders", post(handle_get_open_orders))
@@ -510,9 +548,7 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
         requests.len() - 1
     };
 
-    // Take the notification receiver on connect; the test's `push_notification`
-    // sends Values that get forwarded to the client as subscription frames.
-    let mut notification_rx = state.notification_rx.lock().await.take();
+    let mut notification_rx = None;
 
     loop {
         tokio::select! {
@@ -532,6 +568,9 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                         let request_nonce = params.get("nonce").cloned();
                         let mut reply = match method {
                             "public/login" => {
+                                state.login_cancel_on_disconnect.lock().await.push(
+                                    state.cancel_on_disconnect.load(Ordering::SeqCst)
+                                );
                                 let login_count = {
                                     let mut frames = state.login_frames.lock().await;
                                     frames.push(payload.clone());
@@ -557,6 +596,9 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                                 }
                             }
                             "subscribe" => {
+                                if notification_rx.is_none() {
+                                    notification_rx = state.notification_rx.lock().await.take();
+                                }
                                 state.subscribe_frames.lock().await.push(payload.clone());
                                 let channels = payload
                                     .get("params")
@@ -592,6 +634,19 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                                 json!({"id": id, "result": {"current_subscriptions": channels, "status": status}})
                             }
                                 }
+                            }
+                            "private/set_cancel_on_disconnect" => {
+                                state.cancel_on_disconnect_calls.lock().await.push(params.clone());
+                                let reply = ws_reply(id, &state.cancel_on_disconnect_reply, || {
+                                    serde_json::from_str(include_str!(
+                                        "../../test_data/common/cancel_on_disconnect_ok_response.json"
+                                    )).unwrap()
+                                }).await;
+
+                                if reply["result"] == "ok" {
+                                    state.cancel_on_disconnect.store(params["enabled"].as_bool().unwrap(), Ordering::SeqCst);
+                                }
+                                reply
                             }
                             "private/order" if params.get("trigger_type").is_some() => {
                                 state
@@ -1253,6 +1308,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig 
         market_order_slippage_bps: 50,
         max_matching_requests_per_second: None,
         max_per_instrument_matching_requests_per_second: None,
+        cancel_on_disconnect: false,
     }
 }
 
@@ -1286,6 +1342,7 @@ async fn build_client_with_config(
     configure: impl FnOnce(DeriveExecutionClientConfig) -> DeriveExecutionClientConfig,
 ) -> TestClient {
     ws_state.native_orders = rest_state.get_order_responses.clone();
+    ws_state.cancel_on_disconnect = rest_state.cancel_on_disconnect.clone();
     let rest_addr = start_rest_server(rest_state).await;
     let ws_addr = start_ws_server(ws_state).await;
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
@@ -1758,6 +1815,370 @@ async fn test_exec_client_connect_subscribes_private_channels() {
 
     tc.client.disconnect().await.expect("disconnect succeeds");
     assert!(registry.handle(client_id, endpoint).is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_confirms_setting_before_execution_login() {
+    let rest_state = RestState::default();
+    rest_state.get_account_lag_reads.store(2, Ordering::SeqCst);
+    let ws_state = WsState::default();
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = true;
+            config
+        })
+        .await;
+
+    tc.client.connect().await.unwrap();
+    let connected = tc.client.is_connected();
+    tc.client.disconnect().await.unwrap();
+
+    assert!(connected);
+    assert_eq!(
+        *ws_state.login_cancel_on_disconnect.lock().await,
+        vec![false, true]
+    );
+    assert_eq!(
+        *ws_state.request_methods.lock().await,
+        vec![
+            vec!["public/login", "private/set_cancel_on_disconnect"],
+            vec!["public/login", "subscribe"],
+        ]
+    );
+    assert_eq!(
+        *rest_state.get_account_calls.lock().await,
+        vec![json!({"wallet": TEST_WALLET}); 3]
+    );
+    assert_eq!(
+        *ws_state.cancel_on_disconnect_calls.lock().await,
+        vec![
+            serde_json::from_str::<Value>(include_str!(
+                "../../test_data/common/cancel_on_disconnect_enable_params.json"
+            ))
+            .unwrap()
+        ]
+    );
+    assert!(rest_state.cancel_on_disconnect.load(Ordering::SeqCst));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_setup_cannot_authorize_pending_order() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = true;
+            config.ws_timeout_secs = Some(1);
+            config
+        })
+        .await;
+
+    let instrument: DeriveInstrument = serde_json::from_value(sample_instrument_json()).unwrap();
+    tc.client.cache_instrument(instrument).unwrap();
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("COD-PENDING-1");
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("3100.00"),
+        Price::from("3101.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    tc.cache.borrow_mut().add_quote(quote).unwrap();
+    let order = build_market_order(
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("0.500"),
+    );
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let ticker_reply = rest_state.ticker_response.lock().await;
+    let account_reply = rest_state.get_account_reply.lock().await;
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+    wait_until(
+        || async { !rest_state.ticker_calls.lock().await.is_empty() },
+        "pending order waits for ticker",
+    )
+    .await;
+    let (connected, outcome) = tokio::join!(tc.client.connect(), async {
+        wait_until(
+            || async { !rest_state.get_account_calls.lock().await.is_empty() },
+            "COD setup waits for account confirmation",
+        )
+        .await;
+        drop(ticker_reply);
+        let outcome = tokio::select! {
+            event = drain_until(
+                &mut tc.rx,
+                |event| matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_))),
+                "pending order authorization outcome",
+            ) => Some(event),
+            () = wait_until(
+                || async { !ws_state.submitted_orders.lock().await.is_empty() },
+                "setup must not post pending order",
+            ) => None,
+        };
+        drop(account_reply);
+        outcome
+    });
+    connected.unwrap();
+    tc.client.disconnect().await.unwrap();
+
+    let Some(ExecutionEvent::Order(OrderEventAny::Rejected(rejected))) = outcome else {
+        panic!("setup connection authorized a pending order");
+    };
+
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.reason.as_str(), "Session authentication failed");
+    assert!(ws_state.submitted_orders.lock().await.is_empty());
+    assert_eq!(
+        *ws_state.request_methods.lock().await,
+        vec![
+            vec!["public/login", "private/set_cancel_on_disconnect"],
+            vec!["public/login", "subscribe"],
+        ]
+    );
+}
+
+#[rstest]
+#[case::disabled_wallet(false)]
+#[case::enabled_wallet(true)]
+#[tokio::test]
+async fn test_cancel_on_disconnect_default_preserves_wallet(#[case] enabled: bool) {
+    let rest_state = RestState::default();
+    rest_state
+        .cancel_on_disconnect
+        .store(enabled, Ordering::SeqCst);
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+
+    tc.client.connect().await.unwrap();
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(
+        *ws_state.login_cancel_on_disconnect.lock().await,
+        vec![enabled]
+    );
+    assert!(ws_state.cancel_on_disconnect_calls.lock().await.is_empty());
+    assert!(rest_state.get_account_calls.lock().await.is_empty());
+    assert_eq!(
+        rest_state.cancel_on_disconnect.load(Ordering::SeqCst),
+        enabled
+    );
+}
+
+#[rstest]
+#[case::rejected(include_str!("../../test_data/common/cancel_on_disconnect_scope_error_response.json"))]
+#[case::malformed(include_str!("../../test_data/common/cancel_on_disconnect_invalid_response.json"))]
+#[tokio::test]
+async fn test_cancel_on_disconnect_setup_failure_allows_clean_retry(#[case] reply: &str) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *ws_state.cancel_on_disconnect_reply.lock().await = Some(serde_json::from_str(reply).unwrap());
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = true;
+            config
+        })
+        .await;
+
+    let error = tc.client.connect().await.unwrap_err();
+    wait_until(
+        || async { ws_state.connection_count.load(Ordering::SeqCst) == 0 },
+        "failed startup closes transport",
+    )
+    .await;
+
+    assert_eq!(
+        error.to_string(),
+        "failed to enable Derive cancel-on-disconnect"
+    );
+    assert!(!tc.client.is_connected());
+    assert!(ws_state.subscribe_frames.lock().await.is_empty());
+    assert!(rest_state.get_account_calls.lock().await.is_empty());
+    assert_eq!(ws_state.cancel_on_disconnect_calls.lock().await.len(), 1);
+
+    *ws_state.cancel_on_disconnect_reply.lock().await = None;
+    tc.client.connect().await.unwrap();
+    let connected = tc.client.is_connected();
+    tc.client.disconnect().await.unwrap();
+
+    assert!(connected);
+    assert_eq!(
+        *ws_state.login_cancel_on_disconnect.lock().await,
+        vec![false, false, true]
+    );
+    assert_eq!(ws_state.cancel_on_disconnect_calls.lock().await.len(), 2);
+    assert!(rest_state.cancel_on_disconnect.load(Ordering::SeqCst));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_account_read_failure_keeps_setting_enabled() {
+    let rest_state = RestState::default();
+    *rest_state.get_account_reply.lock().await = Some(
+        serde_json::from_str(include_str!(
+            "../../test_data/common/cancel_on_disconnect_invalid_response.json"
+        ))
+        .unwrap(),
+    );
+    let ws_state = WsState::default();
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = true;
+            config
+        })
+        .await;
+
+    let error = tc.client.connect().await.unwrap_err();
+    wait_until(
+        || async { ws_state.connection_count.load(Ordering::SeqCst) == 0 },
+        "failed startup closes transport",
+    )
+    .await;
+
+    assert_eq!(
+        error.to_string(),
+        "failed to read Derive cancel-on-disconnect setting"
+    );
+    assert!(!tc.client.is_connected());
+    assert!(ws_state.subscribe_frames.lock().await.is_empty());
+    assert_eq!(rest_state.get_account_calls.lock().await.len(), 1);
+    assert_eq!(ws_state.cancel_on_disconnect_calls.lock().await.len(), 1);
+    assert!(rest_state.cancel_on_disconnect.load(Ordering::SeqCst));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_confirmation_timeout_never_opens_execution_socket() {
+    let rest_state = RestState::default();
+    rest_state
+        .get_account_lag_reads
+        .store(usize::MAX, Ordering::SeqCst);
+    let ws_state = WsState::default();
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = true;
+            config
+        })
+        .await;
+
+    let error = tokio::time::timeout(Duration::from_secs(35), tc.client.connect())
+        .await
+        .expect("confirmation deadline must bound startup")
+        .unwrap_err();
+    wait_until(
+        || async { ws_state.connection_count.load(Ordering::SeqCst) == 0 },
+        "setup transport closes",
+    )
+    .await;
+
+    assert_eq!(
+        error.to_string(),
+        "Derive cancel-on-disconnect was not confirmed within 30 seconds"
+    );
+    assert!(!tc.client.is_connected());
+    assert_eq!(
+        *ws_state.request_methods.lock().await,
+        vec![vec!["public/login", "private/set_cancel_on_disconnect"]]
+    );
+    assert!(ws_state.subscribe_frames.lock().await.is_empty());
+    assert!(rest_state.cancel_on_disconnect.load(Ordering::SeqCst));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_execution_login_failure_keeps_setting_enabled() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    ws_state
+        .login_failures_after_first
+        .store(20, Ordering::SeqCst);
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = true;
+            config.ws_timeout_secs = Some(1);
+            config
+        })
+        .await;
+
+    let error = tc.client.connect().await.unwrap_err();
+    wait_until(
+        || async { ws_state.connection_count.load(Ordering::SeqCst) == 0 },
+        "failed execution login closes transport",
+    )
+    .await;
+
+    assert_eq!(error.to_string(), "failed to connect Derive WebSocket");
+    assert!(!tc.client.is_connected());
+    assert!(ws_state.subscribe_frames.lock().await.is_empty());
+    assert_eq!(ws_state.cancel_on_disconnect_calls.lock().await.len(), 1);
+    assert!(rest_state.cancel_on_disconnect.load(Ordering::SeqCst));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_recovery_does_not_repeat_setup() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    ws_state
+        .disconnect_after_subscribe
+        .store(true, Ordering::SeqCst);
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = true;
+            config
+        })
+        .await;
+
+    let instrument: DeriveInstrument = serde_json::from_value(sample_instrument_json()).unwrap();
+    tc.client.cache_instrument(instrument).unwrap();
+
+    tc.client.connect().await.unwrap();
+    drain_until(
+        &mut tc.rx,
+        |event| {
+            matches!(
+                event,
+                ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+            )
+        },
+        "COD reconnect mass status",
+    )
+    .await;
+
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(
+        *ws_state.login_cancel_on_disconnect.lock().await,
+        vec![false, true, true]
+    );
+    assert_eq!(
+        *ws_state.request_methods.lock().await,
+        vec![
+            vec!["public/login", "private/set_cancel_on_disconnect"],
+            vec!["public/login", "subscribe"],
+            vec!["public/login", "subscribe"],
+        ]
+    );
+    assert_eq!(ws_state.cancel_on_disconnect_calls.lock().await.len(), 1);
+    assert_eq!(rest_state.get_account_calls.lock().await.len(), 1);
+    assert!(rest_state.cancel_on_disconnect.load(Ordering::SeqCst));
 }
 
 #[rstest]
@@ -2560,10 +2981,17 @@ async fn test_submit_trigger_order_posts_v3_order_and_emits_accepted(
     #[case] wire_type: &str,
     #[case] trigger_type: &str,
     #[case] limit_price: &str,
+    #[values(false, true)] cancel_on_disconnect: bool,
 ) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), None, |mut config| {
+        config.cancel_on_disconnect = cancel_on_disconnect;
+        config
+    })
+    .await;
+
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
@@ -2675,10 +3103,17 @@ async fn test_submit_order_posts_supported_time_in_force(
     #[case] time_in_force: TimeInForce,
     #[case] post_only: bool,
     #[case] expected: &str,
+    #[values(false, true)] cancel_on_disconnect: bool,
 ) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), None, |mut config| {
+        config.cancel_on_disconnect = cancel_on_disconnect;
+        config
+    })
+    .await;
+
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
@@ -2715,6 +3150,16 @@ async fn test_submit_order_posts_supported_time_in_force(
 
     let posts = ws_state.submitted_orders.lock().await;
     assert_eq!(posts[0]["time_in_force"].as_str(), Some(expected));
+
+    let expected_mmp = if cancel_on_disconnect && time_in_force == TimeInForce::Gtc {
+        Some(json!(true))
+    } else if post_only {
+        Some(json!(false))
+    } else {
+        None
+    };
+
+    assert_eq!(posts[0].get("mmp"), expected_mmp.as_ref());
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -2874,13 +3319,22 @@ async fn test_submit_order_denies_unsupported_trigger_price_type_before_posting(
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_market_with_quote_uses_rounded_slippage_bound() {
+async fn test_submit_order_market_with_quote_uses_rounded_slippage_bound(
+    #[values(false, true)] cancel_on_disconnect: bool,
+) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut refreshed_ticker = sample_ticker_json("ETH-PERP", 1_700_000_000_013_i64);
     refreshed_ticker["best_ask_price"] = json!("3501.00");
     *rest_state.ticker_response.lock().await = refreshed_ticker;
-    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+
+    let mut tc =
+        build_client_with_config(rest_state.clone(), ws_state.clone(), None, |mut config| {
+            config.cancel_on_disconnect = cancel_on_disconnect;
+            config
+        })
+        .await;
+
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
@@ -2928,6 +3382,8 @@ async fn test_submit_order_market_with_quote_uses_rounded_slippage_bound() {
     // Refreshed REST ask, not stale cache: 3501 * 1.005 -> 3518.51
     assert_eq!(body["limit_price"].as_str(), Some("3518.51"));
     assert_eq!(rest_state.ticker_calls.lock().await.len(), 1);
+
+    assert_eq!(body.get("mmp"), None);
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -5237,8 +5693,16 @@ async fn test_cancel_all_orders_missing_cached_venue_id_fails_closed(
 }
 
 #[rstest]
+#[case::gtc(TimeInForce::Gtc, false)]
+#[case::post_only(TimeInForce::Gtc, true)]
+#[case::ioc(TimeInForce::Ioc, false)]
+#[case::fok(TimeInForce::Fok, false)]
 #[tokio::test]
-async fn test_modify_order_posts_replace_and_emits_order_updated() {
+async fn test_modify_order_posts_replace_and_emits_order_updated(
+    #[values(false, true)] cancel_on_disconnect: bool,
+    #[case] time_in_force: TimeInForce,
+    #[case] post_only: bool,
+) {
     let rest_state = RestState::default();
     rest_state.get_order_responses.lock().await.insert(
         "ord-stale-1".to_string(),
@@ -5252,17 +5716,25 @@ async fn test_modify_order_posts_replace_and_emits_order_updated() {
         ),
     );
     let ws_state = WsState::default();
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), None, |mut config| {
+        config.cancel_on_disconnect = cancel_on_disconnect;
+        config
+    })
+    .await;
+
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-MOD-1");
-    let order = build_limit_order(
+    let order = build_limit_order_with_time_in_force(
         instrument_id,
         client_order_id,
         OrderSide::Buy,
         Price::from("3500.00"),
         Quantity::from("1.000"),
+        time_in_force,
+        post_only,
     );
     tc.cache
         .borrow_mut()
@@ -5324,6 +5796,16 @@ async fn test_modify_order_posts_replace_and_emits_order_updated() {
     assert_eq!(body["amount"].as_str(), Some("2.000"));
     assert_eq!(body["limit_price"].as_str(), Some("3505.00"));
     assert_eq!(body["label"].as_str(), Some("STRAT-MOD-1"));
+
+    let expected_mmp = if cancel_on_disconnect && time_in_force == TimeInForce::Gtc {
+        Some(json!(true))
+    } else if post_only {
+        Some(json!(false))
+    } else {
+        None
+    };
+
+    assert_eq!(body.get("mmp"), expected_mmp.as_ref());
     assert!(body["signature"].as_str().unwrap().starts_with("0x"));
     // The legacy cancel-only fallback must not fire any more.
     assert!(ws_state.cancelled_orders.lock().await.is_empty());

@@ -232,6 +232,11 @@ pub struct DeriveExecutionClientConfig {
     /// are absent from `public/getRateLimits`.
     /// See <https://docs.derive.xyz/rate-limits>.
     pub max_per_instrument_matching_requests_per_second: Option<u32>,
+    /// Enables wallet-wide cancel-on-disconnect before accepting orders and tags resting limit orders
+    /// with `mmp: true`. Requires `Trade(All)` across all subaccounts and signature expiry at most
+    /// 15 minutes. False leaves the wallet setting unchanged. Shutdown never disables the setting.
+    #[builder(default)]
+    pub cancel_on_disconnect: bool,
 }
 
 #[cfg(feature = "python")]
@@ -256,6 +261,7 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
     market_order_slippage_bps: u32,
     max_matching_requests_per_second: Option<u32>,
     max_per_instrument_matching_requests_per_second: Option<u32>,
+    cancel_on_disconnect: bool,
 });
 
 impl Default for DeriveExecutionClientConfig {
@@ -292,7 +298,9 @@ impl DeriveExecutionClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if `max_fee_per_contract` is missing or not greater than zero.
+    /// Returns an error if:
+    /// - `max_fee_per_contract` is missing or not greater than zero.
+    /// - Cancel-on-disconnect uses a signature expiry greater than 15 minutes.
     pub fn validate(&self) -> anyhow::Result<()> {
         let Some(max_fee_per_contract) = self.max_fee_per_contract else {
             anyhow::bail!("max_fee_per_contract is required");
@@ -300,6 +308,12 @@ impl DeriveExecutionClientConfig {
 
         if max_fee_per_contract <= Decimal::ZERO {
             anyhow::bail!("max_fee_per_contract must be greater than zero");
+        }
+
+        if self.cancel_on_disconnect && self.signature_expiry_secs > 15 * 60 {
+            anyhow::bail!(
+                "cancel_on_disconnect requires signature_expiry_secs at most 900 seconds"
+            );
         }
 
         Ok(())
@@ -427,6 +441,7 @@ mod tests {
     #[rstest]
     fn test_exec_config_defaults() {
         let config = DeriveExecutionClientConfig::default();
+        assert!(!config.cancel_on_disconnect);
         assert_eq!(config.environment, DeriveEnvironment::Mainnet);
         assert_eq!(config.http_timeout_secs, 10);
         assert_eq!(config.max_retries, 3);
@@ -437,6 +452,36 @@ mod tests {
                 .is_none()
         );
         assert!(!config.has_credentials());
+    }
+
+    #[rstest]
+    #[case::enabled_maximum(true, 900, true)]
+    #[case::enabled_too_long(true, 901, false)]
+    #[case::disabled_long_expiry(false, 901, true)]
+    fn test_exec_config_cancel_on_disconnect_signature_expiry(
+        #[case] enabled: bool,
+        #[case] expiry_secs: u64,
+        #[case] valid: bool,
+    ) {
+        let config = DeriveExecutionClientConfig::builder()
+            .cancel_on_disconnect(enabled)
+            .signature_expiry_secs(expiry_secs)
+            .max_fee_per_contract(Decimal::ONE)
+            .build();
+        let result = config.validate();
+        let decoded: DeriveExecutionClientConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+
+        assert_eq!(decoded.cancel_on_disconnect, enabled);
+        assert_eq!(decoded.signature_expiry_secs, expiry_secs);
+        assert_eq!(result.is_ok(), valid);
+
+        if !valid {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "cancel_on_disconnect requires signature_expiry_secs at most 900 seconds"
+            );
+        }
     }
 
     #[rstest]

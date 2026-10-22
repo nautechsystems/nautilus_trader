@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added accumulation of fractional `Money` commissions beyond currency precision
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
+- Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
