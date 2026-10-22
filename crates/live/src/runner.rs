@@ -619,6 +619,10 @@ impl AsyncRunner {
                     MessagingSwitchboard::portfolio_update_account(),
                     account,
                 );
+                msgbus::publish_account_state(
+                    format!("events.account.{}", account.account_id).into(),
+                    account,
+                );
             }
         }
     }
@@ -2355,6 +2359,111 @@ mod tests {
             }
             _ => panic!("Expected AccountState"),
         }
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    #[case::cash(AccountType::Cash)]
+    #[case::margin(AccountType::Margin)]
+    fn test_account_event_publishes_after_portfolio_application(#[case] account_type: AccountType) {
+        use nautilus_common::msgbus::{MessageBus, TypedHandler};
+        use nautilus_model::{
+            accounts::Account,
+            types::{AccountBalance, Currency},
+        };
+        use nautilus_portfolio::Portfolio;
+
+        msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::new(
+            TraderId::from("TESTER-001"),
+            UUID4::new(),
+            None,
+            None,
+        ))));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let _portfolio = Portfolio::new(clock, cache.clone(), None);
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let received = observed.clone();
+        let source = cache.clone();
+        let handler = TypedHandler::from(move |event: &AccountState| {
+            let cache = source.borrow();
+            let account = cache.account(&event.account_id).unwrap();
+            assert_eq!(account.last_event().unwrap().event_id, event.event_id);
+            assert_eq!(account.account_type(), event.account_type);
+            assert_eq!(
+                account.balances().into_values().collect::<Vec<_>>(),
+                event.balances
+            );
+            received
+                .borrow_mut()
+                .push((event.event_id, account.events().len()));
+        });
+
+        // Even a subscriber ahead of Portfolio's topic handler must see applied state
+        msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), Some(20));
+        let scoped = Rc::new(RefCell::new(Vec::new()));
+        let scoped_received = scoped.clone();
+        let scoped_handler = TypedHandler::from(move |event: &AccountState| {
+            scoped_received.borrow_mut().push(event.event_id);
+        });
+        msgbus::subscribe_account_state(
+            "events.account.SIM-001".into(),
+            scoped_handler.clone(),
+            None,
+        );
+        let mut expected = Vec::new();
+        let mut expected_scoped = Vec::new();
+        for (index, (account_id, total, locked, free, history_len)) in [
+            ("SIM-001", "100 USD", "20 USD", "80 USD", 1),
+            ("SIM-002", "200 USD", "50 USD", "150 USD", 1),
+            ("SIM-001", "90 USD", "10 USD", "80 USD", 2),
+            ("SIM-001", "0 USD", "0 USD", "0 USD", 3),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let event = AccountState::new(
+                AccountId::from(account_id),
+                account_type,
+                vec![AccountBalance::new(
+                    Money::from(total),
+                    Money::from(locked),
+                    Money::from(free),
+                )],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(index as u64 + 1),
+                UnixNanos::from(index as u64 + 1),
+                Some(Currency::USD()),
+            );
+            expected.push((event.event_id, history_len));
+            if account_id == "SIM-001" {
+                expected_scoped.push(event.event_id);
+            }
+            AsyncRunner::handle_exec_event(ExecutionEvent::Account(event));
+        }
+        assert_eq!(*observed.borrow(), expected);
+        assert_eq!(*scoped.borrow(), expected_scoped);
+        let cache = cache.borrow();
+        assert_eq!(
+            cache
+                .account(&AccountId::from("SIM-001"))
+                .unwrap()
+                .events()
+                .len(),
+            3
+        );
+        assert_eq!(
+            cache
+                .account(&AccountId::from("SIM-002"))
+                .unwrap()
+                .events()
+                .len(),
+            1
+        );
+        msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
+        msgbus::unsubscribe_account_state("events.account.SIM-001".into(), &scoped_handler);
     }
 
     #[tokio::test]

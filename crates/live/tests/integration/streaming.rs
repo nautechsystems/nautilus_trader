@@ -26,22 +26,25 @@ use std::{str::FromStr, time::Duration};
 
 use nautilus_common::{
     enums::Environment,
+    messages::ExecutionEvent,
     msgbus::{self, switchboard},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
     config::{LiveExecutionEngineConfig, LiveNodeConfig},
     node::{LiveNode, NodeState},
+    runner::AsyncRunner,
 };
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, NautilusDataType, NautilusRecordType, OrderBookDelta,
         OrderBookDeltas, QuoteTick, TradeTick,
     },
-    enums::{AggressorSide, BookAction, OrderSide, OrderType},
+    enums::{AccountType, AggressorSide, BookAction, OrderSide, OrderType},
+    events::AccountState,
     identifiers::{AccountId, InstrumentId, StrategyId, TradeId, VenueOrderId},
     orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
-    types::{ERROR_PRICE, Price, Quantity},
+    types::{AccountBalance, Currency, ERROR_PRICE, Money, Price, Quantity},
 };
 use nautilus_persistence::{
     backend::parquet::catalog::ParquetDataCatalog, catalog::types::CatalogDataType,
@@ -232,6 +235,32 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
     msgbus::publish_order_event(order_topic, &submitted);
     msgbus::publish_order_event(order_topic, &accepted);
 
+    let account_states: Vec<_> = ["100 USD", "0 USD"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, total)| {
+            AccountState::new(
+                account_id,
+                AccountType::Cash,
+                vec![AccountBalance::new(
+                    Money::from(total),
+                    Money::from("0 USD"),
+                    Money::from(total),
+                )],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(8_000 + index as u64),
+                UnixNanos::from(8_000 + index as u64),
+                Some(Currency::USD()),
+            )
+        })
+        .collect();
+
+    for state in &account_states {
+        AsyncRunner::handle_exec_event(ExecutionEvent::Account(state.clone()));
+    }
+
     node.stop().await.unwrap();
     assert_eq!(node.handle().state(), NodeState::Stopped);
     node.dispose();
@@ -296,6 +325,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
     for record_type in [
         NautilusRecordType::OrderSubmitted,
         NautilusRecordType::OrderAccepted,
+        NautilusRecordType::AccountState,
     ] {
         catalog
             .convert_stream_to_data(
@@ -308,9 +338,10 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
             .unwrap();
     }
 
-    for record_type in [
-        NautilusRecordType::OrderSubmitted,
-        NautilusRecordType::OrderAccepted,
+    for (record_type, expected_rows) in [
+        (NautilusRecordType::OrderSubmitted, 1),
+        (NautilusRecordType::OrderAccepted, 1),
+        (NautilusRecordType::AccountState, account_states.len()),
     ] {
         let batches = catalog
             .query_record_batches(
@@ -323,7 +354,7 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
             )
             .unwrap();
         let rows: usize = batches.iter().map(|batch| batch.num_rows()).sum();
-        assert_eq!(rows, 1, "expected one {record_type} row");
+        assert_eq!(rows, expected_rows, "unexpected {record_type} row count");
     }
 }
 
