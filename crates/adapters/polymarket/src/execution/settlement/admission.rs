@@ -276,6 +276,8 @@ fn admit_owned_legs(
 /// precision only by settlement rounding snaps to it on both transports. `match_time_source`
 /// keeps the raw `match_time` for validation messages, and `ts_event` is the venue match
 /// timestamp parsed from it, with the WebSocket `timestamp` as fallback.
+/// Counterparty executions used to aggregate a taker fill allow historical price precision on
+/// both transports; the resulting fill must preserve the settlement notional.
 struct NormalizedTrade<'a> {
     id: &'a str,
     status: PolymarketTradeStatus,
@@ -530,11 +532,13 @@ fn validate_taker_matches(
                 "taker counterparty matched amount",
                 false,
             )?;
-            validate_price(
-                trade,
-                maker.price,
-                maker.matched_amount,
-                maker_instrument.as_ref().unwrap_or(instrument),
+            // Counterparty executions are historical evidence on both transports
+            let price_precision = maker_instrument
+                .as_ref()
+                .unwrap_or(instrument)
+                .price_precision();
+            validate_historical_price_evidence(
+                snap_settlement_price(maker.price, maker.matched_amount, price_precision),
                 "taker counterparty price",
             )?;
             let price = if same_asset {
@@ -926,6 +930,124 @@ mod tests {
                 OrderSide::Buy
             }
         );
+    }
+
+    #[rstest]
+    fn taker_counterparty_prices_preserve_historical_precision(
+        #[values(false, true)] rest: bool,
+        #[values(false, true)] complement: bool,
+        #[values(false, true)] sell: bool,
+    ) {
+        let instruments = instruments();
+        let mut trade = multilevel_trade(complement, sell);
+        trade.size = "2".to_string();
+        trade.price = "0.42".to_string();
+
+        for (maker, price) in trade
+            .maker_orders
+            .iter_mut()
+            .zip([dec!(0.42), dec!(0.4200014)])
+        {
+            maker.matched_amount = Decimal::ONE;
+            maker.price = if complement {
+                Decimal::ONE - price
+            } else {
+                price
+            };
+        }
+
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let admitted = admit_trade_evidence(evidence, &context(&instruments)).unwrap();
+
+        assert_eq!(admitted.legs.len(), 1);
+        let leg = &admitted.legs[0];
+        assert_eq!(leg.last_qty.as_decimal(), dec!(2));
+        assert_eq!(leg.last_px.as_decimal(), dec!(0.4200007));
+        assert_eq!(
+            (leg.last_qty.as_decimal() * leg.last_px.as_decimal()).round_dp(6),
+            dec!(0.840001),
+        );
+        assert_eq!(leg.commission.as_decimal(), dec!(0.02436));
+        assert_eq!(leg.trade_id, TradeId::from(trade.id.as_str()));
+        assert_eq!(
+            leg.order_side,
+            if sell {
+                OrderSide::Sell
+            } else {
+                OrderSide::Buy
+            }
+        );
+    }
+
+    #[rstest]
+    fn taker_counterparty_settlement_rounding_remains_supported(#[values(false, true)] rest: bool) {
+        let instruments = instruments();
+        let mut trade = multilevel_trade(false, false);
+        trade.size = "2".to_string();
+        trade.price = "0.42".to_string();
+
+        for maker in &mut trade.maker_orders {
+            maker.matched_amount = Decimal::ONE;
+            maker.price = dec!(0.42);
+        }
+
+        trade.maker_orders[1].price += Decimal::new(1, u32::from(FIXED_PRECISION) + 1);
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let admitted = admit_trade_evidence(evidence, &context(&instruments)).unwrap();
+
+        assert_eq!(admitted.legs[0].last_px.as_decimal(), dec!(0.42));
+        assert_eq!(admitted.legs[0].last_qty.as_decimal(), dec!(2));
+        assert_eq!(admitted.legs[0].commission.as_decimal(), dec!(0.02436));
+    }
+
+    #[rstest]
+    #[case::zero(Decimal::ZERO, "must be greater than zero and less than one")]
+    #[case::one(Decimal::ONE, "must be greater than zero and less than one")]
+    #[case::beyond_fixed_precision(
+        dec!(0.4200014) + Decimal::new(1, u32::from(FIXED_PRECISION) + 1),
+        "exceeds the maximum representable price precision",
+    )]
+    fn taker_rejects_invalid_historical_counterparty_price(
+        #[case] price: Decimal,
+        #[case] message: &str,
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments();
+        let mut trade = multilevel_trade(false, false);
+        trade.size = "2".to_string();
+        trade.price = "0.42".to_string();
+
+        for maker in &mut trade.maker_orders {
+            maker.matched_amount = Decimal::ONE;
+            maker.price = dec!(0.42);
+        }
+
+        trade.maker_orders[1].price = price;
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let error = admit_trade_evidence(evidence, &context(&instruments)).unwrap_err();
+
+        assert!(error.to_string().contains(message), "{error}");
     }
 
     #[rstest]
