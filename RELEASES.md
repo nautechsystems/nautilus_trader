@@ -81,6 +81,7 @@ Released on TBD (UTC).
 - Fixed simulated venues matching cross-instrument OTO children with their parent's market and execution state
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
+- Fixed `RetryManager` skipping minimum retry delays after operation timeouts (#5406), thanks @imbolc
 - Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
 - Fixed Architect AX order tracking across uncertain submits, replacements, and simulated market order fills
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
