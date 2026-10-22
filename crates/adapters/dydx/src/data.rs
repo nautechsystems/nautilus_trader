@@ -64,7 +64,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
-    types::Quantity,
+    types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -74,7 +74,7 @@ use crate::{
         consts::DYDX_VENUE,
         enums::DydxCandleResolution,
         instrument_cache::InstrumentCache,
-        parse::{extract_raw_symbol, parse_price},
+        parse::{extract_raw_symbol, parse_decimal},
     },
     config::DydxDataClientConfig,
     http::client::DydxHttpClient,
@@ -1418,7 +1418,7 @@ impl DydxDataClient {
             for (ticker, oracle_data) in oracle_prices {
                 let instrument_id = Self::instrument_id_from_ticker(ticker);
 
-                let Ok(price) = parse_price(&oracle_data.oracle_price, "oracle_price") else {
+                let Ok(price) = parse_oracle_price(&oracle_data.oracle_price) else {
                     log::warn!("Failed to parse oracle price for {ticker}");
                     continue;
                 };
@@ -1531,7 +1531,7 @@ impl DydxDataClient {
 
             if is_snapshot
                 && let Some(ref oracle_price_str) = update.oracle_price
-                && let Ok(price) = parse_price(oracle_price_str, "oracle_price")
+                && let Ok(price) = parse_oracle_price(oracle_price_str)
             {
                 if ctx.active_mark_price_subs.contains(&instrument_id) {
                     let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_init, ts_init);
@@ -1897,6 +1897,13 @@ impl DydxDataClient {
     }
 }
 
+fn parse_oracle_price(value: &str) -> anyhow::Result<Price> {
+    let decimal = parse_decimal(value, "oracle_price")?;
+
+    // Oracle prices can be finer than trading ticks; keep their scale stable for persistence
+    Price::from_decimal_dp(decimal, FIXED_PRECISION).map_err(Into::into)
+}
+
 struct WsMessageContext {
     clock: &'static AtomicTime,
     data_sender: EventSender<DataEvent>,
@@ -1944,7 +1951,10 @@ pub(crate) mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::{consts::DYDX_VENUE, enums::DydxNetwork};
+    use crate::{
+        common::{consts::DYDX_VENUE, enums::DydxNetwork, testing::load_json_fixture},
+        websocket::messages::DydxMarketsContents,
+    };
 
     fn test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
@@ -2453,6 +2463,123 @@ pub(crate) mod tests {
             subscription_error.to_string(),
             "WebSocket transport error: WebSocket connection pool is closed"
         );
+    }
+
+    #[rstest]
+    #[case::both(true, true)]
+    #[case::mark_only(true, false)]
+    #[case::index_only(false, true)]
+    #[case::unsubscribed(false, false)]
+    #[tokio::test]
+    async fn test_oracle_prices_keep_fixed_precision(
+        #[case] mark_subscribed: bool,
+        #[case] index_subscribed: bool,
+        #[values(true, false)] snapshot: bool,
+    ) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let command_tasks = TaskGroup::new();
+
+        let ctx = WsMessageContext {
+            clock: get_atomic_clock_realtime(),
+            data_sender: tx.into(),
+            instrument_cache: Arc::new(InstrumentCache::new()),
+            order_books: Arc::new(DashMap::new()),
+            last_quotes: Arc::new(DashMap::new()),
+            ws_client: DydxWebSocketClient::new_public("ws://127.0.0.1:1".to_string(), None, None),
+            http_client: DydxHttpClient::new(None, 10, None, DydxNetwork::Testnet, None).unwrap(),
+            active_quote_subs: Arc::new(AtomicSet::new()),
+            active_delta_subs: Arc::new(AtomicSet::new()),
+            active_trade_subs: Arc::new(AtomicSet::new()),
+            active_bar_subs: Arc::new(AtomicMap::new()),
+            incomplete_bars: Arc::new(DashMap::new()),
+            bar_type_mappings: Arc::new(AtomicMap::new()),
+            active_mark_price_subs: Arc::new(AtomicSet::new()),
+            active_index_price_subs: Arc::new(AtomicSet::new()),
+            active_funding_rate_subs: Arc::new(AtomicSet::new()),
+            active_instrument_status_subs: Arc::new(AtomicSet::new()),
+            last_instrument_statuses: Arc::new(DashMap::new()),
+            bars_timestamp_on_close: true,
+            pending_bars: Arc::new(DashMap::new()),
+            seen_tickers: Arc::new(AtomicSet::new()),
+            command_spawner: command_tasks.spawner().unwrap(),
+        };
+
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        ctx.seen_tickers.insert(Ustr::from("BTC-USD"));
+        if mark_subscribed {
+            ctx.active_mark_price_subs.insert(instrument_id);
+        }
+
+        if index_subscribed {
+            ctx.active_index_price_subs.insert(instrument_id);
+        }
+
+        let (fixture, field) = if snapshot {
+            ("ws_markets_subscribed.json", "markets")
+        } else {
+            ("ws_markets_update.json", "oraclePrices")
+        };
+
+        let mut fixture = load_json_fixture(fixture);
+        fixture["contents"][field]
+            .as_object_mut()
+            .unwrap()
+            .retain(|ticker, _| ticker == "BTC-USD");
+
+        let mut expected = Vec::new();
+        let inputs = [
+            "81162.6",
+            "81468.36718",
+            "81470.1",
+            "81471.20431",
+            "81468",
+            "81468.00000",
+            "0.000000001",
+        ];
+
+        for (i, value) in inputs.iter().enumerate() {
+            fixture["contents"][field]["BTC-USD"]["oraclePrice"] =
+                serde_json::Value::String((*value).to_string());
+            let contents: DydxMarketsContents =
+                serde_json::from_value(fixture["contents"].clone()).unwrap();
+            let ts = UnixNanos::new(1_700_000_000_000_000_000 + i as u64 * 1_000_000_000);
+            DydxDataClient::handle_markets_message(&contents, &ctx, ts);
+            let decimal = Decimal::from_str(value).unwrap();
+            if mark_subscribed {
+                expected.push((instrument_id, true, decimal, ts, ts));
+            }
+
+            if index_subscribed {
+                expected.push((instrument_id, false, decimal, ts, ts));
+            }
+        }
+
+        let mut actual = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            let (id, mark, price, ts_event, ts_init) = match event {
+                DataEvent::Data(NautilusData::MarkPrice(update)) => (
+                    update.instrument_id,
+                    true,
+                    update.value,
+                    update.ts_event,
+                    update.ts_init,
+                ),
+                DataEvent::Data(NautilusData::IndexPrice(update)) => (
+                    update.instrument_id,
+                    false,
+                    update.value,
+                    update.ts_event,
+                    update.ts_init,
+                ),
+                other => panic!("Unexpected event: {other:?}"),
+            };
+
+            assert_eq!(price.precision, FIXED_PRECISION);
+            actual.push((id, mark, price.as_decimal(), ts_event, ts_init));
+        }
+
+        assert_eq!(actual, expected);
     }
 
     fn book_update_deltas(

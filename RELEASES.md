@@ -40,6 +40,7 @@ Released on TBD (UTC).
 - Changed Bybit TradFi perpetuals to `PerpetualContract`; update type checks (#5344), thanks @dxwil
 - Changed Bybit spot xStocks to `TokenizedAsset`; update type checks (#5344), thanks @dxwil
 - Changed Deribit local validation failures from `OrderRejected` to `OrderDenied`; invalid members deny the whole list
+- Changed dYdX mark/index precision to the build maximum; precision-16 recordings require a high-precision reader
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
 - Changed Hyperliquid account inputs to require lowercase or EIP-55 hex; blank explicit addresses now error
 - Changed `HyperliquidHttpClient::set_account_address` to return `Result`; handle validation errors
@@ -97,6 +98,7 @@ Released on TBD (UTC).
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
 - Fixed Derive startup stalls when loading large instrument listings
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
+- Fixed dYdX oracle price precision for catalog promotion (#5391), thanks for reporting @fintech07
 - Fixed Hyperliquid funding history truncation and latest-row limits (#5343), thanks @dxwil
 - Fixed Hyperliquid builder-fee commands treating invalid `HYPERLIQUID_TESTNET` values as mainnet
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
