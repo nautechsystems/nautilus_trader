@@ -122,6 +122,9 @@ Released on TBD (UTC).
 - Fixed Lighter execution sender setup and reinstallation on repeated starts
 - Fixed Lighter fill parse errors consuming acceptance and replay state
 - Fixed Lighter read retries ignoring `Retry-After` response headers
+- Fixed Lighter probes for completed cancels consuming REST quota and delaying modification confirmation
+- Fixed Lighter cancellation recovery stopping before terminal order status is available
+- Fixed Lighter single-order cancel transaction failures leaving orders pending cancel
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX external limit orders missing amendment confirmations
 - Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved

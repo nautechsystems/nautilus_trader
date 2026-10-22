@@ -47,6 +47,7 @@ use nautilus_model::{
 };
 use parking_lot::Mutex;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+use tokio_util::sync::{CancellationToken, DropGuard};
 use zeroize::Zeroizing;
 
 use crate::{
@@ -645,8 +646,15 @@ impl PendingOrderAction {
 #[derive(Debug)]
 struct PendingOrderActionState {
     action: PendingOrderAction,
-    submission: Option<(u64, i64)>,
+    submission: Option<PendingCancel>,
     modify: Option<PendingModify>,
+}
+
+// Pending state owns the probe lifetime, including waits for REST quota
+#[derive(Debug)]
+struct PendingCancel {
+    identity: (u64, i64),
+    cancellation: DropGuard,
 }
 
 #[derive(Debug)]
@@ -1364,7 +1372,18 @@ impl WsDispatchState {
         if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
             && state.action == PendingOrderAction::cancel(emit_cancel_rejected)
         {
-            state.submission = Some((connection_epoch, nonce));
+            if state
+                .submission
+                .as_ref()
+                .is_some_and(|submission| submission.identity == (connection_epoch, nonce))
+            {
+                return;
+            }
+
+            state.submission = Some(PendingCancel {
+                identity: (connection_epoch, nonce),
+                cancellation: CancellationToken::new().drop_guard(),
+            });
         }
     }
 
@@ -1377,7 +1396,46 @@ impl WsDispatchState {
                     PendingOrderAction::Cancel | PendingOrderAction::CancelUnmarked
                 )
             })
-            .and_then(|state| state.submission)
+            .and_then(|state| {
+                state
+                    .submission
+                    .as_ref()
+                    .map(|submission| submission.identity)
+            })
+    }
+
+    pub(crate) fn pending_cancel_token(
+        &self,
+        cloid: &ClientOrderId,
+        connection_epoch: u64,
+        nonce: i64,
+    ) -> Option<CancellationToken> {
+        self.pending_order_actions
+            .get(cloid)
+            .filter(|state| {
+                matches!(
+                    state.action,
+                    PendingOrderAction::Cancel | PendingOrderAction::CancelUnmarked
+                )
+            })
+            .and_then(|state| {
+                state
+                    .submission
+                    .as_ref()
+                    .filter(|submission| submission.identity == (connection_epoch, nonce))
+                    .map(|submission| submission.cancellation.token().clone())
+            })
+    }
+
+    pub(crate) fn stop_cancel_probes_before(&self, connection_epoch: u64) {
+        // Keep submission identities for reconciliation after stopping old probes
+        for state in self.pending_order_actions.iter() {
+            if let Some(submission) = state.submission.as_ref()
+                && submission.identity.0 < connection_epoch
+            {
+                submission.cancellation.token().cancel();
+            }
+        }
     }
 
     pub(crate) fn clear_pending_cancel_if_nonce(
@@ -1390,7 +1448,13 @@ impl WsDispatchState {
             return false;
         };
 
-        if entry.get().submission != Some((connection_epoch, nonce)) {
+        if entry
+            .get()
+            .submission
+            .as_ref()
+            .map(|submission| submission.identity)
+            != Some((connection_epoch, nonce))
+        {
             return false;
         }
 
@@ -2402,49 +2466,6 @@ pub(crate) async fn lookup_create_order_status_report(
     Ok(Some(dispatch.preserve_pending_order_status(report)))
 }
 
-/// Look up a single order via the active and inactive HTTP endpoints, returning
-/// the corresponding [`OrderStatusReport`] if found.
-///
-/// Resolution order: explicit `venue_order_id` > cached `venue_id_map` >
-/// derived `client_order_index` from `dispatch.derive_client_order_index`.
-/// The third path is active-order only. It makes `query_order` work between
-/// submission and the venue's first `account_*` ack, while avoiding ambiguous
-/// terminal history where Lighter can reuse client indexes.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "order lookup threads context to the parser without a wrapper struct"
-)]
-pub(crate) async fn lookup_order_status_report(
-    http_client: &LighterHttpClient,
-    registry: &Arc<MarketRegistry>,
-    credential: &Credential,
-    account_id: AccountId,
-    instrument_id: Option<InstrumentId>,
-    client_order_id: Option<&ClientOrderId>,
-    venue_order_id: Option<&VenueOrderId>,
-    dispatch: &WsDispatchState,
-    clock: &'static AtomicTime,
-) -> anyhow::Result<Option<OrderStatusReport>> {
-    let lookup = OrderReportLookup::new(
-        registry,
-        dispatch,
-        instrument_id,
-        client_order_id,
-        venue_order_id,
-    )?;
-    collect_order_status_report(
-        http_client,
-        registry,
-        credential,
-        account_id,
-        &lookup,
-        clock,
-        dispatch,
-    )
-    .await
-    .map(|report| report.map(|report| lookup.finish(dispatch, report)))
-}
-
 pub(crate) struct OrderReportLookup {
     instrument_id: InstrumentId,
     target_venue_index: Option<i64>,
@@ -2542,27 +2563,26 @@ impl OrderReportLookup {
     }
 }
 
-pub(crate) async fn collect_order_status_report(
-    http_client: &LighterHttpClient,
-    registry: &Arc<MarketRegistry>,
-    credential: &Credential,
-    account_id: AccountId,
-    lookup: &OrderReportLookup,
-    clock: &'static AtomicTime,
-    dispatch: &WsDispatchState,
-) -> anyhow::Result<Option<(OrderStatusReport, Option<ClientOrderId>)>> {
-    collect_order(http_client, registry, credential, lookup)
-        .await?
-        .map(|order| lookup.parse(&order, registry, account_id, clock.get_time_ns(), dispatch))
-        .transpose()
-}
-
 pub(crate) async fn collect_order(
     http_client: &LighterHttpClient,
     registry: &Arc<MarketRegistry>,
     credential: &Credential,
     lookup: &OrderReportLookup,
 ) -> anyhow::Result<Option<LighterOrder>> {
+    collect_order_while_pending(http_client, registry, credential, lookup, || true).await
+}
+
+pub(crate) async fn collect_order_while_pending(
+    http_client: &LighterHttpClient,
+    registry: &Arc<MarketRegistry>,
+    credential: &Credential,
+    lookup: &OrderReportLookup,
+    is_pending: impl Fn() -> bool,
+) -> anyhow::Result<Option<LighterOrder>> {
+    if !is_pending() {
+        return Ok(None);
+    }
+
     let market_index = registry
         .market_index(&lookup.instrument_id)
         .ok_or_else(|| {
@@ -2593,6 +2613,10 @@ pub(crate) async fn collect_order(
         .await
         .context("failed to fetch Lighter active orders")?;
 
+    if !is_pending() {
+        return Ok(None);
+    }
+
     let mut active_matches = active.orders.iter().filter(|order| matches_order(order));
     let active_match = active_matches.next();
 
@@ -2609,6 +2633,7 @@ pub(crate) async fn collect_order(
     }
 
     if lookup.target_venue_index.is_none() {
+        // Lighter reuses client indexes, so they cannot identify terminal history
         return Ok(None);
     }
 
@@ -2620,6 +2645,10 @@ pub(crate) async fn collect_order(
     let mut pages = 0_usize;
 
     loop {
+        if !is_pending() {
+            return Ok(None);
+        }
+
         pages += 1;
         anyhow::ensure!(
             pages <= MAX_RECONCILIATION_PAGES,
@@ -2639,6 +2668,10 @@ pub(crate) async fn collect_order(
             .get_account_inactive_orders(&query)
             .await
             .context("failed to fetch Lighter inactive orders")?;
+
+        if !is_pending() {
+            return Ok(None);
+        }
 
         for order in &inactive.orders {
             if matches_order(order) {
@@ -2921,7 +2954,7 @@ mod tests {
     use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
-        identifiers::{AccountId, StrategyId, TradeId},
+        identifiers::{AccountId, StrategyId, TradeId, TraderId},
         orders::Order,
         reports::FillReport,
         types::Money,
@@ -4930,13 +4963,22 @@ mod tests {
         state.set_pending_order_action(id, action);
         state.set_pending_cancel_nonce(&id, 3, 41, emit_cancel_rejected);
         assert_eq!(state.pending_cancel_nonce(&id), Some((3, 41)));
+        let old = state.pending_cancel_token(&id, 3, 41).unwrap();
+        assert!(!old.is_cancelled());
         state.set_pending_order_action(id, action);
         assert_eq!(state.pending_cancel_nonce(&id), None);
+        assert!(old.is_cancelled());
+        state.set_pending_cancel_nonce(&id, 3, 42, emit_cancel_rejected);
+        let current = state.pending_cancel_token(&id, 3, 42).unwrap();
         state.set_pending_cancel_nonce(&id, 3, 42, emit_cancel_rejected);
         assert!(!state.clear_pending_cancel_if_nonce(&id, 3, 41));
         assert!(!state.clear_pending_cancel_if_nonce(&id, 2, 42));
         assert_eq!(state.pending_cancel_nonce(&id), Some((3, 42)));
+        assert!(!current.is_cancelled());
+        assert!(state.pending_cancel_token(&id, 2, 42).is_none());
+        assert!(state.pending_cancel_token(&id, 3, 41).is_none());
         assert!(state.clear_pending_cancel_if_nonce(&id, 3, 42));
+        assert!(current.is_cancelled());
         assert_eq!(state.pending_order_action(&id), None);
         state.set_pending_order_action(id, PendingOrderAction::Modify);
         state.set_pending_cancel_nonce(&id, 3, 43, emit_cancel_rejected);
@@ -4946,5 +4988,99 @@ mod tests {
             state.pending_order_action(&id),
             Some(PendingOrderAction::Modify)
         );
+    }
+
+    #[rstest]
+    #[case::marked(PendingOrderAction::Cancel, true)]
+    #[case::unmarked(PendingOrderAction::CancelUnmarked, false)]
+    fn cancel_probe_retirement_preserves_current_and_newer_submissions(
+        #[case] action: PendingOrderAction,
+        #[case] emit_rejected: bool,
+    ) {
+        let state = WsDispatchState::new();
+        let ids = [
+            ClientOrderId::from("CANCEL-OLD"),
+            ClientOrderId::from("CANCEL-CURRENT"),
+            ClientOrderId::from("CANCEL-NEWER"),
+        ];
+        let mut tokens = Vec::new();
+
+        for (i, id) in ids.iter().enumerate() {
+            let epoch = i as u64 + 1;
+            let nonce = i as i64 + 41;
+            state.set_pending_order_action(*id, action);
+            state.set_pending_cancel_nonce(id, epoch, nonce, emit_rejected);
+            tokens.push(state.pending_cancel_token(id, epoch, nonce).unwrap());
+        }
+
+        state.stop_cancel_probes_before(2);
+        state.stop_cancel_probes_before(1);
+        assert_eq!(
+            tokens
+                .iter()
+                .map(CancellationToken::is_cancelled)
+                .collect::<Vec<_>>(),
+            vec![true, false, false]
+        );
+
+        for (i, id) in ids.iter().enumerate() {
+            assert_eq!(
+                state.pending_cancel_nonce(id),
+                Some((i as u64 + 1, i as i64 + 41))
+            );
+            assert_eq!(state.pending_order_action(id), Some(action));
+        }
+
+        state.clear_pending_order_action(&ids[1]);
+        assert_eq!(
+            tokens
+                .iter()
+                .map(CancellationToken::is_cancelled)
+                .collect::<Vec<_>>(),
+            vec![true, true, false]
+        );
+        assert_eq!(state.pending_cancel_nonce(&ids[1]), None);
+        assert_eq!(state.pending_cancel_nonce(&ids[2]), Some((3, 43)));
+    }
+
+    #[rstest]
+    fn cancel_probe_retirement_preserves_overlapping_modify() {
+        let state = WsDispatchState::new();
+        let id = ClientOrderId::from("CANCEL-WITH-MODIFY");
+
+        let command = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("ETH-PERP.LIGHTER"),
+            id,
+            Some(VenueOrderId::from("789")),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        assert!(state.set_pending_modify_action(&command));
+        state.set_pending_modify_nonce(&id, command.command_id, 1, 40);
+        state.set_pending_order_action(id, PendingOrderAction::Cancel);
+        state.set_pending_cancel_nonce(&id, 1, 41, true);
+        let token = state.pending_cancel_token(&id, 1, 41).unwrap();
+        state.stop_cancel_probes_before(2);
+        assert!(token.is_cancelled());
+        assert_eq!(state.pending_cancel_nonce(&id), Some((1, 41)));
+        assert_eq!(state.pending_modify_nonce(&id), Some((1, 40)));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::Cancel)
+        );
+        assert!(state.clear_pending_cancel_if_nonce(&id, 1, 41));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::Modify)
+        );
+        assert_eq!(state.pending_modify_nonce(&id), Some((1, 40)));
     }
 }
