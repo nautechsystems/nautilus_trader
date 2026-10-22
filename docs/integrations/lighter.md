@@ -567,8 +567,10 @@ Non-default modes require zero integrator fees, which the adapter uses.
 `reduce` nets overlapping quantities without a fill. Working-order quantities and reports show the remainder
 plus actual fills; price-only amendments preserve this quantity.
 
-Modify requests omit the self-trade modes. Whether the venue preserves the submitted modes after modification
-is unverified.
+Modify requests omit the self-trade modes. For perpetual limit orders amended to take a resting order from the
+same account, price-only and combined price/quantity changes use `expire_maker`, regardless of the submitted
+behavior. Quantity-only changes, amended maker behavior, equality-scope persistence, and spot or conditional
+amendments remain unverified.
 
 ### Time in force
 
@@ -757,9 +759,12 @@ During this delay:
 
 #### Outcome recovery
 
-Order updates and transaction lookups resolve create and cancel children. Recovery performs up to three
+Order updates and transaction lookups resolve create and cancel outcomes. Recovery performs up to three
 lookups at two-second intervals while the pending action remains current. It validates transaction hash,
 type, account, API key, and original submission nonce.
+
+Resolved or superseded cancels stop their probes, including requests waiting for REST quota.
+When a cancel transaction executes, recovery retries missing or nonterminal order status within the same three lookups.
 
 A definitively failed admitted modification, single or batched, emits one `OrderModifyRejected` and clears
 its matching pending action. The consumed nonce is not rolled back.
@@ -773,7 +778,7 @@ nor resends it. Restart and reconcile venue state before managing that order aga
 :::
 
 Modification probes retain their original submission identity across reconnects. Cancellation probes stop when
-their connection changes.
+their connection changes; the pending cancel keeps its submission identity for reconciliation.
 
 Cancellation recovery includes orders outside `PendingCancel`, such as `CancelAllOrders` targets.
 Only cached orders in `PendingCancel` at dispatch receive `OrderCancelRejected`; other failures are logged.

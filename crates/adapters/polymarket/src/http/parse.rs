@@ -15,6 +15,10 @@
 
 //! Instrument parsing for Polymarket markets.
 
+use std::sync::Arc;
+
+use ahash::AHashMap;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::{
@@ -26,9 +30,10 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ustr::Ustr;
 
-use super::models::{CryptoMarketConfig, FeeSchedule, GammaMarket, GammaTag};
+use super::models::{CryptoMarketConfig, FeeSchedule, GammaEvent, GammaMarket, GammaTag};
 use crate::common::{
     consts::{POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
@@ -61,8 +66,8 @@ pub struct PolymarketInstrumentDef {
     /// Original Gamma market response.
     #[serde(default)]
     pub gamma_market: String,
-    /// Original enclosing event response from event-based discovery.
-    pub gamma_event: Option<String>,
+    /// Shared `Value::String` containing the original enclosing event JSON from discovery.
+    pub gamma_event: Option<Arc<Value>>,
     /// Question ID (resolution hash).
     pub question_id: Option<String>,
     /// Outcome label.
@@ -108,6 +113,13 @@ pub struct PolymarketInstrumentDef {
 /// Each market produces two definitions: one for the Yes outcome
 /// and one for the No outcome.
 pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
+    parse_gamma_market_with_event_cache(market, &mut AHashMap::new())
+}
+
+pub(super) fn parse_gamma_market_with_event_cache(
+    market: &GammaMarket,
+    event_metadata: &mut AHashMap<*const GammaEvent, Arc<Value>>,
+) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
     let event_id = market_event_id(market);
 
     let game_id = market.game_id.clone().or_else(|| {
@@ -149,6 +161,14 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
 
     let neg_risk = market.neg_risk;
 
+    let gamma_event = market.parent_event.as_ref().map(|event| {
+        Arc::clone(
+            event_metadata
+                .entry(Arc::as_ptr(event))
+                .or_insert_with(|| Arc::new(Value::String(event.raw.clone()))),
+        )
+    });
+
     let mut defs = Vec::with_capacity(2);
 
     for (token_id, outcome_label) in token_ids.iter().zip(outcomes.iter()) {
@@ -163,7 +183,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             market_id: market.id.clone(),
             event_id,
             gamma_market: market.raw.clone(),
-            gamma_event: market.parent_event.as_ref().map(|event| event.raw.clone()),
+            gamma_event: gamma_event.clone(),
             question_id: market.question_id.clone(),
             outcome,
             question: market.question.clone(),
@@ -429,7 +449,7 @@ pub fn create_instrument_from_def(
     // `min_quantity`, so leave it unset and let the venue reject out-of-bounds orders.
     let min_quantity: Option<Quantity> = None;
 
-    let info: Params = serde_json::from_value(build_info_json(def))?;
+    let info = build_info(def);
 
     let binary_option = BinaryOption::builder()
         .instrument_id(instrument_id)
@@ -539,11 +559,12 @@ pub(crate) fn tick_relative_price_bounds(tick_size: Decimal) -> anyhow::Result<(
     Ok((min_price, max_price))
 }
 
-fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
+fn build_info(def: &PolymarketInstrumentDef) -> Params {
     let mut map = serde_json::Map::new();
     map.insert("gamma_market".to_string(), def.gamma_market.clone().into());
-    if let Some(event) = &def.gamma_event {
-        map.insert("gamma_event".to_string(), event.clone().into());
+    if def.gamma_event.is_some() {
+        // Reserve the event position under both serde_json map ordering configurations
+        map.insert("gamma_event".to_string(), Value::Null);
     }
 
     if let Some(event_id) = def.event_id {
@@ -633,7 +654,16 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         );
     }
 
-    serde_json::Value::Object(map)
+    let mut map: IndexMap<_, _> = map
+        .into_iter()
+        .map(|(key, value)| (key, Arc::new(value)))
+        .collect();
+
+    if let Some(event) = &def.gamma_event {
+        map.insert("gamma_event".to_string(), Arc::clone(event));
+    }
+
+    Params::from_shared(map)
 }
 
 fn get_currency(code: &str) -> Currency {
@@ -994,6 +1024,56 @@ mod tests {
         assert_eq!(info.get_str("description"), expected);
         assert_eq!(info.contains_key("description"), expected.is_some());
         assert_eq!(info.get_str("resolution_source"), None);
+    }
+
+    #[rstest]
+    fn test_instrument_info_preserves_json_map_order() {
+        let market = load_gamma_market("gamma_market_crypto_twap.json");
+        let mut def = parse_gamma_market(&market).unwrap().remove(0);
+        let event = Arc::new(Value::String(market.raw));
+        def.gamma_event = Some(Arc::clone(&event));
+        def.event_id = Some(Ustr::from("event-123"));
+        let info = build_info(&def);
+        let mut expected = serde_json::Map::new();
+
+        for key in [
+            "gamma_market",
+            "gamma_event",
+            "event_id",
+            "token_id",
+            "condition_id",
+            "market_id",
+            "question_id",
+            "market_slug",
+            "description",
+            "event_start_time",
+            "end_date",
+            "neg_risk",
+            "resolution_source",
+            "crypto_market_config",
+            "min_order_size",
+            "fee_schedule",
+            "game_id",
+        ] {
+            if let Some(value) = info.get(key) {
+                expected.insert(key.to_string(), value.clone());
+            }
+        }
+
+        assert_eq!(
+            info.borrowed_entries()
+                .map(|(key, _)| key)
+                .collect::<Vec<_>>(),
+            expected.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            serde_json::to_string(&info).unwrap(),
+            serde_json::to_string(&expected).unwrap()
+        );
+        assert!(std::ptr::eq(
+            info.get("gamma_event").unwrap(),
+            event.as_ref()
+        ));
     }
 
     #[rstest]

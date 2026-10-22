@@ -27,6 +27,7 @@
 
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc, time::Duration};
 
+use ahash::AHashMap;
 use nautilus_common::live::dst;
 use nautilus_core::{
     UnixNanos,
@@ -50,7 +51,10 @@ use crate::{
         error::{Error, Result, decode_response},
         models::{GammaEvent, GammaMarket, GammaTag, SearchResponse},
         pagination::{Completion, CursorProtocol, FetchOutcome, Paginator, WindowedCollect},
-        parse::{create_instrument_from_def, enrich_market_fee_schedule, parse_gamma_market},
+        parse::{
+            create_instrument_from_def, enrich_market_fee_schedule,
+            parse_gamma_market_with_event_cache,
+        },
         query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
         rate_limits::{HEADER_RETRY_AFTER, POLYMARKET_GAMMA_REST_QUOTA},
     },
@@ -398,13 +402,16 @@ pub(crate) fn parse_markets_with_transient(
     let mut instruments = Vec::new();
     let mut transient = Vec::new();
 
+    // Parents outlive this batch; pointer keys keep distinct discovery snapshots separate
+    let mut event_metadata = AHashMap::new();
+
     for market in markets {
         if is_transient_clob_token_ids(&market.clob_token_ids) {
             transient.push(market.condition_id.clone());
             continue;
         }
 
-        match parse_gamma_market(market) {
+        match parse_gamma_market_with_event_cache(market, &mut event_metadata) {
             Ok(defs) => {
                 for def in defs {
                     match create_instrument_from_def(&def, ts_init) {
@@ -1039,10 +1046,13 @@ fn parse_gamma_markets_response(raw: &RawValue) -> Result<Vec<GammaMarket>> {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::cache::Cache;
+    use nautilus_model::instruments::Instrument;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::http::parse::parse_gamma_market;
 
     fn load_fee_market(filename: &str) -> GammaMarket {
         let path = format!("test_data/{filename}");
@@ -1112,7 +1122,10 @@ mod tests {
             let defs = parse_gamma_market(market).unwrap();
             for def in defs {
                 assert_eq!(def.event_id.unwrap().as_str(), parent.id);
-                assert_eq!(def.gamma_event.as_ref(), Some(&parent.raw));
+                assert_eq!(
+                    def.gamma_event.as_ref().unwrap().as_str(),
+                    Some(parent.raw.as_str())
+                );
                 assert_eq!(def.gamma_market, market.raw);
                 let instrument = create_instrument_from_def(&def, 1.into()).unwrap();
 
@@ -1129,6 +1142,96 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1)]
+    #[case(8)]
+    #[case(32)]
+    fn test_event_metadata_shares_storage_across_instruments_and_clones(
+        #[case] market_count: usize,
+    ) {
+        let mut events: Vec<GammaEvent> =
+            serde_json::from_str(include_str!("../../test_data/gamma_event.json")).unwrap();
+        let mut event = events.remove(0);
+        let market = event.markets[0].clone();
+        event.markets = (0..market_count)
+            .map(|index| {
+                let mut market = market.clone();
+                market.id = format!("market-{index}");
+                market.condition_id = format!("condition-{index}");
+                market.clob_token_ids = serde_json::to_string(&[
+                    format!("{}", 2 * index + 1),
+                    format!("{}", 2 * index + 2),
+                ])
+                .unwrap();
+                market
+            })
+            .collect();
+
+        let expected = event.raw.clone();
+        let markets = flatten_event_markets(vec![event]);
+        let (instruments, transient) = parse_markets_with_transient(&markets, 1.into());
+        let event = instruments[0].info().unwrap().get("gamma_event").unwrap();
+        let mut pointers = std::collections::HashSet::new();
+        let mut cache = Cache::default();
+
+        assert_eq!(instruments.len(), 2 * market_count);
+        assert_eq!(transient, Vec::<String>::new());
+        assert_eq!(event.as_str(), Some(expected.as_str()));
+
+        for instrument in &instruments {
+            cache.add_instrument(instrument.clone()).unwrap();
+            let cloned = cache.instrument(&instrument.id()).unwrap().clone();
+            for instrument in [instrument, &cloned] {
+                let info = instrument.info().unwrap();
+                let value = info.get("gamma_event").unwrap();
+                pointers.insert(value.as_str().unwrap().as_ptr());
+                assert!(std::ptr::eq(value, event));
+                assert_eq!(info.get_bool("closed"), Some(false));
+            }
+        }
+
+        assert_eq!(pointers.len(), 1);
+    }
+
+    #[rstest]
+    fn test_event_metadata_keeps_distinct_snapshots_with_the_same_id() {
+        let mut events: Vec<GammaEvent> =
+            serde_json::from_str(include_str!("../../test_data/gamma_event.json")).unwrap();
+        let event = events.remove(0);
+        let mut updated = event.clone();
+        let mut value: Value = serde_json::from_str(&updated.raw).unwrap();
+        value["snapshot"] = Value::String("updated".to_string());
+        updated.raw = serde_json::to_string(&value).unwrap();
+        let original_raw = event.raw.clone();
+        let updated_raw = updated.raw.clone();
+        let markets_per_event = event.markets.len();
+        let markets = flatten_event_markets(vec![event, updated]);
+        let (instruments, transient) = parse_markets_with_transient(&markets, 1.into());
+        let snapshots = instruments
+            .chunks(2 * markets_per_event)
+            .collect::<Vec<_>>();
+
+        assert_eq!(transient, Vec::<String>::new());
+        assert_eq!(snapshots.len(), 2);
+
+        for (snapshot, expected) in snapshots.iter().zip([original_raw, updated_raw]) {
+            let event = snapshot[0].info().unwrap().get("gamma_event").unwrap();
+            assert_eq!(event.as_str(), Some(expected.as_str()));
+
+            for instrument in *snapshot {
+                assert!(std::ptr::eq(
+                    instrument.info().unwrap().get("gamma_event").unwrap(),
+                    event
+                ));
+            }
+        }
+
+        assert!(!std::ptr::eq(
+            snapshots[0][0].info().unwrap().get("gamma_event").unwrap(),
+            snapshots[1][0].info().unwrap().get("gamma_event").unwrap()
+        ));
+    }
+
+    #[rstest]
     #[case("liquidity")]
     #[case("volume")]
     #[case("volume24hr")]
@@ -1138,8 +1241,6 @@ mod tests {
     #[case("volume_1wk")]
     #[tokio::test]
     async fn test_event_sort_preserves_adjacent_decimal_values(#[case] field: &str) {
-        use nautilus_model::instruments::Instrument;
-
         let mut lower: GammaMarket =
             serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
         lower.clob_token_ids = serde_json::to_string(&["1", "2"]).unwrap();

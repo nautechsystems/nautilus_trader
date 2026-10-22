@@ -130,6 +130,10 @@ pub struct InteractiveBrokersDataClientConfig {
     pub all_last_trades: bool,
     /// Optional interval without incoming market data before emitting a subscription idle event.
     pub subscription_idle_timeout_secs: Option<u64>,
+    /// Bound on ibapi's automatic reconnect attempts for the shared client connection
+    /// (`ClientBuilder::max_reconnect_attempts`). `None` keeps ibapi's default. `Some(0)`
+    /// disables reconnection; `Some(u32::MAX)` retries for practical purposes forever.
+    pub max_reconnect_attempts: Option<u32>,
     /// Instrument provider configuration.
     #[builder(default)]
     pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,
@@ -208,6 +212,11 @@ pub struct InteractiveBrokersExecutionClientConfig {
     /// Whether to track option exercise from position updates.
     #[builder(default)]
     pub track_option_exercise_from_position_update: bool,
+    /// Bound on ibapi's automatic reconnect attempts, see the field of the same name on
+    /// [`InteractiveBrokersDataClientConfig`]. The shared-client registry connects once
+    /// per `(host, port, client_id)`, so when data and exec share a connection the first
+    /// creator's value wins.
+    pub max_reconnect_attempts: Option<u32>,
     /// Instrument provider configuration.
     #[builder(default)]
     pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,

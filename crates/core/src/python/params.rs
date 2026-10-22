@@ -27,7 +27,7 @@ use crate::{
     python::{serialization::serialize_pyobject_pyo3, to_pyvalue_err},
 };
 
-/// Converts a Python dict to `Params` (IndexMap<String, Value>).
+/// Converts a Python dict to `Params`.
 ///
 /// An empty dict canonicalizes to `None`, distinguishing "no params provided"
 /// from a populated map. This is not the inverse of [`params_to_pydict`], which
@@ -129,14 +129,14 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     }
 }
 
-/// Converts `Params` (IndexMap<String, Value>) to a Python dict.
+/// Converts `Params` to a Python dict.
 ///
 /// # Errors
 ///
 /// Returns an error if conversion of any value fails.
 pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
-    for (key, value) in params {
+    for (key, value) in params.borrowed_entries() {
         let py_value = value_to_pyobject(py, value)?;
         dict.set_item(key, py_value)?;
     }
@@ -186,7 +186,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_params_pydict_roundtrip() {
+    fn test_params_pydict_roundtrip(#[values(false, true)] shared: bool) {
         let params = Params::new(
             [
                 ("null".to_string(), Value::Null),
@@ -210,9 +210,17 @@ mod tests {
             .into(),
         );
 
+        let params = if shared {
+            Params::from_shared(params.to_shared_map())
+        } else {
+            params
+        };
+
+        let retained = params.estimated_heap_size();
         Python::initialize();
         Python::attach(|py| {
             let dict = params_to_pydict(py, &params).unwrap();
+            assert_eq!(params.estimated_heap_size(), retained);
             let restored = pydict_to_params(py, &dict).unwrap().unwrap();
             let empty = PyDict::new(py).unbind();
             let absent = pydict_to_params(py, &empty).unwrap();

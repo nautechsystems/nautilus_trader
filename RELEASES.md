@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `Money::from_decimal_exact` and `Money::from_str_exact` for fractional amounts beyond currency precision
 - Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
 - Added accumulation of fractional `Money` commissions beyond currency precision
+- Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
@@ -47,6 +48,7 @@ Released on TBD (UTC).
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
 - Changed Lighter `compute_tx_hash` and `sign_tx` to return `Result`; handle invalid transaction attributes
 - Changed Lighter `L2TxAttributes` literals; add the new fields or use `..Default::default()`
+- Changed `PolymarketInstrumentDef.gamma_event` from `Option<String>` to `Option<Arc<Value>>` (#5389), thanks @imbolc
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
 - Changed Polymarket data WebSocket timeouts from 15 to 30 seconds by default; `ws_timeout_secs` must be positive
@@ -64,11 +66,13 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking
 - Fixed expiration settlement missing final-tick fills when position updates are deferred
 - Fixed reduce-only FOK orders canceling when liquidity covered the remaining position but not the order quantity
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
+- Fixed DeFi swap simulation and replay hanging at bounds or accepting unreachable price limits
 - Fixed SBE market data decoding panics on invalid prices and quantities
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
 - Fixed reconciliation leaving amended orders in `PendingUpdate` after working reports confirm changed terms
@@ -77,6 +81,7 @@ Released on TBD (UTC).
 - Fixed simulated venues matching cross-instrument OTO children with their parent's market and execution state
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
+- Fixed `RetryManager` skipping minimum retry delays after operation timeouts (#5406), thanks @imbolc
 - Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
 - Fixed Architect AX order tracking across uncertain submits, replacements, and simulated market order fills
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
@@ -90,6 +95,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
+- Fixed Derive startup stalls when loading large instrument listings
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed Hyperliquid funding history truncation and latest-row limits (#5343), thanks @dxwil
 - Fixed Hyperliquid builder-fee commands treating invalid `HYPERLIQUID_TESTNET` values as mainnet
@@ -99,6 +105,8 @@ Released on TBD (UTC).
 - Fixed Hyperliquid WebSocket readiness being published before handler initialization
 - Fixed Hyperliquid private WebSocket parse errors exposing account data in logs
 - Fixed Hyperliquid data client consumption loop remaining active after its WebSocket handler closes
+- Fixed Hyperliquid REST fill reports omitting venue client order IDs
+- Fixed Hyperliquid REST order and fill report panics on invalid client order IDs
 - Fixed Interactive Brokers small-lot entry prices after commission rounding (#5327), thanks @bebop23
 - Fixed Interactive Brokers futures expiry times blocking market data (#5318), thanks @chaneyka1
 - Fixed Interactive Brokers quote sizes dropped by float rounding (#5318), thanks @chaneyka1
@@ -114,10 +122,14 @@ Released on TBD (UTC).
 - Fixed Lighter execution sender setup and reinstallation on repeated starts
 - Fixed Lighter fill parse errors consuming acceptance and replay state
 - Fixed Lighter read retries ignoring `Retry-After` response headers
+- Fixed Lighter probes for completed cancels consuming REST quota and delaying modification confirmation
+- Fixed Lighter cancellation recovery stopping before terminal order status is available
+- Fixed Lighter single-order cancel transaction failures leaving orders pending cancel
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX external limit orders missing amendment confirmations
 - Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
+- Fixed Polymarket event metadata duplicated across instruments and cache clones (#5389), thanks @imbolc
 - Fixed Polymarket data clients ignoring `ws_timeout_secs` for market and PolyBolt WebSockets
 - Fixed Polymarket auto-load retrying filter-rejected instruments and logging false missing-market errors
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails
@@ -134,6 +146,7 @@ Released on TBD (UTC).
 - Fixed Polymarket market data subscriptions stalling after transient initial WebSocket connection failures
 - Fixed Polymarket taker rates derived from CLOB `base_fee` when Gamma rates are missing or zero
 - Fixed Polymarket trade history and settlement recovery failing on missing or null transaction hashes
+- Fixed sandbox restarts reviving closed OTO children while the cache still shows them open
 - Fixed sandbox position checks creating spurious closing trades (#5357), thanks @awss1i
 
 ### Internal Improvements

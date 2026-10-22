@@ -202,6 +202,8 @@ struct TestServerState {
     active_orders_response_release: Arc<tokio::sync::Notify>,
     tx_calls: Arc<AtomicUsize>,
     inactive_orders_calls: Arc<AtomicUsize>,
+    inactive_orders_response_blocked: Arc<AtomicBool>,
+    inactive_orders_response_release: Arc<tokio::sync::Notify>,
     trades_calls: Arc<AtomicUsize>,
     trades_queries: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
     active_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -212,6 +214,7 @@ struct TestServerState {
     tx_response_started: tokio::sync::broadcast::Sender<i64>,
     tx_response_release: Arc<tokio::sync::Notify>,
     inactive_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    inactive_orders_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     inactive_orders_unscoped_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
@@ -262,6 +265,8 @@ impl Default for TestServerState {
             active_orders_response_release: Arc::new(tokio::sync::Notify::new()),
             tx_calls: Arc::new(AtomicUsize::new(0)),
             inactive_orders_calls: Arc::new(AtomicUsize::new(0)),
+            inactive_orders_response_blocked: Arc::new(AtomicBool::new(false)),
+            inactive_orders_response_release: Arc::new(tokio::sync::Notify::new()),
             trades_calls: Arc::new(AtomicUsize::new(0)),
             trades_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             active_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -274,6 +279,7 @@ impl Default for TestServerState {
             tx_response_started,
             tx_response_release: Arc::new(tokio::sync::Notify::new()),
             inactive_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            inactive_orders_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             inactive_orders_unscoped_response: Arc::new(tokio::sync::Mutex::new(None)),
             trades_response: Arc::new(tokio::sync::Mutex::new(None)),
             trades_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
@@ -561,17 +567,36 @@ async fn account_inactive_orders(
     State(state): State<Arc<TestServerState>>,
     Query(query): Query<std::collections::HashMap<String, String>>,
 ) -> Response {
-    state.inactive_orders_calls.fetch_add(1, Ordering::Relaxed);
-    if !query.contains_key("market_id")
+    let queued = state.inactive_orders_responses.lock().await.pop_front();
+
+    let body = if let Some(body) = queued {
+        body
+    } else if !query.contains_key("market_id")
         && let Some(body) = state.inactive_orders_unscoped_response.lock().await.clone()
     {
-        return (StatusCode::OK, body.to_string()).into_response();
+        body
+    } else {
+        state
+            .inactive_orders_response
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| json!({"code":200,"orders":[]}))
+    };
+
+    let release = state.inactive_orders_response_release.notified();
+    tokio::pin!(release);
+    release.as_mut().enable();
+    let blocked = state
+        .inactive_orders_response_blocked
+        .load(Ordering::Acquire);
+    state.inactive_orders_calls.fetch_add(1, Ordering::Release);
+
+    if blocked {
+        release.await;
     }
 
-    if let Some(body) = state.inactive_orders_response.lock().await.clone() {
-        return (StatusCode::OK, body.to_string()).into_response();
-    }
-    (StatusCode::OK, json!({"code":200,"orders":[]}).to_string()).into_response()
+    (StatusCode::OK, body.to_string()).into_response()
 }
 
 async fn trades(
@@ -4344,7 +4369,8 @@ async fn test_cancel_all_orders_ignores_stale_terminal_probe() {
         .is_none(),
         "an older cancel probe must not report over a newer cancel"
     );
-    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 0);
     client.disconnect().await.unwrap();
 }
 
@@ -10860,4 +10886,601 @@ async fn test_modify_reduce_remainder_after_http_restoration(
         Quantity::from("0.0050")
     );
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_resolved_single_cancel_probe_spends_no_rest_quota() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-CANCEL-RESOLVED-PROBE");
+    let (index, venue_id) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510801",
+    )
+    .await;
+    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        id,
+        Some(account_id()),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_id),
+    ));
+    cache.borrow_mut().update_order(&pending).unwrap();
+    client
+        .cancel_order(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(venue_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, 2).await;
+    let mut entry = account_all_orders_open_entry(
+        index,
+        venue_id.as_str(),
+        &index.to_string(),
+        TEST_ORDER_NONCE,
+    );
+    entry["status"] = json!("canceled");
+    entry["remaining_base_amount"] = json!("0.0000");
+    state.push_frame(&json!({
+        "type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders":{"0":[entry]},
+    }));
+    let canceled = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .unwrap();
+    assert!(matches!(&canceled, OrderEventAny::Canceled(event) if event.client_order_id == id));
+    cache.borrow_mut().update_order(&canceled).unwrap();
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    client.disconnect().await.unwrap();
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 0);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Acquire), 0);
+    assert_eq!(state.tx_calls.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_completed_cancel_backlog_does_not_delay_modify_confirmation() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.rest_quota_per_min = Some(5);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.unwrap();
+    let target = ClientOrderId::from("O-QUOTA-MODIFY");
+    let (target_index, target_venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        target.as_str(),
+        "281476929510805",
+    )
+    .await;
+
+    for i in 0..3 {
+        let id = ClientOrderId::from(format!("O-QUOTA-CANCELED-{i}").as_str());
+        let (index, venue) = seed_open_order(
+            &client,
+            &cache,
+            &state,
+            &mut rx,
+            id.as_str(),
+            &format!("{}", 281_476_929_510_806_i64 + i),
+        )
+        .await;
+        let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+            trader_id(),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(account_id()),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue),
+        ));
+        cache.borrow_mut().update_order(&pending).unwrap();
+        client
+            .cancel_order(CancelOrder::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                id,
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        await_send_tx_count(&state, 3 + 2 * i as usize).await;
+        let mut entry = account_all_orders_open_entry(
+            index,
+            venue.as_str(),
+            &index.to_string(),
+            TEST_ORDER_NONCE,
+        );
+        entry["status"] = json!("canceled");
+        entry["remaining_base_amount"] = json!("0.0000");
+        state.push_frame(&json!({
+            "type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+            "orders":{"0":[entry]},
+        }));
+        let event = next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert!(matches!(&event,OrderEventAny::Canceled(e) if e.client_order_id == id));
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    tokio::time::sleep(Duration::from_secs(12)).await;
+    let mut row = http_order_fixture(
+        target_venue.as_str(),
+        &target_index.to_string(),
+        "open",
+        "0.0000",
+    );
+    row["price"] = json!("2400.00");
+    row["initial_base_amount"] = json!("0.0100");
+    row["remaining_base_amount"] = json!("0.0100");
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[row], None));
+    state
+        .tx_responses
+        .lock()
+        .await
+        .push_back(json!({"status":2,"event_info":json!({"ae":""}).to_string()}));
+    let pending = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        target,
+        Some(account_id()),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(target_venue),
+    ));
+    cache.borrow_mut().update_order(&pending).unwrap();
+    client
+        .modify_order(modify_command(target, target_venue, "2400.00"))
+        .unwrap();
+    let event = next_order_event(&mut rx, Duration::from_secs(8)).await;
+    client.disconnect().await.unwrap();
+
+    let Some(OrderEventAny::Updated(update)) = event else {
+        panic!("modification confirmation starved behind completed cancels")
+    };
+
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Updated(update))
+        .unwrap();
+    let cached = cache.borrow().order_owned(&target).unwrap();
+    assert_eq!(update.client_order_id, target);
+    assert_eq!(update.venue_order_id, Some(target_venue));
+    assert_eq!(update.instrument_id, eth_perp_id());
+    assert_eq!(update.strategy_id, strategy_id());
+    assert_eq!(update.quantity, Quantity::from("0.0100"));
+    assert_eq!(update.price, Some(Price::from("2400.00")));
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.price(), Some(Price::from("2400.00")));
+    assert_eq!(cached.quantity(), Quantity::from("0.0100"));
+    assert_eq!(cached.leaves_qty(), Quantity::from("0.0100"));
+    assert_eq!(cached.filled_qty(), Quantity::from("0.0000"));
+    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 1);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Acquire), 0);
+    assert_eq!(state.tx_calls.load(Ordering::Acquire), 1);
+}
+
+#[rstest]
+#[case::transaction(0)]
+#[case::active_orders(1)]
+#[case::inactive_page(2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_streamed_cancel_stops_remaining_recovery_reads(#[case] stage: u8) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-CANCEL-DURING-LOOKUP");
+    let (index, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510810",
+    )
+    .await;
+    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        id,
+        Some(account_id()),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue),
+    ));
+    cache.borrow_mut().update_order(&pending).unwrap();
+    state
+        .tx_responses
+        .lock()
+        .await
+        .push_back(json!({"status":2,"event_info":""}));
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.inactive_orders_response.lock().await =
+        Some(http_orders_payload(&[], Some("next-page")));
+    state
+        .tx_response_blocked
+        .store(stage == 0, Ordering::Release);
+    state
+        .active_orders_response_blocked
+        .store(stage == 1, Ordering::Release);
+    state
+        .inactive_orders_response_blocked
+        .store(stage == 2, Ordering::Release);
+    client
+        .cancel_order(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                match stage {
+                    0 => state.tx_calls.load(Ordering::Acquire) == 1,
+                    1 => state.active_orders_calls.load(Ordering::Acquire) == 1,
+                    _ => state.inactive_orders_calls.load(Ordering::Acquire) == 1,
+                }
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut entry =
+        account_all_orders_open_entry(index, venue.as_str(), &index.to_string(), TEST_ORDER_NONCE);
+    entry["status"] = json!("canceled");
+    entry["remaining_base_amount"] = json!("0.0000");
+    state.push_frame(&json!({
+        "type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders":{"0":[entry]},
+    }));
+    let event = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .unwrap();
+    assert!(matches!(&event, OrderEventAny::Canceled(e) if e.client_order_id == id));
+    cache.borrow_mut().update_order(&event).unwrap();
+    state.tx_response_blocked.store(false, Ordering::Release);
+    state
+        .active_orders_response_blocked
+        .store(false, Ordering::Release);
+    state
+        .inactive_orders_response_blocked
+        .store(false, Ordering::Release);
+    state.tx_response_release.notify_one();
+    state.active_orders_response_release.notify_one();
+    state.inactive_orders_response_release.notify_one();
+
+    let extra = next_event_matching(&mut rx, Duration::from_millis(300), |event| {
+        matches!(event, ExecutionEvent::Order(_) | ExecutionEvent::Report(_))
+    })
+    .await;
+
+    client.disconnect().await.unwrap();
+    assert!(extra.is_none());
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(state.tx_calls.load(Ordering::Acquire), 1);
+    assert_eq!(
+        state.active_orders_calls.load(Ordering::Acquire),
+        usize::from(stage >= 1)
+    );
+    assert_eq!(
+        state.inactive_orders_calls.load(Ordering::Acquire),
+        usize::from(stage == 2)
+    );
+}
+
+#[rstest]
+#[case::not_indexed(false)]
+#[case::still_working(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_executed_single_cancel_retries_until_terminal_status(#[case] working: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-CANCEL-DELAYED-STATUS");
+    let (index, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510811",
+    )
+    .await;
+    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        id,
+        Some(account_id()),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue),
+    ));
+    cache.borrow_mut().update_order(&pending).unwrap();
+    let row = http_order_fixture(venue.as_str(), &index.to_string(), "open", "0.0000");
+    state.active_orders_responses.lock().await.extend([
+        http_orders_payload(
+            if working {
+                std::slice::from_ref(&row)
+            } else {
+                &[]
+            },
+            None,
+        ),
+        http_orders_payload(&[], None),
+    ]);
+
+    state.tx_responses.lock().await.extend([
+        json!({"status":2,"event_info":""}),
+        json!({"status":2,"event_info":""}),
+    ]);
+
+    if !working {
+        state
+            .inactive_orders_responses
+            .lock()
+            .await
+            .push_back(http_orders_payload(&[], None));
+    }
+
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(
+        &[http_order_fixture(
+            venue.as_str(),
+            &index.to_string(),
+            "canceled",
+            "0.0000",
+        )],
+        None,
+    ));
+    client
+        .cancel_order(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.active_orders_calls.load(Ordering::Acquire) == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    if working {
+        let event = next_event_matching(&mut rx, Duration::from_secs(1), |event| {
+            matches!(event, ExecutionEvent::Report(ExecutionReport::Order(_)))
+        })
+        .await
+        .unwrap();
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            unreachable!()
+        };
+
+        assert_eq!(report.client_order_id, Some(id));
+        assert_eq!(report.order_status, OrderStatus::PendingCancel);
+    } else {
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.inactive_orders_calls.load(Ordering::Acquire) == 1 }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
+    }
+
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::PendingCancel
+    );
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(5), |event| {
+        matches!(event, ExecutionEvent::Report(ExecutionReport::Order(report)) if report.order_status == OrderStatus::Canceled)
+    }).await.expect("executed cancellation must retry an unindexed terminal status");
+
+    client.disconnect().await.unwrap();
+
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+        unreachable!()
+    };
+
+    assert_eq!(report.client_order_id, Some(id));
+    assert_eq!(report.venue_order_id, venue);
+    assert_eq!(report.account_id, account_id());
+    assert_eq!(report.instrument_id, eth_perp_id());
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.filled_qty, Quantity::from("0.0000"));
+    assert_eq!(state.tx_calls.load(Ordering::Acquire), 2);
+    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 2);
+    assert_eq!(
+        state.inactive_orders_calls.load(Ordering::Acquire),
+        if working { 1 } else { 2 }
+    );
+}
+
+#[rstest]
+#[case::stream(false)]
+#[case::reconnected(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconnect: bool) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.rest_quota_per_min = Some(5);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| build_client_with(config));
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-CANCEL-QUEUED-REST");
+    let (index, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510820",
+    )
+    .await;
+    let row = http_order_fixture(venue.as_str(), &index.to_string(), "open", "0.0000");
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[row], None));
+
+    for _ in 0..3 {
+        let report = client
+            .generate_order_status_report(&GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(eth_perp_id()),
+                Some(id),
+                Some(venue),
+                None,
+                None,
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(report.client_order_id, Some(id));
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+    }
+
+    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        id,
+        Some(account_id()),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue),
+    ));
+    cache.borrow_mut().update_order(&pending).unwrap();
+    client
+        .cancel_order(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    await_send_tx_count(&state, 2).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert_eq!(
+        state.tx_calls.load(Ordering::Acquire),
+        0,
+        "probe must still be queued for REST quota"
+    );
+
+    if reconnect {
+        let handle = registry
+            .handle(client_id(), Ustr::from("lighter-user-streams"))
+            .unwrap();
+        assert_eq!(
+            handle.request_reconnect(),
+            SocketReconnectRequestOutcome::Accepted
+        );
+        await_connection_count(&state, 2).await;
+    } else {
+        let mut entry = account_all_orders_open_entry(
+            index,
+            venue.as_str(),
+            &index.to_string(),
+            TEST_ORDER_NONCE,
+        );
+        entry["status"] = json!("canceled");
+        entry["remaining_base_amount"] = json!("0.0000");
+        state.push_frame(&json!({"type":"update/account_all_orders","channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),"orders":{"0":[entry]}}));
+        let event = next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert!(matches!(&event,OrderEventAny::Canceled(e) if e.client_order_id==id));
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    tokio::time::sleep(Duration::from_secs(if reconnect { 26 } else { 12 })).await;
+    client.disconnect().await.unwrap();
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().status(),
+        if reconnect {
+            OrderStatus::PendingCancel
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert_eq!(state.active_orders_calls.load(Ordering::Acquire), 3);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Acquire), 0);
+    assert_eq!(
+        state.tx_calls.load(Ordering::Acquire),
+        0,
+        "completed cancellation must release its queued recovery lookup"
+    );
 }

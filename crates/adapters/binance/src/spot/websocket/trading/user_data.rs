@@ -15,15 +15,21 @@
 
 //! Binance Spot User Data Stream message types.
 //!
-//! Pure venue types with no Nautilus model imports. These structs map directly
-//! to the JSON payloads from the Binance Spot user data stream WebSocket.
+//! Pure venue types with no Nautilus model imports. Execution reports and account
+//! updates map to JSON payloads. List-status events decode from SBE template 606.
 
 use nautilus_core::serialization::deserialize_decimal_from_str;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use ustr::Ustr;
 
-use crate::common::enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce};
+use crate::{
+    common::enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
+    spot::sbe::spot::{
+        contingency_type::ContingencyType, list_order_status::ListOrderStatus,
+        list_status_type::ListStatusType,
+    },
+};
 
 /// Spot-specific execution type for order updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -153,6 +159,38 @@ impl BinanceSpotExecutionReport {
             _ => &self.client_order_id,
         }
     }
+}
+
+/// Binance Spot `ListStatusEvent` from SBE template 606.
+///
+/// Both timestamps retain microsecond precision from the wire. Child symbols match
+/// the list symbol. The subscription ID is absent for schema version 0 or an SBE
+/// null value. An empty reject reason or `NONE` indicates no rejection.
+///
+/// # References
+///
+/// [Spot SBE schema 3:5](https://github.com/binance/binance-spot-api-docs/blob/master/sbe/schemas/spot_3_5.xml).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinanceSpotListStatus {
+    pub event_time_us: i64,
+    pub transaction_time_us: i64,
+    pub order_list_id: i64,
+    pub contingency_type: ContingencyType,
+    pub list_status_type: ListStatusType,
+    pub list_order_status: ListOrderStatus,
+    pub subscription_id: Option<u16>,
+    pub orders: Vec<BinanceSpotListOrder>,
+    pub symbol: Ustr,
+    pub list_client_order_id: String,
+    pub reject_reason: String,
+}
+
+/// Child identity within a Spot order-list lifecycle event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinanceSpotListOrder {
+    pub order_id: i64,
+    pub symbol: Ustr,
+    pub client_order_id: String,
 }
 
 /// Account position update event (`outboundAccountPosition`).

@@ -156,10 +156,11 @@ where
 
     /// Returns a builder for a retry-managed invocation.
     ///
-    /// Set `retry_delay` to derive a minimum delay from an operation error, including a mapped
-    /// operation timeout. The retry loop uses the greater of this minimum and the configured
-    /// exponential backoff. Retry delays do not consume the per-operation timeout. If the effective
-    /// delay cannot fit within the remaining elapsed budget, the original operation error is returned.
+    /// Set `retry_delay` to derive a minimum delay from an operation error, including errors
+    /// created by `create_error` for operation timeouts. The retry loop uses the greater of this
+    /// minimum and the configured exponential backoff. Retry delays do not consume the per-operation
+    /// timeout. If the effective delay cannot fit within the remaining elapsed budget, that error
+    /// is returned.
     ///
     /// Set `cancellation_token` to cancel the operation. Cancellation is checked at three points:
     ///
@@ -326,6 +327,7 @@ where
                     true,
                 ),
             };
+
             let minimum_delay = retry_delay(&e);
 
             if !should_retry(&e) {
@@ -792,7 +794,7 @@ mod tests {
         tokio::test(start_paused = true)
     )]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-    async fn test_error_retry_delay_observes_cancellation() {
+    async fn test_error_retry_delay_observes_cancellation(#[values(false, true)] timeout: bool) {
         let config = RetryConfig {
             max_retries: 1,
             initial_delay_ms: 10,
@@ -822,10 +824,15 @@ mod tests {
                     let attempts = Arc::clone(&attempts_clone);
                     async move {
                         attempts.fetch_add(1, Ordering::SeqCst);
+
+                        if timeout {
+                            std::future::pending::<()>().await;
+                        }
+
                         Err::<i32, TestError>(TestError::Retryable("rate limit".to_string()))
                     }
                 },
-                should_retry_test_error,
+                |_| true,
                 create_test_error,
             )
             .retry_delay(&|_| Some(Duration::from_millis(200)))
@@ -2040,9 +2047,12 @@ mod proptest_tests {
             backoff_ms in 1u64..500,
             minimum_ms in 0u64..1_000,
             operation_timeout_ms in 1u64..50,
+            timeout in any::<bool>(),
         ) {
             let rt = build_paused_runtime();
             let selected_ms = backoff_ms.max(minimum_ms);
+            let attempt_ms = if timeout { operation_timeout_ms } else { 0 };
+            let elapsed_ms = attempt_ms + selected_ms;
             let config = |max_elapsed_ms| RetryConfig {
                 max_retries: 1,
                 initial_delay_ms: backoff_ms,
@@ -2055,7 +2065,7 @@ mod proptest_tests {
             };
             let minimum_delay = Duration::from_millis(minimum_ms);
 
-            let manager = RetryManager::new(config(selected_ms + 1));
+            let manager = RetryManager::new(config(elapsed_ms + 1));
             let attempts = Arc::new(AtomicU32::new(0));
             let attempts_clone = Arc::clone(&attempts);
             let (result, elapsed) = rt.block_on(async {
@@ -2067,13 +2077,17 @@ mod proptest_tests {
                             let attempts = Arc::clone(&attempts_clone);
                             async move {
                                 if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                                    if timeout {
+                                        std::future::pending::<()>().await;
+                                    }
+
                                     Err(TestError::Retryable("rate limit".to_string()))
                                 } else {
                                     Ok(42)
                                 }
                             }
                         },
-                        should_retry_test_error,
+                        |_| true,
                         create_test_error,
                     )
                     .retry_delay(&|_| Some(minimum_delay))
@@ -2084,16 +2098,16 @@ mod proptest_tests {
 
             prop_assert_eq!(result.unwrap(), 42);
             prop_assert_eq!(attempts.load(Ordering::SeqCst), 2);
-            let selected = Duration::from_millis(selected_ms);
+            let expected_elapsed = Duration::from_millis(elapsed_ms);
             #[cfg(all(feature = "simulation", madsim))]
             {
-                prop_assert!(elapsed >= selected);
-                prop_assert!(elapsed < selected + Duration::from_millis(1));
+                prop_assert!(elapsed >= expected_elapsed);
+                prop_assert!(elapsed < expected_elapsed + Duration::from_millis(1));
             }
             #[cfg(not(all(feature = "simulation", madsim)))]
-            prop_assert_eq!(elapsed, selected);
+            prop_assert_eq!(elapsed, expected_elapsed);
 
-            let manager = RetryManager::new(config(selected_ms));
+            let manager = RetryManager::new(config(elapsed_ms));
             let attempts = Arc::new(AtomicU32::new(0));
             let attempts_clone = Arc::clone(&attempts);
             let (error, elapsed) = rt.block_on(async {
@@ -2105,12 +2119,17 @@ mod proptest_tests {
                             let attempts = Arc::clone(&attempts_clone);
                             async move {
                                 attempts.fetch_add(1, Ordering::SeqCst);
+
+                                if timeout {
+                                    std::future::pending::<()>().await;
+                                }
+
                                 Err::<i32, TestError>(TestError::Retryable(
                                     "rate limit".to_string(),
                                 ))
                             }
                         },
-                        should_retry_test_error,
+                        |_| true,
                         create_test_error,
                     )
                     .retry_delay(&|_| Some(minimum_delay))
@@ -2121,11 +2140,25 @@ mod proptest_tests {
             });
 
             match error {
-                TestError::Retryable(message) => prop_assert_eq!(message, "rate limit"),
-                error => prop_assert!(false, "expected original retryable error, was {error}"),
+                TestError::Retryable(message) if !timeout => {
+                    prop_assert_eq!(message, "rate limit");
+                }
+                TestError::Timeout(RetryError::OperationTimeout { timeout_ms }) if timeout => {
+                    prop_assert_eq!(timeout_ms, operation_timeout_ms);
+                }
+                e => prop_assert!(false, "expected original operation error, was {e}"),
             }
             prop_assert_eq!(attempts.load(Ordering::SeqCst), 1);
-            prop_assert_eq!(elapsed, Duration::ZERO);
+            let expected_elapsed = Duration::from_millis(attempt_ms);
+            #[cfg(all(feature = "simulation", madsim))]
+            if timeout {
+                prop_assert!(elapsed >= expected_elapsed);
+                prop_assert!(elapsed < expected_elapsed + Duration::from_millis(1));
+            } else {
+                prop_assert_eq!(elapsed, expected_elapsed);
+            }
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            prop_assert_eq!(elapsed, expected_elapsed);
         }
 
         #[rstest]

@@ -285,8 +285,10 @@ impl PoolProfiler {
     /// then verifies the simulation results against the actual event data. Tick and
     /// liquidity mismatches are corrected only when no simulated crossings occurred
     /// and anchoring to the event tick preserves the initialized tick partition.
-    /// Otherwise, replay returns an error without changing the profiler. Sqrt price
-    /// mismatches are corrected to match the event.
+    /// Otherwise, replay returns an error without changing the profiler. The event price
+    /// serves as the simulation limit, so wrong-side or out-of-bounds event prices also
+    /// return an error without changing the profiler. After a successful simulation, sqrt
+    /// price mismatches are corrected to match the event.
     ///
     /// # Use Case
     ///
@@ -306,7 +308,12 @@ impl PoolProfiler {
             return Ok(());
         }
 
-        let zero_for_one = swap.amount0.is_positive();
+        let zero_for_one = if swap.amount0.is_zero() && swap.amount1.is_zero() {
+            swap.sqrt_price_x96 < self.state.price_sqrt_ratio_x96
+        } else {
+            swap.amount0.is_positive()
+        };
+
         let amount_specified = if zero_for_one {
             swap.amount0
         } else {
@@ -501,9 +508,10 @@ impl PoolProfiler {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Pool fee is not configured.
+    /// - The price limit violates the swap direction or protocol bounds.
     /// - Fee growth arithmetic overflows when scaling by liquidity.
     /// - Swap step calculations fail.
+    /// - A swap iteration makes no progress: price, tick, and remaining amount are all unchanged.
     ///
     /// # Panics
     ///
@@ -515,6 +523,8 @@ impl PoolProfiler {
         sqrt_price_limit_x96: U160,
         traverse_empty_ranges: bool,
     ) -> anyhow::Result<SwapQuote> {
+        self.validate_price_limit(sqrt_price_limit_x96, zero_for_one, true)?;
+
         let exact_input = amount_specified.is_positive();
         let fee_tier = self.pool.fee.expect("Pool fee should be initialized");
 
@@ -548,6 +558,7 @@ impl PoolProfiler {
             && (sqrt_price_limit_x96 != current_sqrt_price
                 || (replay_exact_input && amount_specified_remaining.is_positive()))
         {
+            let iteration_start = (current_sqrt_price, current_tick, amount_specified_remaining);
             let sqrt_price_start_x96 = current_sqrt_price;
 
             let (mut tick_next, initialized) = self
@@ -671,6 +682,13 @@ impl PoolProfiler {
                 // So, update the tick to match the new price.
                 current_tick = get_tick_at_sqrt_ratio(current_sqrt_price);
             }
+
+            if (current_sqrt_price, current_tick, amount_specified_remaining) == iteration_start {
+                anyhow::bail!(
+                    "Swap simulation made no progress at tick {current_tick} with sqrt price \
+                     {current_sqrt_price} and remaining amount {amount_specified_remaining}"
+                );
+            }
         }
 
         // Calculate final amounts
@@ -737,6 +755,10 @@ impl PoolProfiler {
     }
 
     fn apply_swap_quote_fee_state(&mut self, swap_quote: &SwapQuote) {
+        if swap_quote.amount0.is_zero() && swap_quote.amount1.is_zero() {
+            return;
+        }
+
         if swap_quote.zero_for_one() {
             self.state.fee_growth_global_0 = swap_quote.fee_growth_global_after;
             self.state.protocol_fees_token0 += swap_quote.protocol_fee;
@@ -757,6 +779,7 @@ impl PoolProfiler {
         }
     }
 
+    // panics-doc-ok (transitive via simulate_swap_through_ticks)
     /// Returns a swap quote without modifying pool state.
     ///
     /// This method simulates a swap and provides detailed profiling metrics including:
@@ -768,9 +791,15 @@ impl PoolProfiler {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Pool fee is not configured.
+    /// - The profiler is not initialized or the amount is zero.
+    /// - The price limit violates the swap direction or protocol bounds.
     /// - Fee growth arithmetic overflows when scaling by liquidity.
     /// - Swap step calculations fail.
+    /// - A swap iteration makes no progress.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pool fee has not been initialized.
     pub fn quote_swap(
         &self,
         amount_specified: I256,
@@ -784,7 +813,7 @@ impl PoolProfiler {
         }
 
         if let Some(price_limit) = sqrt_price_limit_x96 {
-            self.validate_price_limit(price_limit, zero_for_one)?;
+            self.validate_price_limit(price_limit, zero_for_one, false)?;
         }
 
         let limit = sqrt_price_limit_x96.unwrap_or_else(|| {
@@ -897,8 +926,9 @@ impl PoolProfiler {
         size_estimator::size_for_impact_bps_detailed(self, impact_bps, zero_for_one, &config)
     }
 
-    /// Validates that the price limit is in the correct direction for the swap and strictly
-    /// inside the `(MIN_SQRT_RATIO, MAX_SQRT_RATIO)` range, matching the Uniswap V3 `SPL` check.
+    /// Validates that the price limit is in the swap direction and strictly inside the
+    /// `(MIN_SQRT_RATIO, MAX_SQRT_RATIO)` range. The current price is valid when `allow_equal` is
+    /// set for direct simulation or replay; otherwise the direction check matches Uniswap V3.
     ///
     /// # Errors
     /// Returns an error if price limit violates swap direction or range constraints.
@@ -906,10 +936,13 @@ impl PoolProfiler {
         &self,
         limit_price_sqrt: U160,
         zero_for_one: bool,
+        allow_equal: bool,
     ) -> anyhow::Result<()> {
         if zero_for_one {
             // Swapping token0 for token1: price must decrease
-            if limit_price_sqrt >= self.state.price_sqrt_ratio_x96 {
+            if limit_price_sqrt > self.state.price_sqrt_ratio_x96
+                || (!allow_equal && limit_price_sqrt == self.state.price_sqrt_ratio_x96)
+            {
                 anyhow::bail!("Price limit must be less than current price for zero_for_one swaps");
             }
 
@@ -920,7 +953,9 @@ impl PoolProfiler {
             }
         } else {
             // Swapping token1 for token0: price must increase
-            if limit_price_sqrt <= self.state.price_sqrt_ratio_x96 {
+            if limit_price_sqrt < self.state.price_sqrt_ratio_x96
+                || (!allow_equal && limit_price_sqrt == self.state.price_sqrt_ratio_x96)
+            {
                 anyhow::bail!(
                     "Price limit must be greater than current price for one_for_zero swaps"
                 );

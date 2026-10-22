@@ -3718,12 +3718,15 @@ impl OrderMatchingEngine {
     /// unset so the fee model has a liquidity side to key on, and seeds
     /// `cached_filled_qty` with the existing filled quantity so subsequent fills
     /// stop at the remaining leaves.
+    ///
+    /// Skips closed orders, orders with no remaining leaves, and OTO children whose
+    /// rejection, cancellation, or expiry is not yet applied to the cache.
     pub fn restore_open_order(&mut self, order: &OrderAny, account_id: AccountId) {
         if self.core.order_exists(order.client_order_id()) {
             return;
         }
 
-        if order.is_closed() {
+        if self.contingent_order_is_closed(order) {
             return;
         }
 
@@ -6348,8 +6351,8 @@ impl OrderMatchingEngine {
             self.cancel_order_excluding(child, None, excluded);
         } else if child_filled_qty >= leaves_qty {
             self.cancel_order(child, Some(false));
-        } else if leaves_qty.non_zero() && leaves_qty != child.leaves_qty() {
-            self.update_contingent_quantity(child, leaves_qty);
+        } else if leaves_qty.non_zero() {
+            self.update_contingent_quantity(child, leaves_qty, false);
         }
     }
 
@@ -7445,22 +7448,26 @@ impl OrderMatchingEngine {
                 }
 
                 let child_filled_qty = self.engine_filled_qty(&child_order);
-                if parent_leaves_qty.is_zero() {
-                    self.cancel_order(&child_order, Some(false));
-                } else if child_filled_qty >= parent_leaves_qty {
+                if child_filled_qty >= parent_leaves_qty {
                     // Child already filled beyond parent's remaining qty, cancel it
                     self.cancel_order(&child_order, Some(false));
                 } else {
-                    let child_leaves_qty = child_order.quantity().saturating_sub(child_filled_qty);
-                    if child_leaves_qty != parent_leaves_qty {
-                        self.update_contingent_quantity(&child_order, parent_leaves_qty);
-                    }
+                    self.update_contingent_quantity(
+                        &child_order,
+                        parent_leaves_qty,
+                        order.is_quote_quantity() && !self.instrument.is_inverse(),
+                    );
                 }
             }
         }
     }
 
-    fn update_contingent_quantity(&mut self, order: &OrderAny, quantity: Quantity) {
+    fn update_contingent_quantity(
+        &mut self,
+        order: &OrderAny,
+        quantity: Quantity,
+        is_quote_quantity: bool,
+    ) {
         if self.contingent_order_is_closed(order)
             || self.inflight_orders.contains(order.client_order_id())
         {
@@ -7472,6 +7479,30 @@ impl OrderMatchingEngine {
             self.cancel_order(order, Some(false));
             return;
         }
+
+        let clear_quote = order.is_quote_quantity()
+            && !is_quote_quantity
+            && if order.instrument_id() == self.instrument.id() {
+                !self.instrument.is_inverse()
+            } else {
+                self.cache
+                    .borrow()
+                    .instrument(&order.instrument_id())
+                    .is_some_and(|instrument| !instrument.is_inverse())
+            };
+
+        if quantity == order.leaves_qty() && !clear_quote {
+            return;
+        }
+
+        let mut converted;
+        let order = if clear_quote {
+            converted = order.clone();
+            converted.set_is_quote_quantity(false);
+            &converted
+        } else {
+            order
+        };
 
         let price = order.price();
         let trigger_price = order.trigger_price();

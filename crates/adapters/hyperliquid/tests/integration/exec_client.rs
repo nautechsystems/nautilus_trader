@@ -77,6 +77,7 @@ use nautilus_hyperliquid::{
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
     execution::context::OrderContext,
+    manager::{ExecutionManager, ExecutionManagerConfig},
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -10435,6 +10436,282 @@ async fn test_generate_fill_reports_filters_time_range(#[values(false, true)] wo
 }
 
 #[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_fill_reports_resolves_cached_client_order_id(
+    #[values(false, true)] worker: bool,
+    #[values(false, true)] cached: bool,
+    #[values(false, true)] with_cloid: bool,
+) {
+    let state = query_recovery_state().await;
+    let order = query_recovery_order();
+    let native_id = order.client_order_id();
+    let cloid = Cloid::from_client_order_id(native_id).to_hex();
+    let mut fills = query_recovery_fills();
+    if with_cloid {
+        for fill in fills.as_array_mut().unwrap() {
+            fill["cloid"] = json!(cloid);
+        }
+    }
+
+    *state.user_fills_response.lock().await = Some(fills);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    add_test_account_to_cache(&cache, account_id);
+    client.connect().await.unwrap();
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let receipt = if worker {
+        let task = client.generate_fill_reports_task(&cmd).unwrap();
+        tokio::spawn(task.collection).await.unwrap();
+        Some(task.result)
+    } else {
+        None
+    };
+
+    if cached {
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&native_id, &VenueOrderId::from("900029"), false)
+            .unwrap();
+    }
+
+    let reports = if let Some(receipt) = receipt {
+        receipt.await.unwrap()
+    } else {
+        generate_fills(&client, cmd, false).await.unwrap()
+    };
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default()).unwrap();
+
+    let expected_id = cached.then_some(native_id);
+
+    assert_eq!(reports.len(), 2);
+
+    for mut report in reports {
+        assert_eq!(report.client_order_id, expected_id);
+        assert_eq!(report.venue_order_id, VenueOrderId::from("900029"));
+        manager
+            .prepare_position_fill_report(&mut report, &[])
+            .unwrap();
+        assert_eq!(report.client_order_id, expected_id);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_fill_reports_recognizes_position_fills_after_order_purge(
+    #[values(false, true)] worker: bool,
+) {
+    let state = query_recovery_state().await;
+    let order = query_recovery_order();
+    let native_id = order.client_order_id();
+    let cloid = Cloid::from_client_order_id(native_id).to_hex();
+    let mut fills = query_recovery_fills();
+    for fill in fills.as_array_mut().unwrap() {
+        fill["cloid"] = json!(cloid);
+    }
+
+    *state.user_fills_response.lock().await = Some(fills);
+    let (mut client, mut rx, cache, mut engine) = query_recovery_client(state, order).await;
+    let venue_order_id = VenueOrderId::from("900029");
+    client
+        .query_order(make_query_order_cmd(native_id, Some(venue_order_id)))
+        .unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let applied = apply_query_events(&mut engine, &mut rx);
+    cache.borrow_mut().purge_order(native_id);
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = generate_fills(&client, cmd, worker).await.unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let manager =
+        ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default()).unwrap();
+
+    assert_eq!(applied.len(), 2);
+    assert!(cache.borrow().order(&native_id).is_none());
+    assert_eq!(cache.borrow().client_order_id(&venue_order_id), None);
+    assert_eq!(reports.len(), 2);
+
+    for report in reports {
+        assert!(manager.position_contains_fill_report(&report));
+        assert_eq!(report.client_order_id, None);
+    }
+
+    {
+        let cache = cache.borrow();
+        let positions = cache.positions_open(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("0.00100"));
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.008 USDC")]);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::external(false, true)]
+#[case::retained(true, true)]
+#[case::retained_fill_only(true, false)]
+#[case::external_fill_only(false, false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_mass_status_reconciles_fill_cloid(
+    #[case] cached: bool,
+    #[case] with_order_report: bool,
+) {
+    let state = query_recovery_state().await;
+    let order = query_recovery_order();
+    let native_id = order.client_order_id();
+    let cloid = Cloid::from_client_order_id(native_id).to_hex();
+    let raw_id = ClientOrderId::from(cloid.as_str());
+    let mut fills = query_recovery_fills();
+    for fill in fills.as_array_mut().unwrap() {
+        fill["cloid"] = json!(cloid);
+    }
+
+    *state.user_fills_response.lock().await = Some(fills);
+    let mut historical = historical_order("BTC", 900029);
+    historical["order"]["cloid"] = json!(cloid);
+    historical["order"]["limitPx"] = json!("92000");
+    historical["order"]["origSz"] = json!("0.001");
+    historical["statusTimestamp"] = json!(1_700_000_002_000u64);
+    let mut accepted = historical.clone();
+    accepted["order"]["sz"] = json!("0.001");
+    accepted["status"] = json!("open");
+    accepted["statusTimestamp"] = json!(1_700_000_000_000u64);
+    *state.historical_orders_response.lock().await = Some(if with_order_report {
+        json!([historical, accepted])
+    } else {
+        json!([])
+    });
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    add_test_perp_instrument_to_cache(&cache);
+    if cached {
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_venue_order_id(&native_id, &VenueOrderId::from("900029"), false)
+            .unwrap();
+    }
+
+    client.connect().await.unwrap();
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let engine = RefCell::new(engine);
+    let mut manager =
+        ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default()).unwrap();
+    let result = manager.reconcile_execution_mass_status(&mass, &engine);
+
+    let expected_id = if cached { native_id } else { raw_id };
+    let reconciles = cached || with_order_report;
+    let fill_reports = mass.fill_reports();
+    let reports = fill_reports.get(&VenueOrderId::from("900029")).unwrap();
+    let order_reports = mass.order_reports();
+
+    assert_eq!(order_reports.len(), usize::from(with_order_report));
+
+    if with_order_report {
+        assert_eq!(
+            order_reports[&VenueOrderId::from("900029")].client_order_id,
+            Some(raw_id)
+        );
+    }
+
+    assert_eq!(reports.len(), 2);
+
+    for report in reports {
+        assert_eq!(report.client_order_id, Some(raw_id));
+    }
+
+    let fill_ids: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| {
+            if let OrderEventAny::Filled(fill) = event {
+                Some(fill.client_order_id)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert_eq!(
+        fill_ids,
+        if reconciles {
+            vec![expected_id; 2]
+        } else {
+            vec![]
+        }
+    );
+    assert_eq!(
+        result.external_orders.len(),
+        usize::from(!cached && with_order_report)
+    );
+    let cache = cache.borrow();
+    assert_eq!(
+        cache.orders(None, None, None, None, None).len(),
+        usize::from(reconciles)
+    );
+
+    if reconciles {
+        let order = cache.order(&expected_id).unwrap();
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("0.00100"));
+        assert_eq!(order.avg_px(), Some(dec!(90600)));
+        assert_eq!(order.trade_ids().len(), 2);
+        assert_eq!(
+            order.commissions().get(&Currency::USDC()),
+            Some(&Money::from("0.008 USDC"))
+        );
+        assert_eq!(
+            cache.client_order_id(&VenueOrderId::from("900029")),
+            Some(&expected_id)
+        );
+    }
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_mass_status_skips_inactive_cached_builder_dexes() {
     let state = TestServerState::default();
@@ -11989,7 +12266,7 @@ async fn test_query_order_clamps_reduce_only_fill_to_fills() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[expect(
     clippy::await_holding_refcell_ref,
-    reason = "worker report tasks must finish without accessing the borrowed live cache"
+    reason = "worker report collections must finish without accessing the borrowed live cache"
 )]
 async fn test_report_tasks_match_inline_fields() {
     let state = TestServerState::default();
@@ -12057,11 +12334,27 @@ async fn test_report_tasks_match_inline_fields() {
         .generate_position_status_reports_task(&positions)
         .unwrap();
     let cache_borrow = cache.borrow_mut();
-    let worker_single = run_report_task(single_task).await.unwrap().unwrap();
-    let worker_orders = run_report_task(orders_task).await.unwrap();
-    let worker_fills = run_report_task(fills_task).await.unwrap();
-    let worker_positions = run_report_task(positions_task).await.unwrap();
+    let core_thread = std::thread::current().id();
+
+    for collection in [
+        single_task.collection,
+        orders_task.collection,
+        fills_task.collection,
+        positions_task.collection,
+    ] {
+        tokio::spawn(async move {
+            assert_ne!(std::thread::current().id(), core_thread);
+            collection.await;
+        })
+        .await
+        .unwrap();
+    }
+
     drop(cache_borrow);
+    let worker_single = single_task.result.await.unwrap().unwrap();
+    let worker_orders = orders_task.result.await.unwrap();
+    let worker_fills = fills_task.result.await.unwrap();
+    let worker_positions = positions_task.result.await.unwrap();
 
     assert_eq!(inline_orders.len(), 1);
     assert_eq!(inline_fills.len(), 1);

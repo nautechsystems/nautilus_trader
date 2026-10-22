@@ -721,16 +721,17 @@ impl DeriveDataClient {
             .collect::<Vec<_>>();
 
         instruments.sort_by_key(|instrument| instrument.id());
+        self.instruments.rcu(|cache| {
+            for instrument in &instruments {
+                cache.insert(instrument.id(), instrument.clone());
+            }
+        });
+
         for instrument in instruments {
-            self.cache_instrument(&instrument);
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
                 log::warn!("Failed to send Derive instrument: {e}");
             }
         }
-    }
-
-    fn cache_instrument(&self, instrument: &InstrumentAny) {
-        cache_instrument(&self.instruments, instrument);
     }
 
     fn prepare_subscribe(&self, instrument_id: InstrumentId) -> anyhow::Result<bool> {

@@ -133,6 +133,7 @@ impl HistoricalInteractiveBrokersClient {
             config.port,
             config.client_id,
             config.connection_timeout,
+            config.max_reconnect_attempts,
         )
         .await?;
         let client = shared_client.as_arc();
@@ -183,6 +184,7 @@ impl HistoricalInteractiveBrokersClient {
             config.port,
             config.client_id,
             config.connection_timeout,
+            config.max_reconnect_attempts,
         )
         .await?;
         let client = shared_client.as_arc();

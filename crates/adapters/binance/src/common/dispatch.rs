@@ -102,6 +102,7 @@ struct AlgoOrderIds {
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
+    pub(crate) order_lists: DashMap<ClientOrderId, OrderListIdentity>,
     algo_order_ids: DashMap<ClientOrderId, AlgoOrderIds>,
     order_updates: DashMap<ClientOrderId, OrderUpdate>,
     replacements: DashMap<ClientOrderId, PendingReplacement>,
@@ -117,6 +118,7 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             pending_requests: DashMap::new(),
+            order_lists: DashMap::new(),
             algo_order_ids: DashMap::new(),
             order_updates: DashMap::new(),
             replacements: DashMap::new(),
@@ -130,7 +132,7 @@ impl Default for WsDispatchState {
 
 impl WsDispatchState {
     pub fn has_emitted_accepted(&self, cid: &ClientOrderId) -> bool {
-        self.emitted_accepted.lock().contains(cid)
+        self.order_lists.contains_key(cid) || self.emitted_accepted.lock().contains(cid)
     }
 
     /// Marks an order as having emitted an OrderAccepted event.
@@ -292,12 +294,20 @@ impl WsDispatchState {
     /// Removes all tracking state for a terminal order.
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
         self.order_identities.remove(&cid);
+        self.order_lists.remove(&cid);
         self.algo_order_ids.remove(&cid);
         self.order_updates.remove(&cid);
         self.replacements.remove(&cid);
         self.emitted_accepted.lock().remove(&cid);
         self.filled_orders.lock().remove(&cid);
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OrderListIdentity {
+    pub order_list_id: i64,
+    pub venue_order_id: VenueOrderId,
+    pub execution_report_seen: bool,
 }
 
 #[derive(Debug)]

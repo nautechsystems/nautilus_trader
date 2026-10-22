@@ -157,7 +157,7 @@ pub struct DeriveExecutionClient {
     http_client: DeriveHttpClient,
     ws_client: DeriveWebSocketClient,
     ws_exec: DeriveWsExecutionHandle,
-    instruments: Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
+    instruments: Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     nonce_manager: Arc<NonceManager>,
     signing: SigningContext,
     is_connected: Arc<AtomicBool>,
@@ -336,7 +336,7 @@ impl DeriveExecutionClient {
             price_increment.precision,
             size_increment.precision,
         );
-        self.instruments.insert(instrument_id, instrument);
+        self.instruments.insert(instrument_id, Arc::new(instrument));
         Ok(())
     }
 
@@ -2388,7 +2388,7 @@ struct DeriveReconciliationContext {
     subaccount_id: u64,
     clock: &'static AtomicTime,
     dispatch_state: Arc<WsDispatchState>,
-    instruments: Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
+    instruments: Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     orders: AHashMap<ClientOrderId, OrderBinding>,
     terminal_revision: Arc<()>,
 }
@@ -4273,7 +4273,7 @@ fn add_missing_flat_position_reports(
     account_id: AccountId,
     touched_instruments: AHashSet<InstrumentId>,
     position_instruments: &AHashSet<InstrumentId>,
-    instruments: &AtomicMap<InstrumentId, DeriveInstrument>,
+    instruments: &AtomicMap<InstrumentId, Arc<DeriveInstrument>>,
     ts_init: UnixNanos,
 ) {
     let mut flat_reports = Vec::new();
@@ -5874,19 +5874,19 @@ fn round_to_tick(value: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal
 
 async fn cached_or_fetch_instrument(
     http_client: &DeriveHttpClient,
-    instruments: &Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
+    instruments: &Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     instrument_id: &InstrumentId,
     venue_symbol: &str,
 ) -> anyhow::Result<DeriveInstrument> {
     if let Some(cached) = instruments.get_cloned(instrument_id) {
-        return Ok(cached);
+        return Ok((*cached).clone());
     }
 
     let instrument = http_client
         .get_instrument(venue_symbol)
         .await
         .with_context(|| format!("failed to fetch instrument {venue_symbol}"))?;
-    instruments.insert(*instrument_id, instrument.clone());
+    instruments.insert(*instrument_id, Arc::new(instrument.clone()));
     Ok(instrument)
 }
 
@@ -6887,6 +6887,42 @@ mod tests {
         assert_eq!(
             client.dispatch_state.instrument_precision(&instrument_id),
             Some((2, 3))
+        );
+    }
+
+    #[rstest]
+    fn test_cache_instrument_shares_metadata_across_snapshots() {
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let perp = sample_derive_instrument();
+        let option: DeriveInstrument =
+            serde_json::from_str(include_str!("../test_data/options/instrument_eth.json")).unwrap();
+        let perp_id = format_instrument_id(perp.instrument_name).unwrap();
+        let option_id = format_instrument_id(option.instrument_name).unwrap();
+
+        client.cache_instrument(perp.clone()).unwrap();
+        let before = client.instruments.load();
+        client.cache_instrument(option.clone()).unwrap();
+        let after = client.instruments.load();
+
+        assert_eq!(before.len(), 1);
+        assert_eq!(after.len(), 2);
+        assert!(Arc::ptr_eq(&before[&perp_id], &after[&perp_id]));
+
+        for (id, expected) in [(perp_id, perp), (option_id, option)] {
+            assert_eq!(
+                serde_json::to_value(&after[&id]).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            assert_eq!(after[&id].raw, expected.raw);
+        }
+
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&perp_id),
+            Some((2, 3))
+        );
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&option_id),
+            Some((1, 2))
         );
     }
 

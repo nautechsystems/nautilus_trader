@@ -15,7 +15,7 @@
 
 //! Instrument filters for the Polymarket adapter.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use nautilus_core::{Params, UnixNanos};
 use nautilus_model::instruments::{BinaryOption, Instrument, InstrumentAny};
@@ -280,9 +280,13 @@ pub(crate) fn binary_market_closed(instrument: &BinaryOption) -> Option<bool> {
 }
 
 pub(crate) fn set_market_closed(instrument: &mut BinaryOption, closed: bool) {
-    let mut info = instrument.info.as_deref().cloned().unwrap_or_default();
-    info.insert(MARKET_CLOSED_KEY.to_string(), closed.into());
-    instrument.info = Some(Params::new(info));
+    let mut info = instrument
+        .info
+        .as_ref()
+        .map(Params::to_shared_map)
+        .unwrap_or_default();
+    info.insert(MARKET_CLOSED_KEY.to_string(), Arc::new(closed.into()));
+    instrument.info = Some(Params::from_shared(info));
 }
 
 /// Returns whether `instrument` is past its expiration without Gamma reporting it still open.

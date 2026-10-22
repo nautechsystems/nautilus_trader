@@ -78,7 +78,10 @@ use nautilus_model::{
     instruments::{
         CryptoOption, CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny,
         OptionContract,
-        stubs::{binary_option, crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
+        stubs::{
+            binary_option, btcusd_inverse_perp, crypto_perpetual_ethusdt, equity_aapl,
+            futures_contract_es,
+        },
     },
     orderbook::OrderBook,
     orders::{
@@ -6031,6 +6034,303 @@ fn test_trailing_stop_limit_with_price_does_not_fill_before_trigger(
         cache.borrow().order(&client_order_id).unwrap().status(),
         OrderStatus::Accepted
     );
+}
+
+#[rstest]
+#[case::partial_fill(false, "0.400")]
+#[case::modify(true, "0.000")]
+fn test_ouo_quote_stop_resize_uses_base_quantity(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[case] modify: bool,
+    #[case] take_profit_filled: &str,
+    #[values(false, true)] deferred: bool,
+    #[values("1600.000", "0.600")] stop_qty: &str,
+) {
+    let instrument = instrument_eth_usdt;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let _handler = order_event_handler_with_cache(cache.clone());
+    let mut engine =
+        get_order_matching_engine_l2(instrument.clone(), None, Some(cache.clone()), None, None);
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let recorded = events.clone();
+    let handler_cache = cache.clone();
+    engine.set_event_handler(Rc::new(move |event| {
+        if !deferred {
+            handler_cache.borrow_mut().update_order(&event).unwrap();
+        }
+
+        recorded.borrow_mut().push(event);
+    }));
+
+    let add_level = |side, price: &str, size: &str, id| {
+        OrderBookDeltaTestBuilder::new(instrument.id())
+            .book_action(BookAction::Add)
+            .book_order(BookOrder::new(
+                side,
+                Price::from(price),
+                Quantity::from(size),
+                id,
+            ))
+            .build()
+    };
+
+    engine
+        .process_order_book_delta(&add_level(OrderSide::Buy, "1500.00", "10.000", 1))
+        .unwrap();
+    engine
+        .process_order_book_delta(&add_level(OrderSide::Sell, "1700.00", "10.000", 2))
+        .unwrap();
+    let tp_id = ClientOrderId::from("QUOTE-TP");
+    let sl_id = ClientOrderId::from("QUOTE-SL");
+    let mut tp = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(tp_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1600.00"))
+        .quantity(Quantity::from("1600.000"))
+        .quote_quantity(true)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![sl_id])
+        .reduce_only(false)
+        .submit(true)
+        .build();
+    let mut sl = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .client_order_id(sl_id)
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("1400.00"))
+        .quantity(Quantity::from(stop_qty))
+        .quote_quantity(true)
+        .contingency_type(ContingencyType::Ouo)
+        .linked_order_ids(vec![tp_id])
+        .reduce_only(false)
+        .submit(true)
+        .build();
+    cache_order(&cache, &sl);
+    engine.process_order(&mut tp, account_id);
+    engine.process_order(&mut sl, account_id);
+
+    if deferred {
+        for event in events.borrow_mut().drain(..) {
+            cache.borrow_mut().update_order(&event).unwrap();
+        }
+    } else {
+        events.borrow_mut().clear();
+    }
+
+    if modify {
+        let command = ModifyOrder::new(
+            TraderId::test_default(),
+            None,
+            StrategyId::test_default(),
+            instrument.id(),
+            tp_id,
+            None,
+            Some(Quantity::from("0.600")),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        engine.process_modify(&command, account_id);
+    } else {
+        engine
+            .process_order_book_delta(&add_level(OrderSide::Buy, "1600.00", "0.400", 3))
+            .unwrap();
+    }
+
+    let updates: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(update) if update.client_order_id == sl_id => Some(*update),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(updates.len(), 1);
+    assert_eq!(updates[0].quantity, Quantity::from("0.600"));
+    assert_eq!(updates[0].price, None);
+    assert_eq!(updates[0].trigger_price, Some(Price::from("1400.00")));
+    assert!(!updates[0].is_quote_quantity);
+
+    if deferred {
+        let stop = cache.borrow().order(&sl_id).unwrap().clone();
+        assert_eq!(stop.quantity(), Quantity::from(stop_qty));
+        assert!(stop.is_quote_quantity());
+    }
+
+    engine
+        .process_order_book_delta(&OrderBookDelta::clear(
+            instrument.id(),
+            0,
+            0.into(),
+            0.into(),
+        ))
+        .unwrap();
+    engine
+        .process_order_book_delta(&add_level(OrderSide::Buy, "1390.00", "10.000", 4))
+        .unwrap();
+
+    if deferred {
+        for event in events.borrow_mut().drain(..) {
+            cache.borrow_mut().update_order(&event).unwrap();
+        }
+    }
+
+    let stop = cache.borrow().order(&sl_id).unwrap().clone();
+    assert_eq!(
+        cache.borrow().order(&tp_id).unwrap().filled_qty(),
+        Quantity::from(take_profit_filled)
+    );
+    assert_eq!(stop.status(), OrderStatus::Filled);
+    assert_eq!(stop.quantity(), Quantity::from("0.600"));
+    assert_eq!(stop.filled_qty(), Quantity::from("0.600"));
+    assert!(!stop.is_quote_quantity());
+}
+
+#[rstest]
+#[case::linear_base_local(false, false, false, false)]
+#[case::linear_quote_local(true, false, false, true)]
+#[case::inverse_base_local(false, true, false, true)]
+#[case::inverse_quote_local(true, true, false, true)]
+#[case::linear_base_inverse(false, false, true, true)]
+#[case::linear_quote_inverse(true, false, true, true)]
+#[case::inverse_base_linear(false, true, true, false)]
+#[case::inverse_quote_linear(true, true, true, false)]
+fn test_ouo_quote_stop_modify_preserves_quantity_units(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] deferred: bool,
+    #[case] source_quote: bool,
+    #[case] inverse: bool,
+    #[case] other_instrument: bool,
+    #[case] sibling_quote: bool,
+) {
+    let inverse_instrument = btcusd_inverse_perp(1, 0, Price::from("0.5"), Quantity::from("1"));
+    let inverse_instrument = InstrumentAny::CryptoPerpetual(inverse_instrument);
+    let instrument = if inverse {
+        inverse_instrument.clone()
+    } else {
+        instrument_eth_usdt.clone()
+    };
+
+    let sibling_instrument = if !other_instrument {
+        instrument.clone()
+    } else if inverse {
+        instrument_eth_usdt
+    } else {
+        inverse_instrument
+    };
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(sibling_instrument.clone())
+        .unwrap();
+    let _handler = order_event_handler_with_cache(cache.clone());
+    let mut engine =
+        get_order_matching_engine(instrument.clone(), None, Some(cache.clone()), None, None);
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument.id(),
+        Price::from("1500.0"),
+        Price::from("1501.0"),
+        Quantity::from("1000"),
+        Quantity::from("1000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    ));
+    let source_id = ClientOrderId::from("MODIFY-SOURCE");
+    let sibling_id = ClientOrderId::from("MODIFY-SIBLING");
+
+    let mut orders = Vec::new();
+
+    for (id, peer, quote, trigger, instrument_id) in [
+        (
+            source_id,
+            sibling_id,
+            source_quote,
+            "1400.0",
+            instrument.id(),
+        ),
+        (
+            sibling_id,
+            source_id,
+            true,
+            "1300.0",
+            sibling_instrument.id(),
+        ),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .client_order_id(id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from(trigger))
+            .quantity(Quantity::from("100"))
+            .quote_quantity(quote)
+            .contingency_type(ContingencyType::Ouo)
+            .linked_order_ids(vec![peer])
+            .reduce_only(false)
+            .submit(true)
+            .build();
+        cache_order(&cache, &order);
+        orders.push(order);
+    }
+
+    engine.process_order(&mut orders[0], account_id);
+
+    if other_instrument {
+        let mut sibling_engine =
+            get_order_matching_engine(sibling_instrument, None, Some(cache.clone()), None, None);
+        sibling_engine.process_order(&mut orders[1], account_id);
+    } else {
+        engine.process_order(&mut orders[1], account_id);
+    }
+
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    if deferred {
+        let pending = pending.clone();
+        engine.set_event_handler(Rc::new(move |event| pending.borrow_mut().push(event)));
+    }
+
+    let command = ModifyOrder::new(
+        TraderId::test_default(),
+        None,
+        StrategyId::test_default(),
+        instrument.id(),
+        source_id,
+        None,
+        Some(Quantity::from("60")),
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    engine.process_modify(&command, account_id);
+
+    for event in pending.borrow_mut().drain(..) {
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    let source = cache.borrow().order(&source_id).unwrap().clone();
+    let sibling = cache.borrow().order(&sibling_id).unwrap().clone();
+    assert_eq!(source.status(), OrderStatus::Accepted);
+    assert_eq!(source.quantity(), Quantity::from("60"));
+    assert_eq!(source.is_quote_quantity(), source_quote);
+    assert_eq!(source.trigger_price(), Some(Price::from("1400.0")));
+    assert_eq!(sibling.status(), OrderStatus::Accepted);
+    assert_eq!(sibling.quantity(), Quantity::from("60"));
+    assert_eq!(sibling.is_quote_quantity(), sibling_quote);
+    assert_eq!(sibling.trigger_price(), Some(Price::from("1300.0")));
 }
 
 #[rstest]
@@ -25870,6 +26170,107 @@ fn test_reduce_only_resize_gives_quote_quantity_exits_base_quantity(
     let summary = event_summary(&handler);
     assert_eq!(sl.status(), OrderStatus::Filled, "{summary:?}");
     assert_eq!(sl.filled_qty(), Quantity::from("6.000"), "{summary:?}");
+}
+
+#[rstest]
+fn test_deferred_reduce_only_resize_keeps_quote_stop_in_base(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] cancel_entry: bool,
+) {
+    let (mut engine, cache, handler) = bracket_engine(&instrument_eth_usdt, engine_config());
+    let orders = quote_quantity_oto_orders(&instrument_eth_usdt, ["1000.000", "30000.000"], true);
+    submit_orders(&mut engine, account_id, orders);
+    let sl_id = ClientOrderId::from(BRACKET_SL_ID);
+
+    run_with_dispatch(&mut engine, true, |engine| {
+        add_then_remove_liquidity(
+            engine,
+            &instrument_eth_usdt,
+            OrderSide::Sell,
+            "1500.00",
+            "6.000",
+            1,
+        );
+
+        // The resize is queued while the cache still holds the original quote quantity
+        {
+            let cache = cache.borrow();
+            let sl = cache.order(&sl_id).unwrap();
+            assert_eq!(sl.quantity(), Quantity::from("1000.000"));
+            assert!(sl.is_quote_quantity());
+        }
+
+        if cancel_entry {
+            engine.process_cancel(&cancel_bracket_entry(&instrument_eth_usdt), account_id);
+        }
+
+        let bid = book_delta(
+            &instrument_eth_usdt,
+            BookAction::Add,
+            OrderSide::Buy,
+            "50.00",
+            "20.000",
+            2,
+        );
+        engine.process_order_book_delta(&bid).unwrap();
+    });
+
+    let events = get_order_event_handler_messages(&handler);
+
+    let updates: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Updated(update) if update.client_order_id == sl_id => {
+                Some((update.quantity, update.is_quote_quantity))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == sl_id => {
+                Some((fill.last_qty, fill.last_px))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(updates, vec![(Quantity::from("6.000"), false)]);
+    assert_eq!(fills, vec![(Quantity::from("6.000"), Price::from("50.00"))]);
+
+    if cancel_entry {
+        let resize = events
+            .iter()
+            .position(|event| {
+                event.client_order_id() == sl_id && event.event_type() == OrderEventType::Updated
+            })
+            .unwrap();
+
+        let cancel = events
+            .iter()
+            .position(|event| {
+                event.client_order_id() == ClientOrderId::from(BRACKET_ENTRY_ID)
+                    && event.event_type() == OrderEventType::Canceled
+            })
+            .unwrap();
+
+        assert!(resize < cancel);
+    }
+
+    let cache = cache.borrow();
+    let sl = cache.order(&sl_id).unwrap();
+    assert_eq!(sl.status(), OrderStatus::Filled);
+    assert_eq!(sl.quantity(), Quantity::from("6.000"));
+    assert_eq!(sl.filled_qty(), Quantity::from("6.000"));
+    assert_eq!(sl.leaves_qty(), Quantity::from("0.000"));
+    assert!(!sl.is_quote_quantity());
+
+    if cancel_entry {
+        assert_bracket_entry(&cache, OrderStatus::Canceled, "6.000");
+    }
 }
 
 // The limit exit's conversion, and the entry's own when it is submitted in the batch, have not

@@ -35,7 +35,7 @@ use nautilus_model::{
         MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
         RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
     },
-    events::{OrderEventAny, OrderReleased},
+    events::{OrderEventAny, OrderEventType, OrderReleased},
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     instruments::{
         Instrument, InstrumentAny,
@@ -1862,6 +1862,78 @@ fn test_process_order_rejects_oto_child_of_deferred_parent_rejection_until_purge
 
     engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
     assert!(engine.orders.rejected_oto_parent_ids.borrow().is_empty());
+}
+
+#[rstest]
+#[case::cache_closed(false, false)]
+#[case::cache_missing(true, false)]
+#[case::engine_reset(false, true)]
+fn test_deferred_canceled_oto_child_lifecycle(#[case] cache_missing: bool, #[case] reset: bool) {
+    let (mut engine, _) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.support_contingent_orders = true;
+    let child_id = ClientOrderId::from("OTO-CANCELED-CHILD");
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(child_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("7.000"))
+        .price(Price::from("1600.00"))
+        .parent_order_id(ClientOrderId::from("OTO-PARENT"))
+        .submit(true)
+        .build();
+    engine
+        .cache
+        .borrow_mut()
+        .add_order(child.clone(), None, None, false)
+        .unwrap();
+    let deferred = Rc::new(RefCell::new(Vec::new()));
+    let handler_deferred = deferred.clone();
+    engine.set_event_handler(Rc::new(move |event| {
+        handler_deferred.borrow_mut().push(event);
+    }));
+
+    engine.cancel_order(&child, Some(false));
+    for timestamp in [2, 3] {
+        engine.iterate(UnixNanos::from(timestamp), AggressorSide::NoAggressor);
+        assert_eq!(
+            engine.cache.borrow().order(&child_id).unwrap().status(),
+            OrderStatus::Submitted
+        );
+        assert_eq!(
+            engine
+                .orders
+                .closed_oto_order_ids
+                .borrow()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![child_id]
+        );
+    }
+
+    let events = deferred.borrow().clone();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type(), OrderEventType::Canceled);
+    assert_eq!(events[0].client_order_id(), child_id);
+
+    if reset {
+        engine.reset();
+    } else {
+        if cache_missing {
+            engine.cache.borrow_mut().reset();
+            assert!(!engine.cache.borrow().order_exists(&child_id));
+        } else {
+            engine.cache.borrow_mut().update_order(&events[0]).unwrap();
+            assert_eq!(
+                engine.cache.borrow().order(&child_id).unwrap().status(),
+                OrderStatus::Canceled
+            );
+        }
+
+        engine.iterate(UnixNanos::from(4), AggressorSide::NoAggressor);
+    }
+
+    assert!(engine.orders.closed_oto_order_ids.borrow().is_empty());
 }
 
 #[rstest]
@@ -6127,4 +6199,79 @@ fn test_market_to_limit_fok_reverts_unexecuted_levels(
         .map(|price| (Price::from(*price), Quantity::from("1.000")))
         .collect();
     assert_eq!(fills, expected);
+}
+
+#[rstest]
+#[case::working(None)]
+#[case::canceled(Some(OrderEventType::Canceled))]
+#[case::expired(Some(OrderEventType::Expired))]
+fn test_restore_open_order_respects_oto_terminal(#[case] terminal: Option<OrderEventType>) {
+    let (mut engine, _) = custom_book_engine(BookType::L2_MBP, false, false);
+    engine.config.support_contingent_orders = true;
+    let parent_id = ClientOrderId::from("OTO-PARENT");
+    let child_id = ClientOrderId::from("OTO-CHILD");
+    let mut parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1400.00"))
+        .quantity(Quantity::from("3.000"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .submit(true)
+        .build();
+    let mut child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(child_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("1600.00"))
+        .quantity(Quantity::from("3.000"))
+        .parent_order_id(parent_id)
+        .submit(true)
+        .build();
+    let account_id = AccountId::from("SIM-001");
+
+    for order in [&parent, &child] {
+        engine
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    engine.process_order(&mut parent, account_id);
+    engine.process_order(&mut child, account_id);
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let captured = events.clone();
+    engine.set_event_handler(Rc::new(move |event| captured.borrow_mut().push(event)));
+    match terminal {
+        Some(OrderEventType::Expired) => engine.expire_order(&child),
+        Some(_) => engine.cancel_order(&child, None),
+        None => {
+            let accepted =
+                TestOrderEventStubs::accepted(&child, account_id, VenueOrderId::from("V-CHILD"));
+            engine.cache.borrow_mut().update_order(&accepted).unwrap();
+        }
+    }
+
+    let cached = engine.cache.borrow().try_order_owned(&child_id).unwrap();
+    engine.restore_open_order(&cached, account_id);
+
+    let expected_status = if terminal.is_some() {
+        OrderStatus::Submitted
+    } else {
+        OrderStatus::Accepted
+    };
+
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(engine.core.order_exists(child_id), terminal.is_none());
+    assert!(engine.core.order_exists(parent_id));
+    let terminals: Vec<_> = events
+        .borrow()
+        .iter()
+        .map(|event| (event.client_order_id(), event.event_type()))
+        .collect();
+
+    let expected: Vec<_> = terminal.into_iter().map(|kind| (child_id, kind)).collect();
+    assert_eq!(terminals, expected);
 }
