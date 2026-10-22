@@ -471,14 +471,21 @@ fn validate_taker_matches(
 ) -> Result<Vec<(Decimal, Decimal)>, AdmissionError> {
     let mut matches = Vec::with_capacity(trade.maker_orders.len());
     let mut order_ids = Vec::with_capacity(trade.maker_orders.len());
+    let mut complementary_binding = None;
 
     for maker in trade.maker_orders {
-        let maker_instrument = ctx
-            .instruments
-            .get_cloned(&maker.asset_id)
-            .ok_or(AdmissionError::UnknownInstrument(maker.asset_id))?;
+        let maker_instrument = ctx.instruments.get_cloned(&maker.asset_id);
         let validate = || -> anyhow::Result<(Decimal, Decimal)> {
-            validate_instrument_binding(&maker_instrument, trade.market, maker.outcome)?;
+            // Outcome filters can leave only the traded token loaded
+            if let Some(maker_instrument) = &maker_instrument {
+                validate_instrument_binding(maker_instrument, trade.market, maker.outcome)?;
+            }
+
+            check_valid_string_ascii(maker.asset_id.as_str(), "taker counterparty asset")?;
+            anyhow::ensure!(
+                !maker.outcome.as_str().trim().is_empty(),
+                "taker counterparty outcome must not be empty",
+            );
             checked_venue_order_id(&maker.order_id, "taker counterparty")?;
             anyhow::ensure!(
                 !order_ids.contains(&maker.order_id.as_str()),
@@ -493,6 +500,15 @@ fn validate_taker_matches(
                 maker.order_id,
                 trade.id,
             );
+
+            if !same_asset && let Some(binding) = complementary_binding {
+                anyhow::ensure!(
+                    binding == (maker.asset_id, maker.outcome),
+                    "inconsistent complementary token evidence in trade {}",
+                    trade.id,
+                );
+            }
+
             let side = determine_order_side(
                 PolymarketLiquiditySide::Maker,
                 trade.side,
@@ -518,7 +534,7 @@ fn validate_taker_matches(
                 trade,
                 maker.price,
                 maker.matched_amount,
-                &maker_instrument,
+                maker_instrument.as_ref().unwrap_or(instrument),
                 "taker counterparty price",
             )?;
             let price = if same_asset {
@@ -529,6 +545,10 @@ fn validate_taker_matches(
             Ok((maker.matched_amount, price))
         };
         matches.push(validate().map_err(AdmissionError::Invalid)?);
+
+        if maker.asset_id != trade.asset_id {
+            complementary_binding = Some((maker.asset_id, maker.outcome));
+        }
         order_ids.push(maker.order_id.as_str());
     }
 
@@ -583,32 +603,44 @@ fn aggregate_taker_matches(
         .checked_div(trade.taker_size)
         .context("taker matched average overflow")?;
     let commission = commission.round_dp_with_strategy(5, RoundingStrategy::ToZero);
+    let settlement_notional = notional.round_dp(USDC_DECIMALS);
+    let preserves_notional = |value: Decimal| -> anyhow::Result<bool> {
+        let represented = value
+            .checked_mul(trade.taker_size)
+            .context("taker represented notional overflow")?;
+        Ok(represented.round_dp(USDC_DECIMALS) == settlement_notional)
+    };
 
-    if matches.iter().all(|(_, price)| *price == average) {
-        return Ok((
-            validate_price(
-                trade,
-                average,
-                trade.taker_size,
-                instrument,
-                "taker matched price",
-            )?,
-            commission,
-        ));
+    if matches.iter().all(|(_, price)| *price == average)
+        && let Ok(price) = validate_price(
+            trade,
+            average,
+            trade.taker_size,
+            instrument,
+            "taker matched price",
+        )
+        && preserves_notional(price.as_decimal())?
+    {
+        return Ok((price, commission));
     }
 
-    let value = average.round_dp(u32::from(FIXED_PRECISION)).normalize();
-    let price = validate_historical_price_evidence(value, "taker matched average")?;
-    let represented_notional = price
-        .as_decimal()
-        .checked_mul(trade.taker_size)
-        .context("taker represented notional overflow")?;
-    anyhow::ensure!(
-        notional.round_dp(USDC_DECIMALS) == represented_notional.round_dp(USDC_DECIMALS),
+    let rounded = average.round_dp(u32::from(FIXED_PRECISION));
+    let increment = Decimal::new(1, u32::from(FIXED_PRECISION));
+
+    // At a cash rounding boundary, the nearest average can land on the wrong side,
+    // check adjacent representable prices before rejecting the fill.
+    for value in [rounded, rounded - increment, rounded + increment] {
+        if value > Decimal::ZERO && value < Decimal::ONE && preserves_notional(value)? {
+            let price =
+                validate_historical_price_evidence(value.normalize(), "taker matched average")?;
+            return Ok((price, commission));
+        }
+    }
+
+    anyhow::bail!(
         "taker matched average cannot preserve the settlement notional for trade {}",
         trade.id,
-    );
-    Ok((price, commission))
+    )
 }
 
 fn admit_maker_leg(
@@ -768,6 +800,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::filters::{InstrumentFilter, PredicateFilter};
 
     fn instruments() -> AtomicMap<Ustr, InstrumentAny> {
         let instruments = AtomicMap::new();
@@ -944,6 +977,71 @@ mod tests {
     }
 
     #[rstest]
+    #[case::upper_cash_midpoint(dec!(1.999985), dec!(1.000015), dec!(1.000002))]
+    #[case::lower_cash_midpoint(dec!(1.999975), dec!(1.000025), dec!(1.000002))]
+    fn taker_average_preserves_cash_at_rounding_midpoint(
+        #[case] first_size: Decimal,
+        #[case] second_size: Decimal,
+        #[case] expected_cash: Decimal,
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments();
+        let mut trade = multilevel_trade(false, false);
+        trade.size = "3".to_string();
+        trade.price = "0.3".to_string();
+        trade.maker_orders[0].matched_amount = first_size;
+        trade.maker_orders[0].price = dec!(0.3);
+        trade.maker_orders[1].matched_amount = second_size;
+        trade.maker_orders[1].price = dec!(0.4);
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let admitted = admit_trade_evidence(evidence, &context(&instruments)).unwrap();
+
+        let leg = &admitted.legs[0];
+        assert_eq!(leg.last_qty.as_decimal(), dec!(3));
+        assert_eq!(
+            (leg.last_px.as_decimal() * leg.last_qty.as_decimal()).round_dp(6),
+            expected_cash,
+        );
+    }
+
+    #[rstest]
+    fn taker_rejects_notional_without_a_representable_average(#[values(false, true)] rest: bool) {
+        let instruments = instruments();
+        let mut trade = multilevel_trade(false, false);
+
+        // One price increment changes cash by 0.0001, so a 0.000001 offset cannot be represented
+        let size = Decimal::from(10_u64.pow(u32::from(FIXED_PRECISION) - 4));
+        trade.size = size.to_string();
+        trade.price = "0.3".to_string();
+        trade.maker_orders[0].matched_amount = size / dec!(2) - dec!(0.00001);
+        trade.maker_orders[0].price = dec!(0.3);
+        trade.maker_orders[1].matched_amount = size / dec!(2) + dec!(0.00001);
+        trade.maker_orders[1].price = dec!(0.4);
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let error = admit_trade_evidence(evidence, &context(&instruments)).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("cannot preserve the settlement notional")
+        );
+    }
+
+    #[rstest]
     #[case::short_quantity("quantity")]
     #[case::excess_quantity("excess")]
     #[case::duplicate_order("duplicate")]
@@ -975,15 +1073,104 @@ mod tests {
     }
 
     #[rstest]
-    fn taker_requires_loaded_counterparty_binding() {
-        let instruments = instruments();
-        let mut trade = multilevel_trade(true, false);
-        trade.maker_orders[0].asset_id = Ustr::from("unknown-token");
+    fn taker_admits_complementary_matches_with_filtered_instruments(
+        #[values(false, true)] rest: bool,
+        #[values(false, true)] sell: bool,
+        #[values(false, true)] yes: bool,
+    ) {
+        let available = instruments();
+        let instruments = AtomicMap::new();
+        let mut trade = multilevel_trade(true, sell);
+        if yes {
+            trade.asset_id = Ustr::from("token-yes");
+            trade.outcome = PolymarketOutcome::yes();
+            for maker in &mut trade.maker_orders {
+                maker.asset_id = Ustr::from("token-no");
+                maker.outcome = PolymarketOutcome::no();
+            }
+        }
 
-        let result = admit_trade_evidence(TradeEvidence::Stream(&trade), &context(&instruments));
+        let filter = PredicateFilter::outcome(trade.outcome.as_str());
+
+        for token in ["token-no", "token-yes"] {
+            let token = Ustr::from(token);
+            let instrument = available.get_cloned(&token).unwrap();
+            if filter.accept(&instrument) {
+                instruments.insert(token, instrument);
+            }
+        }
+
+        assert!(instruments.get_cloned(&trade.asset_id).is_some());
+        assert!(
+            instruments
+                .get_cloned(&trade.maker_orders[0].asset_id)
+                .is_none()
+        );
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let admitted = admit_trade_evidence(evidence, &context(&instruments)).unwrap();
+
+        assert_eq!(admitted.legs.len(), 1);
+        let leg = &admitted.legs[0];
+        assert_eq!(leg.last_qty.as_decimal(), dec!(40));
+        assert_eq!(leg.last_px.as_decimal(), dec!(0.99225));
+        assert_eq!(leg.commission.as_decimal(), dec!(0.01537));
+        assert_eq!(leg.trade_id, TradeId::from(trade.id.as_str()));
+        assert_eq!(
+            leg.order_side,
+            if sell {
+                OrderSide::Sell
+            } else {
+                OrderSide::Buy
+            },
+        );
+    }
+
+    #[rstest]
+    #[case::empty_asset("asset")]
+    #[case::empty_outcome("outcome")]
+    #[case::third_token("third_token")]
+    #[case::conflicting_outcome("conflicting_outcome")]
+    fn taker_rejects_inconsistent_unloaded_counterparty_evidence(
+        #[case] corruption: &str,
+        #[values(false, true)] rest: bool,
+    ) {
+        let available = instruments();
+        let instruments = AtomicMap::new();
+        let mut trade = multilevel_trade(true, false);
+        instruments.insert(
+            trade.asset_id,
+            available.get_cloned(&trade.asset_id).unwrap(),
+        );
+
+        match corruption {
+            "asset" => trade.maker_orders[0].asset_id = Ustr::from(""),
+            "outcome" => trade.maker_orders[0].outcome = PolymarketOutcome::from(""),
+            "third_token" => trade.maker_orders[1].asset_id = Ustr::from("third-token"),
+            "conflicting_outcome" => {
+                trade.maker_orders[1].outcome = PolymarketOutcome::from("other-outcome");
+            }
+            _ => unreachable!(),
+        }
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let result = admit_trade_evidence(evidence, &context(&instruments));
 
         assert!(
-            matches!(result, Err(AdmissionError::UnknownInstrument(token)) if token == Ustr::from("unknown-token"))
+            matches!(result, Err(AdmissionError::Invalid(_))),
+            "{result:?}"
         );
     }
 
@@ -1057,5 +1244,34 @@ mod tests {
             admit_trade_evidence(TradeEvidence::Rest(&report), &context(&instruments)).unwrap();
 
         assert_eq!(admitted.legs[0].last_px.as_decimal(), dec!(0.4200007));
+    }
+
+    #[rstest]
+    #[case::rest(true, "0.4200014")]
+    #[case::stream(false, "0.42")]
+    fn taker_equal_price_preserves_cash_precision(#[case] rest: bool, #[case] top_price: &str) {
+        let instruments = instruments();
+        let mut trade = multilevel_trade(false, false);
+        trade.size = "1".to_string();
+        trade.price = top_price.to_string();
+        trade.maker_orders.truncate(1);
+        trade.maker_orders[0].matched_amount = dec!(1);
+        trade.maker_orders[0].price = dec!(0.4200007);
+        let report: PolymarketTradeReport =
+            serde_json::from_value(serde_json::to_value(&trade).unwrap()).unwrap();
+        let evidence = if rest {
+            TradeEvidence::Rest(&report)
+        } else {
+            TradeEvidence::Stream(&trade)
+        };
+
+        let admitted = admit_trade_evidence(evidence, &context(&instruments)).unwrap();
+
+        let leg = &admitted.legs[0];
+        assert_eq!(leg.last_px.as_decimal(), dec!(0.4200007));
+        assert_eq!(
+            (leg.last_px.as_decimal() * leg.last_qty.as_decimal()).round_dp(6),
+            dec!(0.420001),
+        );
     }
 }
