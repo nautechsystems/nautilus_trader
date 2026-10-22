@@ -55,11 +55,13 @@ from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
+from nautilus_trader.model import Equity
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
 from nautilus_trader.model import InstrumentClose
 from nautilus_trader.model import InstrumentCloseType
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import MarketStatusAction
@@ -78,6 +80,7 @@ from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import StrategyId
+from nautilus_trader.model import Symbol
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
@@ -295,6 +298,49 @@ def test_add_venue_applies_static_latency_model() -> None:
     engine.run()
 
     assert engine.backtest_end == quotes[-1].ts_event + 1_000_000_000
+    engine.dispose()
+
+
+def _aapl_equity(lot_size: int, ts_init: int) -> Equity:
+    return Equity(
+        instrument_id=InstrumentId.from_str("AAPL.XNAS"),
+        raw_symbol=Symbol("AAPL"),
+        isin="US0378331005",
+        currency=USD,
+        price_precision=2,
+        price_increment=Price.from_str("0.01"),
+        lot_size=Quantity.from_int(lot_size),
+        ts_event=ts_init,
+        ts_init=ts_init,
+    )
+
+
+def test_add_instrument_twice_keeps_the_first_definition() -> None:
+    """
+    Test re-adding an identical instrument is a no-op and a changed one raises.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=Venue("XNAS"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.CASH,
+        starting_balances=[Money(1_000_000.0, USD)],
+        base_currency=USD,
+        fee_model=MakerTakerFeeModel(
+            maker_rate=Decimal(0),
+            taker_rate=Decimal(0),
+        ),
+    )
+    instrument = _aapl_equity(lot_size=100, ts_init=0)
+    engine.add_instrument(instrument)
+
+    engine.add_instrument(_aapl_equity(lot_size=100, ts_init=1))
+    with pytest.raises(RuntimeError, match="already registered with a different definition"):
+        engine.add_instrument(_aapl_equity(lot_size=1, ts_init=0))
+
+    cached = engine.cache.instrument(instrument.id)
+    assert cached.lot_size == Quantity.from_int(100)
+    assert cached.ts_init == 0
     engine.dispose()
 
 

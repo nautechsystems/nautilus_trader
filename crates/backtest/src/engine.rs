@@ -347,15 +347,22 @@ impl BacktestEngine {
 
     /// Adds an instrument to the backtest engine for the specified venue.
     ///
+    /// Adding an instrument that is already registered with the same definition is a
+    /// no-op. Event timestamps are ignored when comparing definitions.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The instrument's associated venue has not been added via `add_venue`.
+    /// - An instrument with the same ID is already registered with a different definition.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
     pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get(&instrument.id().venue) {
-            let previous_expiration_ns = exchange.borrow().instrument_expiration(instrument_id);
+            if exchange.borrow().is_instrument_registered(instrument)? {
+                log::debug!("Instrument {instrument_id} is already registered");
+                return Ok(());
+            }
 
             if matches!(
                 instrument,
@@ -370,19 +377,6 @@ impl BacktestEngine {
             exchange.borrow_mut().add_instrument(instrument.clone())?;
             if let Some(expiration_ns) = instrument.expiration_ns() {
                 self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
-            }
-
-            if let Some(previous_expiration_ns) = previous_expiration_ns
-                && instrument.expiration_ns() != Some(previous_expiration_ns)
-                && !exchange
-                    .borrow()
-                    .has_unprocessed_instrument_expiration(previous_expiration_ns)
-            {
-                let timer_name = Self::instrument_expiration_timer_name(
-                    instrument_id.venue,
-                    previous_expiration_ns,
-                );
-                self.kernel.clock.borrow_mut().cancel_timer(&timer_name);
             }
         } else {
             anyhow::bail!(
@@ -3953,6 +3947,91 @@ mod tests {
         assert_eq!(observed_ns.get(), UnixNanos::from(20));
         assert_eq!(engine.kernel.is_shutdown_requested(), shutdown);
         assert_eq!(engine.last_ns, UnixNanos::from(expected_last_ns));
+    }
+
+    // Returns an engine with `instrument` registered and a quote in its book
+    fn engine_with_quoted_instrument(instrument: &InstrumentAny) -> BacktestEngine {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let venue = instrument.id().venue;
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .build()
+            .unwrap();
+        engine.add_venue(venue_config).unwrap();
+        engine.add_instrument(instrument).unwrap();
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        msgbus::send_quote(
+            format!("SimulatedExchange.process_new_quote.{venue}").into(),
+            &quote,
+        );
+        engine
+    }
+
+    fn assert_original_registration_kept(engine: &BacktestEngine, instrument: &InstrumentAny) {
+        let instrument_id = instrument.id();
+        let exchange = engine.venues.get(&instrument_id.venue).unwrap().borrow();
+        let matching_engine = exchange.get_matching_engine(&instrument_id).unwrap();
+        assert_eq!(matching_engine.raw_id, 1);
+        assert_eq!(
+            exchange.best_bid_price(instrument_id),
+            Some(Price::from("1000.00"))
+        );
+        assert_eq!(
+            exchange.best_ask_price(instrument_id),
+            Some(Price::from("1001.00"))
+        );
+        let cache = engine.kernel.cache.borrow();
+        let cached = cache.instrument(&instrument_id).unwrap();
+        assert_eq!(Instrument::ts_init(cached), Instrument::ts_init(instrument));
+        assert_eq!(cached.max_quantity(), instrument.max_quantity());
+    }
+
+    #[rstest]
+    fn test_readd_identical_instrument_keeps_matching_engine(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+        let mut engine = engine_with_quoted_instrument(&instrument);
+        let mut restamped = crypto_perpetual_ethusdt;
+        restamped.ts_event = UnixNanos::from(5);
+        restamped.ts_init = UnixNanos::from(5);
+
+        engine
+            .add_instrument(&InstrumentAny::CryptoPerpetual(restamped))
+            .unwrap();
+
+        assert_original_registration_kept(&engine, &instrument);
+    }
+
+    #[rstest]
+    fn test_readd_changed_instrument_is_rejected_and_keeps_matching_engine(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+        let mut engine = engine_with_quoted_instrument(&instrument);
+        let mut changed = crypto_perpetual_ethusdt;
+        changed.max_quantity = Some(Quantity::from("1.000"));
+
+        let result = engine.add_instrument(&InstrumentAny::CryptoPerpetual(changed));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Instrument ETHUSDT-PERP.BINANCE is already registered with a different definition"
+        );
+        assert_original_registration_kept(&engine, &instrument);
     }
 
     #[rstest]
