@@ -1429,7 +1429,7 @@ fn emit_order_update(
         context.price,
         context.trigger_price,
         None,
-        false,
+        context.is_quote_quantity,
     );
     emitter.send_order_event(OrderEventAny::Updated(updated));
 }

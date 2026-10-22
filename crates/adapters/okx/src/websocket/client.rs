@@ -76,7 +76,7 @@ use super::{
     messages::{
         OKXAuthentication, OKXAuthenticationArg, OKXSubscriptionArg, OKXWsMessage, OKXWsRequest,
         WsAmendOrderParamsBuilder, WsAttachAlgoOrdParams, WsCancelOrderParamsBuilder,
-        WsMassCancelParams, WsPostAlgoOrderParamsBuilder, WsPostOrderParamsBuilder,
+        WsMassCancelParams, WsPostOrderParamsBuilder,
     },
     subscription::topic_from_subscription_arg,
 };
@@ -89,8 +89,7 @@ use crate::common::{
     credential::Credential,
     enums::{
         OKXBookChannel, OKXGreeksType, OKXInstrumentType, OKXOrderType, OKXPositionSide,
-        OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
-        conditional_order_to_algo_type, is_conditional_order,
+        OKXTargetCurrency, OKXTradeMode, OKXVipLevel,
     },
     parse::{
         bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol,
@@ -3315,124 +3314,39 @@ impl OKXWebSocketClient {
         self.ws_batch_cancel_orders(args, client_order_ids).await
     }
 
-    /// Submits an algo order (conditional/stop order).
+    /// Rejects algo placement on the WebSocket transport; use the HTTP client instead.
     ///
     /// # Errors
     ///
-    /// Returns an error if the order parameters are invalid or if the request
-    /// cannot be sent.
-    ///
-    /// # References
-    ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
+    /// Returns an error if called: OKX does not accept this client's `order-algo` operation.
     #[expect(clippy::too_many_arguments)]
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "Preserves the published async API while rejecting an unsupported operation"
+    )]
     pub async fn submit_algo_order(
         &self,
         _trader_id: TraderId,
         _strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        td_mode: OKXTradeMode,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        order_type: OrderType,
-        quantity: Quantity,
-        trigger_price: Option<Price>,
-        trigger_type: Option<TriggerType>,
-        limit_price: Option<Price>,
-        reduce_only: Option<bool>,
-        callback_ratio: Option<String>,
-        callback_spread: Option<String>,
-        activation_price: Option<Price>,
+        _instrument_id: InstrumentId,
+        _td_mode: OKXTradeMode,
+        _client_order_id: ClientOrderId,
+        _order_side: OrderSide,
+        _order_type: OrderType,
+        _quantity: Quantity,
+        _trigger_price: Option<Price>,
+        _trigger_type: Option<TriggerType>,
+        _limit_price: Option<Price>,
+        _reduce_only: Option<bool>,
+        _callback_ratio: Option<String>,
+        _callback_spread: Option<String>,
+        _activation_price: Option<Price>,
     ) -> Result<(), OKXWsError> {
-        if !is_conditional_order(order_type) {
-            return Err(OKXWsError::ClientError(format!(
-                "Order type {order_type:?} is not a conditional order"
-            )));
-        }
-
-        let mut builder = WsPostAlgoOrderParamsBuilder::default();
-
-        if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
-            return Err(OKXWsError::ClientError(
-                "Invalid order side for OKX".to_string(),
-            ));
-        }
-
-        let inst_id_code = self
-            .get_inst_id_code(&instrument_id.symbol.inner())
-            .ok_or_else(|| {
-                OKXWsError::ClientError(format!(
-                    "No instIdCode cached for {instrument_id}, cannot submit algo order"
-                ))
-            })?;
-        builder.inst_id_code(inst_id_code);
-
-        builder.td_mode(td_mode);
-        builder.cl_ord_id(client_order_id.as_str());
-        builder.side(order_side);
-        builder.ord_type(
-            conditional_order_to_algo_type(order_type)
-                .map_err(|e| OKXWsError::ClientError(e.to_string()))?,
-        );
-        builder.sz(quantity.to_string());
-
-        if let Some(tp) = trigger_price {
-            builder.trigger_px(tp.to_string());
-        }
-
-        // Map Nautilus TriggerType to OKX trigger type
-        let okx_trigger_type = trigger_type.map_or(OKXTriggerType::Last, Into::into);
-        builder.trigger_px_type(okx_trigger_type);
-
-        // For stop-limit orders, set the limit price
-        if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched)
-            && let Some(price) = limit_price
-        {
-            builder.order_px(price.to_string());
-        }
-
-        if let Some(reduce) = reduce_only {
-            builder.reduce_only(reduce);
-        }
-
-        if let Some(ratio) = callback_ratio {
-            builder.callback_ratio(ratio);
-        }
-
-        if let Some(spread) = callback_spread {
-            builder.callback_spread(spread);
-        }
-
-        if let Some(active) = activation_price {
-            builder.active_px(active.to_string());
-        }
-
-        builder.tag(OKX_NAUTILUS_BROKER_ID);
-
-        let params = builder
-            .build()
-            .map_err(|e| OKXWsError::ClientError(format!("Build algo order params error: {e}")))?;
-
-        let request_id = self.generate_unique_request_id();
-        let request = OKXWsRequest {
-            id: Some(request_id.clone()),
-            op: super::enums::OKXWsOperation::OrderAlgo,
-            exp_time: None,
-            args: vec![params],
-        };
-
-        let payload = serde_json::to_string(&request)
-            .map_err(|e| OKXWsError::JsonError(format!("Failed to serialize algo order: {e}")))?;
-
-        let cmd = HandlerCommand::Send {
-            payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_ORDER.to_vec()),
-            request_id: Some(request_id),
-            client_order_ids: vec![client_order_id],
-            op: Some(super::enums::OKXWsOperation::OrderAlgo),
-        };
-
-        self.send_cmd(cmd).await
+        Err(OKXWsError::ClientError(
+            "OKX algo placement requires HTTP; use OKXHttpClient::place_algo_order_with_domain_types"
+                .to_string(),
+        ))
     }
 
     /// Cancels an algo order.

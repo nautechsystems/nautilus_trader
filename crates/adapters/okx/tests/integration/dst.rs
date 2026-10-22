@@ -567,74 +567,33 @@ async fn private_order_cancel_sends_exact_wire_fields() {
 }
 
 #[madsim::test]
-async fn private_algo_submit_sends_exact_wire_fields() {
-    madsim::time::timeout(Duration::from_secs(5), async {
-        let listener = TcpListener::bind("127.0.0.1:18098").await.unwrap();
+async fn private_algo_submit_requires_http_before_connect() {
+    let client = private_client("ws://127.0.0.1:18098");
+    let error = client
+        .submit_algo_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from("BTC-USD.OKX"),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("Odstalgoorder00000001"),
+            OrderSide::Buy,
+            OrderType::StopMarket,
+            Quantity::from("0.25"),
+            Some(Price::from("64000.0")),
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
 
-        let peer = madsim::task::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let mut socket = accept_async(stream).await.unwrap();
-            let _login = socket.next().await.unwrap().unwrap();
-            socket
-                .send(Message::text(
-                    r#"{"event":"login","code":"0","msg":"","connId":"dst-conn"}"#,
-                ))
-                .await
-                .unwrap();
-            socket.next().await.unwrap().unwrap()
-        });
-
-        let mut client = private_client("ws://127.0.0.1:18098");
-        client.cache_instruments(&load_spot_instruments());
-        client.cache_inst_id_code(Ustr::from("BTC-USD"), 10_459);
-        client.connect().await.unwrap();
-        client.wait_until_active(5.0).await.unwrap();
-
-        client
-            .submit_algo_order(
-                TraderId::from("TRADER-001"),
-                StrategyId::from("STRATEGY-001"),
-                InstrumentId::from("BTC-USD.OKX"),
-                OKXTradeMode::Cash,
-                ClientOrderId::from("Odstalgoorder00000001"),
-                OrderSide::Buy,
-                OrderType::StopMarket,
-                Quantity::from("0.25"),
-                Some(Price::from("64000.0")),
-                Some(TriggerType::LastPrice),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .await
-            .unwrap();
-
-        let frame = parse_frame(peer.await.unwrap());
-        client.close().await.unwrap();
-
-        assert_eq!(
-            frame,
-            json!({
-                "id": "1",
-                "op": "order-algo",
-                "args": [{
-                    "instIdCode": 10_459,
-                    "tdMode": "cash",
-                    "clOrdId": "Odstalgoorder00000001",
-                    "side": "buy",
-                    "ordType": "trigger",
-                    "sz": "0.25",
-                    "triggerPx": "64000.0",
-                    "triggerPxType": "last",
-                    "tag": OKX_NAUTILUS_BROKER_ID,
-                }],
-            })
-        );
-    })
-    .await
-    .unwrap();
+    assert_eq!(
+        error.to_string(),
+        "Client error: OKX algo placement requires HTTP; use OKXHttpClient::place_algo_order_with_domain_types"
+    );
 }
 
 #[madsim::test]

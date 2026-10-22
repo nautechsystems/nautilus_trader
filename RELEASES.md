@@ -50,6 +50,14 @@ Released on TBD (UTC).
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
 - Changed Lighter `compute_tx_hash` and `sign_tx` to return `Result`; handle invalid transaction attributes
 - Changed Lighter `L2TxAttributes` literals; add the new fields or use `..Default::default()`
+- Changed OKX spot stop/touched buys to explicit base or quote sizing; resubmit pending buys
+- Changed OKX unsupported algo quote sizing to local denials; resubmit spot trailing buys with quote quantity
+- Changed OKX algo triggers to deny unsupported feeds and cash/trailing mark/index; use last price
+- Changed OKX WebSocket algo placement to return an error; use `OKXHttpClient` for algo orders
+- Changed OKX `OKXPlaceAlgoOrderRequest` literals to require `ccy`; use quote currency for spot margin, otherwise `None`
+- Changed Python `OKXHttpClient.place_algo_order` spot stop-market and market-if-touched buy defaults from quote to base
+- Changed Python OKX quote-budget algo calls to require `quote_quantity=True`, including spot trailing buys
+- Changed OKX `place_algo_order_with_domain_types` to require `quote_quantity`; pass `false` for base sizing
 - Changed `PolymarketInstrumentDef.gamma_event` from `Option<String>` to `Option<Arc<Value>>` (#5389), thanks @imbolc
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
@@ -131,6 +139,7 @@ Released on TBD (UTC).
 - Fixed Lighter single-order cancel transaction failures leaving orders pending cancel
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX external limit orders missing amendment confirmations
+- Fixed OKX spot `StopMarket` and `MarketIfTouched` buy sizing (#5371), thanks for reporting @michalismeng
 - Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket event metadata duplicated across instruments and cache clones (#5389), thanks @imbolc

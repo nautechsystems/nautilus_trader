@@ -836,11 +836,27 @@ instrument-based IDs. See [Cache purging](../concepts/cache.md#bulk-purges) and
 
 ### Trade modes and margin configuration
 
-OKX's unified account system supports different trade modes for spot and derivatives. Configure the account
-mode first through the OKX web or app interface. The API cannot set it for the first time.
+Spot orders funded by cash use these trade modes (`tdMode`):
 
-For account mode details, see the
-[OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
+| Account mode          | `acctLv` | Spot `tdMode` |
+| --------------------- | -------- | ------------- |
+| Spot                  | `1`      | `cash`        |
+| Futures               | `2`      | `cash`        |
+| Multi-currency margin | `3`      | `cross`       |
+| Portfolio margin      | `4`      | `cross`       |
+
+Keep auto-borrow off in modes 3 and 4 to prevent borrowing beyond the cash balance.
+
+Activate each account mode first on the OKX website or app. Later switches can use the
+[OKX account-mode API](https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-account-mode).
+Nautilus HTTP clients do not expose account-mode switching, auto-borrow changes, or repayment.
+
+[Auto-borrow (`autoLoan`)](https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-auto-loan)
+applies only to Multi-currency and Portfolio margin modes. Outstanding liabilities can block mode changes.
+[One-click repayment](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-trade-one-click-repay-new)
+requires auto-borrow (`51625`); see OKX's
+[repayment methods](https://www.okx.com/help/borrowing-and-repaying-in-multi-currency-and-portfolio-margin-account-modes)
+for alternatives.
 
 #### Trade modes overview
 
@@ -866,14 +882,19 @@ exec_config = OKXExecutionClientConfig(
 )
 ```
 
-The public Python config does not expose spot margin selection, so spot orders use cash
-mode. In a mixed spot and derivatives client, `margin_mode` applies to derivatives only.
+The Python config selects `cash` for spot, which requires Spot or Futures account mode.
+For Multi-currency or Portfolio margin, submit spot orders with `params={"td_mode": "cross"}`.
+In a mixed client, `margin_mode` applies to derivatives only. The factory derives the Nautilus account type
+for accounting; it does not change OKX's `acctLv`.
+
+In Rust, `use_spot_margin=true` applies `margin_mode` to spot too. Set `OKXMarginMode::Cross`
+for Multi-currency or Portfolio margin; `None` defaults to `Isolated`, which these modes do not support.
 
 :::warning
 **Manual trade mode override**: You can override the trade mode per order with
 `params={"td_mode": "..."}`. This bypasses adapter selection and can lead to order
-rejection when the value does not match the instrument type, such as `isolated` for
-spot instruments.
+rejection when the value does not match the account or instrument, such as `isolated` in
+Multi-currency or Portfolio margin mode.
 
 Only use manual override for requirements that cannot be met through configuration.
 For long/short derivative orders, the override must match the configured margin mode.
@@ -927,10 +948,55 @@ missed-update recovery.
 | `LIMIT_IF_TOUCHED`     | Last, Mark, Index | Limit order placement when price touched.            |
 | `TRAILING_STOP_MARKET` | -                 | Callback ratio or spread; optional activation price. |
 
+See [trigger price types](#trigger-price-types) for account and order-type restrictions.
+
 :::warning
 OKX's `close_fraction` conditional-order parameter is not normalized to the generic `close_position` risk
 contract. Do not add `OKX` to `full_position_exit_venues` based on `close_fraction`. Leave the venue unlisted
 so ordinary quantity and notional checks apply.
+:::
+
+#### Algo sizing
+
+Spot `STOP_MARKET` and `MARKET_IF_TOUCHED` buys use OKX `conditional` orders with explicit
+`tgtCcy` for `cash`, `cross`, and `isolated`. Stop buys use the stop-loss leg; touched buys use the
+take-profit leg.
+
+| Spot algo order                          | Base quantity                  | Quote quantity                  |
+| ---------------------------------------- | ------------------------------ | ------------------------------- |
+| Stop-market or market-if-touched buy     | Requests `tgtCcy=base_ccy`.    | Requests `tgtCcy=quote_ccy`.    |
+| Trailing-stop-market buy                 | Denied locally.                | Uses OKX's native quote sizing. |
+| Stop, touched, or trailing market sell   | Uses OKX's native base sizing. | Denied locally.                 |
+| Stop-limit or limit-if-touched, any side | Uses OKX's native base sizing. | Denied locally.                 |
+
+Derivative algo orders require contract quantity; quote quantity is denied locally.
+These algo rules do not restrict ordinary market orders.
+Spot market orders in `tdMode=cash` also support quote-sized sells.
+Neither size unit guarantees a full fill. OKX documents balance-based size reduction for `trigger` orders.
+For Futures-mode spot-margin `STOP_MARKET` and `MARKET_IF_TOUCHED` buys, use quote quantity:
+OKX rejects `base_ccy` with `59110`. Use `tdMode=cash` in Futures mode for base-sized buys.
+
+Execution-client orders use `quote_quantity` and emit `OrderDenied` when local validation fails.
+Rust `OKXHttpClient::place_algo_order_with_domain_types` requires the flag. Python
+`OKXHttpClient.place_algo_order` defaults it to `False` and raises `ValueError` for unsupported parameters.
+Pass `True` for quote budgets, including spot trailing buys.
+HTTP algo requests include the quote currency as margin `ccy` for spot orders in `cross` or `isolated`.
+Use HTTP for algo placement: Rust `OKXWebSocketClient::submit_algo_order` returns a local error.
+See OKX's [algo order parameters](https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order).
+
+For last-price triggers, OKX requires a stop-buy trigger at or above the last price and a touched-buy
+trigger at or below it. It rejects triggers on the wrong side.
+
+:::warning
+Older versions send spot stop, touched, and trailing market buys in quote units, even when base quantity
+is requested. Cancel and resubmit pending stop/touched buys to select the intended unit. For trailing buys,
+resubmit with an explicit quote budget.
+
+Cancel pending quote-sized algo orders before any process restart. A persisted cache keeps the order but
+not its session context, so later updates arrive as untracked reports. Without persisted cache, and for
+standalone HTTP algo orders at any time, [reconciliation](#reconciliation) can import the quote amount as
+base quantity.
+The [limits on amendments after restart](#modifying-conditional-orders) also apply.
 :::
 
 #### Modifying conditional orders
@@ -951,14 +1017,20 @@ that context emit `OrderModifyRejected` locally. Trailing-stop algo amendments a
 
 #### Trigger price types
 
-Stop and touched orders support different trigger price sources:
+The adapter denies feeds other than default, last, mark, and index before submission. It also denies
+mark/index on cash-spot and trailing orders. For other spot orders in `cross` or `isolated`, it forwards
+mark/index to OKX. Futures-mode spot-margin `STOP_MARKET`/`MARKET_IF_TOUCHED` buys and derivative
+stop/touched orders support them. OKX rejects them for Multi-currency spot buys and documents Last only
+for `SPOT` `trigger` orders.
+
+Stop and touched orders use these sources where the account, instrument, and order type support them:
 
 - **Last price** (`TriggerType.LAST_PRICE`): Uses the last traded price (default).
 - **Mark price** (`TriggerType.MARK_PRICE`): Uses the mark price.
 - **Index price** (`TriggerType.INDEX_PRICE`): Uses the underlying index price.
 
 ```python
-# Example: Stop loss using mark price trigger
+# Mark-price stop loss on a derivative
 stop_order = order_factory.stop_market(
     instrument_id=instrument_id,
     order_side=OrderSide.SELL,
@@ -1417,7 +1489,6 @@ Order operation buckets mirror OKX's published limits where available.
 | `batch-cancel` | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
 | `batch-amend`  | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
 | `mass-cancel`  | 2               | OKX 5 requests / 2 seconds, rounded down.                  |
-| `algo-order`   | 10              | OKX 20 requests / 2 seconds.                               |
 | `algo-cancel`  | 1               | OKX 20 orders / 2 seconds, rounded down for full batches.  |
 
 :::info
@@ -1641,8 +1712,8 @@ Focused Madsim tests in `crates/adapters/okx/tests/integration/dst.rs` prove thi
 - **Reconnect order**: multi-instrument quote reconnect in topic order. Reconnect also clears quote
   and funding caches in `data.rs` so a new generation cannot reuse prior values.
 - **Login frame**: key, passphrase, and signature derived from the simulated wall clock.
-- **Wire fields**: single order-submit, amend, and cancel. Algo order-submit and cancel. Batch order-submit in
-  input order.
+- **Wire fields**: single order-submit, amend, and cancel. Algo cancel. Batch order-submit in input order.
+- **Algo placement**: WebSocket submit returns the HTTP-required local error without connecting.
 
 Complete request-to-wire-to-domain fresh-process comparison stays in the downstream DST harness.
 These share the DST facades and convention gate but remain unproven:

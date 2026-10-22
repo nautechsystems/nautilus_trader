@@ -346,6 +346,7 @@ class OKXHttpClient:
         callback_ratio: str | None = None,
         callback_spread: str | None = None,
         activation_price: model.Price | None = None,
+        quote_quantity: bool = False,
     ) -> typing.Any: ...
     def cancel_algo_order(self, instrument_id: model.InstrumentId, algo_id: str) -> typing.Any: ...
     def cancel_order(

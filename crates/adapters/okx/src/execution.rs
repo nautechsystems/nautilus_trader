@@ -72,8 +72,8 @@ use crate::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS,
             OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_VENUE,
-            OKX_WS_HEARTBEAT_SECS, okx_reduce_only_wire_value, resolve_instrument_families,
-            validate_okx_client_order_id,
+            OKX_WS_HEARTBEAT_SECS, okx_algo_target_currency, okx_reduce_only_wire_value,
+            resolve_instrument_families, validate_algo_trigger_type, validate_okx_client_order_id,
         },
         enums::{
             OKXAlgoOrderType, OKXInstrumentType, OKXMarginMode, OKXPositionMode, OKXPositionSide,
@@ -464,6 +464,7 @@ impl OKXExecutionClient {
         let trigger_price = context.trigger_price;
         let is_post_only = context.is_post_only;
         let is_reduce_only = context.is_reduce_only;
+
         let is_quote_quantity = context.is_quote_quantity;
 
         let px_usd = get_param_as_string(cmd.params.as_ref(), "px_usd");
@@ -625,6 +626,15 @@ impl OKXExecutionClient {
         let price = context.price;
         let is_reduce_only = context.is_reduce_only;
 
+        let tgt_ccy = okx_algo_target_currency(
+            okx_instrument_type_from_symbol(instrument_id.symbol.as_str()),
+            trade_mode,
+            order_side,
+            order_type,
+            context.is_quote_quantity,
+        )
+        .map_err(anyhow::Error::msg)?;
+
         let trailing_offset = order.trailing_offset();
         let trailing_offset_type = order.trailing_offset_type();
         let activation_price = order.activation_price();
@@ -659,7 +669,7 @@ impl OKXExecutionClient {
             (None, None)
         };
 
-        let algo_order_type = if close_fraction.is_some() {
+        let algo_order_type = if close_fraction.is_some() || tgt_ccy.is_some() {
             OKXAlgoOrderType::Conditional
         } else {
             conditional_order_to_algo_type(order_type)?
@@ -685,6 +695,7 @@ impl OKXExecutionClient {
                     order_side,
                     order_type,
                     quantity,
+                    context.is_quote_quantity,
                     trigger_price,
                     trigger_type,
                     price,
@@ -3584,6 +3595,23 @@ fn validate_order(
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
 
+    okx_algo_target_currency(
+        okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+        trade_mode,
+        order.order_side(),
+        order.order_type(),
+        order.is_quote_quantity(),
+    )
+    .map_err(|detail| OrderDeniedReason::ValidationFailed { detail })?;
+
+    validate_algo_trigger_type(
+        okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+        trade_mode,
+        order.order_type(),
+        order.trigger_type(),
+    )
+    .map_err(|detail| OrderDeniedReason::ValidationFailed { detail })?;
+
     if order.is_reduce_only()
         && okx_reduce_only_wire_value(
             okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
@@ -5688,6 +5716,460 @@ mod tests {
                 false
             ),
             OrderCommandRoute::RegularWs
+        );
+    }
+
+    #[rstest]
+    #[case(
+        OrderType::StopMarket,
+        OrderSide::Sell,
+        true,
+        "OKX Spot STOP_MARKET algo orders do not support quote quantity"
+    )]
+    #[case(
+        OrderType::MarketIfTouched,
+        OrderSide::Sell,
+        true,
+        "OKX Spot MARKET_IF_TOUCHED algo orders do not support quote quantity"
+    )]
+    #[case(
+        OrderType::TrailingStopMarket,
+        OrderSide::Sell,
+        true,
+        "OKX Spot TRAILING_STOP_MARKET algo orders do not support quote quantity"
+    )]
+    #[case(
+        OrderType::StopLimit,
+        OrderSide::Sell,
+        true,
+        "OKX Spot STOP_LIMIT algo orders do not support quote quantity"
+    )]
+    #[case(
+        OrderType::LimitIfTouched,
+        OrderSide::Sell,
+        true,
+        "OKX Spot LIMIT_IF_TOUCHED algo orders do not support quote quantity"
+    )]
+    #[case(
+        OrderType::StopLimit,
+        OrderSide::Buy,
+        true,
+        "OKX Spot STOP_LIMIT algo orders do not support quote quantity"
+    )]
+    #[case(
+        OrderType::LimitIfTouched,
+        OrderSide::Buy,
+        true,
+        "OKX Spot LIMIT_IF_TOUCHED algo orders do not support quote quantity"
+    )]
+    #[case(
+        OrderType::TrailingStopMarket,
+        OrderSide::Buy,
+        false,
+        "OKX Spot TRAILING_STOP_MARKET algo buys require quote quantity"
+    )]
+    #[case(
+        OrderType::StopMarket,
+        OrderSide::Buy,
+        false,
+        "OKX Spot STOP_MARKET algo orders do not support BID_ASK triggers"
+    )]
+    fn test_submit_order_denies_unsupported_spot_algo_terms_before_submission(
+        #[case] order_type: OrderType,
+        #[case] side: OrderSide,
+        #[case] quote_quantity: bool,
+        #[case] expected_reason: &str,
+        #[values("cash", "cross", "isolated")] mode: &str,
+    ) {
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("ETH-USDT.OKX"))
+            .client_order_id(ClientOrderId::from("OQUOTEDENIED"))
+            .side(side)
+            .quantity(Quantity::from("12.34"))
+            .quote_quantity(quote_quantity)
+            .price(Price::from(if side == OrderSide::Buy {
+                "2350.12"
+            } else {
+                "2340.12"
+            }))
+            .trigger_price(Price::from("2345.67"))
+            .trigger_type(if expected_reason.ends_with("triggers") {
+                TriggerType::BidAsk
+            } else {
+                TriggerType::LastPrice
+            })
+            .trailing_offset(Decimal::new(25, 0))
+            .trailing_offset_type(TrailingOffsetType::BasisPoints)
+            .build();
+
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let mut command = SubmitOrder::from_order(
+            &order,
+            client.core.trader_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        command.params = Some(Params::new(
+            [("td_mode".to_string(), Value::String(mode.to_string()))].into(),
+        ));
+        let trade_mode = mode.parse::<OKXTradeMode>().unwrap();
+
+        client.submit_order(command).unwrap();
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected denial, received {event:?}");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+
+        let expected = if expected_reason.ends_with("triggers") {
+            format!("VALIDATION_FAILED: {expected_reason}")
+        } else {
+            format!("VALIDATION_FAILED: {expected_reason} in {trade_mode} mode")
+        };
+
+        assert_eq!(denied.reason.as_str(), expected);
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert_eq!(
+            client
+                .ws_dispatch_state
+                .order_context(order.client_order_id()),
+            None
+        );
+        assert!(client.ws_dispatch_state.algo_order_states.is_empty());
+    }
+
+    #[rstest]
+    #[case(OrderType::StopMarket, "slTriggerPx", "newSlTriggerPx")]
+    #[case(OrderType::MarketIfTouched, "tpTriggerPx", "newTpTriggerPx")]
+    #[tokio::test]
+    async fn test_submit_cash_spot_buy_records_conditional_before_stream_update(
+        #[case] order_type: OrderType,
+        #[case] trigger_field: &str,
+        #[case] amend_field: &str,
+        #[values(false, true)] quote_quantity: bool,
+    ) {
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let router = Router::new().route("/api/v5/trade/order-algo", post(
+            move |Json(request): Json<Value>| {
+                let tx = request_tx.clone();
+                async move {
+                    tx.send(request).unwrap();
+                    Json(serde_json::json!({"code": "0", "msg": "", "data": [{
+                        "algoId": "7003", "algoClOrdId": "OSPOTCONDITIONAL", "sCode": "0", "sMsg": ""
+                    }]}))
+                }
+            },
+        ));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("test_key".into()),
+            Some("test_secret".into()),
+            Some("test_pass".into()),
+            Some(base_url),
+            5,
+            0,
+            1,
+            1,
+            OKXEnvironment::Live,
+            None,
+        )
+        .unwrap();
+        let client_order_id = ClientOrderId::from("OSPOTCONDITIONAL");
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+
+        let quantity = Quantity::from(if quote_quantity {
+            "12.34500"
+        } else {
+            "0.12345"
+        });
+
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("ETH-USDT.OKX"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(quantity)
+            .quote_quantity(quote_quantity)
+            .trigger_price(Price::from("2345.67"))
+            .trigger_type(TriggerType::LastPrice)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let submit = SubmitOrder::from_order(
+            &order,
+            client.core.trader_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        client.submit_order(submit).unwrap();
+        let request = tokio::time::timeout(Duration::from_secs(5), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let algo_type = client
+            .ws_dispatch_state
+            .algo_order_states
+            .get(&client_order_id)
+            .unwrap()
+            .order_type;
+        let context = client.ws_dispatch_state.order_context(client_order_id);
+
+        let amend = ModifyOrder::new(
+            client.core.trader_id,
+            Some(*OKX_CLIENT_ID),
+            order.strategy_id(),
+            order.instrument_id(),
+            client_order_id,
+            Some(VenueOrderId::from("7003")),
+            None,
+            None,
+            Some(Price::from("2456.78")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let amendment = algo_amend_request(&amend, Some(algo_type), context).unwrap();
+        let amendment = serde_json::to_value(amendment).unwrap();
+        wait_until_async(
+            || async { client.pending_tasks.all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        server.abort();
+
+        assert_eq!(request["ordType"], "conditional");
+        assert_eq!(
+            request["tgtCcy"],
+            if quote_quantity {
+                "quote_ccy"
+            } else {
+                "base_ccy"
+            }
+        );
+        assert_eq!(request["sz"], quantity.to_string());
+        assert_eq!(request[trigger_field], "2345.67");
+        assert_eq!(algo_type, OKXAlgoOrderType::Conditional);
+        assert_eq!(context.unwrap().is_quote_quantity, quote_quantity);
+        assert_eq!(amendment[amend_field], "2456.78");
+        assert_eq!(amendment.get("newTriggerPx"), None);
+
+        let mut instrument = currency_pair_ethusdt();
+        instrument.id = order.instrument_id();
+        instrument.raw_symbol = Symbol::from("ETH-USDT");
+        let instruments = AtomicMap::new();
+        instruments.insert(
+            Ustr::from("ETH-USDT"),
+            InstrumentAny::CurrencyPair(instrument),
+        );
+        let mut fee_cache = FeeCache::new();
+        let mut fills = FilledQtyCache::new();
+        let mut snapshots = AHashMap::new();
+        let mut parent: Value =
+            serde_json::from_str(include_str!("../test_data/ws_orders_algo.json")).unwrap();
+        let msg = &mut parent["data"][0];
+        for (key, value) in [
+            ("algoId", Value::from("7003")),
+            ("algoClOrdId", Value::from(client_order_id.as_str())),
+            ("instId", Value::from("ETH-USDT")),
+            ("instType", Value::from("SPOT")),
+            ("side", Value::from("buy")),
+            ("posSide", Value::from("net")),
+            ("tdMode", Value::from("cash")),
+            ("reduceOnly", Value::from("false")),
+            ("ordType", request["ordType"].clone()),
+            ("sz", request["sz"].clone()),
+            ("tgtCcy", request["tgtCcy"].clone()),
+            (trigger_field, request[trigger_field].clone()),
+            ("triggerPx", Value::from("")),
+        ] {
+            msg[key] = value;
+        }
+
+        let (price_field, type_field) = if order_type == OrderType::StopMarket {
+            ("slOrdPx", "slTriggerPxType")
+        } else {
+            ("tpOrdPx", "tpTriggerPxType")
+        };
+
+        msg[price_field] = Value::from("-1");
+        msg[type_field] = Value::from("last");
+        let pending = OKXWsMessage::AlgoOrders(
+            serde_json::from_value(serde_json::json!([msg.clone()])).unwrap(),
+        );
+        let pending_replay = OKXWsMessage::AlgoOrders(
+            serde_json::from_value(serde_json::json!([msg.clone()])).unwrap(),
+        );
+        msg[trigger_field] = Value::from("2456.78");
+        msg["uTime"] = Value::from("1737400000050");
+        let amended = OKXWsMessage::AlgoOrders(
+            serde_json::from_value(serde_json::json!([msg.clone()])).unwrap(),
+        );
+        let amended_replay = OKXWsMessage::AlgoOrders(
+            serde_json::from_value(serde_json::json!([msg.clone()])).unwrap(),
+        );
+        msg["state"] = Value::from("order_placed");
+        msg["ordId"] = Value::from("7004");
+        msg["uTime"] = Value::from("1737400000100");
+        let triggered = OKXWsMessage::AlgoOrders(
+            serde_json::from_value(serde_json::json!([msg.clone()])).unwrap(),
+        );
+        let mut child: Value = serde_json::from_str(include_str!(
+            "../test_data/ws_orders_algo_child_filled_empty_cl_ord_id.json"
+        ))
+        .unwrap();
+        let msg = &mut child["data"][0];
+
+        let filled_qty = if quote_quantity { "0.00500" } else { "0.12345" };
+
+        for (key, value) in [
+            ("algoId", "7003"),
+            ("algoClOrdId", client_order_id.as_str()),
+            ("ordId", "7004"),
+            ("ordType", "market"),
+            ("tdMode", "cash"),
+            (
+                "tgtCcy",
+                if quote_quantity {
+                    "quote_ccy"
+                } else {
+                    "base_ccy"
+                },
+            ),
+            (
+                "sz",
+                if quote_quantity {
+                    "12.34500"
+                } else {
+                    "0.12345"
+                },
+            ),
+            ("accFillSz", filled_qty),
+            ("fillSz", filled_qty),
+            ("avgPx", "2469.00"),
+            ("fillPx", "2469.00"),
+            ("px", ""),
+            ("uTime", "1737400000200"),
+            ("cTime", "1737400000000"),
+            ("fillTime", "1737400000200"),
+        ] {
+            msg[key] = Value::from(value);
+        }
+
+        let filled = OKXWsMessage::Orders(serde_json::from_value(child["data"].clone()).unwrap());
+        let filled_replay =
+            OKXWsMessage::Orders(serde_json::from_value(child["data"].clone()).unwrap());
+
+        for message in [
+            pending,
+            pending_replay,
+            amended,
+            amended_replay,
+            triggered,
+            filled,
+            filled_replay,
+        ] {
+            dispatch_ws_message(
+                message,
+                &client.emitter,
+                &client.ws_dispatch_state,
+                client.core.account_id,
+                client.core.account_type,
+                &instruments,
+                &mut fee_cache,
+                &mut fills,
+                &mut snapshots,
+                client.clock,
+            );
+        }
+
+        let events: Vec<_> = std::iter::from_fn(|| event_rx.try_recv().ok()).collect();
+
+        let [
+            ExecutionEvent::Order(OrderEventAny::Submitted(submitted)),
+            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)),
+            ExecutionEvent::Order(OrderEventAny::Updated(amended)),
+            ExecutionEvent::Order(OrderEventAny::Updated(bound)),
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)),
+            reports @ ..,
+        ] = events.as_slice()
+        else {
+            panic!(
+                "Expected submitted, accepted, amended, bound, filled, and optional status, was {events:?}"
+            );
+        };
+
+        let mut applied = order.clone();
+
+        for event in &events {
+            if let ExecutionEvent::Order(event) = event {
+                applied.apply(event.clone()).unwrap();
+                assert_eq!(applied.is_quote_quantity(), quote_quantity);
+            }
+        }
+
+        assert_eq!(submitted.client_order_id, client_order_id);
+        assert_eq!(accepted.client_order_id, client_order_id);
+        assert_eq!(accepted.venue_order_id, VenueOrderId::from("7003"));
+        assert_eq!(amended.client_order_id, client_order_id);
+        assert_eq!(amended.venue_order_id, Some(VenueOrderId::from("7003")));
+        assert_eq!(amended.quantity, quantity);
+        assert_eq!(amended.price, None);
+        assert_eq!(amended.trigger_price, Some(Price::from("2456.78")));
+        assert_eq!(amended.is_quote_quantity, quote_quantity);
+        assert_eq!(bound.client_order_id, client_order_id);
+        assert_eq!(bound.venue_order_id, Some(VenueOrderId::from("7004")));
+        assert_eq!(bound.quantity, quantity);
+        assert_eq!(bound.price, None);
+        assert_eq!(bound.trigger_price, Some(Price::from("2456.78")));
+        assert_eq!(bound.is_quote_quantity, quote_quantity);
+        assert_eq!(filled.client_order_id, client_order_id);
+        assert_eq!(filled.venue_order_id, VenueOrderId::from("7004"));
+        assert_eq!(filled.last_qty, Quantity::from(filled_qty));
+        assert_eq!(filled.last_px, Price::from("2469.00"));
+
+        if quote_quantity {
+            let [ExecutionEvent::Report(CommonExecutionReport::Order(report))] = reports else {
+                panic!("Expected one terminal quote-sized status report, was {reports:?}");
+            };
+
+            assert_eq!(report.client_order_id, Some(client_order_id));
+            assert_eq!(report.venue_order_id, VenueOrderId::from("7004"));
+            assert_eq!(report.order_status, OrderStatus::Filled);
+            assert_eq!(report.quantity, Quantity::from(filled_qty));
+            assert_eq!(report.filled_qty, Quantity::from(filled_qty));
+        } else {
+            assert!(reports.is_empty(), "{reports:?}");
+            assert_eq!(applied.status(), OrderStatus::Filled);
+        }
+
+        assert_eq!(
+            client.ws_dispatch_state.order_identity(client_order_id),
+            None
         );
     }
 

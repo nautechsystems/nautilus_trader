@@ -121,8 +121,8 @@ use crate::{
         consts::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUPPORTED_ORDER_TYPES,
-            OKX_SUPPORTED_TIME_IN_FORCE, okx_reduce_only_wire_value,
-            spot_trade_quote_ccy_wire_value,
+            OKX_SUPPORTED_TIME_IN_FORCE, okx_algo_target_currency, okx_reduce_only_wire_value,
+            spot_trade_quote_ccy_wire_value, validate_algo_trigger_type,
         },
         credential::Credential,
         enums::{
@@ -6607,12 +6607,17 @@ impl OKXHttpClient {
 
     /// Places an algo order using domain types.
     ///
-    /// This is a convenience method that accepts Nautilus domain types
-    /// and builds the appropriate OKX request structure internally.
+    /// Spot `StopMarket` and `MarketIfTouched` buys use `conditional` orders with explicit
+    /// base (`quote_quantity=false`) or quote (`true`) sizing. Spot trailing buys require
+    /// quote sizing. Other algo orders require base size or derivative contracts.
+    /// Cash-spot triggers support last price only; cross/isolated feeds depend on the account mode
+    /// and algo type.
+    /// Trailing orders reject mark/index feeds.
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails.
+    /// Returns an error if the quantity denomination or trigger feed is unsupported,
+    /// required trigger terms are missing, or the request fails.
     #[expect(clippy::too_many_arguments)]
     pub async fn place_algo_order_with_domain_types(
         &self,
@@ -6622,6 +6627,7 @@ impl OKXHttpClient {
         order_side: OrderSide,
         order_type: OrderType,
         quantity: Quantity,
+        quote_quantity: bool,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
         limit_price: Option<Price>,
@@ -6640,10 +6646,31 @@ impl OKXHttpClient {
 
         let okx_side = OKXSide::from(order_side);
 
-        // Map trigger type to OKX format
+        let instrument_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+        let tgt_ccy = okx_algo_target_currency(
+            instrument_type,
+            td_mode,
+            order_side,
+            order_type,
+            quote_quantity,
+        )
+        .map_err(OKXHttpError::ValidationError)?;
+
+        validate_algo_trigger_type(instrument_type, td_mode, order_type, trigger_type)
+            .map_err(OKXHttpError::ValidationError)?;
+
+        let ccy = if instrument_type == OKXInstrumentType::Spot && td_mode != OKXTradeMode::Cash {
+            let (_, quote) = parse_base_quote_from_symbol(instrument_id.symbol.as_str())
+                .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
+            Some(quote.to_string())
+        } else {
+            None
+        };
+
         let trigger_px_type_enum = trigger_type.map_or(OKXTriggerType::Last, Into::into);
 
         let uses_close_fraction = close_fraction.is_some();
+
         let (
             algo_type,
             sz,
@@ -6658,7 +6685,7 @@ impl OKXHttpClient {
             tp_trigger_px_type,
             pos_side,
             reduce_only,
-        ) = if uses_close_fraction {
+        ) = if uses_close_fraction || tgt_ccy.is_some() {
             if order_type == OrderType::TrailingStopMarket {
                 return Err(OKXHttpError::ValidationError(
                     "OKX close_fraction does not support TrailingStopMarket".to_string(),
@@ -6667,7 +6694,7 @@ impl OKXHttpClient {
 
             let trigger_px = trigger_price.map(|p| p.to_string()).ok_or_else(|| {
                 OKXHttpError::ValidationError(
-                    "OKX close_fraction orders require trigger_price".to_string(),
+                    "OKX conditional orders require trigger_price".to_string(),
                 )
             })?;
 
@@ -6715,7 +6742,7 @@ impl OKXHttpClient {
 
             (
                 OKXAlgoOrderType::Conditional,
-                None,
+                (!uses_close_fraction).then(|| quantity.to_string()),
                 None,
                 None,
                 None,
@@ -6725,8 +6752,16 @@ impl OKXHttpClient {
                 tp_trigger_px,
                 tp_ord_px,
                 tp_trigger_px_type,
-                Some(position_side.map_or(OKXPositionSide::Net, Into::into)),
-                Some(true),
+                if uses_close_fraction {
+                    Some(position_side.map_or(OKXPositionSide::Net, Into::into))
+                } else {
+                    position_side.map(Into::into)
+                },
+                if uses_close_fraction {
+                    Some(true)
+                } else {
+                    reduce_only
+                },
             )
         } else {
             let algo_type = conditional_order_to_algo_type(order_type)
@@ -6760,7 +6795,7 @@ impl OKXHttpClient {
 
         let reduce_only = if position_side.is_some() {
             okx_reduce_only_wire_value(
-                okx_instrument_type_from_symbol(instrument_id.symbol.as_str()),
+                instrument_type,
                 td_mode,
                 order_side,
                 position_side,
@@ -6788,7 +6823,7 @@ impl OKXHttpClient {
             tp_trigger_px,
             tp_ord_px,
             tp_trigger_px_type,
-            tgt_ccy: None,
+            tgt_ccy,
             pos_side,
             close_position: None,
             tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
@@ -6797,6 +6832,7 @@ impl OKXHttpClient {
             callback_ratio,
             callback_spread,
             active_px: activation_price.map(|p| p.to_string()),
+            ccy,
         };
 
         self.place_algo_order(request).await

@@ -1571,6 +1571,9 @@ pub struct OKXPlaceAlgoOrderRequest {
     /// activates immediately when placed.
     #[serde(rename = "activePx", skip_serializing_if = "Option::is_none")]
     pub active_px: Option<String>,
+    /// Margin currency for spot margin orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ccy: Option<String>,
 }
 
 /// Represents the response from `POST /api/v5/trade/order-algo` (place algo order).
@@ -1880,6 +1883,7 @@ mod tests {
             callback_ratio: None,
             callback_spread: None,
             active_px: None,
+            ccy: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -1995,6 +1999,7 @@ mod tests {
             callback_ratio: None,
             callback_spread: None,
             active_px: None,
+            ccy: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2037,6 +2042,7 @@ mod tests {
             callback_ratio: None,
             callback_spread: None,
             active_px: None,
+            ccy: None,
         };
 
         // OKX expects an array of requests
@@ -2186,6 +2192,7 @@ mod tests {
             callback_ratio: Some("0.01".to_string()),
             callback_spread: None,
             active_px: None,
+            ccy: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2224,6 +2231,7 @@ mod tests {
             callback_ratio: None,
             callback_spread: Some("50.5".to_string()),
             active_px: None,
+            ccy: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -2261,6 +2269,7 @@ mod tests {
             callback_ratio: Some("0.005".to_string()),
             callback_spread: None,
             active_px: Some("65000".to_string()),
+            ccy: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();

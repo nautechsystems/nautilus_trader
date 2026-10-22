@@ -5238,6 +5238,353 @@ async fn test_http_request_order_status_reports_preserves_attached_tp_sl_child_i
 }
 
 #[rstest]
+#[case(OrderType::StopMarket, "slTriggerPx", "slOrdPx", "slTriggerPxType")]
+#[case(
+    OrderType::MarketIfTouched,
+    "tpTriggerPx",
+    "tpOrdPx",
+    "tpTriggerPxType"
+)]
+#[tokio::test]
+async fn test_http_place_algo_order_spot_buy_preserves_denomination(
+    #[case] order_type: OrderType,
+    #[case] trigger_field: &str,
+    #[case] price_field: &str,
+    #[case] trigger_type_field: &str,
+    #[values(false, true)] quote_quantity: bool,
+    #[values(
+        (OKXTradeMode::Cash, TriggerType::LastPrice, "last"),
+        (OKXTradeMode::Cross, TriggerType::LastPrice, "last"),
+        (OKXTradeMode::Isolated, TriggerType::LastPrice, "last"),
+        (OKXTradeMode::Cross, TriggerType::MarkPrice, "mark"),
+        (OKXTradeMode::Cross, TriggerType::IndexPrice, "index"),
+        (OKXTradeMode::Isolated, TriggerType::MarkPrice, "mark"),
+        (OKXTradeMode::Isolated, TriggerType::IndexPrice, "index")
+    )]
+    feed: (OKXTradeMode, TriggerType, &str),
+) {
+    let (trade_mode, trigger_type, wire_feed) = feed;
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let response = client
+        .place_algo_order_with_domain_types(
+            InstrumentId::from("BTC-USDT.OKX"),
+            trade_mode,
+            ClientOrderId::from("OSPOTBUY"),
+            OrderSide::Buy,
+            order_type,
+            Quantity::from("0.01234567"),
+            quote_quantity,
+            Some(Price::from("51234.5")),
+            Some(trigger_type),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let body = state.last_algo_order_body.lock().await.clone().unwrap();
+    let mut expected = json!({
+        "instId": "BTC-USDT", "tdMode": trade_mode.to_string().to_lowercase(), "side": "buy",
+        "ordType": "conditional", "sz": "0.01234567", "algoClOrdId": "OSPOTBUY",
+        "tgtCcy": if quote_quantity { "quote_ccy" } else { "base_ccy" },
+        "tag": OKX_NAUTILUS_BROKER_ID,
+        trigger_field: "51234.5", price_field: "-1", trigger_type_field: wire_feed,
+    });
+
+    if trade_mode != OKXTradeMode::Cash {
+        expected["ccy"] = json!("USDT");
+    }
+
+    assert_eq!(response.algo_id, "12345");
+    assert_eq!(body, expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_place_algo_order_cash_spot_buy_requires_trigger(
+    #[values(OrderType::StopMarket, OrderType::MarketIfTouched)] order_type: OrderType,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let result = client
+        .place_algo_order_with_domain_types(
+            InstrumentId::from("BTC-USDT.OKX"),
+            OKXTradeMode::Cash,
+            ClientOrderId::from("OSPOTNOTRIGGER"),
+            OrderSide::Buy,
+            order_type,
+            Quantity::from("0.01234567"),
+            false,
+            None,
+            Some(TriggerType::LastPrice),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(OKXHttpError::ValidationError(ref detail))
+        if detail == "OKX conditional orders require trigger_price")
+    );
+    assert_eq!(*state.last_algo_order_body.lock().await, None);
+}
+
+#[rstest]
+#[case(
+    "BTC-USDT.OKX",
+    OrderSide::Sell,
+    OrderType::StopMarket,
+    true,
+    TriggerType::LastPrice,
+    "OKX Spot STOP_MARKET algo orders do not support quote quantity"
+)]
+#[case(
+    "BTC-USDT.OKX",
+    OrderSide::Buy,
+    OrderType::TrailingStopMarket,
+    false,
+    TriggerType::LastPrice,
+    "OKX Spot TRAILING_STOP_MARKET algo buys require quote quantity"
+)]
+#[case(
+    "BTC-USDT.OKX",
+    OrderSide::Buy,
+    OrderType::StopLimit,
+    true,
+    TriggerType::LastPrice,
+    "OKX Spot STOP_LIMIT algo orders do not support quote quantity"
+)]
+#[case(
+    "BTC-USDT-SWAP.OKX",
+    OrderSide::Buy,
+    OrderType::StopMarket,
+    true,
+    TriggerType::LastPrice,
+    "OKX Swap STOP_MARKET algo orders do not support quote quantity"
+)]
+#[case(
+    "BTC-USDT.OKX",
+    OrderSide::Buy,
+    OrderType::StopMarket,
+    false,
+    TriggerType::BidAsk,
+    "OKX Spot STOP_MARKET algo orders do not support BID_ASK triggers"
+)]
+#[case(
+    "BTC-USDT.OKX",
+    OrderSide::Buy,
+    OrderType::MarketIfTouched,
+    false,
+    TriggerType::MidPoint,
+    "OKX Spot MARKET_IF_TOUCHED algo orders do not support MID_POINT triggers"
+)]
+#[tokio::test]
+async fn test_http_place_algo_order_unsupported_terms_are_not_sent(
+    #[case] instrument: &str,
+    #[case] side: OrderSide,
+    #[case] order_type: OrderType,
+    #[case] quote_quantity: bool,
+    #[case] trigger_type: TriggerType,
+    #[case] reason: &str,
+    #[values(OKXTradeMode::Cash, OKXTradeMode::Cross, OKXTradeMode::Isolated)]
+    trade_mode: OKXTradeMode,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let result = client
+        .place_algo_order_with_domain_types(
+            InstrumentId::from(instrument),
+            trade_mode,
+            ClientOrderId::from("OSPOTSELL"),
+            side,
+            order_type,
+            Quantity::from("12.34"),
+            quote_quantity,
+            Some(Price::from("51234.5")),
+            Some(trigger_type),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    let expected = if reason.ends_with("triggers") {
+        reason.to_string()
+    } else {
+        format!("{reason} in {trade_mode} mode")
+    };
+
+    assert!(
+        matches!(result, Err(OKXHttpError::ValidationError(ref detail)) if detail == &expected)
+    );
+    assert_eq!(*state.last_algo_order_body.lock().await, None);
+}
+
+#[rstest]
+#[case(
+    "BTC-USDT.OKX",
+    OKXTradeMode::Cash,
+    OrderSide::Sell,
+    OrderType::StopMarket,
+    false,
+    "-1"
+)]
+#[case(
+    "BTC-USDT.OKX",
+    OKXTradeMode::Cash,
+    OrderSide::Buy,
+    OrderType::StopLimit,
+    false,
+    "50234.1"
+)]
+#[case(
+    "BTC-USDT.OKX",
+    OKXTradeMode::Cash,
+    OrderSide::Buy,
+    OrderType::LimitIfTouched,
+    false,
+    "50234.1"
+)]
+#[case(
+    "BTC-USDT-SWAP.OKX",
+    OKXTradeMode::Cross,
+    OrderSide::Buy,
+    OrderType::MarketIfTouched,
+    false,
+    "-1"
+)]
+#[case(
+    "BTC-USDT.OKX",
+    OKXTradeMode::Cash,
+    OrderSide::Buy,
+    OrderType::TrailingStopMarket,
+    true,
+    ""
+)]
+#[tokio::test]
+async fn test_http_place_algo_order_preserves_algo_routes(
+    #[case] instrument: &str,
+    #[case] trade_mode: OKXTradeMode,
+    #[case] side: OrderSide,
+    #[case] order_type: OrderType,
+    #[case] quote_quantity: bool,
+    #[case] order_px: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from(instrument);
+    let trailing = order_type == OrderType::TrailingStopMarket;
+    client
+        .place_algo_order_with_domain_types(
+            instrument_id,
+            trade_mode,
+            ClientOrderId::from("OPRESERVED"),
+            side,
+            order_type,
+            Quantity::from("0.01234567"),
+            quote_quantity,
+            (!trailing).then(|| Price::from("51234.5")),
+            Some(TriggerType::LastPrice),
+            (!trailing).then(|| Price::from("50234.1")),
+            None,
+            None,
+            None,
+            trailing.then(|| "0.012".to_string()),
+            None,
+            trailing.then(|| Price::from("51234.5")),
+        )
+        .await
+        .unwrap();
+    let body = state.last_algo_order_body.lock().await.clone().unwrap();
+
+    let expected = if trailing {
+        json!({
+            "instId": "BTC-USDT", "tdMode": "cash", "side": "buy",
+            "ordType": "move_order_stop", "sz": "0.01234567", "algoClOrdId": "OPRESERVED",
+            "triggerPxType": "last", "callbackRatio": "0.012", "activePx": "51234.5",
+            "tag": OKX_NAUTILUS_BROKER_ID,
+        })
+    } else {
+        json!({
+            "instId": instrument_id.symbol.as_str(), "tdMode": if trade_mode == OKXTradeMode::Cash { "cash" } else { "cross" },
+            "side": if side == OrderSide::Buy { "buy" } else { "sell" },
+            "ordType": "trigger", "sz": "0.01234567", "algoClOrdId": "OPRESERVED",
+            "triggerPx": "51234.5", "triggerPxType": "last", "orderPx": order_px,
+            "tag": OKX_NAUTILUS_BROKER_ID,
+        })
+    };
+
+    assert_eq!(body, expected);
+}
+
+#[rstest]
 #[case(None, OrderSide::Sell, "net")]
 #[case(Some(PositionSide::Long), OrderSide::Sell, "long")]
 #[case(Some(PositionSide::Short), OrderSide::Buy, "short")]
@@ -5277,6 +5624,7 @@ async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_o
             order_side,
             OrderType::StopMarket,
             Quantity::from("0.01"),
+            false,
             Some(Price::from("50000")),
             Some(TriggerType::Default),
             None,
@@ -8347,6 +8695,7 @@ async fn test_http_place_algo_order_returns_error_on_nonzero_scode() {
             OrderSide::Sell,
             OrderType::StopMarket,
             Quantity::from("0.01"),
+            false,
             Some(Price::from("50000")),
             Some(TriggerType::Default),
             None,
