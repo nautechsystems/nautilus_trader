@@ -81,8 +81,26 @@ impl ParquetDataCatalog {
         end: Option<UnixNanos>,
         skip_disjoint_check: Option<bool>,
     ) -> anyhow::Result<()> {
+        let mut batches = Vec::new();
+        let mut custom = Vec::new();
+
         for batch in DataBatch::from_data_vec_grouped(data)? {
-            write_catalog_batch(self, &batch, start, end, skip_disjoint_check)?;
+            match batch {
+                DataBatch::Custom(data) => custom.extend(data.iter().cloned()),
+                batch => batches.push(batch),
+            }
+        }
+
+        // Check every custom group of every type name before any file is written
+        let custom_writes =
+            self.prepare_custom_data_groups(&custom, start, end, skip_disjoint_check)?;
+
+        for batch in &batches {
+            write_catalog_batch(self, batch, start, end, skip_disjoint_check)?;
+        }
+
+        for write in &custom_writes {
+            self.write_custom_data_prepared(write, skip_disjoint_check)?;
         }
 
         Ok(())
@@ -329,8 +347,7 @@ impl ParquetDataCatalog {
     ///
     /// Every group is prepared and checked before any file is written, so a call whose groups
     /// would share a file, or overlap within a directory while the disjoint check is active,
-    /// fails without writing anything. A file holds one data type, so two such groups cannot be
-    /// stored together, and writing them in turn would skip the second as an existing file.
+    /// fails without writing anything.
     pub(crate) fn write_custom_data_groups(
         &self,
         data: &[CustomData],
@@ -338,6 +355,24 @@ impl ParquetDataCatalog {
         end: Option<UnixNanos>,
         skip_disjoint_check: Option<bool>,
     ) -> anyhow::Result<()> {
+        for write in &self.prepare_custom_data_groups(data, start, end, skip_disjoint_check)? {
+            self.write_custom_data_prepared(write, skip_disjoint_check)?;
+        }
+
+        Ok(())
+    }
+
+    // Prepares one write per custom data group and rejects groups that would share a file or,
+    // while the disjoint check is active, overlap within a directory. A file holds one data type,
+    // so two such groups cannot be stored together, and writing them in turn would skip the
+    // second as an existing file.
+    fn prepare_custom_data_groups(
+        &self,
+        data: &[CustomData],
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        skip_disjoint_check: Option<bool>,
+    ) -> anyhow::Result<Vec<CustomDataWrite>> {
         let check_disjoint = !skip_disjoint_check.unwrap_or(false);
         let mut writes = Vec::new();
         let mut directory_intervals: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
@@ -370,11 +405,7 @@ impl ParquetDataCatalog {
             writes.push(write);
         }
 
-        for write in &writes {
-            self.write_custom_data_prepared(write, skip_disjoint_check)?;
-        }
-
-        Ok(())
+        Ok(writes)
     }
 
     fn prepare_custom_data_write(

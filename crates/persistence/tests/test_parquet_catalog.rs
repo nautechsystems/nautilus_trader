@@ -5631,6 +5631,54 @@ fn test_write_data_enum_rejects_custom_metadata_groups_sharing_a_file(
     assert_eq!(catalog_relative_paths(&temp_dir), Vec::<String>::new());
 }
 
+/// The collision check covers every custom type name and runs before any file is written, so the
+/// files of a valid earlier type are not left on disk when a later type collides.
+#[rstest]
+fn test_write_data_enum_rejects_custom_collision_before_writing_other_custom_types() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, catalog) = create_temp_catalog();
+    let bytes = |identifier: &str, ts_init: u64| {
+        let item = RustTestBytesCustomData {
+            value: vec![1, 2],
+            ts_event: UnixNanos::from(ts_init),
+            ts_init: UnixNanos::from(ts_init),
+        };
+        Data::Custom(CustomData::new(
+            Arc::new(item),
+            DataType::new(
+                "RustTestBytesCustomData",
+                None,
+                Some(identifier.to_string()),
+            ),
+        ))
+    };
+    let data = vec![
+        bytes("X", 1),
+        bytes("Y", 2),
+        custom_with_source("a", 5),
+        custom_with_source("b", 5),
+    ];
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.A"))
+        .unwrap();
+
+    let error = catalog
+        .write_data_enum(&data, None, None, Some(false))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot write custom data for RustTestCustomData with different metadata to the same \
+             file {}: a file holds one data type, so write each metadata value over a distinct range",
+            std::path::PathBuf::from(directory)
+                .join("1970-01-01T00-00-00-000000005Z_1970-01-01T00-00-00-000000005Z.parquet")
+                .display(),
+        )
+    );
+    assert_eq!(catalog_relative_paths(&temp_dir), Vec::<String>::new());
+}
+
 #[rstest]
 fn test_write_data_enum_rejects_overlapping_custom_metadata_groups() {
     ensure_test_custom_data_registered();
