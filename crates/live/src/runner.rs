@@ -1255,7 +1255,7 @@ mod tests {
                 stop.send(()).unwrap();
             }
         }));
-        let received = Rc::new(RefCell::new(Vec::new()));
+        let received = Rc::new(std::cell::Cell::new(0_u64));
         let observed = received.clone();
         let stop = runner.signal_tx.clone();
         msgbus::register_data_endpoint(
@@ -1264,7 +1264,8 @@ mod tests {
                 let Data::Quote(quote) = event else {
                     panic!("Expected quote")
                 };
-                observed.borrow_mut().push(quote.ts_init);
+                observed.set(observed.get() + 1);
+                assert_eq!(quote.ts_init.as_u64(), observed.get());
                 if !timers && quote.ts_init == UnixNanos::from(8) {
                     stop.send(()).unwrap();
                 }
@@ -1281,14 +1282,9 @@ mod tests {
         }));
 
         // Stop halfway through a ready backlog, before starvation can disappear by draining it
-        for timestamp in 1..=16 {
+        for ts in (1..=16_u64).map(UnixNanos::from) {
             if timers {
-                let event = TimeEvent::new(
-                    "fairness".into(),
-                    UUID4::new(),
-                    timestamp.into(),
-                    timestamp.into(),
-                );
+                let event = TimeEvent::new("fairness".into(), UUID4::new(), ts, ts);
                 runner
                     .time_evt_tx
                     .send(TimeEventMessage::new(event, callback.clone()).into())
@@ -1297,7 +1293,7 @@ mod tests {
 
             if data {
                 let mut quote = test_quote();
-                quote.ts_init = timestamp.into();
+                quote.ts_init = ts;
                 runner
                     .data_evt_tx
                     .send(DataEvent::Data(Data::Quote(quote)).into())
@@ -1326,14 +1322,7 @@ mod tests {
         assert!((1..16).contains(&runner.channels.data_cmd_rx.len()));
 
         if data {
-            let received = received.borrow();
-            assert!(!received.is_empty());
-            assert_eq!(
-                *received,
-                (1..=received.len() as u64)
-                    .map(UnixNanos::from)
-                    .collect::<Vec<_>>()
-            );
+            assert!(received.get() > 0);
             assert!(!runner.channels.data_evt_rx.is_empty());
         }
 

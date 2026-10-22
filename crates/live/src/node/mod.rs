@@ -4642,21 +4642,19 @@ mod tests {
     #[tokio::test]
     async fn test_run_data_progress_under_timer_load() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecutionEngineConfig {
-                reconciliation: false,
-                ..Default::default()
-            },
             delay_post_stop: Duration::ZERO,
             ..Default::default()
         };
         let mut node = LiveNode::build("FairDispatchNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
-        let snapshot = Rc::new(RefCell::new(None));
-        let observed = snapshot.clone();
         let stop = handle.clone();
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
             if event.ts_init == UnixNanos::from(8) {
-                *observed.borrow_mut() = Some(stop.metrics_snapshot());
+                // Check progress before shutdown can drain the queues
+                let snapshot = stop.metrics_snapshot();
+                assert_eq!(snapshot.time_events.dispatched, 7);
+                assert!(snapshot.data_events.dispatched > 0);
+                assert_eq!(snapshot.data_commands.dispatched, 1);
                 stop.stop();
             }
         }));
@@ -4664,14 +4662,9 @@ mod tests {
         let drive = async {
             wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
 
-            for timestamp in 1..=16 {
+            for ts in (1..=16_u64).map(UnixNanos::from) {
                 nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
-                    TimeEvent::new(
-                        "fairness".into(),
-                        UUID4::new(),
-                        timestamp.into(),
-                        timestamp.into(),
-                    ),
+                    TimeEvent::new("fairness".into(), UUID4::new(), ts, ts),
                     callback.clone(),
                 ));
                 get_data_event_sender().send(stub_data_event()).unwrap();
@@ -4684,12 +4677,7 @@ mod tests {
         })
         .await
         .unwrap();
-
-        // Sample in the running loop, before shutdown or the final drain can mask starvation
-        let snapshot = snapshot.borrow().unwrap();
-        assert_eq!(snapshot.time_events.dispatched, 7);
-        assert!(snapshot.data_events.dispatched > 0);
-        assert_eq!(snapshot.data_commands.dispatched, 1);
+        assert!(handle.should_stop());
     }
 
     #[rstest]
