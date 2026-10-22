@@ -751,9 +751,11 @@ impl PolymarketExecutionClient {
             .cloned()
             .collect();
 
-        for inst in &instruments {
-            self.upsert_execution_lookup(inst);
-        }
+        upsert_execution_lookups(
+            &self.shared_token_instruments,
+            &self.neg_risk_index,
+            &instruments,
+        );
 
         log::debug!("Loaded {} instruments from cache", instruments.len());
     }
@@ -1726,17 +1728,40 @@ fn upsert_execution_lookup(
     neg_risk_index: &AtomicMap<InstrumentId, bool>,
     instrument: &InstrumentAny,
 ) {
-    let token_id = Ustr::from(instrument.raw_symbol().as_str());
-    shared_token_instruments.insert(token_id, instrument.clone());
+    upsert_execution_lookups(
+        shared_token_instruments,
+        neg_risk_index,
+        std::slice::from_ref(instrument),
+    );
+}
 
-    if let InstrumentAny::BinaryOption(bo) = instrument {
-        let neg_risk = bo
-            .info
-            .as_ref()
-            .and_then(|i| i.get_bool("neg_risk"))
-            .unwrap_or(false);
-        neg_risk_index.insert(bo.id, neg_risk);
+fn upsert_execution_lookups(
+    shared_token_instruments: &AtomicMap<Ustr, InstrumentAny>,
+    neg_risk_index: &AtomicMap<InstrumentId, bool>,
+    instruments: &[InstrumentAny],
+) {
+    if instruments.is_empty() {
+        return;
     }
+
+    shared_token_instruments.rcu(|cache| {
+        for instrument in instruments {
+            cache.insert(instrument.raw_symbol().inner(), instrument.clone());
+        }
+    });
+
+    neg_risk_index.rcu(|cache| {
+        for instrument in instruments {
+            if let InstrumentAny::BinaryOption(binary) = instrument {
+                let neg_risk = binary
+                    .info
+                    .as_ref()
+                    .and_then(|info| info.get_bool("neg_risk"))
+                    .unwrap_or(false);
+                cache.insert(binary.id, neg_risk);
+            }
+        }
+    });
 }
 
 fn remove_execution_lookup(
@@ -2123,7 +2148,7 @@ mod tests {
     #[rstest]
     fn load_instruments_from_cache_preloads_expired_execution_lookup_state() {
         let (client, cache) = test_client();
-        let active = test_binary_option("0xACTIVE", false, true);
+        let active = test_binary_option("0xACTIVE", false, false);
         let expired = test_binary_option("0xEXPIRED", true, true);
 
         {
@@ -2134,18 +2159,25 @@ mod tests {
 
         client.load_instruments_from_cache();
 
-        assert!(
-            client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(active.raw_symbol().as_str()))
-        );
-        assert!(client.neg_risk_index.contains_key(&active.id()));
-        assert!(
-            client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
-        );
-        assert!(client.neg_risk_index.contains_key(&expired.id()));
+        assert_eq!(client.shared_token_instruments.len(), 2);
+        assert_eq!(client.neg_risk_index.len(), 2);
+
+        for (instrument, neg_risk) in [(&active, false), (&expired, true)] {
+            assert_eq!(
+                serde_json::to_value(
+                    client
+                        .shared_token_instruments
+                        .get_cloned(&instrument.raw_symbol().inner())
+                        .unwrap()
+                )
+                .unwrap(),
+                serde_json::to_value(instrument).unwrap()
+            );
+            assert_eq!(
+                client.neg_risk_index.get_cloned(&instrument.id()),
+                Some(neg_risk)
+            );
+        }
     }
 
     #[rstest]

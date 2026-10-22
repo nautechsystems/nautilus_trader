@@ -388,6 +388,10 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn register_closed_condition_logs_once_per_condition() {
+        if super::super::test_logging::run_in_isolated_process() {
+            return;
+        }
+
         let _capture = super::super::test_logging::capture_logs().await;
 
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();

@@ -204,8 +204,12 @@ impl CoinbaseWebSocketClient {
     pub async fn initialize_instruments(&self, instruments: Vec<InstrumentAny>) {
         let cmd_tx = self.cmd_tx.read().await;
 
-        for instrument in &instruments {
-            self.instruments.insert(instrument.id(), instrument.clone());
+        if !instruments.is_empty() {
+            self.instruments.rcu(|cache| {
+                for instrument in &instruments {
+                    cache.insert(instrument.id(), instrument.clone());
+                }
+            });
         }
 
         if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments)) {
@@ -609,6 +613,27 @@ impl CoinbaseWebSocketClient {
         }
     }
 
+    pub(crate) async fn update_instruments(&self, instruments: &[InstrumentAny]) {
+        if instruments.is_empty() {
+            return;
+        }
+
+        let cmd_tx = self.cmd_tx.read().await;
+        self.instruments.rcu(|cache| {
+            for instrument in instruments {
+                cache.insert(instrument.id(), instrument.clone());
+            }
+        });
+
+        for instrument in instruments {
+            if let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(Box::new(
+                instrument.clone(),
+            ))) {
+                log::debug!("Failed to send UpdateInstrument: {e}");
+            }
+        }
+    }
+
     /// Takes the output message receiver, leaving `None` in its place.
     ///
     /// Used by the data client to move the receiver into a background consumption task.
@@ -811,6 +836,80 @@ mod tests {
         }
 
         assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::initialize(true)]
+    #[case::update(false)]
+    #[tokio::test]
+    async fn batch_updates_merge_and_keep_command_order(#[case] initialize: bool) {
+        let ws_client =
+            CoinbaseWebSocketClient::new("wss://test", TransportBackend::default(), None);
+        let retained = InstrumentAny::CryptoPerpetual(
+            nautilus_model::instruments::stubs::crypto_perpetual_ethusdt(),
+        );
+
+        let mut first = match retained.clone() {
+            InstrumentAny::CryptoPerpetual(instrument) => instrument,
+            _ => unreachable!(),
+        };
+
+        first.id = "BTCUSDT.COINBASE".into();
+        first.ts_event = 17.into();
+        let mut latest = first.clone();
+        latest.ts_event = 29.into();
+        let batch = vec![
+            InstrumentAny::CryptoPerpetual(first),
+            InstrumentAny::CryptoPerpetual(latest),
+        ];
+        ws_client
+            .initialize_instruments(vec![retained.clone()])
+            .await;
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        *ws_client.cmd_tx.write().await = sender;
+        if initialize {
+            ws_client.initialize_instruments(batch.clone()).await;
+        } else {
+            ws_client.update_instruments(&batch).await;
+        }
+
+        assert_eq!(ws_client.instruments.len(), 2);
+
+        for expected in [&retained, &batch[1]] {
+            assert_eq!(
+                serde_json::to_value(ws_client.instruments.get_cloned(&expected.id()).unwrap())
+                    .unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+
+        if initialize {
+            let HandlerCommand::InitializeInstruments(actual) = receiver.try_recv().unwrap() else {
+                panic!("expected InitializeInstruments");
+            };
+
+            assert_eq!(
+                serde_json::to_value(actual).unwrap(),
+                serde_json::to_value(&batch).unwrap()
+            );
+        } else {
+            for expected in &batch {
+                let HandlerCommand::UpdateInstrument(actual) = receiver.try_recv().unwrap() else {
+                    panic!("expected UpdateInstrument");
+                };
+
+                assert_eq!(
+                    serde_json::to_value(actual).unwrap(),
+                    serde_json::to_value(expected).unwrap()
+                );
+            }
+        }
+
+        assert!(receiver.try_recv().is_err());
+        let before = ws_client.instruments.load();
+        ws_client.update_instruments(&[]).await;
+        assert!(Arc::ptr_eq(&before, &ws_client.instruments.load()));
+        assert!(receiver.try_recv().is_err());
     }
 
     #[tokio::test]

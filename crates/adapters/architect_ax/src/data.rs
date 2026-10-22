@@ -260,7 +260,6 @@ impl AxDataClient {
 
         let interval = Duration::from_secs(minutes.saturating_mul(60));
         let cancellation = self.cancellation_token.clone();
-        let instruments_cache = Arc::clone(&self.instruments);
         let http_client = self.http_client.clone();
         let data_sender = self.data_sender.clone();
         let client_id = self.client_id;
@@ -277,16 +276,14 @@ impl AxDataClient {
                     () = &mut sleep => {
                         match http_client.request_instruments().await {
                             Ok(instruments) => {
+                                http_client.cache_instruments(&instruments);
                                 for inst in &instruments {
-                                    instruments_cache.insert(inst.symbol().inner(), inst.clone());
-
                                     if let Err(e) = data_sender
                                         .send(DataEvent::Instrument(inst.clone()))
                                     {
                                         log::warn!("Failed to send refreshed instrument: {e}");
                                     }
                                 }
-                                http_client.cache_instruments(&instruments);
                                 log::debug!(
                                     "Instruments refreshed: client_id={client_id}, count={}",
                                     instruments.len(),
@@ -532,10 +529,8 @@ impl DataClient for AxDataClient {
             .await
             .context("Failed to fetch instruments")?;
 
+        self.http_client.cache_instruments(&instruments);
         for instrument in &instruments {
-            self.instruments
-                .insert(instrument.symbol().inner(), instrument.clone());
-
             if let Err(e) = self
                 .data_sender
                 .send(DataEvent::Instrument(instrument.clone()))
@@ -543,7 +538,7 @@ impl DataClient for AxDataClient {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
-        self.http_client.cache_instruments(&instruments);
+
         log::debug!(
             "Cached {} instruments",
             self.http_client.get_cached_symbols().len()
@@ -891,7 +886,6 @@ impl DataClient for AxDataClient {
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         let http = self.http_client.clone();
-        let instruments_cache = Arc::clone(&self.instruments);
         let sender = self.data_sender.clone();
         let cancel = self.cancellation_token.clone();
         let request_id = request.request_id;
@@ -909,9 +903,6 @@ impl DataClient for AxDataClient {
                         return;
                     }
                     log::debug!("Fetched {} instruments from Ax", instruments.len());
-                    for inst in &instruments {
-                        instruments_cache.insert(inst.symbol().inner(), inst.clone());
-                    }
                     http.cache_instruments(&instruments);
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(

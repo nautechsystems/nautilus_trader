@@ -493,9 +493,7 @@ impl HyperliquidExecutionClient {
         } else {
             log::debug!("Initialized {} instruments", instruments.len());
 
-            for instrument in &instruments {
-                self.http_client.cache_instrument(instrument);
-            }
+            self.http_client.merge_instruments(&instruments);
         }
 
         self.core.set_instruments_initialized();
@@ -2636,9 +2634,7 @@ impl HyperliquidExecutionClient {
             .await
             .unwrap_or_default();
 
-        for instrument in instruments {
-            ws_client.cache_instrument(instrument);
-        }
+        ws_client.merge_instruments(&instruments);
 
         ws_client.connect().await?;
         if let Err(e) = ws_client

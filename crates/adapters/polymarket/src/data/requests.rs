@@ -27,7 +27,10 @@ use nautilus_common::messages::{
 use nautilus_core::datetime::datetime_to_unix_nanos;
 use nautilus_model::{data::CustomData, instruments::Instrument};
 
-use super::{PolymarketDataClient, instruments::apply_live_instrument_locked};
+use super::{
+    PolymarketDataClient,
+    instruments::{apply_live_instrument_locked, cache_instruments_unchecked},
+};
 use crate::{
     common::consts::POLYMARKET_VENUE,
     providers::extract_condition_id,
@@ -229,24 +232,34 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                 }
             };
 
-            if crate::data::runtime::is_instrument_expired_and_not_reported_open(
-                &instrument,
-                now_ns,
-            ) || !apply_live_instrument_locked(
-                &closed_condition_ids,
-                &update_state,
-                &instruments_cache,
-                &token_meta,
-                &instrument,
-                |_| {},
-            ) {
-                log::debug!(
-                    "Skipping expired instrument {} during request_instruments cache update",
-                    instrument.id()
-                );
-            }
-
             effective_instruments.push(instrument);
+        }
+
+        let cached_count = if update_state.retired {
+            0
+        } else {
+            let terminal_conditions = closed_condition_ids.lock();
+
+            let live: Vec<_> = effective_instruments
+                .iter()
+                .filter(|instrument| {
+                    !crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                        instrument, now_ns,
+                    ) && !extract_condition_id(&instrument.id())
+                        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+                })
+                .cloned()
+                .collect();
+
+            cache_instruments_unchecked(&instruments_cache, &token_meta, &live);
+            live.len()
+        };
+
+        let skipped_count = effective_instruments.len() - cached_count;
+        if skipped_count > 0 {
+            log::debug!(
+                "Skipped {skipped_count} instruments during request_instruments cache update"
+            );
         }
 
         let response = DataResponse::Instruments(InstrumentsResponse::new(

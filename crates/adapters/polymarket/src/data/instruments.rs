@@ -58,7 +58,7 @@ struct LiveTick {
 #[derive(Debug, Default)]
 pub(super) struct InstrumentUpdateState {
     live_ticks: AHashMap<Ustr, LiveTick>,
-    retired: bool,
+    pub(super) retired: bool,
 }
 
 impl InstrumentUpdateState {
@@ -115,12 +115,30 @@ pub(super) fn cache_instrument_unchecked(
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     instrument: &InstrumentAny,
 ) {
-    let instrument_id = instrument.id();
-    token_meta.insert(
-        Ustr::from(instrument.raw_symbol().as_str()),
-        TokenMeta::from_instrument(instrument),
-    );
-    instruments.insert(instrument_id, instrument.clone());
+    cache_instruments_unchecked(instruments, token_meta, std::slice::from_ref(instrument));
+}
+
+pub(super) fn cache_instruments_unchecked(
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
+    pending: &[InstrumentAny],
+) {
+    if pending.is_empty() {
+        return;
+    }
+
+    for instrument in pending {
+        token_meta.insert(
+            instrument.raw_symbol().inner(),
+            TokenMeta::from_instrument(instrument),
+        );
+    }
+
+    instruments.rcu(|map| {
+        for instrument in pending {
+            map.insert(instrument.id(), instrument.clone());
+        }
+    });
 }
 
 // Applies one instrument while serializing live tick composition, cache mutation,
@@ -297,21 +315,7 @@ pub(super) fn cache_and_publish_instruments(
             return 0;
         }
 
-        for instrument in &pending {
-            token_meta.insert(
-                Ustr::from(instrument.raw_symbol().as_str()),
-                TokenMeta::from_instrument(instrument),
-            );
-        }
-
-        // Batch cache writes while keeping closure checks and cache mutations ordered
-        instruments_cache.rcu(|map| {
-            map.extend(
-                pending
-                    .iter()
-                    .map(|instrument| (instrument.id(), instrument.clone())),
-            );
-        });
+        cache_instruments_unchecked(instruments_cache, token_meta, &pending);
     }
 
     let total = pending.len();

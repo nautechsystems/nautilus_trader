@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::Once;
+use std::{process::Command, sync::Once};
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use parking_lot::Mutex;
@@ -60,4 +60,37 @@ pub(super) async fn capture_logs() -> tokio::sync::MutexGuard<'static, ()> {
 
 pub(super) fn messages() -> Vec<(Level, String)> {
     CAPTURE.messages.lock().clone()
+}
+
+// Background work shares the process-wide runtime and logger with other tests
+pub(super) fn run_in_isolated_process() -> bool {
+    const CHILD_ENV: &str = "NAUTILUS_POLYMARKET_LOG_CAPTURE_CHILD";
+    let thread = std::thread::current();
+    let test_name = thread.name().expect("test thread must be named");
+    if std::env::var(CHILD_ENV).as_deref() == Ok(test_name) {
+        return false;
+    }
+
+    let output = Command::new(std::env::current_exe().expect("test executable must exist"))
+        .arg(test_name)
+        .arg("--exact")
+        .arg("--test-threads=1")
+        .env("NAUTILUS_WORKER_THREADS", "2")
+        .env(CHILD_ENV, test_name)
+        .output()
+        .expect("log capture child process must start");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "log capture child failed with {}\nstdout:\n{stdout}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(
+        stdout
+            .lines()
+            .any(|line| line.starts_with("test result: ok. 1 passed; 0 failed;")),
+        "test did not run: {stdout}"
+    );
+    true
 }

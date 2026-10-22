@@ -1396,78 +1396,86 @@ impl HyperliquidHttpClient {
     /// existing asset index, if any, because guessing one would route orders to
     /// the wrong asset.
     pub fn cache_instrument(&self, instrument: &InstrumentAny) {
-        let full_symbol = instrument.symbol().inner();
-        let coin = instrument.raw_symbol().inner();
+        self.merge_instruments(std::slice::from_ref(instrument));
+    }
 
-        match instrument
-            .info()
-            .and_then(|info| info.get_u64(ASSET_INDEX_INFO_KEY))
-            .and_then(|value| u32::try_from(value).ok())
-        {
-            Some(asset_index) => self.asset_indices.rcu(|m| {
-                m.insert(full_symbol, asset_index);
-            }),
-            // vault tokens are synthesized locally to value balances and are never
-            // submitted, so the venue assigns them no asset index to carry
-            None if coin.starts_with(VAULT_TOKEN_PREFIX) => {}
-            // without an index we cannot address the asset on the wire, so a market we
-            // have never indexed is untradable rather than merely stale
-            None if self.asset_indices.get_cloned(&full_symbol).is_none() => log::warn!(
-                "Instrument '{full_symbol}' carries no '{ASSET_INDEX_INFO_KEY}' info value \
-                 and has no cached asset index; orders for it will be rejected"
-            ),
-            None => log::warn!(
-                "Instrument '{full_symbol}' carries no '{ASSET_INDEX_INFO_KEY}' info value; \
-                 leaving the cached asset index unchanged"
-            ),
+    pub(crate) fn merge_instruments(&self, instruments: &[InstrumentAny]) {
+        if instruments.is_empty() {
+            return;
         }
 
+        self.cache_asset_indices(instruments);
         self.instruments.rcu(|m| {
-            m.insert(full_symbol, instrument.clone());
-            // HTTP responses only include coins, external code may lookup by coin
-            m.insert(coin, instrument.clone());
+            for instrument in instruments {
+                m.insert(instrument.symbol().inner(), instrument.clone());
+                m.insert(instrument.raw_symbol().inner(), instrument.clone());
+            }
         });
 
-        // Composite key allows disambiguating same coin across PERP and SPOT
-        if let Ok(product_type) = HyperliquidProductType::from_symbol(full_symbol.as_str()) {
-            self.instruments_by_coin.rcu(|m| {
-                m.insert((coin, product_type), instrument.clone());
-
-                // Secondary alias key for two distinct callers:
-                //
-                // * Spot raw_symbols are either `@{pair_index}` or slash format
-                //   (e.g., "PURR/USDC"); spot balance/position reconciliation
-                //   maps the venue token name (e.g., "PURR") to instruments via
-                //   this alias.
-                // * Order submission paths split `instrument_id.symbol` on `-`
-                //   to derive a coin key. For HIP-3 perps with wildcard-bearing
-                //   venue names, the sanitized base in `instrument_id.symbol`
-                //   (e.g., "dex:STREAMABCDxxxx") differs from `raw_symbol` /
-                //   `coin` (e.g., "dex:STREAMABCD****"), so an alias on the
-                //   sanitized base lets that lookup resolve.
-                //
-                // For outcomes the alias is the `+<encoding>` token form
-                // (matching the `coin` field on `spotClearinghouseState`);
-                // for perps / spots it is the leading symbol segment.
-                // `cache_alias_for_symbol` keeps the two rules co-located so
-                // every caller derives the same key.
-                //
-                // Keep aliases on their original venue market while refreshing
-                // its definition, canonical spot pairs are cached first.
-                if let Some(alias_ustr) = cache_alias_for_symbol(full_symbol.as_str())
-                    .map(|alias| Ustr::from(alias.as_str()))
-                {
-                    let key = (alias_ustr, product_type);
-                    if alias_ustr != coin
-                        && m.get(&key)
-                            .is_none_or(|cached| cached.raw_symbol() == instrument.raw_symbol())
-                    {
-                        m.insert(key, instrument.clone());
+        let by_coin: Vec<_> = instruments
+            .iter()
+            .filter_map(|instrument| {
+                let symbol = instrument.symbol();
+                match HyperliquidProductType::from_symbol(symbol.as_str()) {
+                    Ok(product_type) => Some((instrument, product_type)),
+                    Err(_) => {
+                        log::warn!("Unable to determine product type for symbol: {symbol}");
+                        None
                     }
                 }
+            })
+            .collect();
+
+        if !by_coin.is_empty() {
+            self.instruments_by_coin.rcu(|m| {
+                for (instrument, product_type) in &by_coin {
+                    cache_coin_aliases(m, instrument, *product_type);
+                }
             });
-        } else {
-            log::warn!("Unable to determine product type for symbol: {full_symbol}");
+        }
+    }
+
+    fn cache_asset_indices(&self, instruments: &[InstrumentAny]) {
+        let cached = self.asset_indices.load();
+        let mut pending = AHashMap::new();
+
+        for instrument in instruments {
+            let full_symbol = instrument.symbol().inner();
+            let coin = instrument.raw_symbol().inner();
+            match instrument
+                .info()
+                .and_then(|info| info.get_u64(ASSET_INDEX_INFO_KEY))
+                .and_then(|value| u32::try_from(value).ok())
+            {
+                Some(asset_index) => {
+                    pending.insert(full_symbol, asset_index);
+                }
+                // vault tokens are synthesized locally to value balances and are never
+                // submitted, so the venue assigns them no asset index to carry
+                None if coin.starts_with(VAULT_TOKEN_PREFIX) => {}
+                // without an index we cannot address the asset on the wire, so a market we
+                // have never indexed is untradable rather than merely stale
+                None if !pending.contains_key(&full_symbol)
+                    && !cached.contains_key(&full_symbol) =>
+                {
+                    log::warn!(
+                        "Instrument '{full_symbol}' carries no '{ASSET_INDEX_INFO_KEY}' info value \
+                         and has no cached asset index; orders for it will be rejected"
+                    );
+                }
+                None => log::warn!(
+                    "Instrument '{full_symbol}' carries no '{ASSET_INDEX_INFO_KEY}' info value; \
+                     leaving the cached asset index unchanged"
+                ),
+            }
+        }
+
+        drop(cached);
+
+        if !pending.is_empty() {
+            self.asset_indices.rcu(|m| {
+                m.extend(pending.iter().map(|(symbol, index)| (*symbol, *index)));
+            });
         }
     }
 
@@ -4241,6 +4249,52 @@ fn perp_dex_asset_index_base(dex_index: usize) -> u32 {
     }
 }
 
+fn cache_coin_aliases(
+    cache: &mut AHashMap<(Ustr, HyperliquidProductType), InstrumentAny>,
+    instrument: &InstrumentAny,
+    product_type: HyperliquidProductType,
+) {
+    let full_symbol = instrument.symbol().inner();
+    let coin = instrument.raw_symbol().inner();
+
+    // Composite key allows disambiguating same coin across PERP and SPOT
+    cache.insert((coin, product_type), instrument.clone());
+
+    // Secondary alias key for two distinct callers:
+    //
+    // * Spot raw_symbols are either `@{pair_index}` or slash format
+    //   (e.g., "PURR/USDC"); spot balance/position reconciliation
+    //   maps the venue token name (e.g., "PURR") to instruments via
+    //   this alias.
+    // * Order submission paths split `instrument_id.symbol` on `-`
+    //   to derive a coin key. For HIP-3 perps with wildcard-bearing
+    //   venue names, the sanitized base in `instrument_id.symbol`
+    //   (e.g., "dex:STREAMABCDxxxx") differs from `raw_symbol` /
+    //   `coin` (e.g., "dex:STREAMABCD****"), so an alias on the
+    //   sanitized base lets that lookup resolve.
+    //
+    // For outcomes the alias is the `+<encoding>` token form
+    // (matching the `coin` field on `spotClearinghouseState`);
+    // for perps / spots it is the leading symbol segment.
+    // `cache_alias_for_symbol` keeps the two rules co-located so
+    // every caller derives the same key.
+    //
+    // Keep aliases on their original venue market while refreshing
+    // its definition, canonical spot pairs are cached first.
+    if let Some(alias_ustr) =
+        cache_alias_for_symbol(full_symbol.as_str()).map(|alias| Ustr::from(alias.as_str()))
+    {
+        let key = (alias_ustr, product_type);
+        if alias_ustr != coin
+            && cache
+                .get(&key)
+                .is_none_or(|cached| cached.raw_symbol() == instrument.raw_symbol())
+        {
+            cache.insert(key, instrument.clone());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -5453,8 +5507,7 @@ mod tests {
                 .unwrap(),
         );
 
-        client.cache_instrument(&canonical);
-        client.cache_instrument(&non_canonical);
+        client.merge_instruments(&[canonical.clone(), non_canonical.clone()]);
 
         let instruments_by_coin = client.instruments_by_coin.load();
         let by_base = instruments_by_coin
@@ -5476,8 +5529,7 @@ mod tests {
         refreshed.size_precision = 3;
         refreshed.size_increment = Quantity::from("0.001");
         let refreshed = InstrumentAny::CurrencyPair(refreshed);
-        client.cache_instrument(&refreshed);
-        client.cache_instrument(&non_canonical);
+        client.merge_instruments(&[refreshed.clone(), non_canonical]);
 
         let resolved = client
             .get_or_create_instrument(&Ustr::from("HYPE"), Some(HyperliquidProductType::Spot))
@@ -5681,11 +5733,13 @@ mod tests {
         let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
 
         client.cache_instrument(&perp_with_asset_index("NEW-USD-PERP", Some(42)));
+        let asset_indices = client.asset_indices.load();
         client.cache_instrument(&perp_with_asset_index("NEW-USD-PERP", None));
         client.cache_instrument(&perp_with_asset_index("OTHER-USD-PERP", None));
 
         assert_eq!(client.get_asset_index("NEW-USD-PERP"), Some(42));
         assert_eq!(client.get_asset_index("OTHER-USD-PERP"), None);
+        assert!(Arc::ptr_eq(&asset_indices, &client.asset_indices.load()));
     }
 
     fn btc_history_client() -> HyperliquidHttpClient {

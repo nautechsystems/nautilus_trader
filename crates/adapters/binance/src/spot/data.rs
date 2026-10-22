@@ -781,11 +781,19 @@ fn spot_ticker_data_type(instrument_id: InstrumentId) -> DataType {
     )
 }
 
-fn upsert_instrument(
+fn upsert_instruments(
     cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    instrument: InstrumentAny,
+    instruments: &[InstrumentAny],
 ) {
-    cache.insert(instrument.id(), instrument);
+    if instruments.is_empty() {
+        return;
+    }
+
+    cache.rcu(|cache| {
+        for instrument in instruments {
+            cache.insert(instrument.id(), instrument.clone());
+        }
+    });
 }
 
 fn parse_spot_depth_snapshot(
@@ -1583,9 +1591,7 @@ impl DataClient for BinanceSpotDataClient {
         self.spawn_command(async move {
             match http.request_instruments_with_config(&provider, us).await {
                 Ok(instruments) => {
-                    for instrument in &instruments {
-                        upsert_instrument(&instruments_cache, instrument.clone());
-                    }
+                    upsert_instruments(&instruments_cache, &instruments);
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -1628,9 +1634,7 @@ impl DataClient for BinanceSpotDataClient {
         self.spawn_command(async move {
             match http.request_instruments_with_config(&provider, us).await {
                 Ok(all_instruments) => {
-                    for instrument in &all_instruments {
-                        upsert_instrument(&instruments, instrument.clone());
-                    }
+                    upsert_instruments(&instruments, &all_instruments);
 
                     let instrument = all_instruments
                         .into_iter()

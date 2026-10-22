@@ -243,9 +243,7 @@ impl CoinbaseDataClient {
             }
         });
 
-        for instrument in &instruments {
-            self.ws_client.update_instrument(instrument.clone()).await;
-        }
+        self.ws_client.update_instruments(&instruments).await;
 
         log::debug!("Bootstrapped {} instruments", instruments.len());
         Ok(instruments)
@@ -847,9 +845,7 @@ impl DataClient for CoinbaseDataClient {
                         }
                     });
 
-                    for instrument in &instruments {
-                        ws.update_instrument(instrument.clone()).await;
-                    }
+                    ws.update_instruments(&instruments).await;
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,

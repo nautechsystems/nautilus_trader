@@ -373,6 +373,7 @@ impl PolymarketDataClient {
                     attempt < max_retries && needs_resolution_hydration(condition_id, outcome)
                 };
 
+                // Resolution admission can yield, so cache and publish each leg together
                 for (condition_id, outcome) in &outcomes {
                     if should_retry_hydration(condition_id, outcome) {
                         continue;

@@ -330,12 +330,21 @@ impl DatabentoHistoricalClient {
             }
         }
 
-        for instrument in &instruments {
-            self.price_precisions
-                .insert(instrument.id().symbol, instrument.price_precision());
-        }
+        self.cache_price_precisions(&instruments);
 
         Ok(instruments)
+    }
+
+    fn cache_price_precisions(&self, instruments: &[InstrumentAny]) {
+        if instruments.is_empty() {
+            return;
+        }
+
+        self.price_precisions.rcu(|precisions| {
+            for instrument in instruments {
+                precisions.insert(instrument.id().symbol, instrument.price_precision());
+            }
+        });
     }
 
     /// Fetches quote ticks for the given parameters.
@@ -1209,6 +1218,40 @@ mod tests {
         assert_eq!(deltas[1].order.order_id, 3);
         assert_eq!(deltas[1].flags, 0);
         assert_eq!(deltas[1].sequence, 3);
+    }
+
+    #[rstest]
+    fn test_definition_precision_batch_merges_and_last_symbol_wins(
+        historical_client: DatabentoHistoricalClient,
+    ) {
+        let mut first = nautilus_model::instruments::stubs::crypto_perpetual_ethusdt();
+        first.id = "FIRST.GLBX".into();
+        first.price_precision = 3;
+        let mut second = first.clone();
+        second.id = "SECOND.GLBX".into();
+        second.price_precision = 5;
+        let mut latest = first.clone();
+        latest.id = "FIRST.XNAS".into();
+        latest.price_precision = 7;
+        historical_client.set_price_precision("RETAINED".into(), 9);
+        historical_client.set_price_precision("FIRST".into(), 1);
+
+        historical_client.cache_price_precisions(&[
+            InstrumentAny::CryptoPerpetual(first),
+            InstrumentAny::CryptoPerpetual(second),
+            InstrumentAny::CryptoPerpetual(latest),
+        ]);
+
+        assert_eq!(historical_client.price_precisions.len(), 3);
+
+        for (symbol, precision) in [("RETAINED", 9), ("FIRST", 7), ("SECOND", 5)] {
+            assert_eq!(
+                historical_client
+                    .resolve_price_precision(&InstrumentId::new(symbol.into(), "GLBX".into()), None)
+                    .unwrap(),
+                precision
+            );
+        }
     }
 
     #[rstest]

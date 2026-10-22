@@ -318,6 +318,15 @@ impl DeriveExecutionClient {
     ///
     /// Returns an error if instrument identity or price and size increments are invalid.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) -> anyhow::Result<()> {
+        let instrument_id = self.register_instrument_precision(&instrument)?;
+        self.instruments.insert(instrument_id, Arc::new(instrument));
+        Ok(())
+    }
+
+    fn register_instrument_precision(
+        &self,
+        instrument: &DeriveInstrument,
+    ) -> anyhow::Result<InstrumentId> {
         let instrument_id = format_instrument_id(instrument.instrument_name)?;
         anyhow::ensure!(
             instrument.tick_size > Decimal::ZERO,
@@ -336,8 +345,7 @@ impl DeriveExecutionClient {
             price_increment.precision,
             size_increment.precision,
         );
-        self.instruments.insert(instrument_id, Arc::new(instrument));
-        Ok(())
+        Ok(instrument_id)
     }
 
     /// Spawns a fire-and-forget task tracked in `pending_tasks` for teardown.
@@ -407,9 +415,22 @@ impl DeriveExecutionClient {
             .cloned()
             .collect();
 
-        for instrument in instruments {
-            self.cache_native_instrument(&instrument)?;
-        }
+        let mut pending = Vec::with_capacity(instruments.len());
+        let result: anyhow::Result<()> = (|| {
+            for instrument in &instruments {
+                let definition = Self::native_instrument(instrument)?;
+                let instrument_id = self.register_instrument_precision(&definition)?;
+                pending.push((instrument_id, Arc::new(definition)));
+            }
+
+            Ok(())
+        })();
+
+        self.instruments.rcu(|cache| {
+            cache.extend(pending.iter().cloned());
+        });
+
+        result?;
 
         self.core.set_instruments_initialized();
         Ok(())
@@ -511,6 +532,10 @@ impl DeriveExecutionClient {
     }
 
     fn cache_native_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        self.cache_instrument(Self::native_instrument(instrument)?)
+    }
+
+    fn native_instrument(instrument: &InstrumentAny) -> anyhow::Result<DeriveInstrument> {
         let info = instrument
             .info()
             .context("Derive instrument has no venue metadata")?;
@@ -521,8 +546,7 @@ impl DeriveExecutionClient {
             "Derive metadata identity does not match {}",
             instrument.id(),
         );
-        self.cache_instrument(definition)?;
-        Ok(())
+        Ok(definition)
     }
 
     fn reconciliation_context(&self) -> DeriveReconciliationContext {
@@ -6959,6 +6983,99 @@ mod tests {
             Some((2, 3))
         );
         assert!(client.core.instruments_initialized());
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_validation_failure_retains_successful_prefix() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from(DERIVE),
+            *DERIVE_VENUE,
+            OmsType::Netting,
+            AccountId::from("DERIVE-001"),
+            AccountType::Margin,
+            None,
+            cache.clone(),
+        );
+        let client = DeriveExecutionClient::new(core, test_config()).unwrap();
+        let perp = sample_derive_instrument();
+        let option: DeriveInstrument =
+            serde_json::from_str(include_str!("../test_data/options/instrument_eth.json")).unwrap();
+        let retained: DeriveInstrument =
+            serde_json::from_str(include_str!("../test_data/spot/instrument_eth.json")).unwrap();
+        let retained_id = format_instrument_id(retained.instrument_name).unwrap();
+        client.cache_instrument(retained.clone()).unwrap();
+        let before = client.instruments.load();
+
+        for definition in [&perp, &option] {
+            let instrument = parse_derive_instrument_any(definition, UnixNanos::default())
+                .unwrap()
+                .unwrap();
+            cache.borrow_mut().add_instrument(instrument).unwrap();
+        }
+
+        let ordered: Vec<_> = cache
+            .borrow()
+            .instruments(&DERIVE_VENUE, None)
+            .iter()
+            .map(|instrument| instrument.id())
+            .collect();
+        let invalid_id = ordered[1];
+        let mut invalid = cache.borrow().instrument(&invalid_id).unwrap().clone();
+        match &mut invalid {
+            InstrumentAny::CryptoPerpetual(instrument) => instrument.info = None,
+            InstrumentAny::CryptoOption(instrument) => instrument.info = None,
+            _ => unreachable!(),
+        }
+
+        cache.borrow_mut().add_instrument(invalid).unwrap();
+
+        let error = client.ensure_instruments_initialized().await.unwrap_err();
+
+        assert_eq!(error.to_string(), "Derive instrument has no venue metadata");
+        assert_eq!(
+            cache
+                .borrow()
+                .instruments(&DERIVE_VENUE, None)
+                .iter()
+                .map(|instrument| instrument.id())
+                .collect::<Vec<_>>(),
+            ordered
+        );
+        assert_eq!(client.instruments.len(), 2);
+        assert!(!client.core.instruments_initialized());
+        assert!(!client.instruments.contains_key(&invalid_id));
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&invalid_id),
+            None
+        );
+        let after = client.instruments.load();
+        assert!(Arc::ptr_eq(&before[&retained_id], &after[&retained_id]));
+
+        for expected in [&perp, &option, &retained] {
+            let id = format_instrument_id(expected.instrument_name).unwrap();
+            if id == invalid_id {
+                continue;
+            }
+
+            assert_eq!(
+                serde_json::to_value(&after[&id]).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+
+        let precision = if ordered[0] == format_instrument_id(perp.instrument_name).unwrap() {
+            (2, 3)
+        } else {
+            (1, 2)
+        };
+
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&ordered[0]),
+            Some(precision)
+        );
     }
 
     #[rstest]

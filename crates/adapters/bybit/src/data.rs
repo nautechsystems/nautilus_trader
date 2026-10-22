@@ -2008,10 +2008,13 @@ impl DataClient for BybitDataClient {
             for product_type in product_types {
                 match http.request_instruments(product_type, None, None).await {
                     Ok(instruments) => {
-                        for instrument in instruments {
-                            upsert_instrument(&instruments_cache, instrument.clone());
-                            all_instruments.push(instrument);
-                        }
+                        instruments_cache.rcu(|cache| {
+                            for instrument in &instruments {
+                                cache.insert(instrument.id(), instrument.clone());
+                            }
+                        });
+
+                        all_instruments.extend(instruments);
                     }
                     Err(e) => {
                         log::error!("Failed to fetch instruments for {product_type:?}: {e:?}");

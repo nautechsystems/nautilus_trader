@@ -1401,13 +1401,26 @@ impl HyperliquidWebSocketClient {
     ///
     /// Any existing instrument with the same raw_symbol will be replaced.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        self.merge_instruments(&[instrument]);
+    }
+
+    pub(crate) fn merge_instruments(&self, instruments: &[InstrumentAny]) {
+        if instruments.is_empty() {
+            return;
+        }
+
         let cmd_tx = self.cache_tx.lock();
-        let coin = instrument.raw_symbol().inner();
-        self.instruments.insert(coin, instrument.clone());
+        self.instruments.rcu(|cache| {
+            for instrument in instruments {
+                cache.insert(instrument.raw_symbol().inner(), instrument.clone());
+            }
+        });
 
         // Before connect() the handler isn't running; this send will fail and that's expected
         // because connect() replays the instruments via InitializeInstruments
-        let _ = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument));
+        for instrument in instruments {
+            let _ = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument.clone()));
+        }
     }
 
     /// Returns a shared reference to the instrument cache.
@@ -2999,6 +3012,64 @@ mod tests {
         }
 
         assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn batch_cache_merges_disjoint_updates_and_preserves_commands() {
+        let ws_client = HyperliquidWebSocketClient::new(
+            Some("wss://test".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        *ws_client.cache_tx.lock() = sender;
+        let mut first = crypto_perpetual_ethusdt();
+        first.raw_symbol = "FIRST".into();
+        first.ts_event = 17.into();
+        let mut second = first.clone();
+        second.id = "BTCUSDT.HYPERLIQUID".into();
+        second.raw_symbol = "SECOND".into();
+        second.ts_event = 29.into();
+        let batches = [
+            vec![InstrumentAny::CryptoPerpetual(first)],
+            vec![InstrumentAny::CryptoPerpetual(second)],
+        ];
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            for batch in &batches {
+                let client = &ws_client;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    client.merge_instruments(batch);
+                });
+            }
+        });
+
+        assert_eq!(ws_client.instruments.len(), 2);
+        let mut received = AHashMap::new();
+
+        for _ in 0..2 {
+            let HandlerCommand::UpdateInstrument(instrument) = receiver.try_recv().unwrap() else {
+                panic!("expected UpdateInstrument");
+            };
+
+            received.insert(instrument.raw_symbol().inner(), instrument);
+        }
+
+        for instrument in batches.iter().flatten() {
+            let key = instrument.raw_symbol().inner();
+            let expected = serde_json::to_value(instrument).unwrap();
+            assert_eq!(
+                serde_json::to_value(ws_client.instruments.get_cloned(&key).unwrap()).unwrap(),
+                expected
+            );
+            assert_eq!(serde_json::to_value(&received[&key]).unwrap(), expected);
+        }
+
+        assert!(receiver.try_recv().is_err());
     }
 
     #[tokio::test]

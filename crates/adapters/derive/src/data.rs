@@ -758,15 +758,16 @@ impl DeriveDataClient {
         let definitions = fetch_instrument_definitions(&http_client, currency, include_expired)
             .await
             .with_context(|| format!("failed to lazy-load Derive instruments for {currency}"))?;
-        let mut found = false;
-
-        for instrument in parse_instrument_definitions(definitions) {
-            if instrument.id() == instrument_id {
-                found = true;
+        let loaded = parse_instrument_definitions(definitions);
+        instruments.rcu(|cache| {
+            for instrument in &loaded {
+                cache.insert(instrument.id(), instrument.clone());
             }
+        });
 
-            cache_instrument(&instruments, &instrument);
-        }
+        let found = loaded
+            .iter()
+            .any(|instrument| instrument.id() == instrument_id);
 
         if !found {
             anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
@@ -1839,10 +1840,14 @@ impl DataClient for DeriveDataClient {
             for currency in currencies {
                 match fetch_instrument_definitions(&http_client, &currency, include_expired).await {
                     Ok(definitions) => {
-                        for instrument in parse_instrument_definitions(definitions) {
-                            cache_instrument(&instruments_cache, &instrument);
-                            all_instruments.push(instrument);
-                        }
+                        let instruments = parse_instrument_definitions(definitions);
+                        instruments_cache.rcu(|cache| {
+                            for instrument in &instruments {
+                                cache.insert(instrument.id(), instrument.clone());
+                            }
+                        });
+
+                        all_instruments.extend(instruments);
                     }
                     Err(e) => {
                         log::error!("Failed to fetch Derive instruments for {currency}: {e:?}");

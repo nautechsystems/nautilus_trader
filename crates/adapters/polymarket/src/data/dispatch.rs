@@ -2488,60 +2488,107 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn instrument_request_does_not_restore_terminal_condition_live_state() {
+    async fn instrument_requests_skip_terminal_and_retired_cache_updates(
+        #[values(false, true)] multiple: bool,
+        #[values(false, true)] retired: bool,
+    ) {
         let market = gamma_market_recheck_fixture_value();
+        let mut expected_market = serde_json::from_value(market.clone()).unwrap();
+        crate::http::parse::enrich_market_fee_schedule(&mut expected_market);
+
         let state = ScriptedAutoLoadServerState::new(
             vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
             vec![],
         );
         let addr = start_scripted_auto_load_test_server(state).await;
         let (client, mut data_rx) = create_test_client(addr);
-        client
-            .subscriptions
-            .closed_condition_ids
-            .lock()
-            .insert(TEST_CONDITION_ID.to_string());
+        if retired {
+            client.instrument_update_state.lock().retire_generation();
+        } else {
+            client
+                .subscriptions
+                .closed_condition_ids
+                .lock()
+                .insert(TEST_CONDITION_ID.to_string());
+        }
+
         let instrument_id = fixture_yes_instrument_id();
+        let request_id = UUID4::new();
 
-        client
-            .request_instrument(RequestInstrument::new(
-                instrument_id,
-                None,
-                None,
-                Some(client.client_id),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-            ))
-            .expect("instrument request should start");
+        if multiple {
+            client
+                .request_instruments(RequestInstruments::new(
+                    None,
+                    None,
+                    Some(client.client_id),
+                    None,
+                    request_id,
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        } else {
+            client
+                .request_instrument(RequestInstrument::new(
+                    instrument_id,
+                    None,
+                    None,
+                    Some(client.client_id),
+                    request_id,
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        }
 
-        let events = tokio::time::timeout(StdDuration::from_secs(3), async {
-            let mut events = Vec::new();
+        let events = nautilus_testkit::events::collect_data_events_until_response(
+            &mut data_rx,
+            request_id,
+            StdDuration::from_secs(3),
+        )
+        .await;
 
-            loop {
-                let event = data_rx.recv().await.expect("data event channel closed");
-                let is_response = matches!(event, DataEvent::Response(DataResponse::Instrument(_)));
-                events.push(event);
-                if is_response {
-                    return events;
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(DataResponse::Instruments(response)) => {
+                    assert!(multiple);
+                    assert_eq!(response.correlation_id, request_id);
+                    Some(response.data.iter().collect::<Vec<_>>())
                 }
-            }
-        })
-        .await
-        .expect("timed out waiting for instrument response");
+                DataEvent::Response(DataResponse::Instrument(response)) => {
+                    assert!(!multiple);
+                    assert_eq!(response.correlation_id, request_id);
+                    assert_eq!(response.instrument_id, instrument_id);
+                    Some(vec![&response.data])
+                }
+                _ => None,
+            })
+            .expect("instrument response");
+
+        assert_eq!(response.len(), if multiple { 2 } else { 1 });
+
+        let (mut expected, _) = crate::http::gamma::parse_markets_with_transient(
+            &[expected_market],
+            response[0].ts_init(),
+        );
+
+        if !multiple {
+            expected.retain(|instrument| instrument.id() == instrument_id);
+        }
+
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
 
         assert!(
             events
                 .iter()
                 .all(|event| !matches!(event, DataEvent::Instrument(_)))
         );
-        assert!(!client.instruments.load().contains_key(&instrument_id));
-        assert!(
-            !client
-                .subscriptions
-                .token_meta
-                .contains_key(&Ustr::from(TEST_TOKEN_ID_YES))
-        );
+        assert!(client.instruments.load().is_empty());
+        assert!(client.subscriptions.token_meta.is_empty());
     }
 
     #[rstest]
@@ -5992,6 +6039,10 @@ mod tests {
     #[case::retries_available(2)]
     #[tokio::test]
     async fn auto_load_filtered_quote_subscription_stops_without_error(#[case] max_retries: u32) {
+        if super::super::test_logging::run_in_isolated_process() {
+            return;
+        }
+
         let _capture = super::super::test_logging::capture_logs().await;
 
         let state = ScriptedAutoLoadServerState::new(

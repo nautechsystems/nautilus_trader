@@ -1685,10 +1685,8 @@ fn cache_instruments(
         }
     });
 
-    for instrument in instruments {
-        http_client.cache_instrument(instrument);
-        ws_client.cache_instrument(instrument.clone());
-    }
+    http_client.merge_instruments(instruments);
+    ws_client.merge_instruments(instruments);
 }
 
 /// Rebuilds the `allDexsAssetCtxs` mapping from the HTTP client's cached instruments.

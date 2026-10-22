@@ -721,12 +721,10 @@ impl DataClient for CoinApiDataClient {
                 load_instruments(&http, &selections, &price_precisions, clock.get_time_ns())
                     .await?;
 
+            index.extend(&loaded);
             let instruments = loaded
                 .iter()
-                .map(|instrument| {
-                    index.insert(instrument);
-                    instrument.instrument.clone()
-                })
+                .map(|instrument| instrument.instrument.clone())
                 .collect();
 
             let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1085,9 +1083,20 @@ struct InstrumentIndexState {
 
 impl InstrumentIndex {
     fn insert(&self, loaded: &CoinApiInstrument) {
+        self.extend(std::slice::from_ref(loaded));
+    }
+
+    fn extend(&self, loaded: &[CoinApiInstrument]) {
+        if loaded.is_empty() {
+            return;
+        }
+
         self.state.rcu(|state| {
             let mut next = (**state).clone();
-            next.insert(loaded);
+            for instrument in loaded {
+                next.insert(instrument);
+            }
+
             Arc::new(next)
         });
     }
@@ -1838,6 +1847,56 @@ mod tests {
         );
         assert_eq!(index.instrument(original.symbol_id), None);
         assert_eq!(index.instrument(latest.symbol_id), Some(latest.instrument));
+    }
+
+    #[rstest]
+    fn batch_refresh_retains_stream_aliases_and_disjoint_updates() {
+        let symbols: Vec<crate::http::models::Symbol> =
+            serde_json::from_str(include_str!("../test_data/symbols.json")).unwrap();
+        let (loaded, _) = crate::http::parse::parse_instruments(&symbols, 17.into());
+        assert!(loaded.len() >= 2);
+        let index = InstrumentIndex::default();
+        index.begin_stream(&loaded);
+
+        let (refreshed, _) = crate::http::parse::parse_instruments(&symbols, 29.into());
+
+        let refreshed: Vec<_> = refreshed
+            .into_iter()
+            .enumerate()
+            .map(|(i, loaded)| CoinApiInstrument {
+                symbol_id: Ustr::from(&format!("REFRESHED_{i}")),
+                ..loaded
+            })
+            .collect();
+
+        let barrier = std::sync::Barrier::new(2);
+        let split = refreshed.len() / 2;
+        std::thread::scope(|scope| {
+            for batch in [&refreshed[..split], &refreshed[split..]] {
+                scope.spawn(|| {
+                    barrier.wait();
+                    index.extend(batch);
+                });
+            }
+        });
+
+        for (original, refreshed) in loaded.iter().zip(&refreshed) {
+            let id = original.instrument.id();
+            assert_eq!(index.stream_symbol_id(id), Some(original.symbol_id));
+            assert_eq!(index.loaded(id).unwrap().0, refreshed.symbol_id);
+
+            for alias in [original.symbol_id, refreshed.symbol_id] {
+                assert_eq!(
+                    serde_json::to_value(index.instrument(alias).unwrap()).unwrap(),
+                    serde_json::to_value(&refreshed.instrument).unwrap()
+                );
+            }
+        }
+
+        let state = index.state.load();
+        assert_eq!(state.symbol_ids.len(), loaded.len());
+        assert_eq!(state.stream_symbol_ids.len(), loaded.len());
+        assert_eq!(state.by_symbol_id.len(), loaded.len() * 2);
     }
 
     #[rstest]
