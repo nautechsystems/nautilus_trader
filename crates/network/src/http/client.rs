@@ -66,6 +66,11 @@ const NAUTILUS_HTTP2_ADAPTIVE_WINDOW: &str = "NAUTILUS_HTTP2_ADAPTIVE_WINDOW";
 /// caps already enforced on the WebSocket and raw-socket paths.
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
 
+/// Request header asking the server for a compressed buffered response.
+const ACCEPT_ENCODING: &str = "accept-encoding";
+/// Only gzip is advertised: it is the encoding every Binance endpoint honors.
+const GZIP: &str = "gzip";
+
 #[cfg(all(feature = "simulation", madsim))]
 pub(super) const REQUEST_TIMEOUT_MESSAGE: &str = "simulated request deadline elapsed";
 #[cfg(not(all(feature = "simulation", madsim)))]
@@ -602,8 +607,19 @@ impl InnerHttpClient {
         body: Option<RequestBody>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
+        // Buffered responses can be transparently decompressed, so ask for gzip unless the caller
+        // (or the client's default headers) already chose an encoding. Streams deliberately do not
+        // get this header: `get_stream` hands raw bytes to the consumer.
+        let mut headers = headers.unwrap_or_default();
+        let has_accept_encoding = headers
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case(ACCEPT_ENCODING))
+            || self.headers.contains_key(http::header::ACCEPT_ENCODING);
+        if !has_accept_encoding {
+            headers.insert(ACCEPT_ENCODING.to_string(), GZIP.to_string());
+        }
         let stream = self
-            .send_stream_internal(method, url, query, headers, body, timeout_secs)
+            .send_stream_internal(method, url, query, Some(headers), body, timeout_secs)
             .await?;
         let result = self
             .consume_response(stream.response, stream.deadline)
@@ -776,15 +792,23 @@ impl InnerHttpClient {
         }
 
         log::trace!(
-            "Received HTTP response: status={} headers={} body_bytes={}",
+            "Received HTTP response: status={} headers={} wire_bytes={}",
             parts.status,
             parts.headers.len(),
             buf.len()
         );
+        let (body, decoded) =
+            decode_content_encoding(parts.headers.get(http::header::CONTENT_ENCODING), buf, max)?;
+        if decoded {
+            // The body handed to callers is already decoded: a headers map still advertising
+            // `content-encoding: gzip` would make callers (e.g. adapters that negotiated gzip
+            // themselves) inflate it a second time.
+            headers.retain(|key, _| !key.eq_ignore_ascii_case("content-encoding"));
+        }
         Ok(HttpResponse {
             status: HttpStatus::new(parts.status),
             headers,
-            body: buf.freeze(),
+            body,
         })
     }
 }
@@ -792,6 +816,44 @@ impl InnerHttpClient {
 enum RequestBody {
     Plain(Vec<u8>),
     Secret(SecretString),
+}
+
+/// Decompresses a buffered response body when the server applied `Content-Encoding: gzip`.
+///
+/// Only the encodings this client advertises are handled; anything else (or a body that fails to
+/// inflate) is reported as an error instead of being handed to callers as corrupted data.
+/// `max` bounds the decompressed size, so a small gzip body cannot inflate without limit.
+/// Returns the body and whether it was decoded.
+fn decode_content_encoding(
+    encoding: Option<&HeaderValue>,
+    body: bytes::BytesMut,
+    max: usize,
+) -> Result<(Bytes, bool), HttpClientError> {
+    let Some(encoding) = encoding.and_then(|value| value.to_str().ok()) else {
+        return Ok((body.freeze(), false));
+    };
+    let encoding = encoding.trim();
+    if encoding.is_empty() || encoding.eq_ignore_ascii_case("identity") {
+        return Ok((body.freeze(), false));
+    }
+    if !encoding.eq_ignore_ascii_case(GZIP) {
+        return Err(HttpClientError::Error(format!(
+            "unsupported HTTP content-encoding '{encoding}'"
+        )));
+    }
+
+    let body = body.freeze();
+    let mut out = Vec::new();
+    let mut reader =
+        std::io::Read::take(flate2::read::GzDecoder::new(body.as_ref()), max as u64 + 1);
+    std::io::Read::read_to_end(&mut reader, &mut out)
+        .map_err(|e| HttpClientError::Error(format!("failed to decode gzip response body: {e}")))?;
+    if out.len() > max {
+        return Err(HttpClientError::Error(format!(
+            "decompressed HTTP response body exceeds maximum of {max} bytes"
+        )));
+    }
+    Ok((Bytes::from(out), true))
 }
 
 impl RequestBody {
