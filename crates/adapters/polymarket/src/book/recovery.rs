@@ -276,12 +276,14 @@ mod tests {
 
         // No owner is stranded: a later event can claim recovery, and a snapshot restores the book
         assert!(tasks.is_empty());
-        assert!(
+        assert_eq!(
             book_sync.record_snapshot_if_subscribed(
                 &active_delta_subs,
                 instrument_id,
+                0.into(),
                 Instant::now()
             ),
+            Ok(true),
             "missing token must not suppress book output"
         );
         assert!(book_sync.claim_recovery(instrument_id).is_some());
@@ -361,14 +363,16 @@ mod tests {
         let accepted = book_sync.record_snapshot_if_subscribed(
             &active_delta_subs,
             instrument_id,
+            0.into(),
             Instant::now(),
         );
         wait_until_async(|| async { tasks.all_finished() }, StdDuration::from_secs(5)).await;
 
         assert!(running, "a failed attempt must not end the recovery");
         assert!(second_owner.is_none());
-        assert!(
+        assert_eq!(
             accepted,
+            Ok(true),
             "a snapshot with the gate open completes the recovery"
         );
         assert!(recovery.is_accepted());

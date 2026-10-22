@@ -23,10 +23,13 @@
 //! also deletes the levels beyond those prices, and the venue's later removals
 //! delete nothing. Other `price_change` batches remain wire-faithful.
 //!
-//! With `compute_effective_deltas` enabled, book snapshots emit only the net
-//! diff against the local book (an empty diff emits nothing), and book snapshots,
-//! price changes, and best bid/ask events older than that book are ignored. After
-//! an epoch reset, the next snapshot seeds the book unchanged.
+//! In both modes, regressing book timestamps suppress deltas and derived quotes
+//! and request native snapshot recovery. Replacement snapshots must cover the
+//! retained baseline and every book-bearing timestamp withheld during recovery.
+//! Equal timestamps retain received order; they cannot establish causal ordering.
+//! With `compute_effective_deltas`, snapshots emit only net changes against the
+//! local book (an empty diff emits nothing). After an epoch reset, the next
+//! snapshot seeds the book unchanged.
 //!
 //! Tick-size changes are handled as book epoch transitions: the local order
 //! book is dropped, incremental `price_change` deltas are gated through the
@@ -52,7 +55,7 @@ use nautilus_common::{
     },
     messages::DataEvent,
 };
-use nautilus_core::{AtomicMap, time::AtomicTime};
+use nautilus_core::{AtomicMap, UnixNanos, time::AtomicTime};
 #[cfg(test)]
 use nautilus_live::task::TaskGroup;
 use nautilus_live::task::TaskSpawner;
@@ -318,13 +321,19 @@ fn start_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
 
 /// Requests a fresh book snapshot for `instrument_id`, starting a recovery
 /// task when this call wins the request.
-fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
+fn request_book_recovery(
+    ctx: &WsMessageContext,
+    instrument_id: InstrumentId,
+    ts_event: Option<UnixNanos>,
+) {
     let outcome = ctx.subscriptions.book_sync.request_recovery_if_subscribed(
         &ctx.subscriptions.active_delta_subs,
         instrument_id,
+        ts_event,
         Instant::now(),
     );
 
+    log::debug!("Book recovery for {instrument_id}: ts_event={ts_event:?}, outcome={outcome:?}");
     if outcome == BookSequenceOutcome::Recover {
         start_book_recovery(ctx, instrument_id);
     }
@@ -333,18 +342,42 @@ fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
 fn reject_book_snapshot(
     ctx: &WsMessageContext,
     instrument_id: InstrumentId,
+    ts_event: Option<UnixNanos>,
     error: PolymarketWsError,
 ) {
+    log::warn!(
+        "Rejected book snapshot for {instrument_id}: ts_event={ts_event:?}, ts_last={:?}, ts_withheld={:?}: {error}",
+        book_timestamp(ctx, instrument_id),
+        ctx.subscriptions
+            .book_sync
+            .withheld_timestamp(instrument_id),
+    );
     let outcome = ctx.subscriptions.book_sync.reject_snapshot_if_subscribed(
         &ctx.subscriptions.active_delta_subs,
         instrument_id,
+        ts_event,
         error,
         Instant::now(),
     );
+    log::debug!("Book snapshot rejection for {instrument_id}: outcome={outcome:?}");
 
     if outcome == BookSequenceOutcome::Recover {
         start_book_recovery(ctx, instrument_id);
     }
+}
+
+fn reject_stale_snapshot(
+    ctx: &WsMessageContext,
+    instrument_id: InstrumentId,
+    ts_event: UnixNanos,
+    floor: UnixNanos,
+) {
+    reject_book_snapshot(
+        ctx,
+        instrument_id,
+        Some(ts_event),
+        PolymarketWsError::InvalidSnapshot(format!("timestamp {ts_event} < minimum {floor}")),
+    );
 }
 
 fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
@@ -365,34 +398,36 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
-            if let Some(book) = comparison_book(ctx, instrument_id) {
-                let ts_event = match parse_timestamp_ms(&snap.timestamp) {
-                    Ok(ts) => ts,
-                    Err(e) => {
-                        log::error!("Failed to parse book snapshot timestamp: {e}");
-                        return;
-                    }
-                };
-
-                if ts_event < book.ts_last {
-                    log::debug!(
-                        "Ignoring stale book snapshot for {instrument_id}: ts_event={ts_event} < ts_last={}",
-                        book.ts_last,
-                    );
-                    return;
-                }
-            }
-
             if let Err(e) =
                 verify_book_snapshot_hash(&snap, meta.min_order_size.as_deref(), meta.neg_risk)
             {
-                log::error!("Rejected book snapshot for {instrument_id}: {e}");
                 reject_book_snapshot(
                     ctx,
                     instrument_id,
+                    None,
                     PolymarketWsError::InvalidSnapshot(e.to_string()),
                 );
 
+                return;
+            }
+
+            let ts_event = match parse_timestamp_ms(&snap.timestamp) {
+                Ok(ts) => ts,
+                Err(e) => {
+                    log::error!("Failed to parse book snapshot timestamp: {e}");
+                    request_book_recovery(ctx, instrument_id, None);
+                    return;
+                }
+            };
+            let ts_last = book_timestamp(ctx, instrument_id);
+            let ts_withheld = ctx
+                .subscriptions
+                .book_sync
+                .withheld_timestamp(instrument_id);
+            if let Some(floor) = ts_last.max(ts_withheld)
+                && ts_event < floor
+            {
+                reject_stale_snapshot(ctx, instrument_id, ts_event, floor);
                 return;
             }
 
@@ -455,11 +490,18 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         // not seed the book or emit deltas, but quote handling
                         // below still runs: quotes are an independent
                         // subscription.
-                        if ctx.subscriptions.book_sync.record_snapshot_if_subscribed(
+                        let acceptance = ctx.subscriptions.book_sync.record_snapshot_if_subscribed(
                             &ctx.subscriptions.active_delta_subs,
                             instrument_id,
+                            ts_event,
                             Instant::now(),
-                        ) {
+                        );
+
+                        if acceptance == Ok(true) {
+                            log::debug!(
+                                "Accepted book snapshot for {instrument_id}: ts_event={ts_event:?}, ts_last={ts_last:?}, ts_withheld={ts_withheld:?}"
+                            );
+
                             if let Some(book) = baseline {
                                 ctx.subscriptions.order_books.insert(instrument_id, book);
                             }
@@ -470,13 +512,16 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                     log::error!("Failed to emit book deltas: {e}");
                                 }
                             }
+                        } else if let Err(floor) = acceptance {
+                            reject_stale_snapshot(ctx, instrument_id, ts_event, floor);
+                            return;
                         }
                     }
                     None => {
                         // The snapshot could not seed the book; without an
                         // accepted snapshot the book stays gated inside the
                         // current episode.
-                        request_book_recovery(ctx, instrument_id);
+                        request_book_recovery(ctx, instrument_id, Some(ts_event));
                     }
                 }
             }
@@ -550,13 +595,13 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     continue;
                 }
 
-                if let Some(book) = comparison_book(ctx, instrument_id)
-                    && ts_event < book.ts_last
+                if let Some(ts_last) = book_timestamp(ctx, instrument_id)
+                    && ts_event < ts_last
                 {
                     log::warn!(
-                        "Ignoring stale price change for {instrument_id}: ts_event={ts_event} < ts_last={}",
-                        book.ts_last,
+                        "Rejecting stale price change for {instrument_id}: ts_event={ts_event} < ts_last={ts_last}",
                     );
+                    request_book_recovery(ctx, instrument_id, Some(ts_event));
                     continue;
                 }
 
@@ -571,6 +616,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         .validate_incremental_if_subscribed(
                             &ctx.subscriptions.active_delta_subs,
                             instrument_id,
+                            ts_event,
                             Instant::now(),
                         ) {
                         BookSequenceOutcome::Accept => {
@@ -820,8 +866,8 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             // Book epoch transition; see module docs.
             let instrument_id = meta.instrument_id;
             ctx.subscriptions.order_books.remove(&instrument_id);
-
-            request_book_recovery(ctx, instrument_id);
+            ctx.subscriptions.book_sync.reset_timestamp(instrument_id);
+            request_book_recovery(ctx, instrument_id, None);
         }
 
         MarketWsMessage::NewMarket(nm) => {
@@ -1180,6 +1226,11 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
             };
 
+            if book_timestamp(ctx, instrument_id).is_some_and(|ts_last| ts_event < ts_last) {
+                log::trace!("Ignoring best bid/ask older than local book for {instrument_id}");
+                return;
+            }
+
             let last_quote = ctx
                 .subscriptions
                 .last_quotes
@@ -1203,10 +1254,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             });
 
             let (bid_top, ask_top) = match comparison_book(ctx, instrument_id) {
-                Some(book) if book.ts_last > ts_event => {
-                    log::trace!("Ignoring best bid/ask older than local book for {instrument_id}");
-                    return;
-                }
                 Some(book) if !ctx.subscriptions.book_sync.book_gated(instrument_id) => (
                     book.best_bid_price().zip(book.best_bid_size()),
                     book.best_ask_price().zip(book.best_ask_size()),
@@ -1254,15 +1301,19 @@ fn emit_quote_if_changed(ctx: &WsMessageContext, instrument_id: InstrumentId, qu
             && existing.ask_size == quote.ask_size
     );
 
-    if emit {
-        ctx.subscriptions.last_quotes.insert(instrument_id, quote);
-        if let Err(e) = ctx
+    ctx.subscriptions.last_quotes.insert(instrument_id, quote);
+
+    if emit
+        && let Err(e) = ctx
             .data_sender
             .send(DataEvent::Data(NautilusData::Quote(quote)))
-        {
-            log::error!("Failed to emit quote tick: {e}");
-        }
+    {
+        log::error!("Failed to emit quote tick: {e}");
     }
+}
+
+fn book_timestamp(ctx: &WsMessageContext, instrument_id: InstrumentId) -> Option<UnixNanos> {
+    Some(ctx.subscriptions.order_books.get(&instrument_id)?.ts_last)
 }
 
 // Effective-delta paths compare against the local book only when that mode is enabled
@@ -10924,11 +10975,14 @@ mod tests {
     #[rstest]
     #[case::valid(None)]
     #[case::invalid_hash(Some("invalid"))]
-    fn stale_snapshot_is_ignored_before_book_and_quote_paths(#[case] hash: Option<&str>) {
+    fn stale_snapshot_is_ignored_before_book_and_quote_paths(
+        #[case] hash: Option<&str>,
+        #[values(false, true)] effective: bool,
+    ) {
         let asset_id = "0xTOKEN_BBA_STALE_BOOK";
         let market = "0xMARKET";
         let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
-        ctx.compute_effective_deltas = true;
+        ctx.compute_effective_deltas = effective;
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
 
         handle_market_message(
@@ -10963,8 +11017,8 @@ mod tests {
             "stale snapshot must not emit book or quote data",
         );
         assert!(
-            !ctx.subscriptions.book_sync.book_gated(instrument_id),
-            "stale snapshot must not gate later book data",
+            ctx.subscriptions.book_sync.book_gated(instrument_id),
+            "stale snapshot must request recovery",
         );
 
         handle_market_message(make_best_bid_ask(market, asset_id, "0.51", "0.52"), &ctx);
@@ -10973,7 +11027,7 @@ mod tests {
         assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
         assert_eq!(quotes[0].bid_price, Price::from("0.51"));
         assert_eq!(quotes[0].ask_price, Price::from("0.52"));
-        assert_eq!(quotes[0].bid_size, Quantity::from("50.00"));
+        assert_eq!(quotes[0].bid_size, Quantity::from("0.00"));
         assert_eq!(quotes[0].ask_size, Quantity::from("300.00"));
 
         let book = ctx.subscriptions.order_books.get(&instrument_id).unwrap();
@@ -10985,11 +11039,13 @@ mod tests {
     }
 
     #[rstest]
-    fn stale_price_change_is_ignored_before_book_and_quote_paths() {
+    fn stale_price_change_is_ignored_before_book_and_quote_paths(
+        #[values(false, true)] effective: bool,
+    ) {
         let asset_id = "0xTOKEN_BBA_STALE_CHANGE";
         let market = "0xMARKET";
         let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
-        ctx.compute_effective_deltas = true;
+        ctx.compute_effective_deltas = effective;
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
 
         handle_market_message(
@@ -10998,7 +11054,7 @@ mod tests {
                 asset_id,
                 &[
                     ("0.49", "100"),
-                    ("0.50", "200"),
+                    ("0.51", "200"),
                     ("0.53", "400"),
                     ("0.52", "300"),
                 ],
@@ -11012,9 +11068,9 @@ mod tests {
                     asset_id: Ustr::from(asset_id),
                     price: "0.51".to_string(),
                     side: PolymarketOrderSide::Buy,
-                    size: "50".to_string(),
+                    size: "0".to_string(),
                     hash: String::new(),
-                    best_bid: Some("0.51".to_string()),
+                    best_bid: Some("0.49".to_string()),
                     best_ask: Some("0.52".to_string()),
                 }],
                 timestamp: "1700000002000".to_string(),
@@ -11044,16 +11100,17 @@ mod tests {
             data_rx.try_recv().is_err(),
             "stale price change must not emit book or quote data",
         );
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
 
-        handle_market_message(make_best_bid_ask(market, asset_id, "0.51", "0.52"), &ctx);
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.49", "0.52"), &ctx);
         assert!(
             emitted_quotes(&mut data_rx).is_empty(),
             "unchanged BBA must not expose stale book sizes",
         );
 
         let book = ctx.subscriptions.order_books.get(&instrument_id).unwrap();
-        assert_eq!(book.best_bid_price(), Some(Price::from("0.51")));
-        assert_eq!(book.best_bid_size(), Some(Quantity::from("50.00")));
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.49")));
+        assert_eq!(book.best_bid_size(), Some(Quantity::from("100.00")));
         assert_eq!(book.best_ask_price(), Some(Price::from("0.52")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("300.00")));
         assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000u64),);
@@ -11165,6 +11222,11 @@ mod tests {
         handle_market_message(make_best_bid_ask(market, asset_id, "0.49", "0.51"), &ctx);
 
         assert!(emitted_quotes(&mut data_rx).is_empty());
+        let quote = ctx.subscriptions.last_quotes.get(&instrument_id).unwrap();
+        assert_eq!(
+            quote.ts_event,
+            UnixNanos::from(1_700_000_003_000_000_000u64)
+        );
     }
 
     #[rstest]
@@ -11277,11 +11339,12 @@ mod tests {
     }
 
     #[rstest]
-    fn pending_drops_price_change_until_snapshot() {
+    fn pending_drops_price_change_until_snapshot(#[values(false, true)] effective: bool) {
         let asset_id_str = "0xTOKEN2";
         let market = "0xMARKET";
 
-        let (ctx, mut data_rx) = make_ws_ctx();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = effective;
         let inst = seed_instrument(
             &ctx,
             asset_id_str,
@@ -11306,13 +11369,19 @@ mod tests {
             "price_change while pending must not emit any events: {events:?}",
         );
 
-        let snap = make_snapshot(
+        let MarketWsMessage::Book(mut snap) = make_snapshot(
             market,
             asset_id_str,
             &[("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")],
-        );
-        handle_market_message(snap, &ctx);
+        ) else {
+            unreachable!();
+        };
+        handle_market_message(MarketWsMessage::Book(snap.clone()), &ctx);
 
+        assert!(!recovery.is_accepted());
+        assert!(data_rx.try_recv().is_err());
+        snap.timestamp = "1700000002000".to_string();
+        handle_market_message(MarketWsMessage::Book(snap), &ctx);
         assert!(recovery.is_accepted());
         assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
         let book = ctx
@@ -13225,10 +13294,9 @@ mod tests {
         assert_eq!(is_crossed(&book), crossed);
     }
 
-    // Wire mode keeps its local book only to prune crossed levels; events older than that book
-    // still emit, and `best_bid_ask` sizes still come from the last quote.
+    // Wire mode retains full snapshots and quote-derived BBA sizes during recovery
     #[rstest]
-    fn wire_mode_local_book_leaves_stale_and_best_bid_ask_paths_unchanged() {
+    fn wire_mode_preserves_snapshot_and_best_bid_ask_output() {
         let asset_id = "0xTOKEN_WIRE_BOOK";
         let market = "0xMARKET";
         let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
@@ -13251,18 +13319,18 @@ mod tests {
 
         while data_rx.try_recv().is_ok() {}
 
-        let mut stale_snapshot = make_snapshot(
+        let mut replacement = make_snapshot(
             market,
             asset_id,
             &[("0.48", "20"), ("0.50", "5"), ("0.53", "6"), ("0.54", "12")],
         );
 
-        let MarketWsMessage::Book(snapshot) = &mut stale_snapshot else {
+        let MarketWsMessage::Book(snapshot) = &mut replacement else {
             unreachable!("make_snapshot must return a book message");
         };
 
-        snapshot.timestamp = "1700000001000".to_string();
-        handle_market_message(stale_snapshot, &ctx);
+        snapshot.timestamp = "1700000002000".to_string();
+        handle_market_message(replacement, &ctx);
         let snapshot_batches = collect_delta_batches(&mut data_rx);
 
         let MarketWsMessage::PriceChange(mut stale_change) =
@@ -13311,13 +13379,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![5]
         );
-        assert_eq!(
-            change_batches
-                .iter()
-                .map(|batch| batch.deltas.len())
-                .collect::<Vec<_>>(),
-            vec![1, 1]
-        );
+        assert!(change_batches.is_empty());
         assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
         assert_eq!(quotes[0].bid_price, Price::from("0.50"));
         assert_eq!(quotes[0].ask_price, Price::from("0.53"));
@@ -13331,16 +13393,8 @@ mod tests {
                     rust_decimal::Decimal::new(500, 2)
                 ),
                 (
-                    rust_decimal::Decimal::new(49, 2),
-                    rust_decimal::Decimal::new(700, 2)
-                ),
-                (
                     rust_decimal::Decimal::new(48, 2),
                     rust_decimal::Decimal::new(2000, 2)
-                ),
-                (
-                    rust_decimal::Decimal::new(47, 2),
-                    rust_decimal::Decimal::new(100, 2)
                 ),
             ]
         );
@@ -13516,11 +13570,15 @@ mod tests {
 
         // Open the delta gate without touching the manually seeded book so the
         // preceding price change still applies to an empty book.
-        assert!(ctx.subscriptions.book_sync.record_snapshot_if_subscribed(
-            &ctx.subscriptions.active_delta_subs,
-            instrument_id,
-            Instant::now(),
-        ));
+        assert_eq!(
+            ctx.subscriptions.book_sync.record_snapshot_if_subscribed(
+                &ctx.subscriptions.active_delta_subs,
+                instrument_id,
+                0.into(),
+                Instant::now(),
+            ),
+            Ok(true)
+        );
 
         handle_market_message(make_price_change(market, asset_id_str, "0.45", "20"), &ctx);
 

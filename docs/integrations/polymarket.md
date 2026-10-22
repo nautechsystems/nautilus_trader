@@ -2047,7 +2047,8 @@ flowchart LR
 ```
 
 All three venue message paths converge on the same quote tick stream. Deduplication compares prices
-and sizes with the last emitted quote regardless of which message type produced it.
+and sizes with the last accepted quote regardless of which message type produced it. An unchanged
+quote advances the cached timestamp without publication, including for quote-only subscriptions.
 
 ##### `best_bid_ask` handling
 
@@ -2062,8 +2063,8 @@ follows:
 - Without effective deltas, or while book updates are gated pending a valid snapshot, a side
   keeps the previous quote size when its top price matches. A moved or unknown side has zero size.
 
-The adapter ignores events older than the last emitted quote or, with effective deltas, the local
-book. It also rejects locked, crossed, out-of-range, and off-grid events.
+In both modes, the adapter ignores events older than the last accepted quote or the local book.
+It also rejects locked, crossed, out-of-range, and off-grid events.
 
 An empty price, a bid at or below zero, or an ask at or above one is a missing side. By default,
 `drop_quotes_missing_side` drops the event. When missing sides are allowed, the missing price uses
@@ -2088,6 +2089,27 @@ Polymarket also sends hashed book updates that omit fields included in the serve
 such as `tick_size` and `last_trade_price`. The adapter accepts these updates without hash
 verification because their exact hash preimage is unavailable. Snapshots without a hash remain
 compatible.
+
+#### Book timestamp ordering
+
+In both emission modes, a `book` or `price_change` older than the retained local book is rejected
+before its deltas or derived quotes are published. For book-delta subscribers, rejection starts
+native snapshot recovery. Other instruments in the same payload continue normally.
+
+Recovery withholds book incrementals until a usable snapshot passes the native subscription-write
+gate and covers both the retained baseline and the newest withheld book-bearing timestamp. Parsed
+timestamps from snapshots that pass the existing hash policy also count when later level parsing
+fails. A newer incremental, an independent quote, or elapsed time cannot complete recovery.
+
+Equal timestamps keep received order. Venue timestamps cannot resolve a snapshot and withheld update
+within the same millisecond, so recovery does not guarantee causal ordering for that case. A forward
+timestamp jump can gate recovery until timestamps catch up or a reconnect or tick-size epoch reset
+clears the floor. No wall-clock plausibility threshold is applied.
+
+Quote subscriptions remain independent during recovery. A usable snapshot blocked only by a pending
+subscription write retains its existing quote output. Top-only `best_bid_ask` events do not initiate
+book recovery. Raw mode retains full snapshots and quote-derived BBA sizes; effective mode retains
+snapshot diffs and no-op suppression. The raw WebSocket client API is unchanged.
 
 #### Price change bursts
 
