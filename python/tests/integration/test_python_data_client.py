@@ -1676,11 +1676,7 @@ def test_failed_lifecycle_releases_background_tasks_and_cache(operation, launch)
         else:
             asyncio.run(hosted())
 
-    message = (
-        "readiness timeout while waiting for engine connections"
-        if operation == "connect"
-        else "Failed to disconnect data clients: PYTHON"
-    )
+    message = f"Failed to {operation} data clients: PYTHON"
     with pytest.raises(RuntimeError, match=message) as error:
         run()
 
