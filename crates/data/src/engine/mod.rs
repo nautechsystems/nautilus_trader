@@ -178,6 +178,7 @@ pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     config: DataEngineConfig,
+    is_stopped: bool,
     msgbus_priority: u32,
     subscriptions_external: SubscriptionRegistry<(ClientId, SubscriptionKey), SubscribeCommand>,
     clients: IndexMap<ClientId, DataClientAdapter>,
@@ -254,6 +255,7 @@ impl DataEngine {
             clock,
             cache,
             config,
+            is_stopped: false,
             msgbus_priority: 10, // High-priority for built-in component
             subscriptions_external: SubscriptionRegistry::default(),
             clients: IndexMap::new(),
@@ -456,6 +458,8 @@ impl DataEngine {
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
     pub fn start(&mut self) {
+        self.is_stopped = false;
+
         for client in self.get_clients_mut() {
             if client.start().is_err() {
                 log::error!("Failed to start data client {}", client.client_id());
@@ -483,6 +487,8 @@ impl DataEngine {
 
     /// Stops all registered data clients and bar aggregator timers.
     pub fn stop(&mut self) {
+        self.is_stopped = true;
+
         for client in self.get_clients_mut() {
             if client.stop().is_err() {
                 log::error!("Failed to stop data client {}", client.client_id());
@@ -500,6 +506,8 @@ impl DataEngine {
 
     /// Resets all registered data clients and clears engine state.
     pub fn reset(&mut self) {
+        self.is_stopped = false;
+
         for client in self.get_clients_mut() {
             match client.reset() {
                 Ok(()) => client.clear_subscription_state(),
@@ -790,11 +798,15 @@ impl DataEngine {
     ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
+        // Retire queued subscriptions after stop while preserving received data and cleanup
         match &cmd {
+            DataCommand::Subscribe(_) if self.is_stopped => return,
             DataCommand::Subscribe(_) | DataCommand::Unsubscribe(_) => self.command_count += 1,
             DataCommand::Request(_) => self.request_count += 1,
             #[cfg(feature = "defi")]
             DataCommand::DefiRequest(_) => self.request_count += 1,
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(_) if self.is_stopped => return,
             #[cfg(feature = "defi")]
             DataCommand::DefiSubscribe(_) | DataCommand::DefiUnsubscribe(_) => {
                 self.command_count += 1;
