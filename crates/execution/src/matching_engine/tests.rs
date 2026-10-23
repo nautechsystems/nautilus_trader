@@ -4314,6 +4314,46 @@ fn test_market_to_limit_stops_after_first_book_level(#[values(false, true)] defe
         engine.core.get_order(id).unwrap().limit_price,
         Some(Price::from("100.00"))
     );
+    drop(cached);
+    drop(cache);
+    drop(saved);
+    events.borrow_mut().clear();
+    engine
+        .process_order_book_delta(&OrderBookDelta::new(
+            engine.instrument.id(),
+            BookAction::Update,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("100.00"),
+                Quantity::from("3.000"),
+                1,
+            ),
+            RecordFlag::F_LAST as u8,
+            4,
+            2.into(),
+            2.into(),
+        ))
+        .unwrap();
+
+    if deferred {
+        for event in events.borrow().iter() {
+            engine.cache.borrow_mut().update_order(event).unwrap();
+        }
+    }
+
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .map(OrderEventAny::event_type)
+            .collect::<Vec<_>>(),
+        vec![OrderEventType::Filled]
+    );
+    let cache = engine.cache.borrow();
+    let cached = cache.order(&id).unwrap();
+    assert_eq!(cached.status(), OrderStatus::Filled);
+    assert_eq!(cached.filled_qty(), Quantity::from("3.000"));
+    assert!(!engine.core.order_exists(id));
 }
 
 #[rstest]
@@ -5613,7 +5653,7 @@ fn test_market_fill_immediately_purges_closed_order_fill_counter(
 #[case::intermediate_depth_fok("10.000", "5.000", TimeInForce::Fok)]
 fn test_reduce_only_consumes_executable_qty(
     #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
-    #[values(OrderType::Market, OrderType::Limit)] order_type: OrderType,
+    #[values(OrderType::Market, OrderType::Limit, OrderType::MarketToLimit)] order_type: OrderType,
     #[case] order_qty: &str,
     #[case] level_qty: &str,
     #[case] time_in_force: TimeInForce,
@@ -6123,8 +6163,16 @@ fn test_queue_cap_consumes_only_fills_and_reverts_fok(
 fn test_market_to_limit_fok_reverts_unexecuted_levels(
     #[case] side: OrderSide,
     #[case] prices: [&str; 3],
+    #[values(false, true)] liquidity_consumption: bool,
+    #[values(false, true)] synthetic: bool,
+    #[values(false, true)] deferred: bool,
 ) {
-    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, true, false);
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, liquidity_consumption, false);
+    if deferred {
+        let captured = events.clone();
+        engine.set_event_handler(Rc::new(move |event| captured.borrow_mut().push(event)));
+    }
+
     engine.book.clear(1, 1.into());
     for (idx, price) in prices.iter().enumerate() {
         engine
@@ -6145,6 +6193,12 @@ fn test_market_to_limit_fok_reverts_unexecuted_levels(
             .unwrap();
     }
 
+    if synthetic {
+        engine.set_fill_model(FillModelHandle::new(TestBookFillModel {
+            book: engine.book.clone(),
+        }));
+    }
+
     let mut order = OrderTestBuilder::new(OrderType::MarketToLimit)
         .instrument_id(engine.instrument.id())
         .client_order_id(ClientOrderId::from("MTL-FOK"))
@@ -6155,15 +6209,25 @@ fn test_market_to_limit_fok_reverts_unexecuted_levels(
         .build();
     process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
 
-    assert!(
-        !events
+    assert_eq!(
+        events
             .borrow()
             .iter()
-            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+            .map(OrderEventAny::event_type)
+            .collect::<Vec<_>>(),
+        vec![OrderEventType::Canceled]
     );
     assert!(engine.ask_consumption.is_empty());
     assert!(engine.bid_consumption.is_empty());
     assert_eq!(engine.trade_consumption, 0);
+    assert!(!engine.core.order_exists(order.client_order_id()));
+
+    if deferred {
+        for event in events.borrow().iter() {
+            engine.cache.borrow_mut().update_order(event).unwrap();
+        }
+    }
+
     assert_eq!(
         engine
             .cache
@@ -6173,7 +6237,6 @@ fn test_market_to_limit_fok_reverts_unexecuted_levels(
             .status(),
         OrderStatus::Canceled
     );
-    assert!(!engine.core.order_exists(order.client_order_id()));
     events.borrow_mut().clear();
     let mut next = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(engine.instrument.id())
@@ -6181,6 +6244,7 @@ fn test_market_to_limit_fok_reverts_unexecuted_levels(
         .side(side)
         .price(Price::from(prices[2]))
         .quantity(Quantity::from("3.000"))
+        .time_in_force(TimeInForce::Fok)
         .submit(true)
         .build();
     process_cached_order(&mut engine, &mut next, AccountId::from("SIM-001"));
@@ -6199,6 +6263,587 @@ fn test_market_to_limit_fok_reverts_unexecuted_levels(
         .map(|price| (Price::from(*price), Quantity::from("1.000")))
         .collect();
     assert_eq!(fills, expected);
+}
+
+#[rstest]
+#[case::l2_real(BookType::L2_MBP, false, false, false, OrderSide::Buy)]
+#[case::l2_consumption(BookType::L2_MBP, true, false, true, OrderSide::Sell)]
+#[case::l2_synthetic(BookType::L2_MBP, false, true, true, OrderSide::Sell)]
+#[case::l2_synthetic_consumption(BookType::L2_MBP, true, true, false, OrderSide::Buy)]
+#[case::l3_real(BookType::L3_MBO, false, false, true, OrderSide::Sell)]
+#[case::l3_consumption(BookType::L3_MBO, true, false, false, OrderSide::Buy)]
+#[case::l3_synthetic(BookType::L3_MBO, false, true, false, OrderSide::Buy)]
+#[case::l3_synthetic_consumption(BookType::L3_MBO, true, true, true, OrderSide::Sell)]
+fn test_market_to_limit_first_price_level(
+    #[case] book_type: BookType,
+    #[case] liquidity_consumption: bool,
+    #[case] synthetic: bool,
+    #[case] deferred: bool,
+    #[case] side: OrderSide,
+    #[values(
+        (TimeInForce::Fok, "2.000"),
+        (TimeInForce::Fok, "3.000"),
+        (TimeInForce::Gtc, "3.000"),
+        (TimeInForce::Ioc, "2.000")
+    )]
+    scenario: (TimeInForce, &str),
+) {
+    let (mut engine, events) = custom_book_engine(book_type, liquidity_consumption, false);
+    engine.book.clear(1, 1.into());
+    let (first, deeper) = if side == OrderSide::Buy {
+        (Price::from("100.00"), Price::from("101.00"))
+    } else {
+        (Price::from("101.00"), Price::from("100.00"))
+    };
+    let levels = if book_type == BookType::L3_MBO {
+        vec![(first, "1.000"), (first, "1.000"), (deeper, "1.000")]
+    } else {
+        vec![(first, "2.000"), (deeper, "1.000")]
+    };
+
+    for (idx, (price, size)) in levels.into_iter().enumerate() {
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                BookAction::Add,
+                BookOrder::new(side.opposite(), price, Quantity::from(size), idx as u64 + 1),
+                RecordFlag::F_LAST as u8,
+                1,
+                1.into(),
+                1.into(),
+            ))
+            .unwrap();
+    }
+
+    if synthetic {
+        engine.set_fill_model(FillModelHandle::new(TestBookFillModel {
+            book: engine.book.clone(),
+        }));
+    }
+
+    if deferred {
+        let captured = events.clone();
+        engine.set_event_handler(Rc::new(move |event| captured.borrow_mut().push(event)));
+    }
+
+    let (time_in_force, quantity) = scenario;
+    let quantity = Quantity::from(quantity);
+    let mut order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(engine.instrument.id())
+        .side(side)
+        .quantity(quantity)
+        .time_in_force(time_in_force)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+
+    let canceled = time_in_force == TimeInForce::Fok && quantity > Quantity::from("2.000");
+    let rests = time_in_force != TimeInForce::Fok && quantity > Quantity::from("2.000");
+    assert_eq!(engine.core.order_exists(order.client_order_id()), rests);
+
+    if deferred {
+        for event in events.borrow().iter() {
+            engine.cache.borrow_mut().update_order(event).unwrap();
+        }
+    }
+
+    let saved = events.borrow();
+    let fills: Vec<_> = saved
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    let expected = if canceled {
+        vec![]
+    } else if book_type == BookType::L3_MBO && (!liquidity_consumption || synthetic) {
+        vec![(first, Quantity::from("1.000")); 2]
+    } else {
+        vec![(first, Quantity::from("2.000"))]
+    };
+    assert_eq!(fills, expected);
+    assert_eq!(
+        saved
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Updated(_)))
+            .count(),
+        usize::from(!canceled)
+    );
+    let cached = engine
+        .cache
+        .borrow()
+        .try_order_owned(&order.client_order_id())
+        .unwrap();
+    assert_eq!(
+        cached.status(),
+        if canceled {
+            OrderStatus::Canceled
+        } else if rests {
+            OrderStatus::Accepted
+        } else {
+            OrderStatus::Filled
+        }
+    );
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if canceled { "0.000" } else { "2.000" })
+    );
+
+    if !canceled {
+        assert_eq!(cached.price(), Some(first));
+    }
+
+    let consumption = if side == OrderSide::Buy {
+        &engine.ask_consumption
+    } else {
+        &engine.bid_consumption
+    };
+
+    if liquidity_consumption && !synthetic && !canceled {
+        assert_eq!(consumption.len(), 1);
+        assert_eq!(
+            consumption[&first.raw()],
+            (Quantity::from("2.000").raw(), Quantity::from("2.000").raw())
+        );
+    } else {
+        assert!(consumption.is_empty());
+    }
+}
+
+#[rstest]
+#[case::filled("1.000", OrderStatus::Filled)]
+#[case::canceled("0.500", OrderStatus::Canceled)]
+fn test_market_to_limit_fok_caps_same_price_reduce_only_fills(
+    #[case] size: &str,
+    #[case] status: OrderStatus,
+    #[values(false, true)] deferred: bool,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L3_MBO, false, false);
+    engine.book.clear(1, 1.into());
+    for (idx, (price, quantity)) in [("1501.00", size), ("1501.00", size), ("1502.00", "3.000")]
+        .into_iter()
+        .enumerate()
+    {
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from(price),
+                    Quantity::from(quantity),
+                    idx as u64 + 1,
+                ),
+                RecordFlag::F_LAST as u8,
+                1,
+                1.into(),
+                1.into(),
+            ))
+            .unwrap();
+    }
+
+    let (opening, fill) = pending_position_fill(
+        &engine.instrument,
+        PositionId::from("MTL-REDUCE-POS"),
+        "MTL-REDUCE-OPEN",
+        OrderSide::Sell,
+        "1.500",
+    );
+    let position = Position::new(&engine.instrument, fill.clone());
+    engine
+        .cache
+        .borrow_mut()
+        .add_order(opening, Some(position.id), None, false)
+        .unwrap();
+    engine
+        .cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Filled(fill))
+        .unwrap();
+    engine
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    if deferred {
+        let captured = events.clone();
+        engine.set_event_handler(Rc::new(move |event| captured.borrow_mut().push(event)));
+    }
+
+    let mut order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(ClientOrderId::from("MTL-REDUCE-CLOSE"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("3.000"))
+        .time_in_force(TimeInForce::Fok)
+        .reduce_only(true)
+        .submit(true)
+        .build();
+    engine
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), Some(position.id), None, false)
+        .unwrap();
+    engine.process_order(&mut order, AccountId::from("SIM-001"));
+    assert!(!engine.core.order_exists(order.client_order_id()));
+
+    if deferred {
+        for event in events.borrow().iter() {
+            engine.cache.borrow_mut().update_order(event).unwrap();
+        }
+    }
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    let expected = if status == OrderStatus::Filled {
+        vec![
+            (Price::from("1501.00"), Quantity::from("1.000")),
+            (Price::from("1501.00"), Quantity::from("0.500")),
+        ]
+    } else {
+        vec![]
+    };
+    assert_eq!(fills, expected);
+    let cache = engine.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached.status(), status);
+    assert_eq!(
+        cached.quantity(),
+        Quantity::from(if status == OrderStatus::Filled {
+            "1.500"
+        } else {
+            "3.000"
+        })
+    );
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if status == OrderStatus::Filled {
+            "1.500"
+        } else {
+            "0.000"
+        })
+    );
+}
+
+#[rstest]
+#[case::filled("2.000", OrderStatus::Filled)]
+#[case::canceled("3.000", OrderStatus::Canceled)]
+fn test_market_to_limit_fok_ignores_nonexecutable_fills(
+    #[case] quantity: &str,
+    #[case] status: OrderStatus,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(engine.instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(quantity))
+        .time_in_force(TimeInForce::Fok)
+        .submit(true)
+        .build();
+    engine
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine
+        .account_ids
+        .insert(order.trader_id(), AccountId::from("SIM-001"));
+    let fills = [
+        (Price::from("1500.00"), Quantity::from("0.000")),
+        (Price::from("1500.001"), Quantity::from("1.000")),
+        (Price::from("1501.00"), Quantity::from("0.0005")),
+        (Price::from("1501.00"), Quantity::from("1.000")),
+        (Price::from("1500.00"), Quantity::from("0.000")),
+        (Price::from("1501.00"), Quantity::from("1.000")),
+        (Price::from("1502.00"), Quantity::from("10.000")),
+    ];
+    engine
+        .apply_fills(&order, &fills, LiquiditySide::Taker, None, None, None, true)
+        .unwrap();
+    let cached = engine
+        .cache
+        .borrow()
+        .try_order_owned(&order.client_order_id())
+        .unwrap();
+    assert_eq!(cached.status(), status);
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if status == OrderStatus::Filled {
+            "2.000"
+        } else {
+            "0.000"
+        })
+    );
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        if status == OrderStatus::Filled { 2 } else { 0 }
+    );
+}
+
+#[rstest]
+#[case::off_tick_l2("off_tick", BookType::L2_MBP, false, false, false, TimeInForce::Ioc)]
+#[case::off_tick_consumption("off_tick", BookType::L2_MBP, true, false, false, TimeInForce::Ioc)]
+#[case::off_tick_l3("off_tick", BookType::L3_MBO, false, false, false, TimeInForce::Ioc)]
+#[case::off_tick_synthetic("off_tick", BookType::L3_MBO, true, true, false, TimeInForce::Ioc)]
+#[case::off_tick_acknowledged("off_tick", BookType::L2_MBP, false, false, true, TimeInForce::Ioc)]
+#[case::invalid_quantity(
+    "invalid_quantity",
+    BookType::L2_MBP,
+    false,
+    false,
+    false,
+    TimeInForce::Ioc
+)]
+#[case::filled("filled", BookType::L2_MBP, false, false, false, TimeInForce::Ioc)]
+#[case::mixed_ioc("mixed", BookType::L3_MBO, false, false, false, TimeInForce::Ioc)]
+#[case::mixed_gtc("mixed", BookType::L3_MBO, false, false, false, TimeInForce::Gtc)]
+#[case::partial_ioc("partial", BookType::L2_MBP, false, false, false, TimeInForce::Ioc)]
+#[case::empty_book("empty", BookType::L2_MBP, false, false, false, TimeInForce::Ioc)]
+fn test_market_to_limit_normalized_fill_outcome(
+    #[case] scenario: &str,
+    #[case] book_type: BookType,
+    #[case] liquidity_consumption: bool,
+    #[case] synthetic: bool,
+    #[case] use_market_order_acks: bool,
+    #[case] time_in_force: TimeInForce,
+    #[values(false, true)] deferred: bool,
+) {
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.price_increment = Price::from("0.05");
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine = OrderMatchingEngine::new(
+        instrument,
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into(),
+        book_type,
+        OmsType::Netting,
+        AccountType::Margin,
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            liquidity_consumption,
+            use_market_order_acks,
+            ..Default::default()
+        },
+    );
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let captured = events.clone();
+    engine.set_event_handler(Rc::new(move |event| {
+        if !deferred {
+            cache.borrow_mut().update_order(&event).unwrap();
+        }
+
+        captured.borrow_mut().push(event);
+    }));
+    let levels = match scenario {
+        "off_tick" => vec![("1501.01", "2.000")],
+        "partial" => vec![("1501.00", "1.000")],
+        "mixed" => vec![("1501.01", "1.000"), ("1501.05", "2.000")],
+        "empty" => vec![],
+        _ => vec![("1501.00", "2.000")],
+    };
+
+    for (index, (price, size)) in levels.into_iter().enumerate() {
+        let size = if scenario == "invalid_quantity" {
+            // Valid precision metadata with raw bits that cannot be normalized to it.
+            Quantity::from_raw(Quantity::from("0.0001").raw(), 3)
+        } else {
+            Quantity::from(size)
+        };
+        engine
+            .process_order_book_delta(&OrderBookDelta::new(
+                engine.instrument.id(),
+                BookAction::Add,
+                BookOrder::new(OrderSide::Sell, Price::from(price), size, index as u64 + 1),
+                RecordFlag::F_LAST as u8,
+                1,
+                1.into(),
+                1.into(),
+            ))
+            .unwrap();
+    }
+
+    if scenario == "off_tick" {
+        assert_eq!(engine.book.best_ask_price(), Some(Price::from("1501.01")));
+    }
+
+    if synthetic {
+        engine.set_fill_model(FillModelHandle::new(TestBookFillModel {
+            book: engine.book.clone(),
+        }));
+    }
+
+    let mut order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(engine.instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .time_in_force(time_in_force)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+
+    let canceled = matches!(scenario, "off_tick" | "invalid_quantity");
+    let partial = matches!(scenario, "mixed" | "partial");
+    let expected_status = if canceled {
+        OrderStatus::Canceled
+    } else if scenario == "empty" {
+        OrderStatus::Rejected
+    } else if partial {
+        // Preserve the existing partial IOC remainder behavior in this focused fix.
+        OrderStatus::Accepted
+    } else {
+        OrderStatus::Filled
+    };
+    assert_eq!(engine.core.order_exists(order.client_order_id()), partial);
+    let mut expected_events = if use_market_order_acks {
+        vec![OrderEventType::Accepted]
+    } else {
+        vec![]
+    };
+    expected_events.extend(if canceled {
+        vec![OrderEventType::Canceled]
+    } else if scenario == "empty" {
+        vec![OrderEventType::Rejected]
+    } else if partial {
+        vec![
+            OrderEventType::Updated,
+            OrderEventType::Filled,
+            OrderEventType::Accepted,
+        ]
+    } else {
+        vec![OrderEventType::Updated, OrderEventType::Filled]
+    });
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .map(OrderEventAny::event_type)
+            .collect::<Vec<_>>(),
+        expected_events
+    );
+
+    if deferred {
+        for event in events.borrow().iter() {
+            engine.cache.borrow_mut().update_order(event).unwrap();
+        }
+    }
+
+    let cached = engine
+        .cache
+        .borrow()
+        .try_order_owned(&order.client_order_id())
+        .unwrap();
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if canceled || scenario == "empty" {
+            "0.000"
+        } else if partial {
+            "1.000"
+        } else {
+            "2.000"
+        })
+    );
+    let expected_price = if canceled || scenario == "empty" {
+        None
+    } else {
+        Some(Price::from(if scenario == "mixed" {
+            "1501.05"
+        } else {
+            "1501.00"
+        }))
+    };
+    assert_eq!(cached.price(), expected_price);
+    assert_eq!(engine.core.order_exists(order.client_order_id()), partial);
+
+    if partial {
+        assert_eq!(
+            engine
+                .core
+                .get_order(order.client_order_id())
+                .unwrap()
+                .limit_price,
+            expected_price
+        );
+    }
+}
+
+#[rstest]
+#[case::zero_only(false)]
+#[case::zero_then_valid(true)]
+fn test_market_to_limit_ioc_zero_fill_candidates(#[case] has_valid_fill: bool) {
+    let (mut engine, events) = custom_book_engine(BookType::L2_MBP, false, false);
+    let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(engine.instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .time_in_force(TimeInForce::Ioc)
+        .submit(true)
+        .build();
+    engine
+        .cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine
+        .account_ids
+        .insert(order.trader_id(), AccountId::from("SIM-001"));
+    // Normal book ingestion rejects zero-size adds; exercise the consumer boundary directly.
+    let mut fills = vec![(Price::from("1500.00"), Quantity::from("0.000"))];
+
+    if has_valid_fill {
+        fills.push((Price::from("1501.00"), Quantity::from("1.000")));
+    }
+
+    engine
+        .apply_fills(&order, &fills, LiquiditySide::Taker, None, None, None, true)
+        .unwrap();
+    let expected_events = if has_valid_fill {
+        vec![OrderEventType::Updated, OrderEventType::Filled]
+    } else {
+        vec![OrderEventType::Canceled]
+    };
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .map(OrderEventAny::event_type)
+            .collect::<Vec<_>>(),
+        expected_events
+    );
+    let cache = engine.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(
+        cached.status(),
+        if has_valid_fill {
+            OrderStatus::Filled
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if has_valid_fill { "1.000" } else { "0.000" })
+    );
+    assert_eq!(
+        cached.price(),
+        has_valid_fill.then_some(Price::from("1501.00"))
+    );
+    assert!(!engine.core.order_exists(order.client_order_id()));
 }
 
 #[rstest]
