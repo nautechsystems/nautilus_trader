@@ -148,7 +148,7 @@ fn make_opened(position: &Position) -> PositionOpened {
         signed_qty: position.signed_qty,
         quantity: position.quantity,
         last_qty: position.quantity,
-        last_px: Price::new(position.avg_px_open, 0),
+        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         realized_pnl: position.realized_pnl,

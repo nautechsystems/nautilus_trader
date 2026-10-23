@@ -70,7 +70,7 @@ use nautilus_core::{
     },
     string::formatting::Separable,
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[cfg(not(any(feature = "defi", feature = "high-precision")))]
@@ -567,6 +567,22 @@ impl Money {
         }
 
         Ok(Self { raw, currency })
+    }
+
+    /// Creates money rounded to the native fixed-point scale with midpoint-to-even rounding.
+    ///
+    /// Uses the greater of the native scale and the currency precision. The currency
+    /// identity and its default display precision remain unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the currency precision is invalid or the rounded amount exceeds money bounds.
+    pub fn from_decimal_native(decimal: Decimal, currency: Currency) -> CorrectnessResult<Self> {
+        let rounded = decimal.round_dp_with_strategy(
+            u32::from(FIXED_PRECISION.max(currency.precision)),
+            RoundingStrategy::MidpointNearestEven,
+        );
+        Self::from_decimal_exact(rounded, currency)
     }
 
     /// Creates money without rounding to the currency precision.

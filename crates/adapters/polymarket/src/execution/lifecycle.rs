@@ -2107,7 +2107,7 @@ mod tests {
     fn closed_position(position: &Position) -> Position {
         let mut closed = position.clone();
         closed.side = PositionSide::Flat;
-        closed.signed_qty = 0.0;
+        closed.signed_qty = 0.into();
         closed.quantity = Quantity::zero(position.size_precision);
         closed.ts_closed = Some(position.ts_last);
         closed.duration_ns = DurationNanos::new(1);
@@ -2125,7 +2125,7 @@ mod tests {
             closing_order_id: position.closing_order_id,
             entry: position.entry,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: 0.into(),
             quantity: Quantity::zero(position.size_precision),
             peak_quantity: position.peak_qty,
             last_qty: Quantity::zero(position.size_precision),

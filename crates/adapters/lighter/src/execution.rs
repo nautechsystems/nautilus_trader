@@ -20527,12 +20527,19 @@ mod tests {
             position.apply(fill);
         }
 
+        // The two reductions realize 2 + 17/7 USDC
+        let expected_pnl = Money::from_decimal_native(
+            Decimal::from(31) / Decimal::from(7),
+            Currency::from("USDC"),
+        )
+        .unwrap();
+
         assert_eq!(
             ids,
             ["900001", "900002", "900003", "900004"].map(TradeId::new)
         );
         assert_eq!(position.quantity, Quantity::from("0.1200"));
-        assert_eq!(position.realized_pnl, Some(Money::from("4.42857143 USDC")));
+        assert_eq!(position.realized_pnl, Some(expected_pnl));
     }
 
     #[rstest]

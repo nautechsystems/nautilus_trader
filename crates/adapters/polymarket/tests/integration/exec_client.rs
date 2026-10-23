@@ -3041,7 +3041,7 @@ async fn test_startup_reconciliation_applies_closed_order_fills_with_commissions
     assert_eq!(positions.len(), 1);
     let position = &positions[0];
     assert_eq!(position.quantity, Quantity::from("8.937144"));
-    assert_eq!(position.avg_px_open, 0.56);
+    assert_eq!(position.avg_px_open, dec!(0.56));
     assert_eq!(position.events.len(), 3);
     assert_eq!(
         position.trade_ids.iter().copied().collect::<HashSet<_>>(),

@@ -9898,7 +9898,7 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity, Quantity::from("0.100"));
         assert_eq!(positions[0].signed_decimal_qty(), dec!(0.1));
-        assert_eq!(positions[0].avg_px_open, 2553.01);
+        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
         assert_eq!(
             positions[0].trade_ids.iter().copied().collect::<Vec<_>>(),
             vec![trade_id]
@@ -9912,7 +9912,7 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
             Some(Money::from("-0.08658967 USDC"))
         );
         assert_eq!(
-            positions[0].unrealized_pnl(Price::from("2553.01")),
+            positions[0].unrealized_pnl(Price::from("2553.01")).unwrap(),
             Money::from("0.00000000 USDC")
         );
     }
@@ -9982,8 +9982,8 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
         );
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity, Quantity::from("0.000"));
-        assert_eq!(positions[0].avg_px_open, 2553.01);
-        assert_eq!(positions[0].avg_px_close, Some(2552.59));
+        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
+        assert_eq!(positions[0].avg_px_close, Some(dec!(2552.59)));
         assert_eq!(
             positions[0].trade_ids,
             [trade_id, close_trade_id].into_iter().collect()

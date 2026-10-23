@@ -154,39 +154,6 @@ fn fill_affects_quantity(apply_position: bool, restatement: bool) -> bool {
     apply_position && !restatement
 }
 
-fn position_accepts_price_restatement(position: &Position, fill: &OrderFilled) -> bool {
-    if !position.is_open()
-        || !position.trade_ids.contains(&fill.trade_id)
-        || fill.order_side != position.entry
-    {
-        return false;
-    }
-
-    let Some(existing) = position.events.iter().find(|event| {
-        event.trade_id == fill.trade_id && event.client_order_id == fill.client_order_id
-    }) else {
-        return false;
-    };
-
-    if existing.last_qty != fill.last_qty {
-        return false;
-    }
-
-    let mut latest = None;
-
-    for event in &position.replay_events {
-        let PositionReplayEvent::Filled(existing) = event else {
-            continue;
-        };
-
-        if existing.trade_id == fill.trade_id && existing.client_order_id == fill.client_order_id {
-            latest = Some(existing.last_px);
-        }
-    }
-
-    latest.is_some_and(|price| price != fill.last_px)
-}
-
 fn is_fill_price_restatement(order: &OrderAny, fill: &OrderFilled) -> bool {
     order.events().iter().any(|event| {
         matches!(
@@ -4396,18 +4363,42 @@ impl ExecutionEngine {
         );
         fragments.sort_by_key(|(_, split_rank, _, _)| *split_rank);
 
+        let precision = fragments
+            .iter()
+            .map(|(_, _, qty, _)| qty.precision)
+            .chain(positions.iter().flat_map(|position| {
+                position
+                    .fill_voids
+                    .iter()
+                    .filter(|record| {
+                        (record.event.client_order_id, record.event.trade_id)
+                            == (event.client_order_id, event.trade_id)
+                    })
+                    .map(|record| record.voided_qty.precision)
+            }))
+            .chain([event.voided_qty.precision])
+            .max()
+            .unwrap_or(event.voided_qty.precision);
+
         let mut allocations = IndexMap::<PositionId, (Quantity, Option<Money>)>::new();
-        let mut remaining_qty = event.voided_qty;
+        let mut remaining_qty = rescale_fill_void_qty(event.voided_qty, precision)?;
         for (position_id, _, quantity, _) in fragments.iter().rev() {
             if remaining_qty.is_zero() {
                 break;
             }
-            let removed = remaining_qty.min(*quantity);
-            allocations
+
+            let quantity = rescale_fill_void_qty(*quantity, precision)?;
+            let removed = remaining_qty.min(quantity);
+            let allocation = allocations
                 .entry(*position_id)
-                .and_modify(|allocation| allocation.0 = allocation.0 + removed)
-                .or_insert((removed, None));
-            remaining_qty = remaining_qty - removed;
+                .or_insert((Quantity::zero(precision), None));
+            allocation.0 = allocation
+                .0
+                .checked_add(removed)
+                .ok_or_else(|| anyhow::anyhow!("position fill void allocation overflow"))?;
+            remaining_qty = remaining_qty
+                .checked_sub(removed)
+                .ok_or_else(|| anyhow::anyhow!("position fill void quantity underflow"))?;
         }
         anyhow::ensure!(
             remaining_qty.is_zero(),
@@ -4436,17 +4427,18 @@ impl ExecutionEngine {
                     magnitude
                 };
 
-                allocations
+                let allocation = allocations
                     .entry(*position_id)
-                    .and_modify(|allocation| {
-                        allocation.1 = Some(
-                            allocation
-                                .1
-                                .map_or(removed, |commission| commission + removed),
-                        );
-                    })
-                    .or_insert((Quantity::zero(event.voided_qty.precision), Some(removed)));
-                remaining_commission = remaining_commission - removed;
+                    .or_insert((Quantity::zero(precision), None));
+                allocation.1 = Some(allocation.1.map_or(Ok(removed), |commission| {
+                    commission
+                        .checked_add(removed)
+                        .ok_or_else(|| anyhow::anyhow!("position fill void commission overflow"))
+                })?);
+
+                remaining_commission = remaining_commission
+                    .checked_sub(removed)
+                    .ok_or_else(|| anyhow::anyhow!("position fill void commission underflow"))?;
             }
             anyhow::ensure!(
                 remaining_commission.is_zero(),
@@ -4481,9 +4473,12 @@ impl ExecutionEngine {
             if previous == Some((voided_qty, commission_voided)) {
                 continue;
             }
-            let corrected_qty = previous.map_or(voided_qty, |(prior_qty, _)| {
-                voided_qty.saturating_sub(prior_qty)
-            });
+
+            let prior_qty = previous.map_or(Quantity::zero(precision), |(qty, _)| qty);
+            let prior_qty = rescale_fill_void_qty(prior_qty, precision)?;
+            let corrected_qty = voided_qty
+                .checked_sub(prior_qty)
+                .ok_or_else(|| anyhow::anyhow!("stale position fill void quantity"))?;
 
             // `events` holds the fills since the position was last flat, because `apply_fill`
             // clears it when reopening from flat. A NETTING flip splits one fill across the
@@ -4493,17 +4488,19 @@ impl ExecutionEngine {
             // fragments in `events` while `voided_qty` stays cumulative, so add back what this
             // position already voided. Read this before `apply_fill_void`, whose rebuild
             // re-derives `events` and can move that boundary.
-            let previously_voided = previous
-                .map_or(Quantity::zero(position.size_precision), |(prior_qty, _)| {
-                    prior_qty
-                });
             let current_cycle_qty = position
                 .events
                 .iter()
                 .filter(|fill| {
                     fill.client_order_id == event.client_order_id && fill.trade_id == event.trade_id
                 })
-                .fold(previously_voided, |total, fill| total + fill.last_qty);
+                .try_fold(prior_qty, |total, fill| {
+                    let qty = rescale_fill_void_qty(fill.last_qty, precision)?;
+                    total
+                        .checked_add(qty)
+                        .ok_or_else(|| anyhow::anyhow!("position current cycle quantity overflow"))
+                })?;
+
             let absorbed_prior_cycles = voided_qty > current_cycle_qty;
             let closed_cycles_pnl =
                 position.apply_fill_void(event.clone(), voided_qty, commission_voided)?;
@@ -4722,6 +4719,8 @@ impl ExecutionEngine {
         fill: OrderFilled,
         oms_type: OmsType,
     ) -> anyhow::Result<Vec<PositionEvent>> {
+        let position = Position::new_checked(instrument, fill.clone())?;
+
         if let Some(position_id) = prior_position_id {
             let prior_snapshot = {
                 let cache = self.cache.borrow();
@@ -4749,7 +4748,6 @@ impl ExecutionEngine {
             }
         }
 
-        let position = Position::new(instrument, fill.clone());
         let is_orderless_leg = self.is_leg_fill(&fill)
             && !self.cache.borrow().order_exists(&position.opening_order_id);
         if let Some(position_id) = prior_position_id {
@@ -4840,8 +4838,14 @@ impl ExecutionEngine {
         position: &mut Position,
         fill: &OrderFilled,
     ) -> Option<PositionEvent> {
-        // Apply the fill to the position
-        position.apply(fill);
+        if let Err(e) = position.try_apply(fill) {
+            log::error!(
+                "Failed to apply fill {} to position {}: {e}",
+                fill.trade_id,
+                position.id
+            );
+            return None;
+        }
 
         // Check if position is closed after applying the fill
         let is_closed = position.is_closed();
@@ -4882,7 +4886,7 @@ impl ExecutionEngine {
             .cache
             .borrow()
             .position(&position_id)
-            .is_some_and(|position| position_accepts_price_restatement(&position, fill));
+            .is_some_and(|position| position.accepts_price_restatement(fill));
 
         if !applicable {
             if let Some(position) = self.cache.borrow().position(&position_id) {
@@ -5064,12 +5068,29 @@ impl ExecutionEngine {
             fill.position_id
         };
 
-        let (fill_split1, fill_split2) = fill
-            .split_for_position_flip(position.quantity, position_id_flip, UUID4::new())
-            .expect("Invalid position flip split");
+        let (fill_split1, fill_split2) =
+            match fill.split_for_position_flip(position.quantity, position_id_flip, UUID4::new()) {
+                Ok(fills) => fills,
+                Err(e) => {
+                    log::error!("Failed to split position flip: {e}");
+                    return position_events;
+                }
+            };
 
+        if let Err(e) = Position::new_checked(instrument, fill_split2.clone()) {
+            log::error!("Failed to validate flipped position: {e}");
+            return position_events;
+        }
+
+        // A database error can leave the closing fill applied in memory
         if let Some(position_event) = self.update_position(position, &fill_split1) {
             position_events.push(position_event);
+        } else if !position
+            .events
+            .last()
+            .is_some_and(|event| event.event_id == fill_split1.event_id)
+        {
+            return position_events;
         }
 
         // Snapshot closed position before reusing ID (NETTING mode)
@@ -5164,6 +5185,11 @@ impl ExecutionEngine {
     }
 }
 
+fn rescale_fill_void_qty(qty: Quantity, precision: u8) -> anyhow::Result<Quantity> {
+    qty.checked_rescale(precision)
+        .ok_or_else(|| anyhow::anyhow!("fill void quantity rescaling overflow or precision loss"))
+}
+
 enum SubmissionValidationResult {
     Valid,
     StaleOrder {
@@ -5198,6 +5224,95 @@ mod tests {
     use rstest::*;
 
     use super::*;
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn open_position_rejects_unrepresentable_cost_without_mutating_cache() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache.clone(),
+            None,
+        );
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-COST-UNDERFLOW");
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position_id)
+            .last_qty(Quantity::from("0.0000000000000001"))
+            .last_px(Price::from("0.0000000000000001"))
+            .build();
+
+        let result = engine.open_position(&instrument, None, false, fill, OmsType::Netting);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "position proportional arithmetic underflow"
+        );
+        assert!(cache.borrow().position(&position_id).is_none());
+        assert_eq!(
+            cache
+                .borrow()
+                .positions_total_count(None, None, None, None, None),
+            0
+        );
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case::closing("0.0000000000000001", "1.0000000000000001", "0.0000000000000001")]
+    #[case::opening("1", "1.0000000000000001", "0.0000000000000001")]
+    #[case::split("1", "9999999999999.9999999999999999", "0.1234567890123456")]
+    fn flip_position_rejection_preserves_open_position(
+        #[case] qty: &str,
+        #[case] last_qty: &str,
+        #[case] last_px: &str,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let mut engine = ExecutionEngine::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache.clone(),
+            None,
+        );
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-FLIP-REJECT"))
+            .last_qty(Quantity::from(qty))
+            .last_px(Price::from("1.00000"))
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+        let before = serde_json::to_value(&position).unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        let mut reversing = opening;
+        reversing.trade_id = TradeId::from("T-FLIP-REJECT");
+        reversing.event_id = UUID4::new();
+        reversing.order_side = OrderSide::Sell;
+        reversing.last_qty = Quantity::from(last_qty);
+        reversing.last_px = Price::from(last_px);
+
+        let events = engine.flip_position(&instrument, &mut position, &reversing, OmsType::Netting);
+
+        assert!(events.is_empty());
+        assert_eq!(serde_json::to_value(&position).unwrap(), before);
+        assert_eq!(
+            serde_json::to_value(&*cache.borrow().position(&position.id).unwrap()).unwrap(),
+            before
+        );
+        assert!(
+            cache
+                .borrow()
+                .position_snapshots(Some(&position.id), None)
+                .is_empty()
+        );
+        assert!(cache.borrow().is_position_open(&position.id));
+        assert!(!cache.borrow().is_position_closed(&position.id));
+    }
 
     #[rstest]
     fn netting_positions_open_for_report_scopes_positions_by_account() {

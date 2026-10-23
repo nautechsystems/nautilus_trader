@@ -29,7 +29,6 @@ use std::{
     cell::{Ref, RefCell},
     fmt::Debug,
     rc::Rc,
-    str::FromStr,
     sync::LazyLock,
     time::Duration,
 };
@@ -1717,7 +1716,10 @@ impl ExecutionManager {
                 })
                 .collect();
 
-            if positions.iter().any(|position| position.avg_px_open <= 0.0) {
+            if positions
+                .iter()
+                .any(|position| position.avg_px_open <= Decimal::ZERO)
+            {
                 return false;
             }
 
@@ -4210,8 +4212,8 @@ impl ExecutionManager {
             venue_signed_qty
         );
 
-        let current_avg_px = if position.avg_px_open > 0.0 {
-            Decimal::from_str(&position.avg_px_open.to_string()).ok()
+        let current_avg_px = if position.avg_px_open > Decimal::ZERO {
+            Some(position.avg_px_open)
         } else {
             None
         };

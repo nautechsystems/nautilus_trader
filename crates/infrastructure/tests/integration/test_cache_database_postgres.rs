@@ -1515,6 +1515,10 @@ mod serial_tests {
         let unrealized = Money::from_str_exact("0.000007 USD").unwrap();
         let mut position_snapshot = PositionSnapshot::from(&position, Some(unrealized));
         position_snapshot.realized_pnl = Some(Money::from_str_exact("0.000003 USD").unwrap());
+        position_snapshot.avg_px_open =
+            Decimal::from_str("0.6666666666666666666666666667").unwrap();
+        position_snapshot.avg_px_close =
+            Some(Decimal::from_str("0.9999999999999999999999999999").unwrap());
         pg_cache.add_position_snapshot(&position_snapshot).unwrap();
         pg_cache.close().unwrap();
 

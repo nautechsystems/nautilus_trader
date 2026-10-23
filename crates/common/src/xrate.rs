@@ -304,15 +304,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_indirect_route_is_deterministic_across_hash_seeds() {
-        let pairs = [
+    fn test_indirect_route_is_deterministic_across_hash_seeds(
+        #[values(false, true)] reverse: bool,
+    ) {
+        let mut pairs = [
             ("AAA/BBB", dec!(2)),
             ("BBB/DDD", dec!(3)),
             ("AAA/CCC", dec!(5)),
             ("CCC/DDD", dec!(7)),
         ];
+
+        if reverse {
+            pairs.reverse();
+        }
+
         let seeds = [(0, 0, 0, 0), (1, 2, 3, 4), (5, 6, 7, 8), (10, 20, 30, 40)];
-        let mut iteration_orders = Vec::new();
 
         let rates = seeds.map(|(k0, k1, k2, k3)| {
             let random_state = RandomState::with_seeds(k0, k1, k2, k3);
@@ -323,7 +329,6 @@ mod tests {
                 quotes_bid.insert(Ustr::from(pair), rate);
                 quotes_ask.insert(Ustr::from(pair), rate);
             }
-            iteration_orders.push(quotes_bid.keys().copied().collect::<Vec<_>>());
 
             get_exchange_rate(
                 Ustr::from("AAA"),
@@ -335,12 +340,6 @@ mod tests {
             .unwrap()
         });
 
-        assert!(
-            iteration_orders
-                .windows(2)
-                .any(|orders| orders[0] != orders[1]),
-            "Explicit hash seeds must produce different raw iteration orders",
-        );
         assert_eq!(rates, [Some(dec!(6)); 4]);
     }
 

@@ -73,7 +73,7 @@ use nautilus_model::{
     },
     instruments::{
         CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny, OptionContract,
-        stubs::{betting, crypto_perpetual_ethusdt, default_fx_ccy},
+        stubs::{audusd_sim, betting, crypto_perpetual_ethusdt, default_fx_ccy},
     },
     orders::{Order, OrderAny},
     position::Position,
@@ -2612,6 +2612,62 @@ fn test_run_books_cash_fill_allowed_by_balance_or_borrowing(
 }
 
 #[rstest]
+fn test_run_preserves_cash_balance_micro_profit() {
+    let mut instrument = audusd_sim();
+    instrument.size_precision = 2;
+    instrument.size_increment = Quantity::from("0.01");
+    instrument.min_quantity = Some(Quantity::from("0.01"));
+    instrument.lot_size = Some(Quantity::from("0.01"));
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue = SimulatedVenueConfig::builder()
+        .venue(Venue::from("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Cash)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1 USD"), Money::zero(Currency::AUD())])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    engine.add_venue(venue).unwrap();
+    engine.add_instrument(&instrument.into_any()).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("0.01"),
+        ))
+        .unwrap();
+
+    let data = ["0.12340", "0.12340", "0.12350", "0.12350"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, price)| {
+            quote_with_size(
+                instrument_id,
+                price,
+                price,
+                "1.00",
+                (index as u64 + 1) * 1_000_000_000,
+            )
+        })
+        .collect();
+
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_closed(None, Some(&instrument_id), None, None, None);
+    let expected = Money::from_str_exact("0.000001 USD").unwrap();
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].realized_pnl, Some(expected));
+    assert_eq!(
+        account_total(&engine, "SIM", Currency::USD()),
+        Some(Money::from_str_exact("1.000001 USD").unwrap()),
+    );
+}
+
+#[rstest]
 fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
     #[values(false, true)] quote_at_expiration: bool,
 ) {
@@ -3616,6 +3672,7 @@ fn test_twap_exec_algorithm_routes_and_slices_order(crypto_perpetual_ethusdt: Cr
     assert_eq!(
         positions[0]
             .unrealized_pnl(Price::from("1000.00"))
+            .unwrap()
             .as_decimal(),
         Decimal::ZERO
     );
@@ -5756,7 +5813,7 @@ fn test_itm_option_expiry_timer_exercises_without_data_at_expiration() {
     let underlying_open = cache.positions_open(None, Some(&underlying_id), None, None, None);
     assert_eq!(underlying_open.len(), 1);
     assert_eq!(underlying_open[0].quantity, Quantity::from(100));
-    assert_eq!(underlying_open[0].avg_px_open, 150.0);
+    assert_eq!(underlying_open[0].avg_px_open, dec!(150.0));
 }
 
 #[rstest]

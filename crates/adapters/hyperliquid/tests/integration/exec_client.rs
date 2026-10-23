@@ -6729,8 +6729,8 @@ fn assert_query_recovery_cache(
     assert_eq!(positions[0].side, PositionSide::Long);
     assert_eq!(positions[0].quantity, Quantity::from("0.00100"));
     assert_eq!(
-        rust_decimal::Decimal::try_from(positions[0].avg_px_open)
-            .unwrap()
+        positions[0]
+            .avg_px_open
             .round_dp(u32::from(positions[0].price_precision)),
         dec!(90600)
     );

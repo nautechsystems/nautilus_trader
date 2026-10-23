@@ -1080,6 +1080,41 @@ fn test_oms_type_returns_actual_position_oms(mut cache: Cache) {
 }
 
 #[rstest]
+#[case::infer_netting(OmsType::Unspecified, true, OmsType::Netting)]
+#[case::preserve_hedging(OmsType::Hedging, true, OmsType::Hedging)]
+#[case::unknown(OmsType::Unspecified, false, OmsType::Unspecified)]
+fn test_add_position_resolves_unspecified_oms(
+    #[case] oms_type: OmsType,
+    #[case] canonical_id: bool,
+    #[case] expected: OmsType,
+    #[values(false, true)] orderless: bool,
+) {
+    let mut position = snapshot_test_position();
+    if canonical_id {
+        position.id = PositionId::new(format!(
+            "{}-{}",
+            position.instrument_id, position.strategy_id
+        ));
+    }
+
+    let mut cache = Cache::default();
+    if orderless {
+        cache
+            .add_position_without_order(&position, oms_type)
+            .unwrap();
+    } else {
+        cache.add_position(&position, oms_type).unwrap();
+    }
+
+    assert_eq!(cache.oms_type(&position.id), Some(expected));
+
+    cache.clear_index();
+    cache.build_index();
+
+    assert_eq!(cache.oms_type(&position.id), Some(expected));
+}
+
+#[rstest]
 fn test_cache_positions_loads_persisted_position_oms() {
     let position = snapshot_test_position();
     let position_id = position.id;
@@ -4332,6 +4367,7 @@ fn test_update_position_from_fill_applies_to_canonical_state(
     #[case] side: OrderSide,
     #[case] last_qty: Quantity,
     #[case] expected_closed: bool,
+    #[values(false, true)] missing_position_id: bool,
 ) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let opening_fill = OrderFilledSpec::builder()
@@ -4372,7 +4408,14 @@ fn test_update_position_from_fill_applies_to_canonical_state(
     expected.apply(&fill);
     let expected_state = expected.clone_without_events();
 
-    let state = cache.update_position_from_fill(position_id, &fill).unwrap();
+    let mut actual = fill;
+    if missing_position_id {
+        actual.position_id = None;
+    }
+
+    let state = cache
+        .update_position_from_fill(position_id, &actual)
+        .unwrap();
 
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
@@ -4438,7 +4481,7 @@ fn test_update_position_from_adjustment_applies_in_place_and_reverts(
 
     let adjustment = funding_adjustment(&position, "-3 USD");
     let mut expected = position.clone();
-    expected.apply_adjustment(adjustment);
+    expected.apply_adjustment(adjustment).unwrap();
     let prior = position.clone_without_events();
 
     cache
@@ -4547,6 +4590,36 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
     );
     assert!(cache.is_position_open(&position_id));
     assert!(!cache.is_position_closed(&position_id));
+}
+
+#[rstest]
+fn test_update_position_from_fill_rejection_preserves_canonical_state(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let opening = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::from("P-REJECT-FILL"))
+        .build();
+    let position = Position::new(&instrument, opening.clone());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    let mut invalid = opening;
+    invalid.client_order_id = ClientOrderId::from("O-DUPLICATE-OTHER");
+    invalid.event_id = UUID4::new();
+
+    let result = cache.update_position_from_fill(position.id, &invalid);
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "`fill.trade_id` already contained in `trade_ids`"
+    );
+    assert_eq!(
+        serde_json::to_value(&*cache.position(&position.id).unwrap()).unwrap(),
+        serde_json::to_value(&position).unwrap()
+    );
+    assert!(cache.is_position_open(&position.id));
+    assert!(!cache.is_position_closed(&position.id));
 }
 
 // -- DATA ------------------------------------------------------------------------------------

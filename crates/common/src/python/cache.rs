@@ -2009,6 +2009,9 @@ impl Cache {
 
     /// Adds the `position` to the cache.
     ///
+    /// For `OmsType.Unspecified`, IDs matching `{instrument_id}-{strategy_id}` resolve to
+    /// `OmsType.Netting`. Other IDs retain the supplied OMS type.
+    ///
     /// # Errors
     ///
     /// Returns an error if persisting the position to the backing database fails. After

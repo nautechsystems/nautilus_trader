@@ -263,6 +263,13 @@ def test_generate_positions_report_structure() -> None:
     assert "quote_currency" not in report.columns
     assert "base_currency" not in report.columns
     assert "settlement_currency" not in report.columns
+    assert report.loc[str(position.id), "venue_order_ids"] == [
+        str(value) for value in position.venue_order_ids()
+    ]
+    assert "replay_events" not in report.columns
+    assert "fill_voids" not in report.columns
+    assert "instrument_class" not in report.columns
+    assert "is_currency_pair" not in report.columns
 
 
 def test_generate_positions_report_snapshot_flag() -> None:

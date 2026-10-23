@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{UUID4, UnixNanos};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -53,7 +54,7 @@ pub struct PositionChanged {
     /// The position side.
     pub side: PositionSide,
     /// The current signed quantity (positive for position side `LONG`, negative for `SHORT`).
-    pub signed_qty: f64,
+    pub signed_qty: Decimal,
     /// The current open quantity.
     pub quantity: Quantity,
     /// The peak directional quantity reached by the position.
@@ -65,9 +66,9 @@ pub struct PositionChanged {
     /// The position quote currency.
     pub currency: Currency,
     /// The average open price.
-    pub avg_px_open: f64,
+    pub avg_px_open: Decimal,
     /// The average close price.
-    pub avg_px_close: Option<f64>,
+    pub avg_px_close: Option<Decimal>,
     /// The realized return for the position.
     pub realized_return: f64,
     /// The realized PnL for the position (including commissions).
@@ -124,6 +125,7 @@ impl PositionChanged {
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -148,13 +150,13 @@ mod tests {
             opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 150.0,
+            signed_qty: dec!(150.0),
             quantity: Quantity::from("150"),
             peak_quantity: Quantity::from("150"),
             last_qty: Quantity::from("50"),
             last_px: Price::from("1.0550"),
             currency: Currency::USD(),
-            avg_px_open: 1.0525,
+            avg_px_open: dec!(1.0525),
             avg_px_close: None,
             realized_return: 0.0,
             realized_pnl: None,
@@ -238,16 +240,16 @@ mod tests {
     fn test_position_changed_different_sides() {
         let mut long_position = create_test_position_changed();
         long_position.side = PositionSide::Long;
-        long_position.signed_qty = 150.0;
+        long_position.signed_qty = dec!(150.0);
 
         let mut short_position = create_test_position_changed();
         short_position.side = PositionSide::Short;
-        short_position.signed_qty = -150.0;
+        short_position.signed_qty = dec!(-150.0);
 
         assert_eq!(long_position.side, PositionSide::Long);
-        assert_eq!(long_position.signed_qty, 150.0);
+        assert_eq!(long_position.signed_qty, dec!(150.0));
 
         assert_eq!(short_position.side, PositionSide::Short);
-        assert_eq!(short_position.signed_qty, -150.0);
+        assert_eq!(short_position.signed_qty, dec!(-150.0));
     }
 }

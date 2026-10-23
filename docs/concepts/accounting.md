@@ -1,8 +1,8 @@
 # Accounting
 
-The accounting subsystem tracks balances, margins, and PnL for each account the platform interacts with. This
-guide covers the data model, the query API that strategies use, and the conventions adapter authors must
-follow to stay consistent across venues.
+The accounting subsystem tracks balances, margins, and PnL for each account. This guide covers the data model,
+the query API that strategies use, and the conventions adapter authors must follow to stay consistent across
+venues.
 
 It applies equally to backtest and live trading. For backtest-specific
 configuration (starting balances, margin-model selection per venue), see
@@ -10,13 +10,12 @@ configuration (starting balances, margin-model selection per venue), see
 
 ## Account types
 
-For live trading and backtests, select Cash, Margin, or Betting with `account_type` when you attach a venue to
-the engine.
+When configuring a venue for live trading or backtests, use `account_type` to select Cash, Margin, or Betting.
 
 Wallet models on-chain wallet state. The Blockchain adapter selects it. Its execution client supports locally
 signed Uniswap V3 market swaps but is not production-ready.
 
-| Account type | Typical use case                                | What the engine locks                                                     |
+| Account type | Typical use case                                | Reservations                                                              |
 | ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
 | Cash         | Spot trading (for example, BTC/USDT, stocks)    | Notional for pending buy orders. Base-asset quantity for pending sells.   |
 | Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
@@ -28,6 +27,16 @@ signed Uniswap V3 market swaps but is not production-ready.
 Cash accounts **settle trades in full**. They have no leverage and thus no concept of margin. Locked balances
 reflect the value reserved for pending orders: the notional value of each pending buy and the quantity each
 pending sell would deliver.
+
+#### Precision and rounding
+
+Cash flows and reservations use checked domain or `Decimal` arithmetic and project to native `Money` precision
+with midpoint-to-even rounding. Balance updates add and subtract `Money` amounts without rounding to currency
+display precision. Currency conversions preserve native `Money` precision too.
+
+See [Precision and settlement](#precision-and-settlement) for the accounting rationale and worked examples.
+
+#### Sell reservations
 
 A sell delivers the instrument's base asset, so the reservation belongs in that asset. Instruments whose
 `base_currency()` is `None`, such as binary options and equities, model no such asset. A pending sell on those
@@ -65,7 +74,7 @@ revalidate later quantity changes.
 
 Margin accounts support instruments that require collateral, such as futures or leveraged crypto perps. They
 track account balances, reserve margin for open orders and positions, and apply a configurable leverage per
-instrument. The engine tracks margin in two scopes. See [Margin scopes](#margin-scopes) below.
+instrument. Margin balances have two scopes. See [Margin scopes](#margin-scopes) below.
 
 **Terms**:
 
@@ -84,8 +93,8 @@ on-chain transaction spends that asset even when the order reduces a position.
 ### Betting accounts
 
 Betting accounts are specialized for venues where you stake an amount to win or lose a fixed payout
-(prediction markets, sports books). The engine locks only the stake required by the venue. Leverage and margin
-do not apply.
+(prediction markets, sports books). They lock only the stake required by the venue. Leverage and margin do not
+apply.
 
 ### Wallet accounts
 
@@ -119,19 +128,22 @@ An `AccountBalance` holds three values in the same currency:
 - `locked`: amount reserved against open orders and positions.
 - `free`: amount available for new orders (`total - locked`).
 
-The **balance invariant** `total == locked + free` must always hold at currency precision.
+The **balance invariant** `total == locked + free` must always hold exactly in the stored Money representation.
+
+### Constructing balances
 
 The Python `AccountBalance(total, locked, free)` constructor requires all three fields up front. Adapter code
-written in Rust has two additional derived constructors that enforce the invariant centrally. Prefer them over
+written in Rust has derived constructors that enforce the invariant centrally. Prefer them over
 `AccountBalance::new` whenever the venue reports only two of the three values:
 
-| Rust constructor                        | When to use                                                              |
-| --------------------------------------- | ------------------------------------------------------------------------ |
-| `AccountBalance::from_total_and_locked` | Venue reports total and locked. `free` is derived from the two.          |
-| `AccountBalance::from_total_and_free`   | Venue reports total and free. `locked` is derived from the two.          |
-| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass-through). |
+| Rust constructor                              | When to use                                                                      |
+| --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `AccountBalance::from_total_and_locked`       | Venue reports total and locked. `free` is derived from the two.                  |
+| `AccountBalance::from_total_and_free`         | Venue reports total and free. `locked` is derived from the two.                  |
+| `AccountBalance::from_money_total_and_locked` | Calculated total and locked are already Money amounts. Retains native precision. |
+| `AccountBalance::new`                         | All three values are already known and consistent (tests, pass-through).         |
 
-Each derived constructor clamps the venue-reported field into `[0, total]` when `total >= 0`,
+Each derived constructor clamps the supplied locked or free amount into `[0, total]` when `total >= 0`,
 so transient overshoots from venue rounding never leave the account in a broken
 state.
 
@@ -163,6 +175,77 @@ The accounting and valuation paths also follow these rules:
 
 See [Portfolio](portfolio.md#equity-and-mark-to-market) for equity formulas, price and xrate selection, snapshot
 metadata, and missing-price query scope.
+
+## Precision and settlement
+
+Position PnL and calculated account balances retain amounts below currency display precision, so small profits
+and fees remain available to later calculations.
+
+### Cost basis and residuals
+
+Financial calculations use checked domain types and `Decimal`:
+
+- Positions derive average prices from retained opening and closing costs. A rounded average never feeds the
+  cost basis.
+- Partial closes allocate opening cost proportionally and retain the unallocated cost. The final close consumes
+  the remaining cost.
+- Positions carry a Decimal PnL remainder below the native `Money` scale into later updates. Reversal fee
+  allocations preserve the original fee total.
+
+Derived `Money` rounds midpoint to even at nine decimal places in standard mode and 16 in high-precision mode,
+or at a finer supported currency precision. Display rounding does not change the stored amount.
+
+Decimal has a 96-bit coefficient and a maximum scale of 28. Inputs must fit exactly; derived arithmetic rounds
+within that bound and rejects overflow or a nonzero value disappearing. PnL sums may absorb a residual smaller
+than one native settlement `Money` unit if Decimal cannot retain it. A disappearing operand of at least one
+native unit still fails. See the
+[full arithmetic contract](positions.md#numerical-precision).
+
+### Worked examples
+
+Both examples use a linear instrument with a multiplier of one, USD prices, and no fees.
+
+#### Profit below a cent
+
+Buy `0.01` units at `0.1234 USD`, then sell them at `0.1235 USD`:
+
+- Purchase cost: `0.01 * 0.1234 = 0.001234 USD`.
+- Sale proceeds: `0.01 * 0.1235 = 0.001235 USD`.
+- Realized PnL and calculated cash-balance increase: `0.000001 USD`.
+
+A two-decimal display shows `0.00 USD`, but the stored profit remains available to later calculations.
+Rounding each cash flow to cents would erase it.
+
+#### Partial closes with a repeating average
+
+Buy three units at `0.10 USD` and four at `0.20 USD`. Opening cost is `1.10 USD`; the average price, `1.10 / 7`,
+repeats. Close at `0.30 USD` in two fills. At standard native precision:
+
+| Action               | Quantity held | Cumulative realized PnL (USD) |
+| -------------------- | ------------- | ----------------------------- |
+| After both buys      | 7             | 0.000000000                   |
+| Sell one at 0.30 USD | 6             | 0.142857143                   |
+| Sell six at 0.30 USD | 0             | 1.000000000                   |
+
+The first sale retains unallocated cost and the difference between Decimal PnL and the rounded `Money` result.
+The final close consumes both remainders: total PnL is `2.10 - 1.10 = 1.00 USD`. Discarding fractional PnL or
+reusing a rounded average can introduce drift.
+
+### Venue cash settlement
+
+Venue settlement rules specify where and how to round booked cash, which can differ from internal PnL.
+With `calculate_account_state=False`, cash and margin accounts skip fill-driven balance calculations and use
+venue-reported balances. FX rollover calculates in Decimal and rounds each posting to currency precision.
+
+CME's [normal futures method (2015)](https://www.cmegroup.com/clearing/files/CME-Money-Calculations-Futures-and-Options.pdf)
+rounds `price * contract value factor` to currency precision at both prices, subtracts those values, then
+multiplies by quantity. Splitting trades at the same price or adding intermediate marks for an unchanged
+holding preserves the total. Midpoints round away from zero. Notional products round after multiplying the
+price change by quantity and the contract value factor.
+
+[Eurex changed variation margin and other cash flows in 2023](https://www.eurex.com/ec-en/find/circulars/clearing-circular-3572446)
+from per-contract rounding to transaction or position rounding, following client demand. Matching a clearing
+statement requires the product's settlement rules; native-precision PnL alone does not reproduce every convention.
 
 ## Margin scopes
 
@@ -256,7 +339,7 @@ mutation methods, including `update_initial_margin`, `update_maintenance_margin`
 
 ### Portfolio-level queries
 
-Margin queries:
+#### Margin queries
 
 - `portfolio.instrument_initial_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
 - `portfolio.instrument_maintenance_margins(venue=..., account_id=...) -> dict[InstrumentId, Money] | None`
@@ -272,6 +355,8 @@ return `None`.
 For account-wide data on cross-margin venues, query the account directly through
 `portfolio.account(venue=venue).account_initial_margin(ccy)`. The returned account is a **detached snapshot**
 and cannot mutate Portfolio state.
+
+#### PnL and valuation queries
 
 PnL, exposure, mark-to-market, and equity queries all accept `venue` and an
 optional `account_id` to scope multi-account venues:

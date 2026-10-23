@@ -14,16 +14,17 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::{
-    IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err, serialization::from_dict_pyo3,
+    IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err,
+    serialization::{from_dict_pyo3, to_dict_pyo3},
+    to_pyvalue_err,
 };
 use pyo3::{
     basic::CompareOp,
     prelude::*,
     types::{PyDict, PyList},
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use rust_decimal::Decimal;
 
-use super::common::commissions_from_vec;
 use crate::{
     enums::{InstrumentClass, OrderSide, PositionSide},
     events::{OrderFilled, PositionAdjusted},
@@ -32,19 +33,33 @@ use crate::{
         Venue, VenueOrderId,
     },
     position::{self, Position},
-    python::instruments::pyobject_to_instrument_any,
+    python::{common::commissions_from_vec, instruments::pyobject_to_instrument_any},
     types::{Currency, Money, Price, Quantity},
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl Position {
-    /// Represents a position in a market.
+    /// An open or closed position in a market.
     ///
-    /// The position ID may be assigned at the trading venue, or can be system
-    /// generated depending on a strategies OMS (Order Management System) settings.
-    /// Replay events and cumulative fill corrections preserve derived state across close and reopen
-    /// cycles.
+    /// # Identity and Replay
+    ///
+    /// The venue may assign the position ID; the strategy's Order Management System (OMS) settings
+    /// control system-generated IDs. Retained replay events and cumulative fill corrections preserve
+    /// derived state across close and reopen cycles.
+    ///
+    /// # Accounting
+    ///
+    /// Financial calculations use checked domain and `Decimal` arithmetic. Decimal has a 96-bit
+    /// coefficient and a maximum scale of 28. Input conversions reject precision loss and overflow;
+    /// derived products, cost sums, division, and proportional intermediates use its finite precision.
+    ///
+    /// - Cost accumulators preserve the cost basis without reusing rounded average prices.
+    /// - Partial reductions retain unallocated cost; the final reduction consumes it.
+    /// - A sub-Money PnL remainder preserves fractional amounts between updates.
+    ///
+    /// `Money` results round midpoint to even at their native fixed-point scale. `realized_return`
+    /// is a floating-point analytics projection and does not feed accounting.
     #[new]
     fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
@@ -137,7 +152,7 @@ impl Position {
 
     #[getter]
     #[pyo3(name = "signed_qty")]
-    fn py_signed_qty(&self) -> f64 {
+    fn py_signed_qty(&self) -> Decimal {
         self.signed_qty
     }
 
@@ -239,13 +254,13 @@ impl Position {
 
     #[getter]
     #[pyo3(name = "avg_px_open")]
-    fn py_avg_px_open(&self) -> f64 {
+    fn py_avg_px_open(&self) -> Decimal {
         self.avg_px_open
     }
 
     #[getter]
     #[pyo3(name = "avg_px_close")]
-    fn py_avg_px_close(&self) -> Option<f64> {
+    fn py_avg_px_close(&self) -> Option<Decimal> {
         self.avg_px_close
     }
 
@@ -338,14 +353,22 @@ impl Position {
         self.is_short()
     }
 
-    /// Returns unrealized P&L based on the last price.
+    /// Returns unrealized PnL at the given price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `Self.try_unrealized_pnl` fails.
     #[pyo3(name = "unrealized_pnl")]
     fn py_unrealized_pnl(&self, last: Price) -> PyResult<Money> {
         self.try_unrealized_pnl(last)
             .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
-    /// Returns total P&L (realized + unrealized) based on the last price.
+    /// Returns total PnL at the given price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `Self.try_total_pnl` fails.
     #[pyo3(name = "total_pnl")]
     fn py_total_pnl(&self, last: Price) -> PyResult<Money> {
         self.try_total_pnl(last)
@@ -380,9 +403,16 @@ impl Position {
     /// - Funding payments (perpetual futures).
     ///
     /// The adjustment event is stored in the position's adjustment history for full audit trail.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if currencies differ, arithmetic overflows, or a quantity change
+    /// cannot be represented.
+    /// An error leaves the position unchanged.
     #[pyo3(name = "apply_adjustment")]
-    fn py_apply_adjustment(&mut self, adjustment: PositionAdjusted) {
-        self.apply_adjustment(adjustment);
+    fn py_apply_adjustment(&mut self, adjustment: PositionAdjusted) -> PyResult<()> {
+        self.apply_adjustment(adjustment)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Purges all order fill events for the given client order ID and recalculates derived state.
@@ -391,9 +421,15 @@ impl Position {
     ///
     /// This operation recalculates the entire position from scratch after removing the specified
     /// order's fills. This is an expensive operation and should be used sparingly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the remaining history cannot be represented. An error leaves the
+    /// position unchanged.
     #[pyo3(name = "purge_events_for_order")]
-    fn py_purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
-        self.purge_events_for_order(client_order_id);
+    fn py_purge_events_for_order(&mut self, client_order_id: ClientOrderId) -> PyResult<()> {
+        self.purge_events_for_order(client_order_id)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Returns whether the given order side is opposite to the position entry side.
@@ -402,12 +438,16 @@ impl Position {
         self.is_opposite_side(side)
     }
 
-    /// Calculates profit and loss from the given prices and quantity.
+    /// Calculates PnL using Decimal prices and exact quantity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `Self.try_calculate_pnl` fails.
     #[pyo3(name = "calculate_pnl")]
     fn py_calculate_pnl(
         &self,
-        avg_px_open: f64,
-        avg_px_close: f64,
+        avg_px_open: Decimal,
+        avg_px_close: Decimal,
         quantity: Quantity,
     ) -> PyResult<Money> {
         self.try_calculate_pnl(avg_px_open, avg_px_close, quantity)
@@ -429,9 +469,24 @@ impl Position {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        let position: Self = from_dict_pyo3(py, values)?;
+        let values = values.into_bound(py).copy()?;
+        let position_id = values.call_method1("pop", ("position_id",))?;
+        values.set_item("id", position_id)?;
+        let commissions = values
+            .call_method1("pop", ("commissions",))?
+            .extract::<Option<Vec<String>>>()?
+            .unwrap_or_default();
+        let amounts = PyDict::new(py);
+
+        for commission in commissions {
+            let money = Money::from_str_exact(&commission).map_err(to_pyvalue_err)?;
+            amounts.set_item(money.currency.to_string(), money.to_string())?;
+        }
+
+        values.set_item("commissions", amounts)?;
+        let position: Self = from_dict_pyo3(py, values.unbind())?;
         position
-            .check_state_float_precision()
+            .check_accounting()
             .map_err(correctness_error_to_pyvalue_err)?;
         Ok(position)
     }
@@ -443,74 +498,28 @@ impl Position {
     /// Returns an error if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(Position))?;
-        let events_dict: PyResult<Vec<_>> = self.events.iter().map(|e| e.py_to_dict(py)).collect();
-        dict.set_item("events", events_dict?)?;
-        let adjustments_dict: PyResult<Vec<_>> =
-            self.adjustments.iter().map(|a| a.py_to_dict(py)).collect();
-        dict.set_item("adjustments", adjustments_dict?)?;
-        dict.set_item("trader_id", self.trader_id.to_string())?;
-        dict.set_item("strategy_id", self.strategy_id.to_string())?;
-        dict.set_item("instrument_id", self.instrument_id.to_string())?;
-        dict.set_item("position_id", self.id.to_string())?;
-        dict.set_item("account_id", self.account_id.to_string())?;
-        dict.set_item("opening_order_id", self.opening_order_id.to_string())?;
-
-        match self.closing_order_id {
-            Some(closing_order_id) => {
-                dict.set_item("closing_order_id", closing_order_id.to_string())?;
-            }
-            None => dict.set_item("closing_order_id", py.None())?,
-        }
-        dict.set_item("entry", self.entry.to_string())?;
-        dict.set_item("side", self.side.to_string())?;
-        dict.set_item("signed_qty", self.signed_qty.to_f64())?;
-        dict.set_item("quantity", self.quantity.to_string())?;
-        dict.set_item("peak_qty", self.peak_qty.to_string())?;
-        dict.set_item("price_precision", self.price_precision.to_u8())?;
-        dict.set_item("size_precision", self.size_precision.to_u8())?;
-        dict.set_item("multiplier", self.multiplier.to_string())?;
-        dict.set_item("is_inverse", self.is_inverse)?;
-
-        match self.base_currency {
-            Some(base_currency) => {
-                dict.set_item("base_currency", base_currency.code.to_string())?;
-            }
-            None => dict.set_item("base_currency", py.None())?,
-        }
-        dict.set_item("quote_currency", self.quote_currency.code.to_string())?;
-        dict.set_item(
-            "settlement_currency",
-            self.settlement_currency.code.to_string(),
-        )?;
-        dict.set_item("ts_init", self.ts_init.as_u64())?;
-        dict.set_item("ts_opened", self.ts_opened.as_u64())?;
-        dict.set_item("ts_last", self.ts_last.as_u64())?;
-        match self.ts_closed {
-            Some(ts_closed) => dict.set_item("ts_closed", ts_closed.as_u64())?,
-            None => dict.set_item("ts_closed", py.None())?,
-        }
-        dict.set_item("duration_ns", self.duration_ns.as_u64())?;
-        dict.set_item("avg_px_open", self.avg_px_open)?;
-        match self.avg_px_close {
-            Some(avg_px_close) => dict.set_item("avg_px_close", avg_px_close)?,
-            None => dict.set_item("avg_px_close", py.None())?,
-        }
-        dict.set_item("realized_return", self.realized_return)?;
-        match self.realized_pnl {
-            Some(realized_pnl) => dict.set_item("realized_pnl", realized_pnl.to_string())?,
-            None => dict.set_item("realized_pnl", py.None())?,
-        }
-        let venue_order_ids_list =
+        let dict = to_dict_pyo3(py, self)?;
+        let values = dict.bind(py);
+        values.set_item("type", stringify!(Position))?;
+        values.set_item("position_id", self.id.to_string())?;
+        values.del_item("id")?;
+        let events: PyResult<Vec<_>> = self
+            .events
+            .iter()
+            .map(|event| event.py_to_dict(py))
+            .collect();
+        values.set_item("events", events?)?;
+        let adjustments: PyResult<Vec<_>> = self
+            .adjustments
+            .iter()
+            .map(|event| event.py_to_dict(py))
+            .collect();
+        values.set_item("adjustments", adjustments?)?;
+        let venue_order_ids =
             PyList::new(py, self.venue_order_ids().iter().map(ToString::to_string))?;
-        dict.set_item("venue_order_ids", venue_order_ids_list)?;
-        let trade_ids_list = PyList::new(py, self.trade_ids().iter().map(ToString::to_string))?;
-        dict.set_item("trade_ids", trade_ids_list)?;
-        dict.set_item("buy_qty", self.buy_qty.to_string())?;
-        dict.set_item("sell_qty", self.sell_qty.to_string())?;
-        dict.set_item("commissions", commissions_from_vec(py, self.commissions())?)?;
-        Ok(dict.into())
+        values.set_item("venue_order_ids", venue_order_ids)?;
+        values.set_item("commissions", commissions_from_vec(py, self.commissions())?)?;
+        Ok(dict.into_any())
     }
 }
 

@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{UUID4, UnixNanos};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -53,7 +54,7 @@ pub struct PositionOpened {
     /// The position side.
     pub side: PositionSide,
     /// The current signed quantity (positive for position side `LONG`, negative for `SHORT`).
-    pub signed_qty: f64,
+    pub signed_qty: Decimal,
     /// The current open quantity.
     pub quantity: Quantity,
     /// The last fill quantity for the position.
@@ -63,7 +64,7 @@ pub struct PositionOpened {
     /// The position quote currency.
     pub currency: Currency,
     /// The average open price.
-    pub avg_px_open: f64,
+    pub avg_px_open: Decimal,
     /// The realized PnL for the current position cycle, denominated in cost currency.
     pub realized_pnl: Option<Money>,
     /// The unique identifier for the event.
@@ -109,6 +110,7 @@ impl PositionOpened {
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -136,12 +138,12 @@ mod tests {
             opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 100.0,
+            signed_qty: dec!(100.0),
             quantity: Quantity::from("100"),
             last_qty: Quantity::from("100"),
             last_px: Price::from("1.0500"),
             currency: Currency::USD(),
-            avg_px_open: 1.0500,
+            avg_px_open: dec!(1.0500),
             realized_pnl: Some(Money::new(-2.0, Currency::USD())),
             event_id: UUID4::default(),
             ts_event: UnixNanos::from(1_000_000_000),
@@ -200,20 +202,20 @@ mod tests {
         let mut long_position = create_test_position_opened();
         long_position.side = PositionSide::Long;
         long_position.entry = OrderSide::Buy;
-        long_position.signed_qty = 100.0;
+        long_position.signed_qty = dec!(100.0);
 
         let mut short_position = create_test_position_opened();
         short_position.side = PositionSide::Short;
         short_position.entry = OrderSide::Sell;
-        short_position.signed_qty = -100.0;
+        short_position.signed_qty = dec!(-100.0);
 
         assert_eq!(long_position.side, PositionSide::Long);
         assert_eq!(long_position.entry, OrderSide::Buy);
-        assert_eq!(long_position.signed_qty, 100.0);
+        assert_eq!(long_position.signed_qty, dec!(100.0));
 
         assert_eq!(short_position.side, PositionSide::Short);
         assert_eq!(short_position.entry, OrderSide::Sell);
-        assert_eq!(short_position.signed_qty, -100.0);
+        assert_eq!(short_position.signed_qty, dec!(-100.0));
     }
 
     #[rstest]
