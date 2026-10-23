@@ -248,19 +248,7 @@ impl ParquetDataCatalog {
 
         let type_name = to_snake_case(std::any::type_name::<T>());
         Self::check_ascending_timestamps(data, &type_name)?;
-
-        let chunk_metadata = T::chunk_metadata(data);
-        if let Some(position) = data
-            .iter()
-            .position(|item| !item.matches_chunk_metadata(&chunk_metadata))
-        {
-            anyhow::bail!(
-                "Cannot write {type_name} data with mixed identities: element {position} has \
-                 metadata {:?} but the chunk has {chunk_metadata:?}; write each \
-                 instrument or bar type separately",
-                data[position].metadata(),
-            );
-        }
+        Self::check_chunk_identity(data, &type_name)?;
 
         let start_ts = start.unwrap_or(first.ts_init());
         let end_ts = end.unwrap_or(last.ts_init());
@@ -761,6 +749,32 @@ impl ParquetDataCatalog {
                 .all(|[a, b]| a.ts_init() <= b.ts_init()),
             "{type_name} timestamps must be in ascending order"
         );
+        Ok(())
+    }
+
+    // Rejects data whose elements carry different chunk metadata, such as two instruments or
+    // precisions, since one file stores one identity.
+    pub(crate) fn check_chunk_identity<T: EncodeToRecordBatch>(
+        data: &[T],
+        type_name: &str,
+    ) -> anyhow::Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        let chunk_metadata = T::chunk_metadata(data);
+
+        if let Some(position) = data
+            .iter()
+            .position(|item| !item.matches_chunk_metadata(&chunk_metadata))
+        {
+            anyhow::bail!(
+                "Cannot write {type_name} data with mixed identities: element {position} has \
+                 metadata {:?} but the chunk has {chunk_metadata:?}; write each \
+                 instrument or bar type separately",
+                data[position].metadata(),
+            );
+        }
+
         Ok(())
     }
 

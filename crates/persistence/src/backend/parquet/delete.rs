@@ -23,7 +23,7 @@
 use std::collections::BTreeMap;
 
 use ahash::AHashSet;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, string::conversions::to_snake_case};
 use nautilus_model::data::{
     Bar, CustomData, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus,
     MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick,
@@ -304,7 +304,8 @@ impl ParquetDataCatalog {
             + EncodeToRecordBatch
             + HasTsInit
             + TryFrom<Data>
-            + Clone,
+            + Clone
+            + PartialEq,
     {
         // Get intervals for cleaner implementation
         let data_type = T::catalog_data_type();
@@ -322,7 +323,8 @@ impl ParquetDataCatalog {
 
         // Execute all operations
         let mut files_to_remove = AHashSet::<String>::new();
-        let mut preserved_by_range = BTreeMap::<(u64, u64), Vec<T>>::new();
+        let file_paths: AHashSet<&str> = files.iter().map(|(path, ..)| path.as_str()).collect();
+        let mut preserved_by_target = BTreeMap::<(String, u64, u64), Vec<T>>::new();
 
         for operation in operations_to_execute {
             // Reset the session before each operation to ensure fresh data is loaded
@@ -344,8 +346,8 @@ impl ParquetDataCatalog {
                     )?;
 
                     if !preserved_data.is_empty() {
-                        preserved_by_range
-                            .entry((operation.file_start_ns, operation.file_end_ns))
+                        preserved_by_target
+                            .entry(split_target(&operation))
                             .or_default()
                             .extend(preserved_data);
                     }
@@ -359,10 +361,33 @@ impl ParquetDataCatalog {
             }
         }
 
-        // Splits of overlapping files can target the same file, so each range is written once
-        // with the rows of all its splits; writing them in turn would skip all but the first
-        for ((start_ns, end_ns), mut preserved_data) in preserved_by_range {
+        // Splits of overlapping files can target the same file, so each target is written once
+        // with the rows of all its splits; writing them in turn would skip all but the first.
+        // Every target is checked before any file is written or removed.
+        let type_name = to_snake_case(std::any::type_name::<T>());
+        let mut writes = Vec::new();
+
+        for ((target, start_ns, end_ns), mut preserved_data) in preserved_by_target {
             preserved_data.sort_by_key(HasTsInit::ts_init);
+
+            if file_paths.contains(target.as_str()) {
+                let mut existing =
+                    self.query::<T>(None, None, None, None, Some(vec![target.clone()]), false)?;
+                existing.sort_by_key(HasTsInit::ts_init);
+                ensure_split_target_holds_rows(
+                    &target,
+                    &preserved_data,
+                    &existing,
+                    HasTsInit::ts_init,
+                )?;
+                continue;
+            }
+
+            Self::check_chunk_identity(&preserved_data, &type_name)?;
+            writes.push((start_ns, end_ns, preserved_data));
+        }
+
+        for (start_ns, end_ns, preserved_data) in writes {
             self.write_to_parquet(
                 &preserved_data,
                 Some(UnixNanos::from(start_ns)),
@@ -418,7 +443,8 @@ impl ParquetDataCatalog {
 
         // Execute all operations
         let mut files_to_remove = AHashSet::<String>::new();
-        let mut preserved_by_range = BTreeMap::<(u64, u64), Vec<CustomData>>::new();
+        let file_paths: AHashSet<&str> = files.iter().map(|(path, ..)| path.as_str()).collect();
+        let mut preserved_by_target = BTreeMap::<(String, u64, u64), Vec<CustomData>>::new();
 
         for operation in operations_to_execute {
             // Reset the session before each operation
@@ -438,8 +464,8 @@ impl ParquetDataCatalog {
                         false,
                     )?;
 
-                    preserved_by_range
-                        .entry((operation.file_start_ns, operation.file_end_ns))
+                    preserved_by_target
+                        .entry(split_target(&operation))
                         .or_default()
                         .extend(preserved_data.into_iter().filter_map(|data| match data {
                             Data::Custom(c) => Some(c),
@@ -455,13 +481,39 @@ impl ParquetDataCatalog {
             }
         }
 
-        // Splits of overlapping files can target the same file, so each range is written once
-        // with the rows of all its splits. Every group is checked before any file is written, so
-        // groups with different metadata that would share a file fail the delete without changes.
+        // Splits of overlapping files can target the same file, so each target is written once
+        // with the rows of all its splits. Every target and group is checked before any file is
+        // written or removed, so groups with different metadata that would share a file fail the
+        // delete without changes.
         let mut writes = Vec::new();
 
-        for ((start_ns, end_ns), mut custom_items) in preserved_by_range {
+        for ((target, start_ns, end_ns), mut custom_items) in preserved_by_target {
             custom_items.sort_by_key(|custom| custom.data.ts_init());
+
+            if file_paths.contains(target.as_str()) {
+                let mut existing: Vec<CustomData> = self
+                    .query_custom_data_dynamic(
+                        type_name,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(vec![target.clone()]),
+                        false,
+                    )?
+                    .into_iter()
+                    .filter_map(|data| match data {
+                        Data::Custom(c) => Some(c),
+                        _ => None,
+                    })
+                    .collect();
+                existing.sort_by_key(|custom| custom.data.ts_init());
+                ensure_split_target_holds_rows(&target, &custom_items, &existing, |custom| {
+                    custom.data.ts_init()
+                })?;
+                continue;
+            }
+
             writes.extend(self.prepare_custom_data_groups(
                 &custom_items,
                 Some(UnixNanos::from(start_ns)),
@@ -614,4 +666,48 @@ fn operations_for_files(
     }
 
     operations
+}
+
+// Returns the file a split operation writes: its source directory, keyed with the file range.
+fn split_target(operation: &DeleteOperation) -> (String, u64, u64) {
+    let source = &operation.files[0];
+    let filename = timestamps_to_filename(
+        UnixNanos::from(operation.file_start_ns),
+        UnixNanos::from(operation.file_end_ns),
+    );
+    let target = match source.rsplit_once('/') {
+        Some((directory, _)) => make_object_store_path(directory, [&filename]),
+        None => filename,
+    };
+
+    (target, operation.file_start_ns, operation.file_end_ns)
+}
+
+// An existing split target is skipped by the write, and the split's sources are then removed, so
+// it must already hold every preserved row, as after a rerun of an interrupted delete. Both slices
+// are sorted by `ts_init`.
+fn ensure_split_target_holds_rows<T: PartialEq>(
+    target: &str,
+    rows: &[T],
+    existing: &[T],
+    ts_init: impl Fn(&T) -> UnixNanos,
+) -> anyhow::Result<()> {
+    let mut start = 0;
+    let holds_rows = rows.iter().all(|row| {
+        let ts = ts_init(row);
+        while start < existing.len() && ts_init(&existing[start]) < ts {
+            start += 1;
+        }
+        existing[start..]
+            .iter()
+            .take_while(|item| ts_init(item) == ts)
+            .any(|item| item == row)
+    });
+
+    anyhow::ensure!(
+        holds_rows,
+        "Cannot preserve the rows outside the deleted range: their target file {target} already \
+         exists without them"
+    );
+    Ok(())
 }
