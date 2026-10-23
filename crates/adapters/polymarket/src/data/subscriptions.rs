@@ -446,7 +446,6 @@ pub(crate) fn resolve_token_id_from(
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
-    use nautilus_model::{identifiers::Symbol, instruments::stubs::binary_option};
     use rstest::rstest;
 
     use super::*;
@@ -654,7 +653,8 @@ mod tests {
     ) {
         let (ws, mut rx) = make_handle();
         let mut subscriptions = make_subscriptions(ws);
-        let mut instruments = AHashMap::new();
+        let watchlist = Arc::new(ResolveWatchlist::default());
+        let mut entries = ahash::AHashMap::new();
         let mut targets = Vec::new();
 
         for index in 0..count {
@@ -662,28 +662,40 @@ mod tests {
             let token_id = format!("0xTOKEN{index}");
             let instrument_id =
                 InstrumentId::from(format!("{condition_id}-{token_id}.POLYMARKET").as_str());
-            let mut instrument = binary_option();
-            instrument.id = instrument_id;
-            instrument.raw_symbol = Symbol::new(&token_id);
-            instrument.expiration_ns = UnixNanos::from(u64::MAX);
-            instruments.insert(instrument_id, InstrumentAny::BinaryOption(instrument));
+            entries.insert(
+                condition_id.clone(),
+                ResolveWatchEntry {
+                    condition_id,
+                    expiration_ns: UnixNanos::from(u64::MAX),
+                    tracked: ahash::AHashMap::from_iter([(
+                        token_id.clone(),
+                        crate::resolve::TrackedInstrument {
+                            instrument_id,
+                            token_id: token_id.clone(),
+                            price_precision: 4,
+                            open_position_ids: AHashSet::new(),
+                            has_data_subscription: true,
+                        },
+                    )]),
+                    paused: false,
+                },
+            );
             targets.push((instrument_id, token_id));
         }
-        subscriptions.instruments.store(instruments);
-
-        for (id, token_id) in &targets {
-            assert!(
-                subscriptions.add_resolution_subscription_intent(*id, SubscriptionKind::Status)
-            );
-            subscriptions
-                .ws_open_tokens
-                .insert(Ustr::from(token_id.as_str()));
-        }
-        assert_eq!(subscriptions.watchlist.read().len(), count);
-        subscriptions.subscribe_new_markets = true;
+        *watchlist.write() = entries;
+        subscriptions.active_instrument_status_subs =
+            Arc::new(targets.iter().map(|(id, _)| *id).collect());
+        subscriptions.ws_open_tokens = Arc::new(
+            targets
+                .iter()
+                .map(|(_, token_id)| Ustr::from(token_id.as_str()))
+                .collect(),
+        );
         let started = std::time::Instant::now();
 
         for (instrument_id, token_id) in &targets {
+            subscriptions.watchlist = watchlist.clone();
+            subscriptions.subscribe_new_markets = true;
             subscriptions
                 .reconcile(*instrument_id, token_id.clone())
                 .await;

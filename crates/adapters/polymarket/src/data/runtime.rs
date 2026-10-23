@@ -398,7 +398,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(ResolveWatchlist::default()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -511,7 +511,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(ResolveWatchlist::default()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -535,7 +535,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(ResolveWatchlist::default()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -571,7 +571,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(ResolveWatchlist::default()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -651,7 +651,7 @@ mod tests {
 
         let mut subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(ResolveWatchlist::default()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,

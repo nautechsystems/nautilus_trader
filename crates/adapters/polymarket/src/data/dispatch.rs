@@ -4274,7 +4274,6 @@ mod tests {
                 ctx.resolve_poll_watchlist
                     .read()
                     .get(&"0xCOND-BTC".to_string())
-                    .cloned()
                     .unwrap()
                     .tracked
                     .len(),
@@ -7529,7 +7528,6 @@ mod tests {
                 .resolve_poll_watchlist
                 .read()
                 .get(&TEST_CONDITION_ID.to_string())
-                .cloned()
                 .unwrap()
                 .expiration_ns,
             expiration
@@ -7556,7 +7554,6 @@ mod tests {
                         .resolve_poll_watchlist
                         .read()
                         .get(&TEST_CONDITION_ID.to_string())
-                        .cloned()
                         .is_some_and(|entry| entry.paused)
                 },
                 StdDuration::from_secs(3),
@@ -7567,7 +7564,6 @@ mod tests {
                     .resolve_poll_watchlist
                     .read()
                     .get(&TEST_CONDITION_ID.to_string())
-                    .cloned()
                     .unwrap()
                     .expiration_ns,
                 expiration
@@ -7659,7 +7655,6 @@ mod tests {
                     .resolve_poll_watchlist
                     .read()
                     .get(&TEST_CONDITION_ID.to_string())
-                    .cloned()
                     .is_some_and(|entry| entry.tracked.len() == 2)
             },
             StdDuration::from_secs(3),
@@ -8426,7 +8421,6 @@ mod tests {
                     .resolve_poll_watchlist
                     .read()
                     .get(&TEST_CONDITION_ID.to_string())
-                    .cloned()
                     .unwrap()
                     .paused
             },

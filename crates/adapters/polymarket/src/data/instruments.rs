@@ -673,7 +673,6 @@ mod tests {
             clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
             gamma::PolymarketGammaHttpClient,
         },
-        resolve::ResolveWatchlist,
         websocket::pool::PolymarketMarketConnectionPool,
     };
 
@@ -1238,7 +1237,7 @@ mod tests {
 
         let subscriptions = crate::data::DataSubscriptions::new(
             instruments.clone(),
-            Arc::new(ResolveWatchlist::default()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -1369,7 +1368,7 @@ mod tests {
 
         let subscriptions = crate::data::DataSubscriptions::new(
             instruments.clone(),
-            Arc::new(ResolveWatchlist::default()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,

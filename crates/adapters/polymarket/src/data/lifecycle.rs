@@ -34,9 +34,8 @@ use super::{
 use crate::{
     data_types::register_polymarket_custom_data,
     resolve::{
-        ResolveBatchErrorMode, ResolveWatchSelectionMode, ResolveWatchlist,
-        collect_resolve_watch_selection, fetch_and_apply_resolutions_by_condition_ids,
-        pause_and_reconcile_resolve_watch_entries,
+        ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
+        fetch_and_apply_resolutions_by_condition_ids, pause_and_reconcile_resolve_watch_entries,
         update_resolve_watchlist_from_position_event_serialized,
     },
     websocket::messages::PolymarketWsMessage,
@@ -430,7 +429,7 @@ impl PolymarketDataClient {
 
         // Fence callbacks which resume after cancellation without yielding to the task runner
         update_guard.retire_generation();
-        self.resolve_poll_watchlist = std::sync::Arc::new(ResolveWatchlist::default());
+        self.resolve_poll_watchlist = std::sync::Arc::default();
         self.pending_resolutions.clear();
         self.deferred_resolutions.rcu(|entries| entries.clear());
         self.instruments = std::sync::Arc::new(AtomicMap::new());

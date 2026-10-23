@@ -548,7 +548,7 @@ mod tests {
 
     #[rstest]
     fn position_events_build_condition_level_watch_entries() {
-        let watchlist: Arc<ResolveWatchlist> = Arc::new(ResolveWatchlist::default());
+        let watchlist: Arc<ResolveWatchlist> = Arc::default();
         let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
         let expiration_ns = UnixNanos::from(1_000_000_000);
         let yes = seed_instrument_with_context(
@@ -635,7 +635,7 @@ mod tests {
 
     #[rstest]
     fn position_events_keep_token_watched_until_last_position_id_closes() {
-        let watchlist: Arc<ResolveWatchlist> = Arc::new(ResolveWatchlist::default());
+        let watchlist: Arc<ResolveWatchlist> = Arc::default();
         let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
         let expiration_ns = UnixNanos::from(1_000_000_000);
         let yes = seed_instrument_with_context(
@@ -706,7 +706,7 @@ mod tests {
 
     #[rstest]
     fn data_subscription_and_position_owners_are_removed_independently() {
-        let watchlist: Arc<ResolveWatchlist> = Arc::new(ResolveWatchlist::default());
+        let watchlist: Arc<ResolveWatchlist> = Arc::default();
         let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
         let yes = seed_instrument_with_context(
             &instruments,
