@@ -818,9 +818,9 @@ impl DataEngine {
     ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
-        // Retire queued subscriptions after stop while preserving received data and cleanup
+        // Stopped client subscriptions retain ownership without being counted as executed
         match &cmd {
-            DataCommand::Subscribe(_) if self.is_stopped => return,
+            DataCommand::Subscribe(_) if self.is_stopped => {}
             DataCommand::Subscribe(_) | DataCommand::Unsubscribe(_) => self.command_count += 1,
             DataCommand::Request(_) => self.request_count += 1,
             #[cfg(feature = "defi")]
@@ -905,19 +905,22 @@ impl DataEngine {
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
-        if self.is_stopped {
-            return Ok(());
-        }
-
         cmd.validate_routing(&self.cache.borrow())?;
         if let Some(client_id) = cmd.client_id().copied()
             && self.is_external_client(client_id)
         {
-            self.subscribe_external(client_id, &cmd);
+            if !self.is_stopped {
+                self.subscribe_external(client_id, &cmd);
+            }
+
             return Ok(());
         }
 
         self.retain_intent(&cmd)?;
+
+        if self.is_stopped {
+            return Ok(());
+        }
 
         let retained = cmd.clone();
         let (groups, result) = self.prepare_subscribe_groups(cmd);
@@ -951,17 +954,26 @@ impl DataEngine {
     }
 
     fn retain_intent(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
+        let is_stopped = self.is_stopped;
         let retain_intent = match cmd {
             SubscribeCommand::Quotes(command) => {
                 self.quote_routing(&command.instrument_ids, command.params.as_ref())?
                     == QuoteRouting::Client
             }
             SubscribeCommand::Trades(command) => !command.instrument_ids[0].is_synthetic(),
-            _ => false,
+            SubscribeCommand::BookDeltas(_)
+            | SubscribeCommand::BookDepth(_)
+            | SubscribeCommand::BookSnapshots(_)
+            | SubscribeCommand::OptionChain(_) => false,
+            _ => is_stopped,
         };
 
         if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
             if let SubscribeCommand::Bars(command) = cmd {
+                if is_stopped && has_continuous_future_params(command.params.as_ref()) {
+                    return Ok(());
+                }
+
                 let external: Vec<_> = command
                     .bar_types
                     .iter()

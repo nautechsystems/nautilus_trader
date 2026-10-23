@@ -822,6 +822,7 @@ impl DataClient for ConnectionDataClient {
 #[rstest]
 #[tokio::test]
 async fn test_retained_subscriptions_resume_after_connect(
+    #[values(false, true)] direct: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -841,16 +842,17 @@ async fn test_retained_subscriptions_resume_after_connect(
         None,
     );
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+    let sub = SubscribeQuotes::new(
+        instrument_id,
+        Some(client_id),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
     engine
-        .execute_subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
-            instrument_id,
-            Some(client_id),
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-        )))
+        .execute_subscribe(SubscribeCommand::Quotes(sub.clone()))
         .unwrap();
     engine.stop();
 
@@ -862,6 +864,19 @@ async fn test_retained_subscriptions_resume_after_connect(
         .clear();
     calls.borrow_mut().clear();
 
+    let temporary = SubscribeCommand::Quotes(SubscribeQuotes {
+        command_id: UUID4::new(),
+        ..sub.clone()
+    });
+
+    if direct {
+        engine.execute_subscribe(temporary.clone()).unwrap();
+    } else {
+        engine.execute(DataCommand::Subscribe(temporary.clone()));
+    }
+
+    let release = temporary.into_unsubscribe(UUID4::new(), UnixNanos::default(), None);
+    engine.execute(DataCommand::Unsubscribe(release));
     engine.start();
 
     assert_eq!(*calls.borrow(), vec![(client_id, "start")]);
@@ -880,6 +895,12 @@ async fn test_retained_subscriptions_resume_after_connect(
         ]
     );
     assert_eq!(engine.subscribed_quotes(), vec![instrument_id]);
+
+    let release =
+        SubscribeCommand::Quotes(sub).into_unsubscribe(UUID4::new(), UnixNanos::default(), None);
+    engine.execute(DataCommand::Unsubscribe(release));
+    assert!(engine.subscribed_quotes().is_empty());
+    assert_eq!(calls.borrow().last(), Some(&(client_id, "unsubscribe")));
 }
 
 #[rstest]
