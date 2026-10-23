@@ -953,11 +953,21 @@ impl DataEngine {
     fn retain_intent(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
         let is_stopped = self.is_stopped;
         let retain_intent = match cmd {
+            SubscribeCommand::Quotes(command) if is_stopped => !self.subscribe_quotes(command)?,
             SubscribeCommand::Quotes(command) => {
                 self.quote_routing(&command.instrument_ids, command.params.as_ref())?
                     == QuoteRouting::Client
             }
+            SubscribeCommand::Trades(command) if is_stopped => !self.subscribe_trades(command),
             SubscribeCommand::Trades(command) => !command.instrument_ids[0].is_synthetic(),
+            SubscribeCommand::BookDeltas(_)
+            | SubscribeCommand::BookDepth(_)
+            | SubscribeCommand::BookSnapshots(_)
+                if is_stopped =>
+            {
+                self.prepare_subscribe_groups(cmd.clone()).1?;
+                false
+            }
             SubscribeCommand::BookDeltas(_)
             | SubscribeCommand::BookDepth(_)
             | SubscribeCommand::BookSnapshots(_)

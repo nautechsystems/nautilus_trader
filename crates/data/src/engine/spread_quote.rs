@@ -37,6 +37,10 @@ impl DataEngine {
             return;
         }
 
+        if self.is_stopped {
+            return;
+        }
+
         let Some(instrument) = self.cache.borrow().instrument(&instrument_id).cloned() else {
             log::error!(
                 "Cannot create spread quote aggregator: no instrument found for {instrument_id}",

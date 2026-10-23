@@ -3408,7 +3408,10 @@ fn test_reset_clears_synthetic_subscriptions(stub_msgbus: Rc<RefCell<MessageBus>
 }
 
 #[rstest]
-fn test_synthetic_quotes_release_after_final_owner(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_synthetic_quotes_release_after_final_owner(
+    #[values(false, true)] stopped: bool,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
@@ -3418,6 +3421,11 @@ fn test_synthetic_quotes_release_after_final_owner(stub_msgbus: Rc<RefCell<Messa
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
 
     data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
     data_engine.execute(unsubscribe_synthetic_quotes_cmd(synthetic_id));
 
@@ -3434,11 +3442,19 @@ fn test_synthetic_quotes_release_after_final_owner(stub_msgbus: Rc<RefCell<Messa
             .subscribed_synthetic_quotes()
             .contains(&synthetic_id)
     );
+
+    if stopped {
+        data_engine.execute(subscribe_synthetic_quotes_cmd(synthetic_id));
+        assert!(data_engine.subscribed_synthetic_quotes().is_empty());
+        data_engine.start();
+        assert!(data_engine.subscribed_synthetic_quotes().is_empty());
+    }
 }
 
 #[rstest]
 fn test_synthetic_trades_release_after_final_owner(
     #[values(false, true)] batch: bool,
+    #[values(false, true)] stopped: bool,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
     let _ = stub_msgbus;
@@ -3459,6 +3475,11 @@ fn test_synthetic_trades_release_after_final_owner(
     instrument_ids.sort();
 
     data_engine.execute(subscribe_synthetic_trades_cmd(&instrument_ids));
+
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(subscribe_synthetic_trades_cmd(&instrument_ids));
     data_engine.execute(unsubscribe_synthetic_trades_cmd(&instrument_ids));
 
@@ -3472,6 +3493,13 @@ fn test_synthetic_trades_release_after_final_owner(
         data_engine.subscribed_synthetic_trades(),
         Vec::<InstrumentId>::new(),
     );
+
+    if stopped {
+        data_engine.execute(subscribe_synthetic_trades_cmd(&instrument_ids));
+        assert!(data_engine.subscribed_synthetic_trades().is_empty());
+        data_engine.start();
+        assert!(data_engine.subscribed_synthetic_trades().is_empty());
+    }
 }
 
 #[cfg(feature = "defi")]

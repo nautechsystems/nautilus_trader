@@ -181,6 +181,10 @@ impl DataEngine {
             return;
         }
 
+        if self.is_stopped {
+            return;
+        }
+
         self.subscribed_synthetic_quotes.insert(instrument_id, 1);
 
         for component_id in &synthetic.components {
@@ -205,6 +209,10 @@ impl DataEngine {
 
         if let Some(owners) = self.subscribed_synthetic_trades.get_mut(&instrument_id) {
             *owners += 1;
+            return;
+        }
+
+        if self.is_stopped {
             return;
         }
 

@@ -73,6 +73,10 @@ impl DataEngine {
         let had_deltas =
             self.has_book_delta_subscription_key(instrument_id, cmd.client_id, cmd.venue);
 
+        if self.is_stopped && !had_deltas {
+            return Ok(false);
+        }
+
         self.retain_book_subscription(SubscribeCommand::BookDeltas(cmd.clone()))?;
 
         self.increment_book_delta_subscription(instrument_id, cmd.client_id, cmd.venue);
@@ -92,6 +96,10 @@ impl DataEngine {
         let had_depth =
             self.has_book_depth_subscription_key(instrument_id, cmd.client_id, cmd.venue);
 
+        if self.is_stopped && !had_depth {
+            return Ok(false);
+        }
+
         self.retain_book_subscription(SubscribeCommand::BookDepth(cmd.clone()))?;
 
         self.increment_book_depth_subscription(instrument_id, cmd.client_id, cmd.venue);
@@ -106,6 +114,14 @@ impl DataEngine {
         let instrument_id = cmd.single_instrument_id()?;
         if instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
+        }
+
+        if self.is_stopped
+            && !self
+                .book_snapshot_counts
+                .contains_key(&(instrument_id, cmd.interval_ms))
+        {
+            return Ok(());
         }
 
         let parent = resolve_parent_components(&instrument_id, cmd.params.as_ref())?;
@@ -152,6 +168,10 @@ impl DataEngine {
         cmd: &SubscribeBookSnapshots,
         client_command: SubscribeCommand,
     ) {
+        if self.is_stopped {
+            return;
+        }
+
         let instrument_id = cmd
             .single_instrument_id()
             .expect("instrument command has one member at this boundary");
