@@ -588,9 +588,9 @@ impl InteractiveBrokersExecutionClient {
             );
             commission_cache
                 .lock()
-                .insert(execution_id, (0.0, commission_currency));
+                .insert(execution_id.clone(), (0.0, commission_currency));
 
-            if let Err(e) = Self::handle_execution_data(
+            match Self::handle_execution_data(
                 &exec_data,
                 orders,
                 instrument_provider,
@@ -604,10 +604,13 @@ impl InteractiveBrokersExecutionClient {
             )
             .await
             {
-                tracing::error!(
+                Ok(()) => pending_execution_cache
+                    .lock()
+                    .mark_emitted_without_commission(execution_id),
+                Err(e) => tracing::error!(
                     execution_id = exec_data.execution.execution_id,
                     "Failed to emit IB execution after commission timeout: {e}",
-                );
+                ),
             }
         }
 
@@ -1287,9 +1290,29 @@ impl InteractiveBrokersExecutionClient {
                     currency = commission.currency,
                     "Received IB commissionReport",
                 );
-                let pending_exec_data = pending_live_exec_data
-                    .lock()
-                    .remove(&commission.execution_id);
+                let (pending_exec_data, emitted_without_commission) = {
+                    let mut pending = pending_live_exec_data.lock();
+                    let exec_data = pending.remove(&commission.execution_id);
+                    let emitted = exec_data.is_none()
+                        && pending.was_emitted_without_commission(&commission.execution_id);
+                    (exec_data, emitted)
+                };
+
+                // The fill already went out at zero commission, and nothing amends an emitted
+                // fill, so the commission is reported rather than cached where nothing reads it.
+                // IB's pending sentinel carries no commission to report.
+                if emitted_without_commission {
+                    if commission.commission != -1.0_f64 {
+                        tracing::warn!(
+                            execution_id = commission.execution_id,
+                            commission = commission.commission,
+                            currency = commission.currency,
+                            "IB commissionReport arrived after its fill was emitted with zero \
+                             commission; the commission is not applied",
+                        );
+                    }
+                    return Ok(());
+                }
 
                 {
                     let mut cache = commission_cache.lock();
