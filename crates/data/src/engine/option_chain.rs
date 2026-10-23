@@ -124,6 +124,10 @@ impl DataEngine {
     }
 
     pub(super) fn update_option_chains(&mut self, instrument: &InstrumentAny) {
+        if self.is_stopped {
+            return;
+        }
+
         let Some(underlying) = instrument.underlying() else {
             return;
         };
@@ -224,6 +228,7 @@ impl DataEngine {
 
             for cmd in commands {
                 match cmd {
+                    DeferredCommand::Subscribe(_) if self.is_stopped => {}
                     DeferredCommand::Subscribe(sub) => {
                         let client = self.get_command_client(sub.client_id(), sub.venue());
                         if let Some(client) = client {

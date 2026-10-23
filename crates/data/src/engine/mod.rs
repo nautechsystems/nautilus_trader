@@ -488,6 +488,7 @@ impl DataEngine {
     /// Stops all registered data clients and bar aggregator timers.
     pub fn stop(&mut self) {
         self.is_stopped = true;
+        self.cancel_pending_option_chain_requests(None);
 
         for client in self.get_clients_mut() {
             if client.stop().is_err() {
@@ -885,6 +886,10 @@ impl DataEngine {
     /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
     /// or if the underlying client operation fails.
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
+        if self.is_stopped {
+            return Ok(());
+        }
+
         cmd.validate_routing(&self.cache.borrow())?;
         if let Some(client_id) = cmd.client_id().copied()
             && self.is_external_client(client_id)

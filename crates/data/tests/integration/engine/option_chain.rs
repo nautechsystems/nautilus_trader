@@ -621,6 +621,7 @@ fn test_subscribe_option_chain_filters_by_underlying(
 
 #[rstest]
 fn test_option_chain_new_instrument_uses_subscription_client(
+    #[values(false, true)] stopped: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -665,9 +666,20 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     explicit_recorder.borrow_mut().clear();
     routed_recorder.borrow_mut().clear();
 
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
     let put = make_btc_option("50000.000", OptionKind::Put);
     let put_id = put.id();
     data_engine.borrow_mut().process(&put);
+    assert_eq!(cache.borrow().instrument(&put_id), Some(&put));
+
+    if stopped {
+        assert!(explicit_recorder.borrow().is_empty());
+        assert!(routed_recorder.borrow().is_empty());
+        return;
+    }
 
     let recorded = explicit_recorder.borrow();
     assert_eq!(recorded.len(), 3);
@@ -1618,6 +1630,8 @@ fn test_subscribe_option_chain_atm_relative_requests_reference_price(
 })]
 fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
     #[case] strike_range: StrikeRange,
+    #[values(false, true)] stopped: bool,
+    #[values(Some(Price::from("50000.000")), None)] price: Option<Price>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1652,7 +1666,7 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
             SubscribeOptionChain::new(
                 series_id,
                 strike_range,
-                None,
+                stopped.then_some(1000),
                 UUID4::new(),
                 UnixNanos::default(),
                 Some(client_id),
@@ -1663,6 +1677,10 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
     let request_id = option_chain_reference_price_request_id(&recorder);
     recorder.borrow_mut().clear();
 
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
     data_engine
         .borrow_mut()
         .response(DataResponse::OptionChainReferencePrice(
@@ -1670,7 +1688,7 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
                 request_id,
                 client_id,
                 series_id,
-                Some(Price::from("50000.000")),
+                price,
                 UnixNanos::from(1),
                 None,
             ),
@@ -1682,9 +1700,19 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
         .filter(|cmd| matches!(cmd, DataCommand::Subscribe(SubscribeCommand::Quotes(_))))
         .count();
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
-    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(
+        data_engine.borrow().has_option_chain_manager(&series_id),
+        !stopped
+    );
     assert_eq!(clock.borrow().timer_count(), 0);
-    assert_eq!(quote_subscriptions, 6);
+    assert_eq!(
+        quote_subscriptions,
+        if stopped || price.is_none() { 0 } else { 6 }
+    );
+
+    if stopped {
+        assert!(recorder.borrow().is_empty());
+    }
 }
 
 #[rstest]
@@ -1995,6 +2023,7 @@ fn test_option_chain_reference_price_timeout_tracks_concurrent_requests(
 
 #[rstest]
 fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
+    #[values(false, true)] stopped: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -2066,11 +2095,15 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
     }));
     recorder.borrow_mut().clear();
 
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
+    let greeks = make_option_chain_greeks(sample_id, 50000.0);
     data_engine
         .borrow_mut()
-        .process_data(Data::OptionGreeks(make_option_chain_greeks(
-            sample_id, 50000.0,
-        )));
+        .process_data(Data::OptionGreeks(greeks));
+    assert_eq!(cache.borrow().option_greeks(&sample_id), Some(&greeks));
 
     let recorded = recorder.borrow();
     let quote_subscriptions = recorded
@@ -2098,9 +2131,13 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         })
         .collect();
 
-    assert_eq!(quote_subscriptions, 2);
-    assert_eq!(greeks_subscriptions, 2);
+    assert_eq!(quote_subscriptions, if stopped { 0 } else { 2 });
+    assert_eq!(greeks_subscriptions, if stopped { 0 } else { 2 });
     assert_eq!(greeks_unsubscriptions, vec![sample_id]);
+
+    if stopped {
+        assert_eq!(recorded.len(), 1);
+    }
 }
 
 #[rstest]
