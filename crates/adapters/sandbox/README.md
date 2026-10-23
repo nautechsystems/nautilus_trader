@@ -15,6 +15,9 @@ paper trading and strategy testing in real-time without actual order execution o
 ## Features
 
 - Paper trading against live market data from any data source.
+- Direct matching against standard `OrderBookDepth` snapshots, including full L2 depth.
+  Subscribe through the data client and set `book_type` to `L2_MBP` for multi-level matching;
+  `L1_MBP` uses only the top of book.
 - Full order matching simulation using the production-grade `OrderMatchingEngine`.
 - Support for all order types (market, limit, stop, etc.).
 - Configurable fill models, fee models, queue-position tracking, and liquidity consumption.

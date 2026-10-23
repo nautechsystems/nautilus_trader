@@ -62,10 +62,14 @@ use nautilus_execution::{
 use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
+    data::{
+        Bar, BarType, BookOrder, Data, InstrumentClose, InstrumentStatus, OrderBookDepth,
+        QuoteTick, TradeTick,
+    },
     enums::{
         AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
-        MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag,
+        TimeInForce,
     },
     events::{
         AccountState, OrderDenied, OrderEventAny, OrderEventType, OrderFilled, OrderPendingCancel,
@@ -10215,4 +10219,523 @@ fn test_deferred_oto_child_cancel_survives_parent_fill(
         OrderStatus::Canceled
     );
     context.client.stop().unwrap();
+}
+
+fn book_depth(
+    instrument_id: InstrumentId,
+    bids: &[(&str, &str)],
+    asks: &[(&str, &str)],
+) -> OrderBookDepth {
+    let orders = |levels: &[(&str, &str)], side| {
+        levels
+            .iter()
+            .map(|(price, size)| {
+                BookOrder::new(side, Price::from(*price), Quantity::from(*size), 0)
+            })
+            .collect::<Vec<_>>()
+    };
+    OrderBookDepth::new(
+        instrument_id,
+        orders(bids, OrderSide::Buy),
+        orders(asks, OrderSide::Sell),
+        vec![0; bids.len()],
+        vec![0; asks.len()],
+        RecordFlag::F_SNAPSHOT as u8,
+        0,
+        1.into(),
+        1.into(),
+    )
+}
+
+fn publish_depth(depth: &OrderBookDepth) {
+    msgbus::publish_depth(
+        nautilus_common::msgbus::switchboard::get_book_depth_topic(depth.instrument_id),
+        depth,
+    );
+}
+
+#[rstest]
+#[case::l1(BookType::L1_MBP, 1)]
+#[case::l2(BookType::L2_MBP, 12)]
+fn test_book_depth_callback_order_uses_current_snapshot(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] book_type: BookType,
+    #[case] level_count: usize,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    let asks: Vec<_> = (0..12)
+        .map(|i| (format!("{}.00", 1000 + i), "1.000".to_string()))
+        .collect();
+    let ask_refs: Vec<_> = asks.iter().map(|(p, q)| (p.as_str(), q.as_str())).collect();
+    let depth = book_depth(instrument.id(), &[("999.00", "1.000")], &ask_refs);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(format!("{level_count}.000").as_str()))
+        .client_order_id("DEPTH-CALLBACK".into())
+        .build();
+    cache_order(&harness, &order);
+    let command = TradingCommand::SubmitOrder(SubmitOrder::from_order(
+        &order,
+        trader_id,
+        Some(harness.client_id),
+        None,
+        UUID4::new(),
+        order.ts_init(),
+    ));
+    let called = Rc::new(Cell::new(false));
+    let handler = {
+        let called = called.clone();
+        TypedHandler::from(move |_: &OrderBookDepth| {
+            called.set(true);
+            msgbus::send_trading_command(
+                MessagingSwitchboard::exec_engine_execute(),
+                command.clone(),
+            );
+        })
+    };
+    let topic = nautilus_common::msgbus::switchboard::get_book_depth_topic(instrument.id());
+    msgbus::subscribe_book_depth(topic.into(), handler.clone(), None);
+
+    publish_depth(&depth);
+    let events = harness.settle();
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    let expected: Vec<_> = depth
+        .asks
+        .iter()
+        .take(level_count)
+        .map(|o| (o.price, o.size))
+        .collect();
+    assert!(called.get());
+    assert_eq!(fills, expected);
+    assert_eq!(
+        harness
+            .published
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        level_count
+    );
+    assert!(harness.cache.borrow().quote(&instrument.id()).is_none());
+    assert!(harness.cache.borrow().trade(&instrument.id()).is_none());
+    msgbus::unsubscribe_book_depth(topic.into(), &handler);
+}
+
+#[rstest]
+fn test_book_depth_replaces_removed_levels_and_empty_side(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    publish_depth(&book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1000.00", "5.000")],
+    ));
+    publish_depth(&book_depth(instrument.id(), &[("999.00", "1.000")], &[]));
+    let order = submit_through_engine(&harness, trader_id, &instrument, "DEPTH-REPLACE", "1001.00");
+    let events = harness.settle();
+    assert!(!events.iter().any(|e| matches!(e, OrderEventAny::Filled(_))));
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+
+    publish_depth(&book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1001.00", "0.400")],
+    ));
+    let events = harness.settle();
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1001.00"), Quantity::from("0.400"))]
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::PartiallyFilled
+    );
+    assert_eq!(
+        harness
+            .cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .leaves_qty(),
+        Quantity::from("0.600")
+    );
+}
+
+#[rstest]
+fn test_book_depth_isolates_instruments_and_venues(trader_id: TraderId, instrument: InstrumentAny) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let InstrumentAny::CryptoPerpetual(base) = &instrument else {
+        panic!("Expected perpetual");
+    };
+    let other = InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+        id: InstrumentId::from("OTHER.BINANCE"),
+        ..base.clone()
+    });
+    let foreign = InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+        id: InstrumentId::from("OTHER.OTHER"),
+        ..base.clone()
+    });
+
+    for asset in [&other, &foreign] {
+        harness
+            .cache
+            .borrow_mut()
+            .add_instrument(asset.clone())
+            .unwrap();
+    }
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "DEPTH-ISOLATED",
+        "1000.00",
+    );
+    harness.settle();
+    publish_depth(&book_depth(other.id(), &[], &[("1000.00", "1.000")]));
+
+    // Use a matching topic with a foreign payload to also exercise the handler's venue guard
+    msgbus::publish_depth(
+        nautilus_common::msgbus::switchboard::get_book_depth_topic(instrument.id()),
+        &book_depth(foreign.id(), &[], &[("1000.00", "1.000")]),
+    );
+    assert!(harness.settle().is_empty());
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    publish_depth(&book_depth(instrument.id(), &[], &[("1000.00", "1.000")]));
+    assert!(harness.settle().iter().any(
+        |e| matches!(e, OrderEventAny::Filled(f) if f.client_order_id == order.client_order_id())
+    ));
+}
+
+#[rstest]
+fn test_book_depth_handler_stop_restart(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    let topic = nautilus_common::msgbus::switchboard::get_book_depth_topic(instrument.id());
+    context.client.start().unwrap();
+    context.client.start().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 1);
+
+    let InstrumentAny::CryptoPerpetual(base) = &instrument else {
+        panic!("Expected perpetual");
+    };
+    let foreign = InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+        id: InstrumentId::from("OTHER.OTHER"),
+        ..base.clone()
+    });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(foreign.clone())
+        .unwrap();
+    let foreign_depth = book_depth(foreign.id(), &[], &[("1000.00", "1.000")]);
+    publish_depth(&foreign_depth);
+    msgbus::publish_depth(topic, &foreign_depth);
+    publish_depth(&book_depth(InstrumentId::from("UNKNOWN.BINANCE"), &[], &[]));
+    msgbus::publish_depth(
+        nautilus_common::msgbus::switchboard::get_pipeline_book_depth_topic(instrument.id()),
+        &book_depth(instrument.id(), &[], &[("1000.00", "1.000")]),
+    );
+    assert_eq!(context.client.matching_engine_count(), 0);
+
+    context.client.stop().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 0);
+    let depth = book_depth(instrument.id(), &[], &[("1000.00", "1.000")]);
+    publish_depth(&depth);
+    assert_eq!(context.client.matching_engine_count(), 0);
+
+    context.client.start().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 1);
+    publish_depth(&depth);
+    assert_eq!(context.client.matching_engine_count(), 1);
+    let order = resting_limit(&instrument, "DEPTH-RESTART", "1000.00", 0.into());
+    submit_to_client(&context, trader_id, &order);
+    let events = drain_order_events(&mut rx);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    context.client.stop().unwrap();
+    assert_eq!(msgbus::subscriber_count_depth(topic), 0);
+}
+
+#[rstest]
+fn test_book_depth_drains_due_commands_before_matching(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    const LATENCY: u64 = 1_000_000_000;
+    let mut harness = setup_engine_harness_with_config(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(LATENCY, 0, 0)),
+        |config| config.book_type = BookType::L2_MBP,
+    );
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "DEPTH-DEFERRED",
+        "1000.00",
+    );
+    harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Submitted
+    );
+
+    // Advance without firing the alert: the depth handler itself must drain the due command
+    harness.test_clock.borrow_mut().set_time(LATENCY.into());
+    publish_depth(&book_depth(instrument.id(), &[], &[("1000.00", "1.000")]));
+    let events = harness.settle();
+    assert_eq!(
+        events.iter().map(order_event_kind).collect::<Vec<_>>(),
+        vec!["accepted", "filled"]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+#[case::price(true)]
+#[case::size(false)]
+fn test_book_depth_rejects_precision_mismatch(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] price: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut depth = book_depth(instrument.id(), &[], &[("1000.00", "1.000")]);
+    if price {
+        depth.asks[0].price = Price::from("1000.001");
+    } else {
+        depth.asks[0].size = Quantity::from("1.0001");
+    }
+    assert!(context.client.process_order_book_depth(&depth).is_err());
+    publish_depth(&depth);
+    let order = resting_limit(&instrument, "DEPTH-PRECISION", "1000.00", 0.into());
+    submit_to_client(&context, trader_id, &order);
+    assert!(
+        !drain_order_events(&mut rx)
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Filled(_)))
+    );
+    let valid = book_depth(instrument.id(), &[], &[("1000.00", "1.000")]);
+    context.client.process_order_book_depth(&valid).unwrap();
+    assert_eq!(
+        drain_order_events(&mut rx)
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    let unknown = book_depth(InstrumentId::from("UNKNOWN.BINANCE"), &[], &[]);
+    assert!(context.client.process_order_book_depth(&unknown).is_err());
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::message_bus(false)]
+#[case::direct(true)]
+fn test_book_depth_releases_cross_instrument_oto(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] direct: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let InstrumentAny::CryptoPerpetual(base) = &instrument else {
+        panic!("Expected perpetual");
+    };
+    let other = InstrumentAny::CryptoPerpetual(CryptoPerpetual {
+        id: InstrumentId::from("OTHER.BINANCE"),
+        ..base.clone()
+    });
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+
+    for asset in [&instrument, &other] {
+        context
+            .cache
+            .borrow_mut()
+            .add_instrument(asset.clone())
+            .unwrap();
+    }
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    publish_depth(&book_depth(
+        other.id(),
+        &[("2000.00", "1.000")],
+        &[("2001.00", "1.000")],
+    ));
+    let parent_id = ClientOrderId::from("DEPTH-PARENT");
+    let child_id = ClientOrderId::from("DEPTH-CHILD");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1000.00"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .build();
+    let child = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(other.id())
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("2000.00"))
+        .build();
+    let orders = [parent, child];
+    for order in &orders {
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+    context
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            context.client.client_id(),
+            instrument.id(),
+            &orders,
+        ))
+        .unwrap();
+    assert!(
+        !drain_order_events(&mut rx)
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Filled(_)))
+    );
+    let depth = book_depth(instrument.id(), &[], &[("1000.00", "1.000")]);
+    if direct {
+        context.client.process_order_book_depth(&depth).unwrap();
+    } else {
+        publish_depth(&depth);
+    }
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => {
+                Some((f.client_order_id, f.instrument_id, f.last_px, f.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![
+            (
+                parent_id,
+                instrument.id(),
+                Price::from("1000.00"),
+                Quantity::from("1.000")
+            ),
+            (
+                child_id,
+                other.id(),
+                Price::from("2000.00"),
+                Quantity::from("1.000")
+            ),
+        ]
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_book_depth_orders_share_available_liquidity(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+        config.liquidity_consumption = true;
+    });
+    publish_depth(&book_depth(instrument.id(), &[], &[("1000.00", "1.000")]));
+    let mut fills = Vec::new();
+    for id in ["DEPTH-CONSUME-1", "DEPTH-CONSUME-2"] {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(id.into())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.750"))
+            .build();
+        send_through_engine(&harness, trader_id, order);
+        fills.extend(
+            harness
+                .settle()
+                .into_iter()
+                .filter_map(|event| match event {
+                    OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+                    _ => None,
+                }),
+        );
+    }
+    assert_eq!(
+        fills,
+        vec![
+            (Price::from("1000.00"), Quantity::from("0.750")),
+            (Price::from("1000.00"), Quantity::from("0.250")),
+        ]
+    );
 }
