@@ -935,14 +935,19 @@ impl DataEngine {
         };
         let commands = client.inactive_retained_subscriptions();
 
+        // Retained entries already own a client feed; preserve that route during replay
         for command in commands {
-            match self.prepare_subscribe_member(&command) {
-                Ok(Some(prepared)) => {
+            #[cfg(feature = "streaming")]
+            let prepared = self.subscribe_command_with_prefilled_start_ns(command.clone());
+            #[cfg(not(feature = "streaming"))]
+            let prepared: anyhow::Result<_> = Ok(command.clone());
+
+            match prepared {
+                Ok(prepared) => {
                     if let Some(client) = self.clients.get_mut(&client_id) {
                         client.execute_subscribe_with_retained(prepared, command, true);
                     }
                 }
-                Ok(None) => {}
                 Err(e) => {
                     log::error!("Failed to prepare retained subscription for {client_id}: {e}");
                 }
@@ -1515,6 +1520,16 @@ impl DataEngine {
                 for id in &cmd.instrument_ids {
                     let member = cmd.with_instrument_ids(*id);
                     self.subscribe_spread_quotes(&member);
+                    let command = SubscribeCommand::Quotes(member);
+
+                    // Balance native cleanup when no aggregate was acquired
+                    if !self.spread_quote_states.contains_key(id)
+                        && let Some(client) =
+                            self.get_command_client(command.client_id(), command.venue())
+                        && client.has_retained_subscription(&command)
+                    {
+                        client.retain_intent(&command);
+                    }
                 }
 
                 Ok(true)

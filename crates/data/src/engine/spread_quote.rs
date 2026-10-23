@@ -163,7 +163,14 @@ impl DataEngine {
             .expect("spread quote routing has one instrument per member");
 
         let Some(state) = self.spread_quote_states.get_mut(&instrument_id) else {
-            log::warn!("Cannot unsubscribe spread quotes for {instrument_id}: not subscribed");
+            if let Some(client) =
+                self.get_command_client(cmd.client_id.as_ref(), cmd.venue.as_ref())
+            {
+                client.execute_unsubscribe(&UnsubscribeCommand::Quotes(cmd.clone()));
+            } else {
+                log::warn!("Cannot unsubscribe spread quotes for {instrument_id}: not subscribed");
+            }
+
             return;
         };
 
