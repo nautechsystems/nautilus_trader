@@ -213,7 +213,8 @@ The formatting hook:
 
 - Checks existing control-flow, spawn, and module-ordering rules at changed boundaries.
 - Compares staged and unstaged changes against `HEAD`, or against the merge base with `CHANGED_BASE_SHA` when set.
-- Falls back to checking all tracked Rust files when a CI base is unavailable.
+- Checks all tracked Rust files when a CI base is unavailable, or when no base is set and there are no
+  uncommitted Rust changes, so `prek run --all-files` on a committed branch checks its commits.
 - Reads complete changed files for context and includes lines used by exemption checks when selecting diagnostics.
 - Does not modify files.
 

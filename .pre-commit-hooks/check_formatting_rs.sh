@@ -40,7 +40,13 @@ if [[ -n "${CHANGED_BASE_SHA:-}" ]]; then
     base=$(git hash-object -t tree /dev/null)
   fi
 elif git rev-parse --verify HEAD > /dev/null 2>&1; then
-  base=HEAD
+  uncommitted=$(git diff --no-color --no-ext-diff --no-textconv --no-renames --name-only HEAD)
+  if grep -q '\.rs$' <<< "$uncommitted"; then
+    base=HEAD
+  else
+    echo "No uncommitted Rust changes; checking all tracked Rust files"
+    base=$(git hash-object -t tree /dev/null)
+  fi
 else
   base=$(git hash-object -t tree /dev/null)
 fi
