@@ -13,14 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Live execution client facade for sharing adapter clients with the live node.
+//! Live execution client facade sharing one adapter client between the execution engine and live node.
 //!
-//! The execution engine stores execution clients as trait objects, but continuous reconciliation
-//! also needs to issue bulk report requests from the live node loop. This facade wraps the adapter
-//! client once and hands cloneable views to both places. Owned report tasks collect on runtime
-//! workers, then finish cache-dependent decisions on the core thread. Clients without owned report
-//! tasks retain inline collection. Instrument updates are deferred only while an inline request
-//! borrows the client and are flushed when that request completes.
+//! # Report lifecycle
+//!
+//! Worker tasks collect off-thread; cache-dependent continuations finalize against current state
+//! on the core thread. A `CollectedReport` holds its continuation and client admission until
+//! `finish()` returns or the receipt is dropped. Dropping it never runs the continuation.
+//!
+//! Inline adapters return completed results wrapped in receipts. The facade's `ExecutionClient`
+//! report methods collect and finish in one call.
+//!
+//! # Adapter obligations
+//!
+//! Task preparation and collection must not change state that controls later report delivery,
+//! such as deduplication markers. This is an adapter obligation the facade cannot enforce.
+//!
+//! # Instrument updates
+//!
+//! Report collection defers instrument updates only while an inline request borrows the client.
+//! The facade flushes them before returning a receipt; the node flushes them on cancellation.
 
 use std::{
     cell::{Cell, RefCell},
@@ -102,37 +114,38 @@ impl LiveExecutionClient {
         clippy::await_holding_refcell_ref,
         reason = "live report polling runs on the single-threaded node runtime"
     )]
-    pub(crate) async fn generate_order_status_report(
+    pub(crate) async fn collect_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
-    ) -> anyhow::Result<Option<OrderStatusReport>> {
+    ) -> anyhow::Result<CollectedReport<Option<OrderStatusReport>>> {
         let task = self.client.borrow().generate_order_status_report_task(cmd);
         if let Some(task) = task {
             return self.collect_report(task).await;
         }
 
         log::debug!("{} collects single-order reports inline", self.client_id);
-        let _guard = self.reserve_report_task().await?;
+        let guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_order_status_report(cmd).await };
         self.flush_pending_instruments();
-        result
+        let finish = Box::new(move || result);
+        Ok(CollectedReport::new(finish, guard))
     }
 
     #[expect(
         clippy::await_holding_refcell_ref,
         reason = "live report polling runs on the single-threaded node runtime"
     )]
-    pub(crate) async fn generate_order_status_reports(
+    pub(crate) async fn collect_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
-    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+    ) -> anyhow::Result<CollectedReport<Vec<OrderStatusReport>>> {
         let task = self.client.borrow().generate_order_status_reports_task(cmd);
         if let Some(task) = task {
             return self.collect_report(task).await;
         }
 
         log::debug!("{} collects bulk order reports inline", self.client_id);
-        let _guard = self.reserve_report_task().await?;
+        let guard = self.reserve_report_task().await?;
 
         let result = {
             self.client
@@ -142,37 +155,39 @@ impl LiveExecutionClient {
         };
 
         self.flush_pending_instruments();
-        result
+        let finish = Box::new(move || result);
+        Ok(CollectedReport::new(finish, guard))
     }
 
     #[expect(
         clippy::await_holding_refcell_ref,
         reason = "live report polling runs on the single-threaded node runtime"
     )]
-    pub(crate) async fn generate_fill_reports(
+    pub(crate) async fn collect_fill_reports(
         &self,
         cmd: GenerateFillReports,
-    ) -> anyhow::Result<Vec<FillReport>> {
+    ) -> anyhow::Result<CollectedReport<Vec<FillReport>>> {
         let task = self.client.borrow().generate_fill_reports_task(&cmd);
         if let Some(task) = task {
             return self.collect_report(task).await;
         }
 
         log::debug!("{} collects fill reports inline", self.client_id);
-        let _guard = self.reserve_report_task().await?;
+        let guard = self.reserve_report_task().await?;
         let result = { self.client.borrow().generate_fill_reports(cmd).await };
         self.flush_pending_instruments();
-        result
+        let finish = Box::new(move || result);
+        Ok(CollectedReport::new(finish, guard))
     }
 
     #[expect(
         clippy::await_holding_refcell_ref,
         reason = "live report polling runs on the single-threaded node runtime"
     )]
-    pub(crate) async fn generate_position_status_reports(
+    pub(crate) async fn collect_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
-    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+    ) -> anyhow::Result<CollectedReport<Vec<PositionStatusReport>>> {
         let task = self
             .client
             .borrow()
@@ -183,7 +198,7 @@ impl LiveExecutionClient {
         }
 
         log::debug!("{} collects position reports inline", self.client_id);
-        let _guard = self.reserve_report_task().await?;
+        let guard = self.reserve_report_task().await?;
 
         let result = {
             self.client
@@ -193,17 +208,20 @@ impl LiveExecutionClient {
         };
 
         self.flush_pending_instruments();
-        result
+        let finish = Box::new(move || result);
+        Ok(CollectedReport::new(finish, guard))
     }
 
-    async fn collect_report<T>(&self, task: ExecutionReportTask<T>) -> anyhow::Result<T> {
-        let _guard = self.reserve_report_task().await?;
+    async fn collect_report<T>(
+        &self,
+        task: ExecutionReportTask<T>,
+    ) -> anyhow::Result<CollectedReport<T>> {
+        let guard = self.reserve_report_task().await?;
 
         self.report_task.borrow_mut().spawn(task.collection)?;
         self.join_report_task().await?;
-        let result = (task.finish)();
         self.flush_pending_instruments();
-        result
+        Ok(CollectedReport::new(task.finish, guard))
     }
 
     async fn reserve_report_task(&self) -> anyhow::Result<ReportTaskGuard> {
@@ -269,6 +287,32 @@ impl LiveExecutionClient {
         }
 
         log::debug!("Flushed {count} deferred execution client instrument update(s)");
+    }
+}
+
+/// Collected reports with synchronous core finalization and retained per-client admission.
+///
+/// Dropping the receipt discards the continuation. Inline adapters have already collected their
+/// result and must not change state that controls later report delivery during collection.
+#[must_use]
+pub(crate) struct CollectedReport<T> {
+    finish: Box<dyn FnOnce() -> anyhow::Result<T>>,
+    _guard: ReportTaskGuard,
+}
+
+impl<T> CollectedReport<T> {
+    fn new(finish: Box<dyn FnOnce() -> anyhow::Result<T>>, guard: ReportTaskGuard) -> Self {
+        Self {
+            finish,
+            _guard: guard,
+        }
+    }
+
+    /// Runs the stored continuation before releasing client admission.
+    ///
+    /// Owned tasks finalize with current core state; inline receipts return their collected result.
+    pub(crate) fn finish(self) -> anyhow::Result<T> {
+        (self.finish)()
     }
 }
 
@@ -424,28 +468,28 @@ impl ExecutionClient for LiveExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        Self::generate_order_status_report(self, cmd).await
+        self.collect_order_status_report(cmd).await?.finish()
     }
 
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        Self::generate_order_status_reports(self, cmd).await
+        self.collect_order_status_reports(cmd).await?.finish()
     }
 
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        Self::generate_fill_reports(self, cmd).await
+        self.collect_fill_reports(cmd).await?.finish()
     }
 
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        Self::generate_position_status_reports(self, cmd).await
+        self.collect_position_status_reports(cmd).await?.finish()
     }
 
     #[expect(
@@ -532,11 +576,49 @@ mod tests {
         time::Duration,
     };
 
+    use nautilus_common::messages::execution::{
+        GenerateFillReportsBuilder, GenerateOrderStatusReportBuilder,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReportsBuilder,
+    };
+    use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
     use rstest::rstest;
 
     use super::*;
 
-    struct ReportExecutionClient;
+    #[derive(Clone, Default)]
+    struct ReportExecutionClient {
+        worker: bool,
+        fail: bool,
+        reports: Rc<Cell<u8>>,
+        instruments: Rc<RefCell<Vec<InstrumentId>>>,
+        report_release: Option<Rc<tokio::sync::Notify>>,
+    }
+
+    impl ReportExecutionClient {
+        fn report_result<T>(&self, value: T, report: u8) -> anyhow::Result<T> {
+            self.reports.set(self.reports.get() | report);
+
+            if self.fail {
+                anyhow::bail!("report {report} failed");
+            }
+
+            Ok(value)
+        }
+
+        fn report_task<T: Send + 'static>(
+            &self,
+            value: T,
+            report: u8,
+        ) -> Option<ExecutionReportTask<T>> {
+            self.worker.then(|| {
+                let client = self.clone();
+
+                ExecutionReportTask::new(async move { Ok(value) }, move |value| {
+                    client.report_result(value, report)
+                })
+            })
+        }
+    }
 
     #[async_trait(?Send)]
     impl ExecutionClient for ReportExecutionClient {
@@ -578,6 +660,76 @@ mod tests {
         fn stop(&mut self) -> anyhow::Result<()> {
             Ok(())
         }
+
+        fn generate_order_status_report_task(
+            &self,
+            _cmd: &GenerateOrderStatusReport,
+        ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+            self.report_task(None, 1)
+        }
+
+        fn generate_order_status_reports_task(
+            &self,
+            _cmd: &GenerateOrderStatusReports,
+        ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+            self.report_task(Vec::new(), 2)
+        }
+
+        fn generate_fill_reports_task(
+            &self,
+            _cmd: &GenerateFillReports,
+        ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+            self.report_task(Vec::new(), 4)
+        }
+
+        fn generate_position_status_reports_task(
+            &self,
+            _cmd: &GeneratePositionStatusReports,
+        ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
+            self.report_task(Vec::new(), 8)
+        }
+
+        async fn generate_order_status_report(
+            &self,
+            _cmd: &GenerateOrderStatusReport,
+        ) -> anyhow::Result<Option<OrderStatusReport>> {
+            assert!(!self.worker);
+            self.report_result(None, 1)
+        }
+
+        async fn generate_order_status_reports(
+            &self,
+            _cmd: &GenerateOrderStatusReports,
+        ) -> anyhow::Result<Vec<OrderStatusReport>> {
+            assert!(!self.worker);
+
+            if let Some(release) = &self.report_release {
+                release.notified().await;
+            }
+
+            self.report_result(Vec::new(), 2)
+        }
+
+        async fn generate_fill_reports(
+            &self,
+            _cmd: GenerateFillReports,
+        ) -> anyhow::Result<Vec<FillReport>> {
+            assert!(!self.worker);
+            self.report_result(Vec::new(), 4)
+        }
+
+        async fn generate_position_status_reports(
+            &self,
+            _cmd: &GeneratePositionStatusReports,
+        ) -> anyhow::Result<Vec<PositionStatusReport>> {
+            assert!(!self.worker);
+            self.report_result(Vec::new(), 8)
+        }
+
+        fn on_instrument(&mut self, instrument: InstrumentAny) {
+            self.instruments.borrow_mut().push(instrument.id());
+        }
+
         async fn generate_mass_status(
             &self,
             _lookback_mins: Option<u64>,
@@ -598,7 +750,7 @@ mod tests {
 
     #[rstest]
     fn venue_order_ids_survive_live_wrapper() {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
 
         let mass_status = ExecutionMassStatus::new(
             client.client_id(),
@@ -619,9 +771,234 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::inline(false)]
+    #[case::worker(true)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn facade_collection_and_fused_routes(#[case] worker: bool) {
+        let adapter = ReportExecutionClient {
+            worker,
+            ..Default::default()
+        };
+
+        let reports = Rc::clone(&adapter.reports);
+        let client = LiveExecutionClient::new(Box::new(adapter));
+        let order = GenerateOrderStatusReportBuilder::default()
+            .ts_init(17.into())
+            .build()
+            .unwrap();
+        let orders = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(19.into())
+            .open_only(true)
+            .build()
+            .unwrap();
+        let fills = GenerateFillReportsBuilder::default()
+            .ts_init(23.into())
+            .build()
+            .unwrap();
+        let positions = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(29.into())
+            .build()
+            .unwrap();
+
+        let receipt = client.collect_order_status_report(&order).await.unwrap();
+        assert_eq!(reports.get(), u8::from(!worker));
+        assert!(client.report_collecting.get());
+        assert_eq!(receipt.finish().unwrap(), None);
+        assert_eq!(reports.get(), 1);
+        assert!(!client.report_collecting.get());
+
+        let receipt = client.collect_order_status_reports(&orders).await.unwrap();
+        assert_eq!(reports.get(), if worker { 1 } else { 3 });
+        assert!(client.report_collecting.get());
+        assert_eq!(receipt.finish().unwrap(), Vec::new());
+        assert_eq!(reports.get(), 3);
+        assert!(!client.report_collecting.get());
+
+        let receipt = client.collect_fill_reports(fills.clone()).await.unwrap();
+        assert_eq!(reports.get(), if worker { 3 } else { 7 });
+        assert!(client.report_collecting.get());
+        assert_eq!(receipt.finish().unwrap(), Vec::new());
+        assert_eq!(reports.get(), 7);
+        assert!(!client.report_collecting.get());
+
+        let receipt = client
+            .collect_position_status_reports(&positions)
+            .await
+            .unwrap();
+        assert_eq!(reports.get(), if worker { 7 } else { 15 });
+        assert!(client.report_collecting.get());
+        assert_eq!(receipt.finish().unwrap(), Vec::new());
+        assert_eq!(reports.get(), 15);
+        assert!(!client.report_collecting.get());
+
+        reports.set(0);
+        assert_eq!(
+            client.generate_order_status_report(&order).await.unwrap(),
+            None
+        );
+        assert_eq!(reports.get(), 1);
+        assert_eq!(
+            client.generate_order_status_reports(&orders).await.unwrap(),
+            Vec::new()
+        );
+        assert_eq!(reports.get(), 3);
+        assert_eq!(
+            client.generate_fill_reports(fills).await.unwrap(),
+            Vec::new()
+        );
+        assert_eq!(reports.get(), 7);
+        assert_eq!(
+            client
+                .generate_position_status_reports(&positions)
+                .await
+                .unwrap(),
+            Vec::new()
+        );
+        assert_eq!(reports.get(), 15);
+        assert!(!client.report_collecting.get());
+    }
+
+    #[rstest]
+    #[case::inline(false)]
+    #[case::worker(true)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn facade_fused_routes_preserve_errors(#[case] worker: bool) {
+        let adapter = ReportExecutionClient {
+            worker,
+            fail: true,
+            ..Default::default()
+        };
+
+        let client = LiveExecutionClient::new(Box::new(adapter));
+        let order = GenerateOrderStatusReportBuilder::default()
+            .ts_init(17.into())
+            .build()
+            .unwrap();
+        let orders = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(19.into())
+            .open_only(true)
+            .build()
+            .unwrap();
+        let fills = GenerateFillReportsBuilder::default()
+            .ts_init(23.into())
+            .build()
+            .unwrap();
+        let positions = GeneratePositionStatusReportsBuilder::default()
+            .ts_init(29.into())
+            .build()
+            .unwrap();
+
+        let order_error = client
+            .generate_order_status_report(&order)
+            .await
+            .unwrap_err();
+        let orders_error = client
+            .generate_order_status_reports(&orders)
+            .await
+            .unwrap_err();
+        let fills_error = client.generate_fill_reports(fills).await.unwrap_err();
+        let positions_error = client
+            .generate_position_status_reports(&positions)
+            .await
+            .unwrap_err();
+
+        assert_eq!(order_error.to_string(), "report 1 failed");
+        assert_eq!(orders_error.to_string(), "report 2 failed");
+        assert_eq!(fills_error.to_string(), "report 4 failed");
+        assert_eq!(positions_error.to_string(), "report 8 failed");
+        assert!(!client.report_collecting.get());
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    #[rstest]
+    #[case::inline(false)]
+    #[case::worker_after_inline_cancel(true)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn collection_flushes_deferred_instruments_before_receipt(
+        #[case] worker: bool,
+        #[values(false, true)] fail: bool,
+    ) {
+        let release = Rc::new(tokio::sync::Notify::new());
+
+        let adapter = ReportExecutionClient {
+            fail,
+            report_release: Some(Rc::clone(&release)),
+            ..Default::default()
+        };
+
+        let instruments = Rc::clone(&adapter.instruments);
+        let client = LiveExecutionClient::new(Box::new(adapter));
+        let mut client_view = client.clone();
+        let command = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(17.into())
+            .open_only(true)
+            .build()
+            .unwrap();
+        let mut collection = Box::pin(client.collect_order_status_reports(&command));
+        std::future::poll_fn(|context| {
+            assert!(collection.as_mut().poll(context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        client_view.on_instrument(instrument);
+        assert!(instruments.borrow().is_empty());
+        assert_eq!(client.pending_instruments.borrow().len(), 1);
+
+        let receipt = if worker {
+            drop(collection);
+
+            let task = ExecutionReportTask::new(async { Ok(Vec::new()) }, move |reports| {
+                if fail {
+                    anyhow::bail!("report 2 failed");
+                }
+
+                Ok(reports)
+            });
+
+            client.collect_report(task).await.unwrap()
+        } else {
+            release.notify_one();
+            collection.await.unwrap()
+        };
+
+        assert_eq!(*instruments.borrow(), vec![instrument_id]);
+        assert!(client.pending_instruments.borrow().is_empty());
+        assert!(client.report_collecting.get());
+        let result = receipt.finish();
+
+        if fail {
+            assert_eq!(result.unwrap_err().to_string(), "report 2 failed");
+        } else {
+            assert_eq!(result.unwrap(), Vec::new());
+        }
+
+        assert!(!client.report_collecting.get());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ready_receipt_does_not_retain_adapter_client() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
+        let adapter = Rc::downgrade(&client.client);
+        let admission = Rc::clone(&client.report_collecting);
+        let task = ExecutionReportTask::new(async { Ok(37) }, Ok);
+        let receipt = client.collect_report(task).await.unwrap();
+        drop(client);
+
+        assert!(adapter.upgrade().is_none());
+        assert!(admission.get());
+        let result = receipt.finish().unwrap();
+
+        assert_eq!(result, 37);
+        assert!(!admission.get());
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn collection_runs_on_worker_and_finishes_with_current_core_state() {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
         let core_thread = std::thread::current().id();
         let current = Rc::new(Cell::new(11));
         let current_for_finish = Rc::clone(&current);
@@ -631,7 +1008,7 @@ mod tests {
             Ok(value + current_for_finish.get())
         });
 
-        let mut collection = Box::pin(client.collect_report(task));
+        let mut collection = Box::pin(async { client.collect_report(task).await?.finish() });
         let worker_thread = tokio::select! {
             result = &mut collection => panic!("collection finished before release: {result:?}"),
             started = started => started.unwrap(),
@@ -644,6 +1021,103 @@ mod tests {
         assert!(client.report_task.borrow().is_none());
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn ready_receipt_finishes_with_state_changed_after_collection() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
+        let core_thread = std::thread::current().id();
+        let current = Rc::new(Cell::new(17));
+        let finalized = Rc::new(Cell::new(0));
+        let current_for_finish = Rc::clone(&current);
+        let finalized_for_finish = Rc::clone(&finalized);
+
+        let task = ExecutionReportTask::new(async { Ok(13) }, move |value| {
+            assert_eq!(std::thread::current().id(), core_thread);
+            let result = value + current_for_finish.get();
+            finalized_for_finish.set(result);
+            Ok(result)
+        });
+
+        let receipt = client.collect_report(task).await.unwrap();
+        assert_eq!(finalized.get(), 0);
+        assert!(client.report_task.borrow().is_none());
+        assert!(client.report_collecting.get());
+        current.set(29);
+        let result = receipt.finish().unwrap();
+
+        assert_eq!(result, 42);
+        assert_eq!(finalized.get(), 42);
+        assert!(!client.report_collecting.get());
+    }
+
+    #[rstest]
+    #[case::dropped(false)]
+    #[case::finished(true)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn ready_receipt_keeps_admission_until_disposal(#[case] finish: bool) {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
+        let finalized = Rc::new(Cell::new(19));
+        let finalized_for_finish = Rc::clone(&finalized);
+
+        let task = ExecutionReportTask::new(async { Ok(37) }, move |value| {
+            finalized_for_finish.set(value);
+            Ok(value)
+        });
+
+        let receipt = client.collect_report(task).await.unwrap();
+        let rejected = client
+            .collect_report(ExecutionReportTask::new(async { Ok(41) }, Ok))
+            .await
+            .and_then(CollectedReport::finish)
+            .unwrap_err();
+        let mass_rejected = client.generate_mass_status(None).await.unwrap_err();
+        assert_eq!(finalized.get(), 19);
+
+        if finish {
+            assert_eq!(receipt.finish().unwrap(), 37);
+        } else {
+            drop(receipt);
+        }
+
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(43) }, Ok))
+            .await
+            .unwrap()
+            .finish()
+            .unwrap();
+
+        assert_eq!(
+            rejected.to_string(),
+            "REPORT report collection is already running"
+        );
+        assert_eq!(mass_rejected.to_string(), rejected.to_string());
+        assert_eq!(finalized.get(), if finish { 37 } else { 19 });
+        assert_eq!(next, 43);
+        assert!(!client.report_collecting.get());
+        assert!(client.report_task.borrow().is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn receipt_finish_error_releases_admission() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
+
+        let task = ExecutionReportTask::<usize>::new(async { Ok(13) }, |value| {
+            anyhow::bail!("cannot finalize {value}");
+        });
+
+        let receipt = client.collect_report(task).await.unwrap();
+        let failure = receipt.finish().unwrap_err();
+        let next = client
+            .collect_report(ExecutionReportTask::new(async { Ok(47) }, Ok))
+            .await
+            .unwrap()
+            .finish()
+            .unwrap();
+
+        assert_eq!(failure.to_string(), "cannot finalize 13");
+        assert_eq!(next, 47);
+        assert!(!client.report_collecting.get());
+    }
+
     #[rstest]
     #[case::dropped(false)]
     #[case::timed_out(true)]
@@ -651,7 +1125,7 @@ mod tests {
     async fn canceled_cpu_collection_stays_owned_and_never_finishes_on_core(
         #[case] timed_out: bool,
     ) {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
         let finalized = Rc::new(Cell::new(0));
         let finalized_for_task = Rc::clone(&finalized);
 
@@ -660,7 +1134,7 @@ mod tests {
             Ok(value)
         });
 
-        let mut collection = Box::pin(client.collect_report(task));
+        let mut collection = Box::pin(async { client.collect_report(task).await?.finish() });
         tokio::select! {
             result = &mut collection => panic!("collection finished before release: {result:?}"),
             started = started => { started.unwrap(); },
@@ -680,6 +1154,7 @@ mod tests {
         let rejected = client
             .collect_report(ExecutionReportTask::new(async { Ok(47) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap_err();
         let mass_rejected = client.generate_mass_status(None).await.unwrap_err();
         assert_eq!(
@@ -692,6 +1167,7 @@ mod tests {
         let next = client
             .collect_report(ExecutionReportTask::new(async { Ok(53) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap();
         assert_eq!(finalized.get(), 0);
         assert_eq!(next, 53);
@@ -700,25 +1176,30 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn collection_panic_is_observed_and_slot_can_be_reused() {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
 
         let task = ExecutionReportTask::<usize>::new::<usize, _, _>(
             async { panic!("report decoding failed") },
             Ok,
         );
-        let failure = client.collect_report(task).await.unwrap_err();
+        let failure = client
+            .collect_report(task)
+            .await
+            .and_then(CollectedReport::finish)
+            .unwrap_err();
         assert!(failure.to_string().contains("report decoding failed"));
         assert!(client.report_task.borrow().is_none());
         let next = client
             .collect_report(ExecutionReportTask::new(async { Ok(59) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap();
         assert_eq!(next, 59);
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn collection_error_does_not_run_continuation() {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
         let finalized = Rc::new(Cell::new(false));
         let finalized_for_task = Rc::clone(&finalized);
 
@@ -730,7 +1211,11 @@ mod tests {
             },
         );
 
-        let failure = client.collect_report(task).await.unwrap_err();
+        let failure = client
+            .collect_report(task)
+            .await
+            .and_then(CollectedReport::finish)
+            .unwrap_err();
         assert_eq!(failure.to_string(), "report endpoint unavailable");
         assert!(!finalized.get());
         assert!(client.report_task.borrow().is_none());
@@ -741,9 +1226,9 @@ mod tests {
     #[case::resumed(true)]
     #[tokio::test(flavor = "current_thread")]
     async fn finished_worker_keeps_admission_until_collector_releases(#[case] resume: bool) {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
         let (task, started, gate) = cpu_collection(Ok);
-        let mut collection = Box::pin(client.collect_report(task));
+        let mut collection = Box::pin(async { client.collect_report(task).await?.finish() });
         tokio::select! {
             result = &mut collection => panic!("collection finished before release: {result:?}"),
             started = started => { started.unwrap(); },
@@ -760,6 +1245,7 @@ mod tests {
         let rejected = client
             .collect_report(ExecutionReportTask::new(async { Ok(61) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap_err();
 
         if resume {
@@ -771,6 +1257,7 @@ mod tests {
         let next = client
             .collect_report(ExecutionReportTask::new(async { Ok(67) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap();
         assert_eq!(
             rejected.to_string(),
@@ -783,9 +1270,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn retained_worker_join_reserves_admission_before_cooperative_yield() {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
         let (task, started, gate) = cpu_collection(Ok);
-        let mut collection = Box::pin(client.collect_report(task));
+        let mut collection = Box::pin(async { client.collect_report(task).await?.finish() });
         tokio::select! {
             result = &mut collection => panic!("collection finished before release: {result:?}"),
             started = started => { started.unwrap(); },
@@ -830,6 +1317,7 @@ mod tests {
         let next = client
             .collect_report(ExecutionReportTask::new(async { Ok(97) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap();
         assert_eq!(next, 97);
         assert!(!client.report_collecting.get());
@@ -838,7 +1326,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn synchronous_continuation_keeps_admission_until_collector_releases() {
-        let client = Rc::new(LiveExecutionClient::new(Box::new(ReportExecutionClient)));
+        let client = Rc::new(LiveExecutionClient::new(Box::new(
+            ReportExecutionClient::default(),
+        )));
         let client_for_finish = Rc::clone(&client);
 
         let task = ExecutionReportTask {
@@ -854,14 +1344,19 @@ mod tests {
                     panic!("overlapping collection was not rejected");
                 };
 
-                result
+                result.and_then(CollectedReport::finish)
             }),
         };
 
-        let rejected = client.collect_report(task).await.unwrap_err();
+        let rejected = client
+            .collect_report(task)
+            .await
+            .and_then(CollectedReport::finish)
+            .unwrap_err();
         let next = client
             .collect_report(ExecutionReportTask::new(async { Ok(73) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap();
         assert_eq!(
             rejected.to_string(),
@@ -874,7 +1369,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn inline_mass_status_keeps_worker_admission_until_collector_releases() {
-        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient::default()));
         let mut mass_status = Box::pin(client.generate_mass_status(None));
         std::future::poll_fn(|context| {
             assert!(mass_status.as_mut().poll(context).is_pending());
@@ -885,11 +1380,13 @@ mod tests {
         let rejected = client
             .collect_report(ExecutionReportTask::new(async { Ok(79) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap_err();
         drop(mass_status);
         let next = client
             .collect_report(ExecutionReportTask::new(async { Ok(83) }, Ok))
             .await
+            .and_then(CollectedReport::finish)
             .unwrap();
         assert_eq!(
             rejected.to_string(),

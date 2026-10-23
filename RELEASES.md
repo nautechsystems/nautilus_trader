@@ -167,6 +167,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added deferred finalization for live execution report collection
 - Improved Dockerfile linting to run Hadolint without Docker
 - Optimized JSON and MessagePack decoding and custom data response encoding
 - Optimized virtual hedging fill-history checks during execution and reconciliation
