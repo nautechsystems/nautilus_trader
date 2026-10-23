@@ -4079,6 +4079,253 @@ fn test_delete_data_range_merges_splits_sharing_a_file() {
     );
 }
 
+fn create_quote_tick_for(
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: u64,
+) -> QuoteTick {
+    QuoteTick::new(
+        instrument_id,
+        Price::new(1987.0, price_precision),
+        Price::new(1988.0, price_precision),
+        Quantity::new(100_000.0, 0),
+        Quantity::new(100_000.0, 0),
+        UnixNanos::from(0),
+        UnixNanos::from(ts_init),
+    )
+}
+
+fn write_quotes_over(catalog: &ParquetDataCatalog, quotes: &[QuoteTick], start: u64, end: u64) {
+    catalog
+        .write_to_parquet(
+            quotes,
+            Some(UnixNanos::from(start)),
+            Some(UnixNanos::from(end)),
+            Some(true),
+        )
+        .unwrap();
+}
+
+fn delete_quotes(
+    catalog: &mut ParquetDataCatalog,
+    identifier: Option<&str>,
+    start: u64,
+    end: u64,
+) -> anyhow::Result<()> {
+    catalog.delete_data_range(
+        &NautilusDataType::QuoteTick,
+        identifier,
+        Some(UnixNanos::from(start)),
+        Some(UnixNanos::from(end)),
+    )
+}
+
+/// Without an identifier, splits of files in different directories with the same range keep their
+/// own directories.
+#[rstest]
+fn test_delete_data_range_without_identifier_writes_splits_per_directory() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let eth = ethusdt_binance_id();
+    let aud = audusd_sim_id();
+    write_quotes_over(
+        &catalog,
+        &[
+            create_quote_tick_for(eth, 1, 1),
+            create_quote_tick_for(eth, 1, 4),
+        ],
+        0,
+        10,
+    );
+    write_quotes_over(
+        &catalog,
+        &[
+            create_quote_tick_for(aud, 1, 2),
+            create_quote_tick_for(aud, 1, 5),
+        ],
+        0,
+        10,
+    );
+
+    delete_quotes(&mut catalog, None, 3, 3).unwrap();
+    let remaining = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(
+        catalog_relative_paths(&temp_dir),
+        vec![
+            "data/quotes/AUDUSD.SIM/\
+             1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet"
+                .to_string(),
+            "data/quotes/AUDUSD.SIM/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+            "data/quotes/ETHUSDT.BINANCE/\
+             1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet"
+                .to_string(),
+            "data/quotes/ETHUSDT.BINANCE/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+        ]
+    );
+    assert_eq!(
+        remaining,
+        vec![
+            create_quote_tick_for(eth, 1, 1),
+            create_quote_tick_for(aud, 1, 2),
+            create_quote_tick_for(eth, 1, 4),
+            create_quote_tick_for(aud, 1, 5),
+        ]
+    );
+}
+
+/// An existing split target that lacks preserved rows would be skipped by the write while its
+/// sources are removed, so the delete fails before it writes or removes any file.
+#[rstest]
+fn test_delete_data_range_rejects_split_target_missing_rows() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let eth = ethusdt_binance_id();
+    write_quotes_over(
+        &catalog,
+        &[
+            create_quote_tick_for(eth, 1, 1),
+            create_quote_tick_for(eth, 1, 4),
+        ],
+        0,
+        10,
+    );
+    write_quotes_over(&catalog, &[create_quote_tick_for(eth, 1, 2)], 0, 2);
+    let files_before = snapshot_catalog_files(&temp_dir);
+
+    let error = delete_quotes(&mut catalog, Some("ETH/USDT.BINANCE"), 3, 3).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Cannot preserve the rows outside the deleted range: their target file \
+         data/quotes/ETHUSDT.BINANCE/1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet \
+         already exists without them"
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
+}
+
+/// An existing split target that already holds the preserved rows, as after an interrupted delete,
+/// is kept and the delete completes.
+#[rstest]
+fn test_delete_data_range_keeps_split_target_holding_rows() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let eth = ethusdt_binance_id();
+    write_quotes_over(
+        &catalog,
+        &[
+            create_quote_tick_for(eth, 1, 1),
+            create_quote_tick_for(eth, 1, 4),
+        ],
+        0,
+        10,
+    );
+    write_quotes_over(&catalog, &[create_quote_tick_for(eth, 1, 1)], 0, 2);
+
+    delete_quotes(&mut catalog, Some("ETH/USDT.BINANCE"), 3, 3).unwrap();
+    let remaining = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(
+        catalog_relative_paths(&temp_dir),
+        vec![
+            "data/quotes/ETHUSDT.BINANCE/\
+             1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet"
+                .to_string(),
+            "data/quotes/ETHUSDT.BINANCE/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+        ]
+    );
+    assert_eq!(
+        remaining,
+        vec![
+            create_quote_tick_for(eth, 1, 1),
+            create_quote_tick_for(eth, 1, 4)
+        ]
+    );
+}
+
+/// Every split target is checked before any file is written, so a later target whose splits carry
+/// different precisions leaves no file from an earlier target behind.
+#[rstest]
+fn test_delete_data_range_checks_every_split_before_writing() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let eth = ethusdt_binance_id();
+    write_quotes_over(
+        &catalog,
+        &[
+            create_quote_tick_for(eth, 1, 1),
+            create_quote_tick_for(eth, 1, 8),
+        ],
+        0,
+        10,
+    );
+    write_quotes_over(
+        &catalog,
+        &[
+            create_quote_tick_for(eth, 2, 6),
+            create_quote_tick_for(eth, 2, 9),
+        ],
+        5,
+        10,
+    );
+    let files_before = snapshot_catalog_files(&temp_dir);
+
+    let error = delete_quotes(&mut catalog, Some("ETH/USDT.BINANCE"), 7, 7).unwrap_err();
+
+    assert!(
+        error.to_string().starts_with(
+            "Cannot write nautilus_model_data_quote_quote_tick data with mixed identities: \
+                 element 1 has metadata"
+        ),
+        "{error}"
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
+}
+
+/// Every period is checked before any is written, so a later period mixing precisions leaves the
+/// earlier periods unconsolidated.
+#[rstest]
+fn test_consolidate_data_by_period_checks_every_period_before_writing() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let eth = ethusdt_binance_id();
+
+    for (price_precision, ts_init) in [(1, 1), (1, 2), (1, 1_500_000_000), (2, 1_600_000_000)] {
+        write_quotes_over(
+            &catalog,
+            &[create_quote_tick_for(eth, price_precision, ts_init)],
+            ts_init,
+            ts_init,
+        );
+    }
+    let files_before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .consolidate_data_by_period(
+            &CatalogDataType::Data(NautilusDataType::QuoteTick),
+            Some("ETH/USDT.BINANCE"),
+            Some(1_000_000_000),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap_err();
+
+    assert!(
+        error.to_string().starts_with(
+            "Cannot write nautilus_model_data_quote_quote_tick data with mixed identities: \
+             element 1 has metadata"
+        ),
+        "{error}"
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
+}
+
 #[rstest]
 fn test_delete_data_range_partial_file_overlap_end() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
@@ -5840,6 +6087,53 @@ fn test_consolidate_data_by_period_rejects_custom_metadata_groups_sharing_a_file
     assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
 }
 
+/// Every period is checked before any is written, so a collision in a later period leaves the
+/// earlier periods unconsolidated.
+#[rstest]
+fn test_consolidate_data_by_period_checks_every_custom_period_before_writing() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    for data in [
+        vec![custom_with_source("a", 1)],
+        vec![custom_with_source("a", 2)],
+        vec![custom_with_source("a", 1_500_000_000)],
+        vec![custom_with_source("b", 1_600_000_000)],
+    ] {
+        catalog
+            .write_data_enum(&data, None, None, Some(false))
+            .unwrap();
+    }
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.A"))
+        .unwrap();
+    let files_before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .consolidate_data_by_period(
+            &CatalogDataType::Data(NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            }),
+            Some("RUST.A"),
+            Some(1_000_000_000),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot write custom data for RustTestCustomData with different metadata to the same \
+             file {}: a file holds one data type",
+            std::path::PathBuf::from(directory)
+                .join("1970-01-01T00-00-01-500000000Z_1970-01-01T00-00-01-600000000Z.parquet")
+                .display(),
+        )
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
+}
+
 // Writes two overlapping custom files whose split before a deletion at ts 3 both target [0, 2].
 fn write_custom_files_with_shared_split(catalog: &ParquetDataCatalog, second_source: &str) {
     catalog
@@ -5943,6 +6237,41 @@ fn test_delete_data_range_rejects_custom_metadata_splits_sharing_a_file() {
                 .join("1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet")
                 .display(),
         )
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
+}
+
+/// An existing custom split target that lacks preserved rows fails the delete without changes.
+#[rstest]
+fn test_delete_data_range_rejects_custom_split_target_missing_rows() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    catalog
+        .write_data_enum(
+            &[custom_with_source("a", 1), custom_with_source("a", 4)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(10)),
+            Some(true),
+        )
+        .unwrap();
+    catalog
+        .write_data_enum(
+            &[custom_with_source("a", 2)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(2)),
+            Some(true),
+        )
+        .unwrap();
+    let files_before = snapshot_catalog_files(&temp_dir);
+
+    let error = delete_rust_test_custom_data_at_3(&mut catalog).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Cannot preserve the rows outside the deleted range: their target file \
+         data/custom/RustTestCustomData/RUST.A/\
+         1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet \
+         already exists without them"
     );
     assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
 }

@@ -21,7 +21,7 @@
     reason = "consolidation operations forward catalog/storage errors and operate on validated batches"
 )]
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, string::conversions::to_snake_case};
 use nautilus_model::data::{
     Bar, CustomData, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, NautilusDataType,
     OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
@@ -840,24 +840,14 @@ impl ParquetDataCatalog {
         // a source file is only deleted when its interval is fully consumed by the consolidation.
         let overall_query_start = queries_to_execute[0].query_start;
 
-        // Phase 2: Execute queries, write, and delete
+        // Phase 2: Query and check every period before writing, so a period that cannot be
+        // written fails the call before any period is written or any source file deleted
+        let type_name = to_snake_case(std::any::type_name::<T>());
         let mut file_start_ns: Option<u64> = None; // Track contiguity across periods
+        let mut periods = Vec::new();
 
         for query_info in queries_to_execute {
-            // Query data for this period
-            let instrument_ids = identifier.map(|id| vec![id.to_string()]);
-
-            // Use optimize_file_loading=false to match Python behavior:
-            // During consolidation, we want to read only the specific files being consolidated,
-            // not the entire directory. This ensures precise file control during consolidation.
-            let period_data = self.query::<T>(
-                instrument_ids,
-                Some(UnixNanos::from(query_info.query_start)),
-                Some(UnixNanos::from(query_info.query_end)),
-                None,
-                Some(existing_files.clone()),
-                false, // optimize_file_loading=false for precise file control during consolidation
-            )?;
+            let period_data = self.query_period::<T>(identifier, &query_info, &existing_files)?;
 
             if period_data.is_empty() {
                 // Skip if no data found, but maintain contiguity by using query start
@@ -903,10 +893,24 @@ impl ParquetDataCatalog {
                 continue;
             }
 
-            // Write consolidated data for this period using write_to_parquet
+            Self::check_ascending_timestamps(&period_data, &type_name)?;
+            Self::check_chunk_identity(&period_data, &type_name)?;
+            periods.push((
+                query_info,
+                UnixNanos::from(final_start_ns),
+                UnixNanos::from(final_end_ns),
+            ));
+
+            // Reset so next period starts a new contiguous segment
+            file_start_ns = None;
+        }
+
+        // Phase 3: Write each period, querying it again so only one period is held in memory,
+        // then delete the files it fully consumed. Files deleted by earlier periods hold no rows
+        // of later periods, so each query returns the rows checked above.
+        for (query_info, start_ts, end_ts) in periods {
+            let period_data = self.query_period::<T>(identifier, &query_info, &existing_files)?;
             // Use skip_disjoint_check since we're managing file removal carefully
-            let start_ts = UnixNanos::from(final_start_ns);
-            let end_ts = UnixNanos::from(final_end_ns);
             self.write_to_parquet(&period_data, Some(start_ts), Some(end_ts), Some(true))?;
 
             // Delete files fully consumed by this period; keep straddlers so no data is lost
@@ -919,9 +923,6 @@ impl ParquetDataCatalog {
                     self.delete_file(&file)?;
                 }
             }
-
-            // Reset so next period starts a new contiguous segment
-            file_start_ns = None;
         }
 
         Ok(())
@@ -992,24 +993,16 @@ impl ParquetDataCatalog {
         // a source file is only deleted when its interval is fully consumed by the consolidation.
         let overall_query_start = queries_to_execute[0].query_start;
 
-        // Phase 2: Execute queries, write, and delete
+        // Phase 2: Query and check every period before writing, so a period whose groups would
+        // share a file fails the call before any period is written or any source file deleted
         let mut file_start_ns: Option<u64> = None; // Track contiguity across periods
+        let mut periods = Vec::new();
 
         for query_info in queries_to_execute {
-            // Query custom data for this period using query_custom_data_dynamic
-            let instrument_ids = identifier.map(|id| vec![id.to_string()]);
+            let custom_items =
+                self.query_custom_period(type_name, identifier, &query_info, &existing_files)?;
 
-            let period_data = self.query_custom_data_dynamic(
-                type_name,
-                instrument_ids.as_deref(),
-                Some(UnixNanos::from(query_info.query_start)),
-                Some(UnixNanos::from(query_info.query_end)),
-                None,
-                Some(existing_files.clone()),
-                false, // optimize_file_loading=false for precise file control during consolidation
-            )?;
-
-            if period_data.is_empty() {
+            if custom_items.is_empty() {
                 // Skip if no data found, but maintain contiguity by using query start
                 if file_start_ns.is_none() {
                     file_start_ns = Some(query_info.query_start);
@@ -1029,12 +1022,12 @@ impl ParquetDataCatalog {
                 (start, query_info.query_end)
             } else {
                 // Use actual data timestamps for file naming
-                let first_ts = period_data.first().unwrap().ts_init().as_u64();
-                let last_ts = period_data.last().unwrap().ts_init().as_u64();
+                let first_ts = custom_items.first().unwrap().data.ts_init().as_u64();
+                let last_ts = custom_items.last().unwrap().data.ts_init().as_u64();
                 (first_ts, last_ts)
             };
 
-            // Check again if target file exists (in case it was created during this process)
+            // Check if target file exists (in case it was created by an earlier consolidation)
             let target_filename = format!(
                 "{}/{}",
                 directory,
@@ -1053,18 +1046,26 @@ impl ParquetDataCatalog {
                 continue;
             }
 
-            let custom_items: Vec<CustomData> = period_data
-                .into_iter()
-                .filter_map(|data| match data {
-                    Data::Custom(c) => Some(c),
-                    _ => None,
-                })
-                .collect();
-
-            // Write consolidated data for each type, rejecting metadata groups that would share
-            // the period file before any of them is written or a source file is deleted
             let start_ts = UnixNanos::from(final_start_ns);
             let end_ts = UnixNanos::from(final_end_ns);
+            self.prepare_custom_data_groups(
+                &custom_items,
+                Some(start_ts),
+                Some(end_ts),
+                Some(true),
+            )?;
+            periods.push((query_info, start_ts, end_ts));
+
+            // Reset so next period starts a new contiguous segment
+            file_start_ns = None;
+        }
+
+        // Phase 3: Write each period, querying it again so only one period is held in memory,
+        // then delete the files it fully consumed. Files deleted by earlier periods hold no rows
+        // of later periods, so each query returns the rows checked above.
+        for (query_info, start_ts, end_ts) in periods {
+            let custom_items =
+                self.query_custom_period(type_name, identifier, &query_info, &existing_files)?;
             self.write_custom_data_groups(&custom_items, Some(start_ts), Some(end_ts), Some(true))?;
 
             // Delete files fully consumed by this period; keep straddlers so no data is lost
@@ -1077,12 +1078,62 @@ impl ParquetDataCatalog {
                     self.delete_file(&file)?;
                 }
             }
-
-            // Reset so next period starts a new contiguous segment
-            file_start_ns = None;
         }
 
         Ok(())
+    }
+
+    // Queries the data of one consolidation period from `files` only.
+    fn query_period<T>(
+        &mut self,
+        identifier: Option<&str>,
+        query_info: &ConsolidationQuery,
+        files: &[String],
+    ) -> anyhow::Result<Vec<T>>
+    where
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
+    {
+        let instrument_ids = identifier.map(|id| vec![id.to_string()]);
+
+        // Use optimize_file_loading=false to match Python behavior:
+        // During consolidation, we want to read only the specific files being consolidated,
+        // not the entire directory. This ensures precise file control during consolidation.
+        self.query::<T>(
+            instrument_ids,
+            Some(UnixNanos::from(query_info.query_start)),
+            Some(UnixNanos::from(query_info.query_end)),
+            None,
+            Some(files.to_vec()),
+            false, // optimize_file_loading=false for precise file control during consolidation
+        )
+    }
+
+    // Queries the custom data of one consolidation period from `files` only.
+    fn query_custom_period(
+        &mut self,
+        type_name: &str,
+        identifier: Option<&str>,
+        query_info: &ConsolidationQuery,
+        files: &[String],
+    ) -> anyhow::Result<Vec<CustomData>> {
+        let instrument_ids = identifier.map(|id| vec![id.to_string()]);
+        let period_data = self.query_custom_data_dynamic(
+            type_name,
+            instrument_ids.as_deref(),
+            Some(UnixNanos::from(query_info.query_start)),
+            Some(UnixNanos::from(query_info.query_end)),
+            None,
+            Some(files.to_vec()),
+            false, // optimize_file_loading=false for precise file control during consolidation
+        )?;
+
+        Ok(period_data
+            .into_iter()
+            .filter_map(|data| match data {
+                Data::Custom(c) => Some(c),
+                _ => None,
+            })
+            .collect())
     }
 
     /// Prepares all queries for consolidation by filtering, grouping, and handling splits.
