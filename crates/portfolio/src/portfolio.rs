@@ -3734,6 +3734,12 @@ fn update_order(
                     .borrow_mut()
                     .balance_error
                     .get_or_insert_with(|| e.to_string());
+                cache.borrow_mut().cache_account_owned(working_account);
+                inner
+                    .borrow_mut()
+                    .pre_position_fill_events
+                    .extend(mark_pre_position_fill_event);
+                return;
             }
         }
 

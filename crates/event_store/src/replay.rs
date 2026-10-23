@@ -45,7 +45,10 @@ use nautilus_model::{
     identifiers::PositionId,
     orders::{Order, OrderAny},
     position::{Position, PositionReplayEvent},
-    types::{Money, Quantity},
+    types::{
+        Money, Quantity,
+        quantity::{QUANTITY_RAW_MAX, QuantityRaw},
+    },
 };
 use serde::{Deserialize, de::DeserializeOwned};
 
@@ -620,11 +623,11 @@ impl CacheReplayError {
 
 #[derive(Default)]
 struct CacheReplayContext {
-    allow_deferred_orderless_flips: bool,
-    pending_orderless_flips: Vec<PendingOrderlessFlip>,
+    allow_deferred_flips: bool,
+    pending_flips: Vec<PendingFlip>,
 }
 
-struct PendingOrderlessFlip {
+struct PendingFlip {
     source_seq: u64,
     source_position_id: PositionId,
     oms_type: OmsType,
@@ -634,27 +637,27 @@ struct PendingOrderlessFlip {
 impl CacheReplayContext {
     fn for_snapshot_tail() -> Self {
         Self {
-            allow_deferred_orderless_flips: true,
-            pending_orderless_flips: Vec::new(),
+            allow_deferred_flips: true,
+            pending_flips: Vec::new(),
         }
     }
 
     fn contains_flip_source(&self, fill: &OrderFilled) -> bool {
-        self.pending_orderless_flips.iter().any(|pending| {
+        self.pending_flips.iter().any(|pending| {
             pending.opening_fill.client_order_id == fill.client_order_id
                 && pending.opening_fill.trade_id == fill.trade_id
                 && pending.opening_fill.causation_id == Some(fill.event_id)
         })
     }
 
-    fn push_orderless_flip(
+    fn push_flip(
         &mut self,
         source_seq: u64,
         source_position_id: PositionId,
         oms_type: OmsType,
         opening_fill: OrderFilled,
     ) {
-        self.pending_orderless_flips.push(PendingOrderlessFlip {
+        self.pending_flips.push(PendingFlip {
             source_seq,
             source_position_id,
             oms_type,
@@ -668,7 +671,7 @@ impl CacheReplayContext {
         opened: &PositionOpened,
     ) -> Result<Option<(OrderFilled, OmsType)>, CacheReplayError> {
         let matching: Vec<usize> = self
-            .pending_orderless_flips
+            .pending_flips
             .iter()
             .enumerate()
             .filter_map(|(index, pending)| {
@@ -690,7 +693,7 @@ impl CacheReplayContext {
             return Err(apply_error(
                 entry,
                 format!(
-                    "ambiguous orderless flip recovery for position {}: {} pending fills match",
+                    "ambiguous position flip recovery for position {}: {} pending fills match",
                     opened.position_id,
                     matching.len(),
                 ),
@@ -700,14 +703,13 @@ impl CacheReplayContext {
         let Some(index) = matching.first().copied() else {
             return Ok(None);
         };
-        let pending = self.pending_orderless_flips.remove(index);
+
+        let pending = self.pending_flips.remove(index);
         let mut fill = pending.opening_fill;
         let oms_type = if pending.source_position_id == opened.position_id {
             pending.oms_type
         } else {
-            // A virtual HEDGING flip is the only live orderless path which opens a
-            // replacement ID. This recovers the OMS metadata even during a full
-            // event-store replay where no cache snapshot supplied it.
+            // Replacement IDs identify HEDGING flips when no snapshot supplies OMS metadata
             OmsType::Hedging
         };
         fill.position_id = Some(opened.position_id);
@@ -719,7 +721,7 @@ impl CacheReplayContext {
     }
 
     fn ensure_complete(&self) -> Result<(), CacheReplayError> {
-        let Some(pending) = self.pending_orderless_flips.first() else {
+        let Some(pending) = self.pending_flips.first() else {
             return Ok(());
         };
 
@@ -727,7 +729,7 @@ impl CacheReplayContext {
             seq: pending.source_seq,
             payload_type: PAYLOAD_TYPE_ORDER_FILLED.to_string(),
             message: format!(
-                "orderless flip fill {} has no matching PositionOpened event",
+                "position flip fill {} has no matching PositionOpened event",
                 pending.opening_fill.trade_id,
             ),
         })
@@ -1239,7 +1241,8 @@ pub fn restore_cache_snapshot_blob(
 /// # Errors
 ///
 /// Returns an error if a supported payload cannot be decoded or the decoded payload cannot be
-/// applied to the cache.
+/// applied to the cache. Position reversals require [`replay_cache_snapshot_tail`] so the following
+/// [`PositionOpened`] event can complete the transition.
 pub fn apply_cache_replay_entry(
     cache: &mut Cache,
     entry: &EventStoreEntry,
@@ -1322,9 +1325,7 @@ fn apply_cache_replay_entry_with_context(
         }
         PAYLOAD_TYPE_POSITION_OPENED => {
             let opened = decode_payload::<PositionOpened>(entry)?;
-            if let Some(applied) =
-                apply_pending_orderless_flip_opened(cache, entry, &opened, context)?
-            {
+            if let Some(applied) = apply_pending_flip_opened(cache, entry, &opened, context)? {
                 return Ok(applied);
             }
             return apply_position_opened(cache, entry, &opened);
@@ -1438,8 +1439,7 @@ fn apply_order_filled(
         apply_result(entry, cache.update_order(&event))?;
     }
 
-    let flip_applied =
-        orderless_leg_fill && apply_orderless_flip_fill(cache, entry, &fill, context)?;
+    let flip_applied = apply_flip_fill(cache, entry, &fill, context)?;
 
     if flip_applied {
         return Ok(true);
@@ -1454,7 +1454,7 @@ struct OrderFilledReplaySide {
     order_side: Option<OrderSide>,
 }
 
-fn apply_orderless_flip_fill(
+fn apply_flip_fill(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     fill: &OrderFilled,
@@ -1467,39 +1467,44 @@ fn apply_orderless_flip_fill(
     let Some(position_id) = fill.position_id else {
         return Ok(false);
     };
-    let Some(mut position) = cache.position_owned(&position_id) else {
-        return Ok(false);
+
+    let mut position = {
+        let Some(position) = cache.position(&position_id) else {
+            return Ok(false);
+        };
+
+        if !position.is_closed() && position.trade_ids.contains(&fill.trade_id) {
+            return Ok(!position.accepts_price_restatement(fill));
+        }
+
+        if position.is_closed()
+            || !position.is_opposite_side(fill.order_side)
+            || fill.last_qty <= position.quantity
+        {
+            return Ok(false);
+        }
+
+        if !context.allow_deferred_flips {
+            return Err(apply_error(
+                entry,
+                "position flip requires snapshot-tail replay context to match the following PositionOpened event",
+            ));
+        }
+
+        position.clone()
     };
-
-    if position.is_closed()
-        || !position.is_opposite_side(fill.order_side)
-        || fill.last_qty <= position.quantity
-    {
-        return Ok(false);
-    }
-
-    if position.side != PositionSide::Flat && position.trade_ids.contains(&fill.trade_id) {
-        return Ok(true);
-    }
-
-    if !context.allow_deferred_orderless_flips {
-        return Err(apply_error(
-            entry,
-            "orderless position flip requires snapshot-tail replay context to match the following PositionOpened event",
-        ));
-    }
 
     let oms_type = cache.oms_type(&position_id).unwrap_or(OmsType::Unspecified);
     let (closing_fill, opening_fill) = fill
         .split_for_position_flip(position.quantity, None, fill.event_id)
         .map_err(|e| apply_error(entry, e))?;
-    position.apply(&closing_fill);
+    apply_result(entry, position.try_apply(&closing_fill))?;
     apply_result(entry, cache.update_position(&position))?;
-    context.push_orderless_flip(entry.seq, position_id, oms_type, opening_fill);
+    context.push_flip(entry.seq, position_id, oms_type, opening_fill);
     Ok(true)
 }
 
-fn apply_pending_orderless_flip_opened(
+fn apply_pending_flip_opened(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     opened: &PositionOpened,
@@ -1515,20 +1520,25 @@ fn apply_pending_orderless_flip_opened(
             apply_error(
                 entry,
                 format!(
-                    "instrument {} not found for orderless flip position {}",
+                    "instrument {} not found for flipped position {}",
                     opening_fill.instrument_id, opened.position_id,
                 ),
             )
         })?;
-    let prior = cache.position_owned(&opened.position_id);
-    let mut position = Position::new(&instrument, opening_fill);
-    if let Some(prior) = prior {
-        let current_replay = position.replay_events.clone();
-        position.replay_events = prior.replay_events;
-        position.replay_events.extend(current_replay);
-        position.fill_voids = prior.fill_voids;
+
+    let index_order = !is_orderless_leg_fill(cache, &opening_fill);
+    let position = apply_result(entry, Position::new_checked(&instrument, opening_fill))?;
+    validate_position_opened(entry, &position, opened)?;
+    if oms_type == OmsType::Netting
+        && let Some(prior) = cache.position_owned(&opened.position_id)
+    {
+        apply_result(entry, cache.snapshot_position(&prior))?;
     }
-    apply_result(entry, cache.add_position_without_order(&position, oms_type))?;
+
+    apply_result(
+        entry,
+        cache.replace_position(&position, oms_type, index_order, true),
+    )?;
 
     apply_position_opened(cache, entry, opened).map(Some)
 }
@@ -1555,11 +1565,14 @@ fn apply_fill_to_position(
         // Mirror live `Position::apply_fill`: a duplicate inside an open episode is
         // the idempotent replay no-op; historical duplicates on a Flat position are
         // ignored inside `apply` itself from the carried replay history.
-        if position.side != PositionSide::Flat && position.trade_ids.contains(&fill.trade_id) {
+        if position.side != PositionSide::Flat
+            && position.trade_ids.contains(&fill.trade_id)
+            && !position.accepts_price_restatement(fill)
+        {
             return Ok(true);
         }
 
-        position.apply(fill);
+        apply_result(entry, position.try_apply(fill))?;
         apply_result(entry, cache.update_position(&position))?;
         return Ok(true);
     }
@@ -1573,7 +1586,7 @@ fn apply_fill_to_position(
         return Ok(false);
     };
 
-    let position = Position::new(&instrument, fill.clone());
+    let position = apply_result(entry, Position::new_checked(&instrument, fill.clone()))?;
 
     if orderless_leg_fill {
         apply_result(
@@ -1765,11 +1778,19 @@ fn allocate_fill_void_fragments(
             break;
         }
         let removed = remaining_qty.min(fragment.quantity);
-        allocations
+        let allocation = allocations
             .entry(fragment.position_id)
-            .and_modify(|allocation| allocation.0 = allocation.0 + removed)
-            .or_insert((removed, None));
-        remaining_qty = remaining_qty - removed;
+            .or_insert((Quantity::zero(removed.precision), None));
+        let precision = allocation.0.precision.max(removed.precision);
+        let total = quantity_raw_at_precision(entry, allocation.0, precision)?
+            .checked_add(quantity_raw_at_precision(entry, removed, precision)?)
+            .ok_or_else(|| apply_error(entry, "voided quantity allocation overflow"))?;
+        allocation.0 = apply_result(entry, Quantity::from_raw_checked(total, precision))?;
+        let precision = remaining_qty.precision.max(removed.precision);
+        let remaining = quantity_raw_at_precision(entry, remaining_qty, precision)?
+            .checked_sub(quantity_raw_at_precision(entry, removed, precision)?)
+            .ok_or_else(|| apply_error(entry, "voided quantity allocation underflow"))?;
+        remaining_qty = apply_result(entry, Quantity::from_raw_checked(remaining, precision))?;
     }
 
     if remaining_qty.non_zero() {
@@ -1838,6 +1859,21 @@ fn allocate_fill_void_fragments(
     Ok(allocations)
 }
 
+fn quantity_raw_at_precision(
+    entry: &EventStoreEntry,
+    quantity: Quantity,
+    precision: u8,
+) -> Result<QuantityRaw, CacheReplayError> {
+    if quantity.raw() > QUANTITY_RAW_MAX {
+        return Err(apply_error(entry, "voided quantity exceeds native bounds"));
+    }
+
+    quantity
+        .checked_rescale(precision)
+        .map(|qty| qty.raw())
+        .ok_or_else(|| apply_error(entry, "voided quantity scale alignment overflow"))
+}
+
 fn apply_position_opened(
     cache: &mut Cache,
     entry: &EventStoreEntry,
@@ -1848,30 +1884,60 @@ fn apply_position_opened(
         return Ok(false);
     };
 
+    validate_position_opened(entry, &position, opened)?;
+
     position.trader_id = opened.trader_id;
     position.strategy_id = opened.strategy_id;
-    position.instrument_id = opened.instrument_id;
     position.id = opened.position_id;
     position.account_id = opened.account_id;
     position.opening_order_id = opened.opening_order_id;
     position.closing_order_id = None;
-    position.entry = opened.entry;
-    position.side = opened.side;
-    position.signed_qty = opened.signed_qty;
-    position.quantity = opened.quantity;
-    position.peak_qty = opened.quantity;
-    position.quote_currency = opened.currency;
     position.ts_opened = opened.ts_event;
     position.ts_last = opened.ts_event;
     position.ts_closed = None;
     position.duration_ns = DurationNanos::default();
-    position.avg_px_open = opened.avg_px_open;
-    position.avg_px_close = None;
-    position.realized_return = 0.0;
-    position.realized_pnl = opened.realized_pnl;
 
     apply_result(entry, cache.update_position(&position))?;
     Ok(true)
+}
+
+fn validate_position_opened(
+    entry: &EventStoreEntry,
+    position: &Position,
+    opened: &PositionOpened,
+) -> Result<(), CacheReplayError> {
+    let journal = (
+        position.instrument_id,
+        position.entry,
+        position.side,
+        position.signed_qty,
+        position.quantity,
+        position.quote_currency,
+        position.avg_px_open,
+        position.realized_pnl,
+    );
+    let notification = (
+        opened.instrument_id,
+        opened.entry,
+        opened.side,
+        opened.signed_qty,
+        opened.quantity,
+        opened.currency,
+        opened.avg_px_open,
+        opened.realized_pnl,
+    );
+
+    if journal != notification {
+        return Err(apply_error(
+            entry,
+            format!(
+                "position {} lifecycle accounting differs from journal: expected {journal:?}, received {notification:?}",
+                position.id
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 fn apply_position_changed(
@@ -1884,25 +1950,51 @@ fn apply_position_changed(
         return Ok(false);
     };
 
+    let journal = (
+        position.instrument_id,
+        position.entry,
+        position.side,
+        position.signed_qty,
+        position.quantity,
+        position.peak_qty,
+        position.quote_currency,
+        position.avg_px_open,
+        position.avg_px_close,
+        position.realized_return,
+        position.realized_pnl,
+    );
+    let notification = (
+        changed.instrument_id,
+        changed.entry,
+        changed.side,
+        changed.signed_qty,
+        changed.quantity,
+        changed.peak_quantity,
+        changed.currency,
+        changed.avg_px_open,
+        changed.avg_px_close,
+        changed.realized_return,
+        changed.realized_pnl,
+    );
+
+    if journal != notification {
+        return Err(apply_error(
+            entry,
+            format!(
+                "position {} lifecycle accounting differs from journal: expected {journal:?}, received {notification:?}",
+                position.id
+            ),
+        ));
+    }
+
     position.trader_id = changed.trader_id;
     position.strategy_id = changed.strategy_id;
-    position.instrument_id = changed.instrument_id;
     position.id = changed.position_id;
     position.account_id = changed.account_id;
     position.opening_order_id = changed.opening_order_id;
-    position.entry = changed.entry;
-    position.side = changed.side;
-    position.signed_qty = changed.signed_qty;
-    position.quantity = changed.quantity;
-    position.peak_qty = changed.peak_quantity;
-    position.quote_currency = changed.currency;
     position.ts_opened = changed.ts_opened;
     position.ts_last = changed.ts_event;
     position.ts_closed = None;
-    position.avg_px_open = changed.avg_px_open;
-    position.avg_px_close = changed.avg_px_close;
-    position.realized_return = changed.realized_return;
-    position.realized_pnl = changed.realized_pnl;
 
     apply_result(entry, cache.update_position(&position))?;
     Ok(true)
@@ -1918,27 +2010,53 @@ fn apply_position_closed(
         return Ok(false);
     };
 
+    let journal = (
+        position.instrument_id,
+        position.entry,
+        position.side,
+        position.signed_qty,
+        position.quantity,
+        position.peak_qty,
+        position.quote_currency,
+        position.avg_px_open,
+        position.avg_px_close,
+        position.realized_return,
+        position.realized_pnl,
+    );
+    let notification = (
+        closed.instrument_id,
+        closed.entry,
+        closed.side,
+        closed.signed_qty,
+        closed.quantity,
+        closed.peak_quantity,
+        closed.currency,
+        closed.avg_px_open,
+        closed.avg_px_close,
+        closed.realized_return,
+        closed.realized_pnl,
+    );
+
+    if journal != notification {
+        return Err(apply_error(
+            entry,
+            format!(
+                "position {} lifecycle accounting differs from journal: expected {journal:?}, received {notification:?}",
+                position.id
+            ),
+        ));
+    }
+
     position.trader_id = closed.trader_id;
     position.strategy_id = closed.strategy_id;
-    position.instrument_id = closed.instrument_id;
     position.id = closed.position_id;
     position.account_id = closed.account_id;
     position.opening_order_id = closed.opening_order_id;
     position.closing_order_id = closed.closing_order_id;
-    position.entry = closed.entry;
-    position.side = closed.side;
-    position.signed_qty = closed.signed_qty;
-    position.quantity = closed.quantity;
-    position.peak_qty = closed.peak_quantity;
-    position.quote_currency = closed.currency;
     position.ts_opened = closed.ts_opened;
     position.ts_last = closed.ts_event;
     position.ts_closed = closed.ts_closed;
     position.duration_ns = closed.duration;
-    position.avg_px_open = closed.avg_px_open;
-    position.avg_px_close = closed.avg_px_close;
-    position.realized_return = closed.realized_return;
-    position.realized_pnl = closed.realized_pnl;
 
     apply_result(entry, cache.update_position(&position))?;
     Ok(true)
@@ -1954,7 +2072,7 @@ fn apply_position_adjustment(
         return Ok(false);
     };
 
-    position.apply_adjustment(adjustment);
+    apply_result(entry, position.apply_adjustment(adjustment))?;
     apply_result(entry, cache.update_position(&position))?;
     Ok(true)
 }
@@ -2035,8 +2153,8 @@ mod tests {
             },
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, TradeId,
-            VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            TradeId, VenueOrderId,
         },
         instruments::{
             Instrument, InstrumentAny,
@@ -3893,6 +4011,285 @@ mod tests {
     }
 
     #[rstest]
+    #[case::netting(OmsType::Netting)]
+    #[case::hedging(OmsType::Hedging)]
+    fn order_backed_flip_replay_preserves_closed_and_opened_accounting(
+        #[case] oms_type: OmsType,
+        #[values(false, true)] empty_cache: bool,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let strategy_id = StrategyId::from("S-REPLAY-001");
+
+        let position_id = if oms_type == OmsType::Netting && empty_cache {
+            PositionId::new(format!("{}-{strategy_id}", instrument.id()))
+        } else {
+            PositionId::from("P-REPLAY-FLIP")
+        };
+
+        let replacement_id = if oms_type == OmsType::Netting {
+            position_id
+        } else {
+            PositionId::from("P-REPLAY-REPLACEMENT")
+        };
+
+        let opening = OrderFilledSpec::builder()
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-REPLAY-OPEN"))
+            .venue_order_id(VenueOrderId::from("V-REPLAY-OPEN"))
+            .position_id(position_id)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("1.00000"))
+            .commission(Money::from("0 USD"))
+            .build();
+        let original = Position::new(&instrument, opening.clone());
+        let reversal = OrderFilledSpec::builder()
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-REPLAY-REVERSE"))
+            .venue_order_id(VenueOrderId::from("V-REPLAY-REVERSE"))
+            .trade_id(TradeId::from("T-REPLAY-REVERSE"))
+            .position_id(position_id)
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(2))
+            .last_px(Price::from("2.00000"))
+            .commission(Money::from_str_exact("0.006 USD").unwrap())
+            .build();
+        let (closing, opening_fragment) = reversal
+            .split_for_position_flip(original.quantity, Some(replacement_id), UUID4::new())
+            .unwrap();
+        let mut closed = original.clone();
+        closed.try_apply(&closing).unwrap();
+        let closed_event = PositionClosed::create(&closed, &closing, UUID4::new(), closing.ts_init);
+        let replacement = Position::new(&instrument, opening_fragment.clone());
+        let opened_event = PositionOpened::create(
+            &replacement,
+            &opening_fragment,
+            UUID4::new(),
+            opening_fragment.ts_init,
+        );
+        let mut entries = Vec::new();
+        if empty_cache {
+            entries.extend(
+                filled_order_events(&opening)
+                    .iter()
+                    .enumerate()
+                    .map(|(index, event)| append_order_event(index as u64 + 1, event)),
+            );
+            let opened = PositionOpened::create(&original, &opening, UUID4::new(), opening.ts_init);
+            entries.push(append_position_event(
+                5,
+                &PositionEvent::PositionOpened(opened),
+            ));
+        }
+
+        let offset = entries.len() as u64;
+        entries.extend(
+            filled_order_events(&reversal)
+                .iter()
+                .enumerate()
+                .map(|(index, event)| append_order_event(offset + index as u64 + 1, event)),
+        );
+        entries.push(append_position_event(
+            offset + 5,
+            &PositionEvent::PositionClosed(closed_event),
+        ));
+        entries.push(append_position_event(
+            offset + 6,
+            &PositionEvent::PositionOpened(opened_event),
+        ));
+        let reader = reader_with_entries("run-order-backed-flip", &entries);
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).unwrap();
+
+        if !empty_cache {
+            let order = OrderAny::from_events(filled_order_events(&opening).to_vec()).unwrap();
+            cache
+                .add_order(order, Some(position_id), None, false)
+                .unwrap();
+            cache.add_position(&original, oms_type).unwrap();
+            cache.build_index();
+        }
+
+        assert!(cache.check_integrity());
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).unwrap();
+        let replayed = cache.position_owned(&replacement_id).unwrap();
+        let predecessor = if oms_type == OmsType::Netting {
+            let mut snapshots = cache.position_snapshots(Some(&position_id), None);
+            assert_eq!(snapshots.len(), 1);
+            snapshots.remove(0)
+        } else {
+            cache.position_owned(&position_id).unwrap()
+        };
+
+        assert_eq!(report.applied_entries, entries.len());
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(predecessor.side, PositionSide::Flat);
+        assert_eq!(
+            predecessor.realized_pnl,
+            Some(Money::from_str_exact("0.997 USD").unwrap())
+        );
+        assert_eq!(predecessor.cost_open, 0.into());
+        assert_eq!(
+            predecessor.commissions(),
+            vec![Money::from_str_exact("0.003 USD").unwrap()]
+        );
+        assert_eq!(replayed.side, PositionSide::Short);
+        assert_eq!(replayed.quantity, Quantity::from(1));
+        assert_eq!(replayed.avg_px_open, 2.into());
+        assert_eq!(replayed.cost_open, 2.into());
+        assert_eq!(
+            replayed.realized_pnl,
+            Some(Money::from_str_exact("-0.003 USD").unwrap())
+        );
+        assert_eq!(
+            replayed.commissions(),
+            vec![Money::from_str_exact("0.003 USD").unwrap()]
+        );
+        assert_eq!(cache.oms_type(&replacement_id), Some(oms_type));
+        assert_eq!(
+            cache.position_id(&reversal.client_order_id),
+            Some(&replacement_id)
+        );
+        assert_eq!(
+            replayed.replay_events.len(),
+            if oms_type == OmsType::Netting { 3 } else { 1 }
+        );
+        assert!(cache.check_integrity());
+    }
+
+    #[rstest]
+    #[case::matching_quantity("2", true, "9.47", "5.53 USD")]
+    #[case::changed_quantity("1", false, "12", "3 USD")]
+    fn price_restatement_replay_preserves_journal_accounting(
+        #[case] restated_qty: &str,
+        #[case] applied: bool,
+        #[case] expected_px: &str,
+        #[case] expected_pnl: &str,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-REPLAY-RESTATEMENT");
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-REPLAY-RESTATEMENT"))
+            .trade_id(TradeId::from("T-REPLAY-RESTATEMENT"))
+            .position_id(position_id)
+            .last_qty(Quantity::from(2))
+            .last_px(Price::from("12.00000"))
+            .commission(Money::from("0 USD"))
+            .build();
+        let mut live = Position::new(&instrument, opening.clone());
+        let opened = PositionOpened::create(&live, &opening, UUID4::new(), opening.ts_init);
+
+        let restatement = OrderFilled {
+            last_qty: Quantity::from(restated_qty),
+            last_px: Price::from("9.47000"),
+            event_id: UUID4::new(),
+            ..opening.clone()
+        };
+
+        let mut entries: Vec<_> = filled_order_events(&opening)
+            .iter()
+            .enumerate()
+            .map(|(index, event)| append_order_event(index as u64 + 1, event))
+            .collect();
+        entries.push(append_position_event(
+            5,
+            &PositionEvent::PositionOpened(opened),
+        ));
+        entries.push(append_order_event(
+            6,
+            &OrderEventAny::Filled(restatement.clone()),
+        ));
+
+        if applied {
+            live.try_apply(&restatement).unwrap();
+            let changed =
+                PositionChanged::create(&live, &restatement, UUID4::new(), restatement.ts_init);
+            entries.push(append_position_event(
+                7,
+                &PositionEvent::PositionChanged(changed),
+            ));
+        }
+
+        let reducing = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-REPLAY-REDUCE"))
+            .venue_order_id(VenueOrderId::from("V-REPLAY-REDUCE"))
+            .trade_id(TradeId::from("T-REPLAY-REDUCE"))
+            .position_id(position_id)
+            .order_side(OrderSide::Sell)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("15.00000"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        live.try_apply(&reducing).unwrap();
+        let changed = PositionChanged::create(&live, &reducing, UUID4::new(), reducing.ts_init);
+        let offset = entries.len() as u64;
+        entries.extend(
+            filled_order_events(&reducing)
+                .iter()
+                .enumerate()
+                .map(|(index, event)| append_order_event(offset + index as u64 + 1, event)),
+        );
+        entries.push(append_position_event(
+            offset + 5,
+            &PositionEvent::PositionChanged(changed),
+        ));
+        let reader = reader_with_entries("run-price-restatement", &entries);
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).unwrap();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).unwrap();
+        let replayed = cache.position_owned(&position_id).unwrap();
+
+        assert_eq!(report.applied_entries, entries.len());
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(replayed.quantity, Quantity::from(1));
+        assert_eq!(replayed.avg_px_open, Price::from(expected_px).as_decimal());
+        assert_eq!(replayed.cost_open, Price::from(expected_px).as_decimal());
+        assert_eq!(replayed.realized_pnl, Some(Money::from(expected_pnl)));
+        assert_eq!(replayed.event_count(), 2);
+        assert_eq!(replayed.replay_events.len(), if applied { 3 } else { 2 });
+        assert_eq!(
+            rmp_serde::to_vec_named(&replayed).unwrap(),
+            rmp_serde::to_vec_named(&live).unwrap()
+        );
+        assert!(cache.check_integrity());
+    }
+
+    fn filled_order_events(fill: &OrderFilled) -> [OrderEventAny; 4] {
+        let initialized = OrderInitializedSpec::builder()
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .order_side(fill.order_side)
+            .quantity(fill.last_qty)
+            .build();
+        let submitted = OrderSubmittedSpec::builder()
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .account_id(fill.account_id)
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .build();
+
+        [
+            OrderEventAny::Initialized(initialized),
+            OrderEventAny::Submitted(submitted),
+            OrderEventAny::Accepted(accepted),
+            OrderEventAny::Filled(fill.clone()),
+        ]
+    }
+
+    #[rstest]
     fn orderless_netting_reopen_replay_does_not_treat_closed_position_as_flip() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let client_order_id = ClientOrderId::from("SPREAD-LEG-AUDUSD");
@@ -4328,26 +4725,10 @@ mod tests {
         price: &str,
     ) -> [OrderEventAny; 4] {
         let position_id = PositionId::from("P-SETTLED");
-        let initialized = OrderInitializedSpec::builder()
-            .instrument_id(instrument.id())
-            .client_order_id(ClientOrderId::from(order_id))
-            .quantity(Quantity::from(quantity))
-            .build();
-        let submitted = OrderSubmittedSpec::builder()
-            .instrument_id(instrument.id())
-            .client_order_id(initialized.client_order_id)
-            .build();
-        let accepted = OrderAcceptedSpec::builder()
-            .instrument_id(instrument.id())
-            .client_order_id(initialized.client_order_id)
-            .venue_order_id(VenueOrderId::from(format!("V-{order_id}").as_str()))
-            .account_id(submitted.account_id)
-            .build();
         let filled = OrderFilledSpec::builder()
             .instrument_id(instrument.id())
-            .client_order_id(initialized.client_order_id)
-            .venue_order_id(accepted.venue_order_id)
-            .account_id(submitted.account_id)
+            .client_order_id(ClientOrderId::from(order_id))
+            .venue_order_id(VenueOrderId::from(format!("V-{order_id}").as_str()))
             .trade_id(TradeId::from(format!("T-{order_id}").as_str()))
             .last_qty(Quantity::from(quantity))
             .last_px(Price::from(price))
@@ -4355,12 +4736,7 @@ mod tests {
             .position_id(position_id)
             .build();
 
-        [
-            OrderEventAny::Initialized(initialized),
-            OrderEventAny::Submitted(submitted),
-            OrderEventAny::Accepted(accepted),
-            OrderEventAny::Filled(filled),
-        ]
+        filled_order_events(&filled)
     }
 
     #[rstest]
@@ -4507,8 +4883,121 @@ mod tests {
         assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
     }
 
+    #[cfg(feature = "defi")]
     #[rstest]
-    fn position_lifecycle_replay_updates_existing_position() {
+    #[case::native_instrument(0, "1.000000000000000001", "0.500000000000000001")]
+    #[case::wei_instrument(18, "1", "0.5")]
+    #[case::large_native(0, "1000000000000", "999999999999.5")]
+    fn fill_void_replay_accepts_mixed_qty_scales(
+        #[case] precision: u8,
+        #[case] qty: &str,
+        #[case] remaining: &str,
+    ) {
+        let mut instrument = audusd_sim();
+        instrument.size_precision = precision;
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let events = binary_order_events(&instrument, "O-MIXED-VOID", qty, "1");
+
+        let OrderEventAny::Filled(fill) = &events[3] else {
+            panic!("Expected fill");
+        };
+
+        let voided_qty =
+            Quantity::from_decimal_dp("0.5".parse().unwrap(), fill.last_qty.precision.max(1))
+                .unwrap();
+        let voided = OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(voided_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .maybe_position_id(fill.position_id)
+            .is_reopened(true)
+            .build();
+        let entries = [
+            append_order_event(1, &events[0]),
+            append_order_event(2, &events[1]),
+            append_order_event(3, &events[2]),
+            append_order_event(4, &events[3]),
+            append_order_event(5, &OrderEventAny::FillVoided(voided.clone())),
+        ];
+        let reader = reader_with_entries("run-mixed-fill-void", &entries);
+        let mut cache = Cache::default();
+        cache.add_instrument(instrument).unwrap();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).unwrap();
+
+        let position = cache.position_owned(&fill.position_id.unwrap()).unwrap();
+        let order = cache.order_owned(&fill.client_order_id).unwrap();
+        assert_eq!(report.applied_entries, 5);
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(position.quantity, Quantity::from(remaining));
+        assert_eq!(position.signed_qty, Quantity::from(remaining).as_decimal());
+        assert_eq!(position.realized_pnl, Some(Money::zero(Currency::USD())));
+        assert_eq!(position.fill_voids.len(), 1);
+        assert_eq!(position.fill_voids[0].event, voided);
+        assert_eq!(order.filled_qty(), Quantity::from(remaining));
+        assert_eq!(order.voided_qty(), voided_qty);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::covered("2", true)]
+    #[case::uncovered("3", false)]
+    fn fill_void_fragment_allocation_aligns_native_and_wei_scales(
+        #[case] voided_qty: &str,
+        #[case] covered: bool,
+    ) {
+        let closing_id = PositionId::from("P-CLOSING");
+        let opening_id = PositionId::from("P-OPENING");
+
+        let fragments = [
+            FillVoidFragment {
+                position_id: closing_id,
+                split_rank: 0,
+                quantity: Quantity::from("1.00"),
+                commission: None,
+            },
+            FillVoidFragment {
+                position_id: opening_id,
+                split_rank: 1,
+                quantity: Quantity::from("1.000000000000000001"),
+                commission: None,
+            },
+        ];
+
+        let event = OrderFillVoidedSpec::builder()
+            .voided_qty(Quantity::from(voided_qty))
+            .build();
+        let entry = append_order_event(1, &OrderEventAny::FillVoided(event.clone())).entry;
+
+        let result = allocate_fill_void_fragments(&entry, &event, &fragments);
+
+        if covered {
+            assert_eq!(
+                result.unwrap(),
+                IndexMap::from([
+                    (opening_id, (Quantity::from("1.000000000000000001"), None)),
+                    (closing_id, (Quantity::from("0.999999999999999999"), None)),
+                ])
+            );
+        } else {
+            assert!(
+                matches!(result.unwrap_err(), CacheReplayError::Apply { message, .. } if message.contains("do not cover voided quantity"))
+            );
+        }
+    }
+
+    #[rstest]
+    fn position_lifecycle_replay_preserves_journal_accounting() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let position_id = PositionId::from("P-001");
         let opened_fill = OrderFilledSpec::builder()
@@ -4521,6 +5010,7 @@ mod tests {
             .last_px(Price::from("1.00000"))
             .build();
         let mut live_position = Position::new(&instrument, opened_fill.clone());
+        let opened_position = live_position.clone();
         let opened = PositionOpened::create(
             &live_position,
             &opened_fill,
@@ -4538,6 +5028,7 @@ mod tests {
             .last_px(Price::from("1.10000"))
             .build();
         live_position.apply(&changed_fill);
+        let changed_position = live_position.clone();
         let changed = PositionChanged::create(
             &live_position,
             &changed_fill,
@@ -4563,13 +5054,10 @@ mod tests {
             UnixNanos::from(30),
         );
 
-        let mut stale_position = Position::new(&instrument, opened_fill);
-        stale_position.signed_qty = 9.0;
-        stale_position.quantity = Quantity::from("9");
         let mut cache = Cache::default();
         cache
-            .add_position(&stale_position, OmsType::Unspecified)
-            .expect("seed stale position");
+            .add_position(&opened_position, OmsType::Unspecified)
+            .expect("seed opened position");
 
         let opened_entry =
             append_position_event(1, &PositionEvent::PositionOpened(opened.clone())).entry;
@@ -4582,77 +5070,136 @@ mod tests {
         let replayed = cache
             .position_owned(&position_id)
             .expect("position after opened");
-        assert_eq!(replayed.signed_qty.to_bits(), opened.signed_qty.to_bits());
+        assert_eq!(replayed.signed_qty, opened.signed_qty);
         assert_eq!(replayed.quantity, opened.quantity);
         assert_eq!(replayed.ts_last, opened.ts_event);
 
+        let fill_entry = append_order_event(2, &OrderEventAny::Filled(changed_fill.clone())).entry;
+        assert!(apply_fill_to_position(&mut cache, &fill_entry, &changed_fill, false).unwrap());
         assert!(apply_cache_replay_entry(&mut cache, &changed_entry).expect("apply changed"));
         let replayed = cache
             .position_owned(&position_id)
             .expect("position after changed");
-        assert_eq!(replayed.signed_qty.to_bits(), changed.signed_qty.to_bits());
+        assert_eq!(replayed.signed_qty, changed.signed_qty);
         assert_eq!(replayed.quantity, changed.quantity);
         assert_eq!(replayed.peak_qty, changed.peak_quantity);
-        assert_eq!(
-            replayed.avg_px_open.to_bits(),
-            changed.avg_px_open.to_bits()
-        );
+        assert_eq!(replayed.avg_px_open, changed.avg_px_open);
         assert!(replayed.is_open());
 
+        assert_eq!(
+            rmp_serde::to_vec_named(&replayed).unwrap(),
+            rmp_serde::to_vec_named(&changed_position).unwrap()
+        );
+        let fill_entry = append_order_event(3, &OrderEventAny::Filled(closed_fill.clone())).entry;
+        assert!(apply_fill_to_position(&mut cache, &fill_entry, &closed_fill, false).unwrap());
         assert!(apply_cache_replay_entry(&mut cache, &closed_entry).expect("apply closed"));
         let replayed = cache
             .position_owned(&position_id)
             .expect("position after closed");
-        assert_eq!(replayed.signed_qty.to_bits(), closed.signed_qty.to_bits());
+        assert_eq!(replayed.signed_qty, closed.signed_qty);
         assert_eq!(replayed.quantity, closed.quantity);
         assert_eq!(replayed.closing_order_id, closed.closing_order_id);
         assert_eq!(replayed.duration_ns, closed.duration);
         assert!(replayed.is_closed());
         assert!(cache.is_position_closed(&position_id));
+        assert_eq!(
+            rmp_serde::to_vec_named(&replayed).unwrap(),
+            rmp_serde::to_vec_named(&live_position).unwrap()
+        );
     }
 
     #[rstest]
-    fn position_opened_replay_replaces_realized_pnl() {
+    #[case::opened_quantity("opened", "quantity")]
+    #[case::opened_average("opened", "average")]
+    #[case::opened_pnl("opened", "pnl")]
+    #[case::changed_quantity("changed", "quantity")]
+    #[case::changed_average("changed", "average")]
+    #[case::changed_pnl("changed", "pnl")]
+    #[case::closed_quantity("closed", "quantity")]
+    #[case::closed_average("closed", "average")]
+    #[case::closed_pnl("closed", "pnl")]
+    fn position_lifecycle_replay_rejects_inconsistent_accounting(
+        #[case] kind: &str,
+        #[case] field: &str,
+    ) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let position_id = PositionId::from("P-001");
-        let fill = OrderFilledSpec::builder()
+        let mut fill = OrderFilledSpec::builder()
             .instrument_id(instrument.id())
             .position_id(position_id)
-            .commission(Money::from("1 USD"))
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("1.00000"))
+            .commission(Money::from_str_exact("0.000001 USD").unwrap())
             .build();
-        let position = Position::new(&instrument, fill.clone());
-        let mut opened =
-            PositionOpened::create(&position, &fill, UUID4::new(), UnixNanos::from(10));
-        assert_eq!(opened.realized_pnl, Some(Money::from("-1 USD")));
+        let mut position = Position::new(&instrument, fill.clone());
+        if kind == "closed" {
+            fill.event_id = UUID4::new();
+            fill.trade_id = TradeId::from("T-CLOSE");
+            fill.order_side = OrderSide::Sell;
+            fill.last_px = Price::from("1.00001");
+            position.try_apply(&fill).unwrap();
+        }
 
-        let mut stale_position = position;
-        stale_position.realized_pnl = Some(Money::from("9 USD"));
+        let mut event = match kind {
+            "opened" => PositionEvent::PositionOpened(PositionOpened::create(
+                &position,
+                &fill,
+                UUID4::new(),
+                UnixNanos::from(10),
+            )),
+            "changed" => PositionEvent::PositionChanged(PositionChanged::create(
+                &position,
+                &fill,
+                UUID4::new(),
+                UnixNanos::from(10),
+            )),
+            "closed" => PositionEvent::PositionClosed(PositionClosed::create(
+                &position,
+                &fill,
+                UUID4::new(),
+                UnixNanos::from(10),
+            )),
+            _ => unreachable!(),
+        };
+
+        let (quantity, average, pnl) = match &mut event {
+            PositionEvent::PositionOpened(event) => (
+                &mut event.signed_qty,
+                &mut event.avg_px_open,
+                &mut event.realized_pnl,
+            ),
+            PositionEvent::PositionChanged(event) => (
+                &mut event.signed_qty,
+                &mut event.avg_px_open,
+                &mut event.realized_pnl,
+            ),
+            PositionEvent::PositionClosed(event) => (
+                &mut event.signed_qty,
+                &mut event.avg_px_open,
+                &mut event.realized_pnl,
+            ),
+            PositionEvent::PositionAdjusted(_) => unreachable!(),
+        };
+
+        match field {
+            "quantity" => *quantity = 9.into(),
+            "average" => *average = 2.into(),
+            "pnl" => *pnl = None,
+            _ => unreachable!(),
+        }
+
         let mut cache = Cache::default();
-        cache
-            .add_position(&stale_position, OmsType::Unspecified)
-            .expect("seed stale position");
-        let entry = append_position_event(1, &PositionEvent::PositionOpened(opened.clone())).entry;
+        cache.add_position(&position, OmsType::Unspecified).unwrap();
+        let before = rmp_serde::to_vec_named(&position).unwrap();
+        let entry = append_position_event(1, &event).entry;
 
-        assert!(apply_cache_replay_entry(&mut cache, &entry).expect("apply opened"));
-        assert_eq!(
-            cache
-                .position_owned(&position_id)
-                .expect("position after opened")
-                .realized_pnl,
-            Some(Money::from("-1 USD")),
+        let error = apply_cache_replay_entry(&mut cache, &entry).unwrap_err();
+        let restored = cache.position_owned(&position_id).unwrap();
+
+        assert!(
+            matches!(error, CacheReplayError::Apply { message, .. } if message.contains("accounting differs from journal"))
         );
-
-        opened.realized_pnl = None;
-        let entry = append_position_event(2, &PositionEvent::PositionOpened(opened)).entry;
-
-        assert!(apply_cache_replay_entry(&mut cache, &entry).expect("apply opened without PnL"));
-        assert_eq!(
-            cache
-                .position_owned(&position_id)
-                .expect("position after opened without PnL")
-                .realized_pnl,
-            None,
-        );
+        assert_eq!(rmp_serde::to_vec_named(&restored).unwrap(), before);
     }
 
     #[rstest]

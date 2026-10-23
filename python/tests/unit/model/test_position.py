@@ -19,12 +19,14 @@ Test position behavior.
 from __future__ import annotations
 
 import re
+from decimal import ROUND_HALF_EVEN
 from decimal import Decimal
 
 import pytest
 from tests.providers import TestInstrumentProvider
 
 from nautilus_trader.core import UUID4
+from nautilus_trader.model import FIXED_PRECISION
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import CryptoPerpetual
@@ -94,7 +96,7 @@ def _make_fill(
         ts_init=0,
         reconciliation=False,
         position_id=None if position_id is None else PositionId(position_id),
-        commission=Money.from_str(commission),
+        commission=Money.from_str_exact(commission),
     )
 
 
@@ -224,13 +226,13 @@ def test_position_long_properties(long_position: object) -> None:
     assert long_position.closing_order_id is None
     assert long_position.quantity == Quantity.from_int(100_000)
     assert long_position.peak_qty == Quantity.from_int(100_000)
-    assert long_position.signed_qty == 100_000.0
+    assert long_position.signed_qty == Decimal("100000.0")
     assert long_position.entry == OrderSide.BUY
     assert long_position.side == PositionSide.LONG
     assert long_position.ts_opened == 0
     assert long_position.ts_last == 0
     assert long_position.duration_ns == 0
-    assert long_position.avg_px_open == 1.00001
+    assert long_position.avg_px_open == Decimal("1.00001")
     assert long_position.event_count == 1
     assert long_position.id == PositionId("P-123456")
     assert long_position.is_long
@@ -251,9 +253,9 @@ def test_position_short_properties(short_position: object) -> None:
     last = Price.from_str("1.00050")
 
     assert short_position.quantity == Quantity.from_int(100_000)
-    assert short_position.signed_qty == -100_000.0
+    assert short_position.signed_qty == Decimal("-100000.0")
     assert short_position.side == PositionSide.SHORT
-    assert short_position.avg_px_open == 1.00001
+    assert short_position.avg_px_open == Decimal("1.00001")
     assert short_position.event_count == 1
     assert short_position.id == PositionId("P-123456")
     assert not short_position.is_long
@@ -304,8 +306,13 @@ def test_position_to_dict(long_position: object) -> None:
     assert d["side"] == "LONG"
     assert d["entry"] == "BUY"
     assert d["quantity"] == "100000"
-    assert d["avg_px_open"] == 1.00001
+    assert d["avg_px_open"] == "1.00001"
     assert d["realized_pnl"] == "-2.00 USD"
+    assert d["venue_order_ids"] == ["1"]
+    assert d["commissions"] == ["2.00 USD"]
+    assert d["events"] == [event.to_dict() for event in long_position.events()]
+    assert d["adjustments"] == []
+    assert Position.from_dict(d).to_dict() == d
 
 
 def test_position_partial_fill_long() -> None:
@@ -322,7 +329,7 @@ def test_position_partial_fill_long() -> None:
     assert position.quantity == Quantity.from_int(50_000)
     assert position.peak_qty == Quantity.from_int(50_000)
     assert position.side == PositionSide.LONG
-    assert position.avg_px_open == 1.00001
+    assert position.avg_px_open == Decimal("1.00001")
     assert position.is_open
     assert position.unrealized_pnl(last) == Money(23.50, USD)
     assert repr(position) == "Position(LONG 50_000 AUD/USD.SIM, id=P-123456)"
@@ -356,8 +363,8 @@ def test_position_close_long() -> None:
     assert position.side == PositionSide.FLAT
     assert position.ts_opened == 1_000_000_000
     assert position.duration_ns == 1_000_000_000
-    assert position.avg_px_open == 1.00001
-    assert position.avg_px_close == 1.00011
+    assert position.avg_px_open == Decimal("1.00001")
+    assert position.avg_px_close == Decimal("1.00011")
     assert position.ts_closed == 2_000_000_000
     assert position.event_count == 2
     assert not position.is_long
@@ -393,8 +400,8 @@ def test_position_close_short() -> None:
 
     assert position.side == PositionSide.FLAT
     assert position.is_closed
-    assert position.avg_px_open == 1.00010
-    assert position.avg_px_close == 1.00000
+    assert position.avg_px_open == Decimal("1.00010")
+    assert position.avg_px_close == Decimal("1.00000")
 
 
 def test_position_partial_fills_then_close() -> None:
@@ -420,7 +427,7 @@ def test_position_partial_fills_then_close() -> None:
 
     assert position.quantity == Quantity.from_int(100_000)
     assert position.side == PositionSide.SHORT
-    assert position.avg_px_open == 1.000015
+    assert position.avg_px_open == Decimal("1.000015")
     assert position.event_count == 2
     assert position.commissions() == [Money(4.00, USD)]
 
@@ -461,8 +468,8 @@ def test_position_no_change() -> None:
 
     assert position.side == PositionSide.FLAT
     assert position.is_closed
-    assert position.avg_px_open == 1.0
-    assert position.avg_px_close == 1.0
+    assert position.avg_px_open == Decimal("1.0")
+    assert position.avg_px_close == Decimal("1.0")
     assert position.realized_return == 0
     assert position.realized_pnl == Money(-4.00, USD)
     assert position.unrealized_pnl(last) == Money(0, USD)
@@ -499,7 +506,7 @@ def test_position_multiple_fills_long() -> None:
     position.apply(fill2)
 
     assert position.quantity == Quantity.from_int(100_000)
-    assert position.avg_px_open == 1.00005
+    assert position.avg_px_open == Decimal("1.00005")
     assert position.is_long
     assert position.is_open
 
@@ -507,7 +514,7 @@ def test_position_multiple_fills_long() -> None:
 
     assert position.side == PositionSide.FLAT
     assert position.is_closed
-    assert position.avg_px_close == 1.00020
+    assert position.avg_px_close == Decimal("1.00020")
 
 
 def test_position_pnl_long_win() -> None:
@@ -594,15 +601,23 @@ def test_position_inverse_pnl_and_notional_value() -> None:
     position = Position(instrument=instrument, fill=fill)
 
     pnl = position.calculate_pnl(
-        avg_px_open=10_000.00,
-        avg_px_close=11_000.00,
+        avg_px_open=Decimal("10000.00"),
+        avg_px_close=Decimal("11000.00"),
         quantity=Quantity.from_int(100_000),
     )
 
-    assert pnl == Money(-0.90909091, Currency.from_str("BTC"))
+    expected_pnl = (Decimal(-10) / Decimal(11)).quantize(
+        Decimal(1).scaleb(-FIXED_PRECISION),
+        rounding=ROUND_HALF_EVEN,
+    )
+    assert pnl == Money.from_decimal_exact(expected_pnl, Currency.from_str("BTC"))
     assert position.unrealized_pnl(Price.from_str("11000.00")) == pnl
-    assert position.notional_value(Price.from_str("11000.00")) == Money(
-        9.09090909,
+    expected_notional = (Decimal(100) / Decimal(11)).quantize(
+        Decimal(1).scaleb(-FIXED_PRECISION),
+        rounding=ROUND_HALF_EVEN,
+    )
+    assert position.notional_value(Price.from_str("11000.00")) == Money.from_decimal_exact(
+        expected_notional,
         Currency.from_str("BTC"),
     )
 
@@ -758,3 +773,90 @@ def _inverse_perpetual() -> object:
         ts_event=0,
         ts_init=0,
     )
+
+
+@pytest.mark.parametrize(
+    ("side", "opening_px", "closing_px"),
+    [(OrderSide.BUY, "0.1234", "0.1235"), (OrderSide.SELL, "0.1235", "0.1234")],
+)
+def test_position_exact_micro_profit_and_native_decimal_api(
+    side: OrderSide,
+    opening_px: str,
+    closing_px: str,
+) -> None:
+    """
+    Rust and Python retain the same micro-profit after a full close.
+    """
+    opening = _make_fill(order_side=side, last_px=opening_px, last_qty="0.01", commission="0 USD")
+    position = Position(instrument=AUDUSD_SIM, fill=opening)
+    closing = _make_fill(
+        order_side=OrderSide.SELL if side == OrderSide.BUY else OrderSide.BUY,
+        last_px=closing_px,
+        last_qty="0.01",
+        commission="0 USD",
+        client_order_id="O-EXACT-CLOSE",
+        trade_id="T-EXACT-CLOSE",
+    )
+    position.apply(closing)
+
+    assert isinstance(position.avg_px_open, Decimal)
+    assert isinstance(position.avg_px_close, Decimal)
+    assert isinstance(position.signed_qty, Decimal)
+    assert position.avg_px_open == Decimal(opening_px)
+    assert position.avg_px_close == Decimal(closing_px)
+    assert position.signed_qty == Decimal(0)
+    assert position.realized_pnl.as_decimal() == Decimal("0.000001")
+
+
+def test_position_exact_opening_micro_fee() -> None:
+    """
+    A fee below USD currency precision remains in the realized PnL.
+    """
+    fill = _make_fill(last_qty="1.00", commission="0.000001 USD")
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+    assert position.realized_pnl.as_decimal() == Decimal("-0.000001")
+    assert position.commissions() == [Money.from_str_exact("0.000001 USD")]
+
+
+def test_position_dict_round_trip_preserves_incremental_accounting() -> None:
+    """
+    Restored cost basis produces the same result when processing the remaining close.
+    """
+    opening = _make_fill(last_px="0.1", last_qty="3", commission="0 USD")
+    original = Position(instrument=AUDUSD_SIM, fill=opening)
+    addition = _make_fill(
+        last_px="0.2",
+        last_qty="4",
+        commission="0 USD",
+        client_order_id="O-ADD",
+        trade_id="T-ADD",
+    )
+    original.apply(addition)
+    reduction = _make_fill(
+        order_side=OrderSide.SELL,
+        last_px="0.3",
+        last_qty="1",
+        commission="0 USD",
+        client_order_id="O-REDUCE",
+        trade_id="T-REDUCE",
+    )
+    original.apply(reduction)
+    values = original.to_dict()
+    restored = Position.from_dict(values)
+    closing = _make_fill(
+        order_side=OrderSide.SELL,
+        last_px="0.3",
+        last_qty="6",
+        commission="0 USD",
+        client_order_id="O-CLOSE",
+        trade_id="T-CLOSE",
+    )
+    original.apply(closing)
+    restored.apply(closing)
+
+    assert values["position_id"] == str(original.id)
+    assert "id" not in values
+    assert restored.to_dict() == original.to_dict()
+    assert restored.realized_pnl.as_decimal() == Decimal(1)
+    assert restored.signed_qty == Decimal(0)

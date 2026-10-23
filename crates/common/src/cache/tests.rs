@@ -1080,6 +1080,41 @@ fn test_oms_type_returns_actual_position_oms(mut cache: Cache) {
 }
 
 #[rstest]
+#[case::infer_netting(OmsType::Unspecified, true, OmsType::Netting)]
+#[case::preserve_hedging(OmsType::Hedging, true, OmsType::Hedging)]
+#[case::unknown(OmsType::Unspecified, false, OmsType::Unspecified)]
+fn test_add_position_resolves_unspecified_oms(
+    #[case] oms_type: OmsType,
+    #[case] canonical_id: bool,
+    #[case] expected: OmsType,
+    #[values(false, true)] orderless: bool,
+) {
+    let mut position = snapshot_test_position();
+    if canonical_id {
+        position.id = PositionId::new(format!(
+            "{}-{}",
+            position.instrument_id, position.strategy_id
+        ));
+    }
+
+    let mut cache = Cache::default();
+    if orderless {
+        cache
+            .add_position_without_order(&position, oms_type)
+            .unwrap();
+    } else {
+        cache.add_position(&position, oms_type).unwrap();
+    }
+
+    assert_eq!(cache.oms_type(&position.id), Some(expected));
+
+    cache.clear_index();
+    cache.build_index();
+
+    assert_eq!(cache.oms_type(&position.id), Some(expected));
+}
+
+#[rstest]
 fn test_cache_positions_loads_persisted_position_oms() {
     let position = snapshot_test_position();
     let position_id = position.id;
@@ -3941,6 +3976,90 @@ fn test_try_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
+#[case::ordered(vec![0, 1, 2], vec![1, 2, 3])]
+#[case::reversed(vec![2, 1, 0], vec![3, 3, 3])]
+#[case::reordered(vec![1, 0, 2, 1], vec![2, 2, 3, 3])]
+#[case::repeated(vec![0, 0, 1, 2], vec![1, 1, 2, 3])]
+fn test_replay_contains_fill_with_retained_history(
+    #[case] queries: Vec<usize>,
+    #[case] expected_offsets: Vec<usize>,
+) {
+    let fills = ["T-REPLAY-1", "T-REPLAY-2", "T-REPLAY-3"].map(|id| {
+        OrderFilledSpec::builder()
+            .trade_id(TradeId::from(id))
+            .build()
+    });
+
+    let events = fills.clone().map(PositionReplayEvent::Filled);
+    let mut offset = 0;
+    let results: Vec<_> = queries
+        .into_iter()
+        .map(|index| {
+            let found = Cache::replay_contains_fill(&events, &fills[index], &mut offset);
+            (found, offset)
+        })
+        .collect();
+
+    let expected: Vec<_> = expected_offsets
+        .into_iter()
+        .map(|offset| (true, offset))
+        .collect();
+
+    assert_eq!(results, expected);
+}
+
+#[rstest]
+fn test_replay_contains_fill_missing_event_preserves_cursor() {
+    let fill = OrderFilledSpec::builder().build();
+    let mut missing = fill.clone();
+    missing.trade_id = TradeId::from("T-MISSING");
+    let events = [PositionReplayEvent::Filled(fill.clone())];
+    let mut offset = 0;
+
+    let missing_before = Cache::replay_contains_fill(&events, &missing, &mut offset);
+    let offset_before = offset;
+    let found = Cache::replay_contains_fill(&events, &fill, &mut offset);
+    let missing_after = Cache::replay_contains_fill(&events, &missing, &mut offset);
+
+    assert!(!missing_before);
+    assert_eq!(offset_before, 0);
+    assert!(found);
+    assert!(!missing_after);
+    assert_eq!(offset, 1);
+}
+
+#[rstest]
+fn test_replay_contains_fill_requires_full_event_match(
+    #[values("quantity", "price", "commission", "causation", "info")] field: &str,
+    #[values(0, 1)] mut offset: usize,
+) {
+    let fill = OrderFilledSpec::builder()
+        .commission(Money::from("0.47 USD"))
+        .info(IndexMap::from([(
+            Ustr::from("source"),
+            Ustr::from("original"),
+        )]))
+        .build();
+    let mut changed = fill.clone();
+    match field {
+        "quantity" => changed.last_qty = Quantity::from(99_999),
+        "price" => changed.last_px = Price::from("1.00001"),
+        "commission" => changed.commission = Some(Money::from("0.13 USD")),
+        "causation" => changed.causation_id = Some(UUID4::new()),
+        "info" => changed.info.as_mut().unwrap()[&Ustr::from("source")] = Ustr::from("corrected"),
+        _ => unreachable!(),
+    }
+
+    let events = [PositionReplayEvent::Filled(fill)];
+    let expected_offset = offset;
+
+    let found = Cache::replay_contains_fill(&events, &changed, &mut offset);
+
+    assert!(!found);
+    assert_eq!(offset, expected_offset);
+}
+
+#[rstest]
 fn test_position_mut_returns_none_for_missing_position(mut cache: Cache) {
     let position_id = PositionId::from("P-MISSING");
     assert!(cache.position_mut(&position_id).is_none());
@@ -4248,6 +4367,7 @@ fn test_update_position_from_fill_applies_to_canonical_state(
     #[case] side: OrderSide,
     #[case] last_qty: Quantity,
     #[case] expected_closed: bool,
+    #[values(false, true)] missing_position_id: bool,
 ) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
     let opening_fill = OrderFilledSpec::builder()
@@ -4288,7 +4408,14 @@ fn test_update_position_from_fill_applies_to_canonical_state(
     expected.apply(&fill);
     let expected_state = expected.clone_without_events();
 
-    let state = cache.update_position_from_fill(position_id, &fill).unwrap();
+    let mut actual = fill;
+    if missing_position_id {
+        actual.position_id = None;
+    }
+
+    let state = cache
+        .update_position_from_fill(position_id, &actual)
+        .unwrap();
 
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
@@ -4354,7 +4481,7 @@ fn test_update_position_from_adjustment_applies_in_place_and_reverts(
 
     let adjustment = funding_adjustment(&position, "-3 USD");
     let mut expected = position.clone();
-    expected.apply_adjustment(adjustment);
+    expected.apply_adjustment(adjustment).unwrap();
     let prior = position.clone_without_events();
 
     cache
@@ -4463,6 +4590,36 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
     );
     assert!(cache.is_position_open(&position_id));
     assert!(!cache.is_position_closed(&position_id));
+}
+
+#[rstest]
+fn test_update_position_from_fill_rejection_preserves_canonical_state(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let opening = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .position_id(PositionId::from("P-REJECT-FILL"))
+        .build();
+    let position = Position::new(&instrument, opening.clone());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    let mut invalid = opening;
+    invalid.client_order_id = ClientOrderId::from("O-DUPLICATE-OTHER");
+    invalid.event_id = UUID4::new();
+
+    let result = cache.update_position_from_fill(position.id, &invalid);
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "`fill.trade_id` already contained in `trade_ids`"
+    );
+    assert_eq!(
+        serde_json::to_value(&*cache.position(&position.id).unwrap()).unwrap(),
+        serde_json::to_value(&position).unwrap()
+    );
+    assert!(cache.is_position_open(&position.id));
+    assert!(!cache.is_position_closed(&position.id));
 }
 
 // -- DATA ------------------------------------------------------------------------------------

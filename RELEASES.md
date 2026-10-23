@@ -9,6 +9,8 @@ Released on TBD (UTC).
 - Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
 - Added accumulation of fractional `Money` commissions beyond currency precision
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
+- Added Derive explicit WebSocket cancel-on-disconnect control
+- Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
@@ -23,6 +25,7 @@ Released on TBD (UTC).
 - Removed Hyperliquid `Secrets::from_file` and `from_json`; use `from_private_key` or `from_env`
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
+- Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
 - Changed `Money` display and decimal conversion to retain finer digits; round to currency precision explicitly
 - Changed `Money` deserialization to reject excess precision instead of rounding; round inputs before loading
@@ -49,6 +52,14 @@ Released on TBD (UTC).
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
 - Changed Lighter `compute_tx_hash` and `sign_tx` to return `Result`; handle invalid transaction attributes
 - Changed Lighter `L2TxAttributes` literals; add the new fields or use `..Default::default()`
+- Changed OKX spot stop/touched buys to explicit base or quote sizing; resubmit pending buys
+- Changed OKX unsupported algo quote sizing to local denials; resubmit spot trailing buys with quote quantity
+- Changed OKX algo triggers to deny unsupported feeds and cash/trailing mark/index; use last price
+- Changed OKX WebSocket algo placement to return an error; use `OKXHttpClient` for algo orders
+- Changed OKX `OKXPlaceAlgoOrderRequest` literals to require `ccy`; use quote currency for spot margin, otherwise `None`
+- Changed Python `OKXHttpClient.place_algo_order` spot stop-market and market-if-touched buy defaults from quote to base
+- Changed Python OKX quote-budget algo calls to require `quote_quantity=True`, including spot trailing buys
+- Changed OKX `place_algo_order_with_domain_types` to require `quote_quantity`; pass `false` for base sizing
 - Changed `PolymarketInstrumentDef.gamma_event` from `Option<String>` to `Option<Arc<Value>>` (#5389), thanks @imbolc
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
@@ -81,6 +92,7 @@ Released on TBD (UTC).
 - Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed simulated venues matching cross-instrument OTO children with their parent's market and execution state
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
+- Fixed non-ASCII signal topics to use Unicode titlecase mappings
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
 - Fixed `RetryManager` skipping minimum retry delays after operation timeouts (#5406), thanks @imbolc
 - Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
@@ -130,6 +142,7 @@ Released on TBD (UTC).
 - Fixed Lighter single-order cancel transaction failures leaving orders pending cancel
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX external limit orders missing amendment confirmations
+- Fixed OKX spot `StopMarket` and `MarketIfTouched` buy sizing (#5371), thanks for reporting @michalismeng
 - Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket event metadata duplicated across instruments and cache clones (#5389), thanks @imbolc
@@ -138,6 +151,8 @@ Released on TBD (UTC).
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails
 - Fixed Polymarket batch submits delaying later chunks behind FOK recovery and deferred cancels
 - Fixed Polymarket book recovery continuing after market resolution (#5359), thanks @imbolc
+- Fixed Polymarket quiet books staying unsynced when the initial subscription snapshot is lost
+- Fixed Polymarket stale snapshots restoring deleted book levels and unverifiable updates continuing to publish
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
 - Fixed Polymarket closure timestamps causing catalog promotion overlaps (#5358), thanks @imbolc
 - Fixed Polymarket reconciliation reverting resting partially filled orders to `Accepted`
@@ -154,8 +169,10 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added deferred finalization for live execution report collection
 - Improved Dockerfile linting to run Hadolint without Docker
 - Optimized JSON and MessagePack decoding and custom data response encoding
+- Optimized virtual hedging fill-history checks during execution and reconciliation
 - Standardized Architect AX owned execution report tasks
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc
 - Upgraded `cargo-codspeed` tool to v5.0.3

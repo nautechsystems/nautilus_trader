@@ -13,10 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A `Position` for the trading domain model.
+//! Market positions, replay history, and checked financial arithmetic.
 //!
-//! Represents an open or closed position a the market, tracking quantity, side, average
-//! prices, realized P&L, and the fill events that created and changed the position.
+//! [`Position`] tracks open and closed positions from fills, adjustments, and instrument settlement.
+//! It records quantity, side, average prices, commissions, and realized PnL.
+//!
+//! # Replay
+//!
+//! The replay journal records fills, adjustments, and instrument close events. Retained history
+//! supports price restatements and cumulative fill corrections across close and reopen cycles.
+//!
+//! # Checked Arithmetic
+//!
+//! Financial calculations use checked domain types and [`Decimal`]. The shared arithmetic also
+//! supports account projections and splitting fills for position reversals.
+//!
+//! - Input conversions reject precision loss and overflow.
+//! - Derived products, cost sums, division, and proportional intermediates round at Decimal precision.
+//!   Cost allocations retain a representable remainder.
+//! - Arithmetic rejects a nonzero operand or result that would disappear at that precision.
+//!   PnL sums may absorb a disappearing residual smaller than one native settlement [`Money`] unit.
+//! - Derived [`Money`] values round midpoint to even at their native fixed-point scale.
 
 use std::{
     fmt::Display,
@@ -32,7 +49,8 @@ use nautilus_core::{
         check_predicate_true,
     },
 };
-use rust_decimal::{Decimal, prelude::ToPrimitive};
+use ruint::aliases::{U256, U512};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -46,15 +64,33 @@ use crate::{
         Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    types::{Currency, Money, Price, Quantity, fixed::check_float_precision},
+    types::{
+        Currency, Money, Price, Quantity,
+        fixed::{FIXED_PRECISION, FIXED_SCALAR_RAW, checked_mul_div_raw, raw_scales_match},
+        quantity::QuantityRaw,
+    },
 };
 
-/// Represents a position in a market.
+/// An open or closed position in a market.
 ///
-/// The position ID may be assigned at the trading venue, or can be system
-/// generated depending on a strategies OMS (Order Management System) settings.
-/// Replay events and cumulative fill corrections preserve derived state across close and reopen
-/// cycles.
+/// # Identity and Replay
+///
+/// The venue may assign the position ID; the strategy's Order Management System (OMS) settings
+/// control system-generated IDs. Retained replay events and cumulative fill corrections preserve
+/// derived state across close and reopen cycles.
+///
+/// # Accounting
+///
+/// Financial calculations use checked domain and [`Decimal`] arithmetic. Decimal has a 96-bit
+/// coefficient and a maximum scale of 28. Input conversions reject precision loss and overflow;
+/// derived products, cost sums, division, and proportional intermediates use its finite precision.
+///
+/// - Cost accumulators preserve the cost basis without reusing rounded average prices.
+/// - Partial reductions retain unallocated cost; the final reduction consumes it.
+/// - A sub-Money PnL remainder preserves fractional amounts between updates.
+///
+/// [`Money`] results round midpoint to even at their native fixed-point scale. `realized_return`
+/// is a floating-point analytics projection and does not feed accounting.
 #[repr(C)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
@@ -81,7 +117,7 @@ pub struct Position {
     pub closing_order_id: Option<ClientOrderId>,
     pub entry: OrderSide,
     pub side: PositionSide,
-    pub signed_qty: f64,
+    pub signed_qty: Decimal,
     pub quantity: Quantity,
     pub peak_qty: Quantity,
     pub price_precision: u8,
@@ -98,8 +134,8 @@ pub struct Position {
     pub ts_last: UnixNanos,
     pub ts_closed: Option<UnixNanos>,
     pub duration_ns: DurationNanos,
-    pub avg_px_open: f64,
-    pub avg_px_close: Option<f64>,
+    pub avg_px_open: Decimal,
+    pub avg_px_close: Option<Decimal>,
     pub realized_return: f64,
     pub realized_pnl: Option<Money>,
     #[serde(with = "nautilus_core::serialization::sorted_hashset")]
@@ -109,6 +145,10 @@ pub struct Position {
     /// Total sell quantity in the current position episode.
     pub sell_qty: Quantity,
     pub commissions: IndexMap<Currency, Money>,
+    pub cost_open: Decimal,
+    pub cost_close: Decimal,
+    pub qty_closed: Decimal,
+    pub realized_pnl_remainder: Decimal,
 }
 
 #[expect(clippy::large_enum_variant)]
@@ -146,9 +186,7 @@ impl Position {
     /// # Errors
     ///
     /// Returns an error if the instrument ID does not match the fill, the fill has no position
-    /// ID, or the precision of the instrument size, multiplier, or settlement currency, or of the
-    /// fill price, quantity, or a commission converted through `f64`, exceeds
-    /// [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION).
+    /// ID, or its accounting values cannot be represented without input precision loss.
     #[allow(
         clippy::needless_pass_by_value,
         reason = "constructor takes the opening fill by value as the position's seed event"
@@ -156,7 +194,6 @@ impl Position {
     pub fn new_checked(instrument: &InstrumentAny, fill: OrderFilled) -> CorrectnessResult<Self> {
         Self::check_fill_instrument(instrument.id(), "instrument.id()", &fill)?;
         let position_id = Self::fill_position_id(&fill)?;
-        check_float_precision(fill.last_px.precision)?;
 
         let mut item = Self {
             events: Vec::<OrderFilled>::new(),
@@ -176,7 +213,7 @@ impl Position {
             closing_order_id: None,
             entry: fill.order_side,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: Decimal::ZERO,
             quantity: fill.last_qty,
             peak_qty: fill.last_qty,
             price_precision: instrument.price_precision(),
@@ -196,14 +233,17 @@ impl Position {
             ts_last: fill.ts_event,
             ts_closed: None,
             duration_ns: DurationNanos::default(),
-            avg_px_open: fill.last_px.as_f64(),
+            avg_px_open: price(fill.last_px)?,
             avg_px_close: None,
             realized_return: 0.0,
             realized_pnl: None,
+            cost_open: Decimal::ZERO,
+            cost_close: Decimal::ZERO,
+            qty_closed: Decimal::ZERO,
+            realized_pnl_remainder: Decimal::ZERO,
         };
 
-        item.check_state_float_precision()?;
-        item.check_fill_float_precision(&fill)?;
+        item.check_accounting()?;
         item.apply_fill(&fill, true)?;
         Ok(item)
     }
@@ -255,6 +295,10 @@ impl Position {
             buy_qty: self.buy_qty,
             sell_qty: self.sell_qty,
             commissions: self.commissions.clone(),
+            cost_open: self.cost_open,
+            cost_close: self.cost_close,
+            qty_closed: self.qty_closed,
+            realized_pnl_remainder: self.realized_pnl_remainder,
         }
     }
 
@@ -283,10 +327,21 @@ impl Position {
     /// This operation recalculates the entire position from scratch after removing the specified
     /// order's fills. This is an expensive operation and should be used sparingly.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if after purging, no fills remain and the position cannot be reconstructed.
-    pub fn purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
+    /// Returns an error if the remaining history cannot be represented. An error leaves the
+    /// position unchanged.
+    pub fn purge_events_for_order(
+        &mut self,
+        client_order_id: ClientOrderId,
+    ) -> CorrectnessResult<()> {
+        let mut next = self.clone();
+        next.purge_order(client_order_id)?;
+        *self = next;
+        Ok(())
+    }
+
+    fn purge_order(&mut self, client_order_id: ClientOrderId) -> CorrectnessResult<()> {
         self.replay_events.retain(|event| {
             !matches!(event, PositionReplayEvent::Filled(fill) if fill.client_order_id == client_order_id)
         });
@@ -326,7 +381,7 @@ impl Position {
             self.buy_qty = Quantity::zero(self.size_precision);
             self.sell_qty = Quantity::zero(self.size_precision);
             self.commissions.clear();
-            self.signed_qty = 0.0;
+            self.signed_qty = Decimal::ZERO;
             self.quantity = Quantity::zero(self.size_precision);
             self.side = PositionSide::Flat;
             self.avg_px_close = None;
@@ -336,7 +391,11 @@ impl Position {
             self.ts_last = UnixNanos::default();
             self.ts_closed = Some(UnixNanos::default());
             self.duration_ns = DurationNanos::default();
-            return;
+            self.cost_open = Decimal::ZERO;
+            self.cost_close = Decimal::ZERO;
+            self.qty_closed = Decimal::ZERO;
+            self.realized_pnl_remainder = Decimal::ZERO;
+            return Ok(());
         }
 
         // Recalculate position from scratch
@@ -383,20 +442,20 @@ impl Position {
                 }
 
                 if restatement_indexes.contains(&index) {
-                    self.apply_price_restatement(fill, false);
+                    self.apply_price_restatement(fill, false)?;
                 } else if let Some(effective) = effective_by_id.get(&fill.event_id) {
-                    self.apply_fill(effective, false).expect_display(FAILED);
+                    self.apply_fill(effective, false)?;
                 }
             }
         } else {
             for event in &filtered_events {
-                self.apply_fill(event, false).expect_display(FAILED);
+                self.apply_fill(event, false)?;
             }
         }
 
         // Reapply preserved adjustments to maintain full state
         for adjustment in preserved_adjustments {
-            self.apply_adjustment_state(adjustment, false);
+            self.apply_adjustment_state(adjustment, false)?;
         }
 
         log::info!(
@@ -407,6 +466,7 @@ impl Position {
             self.signed_qty,
             self.side
         );
+        Ok(())
     }
 
     /// Applies an `OrderFilled` event to this position.
@@ -420,8 +480,7 @@ impl Position {
     ///
     /// # Panics
     ///
-    /// Panics if `fill.trade_id` is already in `trade_ids` and this fill is not a restatement
-    /// of that order.
+    /// Panics if the fill is rejected as a duplicate trade or fails accounting validation.
     pub fn apply(&mut self, fill: &OrderFilled) {
         self.apply_fill(fill, true).expect_display(FAILED);
     }
@@ -438,15 +497,13 @@ impl Position {
     /// Returns an error if:
     /// - The fill instrument or position identity does not match this position.
     /// - The fill has no position ID.
-    /// - The precision of the fill price, quantity, or a commission converted through `f64`
-    ///   exceeds [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION).
+    /// - An accounting input or intermediate exceeds the supported Decimal or domain bounds.
     /// - `fill.trade_id` is already in `trade_ids` and this fill is not a restatement of that
     ///   order.
     pub fn try_apply(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
         Self::check_fill_instrument(self.instrument_id, "self.instrument_id", fill)?;
         let position_id = Self::fill_position_id(fill)?;
         check_equal(&self.id, &position_id, "self.id", "fill.position_id")?;
-        self.check_fill_float_precision(fill)?;
         self.apply_fill(fill, true)
     }
 
@@ -479,42 +536,47 @@ impl Position {
             })
     }
 
-    fn check_fill_float_precision(&self, fill: &OrderFilled) -> CorrectnessResult<()> {
-        check_float_precision(fill.last_px.precision)?;
-        check_float_precision(fill.last_qty.precision)?;
-
-        // Only settlement and base-currency commissions convert through `f64`
-        if let Some(commission) = fill.commission
-            && (commission.currency == self.settlement_currency
-                || (self.is_currency_pair && self.base_currency == Some(commission.currency)))
-        {
-            check_float_precision(commission.currency.precision)?;
+    fn check_fill_accounting(&self, fill: &OrderFilled) -> CorrectnessResult<(Decimal, Decimal)> {
+        let last_px = price(fill.last_px)?;
+        let last_qty = qty(fill.last_qty)?;
+        if let Some(commission) = fill.commission {
+            amount(commission)?;
         }
 
-        Ok(())
+        Ok((last_px, last_qty))
     }
 
-    pub(crate) fn check_state_float_precision(&self) -> CorrectnessResult<()> {
-        check_float_precision(self.size_precision)?;
-        check_float_precision(self.multiplier.precision)?;
-        check_float_precision(self.settlement_currency.precision)?;
-        check_float_precision(self.quantity.precision)?;
-        check_float_precision(self.buy_qty.precision)?;
-        check_float_precision(self.sell_qty.precision)?;
+    /// Checks that stored domain inputs fit the exact Decimal accounting bounds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a stored price, quantity, or monetary input loses precision or overflows.
+    pub fn check_accounting(&self) -> CorrectnessResult<()> {
+        for quantity in [
+            self.quantity,
+            self.peak_qty,
+            self.buy_qty,
+            self.sell_qty,
+            self.multiplier,
+        ] {
+            qty(quantity)?;
+        }
 
-        if let Some(realized_pnl) = self.realized_pnl {
-            check_float_precision(realized_pnl.currency.precision)?;
+        for amount in self.commissions.values().copied().chain(self.realized_pnl) {
+            self::amount(amount)?;
         }
 
         for fill in &self.events {
-            self.check_fill_float_precision(fill)?;
+            self.check_fill_accounting(fill)?;
         }
 
         for event in &self.replay_events {
             match event {
-                PositionReplayEvent::Filled(fill) => self.check_fill_float_precision(fill)?,
+                PositionReplayEvent::Filled(fill) => {
+                    self.check_fill_accounting(fill)?;
+                }
                 PositionReplayEvent::InstrumentClosed(close) => {
-                    check_float_precision(close.close_price.precision)?;
+                    price(close.close_price)?;
                 }
                 PositionReplayEvent::Adjusted(_) => {}
             }
@@ -531,8 +593,12 @@ impl Position {
             return Ok(());
         }
 
+        let (last_px, last_qty) = self.check_fill_accounting(fill)?;
+
         if self.is_price_restatement(fill) {
-            self.apply_price_restatement(fill, record_replay);
+            let mut next = self.clone();
+            next.apply_price_restatement(fill, record_replay)?;
+            *self = next;
             return Ok(());
         }
 
@@ -557,77 +623,88 @@ impl Position {
             );
         }
 
-        if self.side == PositionSide::Flat {
-            self.reset_cycle(fill);
-        }
-
-        if record_replay {
+        let resets = self.side == PositionSide::Flat;
+        if record_replay && !resets {
             check_predicate_true(
                 !self.trade_ids.contains(&fill.trade_id),
                 "`fill.trade_id` already contained in `trade_ids`",
             )?;
-            self.replay_events
+        }
+
+        let mut next = self.prepare_fill(fill, last_px, last_qty)?;
+        if !resets {
+            next.events = std::mem::take(&mut self.events);
+            next.trade_ids = std::mem::take(&mut self.trade_ids);
+            let mut adjustments = std::mem::take(&mut self.adjustments);
+            adjustments.append(&mut next.adjustments);
+            next.adjustments = adjustments;
+        }
+
+        next.replay_events = std::mem::take(&mut self.replay_events);
+        next.fill_voids = std::mem::take(&mut self.fill_voids);
+        next.events.push(fill.clone());
+        next.trade_ids.insert(fill.trade_id);
+        if record_replay {
+            next.replay_events
                 .push(PositionReplayEvent::Filled(fill.clone()));
         }
 
-        self.events.push(fill.clone());
-        self.trade_ids.insert(fill.trade_id);
-
-        // Calculate cumulative commissions
-        if let Some(commission) = fill.commission {
-            self.commissions
-                .entry(commission.currency)
-                .and_modify(|total| *total = *total + commission)
-                .or_insert(commission);
-        }
-
-        // Calculate avg prices, points, return, PnL
-        match fill.order_side {
-            OrderSide::Buy => {
-                self.handle_buy_order_fill(fill);
-            }
-            OrderSide::Sell => {
-                self.handle_sell_order_fill(fill);
-            }
-        }
-
-        // For spot instruments, create adjustment event when commission is in base currency
-        if self.is_currency_pair
-            && let Some(commission) = fill.commission
-            && let Some(base_currency) = self.base_currency
-            && commission.currency == base_currency
-        {
-            self.apply_base_commission_adjustment(fill, commission);
-        }
-
-        // size_precision is valid from instrument
-        self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision);
-        if self.quantity > self.peak_qty {
-            self.peak_qty = self.quantity;
-        }
-
-        if self.quantity.is_zero() {
-            self.side = PositionSide::Flat;
-            self.signed_qty = 0.0; // Normalize
-            self.closing_order_id = Some(fill.client_order_id);
-            self.ts_closed = Some(fill.ts_event);
-            self.duration_ns = fill.ts_event.saturating_duration_since(self.ts_opened);
-        } else if self.signed_qty > 0.0 {
-            self.entry = OrderSide::Buy;
-            self.side = PositionSide::Long;
-        } else {
-            self.entry = OrderSide::Sell;
-            self.side = PositionSide::Short;
-        }
-
-        self.ts_last = fill.ts_event;
-
-        self.debug_assert_invariants();
-
+        next.debug_assert_invariants();
+        *self = next;
         Ok(())
     }
 
-    fn reset_cycle(&mut self, fill: &OrderFilled) {
+    fn prepare_fill(
+        &self,
+        fill: &OrderFilled,
+        last_px: Decimal,
+        last_qty: Decimal,
+    ) -> CorrectnessResult<Self> {
+        let mut next = self.clone_without_events();
+        if self.side == PositionSide::Flat {
+            next.reset_cycle(fill)?;
+        }
+
+        if let Some(commission) = fill.commission {
+            let total = match next.commissions.get(&commission.currency) {
+                Some(total) => total
+                    .checked_add(commission)
+                    .ok_or_else(|| invalid("position commission overflow"))?,
+                None => commission,
+            };
+
+            next.commissions.insert(commission.currency, total);
+        }
+
+        next.handle_order_fill(fill, last_px, last_qty)?;
+        if next.is_currency_pair
+            && let Some(commission) = fill.commission
+            && next.base_currency == Some(commission.currency)
+        {
+            next.apply_base_commission_adjustment(fill, commission)?;
+        }
+
+        next.quantity = quantity(next.signed_qty.abs(), next.size_precision)?;
+        next.peak_qty = next.peak_qty.max(next.quantity);
+        if next.quantity.is_zero() {
+            next.side = PositionSide::Flat;
+            next.signed_qty = Decimal::ZERO;
+            next.closing_order_id = Some(fill.client_order_id);
+            next.ts_closed = Some(fill.ts_event);
+            next.duration_ns = fill.ts_event.saturating_duration_since(next.ts_opened);
+        } else if next.signed_qty > Decimal::ZERO {
+            next.entry = OrderSide::Buy;
+            next.side = PositionSide::Long;
+        } else {
+            next.entry = OrderSide::Sell;
+            next.side = PositionSide::Short;
+        }
+
+        next.ts_last = fill.ts_event;
+        Ok(next)
+    }
+
+    fn reset_cycle(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
         self.events.clear();
         self.trade_ids.clear();
         self.adjustments.clear();
@@ -641,10 +718,15 @@ impl Position {
         self.ts_opened = fill.ts_event;
         self.ts_closed = None;
         self.duration_ns = DurationNanos::default();
-        self.avg_px_open = fill.last_px.as_f64();
+        self.avg_px_open = price(fill.last_px)?;
         self.avg_px_close = None;
         self.realized_return = 0.0;
         self.realized_pnl = None;
+        self.cost_open = Decimal::ZERO;
+        self.cost_close = Decimal::ZERO;
+        self.qty_closed = Decimal::ZERO;
+        self.realized_pnl_remainder = Decimal::ZERO;
+        Ok(())
     }
 
     /// Returns whether durable replay history contains `trade_id`.
@@ -694,6 +776,45 @@ impl Position {
         self.has_replay_trade_id(fill.trade_id)
     }
 
+    /// Returns whether the fill can restate an opening trade's price in the current episode.
+    ///
+    /// The order, trade, side, and quantity must match the recorded opening fill.
+    #[must_use]
+    pub fn accepts_price_restatement(&self, fill: &OrderFilled) -> bool {
+        if !self.is_open()
+            || !self.trade_ids.contains(&fill.trade_id)
+            || fill.order_side != self.entry
+        {
+            return false;
+        }
+
+        let Some(existing) = self.events.iter().find(|event| {
+            event.trade_id == fill.trade_id && event.client_order_id == fill.client_order_id
+        }) else {
+            return false;
+        };
+
+        if existing.last_qty != fill.last_qty {
+            return false;
+        }
+
+        let mut latest = None;
+
+        for event in &self.replay_events {
+            let PositionReplayEvent::Filled(existing) = event else {
+                continue;
+            };
+
+            if existing.trade_id == fill.trade_id
+                && existing.client_order_id == fill.client_order_id
+            {
+                latest = Some(existing.last_px);
+            }
+        }
+
+        latest.is_some_and(|price| price != fill.last_px)
+    }
+
     fn is_price_restatement(&self, fill: &OrderFilled) -> bool {
         if self.side == PositionSide::Flat
             || self.quantity.is_zero()
@@ -725,9 +846,13 @@ impl Position {
         latest.is_some_and(|price| price != fill.last_px)
     }
 
-    fn apply_price_restatement(&mut self, fill: &OrderFilled, record_replay: bool) {
+    fn apply_price_restatement(
+        &mut self,
+        fill: &OrderFilled,
+        record_replay: bool,
+    ) -> CorrectnessResult<()> {
         if self.side != PositionSide::Flat && !self.quantity.is_zero() {
-            self.restate_open_average(fill);
+            self.restate_open_average(fill)?;
         }
 
         self.ts_last = fill.ts_event;
@@ -736,6 +861,8 @@ impl Position {
             self.replay_events
                 .push(PositionReplayEvent::Filled(fill.clone()));
         }
+
+        Ok(())
     }
 
     fn has_replay_price_restatement(&self) -> bool {
@@ -758,102 +885,79 @@ impl Position {
         false
     }
 
-    fn restate_open_average(&mut self, fill: &OrderFilled) {
+    fn restate_open_average(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
         if !self.trade_ids.contains(&fill.trade_id)
             || fill.order_side != self.entry
-            || !self.extends_current_cycle(fill)
+            || !self.extends_current_cycle(fill)?
         {
-            return;
+            return Ok(());
         }
 
-        let new_px = fill.last_px.as_f64();
-        if self.trade_ids.len() <= 1 {
-            self.avg_px_open = new_px;
-            return;
-        }
+        let new_px = price(fill.last_px)?;
 
-        let Some(previous_px) = self.accounting_px_before(fill) else {
-            return;
+        let Some(previous_px) = self.accounting_px_before(fill)? else {
+            return Ok(());
         };
 
-        let open_qty = self.quantity.as_f64();
-        if open_qty <= 0.0 {
-            return;
+        let open_qty = qty(self.quantity)?;
+        let trade_qty = self.cycle_open_qty_for_trade(fill.trade_id)?.min(open_qty);
+        if open_qty.is_zero() || trade_qty.is_zero() {
+            return Ok(());
         }
 
-        let trade_qty = self.cycle_open_qty_for_trade(fill.trade_id).min(open_qty);
-        if trade_qty <= 0.0 {
-            return;
-        }
-
-        let notional = self.avg_px_open * open_qty - previous_px * trade_qty + new_px * trade_qty;
-        self.avg_px_open = notional / open_qty;
+        let delta = mul_rounded(sub(new_px, previous_px)?, trade_qty)?;
+        self.cost_open = add_rounded(self.cost_open, delta)?;
+        self.avg_px_open = div(self.cost_open, open_qty)?;
+        Ok(())
     }
 
-    fn extends_current_cycle(&self, fill: &OrderFilled) -> bool {
+    fn extends_current_cycle(&self, fill: &OrderFilled) -> CorrectnessResult<bool> {
         let long = self.entry == OrderSide::Buy;
-        let mut signed = 0.0_f64;
+        let mut signed = Decimal::ZERO;
 
         for event in &self.events {
+            let qty = qty(event.last_qty)?;
             let delta = if event.order_side == OrderSide::Buy {
-                event.last_qty.as_f64()
+                qty
             } else {
-                -event.last_qty.as_f64()
+                -qty
             };
 
+            let after = add(signed, delta)?;
             if event.trade_id == fill.trade_id && event.client_order_id == fill.client_order_id {
-                let after = signed + delta;
-                return (signed == 0.0 || (signed > 0.0) == long) && ((after > 0.0) == long);
+                return Ok((signed.is_zero() || (signed > Decimal::ZERO) == long)
+                    && ((after > Decimal::ZERO) == long));
             }
 
-            signed += delta;
+            signed = after;
         }
 
-        false
+        Ok(false)
     }
 
-    fn cycle_open_qty_for_trade(&self, trade_id: TradeId) -> f64 {
+    fn cycle_open_qty_for_trade(&self, trade_id: TradeId) -> CorrectnessResult<Decimal> {
         let long = self.entry == OrderSide::Buy;
-        let mut remaining = Vec::new();
-        let mut signed = 0.0_f64;
+        let mut remaining: Vec<(TradeId, Decimal)> = Vec::new();
+        let mut signed = Decimal::ZERO;
 
         for fill in &self.events {
-            let qty = fill.last_qty.as_f64();
+            let qty = qty(fill.last_qty)?;
             let delta = if fill.order_side == OrderSide::Buy {
                 qty
             } else {
                 -qty
             };
 
-            let after = signed + delta;
-
-            if signed != 0.0 && (after > 0.0) != (signed > 0.0) {
-                // A zero crossing starts a new cycle; only the crossing fill's residual
-                // in the current entry direction extends it.
+            let after = add(signed, delta)?;
+            if !signed.is_zero() && (after > Decimal::ZERO) != (signed > Decimal::ZERO) {
                 remaining.clear();
-                if after != 0.0 && (after > 0.0) == long {
+                if !after.is_zero() && (after > Decimal::ZERO) == long {
                     remaining.push((fill.trade_id, after.abs()));
                 }
-
-                signed = after;
-                continue;
-            }
-
-            if fill.order_side == self.entry {
+            } else if fill.order_side == self.entry {
                 remaining.push((fill.trade_id, qty));
-                signed = after;
-                continue;
-            }
-
-            let open_qty: f64 = remaining.iter().map(|(_, qty)| *qty).sum();
-            if open_qty <= 0.0 {
-                signed = after;
-                continue;
-            }
-
-            let keep = (open_qty - qty.min(open_qty)) / open_qty;
-            for lot in &mut remaining {
-                lot.1 *= keep;
+            } else {
+                Self::reduce_open_lots(&mut remaining, qty)?;
             }
 
             signed = after;
@@ -862,11 +966,28 @@ impl Position {
         remaining
             .into_iter()
             .filter(|(id, _)| *id == trade_id)
-            .map(|(_, qty)| qty)
-            .sum()
+            .try_fold(Decimal::ZERO, |total, (_, qty)| add_rounded(total, qty))
     }
 
-    fn accounting_px_before(&self, fill: &OrderFilled) -> Option<f64> {
+    fn reduce_open_lots(
+        remaining: &mut [(TradeId, Decimal)],
+        qty: Decimal,
+    ) -> CorrectnessResult<()> {
+        let open_qty = remaining
+            .iter()
+            .try_fold(Decimal::ZERO, |total, (_, qty)| add_rounded(total, *qty))?;
+
+        if !open_qty.is_zero() {
+            let keep = div(sub(open_qty, qty.min(open_qty))?, open_qty)?;
+            for (_, qty) in remaining {
+                *qty = mul_rounded(*qty, keep)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn accounting_px_before(&self, fill: &OrderFilled) -> CorrectnessResult<Option<Decimal>> {
         let mut price = None;
 
         for event in &self.replay_events {
@@ -882,10 +1003,10 @@ impl Position {
                 break;
             }
 
-            price = Some(existing.last_px.as_f64());
+            price = Some(self::price(existing.last_px)?);
         }
 
-        price
+        Ok(price)
     }
 
     fn voidable_replay_fill<'a>(
@@ -926,132 +1047,157 @@ impl Position {
         indexes
     }
 
-    fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
-        // Handle case where commission could be None or not settlement currency
-        let mut realized_pnl = if let Some(commission) = fill.commission {
-            if commission.currency == self.settlement_currency {
-                -commission.as_f64()
+    fn handle_order_fill(
+        &mut self,
+        fill: &OrderFilled,
+        last_px: Decimal,
+        last_qty: Decimal,
+    ) -> CorrectnessResult<()> {
+        check_predicate_true(last_qty > Decimal::ZERO, "fill quantity must be positive")?;
+        let prior_qty = self.signed_qty.abs();
+        let increases = self.signed_qty.is_zero()
+            || (self.signed_qty > Decimal::ZERO) == (fill.order_side == OrderSide::Buy);
+        let mut pnl = Decimal::ZERO;
+
+        if increases {
+            self.cost_open = add_rounded(self.cost_open, mul_rounded(last_px, last_qty)?)?;
+            self.avg_px_open = div(self.cost_open, add(prior_qty, last_qty)?)?;
+        } else {
+            let closing_qty = last_qty.min(prior_qty);
+
+            let allocated_cost = if closing_qty == prior_qty {
+                self.cost_open
             } else {
-                0.0
+                proportion(self.cost_open, closing_qty, prior_qty)?
+            };
+
+            pnl = self.pnl_from_cost(
+                last_px,
+                closing_qty,
+                allocated_cost,
+                prior_qty,
+                self.cost_open,
+            )?;
+            self.cost_open = sub(self.cost_open, allocated_cost)?;
+            self.cost_close = add_rounded(self.cost_close, mul_rounded(last_px, closing_qty)?)?;
+            self.qty_closed = add(self.qty_closed, closing_qty)?;
+            self.avg_px_close = Some(div(self.cost_close, self.qty_closed)?);
+            self.realized_return = self.calculate_return(
+                self.avg_px_open,
+                self.avg_px_close.expect("closing average is set"),
+            );
+
+            if last_qty > prior_qty {
+                let opening_qty = sub(last_qty, prior_qty)?;
+                self.cost_open = mul_rounded(last_px, opening_qty)?;
+                self.avg_px_open = last_px;
+                self.avg_px_close = None;
+                self.realized_return = 0.0;
+                self.cost_close = Decimal::ZERO;
+                self.qty_closed = Decimal::ZERO;
+                self.buy_qty = Quantity::zero(self.size_precision);
+                self.sell_qty = Quantity::zero(self.size_precision);
             }
-        } else {
-            0.0
-        };
-
-        let last_px = fill.last_px.as_f64();
-        let last_qty = fill.last_qty.as_f64();
-        let last_qty_object = fill.last_qty;
-        let was_short = self.signed_qty < 0.0;
-        let is_reversal = was_short && last_qty_object > self.quantity;
-        let closing_qty_object = if is_reversal {
-            self.quantity
-        } else {
-            last_qty_object
-        };
-        let opening_qty_object = last_qty_object - closing_qty_object;
-        let closing_qty = closing_qty_object.as_f64();
-
-        if self.signed_qty > 0.0 {
-            self.avg_px_open = self.calculate_avg_px_open_px(last_px, last_qty);
-        } else if was_short {
-            // Closing short position
-            let avg_px_close = self.calculate_avg_px_close_px(last_px, closing_qty);
-            self.avg_px_close = Some(avg_px_close);
-            self.realized_return = self
-                .calculate_return(self.avg_px_open, avg_px_close)
-                .unwrap_or_else(|e| {
-                    log::error!("Error calculating return: {e}");
-                    0.0
-                });
-            realized_pnl += self
-                .calculate_pnl_raw(self.avg_px_open, last_px, closing_qty)
-                .unwrap_or_else(|e| {
-                    log::error!("Error calculating PnL: {e}");
-                    0.0
-                });
         }
 
-        let current_pnl = self.realized_pnl.map_or(0.0, |p| p.as_f64());
-        self.realized_pnl = Some(Money::new(
-            current_pnl + realized_pnl,
-            self.settlement_currency,
-        ));
+        let commission = fill
+            .commission
+            .filter(|commission| commission.currency == self.settlement_currency)
+            .map(amount)
+            .transpose()?
+            .unwrap_or(Decimal::ZERO);
+        pnl = add_pnl(pnl, -commission, self.settlement_currency)?;
+        self.accumulate_pnl(pnl)?;
 
-        self.signed_qty += last_qty;
-        self.buy_qty = self.buy_qty + last_qty_object;
+        let signed = if fill.order_side == OrderSide::Buy {
+            last_qty
+        } else {
+            -last_qty
+        };
 
-        // Start a new accounting episode after a short-to-long reversal
-        if is_reversal {
-            self.avg_px_open = last_px;
-            self.avg_px_close = None;
-            self.realized_return = 0.0;
-            self.buy_qty = opening_qty_object;
-            self.sell_qty = Quantity::zero(self.size_precision);
-        }
+        self.signed_qty = add(self.signed_qty, signed)?;
+
+        let qty = if !increases && last_qty > prior_qty {
+            quantity(sub(last_qty, prior_qty)?, self.size_precision)?
+        } else {
+            fill.last_qty
+        };
+
+        let cumulative = if fill.order_side == OrderSide::Buy {
+            &mut self.buy_qty
+        } else {
+            &mut self.sell_qty
+        };
+
+        *cumulative = quantity_add(*cumulative, qty, self.size_precision)?;
+
+        Ok(())
     }
 
-    fn handle_sell_order_fill(&mut self, fill: &OrderFilled) {
-        // Handle case where commission could be None or not settlement currency
-        let mut realized_pnl = if let Some(commission) = fill.commission {
-            if commission.currency == self.settlement_currency {
-                -commission.as_f64()
-            } else {
-                0.0
+    fn accumulate_pnl(&mut self, change: Decimal) -> CorrectnessResult<()> {
+        let prior = self.realized_decimal()?;
+        let total = add_pnl(prior, change, self.settlement_currency)?;
+        let rounded = money(total, self.settlement_currency)?;
+        self.realized_pnl_remainder = sub(total, amount(rounded)?)?;
+        self.realized_pnl = Some(rounded);
+        Ok(())
+    }
+
+    fn realized_decimal(&self) -> CorrectnessResult<Decimal> {
+        let prior = match self.realized_pnl {
+            Some(pnl) => {
+                check_equal(
+                    &pnl.currency,
+                    &self.settlement_currency,
+                    "realized_pnl.currency",
+                    "settlement_currency",
+                )?;
+                amount(pnl)?
             }
-        } else {
-            0.0
+            None => Decimal::ZERO,
         };
 
-        let last_px = fill.last_px.as_f64();
-        let last_qty = fill.last_qty.as_f64();
-        let last_qty_object = fill.last_qty;
-        let was_long = self.signed_qty > 0.0;
-        let is_reversal = was_long && last_qty_object > self.quantity;
-        let closing_qty_object = if is_reversal {
-            self.quantity
+        add(prior, self.realized_pnl_remainder)
+    }
+
+    fn pnl_from_cost(
+        &self,
+        last_px: Decimal,
+        qty: Decimal,
+        cost: Decimal,
+        prior_qty: Decimal,
+        basis_cost: Decimal,
+    ) -> CorrectnessResult<Decimal> {
+        let difference = if self
+            .instrument_class
+            .divides_notional_by_price(self.is_inverse)
+        {
+            check_predicate_true(
+                self.base_currency.is_some(),
+                "inverse position requires base currency",
+            )?;
+            check_predicate_true(
+                last_px > Decimal::ZERO && basis_cost > Decimal::ZERO,
+                "inverse prices must be positive",
+            )?;
+            let entry = div(prior_qty, basis_cost)?;
+            let exit = div(Decimal::ONE, last_px)?;
+            mul_rounded(qty, add_rounded(entry, -exit)?)?
         } else {
-            last_qty_object
+            add_rounded(mul_rounded(last_px, qty)?, -cost)?
         };
-        let opening_qty_object = last_qty_object - closing_qty_object;
-        let closing_qty = closing_qty_object.as_f64();
 
-        if self.signed_qty < 0.0 {
-            self.avg_px_open = self.calculate_avg_px_open_px(last_px, last_qty);
-        } else if was_long {
-            // Closing long position
-            let avg_px_close = self.calculate_avg_px_close_px(last_px, closing_qty);
-            self.avg_px_close = Some(avg_px_close);
-            self.realized_return = self
-                .calculate_return(self.avg_px_open, avg_px_close)
-                .unwrap_or_else(|e| {
-                    log::error!("Error calculating return: {e}");
-                    0.0
-                });
-            realized_pnl += self
-                .calculate_pnl_raw(self.avg_px_open, last_px, closing_qty)
-                .unwrap_or_else(|e| {
-                    log::error!("Error calculating PnL: {e}");
-                    0.0
-                });
+        let difference = if self.signed_qty < Decimal::ZERO {
+            -difference
+        } else {
+            difference
+        };
+
+        if self.multiplier.precision <= FIXED_PRECISION && self.multiplier.raw == FIXED_SCALAR_RAW {
+            return Ok(difference);
         }
 
-        let current_pnl = self.realized_pnl.map_or(0.0, |p| p.as_f64());
-        self.realized_pnl = Some(Money::new(
-            current_pnl + realized_pnl,
-            self.settlement_currency,
-        ));
-
-        self.signed_qty -= last_qty;
-        self.sell_qty = self.sell_qty + last_qty_object;
-
-        // Start a new accounting episode after a long-to-short reversal
-        if is_reversal {
-            self.avg_px_open = last_px;
-            self.avg_px_close = None;
-            self.realized_return = 0.0;
-            self.buy_qty = Quantity::zero(self.size_precision);
-            self.sell_qty = opening_qty_object;
-        }
+        mul_rounded(difference, self::qty(self.multiplier)?)
     }
 
     /// Applies a position adjustment event.
@@ -1063,11 +1209,13 @@ impl Position {
     ///
     /// The adjustment event is stored in the position's adjustment history for full audit trail.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the adjustment's `quantity_change` cannot be converted to f64.
-    pub fn apply_adjustment(&mut self, adjustment: PositionAdjusted) {
-        self.apply_adjustment_state(adjustment, true);
+    /// Returns an error if currencies differ, arithmetic overflows, or a quantity change
+    /// cannot be represented.
+    /// An error leaves the position unchanged.
+    pub fn apply_adjustment(&mut self, adjustment: PositionAdjusted) -> CorrectnessResult<()> {
+        self.apply_adjustment_state(adjustment, true)
     }
 
     /// Reverts the most recent adjustment applied with [`Self::apply_adjustment`].
@@ -1143,12 +1291,14 @@ impl Position {
         }
 
         let mut expected = prior.clone_without_events();
-        expected.apply_adjustment_state(adjustment, false);
+        expected.apply_adjustment_state(adjustment, false)?;
 
         if expected.signed_qty != self.signed_qty
             || expected.quantity != self.quantity
             || expected.peak_qty != self.peak_qty
             || expected.side != self.side
+            || expected.cost_open != self.cost_open
+            || expected.realized_pnl_remainder != self.realized_pnl_remainder
             || expected.realized_pnl != self.realized_pnl
             || expected.ts_last != self.ts_last
         {
@@ -1167,54 +1317,75 @@ impl Position {
         self.peak_qty = prior.peak_qty;
         self.side = prior.side;
         self.realized_pnl = prior.realized_pnl;
+        self.cost_open = prior.cost_open;
+        self.realized_pnl_remainder = prior.realized_pnl_remainder;
         self.ts_last = prior.ts_last;
 
         self.debug_assert_invariants();
         Ok(())
     }
 
-    fn apply_adjustment_state(&mut self, adjustment: PositionAdjusted, record_replay: bool) {
+    fn apply_adjustment_state(
+        &mut self,
+        adjustment: PositionAdjusted,
+        record_replay: bool,
+    ) -> CorrectnessResult<()> {
+        let signed_qty = add(
+            self.signed_qty,
+            adjustment.quantity_change.unwrap_or(Decimal::ZERO),
+        )?;
+        let quantity = quantity(signed_qty.abs(), self.size_precision)?;
+
+        let cost_open = if adjustment.quantity_change.is_some() {
+            if self.signed_qty.is_zero() {
+                mul_rounded(self.avg_px_open, signed_qty.abs())?
+            } else {
+                proportion(self.cost_open, signed_qty.abs(), self.signed_qty.abs())?
+            }
+        } else {
+            self.cost_open
+        };
+
+        let (realized_pnl, remainder) = if let Some(change) = adjustment.pnl_change {
+            check_equal(
+                &change.currency,
+                &self.settlement_currency,
+                "adjustment.currency",
+                "settlement_currency",
+            )?;
+            let prior = self.realized_decimal()?;
+            let total = add_pnl(prior, amount(change)?, self.settlement_currency)?;
+            let rounded = money(total, self.settlement_currency)?;
+            (Some(rounded), sub(total, amount(rounded)?)?)
+        } else {
+            (self.realized_pnl, self.realized_pnl_remainder)
+        };
+
+        self.signed_qty = signed_qty;
+        self.quantity = quantity;
+        self.peak_qty = self.peak_qty.max(quantity);
+        self.cost_open = cost_open;
+        self.realized_pnl = realized_pnl;
+        self.realized_pnl_remainder = remainder;
+
+        self.side = if signed_qty.is_zero() {
+            PositionSide::Flat
+        } else if signed_qty > Decimal::ZERO {
+            PositionSide::Long
+        } else {
+            PositionSide::Short
+        };
+
+        self.adjustments.push(adjustment);
+
         if record_replay {
             self.replay_events
                 .push(PositionReplayEvent::Adjusted(adjustment));
         }
 
-        // Apply quantity change if present
-        if let Some(quantity_change) = adjustment.quantity_change {
-            self.signed_qty += quantity_change
-                .to_f64()
-                .expect("Failed to convert Decimal to f64");
-
-            self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision);
-
-            if self.quantity > self.peak_qty {
-                self.peak_qty = self.quantity;
-            }
-        }
-
-        // Apply PnL change if present
-        if let Some(pnl_change) = adjustment.pnl_change {
-            self.realized_pnl = Some(match self.realized_pnl {
-                Some(current) => current + pnl_change,
-                None => pnl_change,
-            });
-        }
-
-        // Update position state based on quantity (source of truth for zero check)
-        // This handles floating-point precision edge cases
-        if self.quantity.is_zero() {
-            self.side = PositionSide::Flat;
-            self.signed_qty = 0.0; // Normalize
-        } else if self.signed_qty > 0.0 {
-            self.side = PositionSide::Long;
-        } else {
-            self.side = PositionSide::Short;
-        }
-
-        self.adjustments.push(adjustment);
         self.ts_last = adjustment.ts_event;
-
         self.debug_assert_invariants();
+        Ok(())
     }
 
     /// Settles the open position at the payout price of an authoritative contract expiration.
@@ -1255,30 +1426,18 @@ impl Position {
         close: InstrumentClose,
         record_replay: bool,
     ) -> anyhow::Result<()> {
-        // A replayed close that finds the corrected history already flat has nothing to settle
         if self.side == PositionSide::Flat {
             return Ok(());
         }
 
-        let last_qty = self.quantity;
-        let last_px = close.close_price.as_f64();
-        let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty.as_f64());
-
-        let realized_return = self
-            .calculate_return(self.avg_px_open, avg_px_close)
-            .unwrap_or_else(|e| {
-                log::error!("Error calculating return: {e}");
-                0.0
-            });
-
-        let settlement_pnl = self.try_calculate_pnl(self.avg_px_open, last_px, last_qty)?;
-
-        let realized_pnl = match self.realized_pnl {
-            Some(current) => current.checked_add(settlement_pnl).ok_or_else(|| {
-                anyhow::anyhow!("settlement PnL overflow for position {}", self.id)
-            })?,
-            None => settlement_pnl,
-        };
+        let last_px = price(close.close_price)?;
+        let qty = self.signed_qty.abs();
+        let cost_close = add_rounded(self.cost_close, mul_rounded(last_px, qty)?)?;
+        let qty_closed = add(self.qty_closed, qty)?;
+        let avg_px_close = div(cost_close, qty_closed)?;
+        let realized_return = self.calculate_return(self.avg_px_open, avg_px_close);
+        let pnl = self.pnl_from_cost(last_px, qty, self.cost_open, qty, self.cost_open)?;
+        self.accumulate_pnl(pnl)?;
 
         if record_replay {
             self.replay_events
@@ -1287,26 +1446,26 @@ impl Position {
 
         self.avg_px_close = Some(avg_px_close);
         self.realized_return = realized_return;
-        self.realized_pnl = Some(realized_pnl);
+        self.cost_open = Decimal::ZERO;
+        self.cost_close = cost_close;
+        self.qty_closed = qty_closed;
         self.side = PositionSide::Flat;
-        self.signed_qty = 0.0;
+        self.signed_qty = Decimal::ZERO;
         self.quantity = Quantity::zero(self.size_precision);
         self.closing_order_id = None;
         self.ts_last = close.ts_event;
         self.ts_closed = Some(close.ts_event);
         self.duration_ns = close.ts_event.saturating_duration_since(self.ts_opened);
-
         self.debug_assert_invariants();
-
         Ok(())
     }
 
     fn debug_assert_invariants(&self) {
         debug_assert!(
             match self.side {
-                PositionSide::Long => self.signed_qty > 0.0,
-                PositionSide::Short => self.signed_qty < 0.0,
-                PositionSide::Flat => self.signed_qty == 0.0,
+                PositionSide::Long => self.signed_qty > Decimal::ZERO,
+                PositionSide::Short => self.signed_qty < Decimal::ZERO,
+                PositionSide::Flat => self.signed_qty == Decimal::ZERO,
             },
             "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
             self.side,
@@ -1340,11 +1499,14 @@ impl Position {
     ) -> anyhow::Result<Option<Money>> {
         let fragments = self.fill_fragments(event.client_order_id, event.trade_id);
 
+        qty(voided_qty)?;
+
         let fragment_qty = fragments
             .iter()
-            .fold(Quantity::zero(self.size_precision), |total, fill| {
-                total + fill.last_qty
-            });
+            .try_fold(Quantity::zero(self.size_precision), |total, fill| {
+                quantity_add(total, fill.last_qty, self.size_precision)
+            })?;
+
         anyhow::ensure!(
             !voided_qty.is_zero() && voided_qty <= fragment_qty,
             "position fill void exceeds known fragments for {}",
@@ -1378,13 +1540,16 @@ impl Position {
             );
         }
 
-        self.fill_voids.push(PositionFillVoid {
+        let mut next = self.clone();
+        next.fill_voids.push(PositionFillVoid {
             event,
             voided_qty,
             commission_voided,
         });
 
-        Ok(self.rebuild_from_replay())
+        let closed = next.rebuild_from_replay()?;
+        *self = next;
+        Ok(closed)
     }
 
     /// Returns durable fill fragments matching an order trade in local application order.
@@ -1414,7 +1579,7 @@ impl Position {
     // The banked total assumes `replay_events` spans every cycle this position archived, since
     // settling replaces all of its frames with one worth that total. Bounding the log has to
     // preserve it at trim time; `Cache::settle_position_snapshots` documents the two ways.
-    fn rebuild_from_replay(&mut self) -> Option<Money> {
+    fn rebuild_from_replay(&mut self) -> CorrectnessResult<Option<Money>> {
         let replay_events = self.replay_events.clone();
         let restatement_indexes = Self::price_restatement_indexes(&replay_events);
         let mut quantity_removed = AHashMap::<usize, Quantity>::new();
@@ -1440,7 +1605,7 @@ impl Position {
                 if !remaining_qty.is_zero() {
                     let removed = remaining_qty.min(fill.last_qty);
                     quantity_removed.insert(index, removed);
-                    remaining_qty = remaining_qty - removed;
+                    remaining_qty = quantity_sub(remaining_qty, removed, remaining_qty.precision)?;
                 }
 
                 if let (Some(remaining), Some(commission)) = (remaining_commission, fill.commission)
@@ -1468,7 +1633,7 @@ impl Position {
             match replay_event {
                 PositionReplayEvent::Filled(fill) => {
                     if restatement_indexes.contains(&index) {
-                        self.apply_price_restatement(fill, false);
+                        self.apply_price_restatement(fill, false)?;
                         continue;
                     }
 
@@ -1476,7 +1641,9 @@ impl Position {
                         .get(&index)
                         .copied()
                         .unwrap_or_else(|| Quantity::zero(fill.last_qty.precision));
-                    let effective_qty = fill.last_qty - removed;
+                    let effective_qty =
+                        quantity_sub(fill.last_qty, removed, fill.last_qty.precision)?;
+
                     let effective_commission =
                         match (fill.commission, commission_removed.get(&index).copied()) {
                             (Some(commission), Some(removed)) => Some(commission - removed),
@@ -1488,12 +1655,14 @@ impl Position {
                         if let Some(commission) =
                             effective_commission.filter(|commission| !commission.is_zero())
                             && let Some(realized_pnl) =
-                                self.apply_surviving_fill_commission(fill, commission)
+                                self.apply_surviving_fill_commission(fill, commission)?
                         {
-                            closed_cycles_pnl = Some(
-                                closed_cycles_pnl
-                                    .map_or(realized_pnl, |total| total + realized_pnl),
-                            );
+                            closed_cycles_pnl =
+                                Some(closed_cycles_pnl.map_or(Ok(realized_pnl), |total| {
+                                    total
+                                        .checked_add(realized_pnl)
+                                        .ok_or_else(|| invalid("closed cycle PnL overflow"))
+                                })?);
                         }
                         continue;
                     }
@@ -1503,74 +1672,74 @@ impl Position {
                     if self.side == PositionSide::Flat
                         && let Some(realized_pnl) = self.realized_pnl
                     {
-                        closed_cycles_pnl = Some(
-                            closed_cycles_pnl.map_or(realized_pnl, |total| total + realized_pnl),
-                        );
+                        closed_cycles_pnl =
+                            Some(closed_cycles_pnl.map_or(Ok(realized_pnl), |total| {
+                                total
+                                    .checked_add(realized_pnl)
+                                    .ok_or_else(|| invalid("closed cycle PnL overflow"))
+                            })?);
                     }
 
                     let mut effective = fill.clone();
                     effective.last_qty = effective_qty;
                     effective.commission = effective_commission;
-                    self.apply_fill(&effective, false).expect_display(FAILED);
+                    self.apply_fill(&effective, false)?;
                 }
                 PositionReplayEvent::Adjusted(adjustment) => {
-                    self.apply_adjustment_state(*adjustment, false);
+                    self.apply_adjustment_state(*adjustment, false)?;
                 }
                 PositionReplayEvent::InstrumentClosed(close) => {
                     self.apply_instrument_close_state(*close, false)
-                        .expect("replaying a validated instrument close must succeed");
+                        .map_err(|e| invalid(&e.to_string()))?;
                 }
             }
         }
 
-        closed_cycles_pnl
+        Ok(closed_cycles_pnl)
     }
 
     fn apply_surviving_fill_commission(
         &mut self,
         fill: &OrderFilled,
         commission: Money,
-    ) -> Option<Money> {
+    ) -> CorrectnessResult<Option<Money>> {
         let is_base_commission =
             self.is_currency_pair && self.base_currency == Some(commission.currency);
-        let reopens = self.side == PositionSide::Flat
-            && is_base_commission
-            && !Quantity::new(commission.as_f64().abs(), self.size_precision).is_zero();
+        let reopens =
+            self.side == PositionSide::Flat && is_base_commission && !amount(commission)?.is_zero();
         let closed_cycles_pnl_previous = reopens.then_some(self.realized_pnl).flatten();
 
         if reopens {
-            self.reset_cycle(fill);
+            self.reset_cycle(fill)?;
         }
 
         self.commissions
             .entry(commission.currency)
-            .and_modify(|total| *total = *total + commission)
-            .or_insert(commission);
-
+            .or_insert(Money::zero(commission.currency));
+        let total = self.commissions[&commission.currency]
+            .checked_add(commission)
+            .ok_or_else(|| invalid("position commission overflow"))?;
+        self.commissions.insert(commission.currency, total);
         if commission.currency == self.settlement_currency {
-            let pnl_change = Money::zero(self.settlement_currency) - commission;
-            self.realized_pnl = Some(match self.realized_pnl {
-                Some(current) => current + pnl_change,
-                None => pnl_change,
-            });
+            self.accumulate_pnl(-amount(commission)?)?;
         }
 
         if is_base_commission {
             let previous_side = self.side;
-            self.apply_base_commission_adjustment(fill, commission);
-            self.finalize_surviving_base_commission(fill, previous_side);
+            self.apply_base_commission_adjustment(fill, commission)?;
+            self.finalize_surviving_base_commission(fill, previous_side)?;
         } else {
             self.ts_last = fill.ts_event;
         }
 
-        closed_cycles_pnl_previous
+        Ok(closed_cycles_pnl_previous)
     }
 
     fn finalize_surviving_base_commission(
         &mut self,
         fill: &OrderFilled,
         previous_side: PositionSide,
-    ) {
+    ) -> CorrectnessResult<()> {
         if self.side == PositionSide::Flat {
             if previous_side != PositionSide::Flat {
                 self.closing_order_id = Some(fill.client_order_id);
@@ -1585,31 +1754,37 @@ impl Position {
             };
 
             if previous_side != PositionSide::Flat && previous_side != self.side {
-                self.avg_px_open = fill.last_px.as_f64();
+                self.avg_px_open = price(fill.last_px)?;
+                self.cost_open = mul_rounded(self.avg_px_open, self.signed_qty.abs())?;
             }
         }
+
+        Ok(())
     }
 
-    fn apply_base_commission_adjustment(&mut self, fill: &OrderFilled, commission: Money) {
+    fn apply_base_commission_adjustment(
+        &mut self,
+        fill: &OrderFilled,
+        commission: Money,
+    ) -> CorrectnessResult<()> {
         let mut adjustment_id = fill.event_id.as_bytes();
         adjustment_id[15] ^= 0x01;
-        self.apply_adjustment_state(
-            PositionAdjusted::new(
-                self.trader_id,
-                self.strategy_id,
-                self.instrument_id,
-                self.id,
-                self.account_id,
-                PositionAdjustmentType::Commission,
-                Some(-commission.as_decimal()),
-                None,
-                Some(fill.client_order_id.inner()),
-                UUID4::from_bytes(adjustment_id),
-                fill.ts_event,
-                fill.ts_init,
-            ),
-            false,
+
+        let adjustment = PositionAdjusted::new(
+            self.trader_id,
+            self.strategy_id,
+            self.instrument_id,
+            self.id,
+            self.account_id,
+            PositionAdjustmentType::Commission,
+            Some(-amount(commission)?),
+            None,
+            Some(fill.client_order_id.inner()),
+            UUID4::from_bytes(adjustment_id),
+            fill.ts_event,
+            fill.ts_init,
         );
+        self.apply_adjustment_state(adjustment, false)
     }
 
     fn latest_fill_voids(&self) -> Vec<&PositionFillVoid> {
@@ -1630,7 +1805,7 @@ impl Position {
         self.buy_qty = Quantity::zero(self.size_precision);
         self.sell_qty = Quantity::zero(self.size_precision);
         self.commissions.clear();
-        self.signed_qty = 0.0;
+        self.signed_qty = Decimal::ZERO;
         self.quantity = Quantity::zero(self.size_precision);
         self.peak_qty = Quantity::zero(self.size_precision);
         self.side = PositionSide::Flat;
@@ -1639,272 +1814,156 @@ impl Position {
         self.ts_last = UnixNanos::default();
         self.ts_closed = Some(UnixNanos::default());
         self.duration_ns = DurationNanos::default();
-        self.avg_px_open = 0.0;
+        self.cost_open = Decimal::ZERO;
+        self.cost_close = Decimal::ZERO;
+        self.qty_closed = Decimal::ZERO;
+        self.realized_pnl_remainder = Decimal::ZERO;
+        self.avg_px_open = Decimal::ZERO;
         self.avg_px_close = None;
         self.realized_pnl = None;
         self.realized_return = 0.0;
     }
 
-    /// Calculates the average price using f64 arithmetic.
+    fn calculate_return(&self, open: Decimal, close: Decimal) -> f64 {
+        if open.is_zero() {
+            return 0.0;
+        }
+
+        let open = open.as_f64();
+        let close = close.as_f64();
+        let points = if self.side == PositionSide::Short {
+            open - close
+        } else {
+            close - open
+        };
+
+        points / open
+    }
+
+    /// Returns the realized PnL increment for reducing this position at `last`.
     ///
-    /// # Design Decision: f64 vs Fixed-Point Arithmetic
-    ///
-    /// This function uses f64 arithmetic which provides sufficient precision for financial
-    /// calculations in this context. While f64 can introduce precision errors, the risk
-    /// is minimal here because:
-    ///
-    /// 1. **No cumulative error**: Each calculation starts fresh from precise Price and
-    ///    Quantity objects (derived from fixed-point raw values via `as_f64()`), rather
-    ///    than carrying f64 intermediate results between calculations.
-    ///
-    /// 2. **Single operation**: This is a single weighted average calculation, not a
-    ///    chain of operations where errors would compound.
-    ///
-    /// 3. **Overflow safety**: Raw integer arithmetic (`price_raw` * `qty_raw`) would risk
-    ///    overflow even with i128 intermediates, since max values can exceed integer limits.
-    ///
-    /// 4. **f64 precision**: ~15 decimal digits is sufficient for typical financial
-    ///    calculations at this level.
-    ///
-    /// For scenarios requiring higher precision (regulatory compliance, high-frequency
-    /// micro-calculations), consider using Decimal arithmetic libraries.
-    ///
-    /// # Empirical Precision Validation
-    ///
-    /// Testing confirms f64 arithmetic maintains accuracy for typical trading scenarios:
-    /// - **Typical amounts**: No precision loss for amounts ≥ 0.01 in standard currencies.
-    /// - **High-precision instruments**: 9-decimal crypto prices preserved within 1e-6 tolerance.
-    /// - **Many fills**: 100 sequential fills show no drift (commission accuracy to 1e-10).
-    /// - **Extreme prices**: Handles range from 0.00001 to 99999.99999 without overflow/underflow.
-    /// - **Round-trip**: Open/close at same price produces exact PnL (commissions only).
-    ///
-    /// See precision validation tests: `test_position_pnl_precision_*`
+    /// Carries the position's existing fractional PnL into the native Money rounding.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - Both `qty` and `last_qty` are zero.
-    /// - `last_qty` is zero (prevents division by zero).
-    /// - `total_qty` is zero or negative (arithmetic error).
-    fn calculate_avg_px(
-        &self,
-        qty: f64,
-        avg_pg: f64,
-        last_px: f64,
-        last_qty: f64,
-    ) -> anyhow::Result<f64> {
-        // Prices can be negative for options and spreads, so only quantities
-        // are checked for non-negativity here.
-        debug_assert!(
-            qty >= 0.0 && last_qty >= 0.0,
-            "Invariant: average price calc requires non-negative quantities \
-             (qty={qty}, last_qty={last_qty})"
-        );
-
-        if qty == 0.0 && last_qty == 0.0 {
-            anyhow::bail!("Cannot calculate average price: both quantities are zero");
+    /// Returns an error if inverse prices are invalid, precision is unsupported, or arithmetic overflows.
+    pub fn try_realized_pnl(&self, last: Price, quantity: Quantity) -> CorrectnessResult<Money> {
+        let qty = qty(quantity)?.min(self.signed_qty.abs());
+        if qty.is_zero() {
+            return Ok(Money::zero(self.settlement_currency));
         }
 
-        if last_qty == 0.0 {
-            anyhow::bail!("Cannot calculate average price: fill quantity is zero");
-        }
-
-        if qty == 0.0 {
-            return Ok(last_px);
-        }
-
-        let start_cost = avg_pg * qty;
-        let event_cost = last_px * last_qty;
-        let total_qty = qty + last_qty;
-
-        // Runtime check to prevent division by zero even in release builds
-        if total_qty <= 0.0 {
-            anyhow::bail!(
-                "Total quantity unexpectedly zero or negative in average price calculation: qty={qty}, last_qty={last_qty}, total_qty={total_qty}"
-            );
-        }
-
-        Ok((start_cost + event_cost) / total_qty)
-    }
-
-    fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
-        self.calculate_avg_px(self.quantity.as_f64(), self.avg_px_open, last_px, last_qty)
-            .unwrap_or_else(|e| {
-                log::error!("Error calculating average open price: {e}");
-                last_px
-            })
-    }
-
-    fn calculate_avg_px_close_px(&self, last_px: f64, last_qty: f64) -> f64 {
-        let Some(avg_px_close) = self.avg_px_close else {
-            return last_px;
-        };
-        let closing_qty = if self.side == PositionSide::Long {
-            self.sell_qty
+        let cost = if qty == self.signed_qty.abs() {
+            self.cost_open
         } else {
-            self.buy_qty
+            proportion(self.cost_open, qty, self.signed_qty.abs())?
         };
-        self.calculate_avg_px(closing_qty.as_f64(), avg_px_close, last_px, last_qty)
-            .unwrap_or_else(|e| {
-                log::error!("Error calculating average close price: {e}");
-                last_px
-            })
+
+        let pnl = self.pnl_from_cost(
+            price(last)?,
+            qty,
+            cost,
+            self.signed_qty.abs(),
+            self.cost_open,
+        )?;
+        let prior = self.realized_decimal()?;
+        let total = add_pnl(prior, pnl, self.settlement_currency)?;
+        let rounded = money(total, self.settlement_currency)?;
+        rounded
+            .checked_sub(
+                self.realized_pnl
+                    .unwrap_or(Money::zero(self.settlement_currency)),
+            )
+            .ok_or_else(|| invalid("position PnL increment overflow"))
     }
 
-    fn calculate_points(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
-        match self.side {
-            PositionSide::Long => avg_px_close - avg_px_open,
-            PositionSide::Short => avg_px_open - avg_px_close,
-            PositionSide::Flat => 0.0,
-        }
-    }
-
-    fn calculate_points_inverse(&self, avg_px_open: f64, avg_px_close: f64) -> anyhow::Result<f64> {
-        // Epsilon at the limit of IEEE f64 precision before rounding errors (f64::EPSILON ≈ 2.22e-16)
-        const EPSILON: f64 = 1e-15;
-
-        if avg_px_open <= 0.0 || avg_px_open.abs() < EPSILON {
-            anyhow::bail!(
-                "Cannot calculate inverse points: open price is not positive or is too small ({avg_px_open})"
-            );
-        }
-
-        if avg_px_close <= 0.0 || avg_px_close.abs() < EPSILON {
-            anyhow::bail!(
-                "Cannot calculate inverse points: close price is not positive or is too small ({avg_px_close})"
-            );
-        }
-
-        let inverse_open = 1.0 / avg_px_open;
-        let inverse_close = 1.0 / avg_px_close;
-        let result = match self.side {
-            PositionSide::Long => inverse_open - inverse_close,
-            PositionSide::Short => inverse_close - inverse_open,
-            PositionSide::Flat => 0.0,
-        };
-        Ok(result)
-    }
-
-    fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> anyhow::Result<f64> {
-        // Prevent division by zero in return calculation
-        if avg_px_open == 0.0 {
-            anyhow::bail!(
-                "Cannot calculate return: open price is zero (close price: {avg_px_close})"
-            );
-        }
-        Ok(self.calculate_points(avg_px_open, avg_px_close) / avg_px_open)
-    }
-
-    fn calculate_pnl_raw(
-        &self,
-        avg_px_open: f64,
-        avg_px_close: f64,
-        quantity: f64,
-    ) -> anyhow::Result<f64> {
-        let quantity = quantity.min(self.signed_qty.abs());
-
-        let result = if self
-            .instrument_class
-            .divides_notional_by_price(self.is_inverse)
-        {
-            anyhow::ensure!(
-                self.base_currency.is_some(),
-                "inverse position {} has no base currency",
-                self.instrument_id
-            );
-            let points = self.calculate_points_inverse(avg_px_open, avg_px_close)?;
-            quantity * self.multiplier.as_f64() * points
-        } else {
-            quantity * self.multiplier.as_f64() * self.calculate_points(avg_px_open, avg_px_close)
-        };
-        Ok(result)
-    }
-
-    /// Calculates profit and loss from the given prices and quantity.
+    /// Calculates PnL using Decimal prices and exact quantity.
     ///
     /// # Errors
     ///
-    /// Returns an error if the `quantity` precision exceeds
-    /// [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION), inverse P&L cannot be
-    /// calculated, or the result cannot be represented as [`Money`].
+    /// Returns an error if inverse prices are invalid, arithmetic overflows, or precision is unsupported.
     pub fn try_calculate_pnl(
         &self,
-        avg_px_open: f64,
-        avg_px_close: f64,
+        avg_px_open: Decimal,
+        avg_px_close: Decimal,
         quantity: Quantity,
-    ) -> anyhow::Result<Money> {
-        check_float_precision(quantity.precision)?;
-        let pnl_raw = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64())?;
-        Money::new_checked(pnl_raw, self.settlement_currency).map_err(Into::into)
+    ) -> CorrectnessResult<Money> {
+        let qty = qty(quantity)?.min(self.signed_qty.abs());
+        if qty.is_zero() {
+            return Ok(Money::zero(self.settlement_currency));
+        }
+
+        let cost = mul_rounded(avg_px_open, qty)?;
+        let basis_cost = mul_rounded(avg_px_open, self.signed_qty.abs())?;
+        let pnl = self.pnl_from_cost(avg_px_close, qty, cost, self.signed_qty.abs(), basis_cost)?;
+        money(pnl, self.settlement_currency)
     }
 
-    /// Calculates profit and loss from the given prices and quantity.
-    #[must_use]
-    pub fn calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
+    /// Calculates PnL using Decimal prices and exact quantity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`Self::try_calculate_pnl`] fails.
+    pub fn calculate_pnl(
+        &self,
+        avg_px_open: Decimal,
+        avg_px_close: Decimal,
+        quantity: Quantity,
+    ) -> CorrectnessResult<Money> {
         self.try_calculate_pnl(avg_px_open, avg_px_close, quantity)
-            .unwrap_or_else(|e| {
-                log::error!("Error calculating PnL: {e}");
-                Money::zero(self.settlement_currency)
-            })
     }
 
-    /// Returns total P&L (realized + unrealized) based on the last price.
+    /// Returns total PnL at the given price.
     ///
     /// # Errors
     ///
-    /// Returns an error if unrealized P&L cannot be calculated, the realized and unrealized
-    /// currencies differ, or the total cannot be represented as [`Money`].
-    pub fn try_total_pnl(&self, last: Price) -> anyhow::Result<Money> {
-        let unrealized = self.try_unrealized_pnl(last)?;
-
-        match self.realized_pnl {
-            Some(realized) => {
-                anyhow::ensure!(
-                    realized.currency == unrealized.currency,
-                    "realized and unrealized PnL currencies differ"
-                );
-                realized
-                    .checked_add(unrealized)
-                    .ok_or_else(|| anyhow::anyhow!("total PnL overflow"))
-            }
-            None => Ok(unrealized),
-        }
+    /// Returns an error if the PnL cannot be calculated or represented.
+    pub fn try_total_pnl(&self, last: Price) -> CorrectnessResult<Money> {
+        let unrealized = self.unrealized_decimal(last)?;
+        let realized = self.realized_decimal()?;
+        let total = add_pnl(realized, unrealized, self.settlement_currency)?;
+        money(total, self.settlement_currency)
     }
 
-    /// Returns total P&L (realized + unrealized) based on the last price.
-    #[must_use]
-    pub fn total_pnl(&self, last: Price) -> Money {
-        self.try_total_pnl(last).unwrap_or_else(|e| {
-            log::error!("Error calculating total PnL: {e}");
-            Money::zero(self.settlement_currency)
-        })
-    }
-
-    /// Returns unrealized P&L based on the last price.
+    /// Returns total PnL at the given price.
     ///
     /// # Errors
     ///
-    /// Returns an error if the position is not flat and the `last` precision exceeds
-    /// [`MAX_FLOAT_PRECISION`](crate::types::fixed::MAX_FLOAT_PRECISION), inverse P&L cannot be
-    /// calculated, or the result cannot be represented as [`Money`].
-    pub fn try_unrealized_pnl(&self, last: Price) -> anyhow::Result<Money> {
+    /// Returns an error if [`Self::try_total_pnl`] fails.
+    pub fn total_pnl(&self, last: Price) -> CorrectnessResult<Money> {
+        self.try_total_pnl(last)
+    }
+
+    /// Returns unrealized PnL at the given price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the PnL cannot be calculated or represented.
+    pub fn try_unrealized_pnl(&self, last: Price) -> CorrectnessResult<Money> {
+        money(self.unrealized_decimal(last)?, self.settlement_currency)
+    }
+
+    fn unrealized_decimal(&self, last: Price) -> CorrectnessResult<Decimal> {
         if self.side == PositionSide::Flat {
-            Ok(Money::zero(self.settlement_currency))
-        } else {
-            check_float_precision(last.precision)?;
-            let pnl =
-                self.calculate_pnl_raw(self.avg_px_open, last.as_f64(), self.quantity.as_f64())?;
-            Money::new_checked(pnl, self.settlement_currency).map_err(Into::into)
+            return Ok(Decimal::ZERO);
         }
+
+        self.pnl_from_cost(
+            price(last)?,
+            self.signed_qty.abs(),
+            self.cost_open,
+            self.signed_qty.abs(),
+            self.cost_open,
+        )
     }
 
-    /// Returns unrealized P&L based on the last price.
-    #[must_use]
-    pub fn unrealized_pnl(&self, last: Price) -> Money {
-        self.try_unrealized_pnl(last).unwrap_or_else(|e| {
-            log::error!("Error calculating unrealized PnL: {e}");
-            Money::zero(self.settlement_currency)
-        })
+    /// Returns unrealized PnL at the given price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`Self::try_unrealized_pnl`] fails.
+    pub fn unrealized_pnl(&self, last: Price) -> CorrectnessResult<Money> {
+        self.try_unrealized_pnl(last)
     }
 
     /// Returns the order side required to close this position.
@@ -2004,15 +2063,15 @@ impl Position {
             self.settlement_currency
         };
 
-        crate::instruments::try_notional_value(
+        notional(
             self.quantity,
             last,
             self.multiplier,
-            self.instrument_class,
-            self.is_inverse,
-            false,
+            self.instrument_class
+                .divides_notional_by_price(self.is_inverse),
             currency,
         )
+        .map_err(Into::into)
     }
 
     /// Calculates the notional value based on the last price.
@@ -2081,7 +2140,7 @@ impl Position {
     /// Retained virtual position cycles also require the complete replay state.
     #[must_use]
     pub fn requires_replay_state(&self) -> bool {
-        // A price restatement is stored only in replay, so equal lengths cannot contain one.
+        // A price restatement is stored only in replay, so equal lengths cannot contain one
         !self.fill_voids.is_empty()
             || self.is_settled()
             || (self.replay_events.len() > self.events.len() && self.has_replay_price_restatement())
@@ -2090,11 +2149,11 @@ impl Position {
 
     /// Returns the signed quantity as a `Decimal`.
     ///
-    /// Uses the raw `signed_qty` field to preserve full precision, as the `quantity`
+    /// Uses the authoritative Decimal signed quantity, as the `quantity`
     /// field may have reduced precision based on the instrument's `size_precision`.
     #[must_use]
     pub fn signed_decimal_qty(&self) -> Decimal {
-        Decimal::try_from(self.signed_qty).unwrap_or(Decimal::ZERO)
+        self.signed_qty
     }
 
     /// Returns the cumulative commissions for the position as a vector.
@@ -2125,12 +2184,424 @@ impl Display for Position {
         } else {
             self.quantity.to_formatted_string() + " "
         };
+
         write!(
             f,
             "Position({} {}{}, id={})",
             self.side, quantity_str, self.instrument_id, self.id
         )
     }
+}
+
+fn invalid(message: &str) -> CorrectnessError {
+    CorrectnessError::PredicateViolation {
+        message: message.to_owned(),
+    }
+}
+
+pub(crate) fn from_raw(mut raw: i128, mut scale: u32) -> CorrectnessResult<Decimal> {
+    if let Ok(value) = Decimal::try_from_i128_with_scale(raw, scale) {
+        return Ok(value.normalize());
+    }
+
+    while scale > 0 && raw % 10 == 0 {
+        raw /= 10;
+        scale -= 1;
+    }
+
+    Decimal::try_from_i128_with_scale(raw, scale)
+        .map_err(|_| invalid("position input exceeds exact Decimal representation"))
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "raw integer widths vary between standard and high precision"
+)]
+pub(crate) fn price(value: Price) -> CorrectnessResult<Decimal> {
+    from_raw(
+        i128::from(value.raw),
+        u32::from(FIXED_PRECISION.max(value.precision)),
+    )
+}
+
+#[allow(
+    clippy::unnecessary_fallible_conversions,
+    reason = "high precision quantities use u128 and require a checked signed conversion"
+)]
+pub(crate) fn qty(value: Quantity) -> CorrectnessResult<Decimal> {
+    let raw = i128::try_from(value.raw)
+        .map_err(|_| invalid("position quantity exceeds Decimal bounds"))?;
+    from_raw(raw, u32::from(FIXED_PRECISION.max(value.precision)))
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "raw integer widths vary between standard and high precision"
+)]
+pub(crate) fn amount(value: Money) -> CorrectnessResult<Decimal> {
+    from_raw(
+        i128::from(value.raw),
+        u32::from(FIXED_PRECISION.max(value.currency.precision)),
+    )
+}
+
+pub(crate) fn quantity(value: Decimal, precision: u8) -> CorrectnessResult<Quantity> {
+    let precision = precision.max(value.normalize().scale() as u8);
+    let quantity = Quantity::from_decimal_dp(value, precision)?;
+    if qty(quantity)? != value {
+        return Err(invalid("position quantity loses instrument precision"));
+    }
+
+    Ok(quantity)
+}
+
+pub(crate) fn quantity_add(
+    lhs: Quantity,
+    rhs: Quantity,
+    precision: u8,
+) -> CorrectnessResult<Quantity> {
+    if let Some(sum) = lhs.checked_add(rhs)
+        && let Some(quantity) = quantity_native(sum, precision)
+    {
+        return Ok(quantity);
+    }
+
+    quantity(add(qty(lhs)?, qty(rhs)?)?, precision)
+}
+
+#[allow(clippy::useless_conversion, reason = "QuantityRaw is u64 or u128")]
+pub(crate) fn quantity_sub(
+    lhs: Quantity,
+    rhs: Quantity,
+    precision: u8,
+) -> CorrectnessResult<Quantity> {
+    if u128::from(lhs.raw) <= Decimal::MAX.mantissa() as u128
+        && let Some(difference) = lhs.checked_sub(rhs)
+        && let Some(quantity) = quantity_native(difference, precision)
+    {
+        return Ok(quantity);
+    }
+
+    quantity(sub(qty(lhs)?, qty(rhs)?)?, precision)
+}
+
+#[allow(clippy::useless_conversion, reason = "QuantityRaw is u64 or u128")]
+fn quantity_native(value: Quantity, precision: u8) -> Option<Quantity> {
+    if !raw_scales_match(value.precision, precision)
+        || u128::from(value.raw) > Decimal::MAX.mantissa() as u128
+    {
+        return None;
+    }
+
+    let step = QuantityRaw::pow(
+        10,
+        u32::from(FIXED_PRECISION.max(value.precision) - precision),
+    );
+
+    if !value.raw.is_multiple_of(step) {
+        return None;
+    }
+
+    Quantity::from_raw_checked(value.raw, precision).ok()
+}
+
+pub(crate) fn proportion(
+    value: Decimal,
+    numerator: Decimal,
+    denominator: Decimal,
+) -> CorrectnessResult<Decimal> {
+    if denominator.is_zero() {
+        return Err(invalid("position proportion has zero denominator"));
+    }
+
+    if value.is_zero() || numerator.is_zero() {
+        return Ok(Decimal::ZERO);
+    }
+
+    if let Ok(product) = mul(value, numerator)
+        && let Ok(result) = div(product, denominator)
+        && sub(value, result).is_ok()
+    {
+        return Ok(result);
+    }
+
+    let raw = U512::from(value.mantissa().unsigned_abs())
+        * U512::from(numerator.mantissa().unsigned_abs());
+    let divisor = U512::from(denominator.mantissa().unsigned_abs());
+    let negative =
+        value.is_sign_negative() ^ numerator.is_sign_negative() ^ denominator.is_sign_negative();
+    for scale in (0..=Decimal::MAX_SCALE).rev() {
+        let exponent = scale as i32 + denominator.scale() as i32
+            - value.scale() as i32
+            - numerator.scale() as i32;
+        let ten = U512::from(10_u8);
+        let (dividend, divisor) = if exponent >= 0 {
+            (raw * ten.pow(U512::from(exponent as u32)), divisor)
+        } else {
+            (raw, divisor * ten.pow(U512::from(exponent.unsigned_abs())))
+        };
+
+        let Some(result) = decimal_quotient(dividend, divisor, scale, negative) else {
+            continue;
+        };
+
+        if result.is_zero() {
+            return Err(invalid("position proportional allocation underflow"));
+        }
+
+        if sub(value, result).is_ok() {
+            return Ok(result);
+        }
+    }
+
+    Err(invalid("position proportional allocation overflow"))
+}
+
+fn decimal_quotient(dividend: U512, divisor: U512, scale: u32, negative: bool) -> Option<Decimal> {
+    let mut quotient = dividend / divisor;
+    let doubled = (dividend % divisor) * U512::from(2_u8);
+    if doubled > divisor || (doubled == divisor && quotient % U512::from(2_u8) != U512::ZERO) {
+        quotient += U512::ONE;
+    }
+
+    let mantissa = u128::try_from(quotient).ok()?;
+    let mantissa = i128::try_from(mantissa).ok()?;
+    from_raw(if negative { -mantissa } else { mantissa }, scale).ok()
+}
+
+pub(crate) fn mul_rounded(lhs: Decimal, rhs: Decimal) -> CorrectnessResult<Decimal> {
+    let value = lhs
+        .checked_mul(rhs)
+        .ok_or_else(|| invalid("position proportional arithmetic overflow"))?;
+
+    if !lhs.is_zero() && !rhs.is_zero() && value.is_zero() {
+        return Err(invalid("position proportional arithmetic underflow"));
+    }
+
+    Ok(value.normalize())
+}
+
+pub(crate) fn add(lhs: Decimal, rhs: Decimal) -> CorrectnessResult<Decimal> {
+    let scale = lhs.scale().max(rhs.scale());
+    let left_scale = 10_i128.pow(scale - lhs.scale());
+    let right_scale = 10_i128.pow(scale - rhs.scale());
+    if let Some(raw) = lhs.mantissa().checked_mul(left_scale).and_then(|left| {
+        rhs.mantissa()
+            .checked_mul(right_scale)
+            .and_then(|right| left.checked_add(right))
+    }) {
+        return from_raw(raw, scale)
+            .map_err(|e| invalid(&format!("position exact sum {lhs} + {rhs}: {e}")));
+    }
+
+    let left = U256::from(lhs.mantissa().unsigned_abs()) * U256::from(left_scale as u128);
+    let right = U256::from(rhs.mantissa().unsigned_abs()) * U256::from(right_scale as u128);
+    let (raw, negative) = if lhs.is_sign_negative() == rhs.is_sign_negative() {
+        (left + right, lhs.is_sign_negative())
+    } else if left >= right {
+        (left - right, lhs.is_sign_negative())
+    } else {
+        (right - left, rhs.is_sign_negative())
+    };
+
+    from_wide(raw, scale, negative)
+}
+
+pub(crate) fn add_rounded(lhs: Decimal, rhs: Decimal) -> CorrectnessResult<Decimal> {
+    let result = lhs
+        .checked_add(rhs)
+        .ok_or_else(|| invalid("position Decimal addition overflow"))?;
+
+    if (!rhs.is_zero() && result == lhs) || (!lhs.is_zero() && result == rhs) {
+        return Err(invalid(
+            "position Decimal addition loses the entire increment",
+        ));
+    }
+
+    Ok(result)
+}
+
+fn add_pnl(lhs: Decimal, rhs: Decimal, currency: Currency) -> CorrectnessResult<Decimal> {
+    let result = lhs
+        .checked_add(rhs)
+        .ok_or_else(|| invalid("position Decimal addition overflow"))?;
+
+    let lost = if result == lhs {
+        rhs
+    } else if result == rhs {
+        lhs
+    } else {
+        Decimal::ZERO
+    };
+
+    if !lost.is_zero() && lost.abs() >= amount(Money::from_raw_checked(1, currency)?)? {
+        return Err(invalid(
+            "position PnL addition loses at least one native Money unit",
+        ));
+    }
+
+    Ok(result)
+}
+
+pub(crate) fn sub(lhs: Decimal, rhs: Decimal) -> CorrectnessResult<Decimal> {
+    add(lhs, -rhs)
+}
+
+pub(crate) fn mul(lhs: Decimal, rhs: Decimal) -> CorrectnessResult<Decimal> {
+    let scale = lhs.scale() + rhs.scale();
+    if let Some(raw) = lhs.mantissa().checked_mul(rhs.mantissa()) {
+        return from_raw(raw, scale);
+    }
+
+    let raw = U256::from(lhs.mantissa().unsigned_abs()) * U256::from(rhs.mantissa().unsigned_abs());
+    from_wide(raw, scale, lhs.is_sign_negative() != rhs.is_sign_negative())
+}
+
+fn from_wide(mut raw: U256, mut scale: u32, negative: bool) -> CorrectnessResult<Decimal> {
+    let ten = U256::from(10_u8);
+    while scale > 0 && raw % ten == U256::ZERO {
+        raw /= ten;
+        scale -= 1;
+    }
+
+    let raw: u128 = raw
+        .try_into()
+        .map_err(|_| invalid("position Decimal arithmetic overflow"))?;
+    let signed =
+        i128::try_from(raw).map_err(|_| invalid("position Decimal arithmetic overflow"))?;
+    from_raw(if negative { -signed } else { signed }, scale)
+}
+
+pub(crate) fn div(lhs: Decimal, rhs: Decimal) -> CorrectnessResult<Decimal> {
+    let value = lhs
+        .checked_div(rhs)
+        .ok_or_else(|| invalid("position Decimal division overflow or zero divisor"))?;
+
+    if !lhs.is_zero() && value.is_zero() {
+        return Err(invalid("position Decimal division underflow"));
+    }
+
+    Ok(value)
+}
+
+pub(crate) fn money(amount: Decimal, currency: Currency) -> CorrectnessResult<Money> {
+    Money::from_decimal_native(amount, currency)
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "the raw width differs when high-precision is disabled"
+)]
+pub(crate) fn money_from_qty(value: Quantity, currency: Currency) -> CorrectnessResult<Money> {
+    if raw_scales_match(value.precision, currency.precision)
+        && u128::from(value.raw) <= Decimal::MAX.mantissa() as u128
+        && let Ok(raw) = value.raw.try_into()
+    {
+        return Money::from_raw_checked(raw, currency);
+    }
+
+    money(qty(value)?, currency)
+}
+
+pub(crate) fn notional(
+    quantity: Quantity,
+    last: Price,
+    multiplier: Quantity,
+    divides_by_price: bool,
+    currency: Currency,
+) -> CorrectnessResult<Money> {
+    let product = mul_rounded(qty(quantity)?, qty(multiplier)?)?;
+    let price = price(last)?;
+    let amount = if divides_by_price {
+        if price <= Decimal::ZERO {
+            return Err(invalid(
+                "price must be positive for inverse notional valuation",
+            ));
+        }
+
+        div(product, price)?
+    } else {
+        mul_rounded(product, price)?
+    };
+
+    money(amount, currency)
+}
+
+#[allow(
+    clippy::useless_conversion,
+    clippy::unnecessary_fallible_conversions,
+    reason = "raw integer widths vary between standard and high precision"
+)]
+pub(crate) fn split_commission_qty(
+    commission: Money,
+    closing_qty: Quantity,
+    total_qty: Quantity,
+) -> CorrectnessResult<(Money, Money)> {
+    if closing_qty.non_zero()
+        && closing_qty < total_qty
+        && raw_scales_match(closing_qty.precision, total_qty.precision)
+        && u128::from(total_qty.raw) <= Decimal::MAX.mantissa() as u128
+        && let Some(magnitude) = checked_mul_div_raw(
+            commission.raw.unsigned_abs(),
+            closing_qty.raw,
+            total_qty.raw,
+        )
+    {
+        let raw = i128::try_from(magnitude)
+            .map_err(|_| invalid("commission split exceeds raw bounds"))?;
+        return commission_parts(
+            commission,
+            if commission.is_negative() { -raw } else { raw },
+        );
+    }
+
+    split_commission(commission, qty(closing_qty)?, qty(total_qty)?)
+}
+
+#[allow(
+    clippy::useless_conversion,
+    reason = "raw integer widths vary between standard and high precision"
+)]
+pub(crate) fn split_commission(
+    commission: Money,
+    closing_qty: Decimal,
+    total_qty: Decimal,
+) -> CorrectnessResult<(Money, Money)> {
+    if closing_qty <= Decimal::ZERO || closing_qty >= total_qty {
+        return Err(invalid(
+            "commission split requires a positive closing quantity below the total",
+        ));
+    }
+
+    let raw = i128::from(commission.raw);
+    let mut numerator =
+        U512::from(raw.unsigned_abs()) * U512::from(closing_qty.mantissa().unsigned_abs());
+    let mut denominator = U512::from(total_qty.mantissa().unsigned_abs());
+    let ten = U512::from(10_u8);
+    if total_qty.scale() >= closing_qty.scale() {
+        numerator *= ten.pow(U512::from(total_qty.scale() - closing_qty.scale()));
+    } else {
+        denominator *= ten.pow(U512::from(closing_qty.scale() - total_qty.scale()));
+    }
+
+    let magnitude: u128 = (numerator / denominator)
+        .try_into()
+        .map_err(|_| invalid("commission split exceeds raw bounds"))?;
+    let magnitude =
+        i128::try_from(magnitude).map_err(|_| invalid("commission split exceeds raw bounds"))?;
+    commission_parts(commission, if raw < 0 { -magnitude } else { magnitude })
+}
+
+#[allow(clippy::useless_conversion, reason = "MoneyRaw is i64 or i128")]
+fn commission_parts(commission: Money, closing_raw: i128) -> CorrectnessResult<(Money, Money)> {
+    let closing_raw = closing_raw
+        .try_into()
+        .map_err(|_| invalid("commission split exceeds native Money bounds"))?;
+    let closing = Money::from_raw(closing_raw, commission.currency);
+    let opening = commission
+        .checked_sub(closing)
+        .ok_or_else(|| invalid("position commission allocation overflow"))?;
+    Ok((closing, opening))
 }
 
 /// Replays position legs onto a hypothetical NETTING position in `ts_opened`
@@ -2162,7 +2633,6 @@ pub fn fold_net_position(legs: &[(Decimal, Decimal, u64)]) -> (Decimal, Decimal)
 
         let same_side = net_signed_qty.is_sign_negative() == p_qty.is_sign_negative();
         let new_net = net_signed_qty + p_qty;
-
         if same_side {
             let total_abs = net_signed_qty.abs() + p_qty.abs();
             net_avg_px = (net_signed_qty.abs() * net_avg_px + p_qty.abs() * p_px) / total_abs;
@@ -2194,6 +2664,7 @@ mod tests {
     use rust_decimal::{Decimal, prelude::ToPrimitive};
     use rust_decimal_macros::dec;
 
+    use super::*;
     #[cfg(feature = "defi")]
     use crate::enums::CurrencyType;
     use crate::{
@@ -2212,10 +2683,556 @@ mod tests {
             InstrumentAny, stubs::*,
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::{Position, PositionFillVoid, PositionReplayEvent, fold_net_position},
         stubs::*,
-        types::{Currency, Money, Price, Quantity, money::MONEY_RAW_MAX},
+        types::{
+            Currency, Money, Price, Quantity,
+            money::{MONEY_RAW_MAX, MoneyRaw},
+        },
     };
+
+    fn native_money(value: Decimal, currency: Currency) -> Money {
+        let value = value.round_dp_with_strategy(
+            u32::from(crate::types::fixed::FIXED_PRECISION),
+            rust_decimal::RoundingStrategy::MidpointNearestEven,
+        );
+        Money::from_decimal_exact(value, currency).unwrap()
+    }
+
+    #[rstest]
+    fn test_decimal_intermediate_price_restatement_after_third_reduction(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-THIRD-RESTATE"))
+            .last_qty(Quantity::from(100_000))
+            .last_px(Price::from("1.00001"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+        let mut addition = opening.clone();
+        addition.trade_id = TradeId::from("T-ADD");
+        addition.event_id = UUID4::new();
+        addition.last_qty = Quantity::from(200_000);
+        addition.last_px = Price::from("1.00002");
+        position.try_apply(&addition).unwrap();
+        let mut reduction = opening.clone();
+        reduction.trade_id = TradeId::from("T-REDUCE");
+        reduction.event_id = UUID4::new();
+        reduction.order_side = OrderSide::Sell;
+        reduction.last_px = Price::from("1.00004");
+        position.try_apply(&reduction).unwrap();
+        let realized_before = position.realized_pnl;
+        let mut restatement = opening;
+        restatement.event_id = UUID4::new();
+        restatement.last_px = Price::from("1.00003");
+
+        position.try_apply(&restatement).unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(200_000));
+        assert_eq!(position.signed_qty, dec!(200000));
+        assert_eq!(position.cost_open, dec!(200004.66666666666666666666666));
+        assert_eq!(position.avg_px_open, dec!(1.0000233333333333333333333333));
+        assert_eq!(position.realized_pnl, realized_before);
+        assert_eq!(position.events.len(), 3);
+        assert_eq!(position.replay_events.len(), 4);
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, dec!(1))]
+    #[case(OrderSide::Sell, dec!(-1))]
+    fn test_decimal_intermediate_inverse_large_move(
+        btcusd_bybit: CryptoPerpetual,
+        #[case] side: OrderSide,
+        #[case] sign: Decimal,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-INVERSE-MOVE"))
+            .order_side(side)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("0.0625"))
+            .commission(Money::zero(Currency::BTC()))
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+        let mut settled = position.clone();
+        let mark = Price::from("0.15");
+        let expected = native_money(sign * dec!(28) / dec!(3), Currency::BTC());
+        let unrealized = position.try_unrealized_pnl(mark).unwrap();
+        let realized = position.try_realized_pnl(mark, position.quantity).unwrap();
+        let mut closing = opening;
+        closing.trade_id = TradeId::from("T-CLOSE");
+        closing.event_id = UUID4::new();
+
+        closing.order_side = if side == OrderSide::Buy {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        };
+
+        closing.last_px = mark;
+        position.try_apply(&closing).unwrap();
+        let close = contract_expired(&instrument, "0.15");
+        settled.apply_instrument_close(close).unwrap();
+
+        assert_eq!(unrealized, expected);
+        assert_eq!(realized, expected);
+        assert_eq!(position.realized_pnl, Some(expected));
+        assert_eq!(settled.realized_pnl, Some(expected));
+        assert_eq!(position.quantity, Quantity::from(0));
+        assert_eq!(settled.quantity, Quantity::from(0));
+        assert_eq!(position.side, PositionSide::Flat);
+        assert!(settled.is_settled());
+    }
+
+    #[rstest]
+    fn test_position_accepts_pnl_after_break_even_residual(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-BREAK-EVEN"))
+            .last_qty(Quantity::from(5))
+            .last_px(Price::from("1.00000"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+
+        for (trade_id, side, qty, px) in [
+            ("T-ADD", OrderSide::Buy, 10, "0.60000"),
+            ("T-REDUCE-1", OrderSide::Sell, 1, "0.70000"),
+            ("T-REDUCE-2", OrderSide::Sell, 5, "0.74000"),
+        ] {
+            let fill = OrderFilled {
+                trade_id: TradeId::from(trade_id),
+                order_side: side,
+                last_qty: Quantity::from(qty),
+                last_px: Price::from(px),
+                event_id: UUID4::new(),
+                ..opening.clone()
+            };
+
+            position.try_apply(&fill).unwrap();
+        }
+
+        assert_eq!(position.realized_pnl, Some(Money::zero(Currency::USD())));
+        assert_eq!(
+            position.realized_pnl_remainder,
+            dec!(0.0000000000000000000000000002)
+        );
+
+        let closing = OrderFilled {
+            trade_id: TradeId::from("T-CLOSE"),
+            order_side: OrderSide::Sell,
+            last_qty: Quantity::from(9),
+            last_px: Price::from("2.00000"),
+            event_id: UUID4::new(),
+            ..opening
+        };
+
+        let realized = position.try_realized_pnl(closing.last_px, closing.last_qty);
+        let total = position.try_total_pnl(closing.last_px);
+        let expected = Money::from("11.40 USD");
+        let mut adjusted = position.clone();
+
+        let adjustment = PositionAdjusted::new(
+            position.trader_id,
+            position.strategy_id,
+            position.instrument_id,
+            position.id,
+            position.account_id,
+            PositionAdjustmentType::Funding,
+            None,
+            Some(expected),
+            None,
+            UUID4::new(),
+            position.ts_last,
+            position.ts_last,
+        );
+        let adjustment = adjusted
+            .apply_adjustment(adjustment)
+            .map(|()| adjusted.realized_pnl.unwrap());
+        let closed = position
+            .try_apply(&closing)
+            .map(|()| position.realized_pnl.unwrap());
+        let results: Vec<_> = [realized, total, adjustment, closed]
+            .into_iter()
+            .map(|result| result.map_err(|e| e.to_string()))
+            .collect();
+
+        assert_eq!(results, vec![Ok(expected); 4]);
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.quantity, Quantity::from(0));
+        assert_eq!(position.cost_open, Decimal::ZERO);
+        assert_eq!(position.realized_pnl_remainder, Decimal::ZERO);
+        assert_eq!(adjusted.quantity, Quantity::from(9));
+        assert_eq!(adjusted.realized_pnl_remainder, Decimal::ZERO);
+    }
+
+    #[rstest]
+    #[case::without_fee("0 USD", "10.60 USD")]
+    #[case::with_fee("0.01 USD", "10.59 USD")]
+    fn test_position_accepts_residual_pnl_on_close(
+        audusd_sim: CurrencyPair,
+        #[case] commission: &str,
+        #[case] expected: &str,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-RESIDUAL-CLOSE"))
+            .last_qty(Quantity::from(5))
+            .last_px(Price::from("1.00000"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+
+        for (trade_id, side, qty, px) in [
+            ("T-ADD", OrderSide::Buy, 10, "0.60000"),
+            ("T-REDUCE-1", OrderSide::Sell, 1, "10.00000"),
+            ("T-REDUCE-2", OrderSide::Sell, 5, "1.00000"),
+            ("T-ADD-2", OrderSide::Buy, 1, "0.60000"),
+        ] {
+            let fill = OrderFilled {
+                trade_id: TradeId::from(trade_id),
+                order_side: side,
+                last_qty: Quantity::from(qty),
+                last_px: Price::from(px),
+                event_id: UUID4::new(),
+                ..opening.clone()
+            };
+
+            position.try_apply(&fill).unwrap();
+        }
+
+        let closing = OrderFilled {
+            trade_id: TradeId::from("T-CLOSE"),
+            order_side: OrderSide::Sell,
+            last_qty: Quantity::from(10),
+            last_px: Price::from("0.72000"),
+            commission: Some(Money::from(commission)),
+            event_id: UUID4::new(),
+            ..opening
+        };
+
+        let realized = position.try_realized_pnl(closing.last_px, closing.last_qty);
+        let total = position.try_total_pnl(closing.last_px);
+        let closed = position.try_apply(&closing);
+
+        assert_eq!(realized.unwrap(), Money::zero(Currency::USD()));
+        assert_eq!(total.unwrap(), Money::from("10.60 USD"));
+        closed.unwrap();
+        assert_eq!(position.realized_pnl, Some(Money::from(expected)));
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.quantity, Quantity::from(0));
+        assert_eq!(position.cost_open, Decimal::ZERO);
+        assert_eq!(position.realized_pnl_remainder, Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_decimal_intermediate_restatement_after_two_reductions(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-REDUCED-LOTS"))
+            .last_qty(Quantity::from("2.00"))
+            .last_px(Price::from("12.00"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+        for (id, side, qty, price) in [
+            ("T-ADD", OrderSide::Buy, "100.00", "10.00"),
+            ("T-REDUCE-1", OrderSide::Sell, "3.00", "15.00"),
+            ("T-REDUCE-2", OrderSide::Sell, "1.00", "15.00"),
+        ] {
+            let mut fill = opening.clone();
+            fill.trade_id = TradeId::from(id);
+            fill.event_id = UUID4::new();
+            fill.order_side = side;
+            fill.last_qty = Quantity::from(qty);
+            fill.last_px = Price::from(price);
+            position.try_apply(&fill).unwrap();
+        }
+
+        let realized = position.realized_pnl;
+        let mut restatement = opening;
+        restatement.event_id = UUID4::new();
+        restatement.last_px = Price::from("14.00");
+
+        position.try_apply(&restatement).unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(98));
+        assert_eq!(position.cost_open, dec!(987.686274509803921568627451));
+        assert_eq!(position.avg_px_open, dec!(10.078431372549019607843137255));
+        assert_eq!(position.realized_pnl, realized);
+        assert_eq!(position.events.len(), 4);
+        assert_eq!(position.replay_events.len(), 5);
+    }
+
+    #[rstest]
+    fn test_decimal_intermediate_adjustment_on_flat_position(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-ADJUST-REOPEN"))
+            .last_qty(Quantity::from(100_000))
+            .last_px(Price::from("1.00001"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, opening);
+        let mut addition = position.events[0].clone();
+        addition.trade_id = TradeId::from("T-ADD-REOPEN");
+        addition.event_id = UUID4::new();
+        addition.last_qty = Quantity::from(23_457);
+        addition.last_px = Price::from("1.00004");
+        position.try_apply(&addition).unwrap();
+        let qty = position.quantity;
+        let average = position.avg_px_open;
+        let mut closing = addition;
+        closing.trade_id = TradeId::from("T-CLOSE-REOPEN");
+        closing.event_id = UUID4::new();
+        closing.order_side = OrderSide::Sell;
+        closing.last_qty = qty;
+        position.try_apply(&closing).unwrap();
+
+        let adjustment = PositionAdjusted::new(
+            position.trader_id,
+            position.strategy_id,
+            position.instrument_id,
+            position.id,
+            position.account_id,
+            PositionAdjustmentType::Commission,
+            Some(qty.as_decimal()),
+            None,
+            None,
+            UUID4::new(),
+            position.ts_last,
+            position.ts_last,
+        );
+
+        position.apply_adjustment(adjustment).unwrap();
+
+        assert_eq!(position.quantity, qty);
+        assert_eq!(position.signed_qty, dec!(123457));
+        assert_eq!(position.side, PositionSide::Long);
+        assert_eq!(position.avg_px_open, average);
+        assert_eq!(position.cost_open, dec!(123458.93828));
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_position_accepts_rounded_dex_fill_cost(
+        audusd_sim: CurrencyPair,
+        #[case] side: OrderSide,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-DEX-COST"))
+            .order_side(side)
+            .last_qty(Quantity::from("0.0010000004030790"))
+            .last_px(Price::from("1891.3472376376468003"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new_checked(&instrument, opening.clone()).unwrap();
+        let expected_cost = dec!(1.8913480000000000000450346181);
+        let notional = position.try_notional_value(opening.last_px).unwrap();
+        let opening_cost = position.cost_open;
+        let mut addition = opening.clone();
+        addition.trade_id = TradeId::from("T-DEX-ADD");
+        addition.event_id = UUID4::new();
+        position.try_apply(&addition).unwrap();
+        let added_cost = position.cost_open;
+        let mut settled = position.clone();
+        let mut closing = opening;
+        closing.trade_id = TradeId::from("T-DEX-REDUCE");
+        closing.event_id = UUID4::new();
+
+        closing.order_side = if side == OrderSide::Buy {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        };
+
+        position.try_apply(&closing).unwrap();
+        let remaining_cost = position.cost_open;
+        closing.trade_id = TradeId::from("T-DEX-CLOSE");
+        closing.event_id = UUID4::new();
+        position.try_apply(&closing).unwrap();
+        let close = contract_expired(&instrument, "1891.3472376376468003");
+        settled.apply_instrument_close(close).unwrap();
+
+        assert_eq!(opening_cost, expected_cost);
+        assert_eq!(notional.as_decimal(), dec!(1.891348));
+        assert_eq!(added_cost, dec!(3.7826960000000000000900692362));
+        assert_eq!(remaining_cost, expected_cost);
+        assert_eq!(position.cost_open, Decimal::ZERO);
+        assert_eq!(position.cost_close, added_cost);
+        assert_eq!(position.signed_qty, Decimal::ZERO);
+        assert_eq!(position.realized_pnl, Some(Money::zero(Currency::USD())));
+        assert_eq!(position.realized_pnl_remainder, Decimal::ZERO);
+        assert_eq!(settled.cost_open, Decimal::ZERO);
+        assert_eq!(settled.cost_close, added_cost);
+        assert_eq!(settled.signed_qty, Decimal::ZERO);
+        assert_eq!(settled.realized_pnl, position.realized_pnl);
+        assert_eq!(settled.realized_pnl_remainder, Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_decimal_intermediate_pnl_accepts_repeating_average(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-REPEATING-PNL"))
+            .last_qty(Quantity::from(100_000))
+            .last_px(Price::from("1.00001"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, opening.clone());
+        let mut addition = opening;
+        addition.trade_id = TradeId::from("T-ADD");
+        addition.event_id = UUID4::new();
+        addition.last_qty = Quantity::from(23_457);
+        addition.last_px = Price::from("1.00004");
+        position.try_apply(&addition).unwrap();
+
+        let pnl = position.calculate_pnl(position.avg_px_open, dec!(1.00005), position.quantity);
+        let unchanged = position.calculate_pnl(
+            position.avg_px_open,
+            position.avg_px_open,
+            position.quantity,
+        );
+
+        assert_eq!(position.avg_px_open, dec!(1.0000157000413099297731193857));
+        assert_eq!(
+            pnl.unwrap(),
+            Money::from_decimal_exact(dec!(4.23457), Currency::USD()).unwrap()
+        );
+        assert_eq!(unchanged.unwrap(), Money::zero(Currency::USD()));
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "0.1234", "0.1235")]
+    #[case(OrderSide::Sell, "0.1235", "0.1234")]
+    fn test_position_preserves_micro_fees_and_profit(
+        audusd_sim: CurrencyPair,
+        #[case] side: OrderSide,
+        #[case] opening_px: &str,
+        #[case] closing_px: &str,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-MICRO"))
+            .order_side(side)
+            .last_qty(Quantity::from("0.01"))
+            .last_px(Price::from(opening_px))
+            .commission(Money::from_decimal_exact(dec!(0.000001), Currency::USD()).unwrap())
+            .build();
+        let mut position = Position::new_checked(&instrument, opening.clone()).unwrap();
+        assert_eq!(position.realized_pnl.unwrap().as_decimal(), dec!(-0.000001));
+
+        let closing = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position.id)
+            .client_order_id(ClientOrderId::from("O-CLOSE-MICRO"))
+            .trade_id(TradeId::from("T-CLOSE-MICRO"))
+            .order_side(if side == OrderSide::Buy {
+                OrderSide::Sell
+            } else {
+                OrderSide::Buy
+            })
+            .last_qty(Quantity::from("0.01"))
+            .last_px(Price::from(closing_px))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+
+        let mut zero_fee = opening;
+        zero_fee.commission = Some(Money::zero(Currency::USD()));
+        let mut without_fee = Position::new_checked(&instrument, zero_fee).unwrap();
+        without_fee.try_apply(&closing).unwrap();
+        position.try_apply(&closing).unwrap();
+        assert_eq!(
+            without_fee.realized_pnl.unwrap().as_decimal(),
+            dec!(0.000001)
+        );
+        assert_eq!(position.realized_pnl.unwrap().as_decimal(), Decimal::ZERO);
+        assert_eq!(position.signed_qty, Decimal::ZERO);
+        assert_eq!(
+            position.commissions(),
+            vec![Money::from_decimal_exact(dec!(0.000001), Currency::USD()).unwrap()]
+        );
+    }
+
+    #[rstest]
+    fn test_position_commission_overflow_preserves_all_state(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-OVERFLOW"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(1))
+            .last_px(Price::from("1"))
+            .commission(Money::from_raw(
+                crate::types::money::MONEY_RAW_MAX,
+                Currency::USD(),
+            ))
+            .build();
+        let mut position = Position::new_checked(&instrument, opening.clone()).unwrap();
+        let before = serde_json::to_value(&position).unwrap();
+        let mut next = opening;
+        next.event_id = UUID4::new();
+        next.trade_id = TradeId::from("T-OVERFLOW");
+        next.last_qty = Quantity::from(2);
+        next.last_px = Price::from("3");
+        next.commission = Some(Money::from_decimal_exact(dec!(0.000001), Currency::USD()).unwrap());
+        let result = position.try_apply(&next);
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "position commission overflow"
+        );
+        assert_eq!(serde_json::to_value(&position).unwrap(), before);
+    }
+
+    #[rstest]
+    fn test_position_restoration_preserves_basis_and_fractional_pnl(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let mut fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-RESTORE"))
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from(3))
+            .last_px(Price::from("0.1"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new_checked(&instrument, fill.clone()).unwrap();
+        fill.event_id = UUID4::new();
+        fill.trade_id = TradeId::from("T-ADD");
+        fill.last_qty = Quantity::from(4);
+        fill.last_px = Price::from("0.2");
+        position.try_apply(&fill).unwrap();
+        fill.event_id = UUID4::new();
+        fill.trade_id = TradeId::from("T-REDUCE");
+        fill.order_side = OrderSide::Sell;
+        fill.last_qty = Quantity::from(1);
+        fill.last_px = Price::from("0.3");
+        position.try_apply(&fill).unwrap();
+        let encoded = serde_json::to_string(&position).unwrap();
+        let mut restored: Position = serde_json::from_str(&encoded).unwrap();
+        fill.event_id = UUID4::new();
+        fill.trade_id = TradeId::from("T-CLOSE");
+        fill.last_qty = Quantity::from(6);
+        position.try_apply(&fill).unwrap();
+        restored.try_apply(&fill).unwrap();
+        assert_eq!(position.realized_pnl.unwrap().as_decimal(), dec!(1));
+        assert_eq!(position.cost_open, Decimal::ZERO);
+        assert_eq!(position.realized_pnl_remainder, Decimal::ZERO);
+        assert_eq!(
+            serde_json::to_value(restored).unwrap(),
+            serde_json::to_value(position).unwrap()
+        );
+    }
 
     #[rstest]
     fn test_same_trade_id_new_price_restates_position_average(audusd_sim: CurrencyPair) {
@@ -2244,7 +3261,7 @@ mod tests {
 
         assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
         assert_eq!(position.side, PositionSide::Long);
-        assert_eq!(position.avg_px_open, Price::from("9.47").as_f64());
+        assert_eq!(position.avg_px_open, Price::from("9.47").as_decimal());
         assert_eq!(position.events[0].last_px, Price::from("12"));
 
         let voided = OrderFillVoidedSpec::builder()
@@ -2260,7 +3277,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
-        assert_eq!(position.avg_px_open, Price::from("9.47").as_f64());
+        assert_eq!(position.avg_px_open, Price::from("9.47").as_decimal());
         assert_eq!(position.events[0].last_px, Price::from("12"));
         assert!(position.requires_replay_state());
     }
@@ -2301,8 +3318,8 @@ mod tests {
 
         assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
         assert_eq!(position.side, PositionSide::Long);
-        assert_eq!(position.avg_px_open, Price::from("12").as_f64());
-        assert_eq!(position.avg_px_close, Some(Price::from("15").as_f64()));
+        assert_eq!(position.avg_px_open, Price::from("12").as_decimal());
+        assert_eq!(position.avg_px_close, Some(Price::from("15").as_decimal()));
         assert_eq!(
             position.realized_pnl.map(|pnl| pnl.as_decimal()),
             Some(dec!(3))
@@ -2346,7 +3363,7 @@ mod tests {
 
         assert_eq!(position.side, PositionSide::Short);
         assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
-        assert_eq!(position.avg_px_open, Price::from("10").as_f64());
+        assert_eq!(position.avg_px_open, Price::from("10").as_decimal());
     }
 
     #[rstest]
@@ -2387,7 +3404,7 @@ mod tests {
 
         assert_eq!(position.side, PositionSide::Short);
         assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
-        assert_eq!(position.avg_px_open, Price::from("9").as_f64());
+        assert_eq!(position.avg_px_open, Price::from("9").as_decimal());
 
         position.apply(
             &OrderFilledSpec::builder()
@@ -2401,7 +3418,7 @@ mod tests {
                 .build(),
         );
 
-        assert_eq!(position.avg_px_open, Price::from("8").as_f64());
+        assert_eq!(position.avg_px_open, Price::from("8").as_decimal());
     }
 
     #[rstest]
@@ -2449,7 +3466,7 @@ mod tests {
         position.apply(&later);
         position.apply(&restatement);
 
-        let expected = f64::midpoint(11.0 * 2.0 - 12.0, Price::from("9.47").as_f64());
+        let expected = (dec!(11) * dec!(2) - dec!(12) + dec!(9.47)) / dec!(2);
         assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
         assert_eq!(position.avg_px_open, expected);
     }
@@ -2481,7 +3498,7 @@ mod tests {
         let replay_len = position.replay_events.len();
         position.apply(&restatement);
 
-        assert_eq!(position.avg_px_open, Price::from("9.47").as_f64());
+        assert_eq!(position.avg_px_open, Price::from("9.47").as_decimal());
         assert_eq!(position.replay_events.len(), replay_len);
     }
 
@@ -2521,10 +3538,12 @@ mod tests {
         let mut position = Position::new(&instrument, opening);
         position.apply(&other);
         position.apply(&restatement);
-        position.purge_events_for_order(ClientOrderId::from("O-DROP"));
+        position
+            .purge_events_for_order(ClientOrderId::from("O-DROP"))
+            .unwrap();
 
         assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
-        assert_eq!(position.avg_px_open, Price::from("9.47").as_f64());
+        assert_eq!(position.avg_px_open, Price::from("9.47").as_decimal());
     }
 
     #[rstest]
@@ -2571,7 +3590,7 @@ mod tests {
         position.apply(&later);
         position.apply(&restatement);
 
-        let expected = f64::midpoint(11.0 * 2.0 - 12.0, Price::from("9.47").as_f64());
+        let expected = (dec!(11) * dec!(2) - dec!(12) + dec!(9.47)) / dec!(2);
         assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
         assert_eq!(position.avg_px_open, expected);
     }
@@ -2622,7 +3641,7 @@ mod tests {
         position.apply(&closing);
         position.apply(&restatement);
 
-        let expected = f64::midpoint(11.0 * 2.0 - 12.0, Price::from("9.47").as_f64());
+        let expected = (dec!(11) * dec!(2) - dec!(12) + dec!(9.47)) / dec!(2);
         assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
         assert_eq!(position.avg_px_open, expected);
     }
@@ -2676,7 +3695,9 @@ mod tests {
         let pnl_before = position.realized_pnl;
         let avg_before = position.avg_px_open;
         position.apply(&other);
-        position.purge_events_for_order(ClientOrderId::from("O-DROP"));
+        position
+            .purge_events_for_order(ClientOrderId::from("O-DROP"))
+            .unwrap();
 
         assert_eq!(position.realized_pnl, pnl_before);
         assert_eq!(position.avg_px_open, avg_before);
@@ -2810,7 +3831,9 @@ mod tests {
             .apply_fill_void(voided, Quantity::from(1), None)
             .unwrap();
         position.apply(&other);
-        position.purge_events_for_order(ClientOrderId::from("O-DROP"));
+        position
+            .purge_events_for_order(ClientOrderId::from("O-DROP"))
+            .unwrap();
 
         assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
     }
@@ -2848,7 +3871,7 @@ mod tests {
             UnixNanos::from(2),
             UnixNanos::from(2),
         );
-        stub_position_long.apply_adjustment(adjustment);
+        stub_position_long.apply_adjustment(adjustment).unwrap();
 
         if close {
             let closing_fill = OrderFilledSpec::builder()
@@ -3034,16 +4057,15 @@ mod tests {
 
     #[cfg(feature = "defi")]
     #[rstest]
-    #[case::price_17("1.00000000000000001", "100000", None, 17)]
-    #[case::price_18("1.000000000000000001", "100000", None, 18)]
-    #[case::quantity_18("1.00000", "1.000000000000000001", None, 18)]
-    #[case::settlement_commission_18("1.00000", "100000", Some(("USD", 18)), 18)]
-    #[case::base_commission_18("1.00000", "100000", Some(("AUD", 18)), 18)]
-    fn test_new_checked_rejects_fill_values_above_float_precision(
+    #[case::price_17("1.00000000000000001", "100000", None)]
+    #[case::price_18("1.000000000000000001", "100000", None)]
+    #[case::quantity_18("1.00000", "1.000000000000000001", None)]
+    #[case::settlement_commission_18("1.00000", "100000", Some(("USD", 18)))]
+    #[case::base_commission_18("1.00000", "100000", Some(("AUD", 18)))]
+    fn test_new_checked_preserves_high_precision_fill_values(
         #[case] last_px: &str,
         #[case] last_qty: &str,
         #[case] commission: Option<(&str, u8)>,
-        #[case] expected_precision: u8,
         audusd_sim: CurrencyPair,
     ) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
@@ -3058,13 +4080,20 @@ mod tests {
             Money::from_decimal(dec!(1), currency).unwrap()
         });
 
-        let error = Position::new_checked(&instrument, fill).unwrap_err();
+        let position = Position::new_checked(&instrument, fill.clone()).unwrap();
 
+        let expected_qty = if commission.is_some_and(|(code, _)| code == "AUD") {
+            dec!(99999)
+        } else {
+            last_qty.parse().unwrap()
+        };
+
+        assert_eq!(position.avg_px_open, last_px.parse::<Decimal>().unwrap());
+        assert_eq!(position.signed_qty, expected_qty);
+        assert_eq!(position.quantity.as_decimal(), expected_qty);
         assert_eq!(
-            error.to_string(),
-            format!(
-                "Fixed-point precision {expected_precision} exceeds maximum float precision 16"
-            )
+            position.commissions(),
+            fill.commission.into_iter().collect::<Vec<_>>()
         );
     }
 
@@ -3073,7 +4102,7 @@ mod tests {
     #[case::size_precision(18, 0, 2)]
     #[case::multiplier(0, 18, 2)]
     #[case::settlement_currency(0, 0, 18)]
-    fn test_new_checked_rejects_instrument_above_float_precision(
+    fn test_new_checked_accepts_high_precision_instrument(
         #[case] size_precision: u8,
         #[case] multiplier_precision: u8,
         #[case] quote_precision: u8,
@@ -3089,17 +4118,16 @@ mod tests {
             .position_id(PositionId::from("P-1"))
             .build();
 
-        let error = Position::new_checked(&instrument, fill).unwrap_err();
+        let position = Position::new_checked(&instrument, fill).unwrap();
 
-        assert_eq!(
-            error.to_string(),
-            "Fixed-point precision 18 exceeds maximum float precision 16"
-        );
+        assert_eq!(position.size_precision, size_precision);
+        assert_eq!(position.multiplier.precision, multiplier_precision);
+        assert_eq!(position.settlement_currency.precision, quote_precision);
     }
 
     #[cfg(feature = "defi")]
     #[rstest]
-    fn test_new_checked_accepts_fill_values_at_float_precision(audusd_sim: CurrencyPair) {
+    fn test_new_checked_preserves_sixteen_digit_inputs(audusd_sim: CurrencyPair) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let usd = Currency::new("USD", 16, 840, "US dollar", CurrencyType::Fiat);
         let mut fill = OrderFilledSpec::builder()
@@ -3112,17 +4140,15 @@ mod tests {
 
         let position = Position::new_checked(&instrument, fill).unwrap();
 
-        assert_eq!(position.avg_px_open, 1.5);
-        assert_eq!(position.signed_qty, 2.0);
+        assert_eq!(position.avg_px_open, dec!(1.5));
+        assert_eq!(position.signed_qty, dec!(2.0));
         assert_eq!(position.quantity, Quantity::from("2.0000000000000000"));
         assert_eq!(position.realized_pnl, Some(Money::from("-0.25 USD")));
     }
 
     #[cfg(feature = "defi")]
     #[rstest]
-    fn test_new_checked_accepts_unconverted_commission_above_float_precision(
-        audusd_sim: CurrencyPair,
-    ) {
+    fn test_new_checked_preserves_eighteen_digit_foreign_commission(audusd_sim: CurrencyPair) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let wei = Currency::new("WEI", 18, 0, "Wei", CurrencyType::Crypto);
         let commission = Money::from_decimal(dec!(0.000000000000000001), wei).unwrap();
@@ -3140,8 +4166,11 @@ mod tests {
 
     #[cfg(feature = "defi")]
     #[rstest]
-    fn test_try_apply_rejects_fill_above_float_precision_without_mutation(
+    #[case::price("price")]
+    #[case::foreign_commission("foreign_commission")]
+    fn test_try_apply_rejects_unrepresentable_input_without_mutation(
         audusd_sim: CurrencyPair,
+        #[case] input: &str,
     ) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
         let position_id = PositionId::from("P-1");
@@ -3150,12 +4179,29 @@ mod tests {
             .trade_id(TradeId::from("T-1"))
             .position_id(position_id)
             .build();
-        let fill_invalid = OrderFilledSpec::builder()
+        let mut fill_invalid = OrderFilledSpec::builder()
             .instrument_id(instrument.id())
             .trade_id(TradeId::from("T-2"))
-            .last_px(Price::from("1.000000000000000001"))
             .position_id(position_id)
             .build();
+
+        match input {
+            "price" => fill_invalid.last_px = Price::from("100000000000.000000000000000001"),
+            "foreign_commission" => {
+                fill_invalid.commission = Some(Money::from_raw(
+                    100_000_000_000_000_000_000_000_000_001,
+                    Currency::EUR(),
+                ));
+            }
+            _ => unreachable!(),
+        }
+
+        assert_eq!(
+            Position::new_checked(&instrument, fill_invalid.clone())
+                .unwrap_err()
+                .to_string(),
+            "position input exceeds exact Decimal representation",
+        );
         let mut position = Position::new(&instrument, fill_open);
         let state_before = serde_json::to_value(&position).unwrap();
 
@@ -3163,33 +4209,29 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Fixed-point precision 18 exceeds maximum float precision 16"
+            "position input exceeds exact Decimal representation"
         );
         assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
     }
 
     #[cfg(feature = "defi")]
     #[rstest]
-    #[case::unchanged(|_: &mut Position| {}, None)]
+    #[case::unchanged(|_: &mut Position| {})]
     #[case::buy_qty(
-        |position: &mut Position| position.buy_qty = Quantity::from("1.000000000000000001"),
-        Some(18)
+        |position: &mut Position| position.buy_qty = Quantity::from("1.000000000000000001")
     )]
     #[case::sell_qty(
-        |position: &mut Position| position.sell_qty = Quantity::from("1.000000000000000001"),
-        Some(18)
+        |position: &mut Position| position.sell_qty = Quantity::from("1.000000000000000001")
     )]
     #[case::event_fill(
-        |position: &mut Position| position.events[0].last_px = Price::from("1.000000000000000001"),
-        Some(18)
+        |position: &mut Position| position.events[0].last_px = Price::from("1.000000000000000001")
     )]
     #[case::replay_fill(
         |position: &mut Position| {
             let mut fill = position.events[0].clone();
             fill.last_qty = Quantity::from("1.00000000000000001");
             position.replay_events.push(PositionReplayEvent::Filled(fill));
-        },
-        Some(17)
+        }
     )]
     #[case::replay_close(
         |position: &mut Position| {
@@ -3201,52 +4243,40 @@ mod tests {
                 UnixNanos::default(),
             );
             position.replay_events.push(PositionReplayEvent::InstrumentClosed(close));
-        },
-        Some(18)
+        }
     )]
     #[case::realized_pnl(
         |position: &mut Position| {
             let usd = Currency::new("USD", 18, 840, "US dollar", CurrencyType::Fiat);
             position.realized_pnl = Some(Money::from_decimal(dec!(1), usd).unwrap());
-        },
-        Some(18)
+        }
     )]
-    fn test_check_state_float_precision_covers_stored_values(
+    fn test_check_accounting_accepts_high_precision_stored_values(
         #[case] mutate: fn(&mut Position),
-        #[case] expected_error_precision: Option<u8>,
         mut stub_position_long: Position,
     ) {
         mutate(&mut stub_position_long);
 
-        let result = stub_position_long.check_state_float_precision();
+        let result = stub_position_long.check_accounting();
 
-        let expected = expected_error_precision.map_or(Ok(()), |precision| {
-            Err(CorrectnessError::PredicateViolation {
-                message: format!(
-                    "Fixed-point precision {precision} exceeds maximum float precision 16"
-                ),
-            })
-        });
-
-        assert_eq!(result, expected);
+        assert_eq!(result, Ok(()));
     }
 
     #[cfg(feature = "defi")]
     #[rstest]
-    fn test_try_pnl_rejects_values_above_float_precision(stub_position_long: Position) {
+    fn test_try_pnl_preserves_eighteen_digit_inputs(stub_position_long: Position) {
         let last = Price::from("1.000000000000000001");
         let quantity = Quantity::from("1.000000000000000001");
-        let expected = "Fixed-point precision 18 exceeds maximum float precision 16";
 
-        let unrealized = stub_position_long.try_unrealized_pnl(last).unwrap_err();
-        let total = stub_position_long.try_total_pnl(last).unwrap_err();
+        let unrealized = stub_position_long.try_unrealized_pnl(last).unwrap();
+        let total = stub_position_long.try_total_pnl(last).unwrap();
         let calculated = stub_position_long
-            .try_calculate_pnl(1.0, 1.0, quantity)
-            .unwrap_err();
+            .try_calculate_pnl(dec!(1.0), dec!(1.0), quantity)
+            .unwrap();
 
-        assert_eq!(unrealized.to_string(), expected);
-        assert_eq!(total.to_string(), expected);
-        assert_eq!(calculated.to_string(), expected);
+        assert_eq!(unrealized, Money::from_str_exact("-0.0002 USD").unwrap());
+        assert_eq!(total, Money::from_str_exact("-2.0002 USD").unwrap());
+        assert_eq!(calculated, Money::zero(Currency::USD()));
     }
 
     #[rstest]
@@ -3387,7 +4417,7 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(15));
         assert_eq!(position.opening_order_id, ClientOrderId::from("O-1"));
         assert_eq!(position.closing_order_id, None);
-        assert_eq!(position.avg_px_open, 1.0);
+        assert_eq!(position.avg_px_open, dec!(1.0));
         assert_eq!(position.buy_qty, Quantity::from(15));
         assert_eq!(position.sell_qty, Quantity::from(0));
         assert_eq!(
@@ -3491,10 +4521,10 @@ mod tests {
         position.apply(&fill2.into());
 
         assert_eq!(position.quantity, Quantity::from(100_000));
-        assert_eq!(position.signed_qty, 100_000.0);
+        assert_eq!(position.signed_qty, dec!(100_000.0));
         assert_eq!(position.side, PositionSide::Long);
         // Weighted avg_px_open: (50_000 * -5 + 50_000 * -7) / 100_000 = -6.0
-        assert_eq!(position.avg_px_open, -6.0);
+        assert_eq!(position.avg_px_open, dec!(-6.0));
     }
 
     #[rstest]
@@ -3528,12 +4558,12 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(100_000));
         assert_eq!(position.peak_qty, Quantity::from(100_000));
         assert_eq!(position.size_precision, 0);
-        assert_eq!(position.signed_qty, 100_000.0);
+        assert_eq!(position.signed_qty, dec!(100_000.0));
         assert_eq!(position.entry, OrderSide::Buy);
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.ts_opened.as_u64(), 0);
         assert_eq!(position.duration_ns, DurationNanos::default());
-        assert_eq!(position.avg_px_open, 1.00001);
+        assert_eq!(position.avg_px_open, dec!(1.00001));
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.id, PositionId::new("1"));
         assert_eq!(position.events.len(), 1);
@@ -3543,8 +4573,14 @@ mod tests {
         assert!(!position.is_closed());
         assert_eq!(position.realized_return, 0.0);
         assert_eq!(position.realized_pnl, Some(Money::from("-2.0 USD")));
-        assert_eq!(position.unrealized_pnl(last_price), Money::from("49.0 USD"));
-        assert_eq!(position.total_pnl(last_price), Money::from("47.0 USD"));
+        assert_eq!(
+            position.unrealized_pnl(last_price).unwrap(),
+            Money::from("49.0 USD")
+        );
+        assert_eq!(
+            position.total_pnl(last_price).unwrap(),
+            Money::from("47.0 USD")
+        );
         assert_eq!(position.commissions(), vec![Money::from("2.0 USD")]);
         assert_eq!(
             format!("{position}"),
@@ -3582,11 +4618,11 @@ mod tests {
         assert!(position.closing_order_id.is_none());
         assert_eq!(position.quantity, Quantity::from(100_000));
         assert_eq!(position.peak_qty, Quantity::from(100_000));
-        assert_eq!(position.signed_qty, -100_000.0);
+        assert_eq!(position.signed_qty, dec!(-100_000.0));
         assert_eq!(position.entry, OrderSide::Sell);
         assert_eq!(position.side, PositionSide::Short);
         assert_eq!(position.ts_opened.as_u64(), 0);
-        assert_eq!(position.avg_px_open, 1.00001);
+        assert_eq!(position.avg_px_open, dec!(1.00001));
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.id, PositionId::new("1"));
         assert_eq!(position.events.len(), 1);
@@ -3597,10 +4633,13 @@ mod tests {
         assert_eq!(position.realized_return, 0.0);
         assert_eq!(position.realized_pnl, Some(Money::from("-2.0 USD")));
         assert_eq!(
-            position.unrealized_pnl(last_price),
+            position.unrealized_pnl(last_price).unwrap(),
             Money::from("-49.0 USD")
         );
-        assert_eq!(position.total_pnl(last_price), Money::from("-51.0 USD"));
+        assert_eq!(
+            position.total_pnl(last_price).unwrap(),
+            Money::from("-51.0 USD")
+        );
         assert_eq!(position.commissions(), vec![Money::from("2.0 USD")]);
         assert_eq!(
             format!("{position}"),
@@ -3633,8 +4672,8 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(50_000));
         assert_eq!(position.peak_qty, Quantity::from(50_000));
         assert_eq!(position.side, PositionSide::Long);
-        assert_eq!(position.signed_qty, 50000.0);
-        assert_eq!(position.avg_px_open, 1.00001);
+        assert_eq!(position.signed_qty, dec!(50000.0));
+        assert_eq!(position.avg_px_open, dec!(1.00001));
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.ts_opened.as_u64(), 0);
         assert!(position.is_long());
@@ -3643,8 +4682,14 @@ mod tests {
         assert!(!position.is_closed());
         assert_eq!(position.realized_return, 0.0);
         assert_eq!(position.realized_pnl, Some(Money::from("-2.0 USD")));
-        assert_eq!(position.unrealized_pnl(last_price), Money::from("23.5 USD"));
-        assert_eq!(position.total_pnl(last_price), Money::from("21.5 USD"));
+        assert_eq!(
+            position.unrealized_pnl(last_price).unwrap(),
+            Money::from("23.5 USD")
+        );
+        assert_eq!(
+            position.total_pnl(last_price).unwrap(),
+            Money::from("21.5 USD")
+        );
         assert_eq!(position.commissions(), vec![Money::from("2.0 USD")]);
         assert_eq!(
             format!("{position}"),
@@ -3691,8 +4736,8 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(100_000));
         assert_eq!(position.peak_qty, Quantity::from(100_000));
         assert_eq!(position.side, PositionSide::Short);
-        assert_eq!(position.signed_qty, -100_000.0);
-        assert_eq!(position.avg_px_open, 1.000_015);
+        assert_eq!(position.signed_qty, dec!(-100_000.0));
+        assert_eq!(position.avg_px_open, dec!(1.000_015));
         assert_eq!(position.event_count(), 2);
         assert_eq!(position.ts_opened, 0);
         assert!(position.is_short());
@@ -3702,10 +4747,13 @@ mod tests {
         assert_eq!(position.realized_return, 0.0);
         assert_eq!(position.realized_pnl, Some(Money::from("-4.0 USD")));
         assert_eq!(
-            position.unrealized_pnl(last_price),
+            position.unrealized_pnl(last_price).unwrap(),
             Money::from("-48.5 USD")
         );
-        assert_eq!(position.total_pnl(last_price), Money::from("-52.5 USD"));
+        assert_eq!(
+            position.total_pnl(last_price).unwrap(),
+            Money::from("-52.5 USD")
+        );
         assert_eq!(position.commissions(), vec![Money::from("4.0 USD")]);
     }
 
@@ -3756,22 +4804,22 @@ mod tests {
             Quantity::zero(audusd_sim.price_precision())
         );
         assert_eq!(position.size_precision, 0);
-        assert_eq!(position.signed_qty, 0.0);
+        assert_eq!(position.signed_qty, dec!(0.0));
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 1_000_000_000);
         assert_eq!(position.ts_closed, Some(UnixNanos::from(2_000_000_000)));
         assert_eq!(position.duration_ns, DurationNanos::from_secs(1));
-        assert_eq!(position.avg_px_open, 1.00001);
-        assert_eq!(position.avg_px_close, Some(1.00011));
+        assert_eq!(position.avg_px_open, dec!(1.00001));
+        assert_eq!(position.avg_px_close, Some(dec!(1.00011)));
         assert!(!position.is_long());
         assert!(!position.is_short());
         assert!(!position.is_open());
         assert!(position.is_closed());
-        assert_eq!(position.realized_return, 9.999_900_000_998_888e-5);
+        assert_eq!(position.realized_return, (1.00011_f64 - 1.00001) / 1.00001);
         assert_eq!(position.realized_pnl, Some(Money::from("13.0 USD")));
-        assert_eq!(position.unrealized_pnl(last), Money::from("0 USD"));
+        assert_eq!(position.unrealized_pnl(last).unwrap(), Money::from("0 USD"));
         assert_eq!(position.commissions(), vec![Money::from("2 USD")]);
-        assert_eq!(position.total_pnl(last), Money::from("13 USD"));
+        assert_eq!(position.total_pnl(last).unwrap(), Money::from("13 USD"));
         assert_eq!(format!("{position}"), "Position(FLAT AUD/USD.SIM, id=P-1)");
     }
 
@@ -3836,18 +4884,18 @@ mod tests {
         );
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
-        assert_eq!(position.avg_px_open, 1.0);
+        assert_eq!(position.avg_px_open, dec!(1.0));
         assert_eq!(position.events.len(), 3);
         assert_eq!(position.ts_closed, Some(UnixNanos::default()));
-        assert_eq!(position.avg_px_close, Some(1.00002));
+        assert_eq!(position.avg_px_close, Some(dec!(1.00002)));
         assert!(!position.is_long());
         assert!(!position.is_short());
         assert!(!position.is_open());
         assert!(position.is_closed());
         assert_eq!(position.commissions(), vec![Money::from("6.0 USD")]);
-        assert_eq!(position.unrealized_pnl(last), Money::from("0 USD"));
+        assert_eq!(position.unrealized_pnl(last).unwrap(), Money::from("0 USD"));
         assert_eq!(position.realized_pnl, Some(Money::from("-8.0 USD")));
-        assert_eq!(position.total_pnl(last), Money::from("-8.0 USD"));
+        assert_eq!(position.total_pnl(last).unwrap(), Money::from("-8.0 USD"));
         assert_eq!(
             format!("{position}"),
             "Position(FLAT AUD/USD.SIM, id=P-19700101-000000-001-001-1)"
@@ -3902,19 +4950,19 @@ mod tests {
         assert_eq!(position.closing_order_side(), None);
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
-        assert_eq!(position.avg_px_open, 1.0);
+        assert_eq!(position.avg_px_open, dec!(1.0));
         assert_eq!(position.events.len(), 2);
         // assert_eq!(position.trade_ids, vec![fill1.trade_id, fill2.trade_id]);  // TODO
         assert_eq!(position.ts_closed, Some(UnixNanos::default()));
-        assert_eq!(position.avg_px_close, Some(1.0));
+        assert_eq!(position.avg_px_close, Some(dec!(1.0)));
         assert!(!position.is_long());
         assert!(!position.is_short());
         assert!(!position.is_open());
         assert!(position.is_closed());
         assert_eq!(position.commissions(), vec![Money::from("4.0 USD")]);
-        assert_eq!(position.unrealized_pnl(last), Money::from("0 USD"));
+        assert_eq!(position.unrealized_pnl(last).unwrap(), Money::from("0 USD"));
         assert_eq!(position.realized_pnl, Some(Money::from("-4.0 USD")));
-        assert_eq!(position.total_pnl(last), Money::from("-4.0 USD"));
+        assert_eq!(position.total_pnl(last).unwrap(), Money::from("-4.0 USD"));
         assert_eq!(
             format!("{position}"),
             "Position(FLAT AUD/USD.SIM, id=P-19700101-000000-001-001-1)"
@@ -3986,22 +5034,22 @@ mod tests {
         );
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
-        assert_eq!(position.avg_px_open, 1.000_005);
+        assert_eq!(position.avg_px_open, dec!(1.000_005));
         assert_eq!(position.events.len(), 3);
         // assert_eq!(
         //     position.trade_ids,
         //     vec![fill1.trade_id, fill2.trade_id, fill3.trade_id]
         // );
         assert_eq!(position.ts_closed, Some(UnixNanos::default()));
-        assert_eq!(position.avg_px_close, Some(1.0001));
+        assert_eq!(position.avg_px_close, Some(dec!(1.0001)));
         assert!(position.is_closed());
         assert!(!position.is_open());
         assert!(!position.is_long());
         assert!(!position.is_short());
         assert_eq!(position.commissions(), vec![Money::from("6.0 USD")]);
         assert_eq!(position.realized_pnl, Some(Money::from("13.0 USD")));
-        assert_eq!(position.unrealized_pnl(last), Money::from("0 USD"));
-        assert_eq!(position.total_pnl(last), Money::from("13 USD"));
+        assert_eq!(position.unrealized_pnl(last).unwrap(), Money::from("0 USD"));
+        assert_eq!(position.total_pnl(last).unwrap(), Money::from("13 USD"));
         assert_eq!(
             format!("{position}"),
             "Position(FLAT AUD/USD.SIM, id=P-123456)"
@@ -4057,7 +5105,7 @@ mod tests {
         position.apply(&fill2.into());
         assert_eq!(position.quantity, Quantity::from(29));
         assert_eq!(position.realized_pnl, Some(Money::from("-0.28830000 USDT")));
-        assert_eq!(position.avg_px_open, 99.413_793_103_448_27);
+        assert_eq!(position.avg_px_open, (dec!(2883) / dec!(29)));
         let quantity3 = Quantity::from(9);
         let order3 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(ethusdt.id())
@@ -4081,8 +5129,11 @@ mod tests {
         );
         position.apply(&fill3.into());
         assert_eq!(position.quantity, Quantity::from(20));
-        assert_eq!(position.realized_pnl, Some(Money::from("13.89666207 USDT")));
-        assert_eq!(position.avg_px_open, 99.413_793_103_448_27);
+        assert_eq!(
+            position.realized_pnl,
+            Some(native_money(dec!(251877) / dec!(18125), Currency::USDT()))
+        );
+        assert_eq!(position.avg_px_open, (dec!(2883) / dec!(29)));
         let quantity4 = Quantity::from("4");
         let price4 = Price::from("105.0");
         let order4 = OrderTestBuilder::new(OrderType::Market)
@@ -4106,8 +5157,11 @@ mod tests {
         );
         position.apply(&fill4.into());
         assert_eq!(position.quantity, Quantity::from("16"));
-        assert_eq!(position.realized_pnl, Some(Money::from("36.19948966 USDT")));
-        assert_eq!(position.avg_px_open, 99.413_793_103_448_27);
+        assert_eq!(
+            position.realized_pnl,
+            Some(native_money(dec!(2624463) / dec!(72500), Currency::USDT()))
+        );
+        assert_eq!(position.avg_px_open, (dec!(2883) / dec!(29)));
         let quantity5 = Quantity::from("3");
         let price5 = Price::from("103.0");
         let order5 = OrderTestBuilder::new(OrderType::Market)
@@ -4131,8 +5185,14 @@ mod tests {
         );
         position.apply(&fill5.into());
         assert_eq!(position.quantity, Quantity::from("19"));
-        assert_eq!(position.realized_pnl, Some(Money::from("36.16858966 USDT")));
-        assert_eq!(position.avg_px_open, 99.980_036_297_640_65);
+        assert_eq!(
+            position.realized_pnl,
+            Some(native_money(
+                dec!(10488891) / dec!(290000),
+                Currency::USDT()
+            ))
+        );
+        assert_eq!(position.avg_px_open, dec!(99.98003629764065335753176043));
         assert_eq!(
             format!("{position}"),
             "Position(LONG 19.00000 ETHUSDT.BINANCE, id=P-123456)"
@@ -4210,7 +5270,7 @@ mod tests {
         assert_eq!(position.closing_order_id, None);
         assert_eq!(position.ts_opened, 3_000_000_000);
         assert_eq!(position.duration_ns, DurationNanos::default());
-        assert_eq!(position.avg_px_open, 1.00012);
+        assert_eq!(position.avg_px_open, dec!(1.00012));
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.ts_closed, None);
         assert_eq!(position.avg_px_close, None);
@@ -4220,8 +5280,11 @@ mod tests {
         assert!(!position.is_closed());
         assert_eq!(position.realized_return, 0.0);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
-        assert_eq!(position.unrealized_pnl(last), Money::from("27 USD"));
-        assert_eq!(position.total_pnl(last), Money::from("27 USD"));
+        assert_eq!(
+            position.unrealized_pnl(last).unwrap(),
+            Money::from("27 USD")
+        );
+        assert_eq!(position.total_pnl(last).unwrap(), Money::from("27 USD"));
         assert_eq!(position.commissions(), vec![Money::from("0 USD")]);
         assert_eq!(
             format!("{position}"),
@@ -4380,6 +5443,48 @@ mod tests {
         assert_eq!(position.fill_voids.len(), 2);
     }
 
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case::native_instrument(0, "1.000000000000000001", "0.5", "0.500000000000000001")]
+    #[case::wei_instrument(18, "1", "0.500000000000000001", "0.499999999999999999")]
+    fn test_fill_void_accepts_mixed_qty_scales(
+        mut audusd_sim: CurrencyPair,
+        #[case] precision: u8,
+        #[case] qty: &str,
+        #[case] voided: &str,
+        #[case] remaining: &str,
+    ) {
+        audusd_sim.size_precision = precision;
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .last_qty(Quantity::from(qty))
+            .last_px(Price::from("1"))
+            .position_id(PositionId::from("P-MIXED-VOID"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, fill.clone());
+        let voided_qty = Quantity::from(voided);
+        let first = matching_fill_void(&fill, voided_qty, None);
+        position.apply_fill_void(first, voided_qty, None).unwrap();
+
+        assert_eq!(position.quantity, Quantity::from(remaining));
+        assert_eq!(position.signed_qty, remaining.parse::<Decimal>().unwrap());
+        assert_eq!(position.cost_open, remaining.parse::<Decimal>().unwrap());
+        assert_eq!(position.realized_pnl, Some(Money::zero(Currency::USD())));
+
+        let final_void = matching_fill_void(&fill, fill.last_qty, None);
+        position
+            .apply_fill_void(final_void, fill.last_qty, None)
+            .unwrap();
+
+        assert_eq!(position.quantity.as_decimal(), Decimal::ZERO);
+        assert_eq!(position.signed_qty, Decimal::ZERO);
+        assert_eq!(position.cost_open, Decimal::ZERO);
+        assert_eq!(position.realized_pnl_remainder, Decimal::ZERO);
+        assert_eq!(position.fill_voids.len(), 2);
+    }
+
     #[rstest]
     fn test_fill_void_replays_across_position_close_and_reopen(audusd_sim: CurrencyPair) {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim);
@@ -4482,7 +5587,7 @@ mod tests {
             UnixNanos::from(2),
         );
         let mut position = Position::new(&instrument, fill);
-        position.apply_adjustment(adjustment);
+        position.apply_adjustment(adjustment).unwrap();
 
         position
             .apply_fill_void(fill_voided, Quantity::from(2), None)
@@ -4555,7 +5660,7 @@ mod tests {
         assert!(position.is_closed());
         assert!(position.is_settled());
         assert_eq!(position.side, PositionSide::Flat);
-        assert_eq!(position.signed_qty, 0.0);
+        assert_eq!(position.signed_qty, dec!(0.0));
         assert_eq!(position.quantity, Quantity::from("0.00"));
         assert_eq!(position.peak_qty, Quantity::from("10.00"));
         assert_eq!(position.buy_qty, Quantity::from("10.00"));
@@ -4564,10 +5669,10 @@ mod tests {
         assert_eq!(position.closing_order_id, None);
         assert_eq!(position.events, vec![fill]);
         assert_eq!(position.commissions(), vec![Money::from("0.10 USDC")]);
-        assert_eq!(position.avg_px_open, 0.4);
+        assert_eq!(position.avg_px_open, dec!(0.4));
         assert_eq!(
             position.avg_px_close,
-            Some(Price::from(close_price).as_f64())
+            Some(Price::from(close_price).as_decimal())
         );
         assert!((position.realized_return - expected_return).abs() < 1e-12);
         assert_eq!(
@@ -4605,7 +5710,7 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from("0.00"));
         assert_eq!(position.buy_qty, Quantity::from("10.00"));
         assert_eq!(position.sell_qty, Quantity::from("4.00"));
-        assert!((position.avg_px_close.unwrap() - 0.84).abs() < 1e-12);
+        assert!((position.avg_px_close.unwrap() - dec!(0.84)).abs() < dec!(1e-12));
         assert!((position.realized_return - 1.1).abs() < 1e-12);
         assert_eq!(position.realized_pnl.unwrap().as_decimal(), dec!(4.20));
         assert_eq!(position.closing_order_id, None);
@@ -4750,7 +5855,7 @@ mod tests {
         assert_eq!(closed_cycles_pnl, Some(Money::from("30.00 USD")));
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.quantity, Quantity::from(4));
-        assert_eq!(position.avg_px_open, 6.0);
+        assert_eq!(position.avg_px_open, dec!(6.0));
         assert_eq!(position.realized_pnl, Some(Money::from("0.00 USD")));
         assert_eq!(position.events.len(), 1);
         assert_eq!(position.replay_events.len(), 5);
@@ -4843,7 +5948,7 @@ mod tests {
         assert_eq!(position.ts_last, UnixNanos::from(2_000));
         assert_eq!(position.ts_closed, None);
         assert_eq!(position.duration_ns, DurationNanos::default());
-        assert_eq!(position.avg_px_open, 50_000.0);
+        assert_eq!(position.avg_px_open, dec!(50_000.0));
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, None);
         assert!(position.events.is_empty());
@@ -4911,7 +6016,7 @@ mod tests {
         assert_eq!(position.ts_last, UnixNanos::from(2_000));
         assert_eq!(position.ts_closed, Some(UnixNanos::from(2_000)));
         assert_eq!(position.duration_ns, DurationNanos::new(1_000));
-        assert_eq!(position.avg_px_open, 50_000.0);
+        assert_eq!(position.avg_px_open, dec!(50_000.0));
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, Some(Money::from("0.00 USDT")));
         assert!(!position.is_open());
@@ -4983,7 +6088,7 @@ mod tests {
         assert_eq!(position.ts_last, UnixNanos::from(3_000));
         assert_eq!(position.ts_closed, None);
         assert_eq!(position.duration_ns, DurationNanos::default());
-        assert_eq!(position.avg_px_open, 52_000.0);
+        assert_eq!(position.avg_px_open, dec!(52_000.0));
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, None);
         assert!(position.is_open());
@@ -5047,7 +6152,7 @@ mod tests {
         assert_eq!(position.ts_last, UnixNanos::from(2_000));
         assert_eq!(position.ts_closed, None);
         assert_eq!(position.duration_ns, DurationNanos::default());
-        assert_eq!(position.avg_px_open, 52_000.0);
+        assert_eq!(position.avg_px_open, dec!(52_000.0));
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, Some(Money::from("0.00 USDT")));
         assert!(position.is_open());
@@ -5205,7 +6310,7 @@ mod tests {
 
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.quantity, Quantity::from(3));
-        assert_eq!(position.avg_px_open, 1.1);
+        assert_eq!(position.avg_px_open, dec!(1.1));
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_return, 0.0);
         assert_eq!(position.buy_qty, Quantity::from(3));
@@ -5274,7 +6379,7 @@ mod tests {
             position.realized_pnl,
             Some(Money::from("-289.98300000 USDT"))
         );
-        assert_eq!(position.avg_px_open, 9_999.413_793_103_447);
+        assert_eq!(position.avg_px_open, (dec!(289983) / dec!(29)));
         let order3 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(btcusdt.id())
             .side(OrderSide::Sell)
@@ -5303,9 +6408,9 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(20));
         assert_eq!(
             position.realized_pnl,
-            Some(Money::from("-365.71613793 USDT"))
+            Some(native_money(dec!(-1325721) / dec!(3625), Currency::USDT()))
         );
-        assert_eq!(position.avg_px_open, 9_999.413_793_103_447);
+        assert_eq!(position.avg_px_open, (dec!(289983) / dec!(29)));
         let order4 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(btcusdt.id())
             .side(OrderSide::Buy)
@@ -5334,9 +6439,12 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(23));
         assert_eq!(
             position.realized_pnl,
-            Some(Money::from("-395.72513793 USDT"))
+            Some(native_money(
+                dec!(-11476029) / dec!(29000),
+                Currency::USDT()
+            ))
         );
-        assert_eq!(position.avg_px_open, 9_999.881_559_220_39);
+        assert_eq!(position.avg_px_open, (dec!(6669921) / dec!(667)));
         let order5 = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(btcusdt.id())
             .side(OrderSide::Sell)
@@ -5365,9 +6473,12 @@ mod tests {
         assert_eq!(position.quantity, Quantity::from(19));
         assert_eq!(
             position.realized_pnl,
-            Some(Money::from("-415.27137481 USDT"))
+            Some(native_money(
+                dec!(-276986007) / dec!(667000),
+                Currency::USDT()
+            ))
         );
-        assert_eq!(position.avg_px_open, 9_999.881_559_220_39);
+        assert_eq!(position.avg_px_open, (dec!(6669921) / dec!(667)));
         assert_eq!(
             format!("{position}"),
             "Position(LONG 19.000000 BTCUSDT.BINANCE, id=P-19700101-000000-001-001-1)"
@@ -5397,7 +6508,9 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusdt, fill.into());
-        let result = position.calculate_pnl(10500.0, 10500.0, Quantity::from("100000.0"));
+        let result = position
+            .calculate_pnl(dec!(10500.0), dec!(10500.0), Quantity::from("100000.0"))
+            .unwrap();
         assert_eq!(result, Money::from("0 USDT"));
     }
 
@@ -5429,15 +6542,17 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusdt, fill.into());
-        let pnl = position.calculate_pnl(10500.0, 10510.0, Quantity::from("12.0"));
+        let pnl = position
+            .calculate_pnl(dec!(10500.0), dec!(10510.0), Quantity::from("12.0"))
+            .unwrap();
         assert_eq!(pnl, Money::from("120 USDT"));
         assert_eq!(position.realized_pnl, Some(Money::from("-126 USDT")));
         assert_eq!(
-            position.unrealized_pnl(Price::from("10510.0")),
+            position.unrealized_pnl(Price::from("10510.0")).unwrap(),
             Money::from("120.0 USDT")
         );
         assert_eq!(
-            position.total_pnl(Price::from("10510.0")),
+            position.total_pnl(Price::from("10510.0")).unwrap(),
             Money::from("-6 USDT")
         );
         assert_eq!(position.commissions(), vec![Money::from("126.0 USDT")]);
@@ -5471,15 +6586,17 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusdt, fill.into());
-        let pnl = position.calculate_pnl(10500.0, 10480.5, Quantity::from("10.0"));
+        let pnl = position
+            .calculate_pnl(dec!(10500.0), dec!(10480.5), Quantity::from("10.0"))
+            .unwrap();
         assert_eq!(pnl, Money::from("-195 USDT"));
         assert_eq!(position.realized_pnl, Some(Money::from("-126 USDT")));
         assert_eq!(
-            position.unrealized_pnl(Price::from("10480.50")),
+            position.unrealized_pnl(Price::from("10480.50")).unwrap(),
             Money::from("-234.0 USDT")
         );
         assert_eq!(
-            position.total_pnl(Price::from("10480.50")),
+            position.total_pnl(Price::from("10480.50")).unwrap(),
             Money::from("-360 USDT")
         );
         assert_eq!(position.commissions(), vec![Money::from("126.0 USDT")]);
@@ -5513,10 +6630,12 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusdt, fill.into());
-        let pnl = position.calculate_pnl(10500.0, 10390.0, Quantity::from("10.15"));
+        let pnl = position
+            .calculate_pnl(dec!(10500.0), dec!(10390.0), Quantity::from("10.15"))
+            .unwrap();
         assert_eq!(pnl, Money::from("1116.5 USDT"));
         assert_eq!(
-            position.unrealized_pnl(Price::from("10390.0")),
+            position.unrealized_pnl(Price::from("10390.0")).unwrap(),
             Money::from("1116.5 USDT")
         );
         assert_eq!(position.realized_pnl, Some(Money::from("-106.575 USDT")));
@@ -5555,10 +6674,12 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusdt, fill.into());
-        let pnl = position.calculate_pnl(10500.0, 10670.5, Quantity::from("10.0"));
+        let pnl = position
+            .calculate_pnl(dec!(10500.0), dec!(10670.5), Quantity::from("10.0"))
+            .unwrap();
         assert_eq!(pnl, Money::from("-1705 USDT"));
         assert_eq!(
-            position.unrealized_pnl(Price::from("10670.5")),
+            position.unrealized_pnl(Price::from("10670.5")).unwrap(),
             Money::from("-1705 USDT")
         );
         assert_eq!(position.realized_pnl, Some(Money::from("-105 USDT")));
@@ -5597,16 +6718,18 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusd_bybit, fill.into());
-        let pnl = position.calculate_pnl(10000.0, 11000.0, Quantity::from("100000.0"));
-        assert_eq!(pnl, Money::from("-0.90909091 BTC"));
+        let pnl = position
+            .calculate_pnl(dec!(10000.0), dec!(11000.0), Quantity::from("100000.0"))
+            .unwrap();
+        assert_eq!(pnl, native_money(dec!(-10) / dec!(11), Currency::BTC()));
         assert_eq!(
-            position.unrealized_pnl(Price::from("11000.0")),
-            Money::from("-0.90909091 BTC")
+            position.unrealized_pnl(Price::from("11000.0")).unwrap(),
+            native_money(dec!(-10) / dec!(11), Currency::BTC())
         );
         assert_eq!(position.realized_pnl, Some(Money::from("-0.00750000 BTC")));
         assert_eq!(
             position.notional_value(Price::from("11000.0")),
-            Money::from("9.09090909 BTC")
+            native_money(dec!(100) / dec!(11), Currency::BTC())
         );
     }
 
@@ -5658,7 +6781,7 @@ mod tests {
             None,
         );
         let mut position = Position::new(&option, open_fill.into());
-        let unrealized_pnl = position.unrealized_pnl(Price::from(close_px));
+        let unrealized_pnl = position.unrealized_pnl(Price::from(close_px)).unwrap();
         let notional = position.notional_value(Price::from(close_px));
 
         position.apply(&close_fill.into());
@@ -5698,8 +6821,10 @@ mod tests {
         let inverse_position = Position::new(&btcusd_bybit, inverse_fill.into());
 
         assert_eq!(
-            inverse_position.calculate_pnl(10000.0, 11000.0, Quantity::from("100000.0")),
-            Money::from("-9.09090909 BTC")
+            inverse_position
+                .calculate_pnl(dec!(10000.0), dec!(11000.0), Quantity::from("100000.0"))
+                .unwrap(),
+            native_money(dec!(-100) / dec!(11), Currency::BTC())
         );
 
         crypto_perpetual_ethusdt.multiplier = Quantity::from(10);
@@ -5724,7 +6849,9 @@ mod tests {
         let linear_position = Position::new(&ethusdt, linear_fill.into());
 
         assert_eq!(
-            linear_position.calculate_pnl(1000.0, 1100.0, Quantity::from("2.000")),
+            linear_position
+                .calculate_pnl(dec!(1000.0), dec!(1100.0), Quantity::from("2.000"))
+                .unwrap(),
             Money::new(2000.0, linear_position.settlement_currency)
         );
     }
@@ -5759,24 +6886,19 @@ mod tests {
         );
         assert!(
             position
-                .try_calculate_pnl(10_000.0, 0.0, position.quantity)
+                .try_calculate_pnl(dec!(10_000.0), dec!(0.0), position.quantity)
                 .is_err()
         );
         assert!(position.try_unrealized_pnl(Price::new(0.0, 1)).is_err());
         assert!(position.try_total_pnl(Price::new(0.0, 1)).is_err());
         assert!(position.try_unrealized_pnl(Price::new(-1.0, 1)).is_err());
-        assert_eq!(
-            position.calculate_pnl(10_000.0, 0.0, position.quantity),
-            Money::zero(position.settlement_currency)
+        assert!(
+            position
+                .calculate_pnl(dec!(10_000.0), dec!(0.0), position.quantity)
+                .is_err()
         );
-        assert_eq!(
-            position.unrealized_pnl(Price::new(0.0, 1)),
-            Money::zero(position.settlement_currency)
-        );
-        assert_eq!(
-            position.total_pnl(Price::new(0.0, 1)),
-            Money::zero(position.settlement_currency)
-        );
+        assert!(position.unrealized_pnl(Price::new(0.0, 1)).is_err());
+        assert!(position.total_pnl(Price::new(0.0, 1)).is_err());
 
         position.base_currency = None;
         let result = position.try_notional_value(Price::from("10000.0"));
@@ -5790,38 +6912,31 @@ mod tests {
 
     #[rstest]
     fn test_calculate_avg_px_zero_quantity_paths(stub_position_long: Position) {
-        assert_eq!(
-            stub_position_long
-                .calculate_avg_px(0.0, 1.0, 2.0, 5.0)
-                .unwrap(),
-            2.0
+        let mut position = stub_position_long;
+        let mut fill = position.events[0].clone();
+        position.signed_qty = Decimal::ZERO;
+        position.quantity = Quantity::zero(position.size_precision);
+        position.cost_open = Decimal::ZERO;
+        fill.last_qty = Quantity::zero(position.size_precision);
+        assert!(
+            position
+                .handle_order_fill(&fill, fill.last_px.as_decimal(), Decimal::ZERO)
+                .is_err()
         );
-        assert_eq!(
-            stub_position_long
-                .calculate_avg_px(0.0, 1.0, 2.0, 0.0)
-                .unwrap_err()
-                .to_string(),
-            "Cannot calculate average price: both quantities are zero"
-        );
-        assert_eq!(
-            stub_position_long
-                .calculate_avg_px(5.0, 1.0, 2.0, 0.0)
-                .unwrap_err()
-                .to_string(),
-            "Cannot calculate average price: fill quantity is zero"
-        );
+        fill.last_qty = Quantity::from(5);
+        fill.last_px = Price::from("2");
+        position.handle_order_fill(&fill, dec!(2), dec!(5)).unwrap();
+        assert_eq!(position.avg_px_open, dec!(2));
+        assert_eq!(position.cost_open, dec!(10));
     }
 
     #[rstest]
-    fn test_calculate_return_rejects_zero_open_price(stub_position_long: Position) {
+    fn test_calculate_return_with_zero_open_price(stub_position_long: Position) {
         assert_eq!(
-            stub_position_long
-                .calculate_return(0.0, 1.5)
-                .unwrap_err()
-                .to_string(),
-            "Cannot calculate return: open price is zero (close price: 1.5)"
+            stub_position_long.calculate_return(Decimal::ZERO, dec!(1.5)),
+            0.0
         );
-        assert_eq!(stub_position_long.calculate_return(2.0, 3.0).unwrap(), 0.5);
+        assert_eq!(stub_position_long.calculate_return(dec!(2), dec!(3)), 0.5);
     }
 
     #[rstest]
@@ -5846,24 +6961,24 @@ mod tests {
         );
         let position = Position::new(&btcusd_bybit, fill.into());
 
-        assert_eq!(
+        for (open, close) in [
+            (dec!(-1), dec!(10000)),
+            (dec!(10000), dec!(-1)),
+            (Decimal::ZERO, dec!(10000)),
+            (dec!(10000), Decimal::ZERO),
+        ] {
+            assert!(
+                position
+                    .try_calculate_pnl(open, close, position.quantity)
+                    .is_err()
+            );
+        }
+
+        assert!(
             position
-                .calculate_points_inverse(-1.0, 10_000.0)
-                .unwrap_err()
-                .to_string(),
-            "Cannot calculate inverse points: open price is not positive or is too small (-1)"
+                .try_calculate_pnl(dec!(0.0000000000000001), dec!(10000), position.quantity)
+                .is_err()
         );
-        assert_eq!(
-            position
-                .calculate_points_inverse(10_000.0, -1.0)
-                .unwrap_err()
-                .to_string(),
-            "Cannot calculate inverse points: close price is not positive or is too small (-1)"
-        );
-        assert!(position.calculate_points_inverse(1e-16, 10_000.0).is_err());
-        assert!(position.calculate_points_inverse(10_000.0, 1e-16).is_err());
-        assert!(position.calculate_points_inverse(1e-15, 10_000.0).is_ok());
-        assert!(position.calculate_points_inverse(10_000.0, 1e-15).is_ok());
     }
 
     #[rstest]
@@ -5896,12 +7011,12 @@ mod tests {
         let position = Position::new(&ethusd_bybit, fill.into());
 
         assert_eq!(
-            position.unrealized_pnl(Price::from("370.00")),
-            Money::from("4.27745208 ETH")
+            position.unrealized_pnl(Price::from("370.00")).unwrap(),
+            native_money(dec!(1190000) / dec!(278203), Currency::ETH())
         );
         assert_eq!(
             position.notional_value(Price::from("370.00")),
-            Money::from("270.27027027 ETH")
+            native_money(dec!(10000) / dec!(37), Currency::ETH())
         );
     }
 
@@ -5988,7 +7103,7 @@ mod tests {
         );
         let mut position = Position::new(&btcusdt, fill1.into());
         position.apply(&fill2.into());
-        let pnl = position.unrealized_pnl(Price::from("11505.60"));
+        let pnl = position.unrealized_pnl(Price::from("11505.60")).unwrap();
         assert_eq!(pnl, Money::from("4022.40000000 USDT"));
         assert_eq!(
             position.realized_pnl,
@@ -6028,7 +7143,7 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusdt, fill.into());
-        let pnl = position.unrealized_pnl(Price::from("10407.15"));
+        let pnl = position.unrealized_pnl(Price::from("10407.15")).unwrap();
         assert_eq!(pnl, Money::from("582.03640000 USDT"));
         assert_eq!(
             position.realized_pnl,
@@ -6069,8 +7184,11 @@ mod tests {
         );
 
         let position = Position::new(&btcusd_bybit, fill.into());
-        let pnl = position.unrealized_pnl(Price::from("11505.60"));
-        assert_eq!(pnl, Money::from("0.83238969 BTC"));
+        let pnl = position.unrealized_pnl(Price::from("11505.60")).unwrap();
+        assert_eq!(
+            pnl,
+            native_money(dec!(41900) / dec!(50337), Currency::BTC())
+        );
         assert_eq!(position.realized_pnl, Some(Money::from("-0.00714286 BTC")));
         assert_eq!(position.commissions(), vec![Money::from("0.00714286 BTC")]);
     }
@@ -6103,9 +7221,12 @@ mod tests {
             None,
         );
         let position = Position::new(&btcusd_bybit, fill.into());
-        let pnl = position.unrealized_pnl(Price::from("12506.65"));
+        let pnl = position.unrealized_pnl(Price::from("12506.65")).unwrap();
 
-        assert_eq!(pnl, Money::from("19.30166700 BTC"));
+        assert_eq!(
+            pnl,
+            native_money(dec!(149667500) / dec!(7754123), Currency::BTC())
+        );
         assert_eq!(position.realized_pnl, Some(Money::from("-0.06048387 BTC")));
         assert_eq!(position.commissions(), vec![Money::from("0.06048387 BTC")]);
     }
@@ -6146,7 +7267,7 @@ mod tests {
             None,
         );
         let position = Position::new(&audusd_sim, fill.into());
-        assert_eq!(position.signed_qty, expected);
+        assert_eq!(position.signed_qty, Decimal::try_from(expected).unwrap());
     }
 
     #[rstest]
@@ -6222,7 +7343,9 @@ mod tests {
         );
 
         position.apply(&fill2.into());
-        position.purge_events_for_order(order1.client_order_id());
+        position
+            .purge_events_for_order(order1.client_order_id())
+            .unwrap();
 
         assert_eq!(position.events.len(), 1);
         assert_eq!(position.trade_ids.len(), 1);
@@ -6268,7 +7391,9 @@ mod tests {
         assert_ne!(original_ts_opened, UnixNanos::default());
         assert_ne!(original_ts_last, UnixNanos::default());
 
-        position.purge_events_for_order(order.client_order_id());
+        position
+            .purge_events_for_order(order.client_order_id())
+            .unwrap();
 
         assert_eq!(position.events.len(), 0);
         assert_eq!(position.trade_ids.len(), 0);
@@ -6315,7 +7440,9 @@ mod tests {
         );
 
         let mut position = Position::new(&audusd_sim, fill1.into());
-        position.purge_events_for_order(order1.client_order_id());
+        position
+            .purge_events_for_order(order1.client_order_id())
+            .unwrap();
 
         // Verify it's an empty shell
         assert!(position.is_closed());
@@ -6380,7 +7507,9 @@ mod tests {
         );
 
         let mut position = Position::new(&audusd_sim, fill.into());
-        position.purge_events_for_order(order.client_order_id());
+        position
+            .purge_events_for_order(order.client_order_id())
+            .unwrap();
 
         // INVARIANTS: When event_count == 0, the following MUST be true
         assert_eq!(
@@ -6537,24 +7666,12 @@ mod tests {
 
         // Verify high-precision price is preserved in f64 (within tolerance)
         let avg_px = position.avg_px_open;
-        assert!(
-            (avg_px - 2_345.123_456_789).abs() < 1e-6,
-            "High precision price should be preserved within f64 tolerance"
-        );
+        assert_eq!(avg_px, dec!(2345.123456789));
 
-        // Quantity will be rounded to instrument's size_precision
-        // Verify it matches the instrument's precision
-        assert_eq!(
-            position.quantity.precision, size_precision,
-            "Quantity precision should match instrument"
-        );
-
-        // f64 representation will be close but may have rounding based on precision
-        let qty_f64 = position.quantity.as_f64();
-        assert!(
-            qty_f64 > 1.0 && qty_f64 < 2.0,
-            "Quantity should be in expected range"
-        );
+        assert_eq!(position.size_precision, size_precision);
+        assert_eq!(position.quantity.precision, 9);
+        assert_eq!(position.quantity.as_decimal(), dec!(1.123456789));
+        assert_eq!(position.signed_qty, dec!(1.123456789));
     }
 
     #[rstest]
@@ -6614,7 +7731,7 @@ mod tests {
         // Verify average price is reasonable (should be around 1.0005)
         let avg_px = position.avg_px_open;
         assert!(
-            avg_px > 1.0 && avg_px < 1.001,
+            avg_px > dec!(1.0) && avg_px < dec!(1.001),
             "Average price should be reasonable: got {avg_px}"
         );
     }
@@ -6645,11 +7762,11 @@ mod tests {
         );
 
         let position_small = Position::new(&audusd_sim, fill_small.into());
-        assert_eq!(position_small.avg_px_open, 0.00001);
+        assert_eq!(position_small.avg_px_open, dec!(0.00001));
 
         // Verify notional calculation doesn't underflow
         let last_price_small = Price::from("0.00002");
-        let unrealized = position_small.unrealized_pnl(last_price_small);
+        let unrealized = position_small.unrealized_pnl(last_price_small).unwrap();
         assert!(
             unrealized.as_f64() > 0.0,
             "Unrealized PnL should be positive when price doubles"
@@ -6677,7 +7794,7 @@ mod tests {
 
         let position_large = Position::new(&audusd_sim, fill_large.into());
         assert!(
-            (position_large.avg_px_open - 99999.99999).abs() < 1e-6,
+            (position_large.avg_px_open - dec!(99999.99999)).abs() < dec!(1e-6),
             "Large price should be preserved within f64 tolerance"
         );
     }
@@ -6782,7 +7899,7 @@ mod tests {
 
         // Signed qty should also be 0.999
         assert!(
-            (position.signed_qty - 0.999).abs() < 1e-9,
+            (position.signed_qty - dec!(0.999)).abs() < dec!(1e-9),
             "Signed qty should be 0.999, was {}",
             position.signed_qty
         );
@@ -6940,7 +8057,7 @@ mod tests {
 
         // Signed qty should be -1.001 (short position)
         assert!(
-            (position.signed_qty - (-1.001)).abs() < 1e-9,
+            (position.signed_qty - (dec!(-1.001))).abs() < dec!(1e-9),
             "Signed qty should be -1.001, was {}",
             position.signed_qty
         );
@@ -7194,20 +8311,22 @@ mod tests {
         assert!(position.is_closed());
         assert!(!position.is_open());
 
-        position.apply_adjustment(PositionAdjusted::new(
-            position.trader_id,
-            position.strategy_id,
-            position.instrument_id,
-            position.id,
-            position.account_id,
-            PositionAdjustmentType::Funding,
-            Some(dec!(5)),
-            None,
-            None,
-            uuid4(),
-            UnixNanos::from(3),
-            UnixNanos::from(3),
-        ));
+        position
+            .apply_adjustment(PositionAdjusted::new(
+                position.trader_id,
+                position.strategy_id,
+                position.instrument_id,
+                position.id,
+                position.account_id,
+                PositionAdjustmentType::Funding,
+                Some(dec!(5)),
+                None,
+                None,
+                uuid4(),
+                UnixNanos::from(3),
+                UnixNanos::from(3),
+            ))
+            .unwrap();
 
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.ts_closed, Some(UnixNanos::from(2)));
@@ -7335,7 +8454,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(position.quantity, Quantity::from(7));
-        assert_eq!(position.avg_px_open, 1.0);
+        assert_eq!(position.avg_px_open, dec!(1.0));
         assert_eq!(position.commissions(), vec![Money::new(3.0, base_currency)]);
     }
 
@@ -7456,7 +8575,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(position.quantity, Quantity::from(16));
-        assert_eq!(position.avg_px_open, 1.625);
+        assert_eq!(position.avg_px_open, dec!(1.625));
     }
 
     #[rstest]
@@ -7498,7 +8617,9 @@ mod tests {
 
         assert_eq!(position.fill_voids.len(), 2);
 
-        position.purge_events_for_order(ClientOrderId::from("O-1"));
+        position
+            .purge_events_for_order(ClientOrderId::from("O-1"))
+            .unwrap();
 
         assert_eq!(position.fill_voids.len(), 1);
         assert_eq!(
@@ -7538,7 +8659,9 @@ mod tests {
         assert_eq!(position.events.len(), 1);
 
         // Purge the only fill - should go to flat and clear everything
-        position.purge_events_for_order(order.client_order_id());
+        position
+            .purge_events_for_order(order.client_order_id())
+            .unwrap();
 
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.events.len(), 0, "Events should be cleared");
@@ -7606,7 +8729,9 @@ mod tests {
         assert_eq!(position.events.len(), 2);
 
         // Purge first order - should rebuild from remaining fill
-        position.purge_events_for_order(order1.client_order_id());
+        position
+            .purge_events_for_order(order1.client_order_id())
+            .unwrap();
 
         assert_eq!(position.events.len(), 1, "Should have 1 remaining event");
         assert_eq!(
@@ -7676,7 +8801,9 @@ mod tests {
         let mut position = btcusdt_position();
         let before = serde_json::to_value(&position).unwrap();
         let prior = position.clone_without_events();
-        position.apply_adjustment(funding_payment(&position, -10.0));
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
 
         position.revert_last_adjustment(&prior).unwrap();
 
@@ -7686,7 +8813,7 @@ mod tests {
     fn assert_reverts_to_snapshot(mut position: Position, payment: PositionAdjusted) {
         let before = serde_json::to_value(&position).unwrap();
         let prior = position.clone_without_events();
-        position.apply_adjustment(payment);
+        position.apply_adjustment(payment).unwrap();
 
         position.revert_last_adjustment(&prior).unwrap();
 
@@ -7696,7 +8823,9 @@ mod tests {
     #[rstest]
     fn test_revert_last_adjustment_after_earlier_adjustment() {
         let mut position = btcusdt_position();
-        position.apply_adjustment(funding_payment(&position, -10.0));
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
         let mut payment = funding_payment(&position, -5.0);
         payment.ts_event = UnixNanos::from(6);
 
@@ -7709,9 +8838,11 @@ mod tests {
         let prior = position.clone_without_events();
         let mut zero_payment = funding_payment(&position, 0.0);
         zero_payment.ts_event = position.ts_last;
-        position.apply_adjustment(zero_payment);
+        position.apply_adjustment(zero_payment).unwrap();
         let before = serde_json::to_value(&position).unwrap();
-        position.apply_adjustment(funding_payment(&position, -5.0));
+        position
+            .apply_adjustment(funding_payment(&position, -5.0))
+            .unwrap();
 
         // The zero value payment at the snapshot's time leaves the snapshot's state unchanged
         position.revert_last_adjustment(&prior).unwrap();
@@ -7750,8 +8881,12 @@ mod tests {
         let mut fill = btcusdt_fill("2", "O-002", "0.5");
         fill.ts_event = UnixNanos::from(3);
         position.apply(&fill);
-        position.apply_adjustment(funding_payment(&position, -10.0));
-        position.purge_events_for_order(ClientOrderId::new("O-002"));
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
+        position
+            .purge_events_for_order(ClientOrderId::new("O-002"))
+            .unwrap();
         let mut payment = funding_payment(&position, -5.0);
         payment.ts_event = UnixNanos::from(6);
 
@@ -7778,7 +8913,9 @@ mod tests {
         let mut position = btcusdt_position();
         let mut prior = position.clone_without_events();
         prior.id = PositionId::new("P-OTHER");
-        position.apply_adjustment(funding_payment(&position, -10.0));
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
         let after = serde_json::to_value(&position).unwrap();
 
         let error = position.revert_last_adjustment(&prior).unwrap_err();
@@ -7791,7 +8928,9 @@ mod tests {
     fn test_revert_last_adjustment_rejects_after_later_fill() {
         let mut position = btcusdt_position();
         let prior = position.clone_without_events();
-        position.apply_adjustment(funding_payment(&position, -10.0));
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
         position.apply(&btcusdt_fill("2", "O-002", "0.5"));
         let after = serde_json::to_value(&position).unwrap();
 
@@ -7808,8 +8947,12 @@ mod tests {
     fn test_revert_last_adjustment_rejects_stale_snapshot() {
         let mut position = btcusdt_position();
         let prior = position.clone_without_events();
-        position.apply_adjustment(funding_payment(&position, -10.0));
-        position.apply_adjustment(funding_payment(&position, -5.0));
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
+        position
+            .apply_adjustment(funding_payment(&position, -5.0))
+            .unwrap();
         let after = serde_json::to_value(&position).unwrap();
 
         let error = position.revert_last_adjustment(&prior).unwrap_err();
@@ -7822,11 +8965,13 @@ mod tests {
     fn test_revert_last_adjustment_rejects_snapshot_before_zero_value_adjustment() {
         let mut position = btcusdt_position();
         let prior = position.clone_without_events();
-        position.apply_adjustment(funding_payment(&position, 0.0));
+        position
+            .apply_adjustment(funding_payment(&position, 0.0))
+            .unwrap();
         let mut later_payment = funding_payment(&position, -5.0);
         later_payment.ts_event = UnixNanos::from(6);
         later_payment.ts_init = UnixNanos::from(6);
-        position.apply_adjustment(later_payment);
+        position.apply_adjustment(later_payment).unwrap();
         let after = serde_json::to_value(&position).unwrap();
 
         let error = position.revert_last_adjustment(&prior).unwrap_err();
@@ -7839,7 +8984,9 @@ mod tests {
     fn test_revert_last_adjustment_rejects_snapshot_before_zero_value_adjustment_and_voided_fill() {
         let mut position = btcusdt_position();
         let prior = position.clone_without_events();
-        position.apply_adjustment(funding_payment(&position, 0.0));
+        position
+            .apply_adjustment(funding_payment(&position, 0.0))
+            .unwrap();
         let mut fill = btcusdt_fill("2", "O-002", "0.5");
         fill.ts_event = UnixNanos::from(6);
         position.apply(&fill);
@@ -7853,7 +9000,7 @@ mod tests {
             .unwrap();
         let mut later_payment = funding_payment(&position, -5.0);
         later_payment.ts_event = UnixNanos::from(7);
-        position.apply_adjustment(later_payment);
+        position.apply_adjustment(later_payment).unwrap();
         let after = serde_json::to_value(&position).unwrap();
 
         let error = position.revert_last_adjustment(&prior).unwrap_err();
@@ -7867,7 +9014,9 @@ mod tests {
         let mut position = btcusdt_position();
         let mut prior = position.clone_without_events();
         prior.realized_pnl = Some(Money::from_raw(MONEY_RAW_MAX, position.settlement_currency));
-        position.apply_adjustment(funding_payment(&position, 10.0));
+        position
+            .apply_adjustment(funding_payment(&position, 10.0))
+            .unwrap();
         let after = serde_json::to_value(&position).unwrap();
 
         let error = position.revert_last_adjustment(&prior).unwrap_err();
@@ -7891,7 +9040,10 @@ mod tests {
             "prior.size_precision" => prior.size_precision += 1,
             _ => prior.settlement_currency = Currency::USD(),
         }
-        position.apply_adjustment(funding_payment(&position, -10.0));
+
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
         let after = serde_json::to_value(&position).unwrap();
 
         let error = position.revert_last_adjustment(&prior).unwrap_err();
@@ -7905,7 +9057,9 @@ mod tests {
         let mut position = btcusdt_position();
         let mut prior = position.clone_without_events();
         prior.realized_pnl = Some(Money::new(1.0, Currency::USD()));
-        position.apply_adjustment(funding_payment(&position, -10.0));
+        position
+            .apply_adjustment(funding_payment(&position, -10.0))
+            .unwrap();
         let after = serde_json::to_value(&position).unwrap();
 
         let error = position.revert_last_adjustment(&prior).unwrap_err();
@@ -7962,7 +9116,7 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         );
-        position.apply_adjustment(funding_adjustment);
+        position.apply_adjustment(funding_adjustment).unwrap();
         assert_eq!(position.adjustments.len(), 2);
 
         // Second fill with different order
@@ -7994,7 +9148,9 @@ mod tests {
         );
 
         // Purge first order - manual funding adjustment should be preserved
-        position.purge_events_for_order(order1.client_order_id());
+        position
+            .purge_events_for_order(order1.client_order_id())
+            .unwrap();
 
         assert_eq!(position.events.len(), 1, "Should have 1 remaining event");
         assert_eq!(
@@ -8106,7 +9262,7 @@ mod tests {
 
         // Signed qty should also be 1.0
         assert!(
-            (position.signed_qty - 1.0).abs() < 1e-9,
+            (position.signed_qty - dec!(1.0)).abs() < dec!(1e-9),
             "Signed qty should be 1.0, was {}",
             position.signed_qty
         );
@@ -8116,20 +9272,14 @@ mod tests {
     fn test_signed_decimal_qty_long(stub_position_long: Position) {
         let signed_qty = stub_position_long.signed_decimal_qty();
         assert!(signed_qty > Decimal::ZERO);
-        assert_eq!(
-            signed_qty,
-            Decimal::try_from(stub_position_long.signed_qty).unwrap()
-        );
+        assert_eq!(signed_qty, stub_position_long.signed_qty);
     }
 
     #[rstest]
     fn test_signed_decimal_qty_short(stub_position_short: Position) {
         let signed_qty = stub_position_short.signed_decimal_qty();
         assert!(signed_qty < Decimal::ZERO);
-        assert_eq!(
-            signed_qty,
-            Decimal::try_from(stub_position_short.signed_qty).unwrap()
-        );
+        assert_eq!(signed_qty, stub_position_short.signed_qty);
     }
 
     #[rstest]
@@ -8238,7 +9388,8 @@ mod tests {
             position.quantity
         );
         assert_eq!(
-            position.signed_qty, 0.0,
+            position.signed_qty,
+            dec!(0.0),
             "signed_qty should be normalized to 0.0, was {}",
             position.signed_qty
         );
@@ -8304,13 +9455,16 @@ mod tests {
 
         assert_eq!(position.entry, entry);
         assert_eq!(position.side, PositionSide::Flat);
-        assert_eq!(position.signed_qty, 0.0);
+        assert_eq!(position.signed_qty, dec!(0.0));
         assert_eq!(position.quantity, Quantity::zero(6));
         assert_eq!(position.peak_qty, Quantity::from("0.7"));
         assert_eq!(position.buy_qty, Quantity::from("0.7"));
         assert_eq!(position.sell_qty, Quantity::from("0.7"));
-        assert_eq!(position.avg_px_open, 151.25);
-        assert_eq!(position.avg_px_close, Some(expected_avg_close));
+        assert_eq!(position.avg_px_open, dec!(151.25));
+        assert_eq!(
+            position.avg_px_close,
+            Some(Decimal::try_from(expected_avg_close).unwrap())
+        );
         assert_eq!(position.realized_return, 0.133_884_297_520_661_17);
         assert_eq!(position.realized_pnl, Some(Money::from("14.17500000 USDT")));
         assert_eq!(position.commissions(), vec![Money::from("0 USDT")]);
@@ -8416,10 +9570,13 @@ mod tests {
 
         assert_eq!(position.entry, exit);
         assert_eq!(position.side, expected_side);
-        assert!((position.signed_qty - expected_signed_qty).abs() < 1e-12);
+        assert_eq!(
+            position.signed_qty,
+            Decimal::try_from(expected_signed_qty).unwrap()
+        );
         assert_eq!(position.quantity, Quantity::from("0.000001"));
         assert_eq!(position.peak_qty, Quantity::from("0.7"));
-        assert_eq!(position.avg_px_open, Price::from(reversal_px).as_f64());
+        assert_eq!(position.avg_px_open, Price::from(reversal_px).as_decimal());
         assert_eq!(
             position.realized_pnl,
             Some(Money::from("-14.17500000 USDT"))
@@ -8526,7 +9683,7 @@ mod tests {
 
         assert_eq!(position.side, expected_side);
         assert_eq!(position.quantity, Quantity::from("2"));
-        assert_eq!(position.avg_px_open, Price::from(reversal_px).as_f64());
+        assert_eq!(position.avg_px_open, Price::from(reversal_px).as_decimal());
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_return, 0.0);
         if expected_side == PositionSide::Long {
@@ -8579,7 +9736,10 @@ mod tests {
         assert_eq!(position.quantity, Quantity::zero(6));
         assert_eq!(position.buy_qty, Quantity::from("2"));
         assert_eq!(position.sell_qty, Quantity::from("2"));
-        assert_eq!(position.avg_px_close, Some(expected_avg_close));
+        assert_eq!(
+            position.avg_px_close,
+            Some(Decimal::try_from(expected_avg_close).unwrap())
+        );
         assert_eq!(position.realized_return, expected_return);
         assert_eq!(position.realized_pnl, Some(Money::from("205 USDT")));
         assert_eq!(position.commissions(), vec![Money::from("5 USDT")]);
@@ -8624,7 +9784,7 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         );
-        position.apply_adjustment(adjustment);
+        position.apply_adjustment(adjustment).unwrap();
 
         assert_eq!(
             position.side,
@@ -8636,7 +9796,8 @@ mod tests {
             "Quantity should be zero after adjustment"
         );
         assert_eq!(
-            position.signed_qty, 0.0,
+            position.signed_qty,
+            dec!(0.0),
             "signed_qty should be normalized to 0.0"
         );
     }
@@ -8670,7 +9831,7 @@ mod tests {
         let mut position = Position::new(&eth_usdt, fill1.into());
 
         assert_eq!(position.quantity, Quantity::from("0.00349"));
-        assert!((position.signed_qty - 0.00349).abs() < 1e-9);
+        assert_eq!(position.signed_qty, dec!(0.00349));
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.adjustments.len(), 1);
         assert_eq!(
@@ -8700,7 +9861,7 @@ mod tests {
         position.apply(&fill2.into());
 
         assert_eq!(position.quantity, Quantity::from("0.00698"));
-        assert!((position.signed_qty - 0.00698).abs() < 1e-9);
+        assert_eq!(position.signed_qty, dec!(0.00698));
         assert_eq!(position.adjustments.len(), 2);
 
         let order3 = OrderTestBuilder::new(OrderType::Market)
@@ -8727,7 +9888,7 @@ mod tests {
         // Total filled: 0.01000, total commission: 0.00003
         // Position should be 0.01000 - 0.00003 = 0.00997
         assert_eq!(position.quantity, Quantity::from("0.00997"));
-        assert!((position.signed_qty - 0.00997).abs() < 1e-9);
+        assert_eq!(position.signed_qty, dec!(0.00997));
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.adjustments.len(), 3);
 
@@ -8762,7 +9923,7 @@ mod tests {
         let mut position = Position::new(&btc_usdt, fill1.into());
 
         // Short: sold 0.5 + paid 0.001 commission = -0.501 exposure
-        assert!((position.signed_qty - (-0.501)).abs() < 1e-9);
+        assert!((position.signed_qty - (dec!(-0.501))).abs() < dec!(1e-9));
         assert_eq!(position.side, PositionSide::Short);
         assert_eq!(position.adjustments.len(), 1);
 
@@ -8788,7 +9949,7 @@ mod tests {
         position.apply(&fill2.into());
 
         // Total short: 1.0 sold + 0.002 commission = -1.002
-        assert!((position.signed_qty - (-1.002)).abs() < 1e-9);
+        assert!((position.signed_qty - (dec!(-1.002))).abs() < dec!(1e-9));
         assert!((position.quantity.as_f64() - 1.002).abs() < 1e-9);
         assert_eq!(position.adjustments.len(), 2);
         assert_eq!(position.sell_qty, Quantity::from("1.0"));
@@ -8846,7 +10007,7 @@ mod tests {
         position.apply(&sell_fill.into());
 
         assert_eq!(position.side, PositionSide::Flat);
-        assert_eq!(position.signed_qty, 0.0);
+        assert_eq!(position.signed_qty, dec!(0.0));
         assert!(position.is_closed());
         // Only 1 adjustment from the buy (quote commission doesn't create adjustment)
         assert_eq!(position.adjustments.len(), 1);
@@ -9296,9 +10457,7 @@ mod tests {
             }
         }
         let p = position.expect("at least one fill");
-        let signed = Decimal::try_from(p.signed_qty).unwrap_or(Decimal::ZERO);
-        let px = Decimal::try_from(p.avg_px_open).unwrap_or(Decimal::ZERO);
-        (signed, px)
+        (p.signed_qty, p.avg_px_open)
     }
 
     // Build the HEDGING leg list (one leg per fill) as Decimal tuples.
@@ -9410,5 +10569,306 @@ mod tests {
             .maybe_position_id(fill.position_id)
             .maybe_commission_voided(commission_voided)
             .build()
+    }
+
+    #[rstest]
+    #[case(0, 56, Some((0, 0)))]
+    #[case(123_450_000, 7, Some((12345, 3)))]
+    #[case(-123_450_000, 7, Some((-12345, 3)))]
+    #[case(Decimal::MAX.mantissa() * 10, 1, Some((Decimal::MAX.mantissa(), 0)))]
+    #[case(Decimal::MAX.mantissa() * 10 + 1, 1, None)]
+    #[case(10, 29, Some((1, 28)))]
+    #[case(1, 29, None)]
+    fn test_raw_conversion_preserves_exact_bounds(
+        #[case] raw: i128,
+        #[case] scale: u32,
+        #[case] expected: Option<(i128, u32)>,
+    ) {
+        let actual = from_raw(raw, scale);
+
+        match expected {
+            Some(expected) => {
+                let actual = actual.unwrap();
+                assert_eq!((actual.mantissa(), actual.scale()), expected);
+            }
+            None => assert!(actual.is_err()),
+        }
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_raw_conversion_matches_exact_normalization(
+            mut raw in prop_oneof![any::<i128>(), -Decimal::MAX.mantissa()..=Decimal::MAX.mantissa()],
+            mut scale in 0_u32..=56,
+        ) {
+            let actual = from_raw(raw, scale);
+            while scale > 0 && raw % 10 == 0 {
+                raw /= 10;
+                scale -= 1;
+            }
+            let expected = Decimal::try_from_i128_with_scale(raw, scale);
+
+            match expected {
+                Ok(expected) => {
+                    let actual = actual.unwrap();
+                    prop_assert_eq!((actual.mantissa(), actual.scale()), (expected.mantissa(), expected.scale()));
+                }
+                Err(_) => prop_assert!(actual.is_err()),
+            }
+        }
+
+        #[rstest]
+        fn prop_domain_fee_split_matches_exact_ratio(
+            raw in -MoneyRaw::from(1_000_000_i32)..=MoneyRaw::from(1_000_000_i32),
+            closing in QuantityRaw::from(1_u32)..=QuantityRaw::from(1_000_000_000_u32),
+            remainder in QuantityRaw::from(1_u32)..=QuantityRaw::from(1_000_000_000_u32),
+        ) {
+            let fee = Money::from_raw(raw, Currency::USD());
+            let closing = Quantity::from_raw(closing, FIXED_PRECISION);
+            let total = Quantity::from_raw(closing.raw + remainder, FIXED_PRECISION);
+            let expected = split_commission(fee, qty(closing).unwrap(), qty(total).unwrap()).unwrap();
+            let actual = split_commission_qty(fee, closing, total).unwrap();
+
+            prop_assert_eq!(actual, expected);
+            prop_assert_eq!(actual.0.checked_add(actual.1), Some(fee));
+        }
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_domain_subtraction_rejects_unsupported_input_before_cancellation() {
+        let raw = Decimal::MAX.mantissa() as u128 + 1;
+        let value = Quantity::from_raw(raw, FIXED_PRECISION);
+
+        assert!(quantity_sub(value, value, FIXED_PRECISION).is_err());
+        assert!(money_from_qty(value, Currency::USD()).is_err());
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_domain_operations_preserve_mixed_raw_scales() {
+        let lhs = Quantity::from("1.000000000000000001");
+        let rhs = Quantity::from("0.5000000000000000");
+        let sum = quantity_add(lhs, rhs, 16).unwrap();
+        let difference = quantity_sub(lhs, rhs, 16).unwrap();
+        let fee = Money::from_raw(-7, Currency::USD());
+        let split = split_commission_qty(fee, rhs, lhs).unwrap();
+        let money = money_from_qty(lhs, Currency::USD()).unwrap();
+
+        assert_eq!((sum.raw, sum.precision), (1_500_000_000_000_000_001, 18));
+        assert_eq!(
+            (difference.raw, difference.precision),
+            (500_000_000_000_000_001, 18)
+        );
+        assert_eq!(
+            split,
+            (
+                Money::from_raw(-3, Currency::USD()),
+                Money::from_raw(-4, Currency::USD())
+            )
+        );
+        assert_eq!(money, Money::from("1 USD"));
+    }
+
+    #[rstest]
+    #[case("1.2300", "0.230", 2, "1.46", "1.00")]
+    #[case("1.23", "0.004", 2, "1.234", "1.226")]
+    #[case("2", "2", 3, "4.000", "0.000")]
+    fn test_quantity_operations_preserve_value_and_precision(
+        #[case] lhs: &str,
+        #[case] rhs: &str,
+        #[case] precision: u8,
+        #[case] sum: &str,
+        #[case] difference: &str,
+    ) {
+        let lhs = Quantity::from(lhs);
+        let rhs = Quantity::from(rhs);
+        let sum = Quantity::from(sum);
+        let difference = Quantity::from(difference);
+        let actual_sum = quantity_add(lhs, rhs, precision).unwrap();
+        let actual_difference = quantity_sub(lhs, rhs, precision).unwrap();
+
+        assert_eq!(
+            (actual_sum.raw, actual_sum.precision),
+            (sum.raw, sum.precision)
+        );
+        assert_eq!(
+            (actual_difference.raw, actual_difference.precision),
+            (difference.raw, difference.precision),
+        );
+    }
+
+    #[rstest]
+    fn test_domain_operations_preserve_fractional_raw_units() {
+        let value = Quantity::from_raw(1, 2);
+        let zero = Quantity::zero(2);
+        let sum = quantity_add(value, zero, 2).unwrap();
+        let difference = quantity_sub(value, zero, 2).unwrap();
+        let amount = money_from_qty(value, Currency::USD()).unwrap();
+
+        assert_eq!((sum.raw, sum.precision), (1, FIXED_PRECISION));
+        assert_eq!((difference.raw, difference.precision), (1, FIXED_PRECISION));
+        assert_eq!(amount, Money::from_raw(1, Currency::USD()));
+    }
+
+    #[rstest]
+    #[case(5, 1, 4)]
+    #[case(-5, -1, -4)]
+    #[case(0, 0, 0)]
+    fn test_domain_fee_split_conserves_raw_units(
+        #[case] raw: MoneyRaw,
+        #[case] closing: MoneyRaw,
+        #[case] opening: MoneyRaw,
+    ) {
+        let fee = Money::from_raw(raw, Currency::USD());
+        let actual = split_commission_qty(fee, Quantity::from("1"), Quantity::from("3")).unwrap();
+
+        assert_eq!(
+            actual,
+            (
+                Money::from_raw(closing, Currency::USD()),
+                Money::from_raw(opening, Currency::USD()),
+            ),
+        );
+        assert_eq!(actual.0.checked_add(actual.1), Some(fee));
+    }
+
+    #[rstest]
+    fn test_domain_fee_split_preserves_ratio_after_intermediate_overflow() {
+        let fee = Money::from("1000000 USD");
+        let closing_qty = Quantity::from("1000000");
+        let total_qty = Quantity::from("4000000");
+        let actual = split_commission_qty(fee, closing_qty, total_qty).unwrap();
+
+        assert_eq!(
+            actual,
+            (Money::from("250000 USD"), Money::from("750000 USD"))
+        );
+        assert_eq!(actual.0.checked_add(actual.1), Some(fee));
+    }
+
+    #[rstest]
+    fn test_quantity_operations_reject_overflow_and_underflow() {
+        let max = Quantity::from_raw(crate::types::quantity::QUANTITY_RAW_MAX, FIXED_PRECISION);
+        let unit = Quantity::from_raw(1, FIXED_PRECISION);
+
+        assert!(quantity_add(max, unit, FIXED_PRECISION).is_err());
+        assert!(quantity_sub(unit, max, FIXED_PRECISION).is_err());
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_fee_allocation_uses_exact_integer_ratio(#[case] rebate: bool) {
+        let fee =
+            Money::from_decimal_exact(Decimal::new(1, u32::from(FIXED_PRECISION)), Currency::USD())
+                .unwrap();
+
+        let fee = if rebate { -fee } else { fee };
+        let (closing, opening) =
+            split_commission(fee, Decimal::MAX - Decimal::ONE, Decimal::MAX).unwrap();
+        assert_eq!(closing, Money::zero(Currency::USD()));
+        assert_eq!(opening, fee);
+    }
+
+    #[rstest]
+    #[case(5, 0)]
+    #[case(15, 2)]
+    #[case(25, 2)]
+    #[case(-5, 0)]
+    #[case(-15, -2)]
+    #[case(-25, -2)]
+    fn test_money_rounds_native_midpoints_to_even(#[case] coefficient: i64, #[case] expected: i64) {
+        let amount = Decimal::new(coefficient, u32::from(FIXED_PRECISION) + 1);
+        let expected = Decimal::new(expected, u32::from(FIXED_PRECISION));
+
+        assert_eq!(
+            money(amount, Currency::USD()).unwrap().as_decimal(),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_proportion_preserves_exact_cancellation() {
+        let allocated = proportion(dec!(11382), Decimal::ONE, dec!(271)).unwrap();
+        assert_eq!(allocated, dec!(42));
+        assert_eq!(sub(dec!(11382), allocated).unwrap(), dec!(11340));
+    }
+
+    #[rstest]
+    fn test_rounded_arithmetic_rejects_underflow() {
+        assert!(div(dec!(0.0000000000000000000000000001), dec!(10)).is_err());
+        assert!(mul_rounded(dec!(0.0000000000000001), dec!(0.0000000000000001)).is_err());
+        assert!(add_rounded(Decimal::MAX, dec!(0.1)).is_err());
+        assert!(add_rounded(dec!(0.1), Decimal::MAX).is_err());
+    }
+
+    #[rstest]
+    fn test_pnl_sum_bounds_lost_residual(
+        #[values(false, true)] reverse: bool,
+        #[values(Decimal::ONE, Decimal::NEGATIVE_ONE)] sign: Decimal,
+    ) {
+        let currency = Currency::USD();
+        let unit = amount(Money::from_raw(1, currency)).unwrap() * sign;
+        let residual = unit / dec!(10);
+        let (lhs, rhs) = if reverse {
+            (unit, Decimal::MAX)
+        } else {
+            (Decimal::MAX, unit)
+        };
+
+        let (lhs_residual, rhs_residual) = if reverse {
+            (residual, Decimal::MAX)
+        } else {
+            (Decimal::MAX, residual)
+        };
+
+        assert!(add_pnl(lhs, rhs, currency).is_err());
+        assert_eq!(
+            add_pnl(lhs_residual, rhs_residual, currency).unwrap(),
+            Decimal::MAX
+        );
+        assert_eq!(
+            add_pnl(Decimal::ONE, residual, currency).unwrap(),
+            Decimal::ONE + residual
+        );
+    }
+
+    #[rstest]
+    fn test_checked_product_rejects_silent_underflow() {
+        assert!(mul(dec!(0.0000000000000001), dec!(0.0000000000000001)).is_err());
+        assert_eq!(mul(dec!(1.2345), dec!(0.01)).unwrap(), dec!(0.012345));
+    }
+
+    #[rstest]
+    fn test_checked_sum_rejects_lost_increment() {
+        assert!(add(Decimal::MAX, dec!(0.1)).is_err());
+        assert_eq!(sub(dec!(1.000001), Decimal::ONE).unwrap(), dec!(0.000001));
+        assert_eq!(
+            money(dec!(0.000001), Currency::USD()).unwrap().as_decimal(),
+            dec!(0.000001)
+        );
+        assert_eq!(
+            add(dec!(1000000000), dec!(0.000001)).unwrap(),
+            dec!(1000000000.000001)
+        );
+    }
+
+    #[rstest]
+    #[case(dec!(0.000002), dec!(0.5), dec!(0.000001), dec!(0.000001))]
+    #[case(dec!(0.006000), dec!(0.9), dec!(0.005400), dec!(0.000600))]
+    #[case(dec!(-0.006000), dec!(0.9), dec!(-0.005400), dec!(-0.000600))]
+    fn test_fee_allocation(
+        #[case] fee: Decimal,
+        #[case] closing_qty: Decimal,
+        #[case] closing: Decimal,
+        #[case] opening: Decimal,
+    ) {
+        let fee = Money::from_decimal_exact(fee, Currency::USD()).unwrap();
+        let (actual_closing, actual_opening) =
+            split_commission(fee, closing_qty, Decimal::ONE).unwrap();
+        assert_eq!(actual_closing.as_decimal(), closing);
+        assert_eq!(actual_opening.as_decimal(), opening);
+        assert_eq!(actual_closing.checked_add(actual_opening), Some(fee));
     }
 }

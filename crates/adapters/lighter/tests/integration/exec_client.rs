@@ -7306,7 +7306,7 @@ async fn test_generate_order_status_report_preserves_pending_modify(
     let collected = if worker {
         let task = client.generate_order_status_report_task(&cmd).unwrap();
         tokio::spawn(task.collection).await.unwrap();
-        Some(task.result)
+        Some(task.finish)
     } else {
         None
     };
@@ -7330,8 +7330,8 @@ async fn test_generate_order_status_report_preserves_pending_modify(
         .expect("modify_order");
     await_send_tx_count(&state, 1).await;
 
-    let report = if let Some(result) = collected {
-        result.await
+    let report = if let Some(finish) = collected {
+        finish()
     } else {
         client.generate_order_status_report(&cmd).await
     }
@@ -7993,7 +7993,7 @@ async fn run_report_collection<T: 'static>(task: ExecutionReportTask<T>) -> anyh
     .expect("collection worker");
 
     assert_eq!(std::thread::current().id(), core_thread);
-    task.result.await
+    (task.finish)()
 }
 
 async fn generate_order_status_report(
@@ -8198,17 +8198,17 @@ async fn test_fill_report_task_finalizes_against_current_live_delivery(
 
     if stop {
         client.reset().unwrap();
-        let error = task.result.await.unwrap_err();
+        let error = (task.finish)().unwrap_err();
         assert_eq!(error.to_string(), "Lighter report session stopped");
         client.disconnect().await.unwrap();
         return;
     }
 
     let result = if discard {
-        drop(task.result);
+        drop(task.finish);
         None
     } else {
-        Some(task.result)
+        Some(task.finish)
     };
 
     state.push_frame(&json!({"type":"update/account_all_trades", "channel":format!("account_all_trades:{TEST_ACCOUNT_INDEX}"), "trades":{"0":[trade]}}));
@@ -8225,8 +8225,8 @@ async fn test_fill_report_task_finalizes_against_current_live_delivery(
 
     assert_eq!(report.trade_id, TradeId::from("19209006906"));
 
-    if let Some(result) = result {
-        assert_eq!(result.await.unwrap(), Vec::<FillReport>::new());
+    if let Some(finish) = result {
+        assert_eq!(finish().unwrap(), Vec::<FillReport>::new());
     }
 
     client.disconnect().await.unwrap();
@@ -8256,7 +8256,7 @@ async fn test_position_report_task_reads_snapshot_at_finish() {
     state.push_frame(&snapshot);
     next_event_matching(&mut rx, Duration::from_secs(2), |event| matches!(event, ExecutionEvent::Report(ExecutionReport::Position(report)) if report.position_side == PositionSide::Short)).await.unwrap();
     let expected = client.generate_position_status_reports(&cmd).await.unwrap();
-    let actual = task.result.await.unwrap();
+    let actual = (task.finish)().unwrap();
     assert_eq!(actual.len(), 1);
     assert_eq!(actual[0].quantity, Quantity::from("1.5000"));
     assert_eq!(actual[0].position_side, PositionSide::Short);
@@ -8305,7 +8305,7 @@ async fn test_fill_report_task_keeps_owned_instruments_during_update() {
         .unwrap();
     drop(response);
     worker.await.unwrap();
-    let reports = task.result.await.unwrap();
+    let reports = (task.finish)().unwrap();
     let updated = client.generate_fill_reports(cmd).await.unwrap();
     assert_eq!(reports.len(), 1);
     assert_eq!(updated.len(), 1);
@@ -8344,7 +8344,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_order_status_report_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         1 => {
             let cmd = GenerateOrderStatusReports::new(
@@ -8360,7 +8360,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_order_status_reports_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         2 => {
             let cmd = GenerateFillReports::new(
@@ -8376,7 +8376,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_fill_reports_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         3 => {
             let cmd = GeneratePositionStatusReports::new(
@@ -8391,7 +8391,7 @@ async fn test_report_task_rejects_receipt_after_disconnect(#[case] kind: u8) {
             let task = client.generate_position_status_reports_task(&cmd).unwrap();
             tokio::spawn(task.collection).await.unwrap();
             client.disconnect().await.unwrap();
-            task.result.await.unwrap_err()
+            (task.finish)().unwrap_err()
         }
         _ => unreachable!(),
     };
@@ -8452,7 +8452,7 @@ async fn test_bulk_report_task_records_discovered_markets_only_at_finish(
         client.reset().unwrap();
     }
 
-    let result = task.result.await;
+    let result = (task.finish)();
 
     if stop {
         assert_eq!(
@@ -8543,7 +8543,7 @@ async fn test_bulk_report_task_restores_identity_from_current_cache() {
             false,
         )))
         .unwrap();
-    let reports = task.result.await.unwrap();
+    let reports = (task.finish)().unwrap();
     assert_eq!(reports.len(), 1);
     assert_eq!(reports[0].client_order_id, Some(client_order_id));
     assert_eq!(reports[0].venue_order_id, venue_order_id);
@@ -8957,6 +8957,7 @@ async fn test_order_batches_chunk_rejections_are_isolated(
         cache_order(&cache, order.clone());
     }
 
+    let mut completions = state.send_tx_completed.subscribe();
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client
         .submit_order_list(submit_order_list_command(&orders, "OL-CHUNK-REJECT"))
@@ -8965,6 +8966,7 @@ async fn test_order_batches_chunk_rejections_are_isolated(
 
     for i in 0..sizes.len() {
         await_send_tx_count(&state, i + 1).await;
+        await_send_tx_completions(&mut completions, 1).await;
         let frames = state.send_txs().await;
         let frame = &frames[i];
         let hashes: Vec<_> = batch_tx_infos(frame)
@@ -9085,11 +9087,13 @@ async fn test_order_batches_chunk_interleaves_with_single(#[case] lost_ack: bool
         cache_order(&cache, order.clone());
     }
 
+    let mut completions = state.send_tx_completed.subscribe();
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client
         .submit_order_list(submit_order_list_command(&orders[..31], "OL-CHUNK-SINGLE"))
         .unwrap();
     await_send_tx_count(&state, 1).await;
+    await_send_tx_completions(&mut completions, 1).await;
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client.submit_order(submit_command(&orders[31])).unwrap();
     await_send_tx_count(&state, 2).await;
@@ -9775,7 +9779,7 @@ async fn test_acknowledged_modify_unavailable_retains_outcome() {
 
 #[rstest]
 #[case::immediate_nonce_refresh(0)]
-#[case::delayed_nonce_refresh(3_200)]
+#[case::delayed_nonce_refresh(7_200)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
     #[case] nonce_delay_ms: u64,
@@ -9784,7 +9788,7 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
     let registry = SocketReconnectRegistry::default();
     let mut config = build_config(addr);
     // Keep old lookups in flight through both the nonce refresh and resumed-send waits
-    config.http_timeout_secs = 15;
+    config.http_timeout_secs = 30;
     let (mut client, mut rx, cache) = registry.scope(|| build_client_with(config));
     client.connect().await.unwrap();
     let mut modifies = Vec::new();
@@ -9857,6 +9861,7 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
 
     assert_eq!(state.send_txs().await.len(), 17);
     let mut nonce_responses = state.next_nonce_response_ready.subscribe();
+    let mut completions = state.send_tx_completed.subscribe();
     state.next_nonce.store(first_nonce + 15, Ordering::Release);
     state
         .next_nonce_response_delay_ms
@@ -9868,13 +9873,20 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
         handle.request_reconnect(),
         SocketReconnectRequestOutcome::Accepted
     );
-    let nonce = tokio::time::timeout(Duration::from_secs(5), nonce_responses.recv())
-        .await
-        .expect("post-reconnect nonce response ready")
-        .expect("nonce response notification");
+    let nonce = tokio::time::timeout(
+        Duration::from_millis(nonce_delay_ms) + Duration::from_secs(5),
+        nonce_responses.recv(),
+    )
+    .await
+    .expect("post-reconnect nonce response ready")
+    .expect("nonce response notification");
     assert_eq!(nonce, first_nonce + 15);
-    // Keep nonce lookup latency outside the resumed-send deadline
-    await_send_tx_count(&state, 18).await;
+    // A nonce response does not wake the batch signer from its retry backoff
+    tokio::time::timeout(Duration::from_secs(15), completions.recv())
+        .await
+        .expect("post-reconnect batch handling completed")
+        .expect("batch completion notification");
+    assert_eq!(state.send_txs().await.len(), 18);
     state.tx_response_blocked.store(false, Ordering::Release);
     state.tx_response_release.notify_waiters();
     let mut outcomes = Vec::new();
@@ -11441,6 +11453,7 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
     );
 
     if reconnect {
+        let subscribe_count = state.subscribes().await.len();
         let handle = registry
             .handle(client_id(), Ustr::from("lighter-user-streams"))
             .unwrap();
@@ -11448,7 +11461,7 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
             handle.request_reconnect(),
             SocketReconnectRequestOutcome::Accepted
         );
-        await_connection_count(&state, 2).await;
+        await_subscribe_count(&state, subscribe_count + 5).await;
     } else {
         let mut entry = account_all_orders_open_entry(
             index,

@@ -4486,12 +4486,12 @@ class IndicatorEventStrategy:
             opening_order_id: ClientOrderId::from("O-001"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 1.0,
+            signed_qty: 1.into(),
             quantity: Quantity::from(1),
             last_qty: Quantity::from(1),
             last_px: Price::from("1.00000"),
             currency: Currency::from("USD"),
-            avg_px_open: 1.0,
+            avg_px_open: 1.into(),
             realized_pnl: None,
             event_id: UUID4::new(),
             ts_event: UnixNanos::default(),
@@ -4509,13 +4509,13 @@ class IndicatorEventStrategy:
             opening_order_id: ClientOrderId::from("O-001"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 2.0,
+            signed_qty: 2.into(),
             quantity: Quantity::from(2),
             peak_quantity: Quantity::from(2),
             last_qty: Quantity::from(1),
             last_px: Price::from("1.10000"),
             currency: Currency::from("USD"),
-            avg_px_open: 1.05,
+            avg_px_open: "1.05".parse().unwrap(),
             avg_px_close: None,
             realized_return: 0.0,
             realized_pnl: None,
@@ -4538,14 +4538,14 @@ class IndicatorEventStrategy:
             closing_order_id: Some(ClientOrderId::from("O-002")),
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: 0.into(),
             quantity: Quantity::from(0),
             peak_quantity: Quantity::from(2),
             last_qty: Quantity::from(2),
             last_px: Price::from("1.20000"),
             currency: Currency::from("USD"),
-            avg_px_open: 1.05,
-            avg_px_close: Some(1.20),
+            avg_px_open: "1.05".parse().unwrap(),
+            avg_px_close: Some("1.20".parse().unwrap()),
             realized_return: 0.1,
             realized_pnl: Some(Money::new(0.1, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
@@ -6074,6 +6074,13 @@ class IndicatorEventStrategy:
                 position_id,
                 ClientOrderId::from("O-PYO3-CLOSE-001"),
             );
+            rust_strategy
+                .inner()
+                .core
+                .cache_rc()
+                .borrow_mut()
+                .add_instrument(InstrumentAny::CurrencyPair(sample_instrument()))
+                .unwrap();
             let params = PyDict::new(py);
 
             params.set_item("routing_hint", "close_single").unwrap();

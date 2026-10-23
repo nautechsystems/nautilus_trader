@@ -127,6 +127,7 @@ impl DeriveExecutionClientConfig {
         max_matching_requests_per_second = None,
         max_per_instrument_matching_requests_per_second = None,
         transport_backend = None,
+        cancel_on_disconnect = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -152,6 +153,7 @@ impl DeriveExecutionClientConfig {
         max_matching_requests_per_second: Option<u32>,
         max_per_instrument_matching_requests_per_second: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        cancel_on_disconnect: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
 
@@ -180,6 +182,7 @@ impl DeriveExecutionClientConfig {
                 .unwrap_or(defaults.market_order_slippage_bps),
             max_matching_requests_per_second,
             max_per_instrument_matching_requests_per_second,
+            cancel_on_disconnect: cancel_on_disconnect.unwrap_or(defaults.cancel_on_disconnect),
         }
     }
 
@@ -199,6 +202,36 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::default(None, false)]
+    #[case::disabled(Some(false), false)]
+    #[case::enabled(Some(true), true)]
+    fn test_python_cancel_on_disconnect(#[case] enabled: Option<bool>, #[case] expected: bool) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            if let Some(enabled) = enabled {
+                kwargs.set_item("cancel_on_disconnect", enabled).unwrap();
+            }
+
+            let config = py
+                .get_type::<DeriveExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let getter = config
+                .getattr("cancel_on_disconnect")
+                .unwrap()
+                .extract::<bool>()
+                .unwrap();
+            let rust_config = config
+                .extract::<PyRef<DeriveExecutionClientConfig>>()
+                .unwrap();
+
+            assert_eq!(getter, expected);
+            assert_eq!(rust_config.cancel_on_disconnect, expected);
+        });
+    }
 
     #[rstest]
     fn test_python_currencies_normalized_uniqueness(#[values(false, true)] duplicate: bool) {

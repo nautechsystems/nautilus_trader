@@ -5286,9 +5286,7 @@ mod tests {
 
                 ExecutionReportTask {
                     collection: task.collection,
-                    result: Box::pin(async move {
-                        Ok(task.result.await?.into_iter().collect::<Vec<_>>())
-                    }),
+                    finish: Box::new(move || Ok((task.finish)()?.into_iter().collect::<Vec<_>>())),
                 }
             } else {
                 client.generate_order_status_reports_task(&cmd).unwrap()
@@ -5318,7 +5316,7 @@ mod tests {
             assert!(caches.cid_to_client_order_id.contains_key(&filled_cid));
 
             if canceled {
-                let error = task.result.await.unwrap_err();
+                let error = (task.finish)().unwrap_err();
                 assert_eq!(
                     error.to_string(),
                     "report collection stopped without a result"
@@ -5329,7 +5327,7 @@ mod tests {
                 return;
             }
 
-            task.result.await.unwrap()
+            (task.finish)().unwrap()
         } else if single {
             client
                 .generate_order_status_report(&single_cmd)
@@ -5411,8 +5409,16 @@ mod tests {
             .await
             .expect("sandbox authentication");
         let now = client.clock.get_time_ns();
-        let single =
-            GenerateOrderStatusReport::new(UUID4::new(), now, None, None, None, None, None);
+
+        let single = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            now,
+            None,
+            None,
+            Some(VenueOrderId::from("O-01ARZ3NDEKTSV4RRFFQ69G5FAV")),
+            None,
+            None,
+        );
         let orders =
             GenerateOrderStatusReports::new(UUID4::new(), now, false, None, None, None, None, None);
         let fills = GenerateFillReports::new(UUID4::new(), now, None, None, None, None, None, None);
@@ -5420,19 +5426,19 @@ mod tests {
             GeneratePositionStatusReports::new(UUID4::new(), now, None, None, None, None, None);
         let task = client.generate_order_status_report_task(&single).unwrap();
         tokio::spawn(task.collection).await.unwrap();
-        let single = task.result.await.expect("sandbox single order reports");
+        let single = (task.finish)().expect("sandbox single order reports");
         let task = client.generate_order_status_reports_task(&orders).unwrap();
         tokio::spawn(task.collection).await.unwrap();
-        let orders = task.result.await.expect("sandbox bulk order reports");
+        let orders = (task.finish)().expect("sandbox bulk order reports");
         let task = client.generate_fill_reports_task(&fills).unwrap();
         tokio::spawn(task.collection).await.unwrap();
-        let fills = task.result.await.expect("sandbox fill reports");
+        let fills = (task.finish)().expect("sandbox fill reports");
         let task = client
             .generate_position_status_reports_task(&positions)
             .unwrap();
 
         tokio::spawn(task.collection).await.unwrap();
-        let positions = task.result.await.expect("sandbox position reports");
+        let positions = (task.finish)().expect("sandbox position reports");
 
         for account_id in single
             .iter()

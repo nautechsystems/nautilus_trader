@@ -4658,7 +4658,7 @@ async fn test_bounded_reduce_only_history_reconciles_flat_or_remains_unresolved(
         assert!(position.is_open());
         assert_eq!(position.is_long(), closing_side == OrderSide::Buy);
         assert_eq!(position.quantity, Quantity::from("0.500"));
-        assert_eq!(position.avg_px_open, 3100.0);
+        assert_eq!(position.avg_px_open, dec!(3100.0));
         assert_eq!(position.trade_ids.len(), 1);
         assert!(position.trade_ids.contains(&closing_trade_id));
         assert_eq!(position.commissions(), vec![Money::from("0.10 USDT")]);
@@ -4986,7 +4986,7 @@ async fn test_bounded_nonflat_position_requires_coherent_historical_fill(
     assert!(position.is_open());
     assert!(position.is_long());
     assert_eq!(position.quantity, Quantity::from("1.000"));
-    assert_eq!(position.avg_px_open, 3000.0);
+    assert_eq!(position.avg_px_open, dec!(3000.0));
     assert!(position.trade_ids.contains(&trade_id));
     assert_eq!(
         position.trade_ids.len(),
@@ -9544,7 +9544,7 @@ async fn test_mass_status_reduction_uses_reported_average_and_validates_remainin
     assert_eq!(fill.last_px, Price::from("3100.00"));
     let position = ctx.cache.borrow().position_owned(&position_id).unwrap();
     assert_eq!(position.quantity, Quantity::from("10.000"));
-    assert_eq!(position.avg_px_open, 3000.0);
+    assert_eq!(position.avg_px_open, dec!(3000.0));
     assert_eq!(
         result.unresolved_positions,
         vec![format!(
@@ -9620,7 +9620,7 @@ async fn test_mass_status_opening_only_average_skips_entry_price_check(
 
     assert!(result.events.is_empty());
     assert_eq!(result.unresolved_positions, expected_unresolved);
-    assert_eq!(position.avg_px_open, 55000.0);
+    assert_eq!(position.avg_px_open, dec!(55000.0));
     assert_eq!(
         ctx.cache.borrow().position_owned(&position.id),
         Some(position)
@@ -9673,7 +9673,7 @@ async fn test_mass_status_opening_only_average_recovers_empty_cache() {
     assert!(result.unresolved_positions.is_empty());
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 60000.0);
+    assert_eq!(positions[0].avg_px_open, dec!(60000.0));
 }
 
 #[rstest]
@@ -9834,7 +9834,7 @@ async fn test_mass_status_opening_only_average_applies_full_history(
     assert_eq!(result.unresolved_positions, expected_unresolved);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 55000.0);
+    assert_eq!(positions[0].avg_px_open, dec!(55000.0));
     assert_eq!(
         positions[0].trade_ids,
         AHashSet::from([TradeId::from("1"), TradeId::from("2"), TradeId::from("3")])
@@ -11000,7 +11000,7 @@ async fn test_reconcile_mass_status_reconciles_partial_hedge_fill_to_position_re
         .position_owned(&venue_position_id)
         .unwrap();
     assert_eq!(position.quantity, Quantity::from("5.0"));
-    assert_eq!(position.avg_px_open, 3000.0);
+    assert_eq!(position.avg_px_open, dec!(3000.0));
 }
 
 #[tokio::test]
@@ -11082,7 +11082,7 @@ async fn test_reconcile_mass_status_leaves_hedge_reversal_identity_unresolved() 
     );
     assert_eq!(positions[0].side, PositionSide::Long);
     assert_eq!(positions[0].quantity, Quantity::from("5.0"));
-    assert_eq!(positions[0].avg_px_open, 3000.0);
+    assert_eq!(positions[0].avg_px_open, dec!(3000.0));
     assert_eq!(positions[0].realized_pnl, Some(Money::from("0 USDT")));
 }
 
@@ -11187,7 +11187,7 @@ async fn test_reconcile_mass_status_skips_only_position_with_fill_position_id_co
     assert_eq!(other_position.instrument_id, instrument_id);
     assert_eq!(other_position.side, PositionSide::Short);
     assert_eq!(other_position.quantity, Quantity::from("3.0"));
-    assert_eq!(other_position.avg_px_open, 3100.0);
+    assert_eq!(other_position.avg_px_open, dec!(3100.0));
 }
 
 #[tokio::test]
@@ -13761,7 +13761,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
     let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 3142.04);
+    assert_eq!(positions[0].avg_px_open, dec!(3142.04));
     drop(positions);
     drop(order);
     drop(cache);
@@ -13778,7 +13778,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
     let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 3142.04);
+    assert_eq!(positions[0].avg_px_open, dec!(3142.04));
     drop(positions);
     drop(cache);
 
@@ -13807,7 +13807,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
     let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(2));
-    assert_eq!(positions[0].avg_px_open, 3171.02);
+    assert_eq!(positions[0].avg_px_open, dec!(3171.02));
     assert_eq!(positions[0].trade_ids.len(), 2);
     assert!(positions[0].trade_ids.contains(&TradeId::from("T-005")));
     assert!(!positions[0].trade_ids.contains(&TradeId::from("T-004")));
@@ -14569,7 +14569,7 @@ async fn test_orphan_fills_without_order_reports_processed() {
     assert_eq!(position.instrument_id, instrument_id);
     assert_eq!(position.side, PositionSide::Long);
     assert_eq!(position.quantity, Quantity::from("2.0"));
-    assert_eq!(position.avg_px_open, 3062.5);
+    assert_eq!(position.avg_px_open, dec!(3062.5));
 
     let replay = ctx
         .manager

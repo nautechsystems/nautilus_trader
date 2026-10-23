@@ -4513,7 +4513,7 @@ async fn test_owned_reports_match_inline(
 
 async fn collect_report_task<T>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
     tokio::spawn(task.collection).await?;
-    task.result.await
+    (task.finish)()
 }
 
 fn assert_reports_equal<T: serde::Serialize>(inline: Vec<T>, owned: Vec<T>, before: UnixNanos) {
@@ -4658,7 +4658,7 @@ async fn test_owned_report_delay_allows_core_progress(#[case] cancel: bool) {
     if cancel {
         worker.abort();
         assert!(worker.await.unwrap_err().is_cancelled());
-        let error = task.result.await.unwrap_err();
+        let error = (task.finish)().unwrap_err();
         assert_eq!(
             error.to_string(),
             "report collection stopped without a result"
@@ -4666,7 +4666,7 @@ async fn test_owned_report_delay_allows_core_progress(#[case] cancel: bool) {
     } else {
         state.order_report_response_release.notify_one();
         worker.await.unwrap();
-        let reports = task.result.await.unwrap();
+        let reports = (task.finish)().unwrap();
         assert_eq!(reports.len(), 2);
         assert_eq!(reports[0].account_id, AccountId::from("AX-001"));
     }

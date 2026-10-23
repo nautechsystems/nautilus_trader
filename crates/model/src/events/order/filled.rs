@@ -31,6 +31,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
+    position::{amount, quantity_sub, split_commission_qty},
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -155,6 +156,9 @@ impl OrderFilled {
     /// Splits an overfill into the fragment which closes the current position and the
     /// fragment which opens the flipped position.
     ///
+    /// The closing commission truncates its exact proportional share toward zero in native Money
+    /// units. The opening commission receives the remainder, conserving fees and rebates exactly.
+    ///
     /// # Errors
     ///
     /// Returns an error if `closing_qty` is zero, is not smaller than the fill quantity, or the
@@ -165,6 +169,10 @@ impl OrderFilled {
         opening_position_id: Option<PositionId>,
         opening_event_id: UUID4,
     ) -> anyhow::Result<(Self, Self)> {
+        if let Some(commission) = self.commission {
+            amount(commission)?;
+        }
+
         anyhow::ensure!(closing_qty.non_zero(), "closing quantity was zero");
         anyhow::ensure!(
             closing_qty < self.last_qty,
@@ -172,19 +180,13 @@ impl OrderFilled {
             self.last_qty,
         );
 
-        let mut opening_qty = self
-            .last_qty
-            .checked_sub(closing_qty)
-            .ok_or_else(|| anyhow::anyhow!("fill quantities have incompatible scales"))?;
-        opening_qty.precision = closing_qty.precision;
-        let closing_fraction = closing_qty.as_decimal() / self.last_qty.as_decimal();
+        let opening_qty = quantity_sub(self.last_qty, closing_qty, closing_qty.precision)?;
+
         let (closing_commission, opening_commission) = match self.commission {
             Some(commission) => {
-                let closing = Money::from_decimal(
-                    commission.as_decimal() * closing_fraction,
-                    commission.currency,
-                )?;
-                (Some(closing), Some(commission - closing))
+                let (closing, opening) =
+                    split_commission_qty(commission, closing_qty, self.last_qty)?;
+                (Some(closing), Some(opening))
             }
             None => (None, None),
         };
@@ -585,6 +587,43 @@ mod tests {
         assert_eq!(opening.event_id, opening_event_id);
         assert_eq!(opening.causation_id, Some(source_event_id));
         assert_eq!(opening.commission, Some(Money::new(1.5, Currency::USD())));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_split_for_position_flip_preserves_mixed_quantity_scales() {
+        let mut fill = create_test_order_filled();
+        fill.last_qty = Quantity::from("2.000000000000000001");
+        fill.commission = None;
+        let closing_qty = Quantity::from("1.00");
+
+        let (closing, opening) = fill
+            .split_for_position_flip(closing_qty, None, UUID4::new())
+            .unwrap();
+
+        assert_eq!(closing.last_qty, closing_qty);
+        assert_eq!(opening.last_qty, Quantity::from("1.000000000000000001"));
+        assert_eq!(opening.last_qty.precision, 18);
+        assert_eq!(closing.commission, None);
+        assert_eq!(opening.commission, None);
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_split_for_position_flip_rejects_unrepresentable_original_commission() {
+        let mut fill = create_test_order_filled();
+        fill.last_qty = Quantity::from(2);
+        fill.commission = Some(Money::from_raw(
+            100_000_000_000_000_000_000_000_000_001,
+            Currency::USD(),
+        ));
+
+        let result = fill.split_for_position_flip(Quantity::from(1), None, UUID4::new());
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "position input exceeds exact Decimal representation"
+        );
     }
 
     #[rstest]

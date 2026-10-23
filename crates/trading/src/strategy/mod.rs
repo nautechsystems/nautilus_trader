@@ -53,6 +53,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
         TraderId,
     },
+    instruments::Instrument,
     orders::{
         LIMIT_ORDER_TYPES, Order, OrderAny, OrderCore, OrderError, OrderList, STOP_ORDER_TYPES,
     },
@@ -1119,9 +1120,13 @@ pub trait Strategy: DataActor {
 
     /// Closes a position by submitting a market order for the opposite side.
     ///
+    /// Quantities round down to a multiple of the instrument's size increment.
+    /// Any remaining dust stays in the position; no order is submitted for dust alone.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered or position closing fails.
+    /// Returns an error if the strategy is not registered, a required instrument is not cached,
+    /// or position closing fails.
     #[expect(clippy::too_many_arguments)]
     fn close_position(
         &mut self,
@@ -1148,10 +1153,14 @@ pub trait Strategy: DataActor {
             return Ok(());
         };
 
+        let Some(quantity) = closing_qty(core, position.instrument_id, position.quantity)? else {
+            return Ok(());
+        };
+
         let order = core.order_factory().market(
             position.instrument_id,
             closing_side,
-            position.quantity,
+            quantity,
             time_in_force,
             reduce_only.or(Some(true)),
             quote_quantity,
@@ -1166,9 +1175,13 @@ pub trait Strategy: DataActor {
 
     /// Closes all open positions for the given instrument.
     ///
+    /// Quantities round down to a multiple of the instrument's size increment.
+    /// Positions with only dust remain open without an order.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered or position closing fails.
+    /// Returns an error if the strategy is not registered, a required instrument is not cached,
+    /// or position closing fails.
     #[expect(clippy::too_many_arguments)]
     fn close_all_positions(
         &mut self,
@@ -1226,10 +1239,15 @@ pub trait Strategy: DataActor {
             let Some(closing_side) = OrderCore::closing_side(pos_side) else {
                 continue;
             };
+
+            let Some(quantity) = closing_qty(core, pos_instrument_id, pos_quantity)? else {
+                continue;
+            };
+
             let order = core.order_factory().market(
                 pos_instrument_id,
                 closing_side,
-                pos_quantity,
+                quantity,
                 time_in_force,
                 reduce_only.or(Some(true)),
                 quote_quantity,
@@ -1899,50 +1917,45 @@ pub trait Strategy: DataActor {
             return;
         }
 
-        let positions_data: Vec<_> = cache
+        let mut instrument_ids: Vec<_> = cache
             .positions_open(None, None, Some(&strategy_id), None, None)
             .iter()
-            .map(|p| (p.id, p.instrument_id, p.side, p.quantity, p.is_closed()))
+            .filter_map(|position| {
+                // Keep failed conversions pending so close_all_positions reports the error
+                match closing_qty(core, position.instrument_id, position.quantity) {
+                    Ok(None) => None,
+                    Ok(Some(_)) | Err(_) => Some(position.instrument_id),
+                }
+            })
             .collect();
 
-        if !positions_data.is_empty() {
-            // If there are open positions but no orders, re-send close orders
-            drop(cache);
+        instrument_ids.sort();
+        instrument_ids.dedup();
 
-            for (pos_id, instrument_id, side, quantity, is_closed) in positions_data {
-                if is_closed {
-                    continue;
-                }
+        let time_in_force = core.config.market_exit_time_in_force;
+        let reduce_only = core.config.market_exit_reduce_only;
+        let market_exit_tag = core.market_exit_tag;
+        drop(cache);
 
-                let core = StrategyNative::strategy_core_mut(self);
-                let time_in_force = core.config.market_exit_time_in_force;
-                let reduce_only = core.config.market_exit_reduce_only;
-                let market_exit_tag = core.market_exit_tag;
-                let Some(closing_side) = OrderCore::closing_side(side) else {
-                    continue;
-                };
-                let order = core.order_factory().market(
-                    instrument_id,
-                    closing_side,
-                    quantity,
-                    Some(time_in_force),
-                    Some(reduce_only),
-                    None,
-                    None,
-                    None,
-                    Some(vec![market_exit_tag]),
-                    None,
-                );
-
-                if let Err(e) = self.submit_order(order, Some(pos_id), None, None) {
-                    log::error!("Error re-submitting close order for position {pos_id}: {e}");
-                }
-            }
+        if instrument_ids.is_empty() {
+            self.finalize_market_exit();
             return;
         }
 
-        drop(cache);
-        self.finalize_market_exit();
+        for instrument_id in instrument_ids {
+            if let Err(e) = self.close_all_positions(
+                instrument_id,
+                None,
+                None,
+                Some(vec![market_exit_tag]),
+                Some(time_in_force),
+                Some(reduce_only),
+                None,
+                None,
+            ) {
+                log::error!("Error re-submitting close orders for {instrument_id}: {e}");
+            }
+        }
     }
 
     /// Finalizes the market exit process.
@@ -2472,6 +2485,31 @@ fn log_cmd_send(command: &TradingCommand) {
     }
 }
 
+fn closing_qty(
+    core: &StrategyCore,
+    instrument_id: InstrumentId,
+    quantity: Quantity,
+) -> anyhow::Result<Option<Quantity>> {
+    let cache = core.cache_ref();
+
+    let instrument = cache.instrument(&instrument_id).ok_or_else(|| {
+        anyhow::anyhow!("Cannot close position: instrument {instrument_id} is not cached")
+    })?;
+
+    let Some(rounded) = quantity.checked_floor_to_increment(instrument.size_increment()) else {
+        anyhow::bail!("close quantity cannot be aligned to the size increment");
+    };
+
+    if rounded.is_zero() {
+        log::warn!(
+            "Cannot close {instrument_id} position: quantity {quantity} is below the size increment"
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(rounded))
+}
+
 fn registered_trader_id(core: &StrategyCore) -> anyhow::Result<TraderId> {
     core.trader_id()
         .ok_or_else(|| anyhow::anyhow!("Strategy not registered: trader_id is not set"))
@@ -2531,7 +2569,7 @@ mod tests {
     use nautilus_execution::engine::ExecutionEngine;
     use nautilus_model::{
         enums::{
-            ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+            ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
             PositionAdjustmentType, PositionSide, TrailingOffsetType, TriggerType,
         },
         events::{
@@ -2546,6 +2584,7 @@ mod tests {
             AccountId, ActorId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
             TradeId, TraderId, VenueOrderId,
         },
+        instruments::{InstrumentAny, stubs::currency_pair_btcusdt},
         orderbook::own::OwnOrderBook,
         orders::{LimitOrder, MarketOrder, OrderTestBuilder, stubs::TestOrderEventStubs},
         stubs::TestDefault,
@@ -3110,12 +3149,12 @@ mod tests {
             opening_order_id: ClientOrderId::from("O-001"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 1.0,
+            signed_qty: 1.into(),
             quantity: Quantity::default(),
             last_qty: Quantity::default(),
             last_px: Price::default(),
             currency: Currency::from("USD"),
-            avg_px_open: 0.0,
+            avg_px_open: 0.into(),
             realized_pnl: None,
             event_id: UUID4::default(),
             ts_event: UnixNanos::default(),
@@ -3134,13 +3173,13 @@ mod tests {
             opening_order_id: ClientOrderId::from("O-001"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 2.0,
+            signed_qty: 2.into(),
             quantity: Quantity::default(),
             peak_quantity: Quantity::default(),
             last_qty: Quantity::default(),
             last_px: Price::default(),
             currency,
-            avg_px_open: 0.0,
+            avg_px_open: 0.into(),
             avg_px_close: None,
             realized_return: 0.0,
             realized_pnl: None,
@@ -3164,13 +3203,13 @@ mod tests {
             closing_order_id: Some(ClientOrderId::from("O-002")),
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: 0.into(),
             quantity: Quantity::default(),
             peak_quantity: Quantity::default(),
             last_qty: Quantity::default(),
             last_px: Price::default(),
             currency,
-            avg_px_open: 0.0,
+            avg_px_open: 0.into(),
             avg_px_close: None,
             realized_return: 0.0,
             realized_pnl: None,
@@ -3765,6 +3804,198 @@ mod tests {
             OrderEventAny::Initialized(order.init_event().clone())
         );
         assert_eq!(timeline.borrow().as_slice(), &["init", "command"]);
+    }
+
+    #[rstest]
+    #[case::single("single", "1.234570", "0.00000211 BTC", "0.000001", Some("1.234567"))]
+    #[case::all("all", "1.234570", "0.00000211 BTC", "0.000001", Some("1.234567"))]
+    #[case::single_dust("single", "0.000001", "0.00000011 BTC", "0.000001", None)]
+    #[case::all_dust("all", "0.000001", "0.00000011 BTC", "0.000001", None)]
+    #[case::retry("retry", "1.234570", "0.00000211 BTC", "0.000001", Some("1.234567"))]
+    #[case::retry_dust("retry", "0.000001", "0.00000011 BTC", "0.000001", None)]
+    #[case::single_increment("single", "1.00", "0.001 BTC", "0.50", Some("0.50"))]
+    #[case::all_increment("all", "1.00", "0.001 BTC", "0.50", Some("0.50"))]
+    #[case::retry_increment("retry", "1.00", "0.001 BTC", "0.50", Some("0.50"))]
+    #[case::single_increment_dust("single", "0.50", "0.001 BTC", "0.50", None)]
+    #[case::all_increment_dust("all", "0.50", "0.001 BTC", "0.50", None)]
+    #[case::retry_increment_dust("retry", "0.50", "0.001 BTC", "0.50", None)]
+    #[case::single_increment_same_precision("single", "1.00", "0.25 BTC", "0.50", Some("0.50"))]
+    fn test_close_positions_retains_fee_dust(
+        #[case] operation: &str,
+        #[case] qty: &str,
+        #[case] fee: &str,
+        #[case] increment: &str,
+        #[case] expected_qty: Option<&str>,
+    ) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let mut pair = currency_pair_btcusdt();
+        pair.size_increment = Quantity::from(increment);
+        pair.size_precision = pair.size_increment.precision;
+        let instrument = InstrumentAny::CurrencyPair(pair);
+        let fill = OrderFilledSpec::builder()
+            .strategy_id(strategy.core.strategy_id().unwrap())
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-CLOSE-DUST"))
+            .last_qty(Quantity::from(qty))
+            .last_px(Price::from("10000.00"))
+            .commission(Money::from_str_exact(fee).unwrap())
+            .build();
+        let position = Position::new(&instrument, fill);
+        let cache = strategy.core.cache_rc();
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+        let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+
+        match operation {
+            "all" => strategy
+                .close_all_positions(instrument.id(), None, None, None, None, None, None, None)
+                .unwrap(),
+            "retry" => {
+                strategy.core.is_exiting = true;
+
+                let event = TimeEvent::new(
+                    strategy.core.market_exit_timer_name,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                );
+                strategy.check_market_exit(event);
+            }
+            _ => strategy
+                .close_position(&position, None, None, None, None, None, None)
+                .unwrap(),
+        }
+
+        assert_eq!(
+            strategy.core.is_exiting,
+            operation == "retry" && expected_qty.is_some()
+        );
+        let messages = messages.get_messages();
+
+        if let Some(expected) = expected_qty {
+            assert_eq!(messages.len(), 1);
+
+            let TradingCommand::SubmitOrder(command) = &messages[0] else {
+                panic!("expected close order")
+            };
+
+            let cache = cache.borrow();
+            let order = cache.order(&command.client_order_id).unwrap();
+            assert_eq!(order.quantity(), Quantity::from(expected));
+            assert_eq!(order.order_side(), OrderSide::Sell);
+            assert!(order.is_reduce_only());
+            assert_eq!(command.position_id, Some(position.id));
+        } else {
+            assert!(messages.is_empty());
+        }
+
+        assert_eq!(
+            cache.borrow().position(&position.id).unwrap().signed_qty,
+            position.signed_qty
+        );
+    }
+
+    #[rstest]
+    fn test_market_exit_retry_sorts_and_deduplicates_instruments() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let cache = strategy.core.cache_rc();
+
+        for index in (0..12).rev() {
+            let mut pair = currency_pair_btcusdt();
+            pair.id = InstrumentId::from(format!("BTCUSDT.VENUE{index:02}"));
+            let instrument = InstrumentAny::CurrencyPair(pair);
+            cache
+                .borrow_mut()
+                .add_instrument(instrument.clone())
+                .unwrap();
+            let fill = OrderFilledSpec::builder()
+                .strategy_id(strategy.core.strategy_id().unwrap())
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from(format!("O-SORT-{index:02}")))
+                .position_id(PositionId::from(format!("P-SORT-{:02}", 11 - index)))
+                .last_qty(Quantity::from(1))
+                .last_px(Price::from("10000.00"))
+                .currency(instrument.quote_currency())
+                .commission(Money::zero(instrument.quote_currency()))
+                .build();
+            let position = Position::new(&instrument, fill.clone());
+            cache
+                .borrow_mut()
+                .add_position(&position, OmsType::Hedging)
+                .unwrap();
+
+            if index == 0 {
+                let mut duplicate = fill;
+                duplicate.position_id = Some(PositionId::from("Z-SORT-DUP"));
+                duplicate.client_order_id = ClientOrderId::from("O-SORT-DUP");
+                let position = Position::new(&instrument, duplicate);
+                cache
+                    .borrow_mut()
+                    .add_position(&position, OmsType::Hedging)
+                    .unwrap();
+            }
+        }
+
+        let (handler, messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            handler,
+        );
+        strategy.core.is_exiting = true;
+
+        let event = TimeEvent::new(
+            strategy.core.market_exit_timer_name,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        strategy.check_market_exit(event);
+
+        let commands: Vec<_> = messages
+            .get_messages()
+            .iter()
+            .map(|message| {
+                let TradingCommand::SubmitOrder(command) = message else {
+                    panic!("expected close command")
+                };
+
+                (command.instrument_id, command.position_id.unwrap())
+            })
+            .collect();
+
+        let mut expected = vec![
+            (
+                InstrumentId::from("BTCUSDT.VENUE00"),
+                PositionId::from("P-SORT-11"),
+            ),
+            (
+                InstrumentId::from("BTCUSDT.VENUE00"),
+                PositionId::from("Z-SORT-DUP"),
+            ),
+        ];
+        expected.extend((1..12).map(|index| {
+            (
+                InstrumentId::from(format!("BTCUSDT.VENUE{index:02}")),
+                PositionId::from(format!("P-SORT-{:02}", 11 - index)),
+            )
+        }));
+
+        assert_eq!(commands, expected);
     }
 
     #[rstest]

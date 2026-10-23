@@ -3041,7 +3041,7 @@ async fn test_startup_reconciliation_applies_closed_order_fills_with_commissions
     assert_eq!(positions.len(), 1);
     let position = &positions[0];
     assert_eq!(position.quantity, Quantity::from("8.937144"));
-    assert_eq!(position.avg_px_open, 0.56);
+    assert_eq!(position.avg_px_open, dec!(0.56));
     assert_eq!(position.events.len(), 3);
     assert_eq!(
         position.trade_ids.iter().copied().collect::<HashSet<_>>(),
@@ -4516,7 +4516,14 @@ async fn test_generate_fill_reports_scopes_venue_order_before_binding(#[case] tr
         reports[0].venue_order_id,
         VenueOrderId::from(target_order_id)
     );
-    assert_eq!(reports[0].last_qty, Quantity::from("25.0000"));
+    assert_eq!(
+        reports[0].last_qty,
+        Quantity::from(if trader_side == "MAKER" {
+            "20.0000"
+        } else {
+            "25.0000"
+        })
+    );
     assert_eq!(reports[0].last_px, Price::from("0.5000"));
 }
 
@@ -5505,6 +5512,11 @@ async fn test_generate_fill_reports_rejects_known_target_order_side_contradictio
     trade["market"] = json!(TEST_CONDITION_ID);
     trade["taker_order_id"] = json!(target_order_id);
     trade["side"] = json!("SELL");
+
+    for maker in trade["maker_orders"].as_array_mut().unwrap() {
+        maker["side"] = json!("BUY");
+    }
+
     *state.trades_response_override.lock().await = Some(json!({
         "data": [trade],
         "next_cursor": "LTE=",
@@ -5561,6 +5573,11 @@ async fn test_generate_fill_reports_rejects_known_target_instrument_without_comm
     trade["market"] = json!(other_condition);
     trade["asset_id"] = json!(other_token);
     trade["taker_order_id"] = json!(target_order_id);
+
+    for maker in trade["maker_orders"].as_array_mut().unwrap() {
+        maker["asset_id"] = json!(other_token);
+    }
+
     *state.trades_response_override.lock().await = Some(json!({
         "data": [trade],
         "next_cursor": "LTE=",
@@ -5740,6 +5757,10 @@ async fn test_generate_fill_reports_rejects_target_order_on_wrong_loaded_instrum
         target["maker_orders"] = json!([leg]);
     } else {
         target["taker_order_id"] = json!(target_order_id);
+
+        for maker in target["maker_orders"].as_array_mut().unwrap() {
+            maker["asset_id"] = json!(other_token);
+        }
     }
 
     *state.trades_response_override.lock().await = Some(json!({
@@ -6303,6 +6324,7 @@ async fn test_venue_only_buy_order_report_raises_qty_to_confirmed_overfill() {
     *state.single_order_response.lock().await = Some(response);
     let mut trade = load_json("http_trade_report.json");
     trade["size"] = json!("10.0040");
+    trade["maker_orders"][0]["matched_amount"] = json!("5.0040");
     *state.trades_response_override.lock().await = Some(json!({
         "data": [trade],
         "next_cursor": "LTE=",
@@ -6574,6 +6596,7 @@ async fn test_limit_submit_normalizes_signed_quantity_for_reporting(#[case] side
     let mut trade = load_json("http_trade_report.json");
     trade["taker_order_id"] = json!(venue_order_id_str);
     trade["size"] = json!("23.4550");
+    trade["maker_orders"][0]["matched_amount"] = json!("18.4550");
     *state.trades_response_override.lock().await = Some(json!({
         "data": [trade],
         "next_cursor": "LTE=",

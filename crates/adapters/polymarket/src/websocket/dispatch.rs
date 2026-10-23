@@ -2182,8 +2182,14 @@ mod tests {
 
     #[rstest]
     #[case::matching(|_: &mut PolymarketUserTrade, _: &mut InstrumentAny| {}, false, dec!(0))]
-    #[case::quantity(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| trade.size = "26.0".to_string(), true, dec!(0))]
-    #[case::price(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| trade.price = "0.6".to_string(), true, dec!(0))]
+    #[case::quantity(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| {
+        trade.size = "26.0".to_string();
+        trade.maker_orders[0].matched_amount = dec!(26);
+    }, true, dec!(0))]
+    #[case::price(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| {
+        trade.price = "0.6".to_string();
+        trade.maker_orders[0].price = dec!(0.6);
+    }, true, dec!(0))]
     #[case::side(|trade: &mut PolymarketUserTrade, _: &mut InstrumentAny| trade.side = PolymarketOrderSide::Sell, true, dec!(0))]
     #[case::fee_schedule(|_: &mut PolymarketUserTrade, instrument: &mut InstrumentAny| set_taker_fee_rate(instrument, dec!(0.01)), false, dec!(0))]
     fn test_dispatch_conflicting_trade_after_applied_fill(
@@ -4039,6 +4045,7 @@ mod tests {
         if maker {
             trade.trader_side = PolymarketLiquiditySide::Maker;
             trade.side = PolymarketOrderSide::Sell;
+            trade.maker_orders[0].matched_amount = dec!(20);
         }
 
         let (order_id, user_address, api_key) = if maker {
@@ -4598,6 +4605,10 @@ mod tests {
             rest.taker_order_id = self.trade.taker_order_id.clone();
             rest.asset_id = self.trade.asset_id;
             rest.price = dec!(0.6);
+            for maker in &mut rest.maker_orders {
+                maker.price = rest.price;
+            }
+
             rest.status = PolymarketTradeStatus::Confirmed;
             rest
         }
@@ -5573,6 +5584,8 @@ mod tests {
         order.associate_trades = Some(vec![trade.id.clone()]);
         trade.size = "99.995".to_string();
         trade.price = order.price.clone();
+        trade.maker_orders[0].matched_amount = dec!(99.995);
+        trade.maker_orders[0].price = trade.price.parse().unwrap();
 
         let token_instruments = AtomicMap::new();
         token_instruments.insert(order.asset_id, instrument.clone());
@@ -6309,6 +6322,7 @@ mod tests {
     fn test_modified_buy_overfill_raises_order_qty_with_prior_legs() {
         let mut trade: PolymarketUserTrade = load("ws_user_trade.json");
         trade.size = "100.000058".to_string();
+        trade.maker_orders[0].matched_amount = dec!(100.000058);
         let instrument = instrument_for_trade(&trade);
         let old_venue_order_id = VenueOrderId::from("0xold-overfill-leg");
         let replacement_venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());

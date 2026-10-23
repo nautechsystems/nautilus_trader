@@ -375,12 +375,19 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
         "SELECT table_name || '.' || column_name || ' (' || data_type || ')'
         FROM information_schema.columns
         WHERE table_schema = current_schema()
-          AND (table_name, column_name) IN (('order', 'avg_px'), ('order', 'slippage'))
+          AND (table_name, column_name) IN (('order', 'avg_px'), ('order', 'slippage'),
+              ('position', 'signed_qty'), ('position', 'avg_px_open'), ('position', 'avg_px_close'))
           AND data_type <> 'numeric'
         ORDER BY table_name, column_name",
     )
     .fetch_all(pool)
     .await?;
+
+    if stale.iter().any(|column| column.starts_with("position.")) {
+        return Err(sqlx::Error::Configuration(
+            format!("Postgres position accounting requires numeric columns, found {}; create a new cache with the current schema", stale.join(", ")).into(),
+        ));
+    }
 
     if !stale.is_empty() {
         return Err(sqlx::Error::Configuration(

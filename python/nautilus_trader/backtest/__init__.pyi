@@ -419,7 +419,7 @@ class FXRolloverInterestModule(SimulationModule):
 
 @typing.final
 class InterestRateRecord:
-    def __new__(cls, location: str, time: str, value: float) -> InterestRateRecord: ...
+    def __new__(cls, location: str, time: str, value: decimal.Decimal) -> InterestRateRecord: ...
 
 @typing.final
 class BacktestEngine:

@@ -1295,15 +1295,15 @@ def test_backtest_cash_margin_account_order_fill_position_parity_golden() -> Non
     )
     _assert_closed_position(
         engine.cache.positions(instrument_id=audusd.id)[0],
-        0.7,
-        0.7002,
+        Decimal("0.7"),
+        Decimal("0.7002"),
         Money(17.20, usd),
         ["2.80 USD"],
     )
     _assert_closed_position(
         engine.cache.positions(instrument_id=ethusdt.id)[0],
-        2000.0,
-        2001.0,
+        Decimal("2000.0"),
+        Decimal("2001.0"),
         Money(0.29995000, usdt),
         ["0.20005000 USDT"],
     )
@@ -1379,8 +1379,8 @@ def _assert_filled_market_order(
 
 def _assert_closed_position(
     position: object,
-    avg_px_open: float,
-    avg_px_close: float,
+    avg_px_open: Decimal,
+    avg_px_close: Decimal,
     realized_pnl: Money,
     commissions: list[str],
 ) -> None:

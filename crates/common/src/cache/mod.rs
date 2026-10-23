@@ -912,8 +912,7 @@ impl Cache {
 
         for position in self.positions.values().map(|cell| cell.borrow()) {
             if !self.index.position_oms.contains_key(&position.id)
-                && position.id.as_str()
-                    == format!("{}-{}", position.instrument_id, position.strategy_id)
+                && resolve_position_oms(&position, OmsType::Unspecified) == OmsType::Netting
             {
                 self.index
                     .position_oms
@@ -3146,6 +3145,9 @@ impl Cache {
 
     /// Adds the `position` to the cache.
     ///
+    /// For [`OmsType::Unspecified`], IDs matching `{instrument_id}-{strategy_id}` resolve to
+    /// [`OmsType::Netting`]. Other IDs retain the supplied OMS type.
+    ///
     /// # Errors
     ///
     /// Returns an error if persisting the position to the backing database fails. After
@@ -3156,6 +3158,8 @@ impl Cache {
     }
 
     /// Adds a position whose opening fill intentionally has no backing order.
+    ///
+    /// Resolves unspecified OMS types as [`Self::add_position`] does.
     ///
     /// # Errors
     ///
@@ -3177,6 +3181,8 @@ impl Cache {
     /// [`Self::add_position_without_order`]. The carry runs under the same borrow as the swap, so a
     /// validation failure cannot leave the prior position stripped of its replay history.
     ///
+    /// Resolves unspecified OMS types as [`Self::add_position`] does.
+    ///
     /// # Errors
     ///
     /// Returns an error if validating or persisting the position fails.
@@ -3197,6 +3203,8 @@ impl Cache {
         index_order: bool,
         carry_replay_state: bool,
     ) -> anyhow::Result<()> {
+        let oms_type = resolve_position_oms(&position, oms_type);
+
         // Validate and serialize the OMS entry up front: both are construction failures, and
         // committing the position before they run would leave the cache mutated by one.
         // The key embeds the position ID, which embeds the instrument ID and venue
@@ -3618,12 +3626,12 @@ impl Cache {
     /// Updates a cached position by applying an order fill in place.
     ///
     /// Returns a transient copy of the updated state without stored history. The canonical cached
-    /// position retains its complete history.
+    /// position retains its complete history. A fill without a position ID uses `position_id`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the position is not already held in the cache, or if updating the
-    /// position in the database fails.
+    /// Returns an error if the position is not cached, the fill fails accounting validation,
+    /// or updating the position in the database fails.
     pub fn update_position_from_fill(
         &mut self,
         position_id: PositionId,
@@ -3633,9 +3641,18 @@ impl Cache {
             anyhow::bail!("Cannot update position {position_id}: not found in cache");
         };
 
+        let mut resolved_fill;
+        let fill = if fill.position_id.is_none() {
+            resolved_fill = fill.clone();
+            resolved_fill.position_id = Some(position_id);
+            &resolved_fill
+        } else {
+            fill
+        };
+
         let position = {
             let mut position = position_cell.borrow_mut();
-            position.apply(fill);
+            position.try_apply(fill)?;
             position.clone_without_events()
         };
 
@@ -3667,7 +3684,7 @@ impl Cache {
             anyhow::bail!("Cannot update position {position_id}: not found in cache");
         };
 
-        position_cell.borrow_mut().apply_adjustment(adjustment);
+        position_cell.borrow_mut().apply_adjustment(adjustment)?;
         self.refresh_position_indexes(&position_cell.borrow());
 
         if let Some(database) = &mut self.database {
@@ -5630,6 +5647,9 @@ impl Cache {
         let mut flip = None;
         let mut corrected_source = None;
 
+        // Keep ordered fill checks linear in each position's replay history
+        let mut replay_offsets = AHashMap::new();
+
         for event in order.events() {
             let OrderEventAny::Filled(fill) = event else {
                 continue;
@@ -5645,9 +5665,8 @@ impl Cache {
             }
 
             if source.as_ref().is_some_and(|source| {
-                source.replay_events.iter().any(|event| {
-                    matches!(event, PositionReplayEvent::Filled(fragment) if fragment == fill)
-                })
+                let offset = replay_offsets.entry(source_id).or_default();
+                Self::replay_contains_fill(&source.replay_events, fill, offset)
             }) {
                 continue;
             }
@@ -5702,6 +5721,22 @@ impl Cache {
         }
 
         Ok(flip)
+    }
+
+    fn replay_contains_fill(
+        events: &[PositionReplayEvent],
+        fill: &OrderFilled,
+        offset: &mut usize,
+    ) -> bool {
+        let matches_fill = |event: &PositionReplayEvent| matches!(event, PositionReplayEvent::Filled(fragment) if fragment == fill);
+
+        if let Some(index) = events[*offset..].iter().position(matches_fill) {
+            *offset += index + 1;
+            return true;
+        }
+
+        // Repeated or reordered fills can still match before the cursor
+        events[..*offset].iter().any(matches_fill)
     }
 
     fn hedging_flip_destination(
@@ -7032,6 +7067,16 @@ const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
 fn position_oms_key(position_id: PositionId) -> String {
     format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
+}
+
+fn resolve_position_oms(position: &Position, oms_type: OmsType) -> OmsType {
+    if oms_type == OmsType::Unspecified
+        && position.id.as_str() == format!("{}-{}", position.instrument_id, position.strategy_id)
+    {
+        OmsType::Netting
+    } else {
+        oms_type
+    }
 }
 
 /// Inserts `bar` into the newest-first bars deque for a `bar_type`.

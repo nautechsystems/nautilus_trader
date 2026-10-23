@@ -46,9 +46,10 @@ pub use messages::{
     DeriveOrderbookData, DeriveOrderbookLevel, DeriveOrderbookMsg, DeriveOrdersSubscriptionData,
     DerivePublicWsData, DeriveTickerData, DeriveTickerMsg, DeriveTradesMsg,
     DeriveTradesSubscriptionData, DeriveWsChannel, DeriveWsFrame, WsLoginParams, WsLoginResult,
-    WsRequestParams, WsSubscribeParams, WsSubscribeResult, WsSubscriptionFrame,
-    WsSubscriptionPayload, WsUnsubscribeParams, WsUnsubscribeResult, balances_channel, methods,
-    orderbook_channel, orders_channel, private_trades_channel, ticker_channel, trades_channel,
+    WsRequestParams, WsSetCancelOnDisconnectParams, WsSubscribeParams, WsSubscribeResult,
+    WsSubscriptionFrame, WsSubscriptionPayload, WsUnsubscribeParams, WsUnsubscribeResult,
+    balances_channel, methods, orderbook_channel, orders_channel, private_trades_channel,
+    ticker_channel, trades_channel,
 };
 pub use parse::{
     bar_spec_to_derive_period, parse_candle_record, parse_funding_rate,

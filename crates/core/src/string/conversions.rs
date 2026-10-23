@@ -165,11 +165,11 @@ fn push_lower_unicode(result: &mut String, word: &str, first_word: &mut bool) {
     }
 }
 
-/// Title-cases `s` by capitalizing the first letter of each alphabetic run.
+/// Titlecases `s`, treating each maximal run of cased characters as a word.
 ///
-/// Mirrors Python's `str.title()`: word boundaries fall at any non-alphabetic
-/// character, the first letter of each run is uppercased, and the rest are
-/// lowercased.
+/// Follows Python's `str.title()` word-boundary rules: the first character of each word uses its
+/// Unicode titlecase mapping, and the rest are lowercased. Unlike Python, a word-final `Σ`
+/// lowercases to `σ`, not `ς`.
 ///
 /// # Examples
 ///
@@ -183,24 +183,93 @@ fn push_lower_unicode(result: &mut String, word: &str, first_word: &mut bool) {
 /// ```
 #[must_use]
 pub fn title_case(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut prev_alpha = false;
+    if s.is_ascii() {
+        title_case_ascii(s.as_bytes())
+    } else {
+        title_case_unicode(s)
+    }
+}
 
-    for ch in s.chars() {
-        if ch.is_alphabetic() {
-            if prev_alpha {
-                out.extend(ch.to_lowercase());
-            } else {
-                out.extend(ch.to_uppercase());
-            }
-            prev_alpha = true;
+fn title_case_ascii(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len());
+    let mut prev_cased = false;
+    for &byte in bytes {
+        let byte = if prev_cased {
+            byte.to_ascii_lowercase()
         } else {
-            out.push(ch);
-            prev_alpha = false;
-        }
+            byte.to_ascii_uppercase()
+        };
+
+        out.push(char::from(byte));
+        prev_cased = byte.is_ascii_alphabetic();
     }
 
     out
+}
+
+fn title_case_unicode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_cased = false;
+    for ch in s.chars() {
+        if prev_cased {
+            out.extend(ch.to_lowercase());
+        } else {
+            push_titlecase(&mut out, ch);
+        }
+
+        prev_cased = is_cased(ch);
+    }
+
+    out
+}
+
+fn push_titlecase(out: &mut String, ch: char) {
+    // Stable Rust does not expose `char::to_titlecase`. These Unicode 17 mappings from
+    // UnicodeData.txt and SpecialCasing.txt cannot be reproduced by keeping the first scalar of
+    // the uppercase mapping and lowercasing the rest.
+    match ch {
+        '\u{149}' => out.push_str("\u{2BC}N"),
+        '\u{1C4}'..='\u{1C6}' => out.push('\u{1C5}'),
+        '\u{1C7}'..='\u{1C9}' => out.push('\u{1C8}'),
+        '\u{1CA}'..='\u{1CC}' => out.push('\u{1CB}'),
+        '\u{1F1}'..='\u{1F3}' => out.push('\u{1F2}'),
+        '\u{10D0}'..='\u{10FA}'
+        | '\u{10FD}'..='\u{10FF}'
+        | '\u{1F88}'..='\u{1F8F}'
+        | '\u{1F98}'..='\u{1F9F}'
+        | '\u{1FA8}'..='\u{1FAF}' => out.push(ch),
+        '\u{1F80}'..='\u{1F87}' | '\u{1F90}'..='\u{1F97}' | '\u{1FA0}'..='\u{1FA7}' => {
+            out.push(
+                char::from_u32(ch as u32 + 8).expect("titlecase mapping must be valid Unicode"),
+            );
+        }
+        '\u{1FB2}' => out.push_str("\u{1FBA}\u{345}"),
+        '\u{1FB3}' | '\u{1FBC}' => out.push('\u{1FBC}'),
+        '\u{1FB4}' => out.push_str("\u{386}\u{345}"),
+        '\u{1FB7}' => out.push_str("\u{391}\u{342}\u{345}"),
+        '\u{1FC2}' => out.push_str("\u{1FCA}\u{345}"),
+        '\u{1FC3}' | '\u{1FCC}' => out.push('\u{1FCC}'),
+        '\u{1FC4}' => out.push_str("\u{389}\u{345}"),
+        '\u{1FC7}' => out.push_str("\u{397}\u{342}\u{345}"),
+        '\u{1FF2}' => out.push_str("\u{1FFA}\u{345}"),
+        '\u{1FF3}' | '\u{1FFC}' => out.push('\u{1FFC}'),
+        '\u{1FF4}' => out.push_str("\u{38F}\u{345}"),
+        '\u{1FF7}' => out.push_str("\u{3A9}\u{342}\u{345}"),
+        _ => {
+            let mut uppercase = ch.to_uppercase();
+            if let Some(first) = uppercase.next() {
+                out.push(first);
+            }
+
+            for ch in uppercase {
+                out.extend(ch.to_lowercase());
+            }
+        }
+    }
+}
+
+fn is_cased(ch: char) -> bool {
+    ch.is_lowercase() || ch.is_uppercase() || ch.to_lowercase().next() != Some(ch)
 }
 
 #[cfg(test)]
@@ -260,13 +329,42 @@ mod tests {
     #[case("a", "A")]
     #[case("example", "Example")]
     #[case("EXAMPLE", "Example")]
+    #[case("ΟΣ", "Οσ")]
     #[case("hello_world", "Hello_World")]
     #[case("hello-world", "Hello-World")]
     #[case("hello world", "Hello World")]
     #[case("hELLO wORLD", "Hello World")]
     #[case("123abc", "123Abc")]
     #[case("_leading", "_Leading")]
+    #[case("\u{1C6}", "\u{1C5}")]
+    #[case("\u{1C9}", "\u{1C8}")]
+    #[case("\u{1CC}", "\u{1CB}")]
+    #[case("ǳ", "ǲ")]
+    #[case("ﬃ", "Ffi")]
+    #[case("\u{149}", "\u{2BC}N")]
+    #[case("\u{10D0}", "\u{10D0}")]
+    #[case("\u{1F80}", "\u{1F88}")]
+    #[case("\u{1FB2}", "\u{1FBA}\u{345}")]
+    #[case("\u{1FB3}", "\u{1FBC}")]
+    #[case("\u{1FB4}", "\u{386}\u{345}")]
+    #[case("\u{1FB7}", "\u{391}\u{342}\u{345}")]
+    #[case("\u{1FC2}", "\u{1FCA}\u{345}")]
+    #[case("\u{1FC3}", "\u{1FCC}")]
+    #[case("\u{1FC4}", "\u{389}\u{345}")]
+    #[case("\u{1FC7}", "\u{397}\u{342}\u{345}")]
+    #[case("\u{1FF2}", "\u{1FFA}\u{345}")]
+    #[case("\u{1FF3}", "\u{1FFC}")]
+    #[case("\u{1FF4}", "\u{38F}\u{345}")]
+    #[case("\u{1FF7}", "\u{3A9}\u{342}\u{345}")]
+    #[case("\u{4E2D}a", "\u{4E2D}A")]
+    #[case("ªa", "ªa")]
+    #[case("ǲa", "ǲa")]
     fn test_title_case(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(title_case(input), expected);
+    }
+
+    #[rstest]
+    fn test_title_case_unicode_version() {
+        assert_eq!(char::UNICODE_VERSION, (17, 0, 0));
     }
 }

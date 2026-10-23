@@ -95,7 +95,10 @@ use crate::{
             MIN_SIGNATURE_TTL, TRIGGER_ORDER_SIGNATURE_TTL, WS_REQUEST_TIMEOUT,
         },
         credential::DeriveCredential,
-        enums::{DeriveInstrumentType, DeriveOrderSide, DeriveOrderStatus},
+        enums::{
+            DeriveInstrumentType, DeriveOrderSide, DeriveOrderStatus, DeriveOrderType,
+            DeriveTimeInForce,
+        },
         parse::{
             STRATEGY_REASON_MAX_CHARS, derive_order_type_to_nautilus_for_order,
             derive_rejection_due_post_only, derive_status_to_nautilus, format_instrument_id,
@@ -119,8 +122,8 @@ use crate::{
             DeriveCancelByInstrumentParams, DeriveCancelByLabelParams, DeriveCancelParams,
             DeriveCancelTriggerOrderParams, DeriveGetOpenOrdersParams, DeriveGetOrderHistoryParams,
             DeriveGetOrderParams, DeriveGetPositionsParams, DeriveGetSubaccountParams,
-            DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams, PaginationCursor,
-            order_replace_to_derive_payload, order_to_derive_payload,
+            DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams, DeriveOrderParams,
+            PaginationCursor, order_replace_to_derive_payload, order_to_derive_payload,
             trigger_order_to_derive_payload, validate_order_support,
             validate_trigger_order_support,
         },
@@ -140,6 +143,7 @@ use crate::{
 };
 
 const DERIVE_PRIVATE_PAGE_SIZE: u32 = 500;
+const CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Live execution client for Derive.
 ///
@@ -216,34 +220,14 @@ impl DeriveExecutionClient {
             config.rest_url(),
             http_credentials,
             Some(config.http_timeout_secs),
-            proxy_url.clone(),
+            proxy_url,
             Some(retry_config),
         )
         .context("failed to create Derive HTTP client")?;
 
-        let ws_credentials = DeriveWsCredentials::new(
-            credential.wallet_address().to_string(),
-            credential.session_key(),
-        )
-        .context("failed to build Derive WebSocket credentials")?;
-        let mut ws_client = DeriveWebSocketClient::with_credentials(
-            Some(config.ws_url()),
-            config.environment,
-            config.transport_backend,
-            proxy_url,
-            ws_credentials,
-            config.max_matching_requests_per_second,
-            config.max_per_instrument_matching_requests_per_second,
-        )
-        .with_socket_control(SocketControl::new(
-            core.client_id,
-            Some(*DERIVE_VENUE),
-            "derive-user-streams",
-        ));
-
-        if let Some(secs) = config.ws_timeout_secs {
-            ws_client.set_request_timeout(Duration::from_secs(secs));
-        }
+        let ws_client = create_ws_client(&config, &credential)?.with_socket_control(
+            SocketControl::new(core.client_id, Some(*DERIVE_VENUE), "derive-user-streams"),
+        );
 
         // The handle shares the client's command channel, which survives the
         // reconnect swap, so it stays valid for the client's lifetime.
@@ -681,6 +665,90 @@ impl DeriveExecutionClient {
         Ok(())
     }
 
+    async fn connect_ws(&mut self) -> anyhow::Result<()> {
+        if self.config.cancel_on_disconnect
+            && let Err(e) = self.enable_cancel_on_disconnect().await
+        {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive cancel-on-disconnect startup teardown failed: {teardown_error}"
+                )));
+            }
+
+            return Err(e);
+        }
+
+        if let Err(e) = self.ws_client.connect().await {
+            let e = anyhow::Error::new(e).context("failed to connect Derive WebSocket");
+            if self.config.cancel_on_disconnect
+                && let Err(teardown_error) = self.teardown_partial_connect().await
+            {
+                return Err(e.context(teardown_error));
+            }
+
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    async fn enable_cancel_on_disconnect(&self) -> anyhow::Result<()> {
+        #[derive(serde::Deserialize)]
+        struct AccountSettings {
+            cancel_on_disconnect: bool,
+        }
+
+        let mut setup_client = create_ws_client(&self.config, &self.credential)?;
+        let setup_result = async {
+            setup_client
+                .connect()
+                .await
+                .context("failed to authenticate Derive cancel-on-disconnect setup connection")?;
+            setup_client
+                .set_cancel_on_disconnect(true)
+                .await
+                .context("failed to enable Derive cancel-on-disconnect")?;
+
+            let confirmation = time::timeout(CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT, async {
+                loop {
+                    let settings: AccountSettings = self
+                        .http_client
+                        .send_private(
+                            "private/get_account",
+                            &serde_json::json!({"wallet": self.credential.wallet_address()}),
+                        )
+                        .await
+                        .context("failed to read Derive cancel-on-disconnect setting")?;
+
+                    if settings.cancel_on_disconnect {
+                        return Ok::<(), anyhow::Error>(());
+                    }
+
+                    time::sleep(Duration::from_millis(250)).await;
+                }
+            });
+
+            Box::pin(confirmation).await.with_context(|| {
+                format!(
+                    "Derive cancel-on-disconnect was not confirmed within {} seconds",
+                    CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT.as_secs(),
+                )
+            })?
+        }
+        .await;
+
+        let disconnect_result = setup_client
+            .disconnect()
+            .await
+            .context("failed to close Derive cancel-on-disconnect setup connection");
+
+        match (setup_result, disconnect_result) {
+            (Err(e), Err(disconnect_error)) => Err(e.context(disconnect_error)),
+            (Err(e), Ok(())) => Err(e),
+            (Ok(()), result) => result,
+        }
+    }
+
     fn start_ws_dispatch(
         &self,
         rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
@@ -1057,10 +1125,7 @@ impl ExecutionClient for DeriveExecutionClient {
             }
         }
 
-        self.ws_client
-            .connect()
-            .await
-            .context("failed to connect Derive WebSocket")?;
+        self.connect_ws().await?;
 
         let Some(rx) = self.ws_client.take_event_receiver() else {
             let e = anyhow::anyhow!("Derive execution WS event receiver not initialized");
@@ -1238,6 +1303,7 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         let is_trigger_order = is_derive_trigger_order_type(order.order_type());
+        let cancel_on_disconnect = self.config.cancel_on_disconnect;
         let market_quote = (order.order_type() == OrderType::Market).then_some(());
 
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
@@ -1487,7 +1553,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 )
             };
 
-            let payload = match payload_result {
+            let mut payload = match payload_result {
                 Ok(p) => p,
                 Err(e) => {
                     log::warn!("Order encode failed for {}: {e}", order_for_task.client_order_id());
@@ -1497,6 +1563,8 @@ impl ExecutionClient for DeriveExecutionClient {
                     return Ok(());
                 }
             };
+
+            enable_resting_order_mmp(&mut payload, cancel_on_disconnect);
 
             // Pre-flight debug log so a venue 11012-style rejection can be
             // diagnosed without re-running with full payload tracing.
@@ -1893,6 +1961,7 @@ impl ExecutionClient for DeriveExecutionClient {
             .unwrap_or_else(|| (order.quantity(), order.price()));
         let target_quantity = cmd.quantity.unwrap_or(quantity);
         let target_price = cmd.price.or(price);
+        let cancel_on_disconnect = self.config.cancel_on_disconnect;
 
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let http_client = self.http_client.clone();
@@ -2038,6 +2107,7 @@ impl ExecutionClient for DeriveExecutionClient {
             };
 
             payload.expected_filled_amount = Some(expected_filled_amount);
+            enable_resting_order_mmp(&mut payload.order, cancel_on_disconnect);
 
             {
                 let _delivery = dispatch_state.delivery_guard();
@@ -2245,6 +2315,48 @@ impl OrderReportEvidence {
         }
 
         Ok(())
+    }
+}
+
+fn create_ws_client(
+    config: &DeriveExecutionClientConfig,
+    credential: &DeriveCredential,
+) -> anyhow::Result<DeriveWebSocketClient> {
+    let credentials = DeriveWsCredentials::new(
+        credential.wallet_address().to_string(),
+        credential.session_key(),
+    )
+    .context("failed to build Derive WebSocket credentials")?;
+    let mut ws_client = DeriveWebSocketClient::with_credentials(
+        Some(config.ws_url()),
+        config.environment,
+        config.transport_backend,
+        config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
+        credentials,
+        config.max_matching_requests_per_second,
+        config.max_per_instrument_matching_requests_per_second,
+    );
+
+    if let Some(secs) = config.ws_timeout_secs {
+        ws_client.set_request_timeout(Duration::from_secs(secs));
+    }
+
+    Ok(ws_client)
+}
+
+fn enable_resting_order_mmp(payload: &mut DeriveOrderParams, enabled: bool) {
+    if enabled
+        && payload.order_type == DeriveOrderType::Limit
+        && payload.trigger_type.is_none()
+        && matches!(
+            payload.time_in_force,
+            DeriveTimeInForce::Gtc | DeriveTimeInForce::PostOnly
+        )
+    {
+        payload.mmp = Some(true);
     }
 }
 

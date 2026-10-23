@@ -45,16 +45,16 @@ use crate::{
     accounts::{
         Account,
         base::BaseAccount,
+        fill_position_pnl,
         margin_model::{MarginModel, MarginModelHandle},
     },
     enums::{AccountType, OrderSide},
     events::{AccountState, OrderFilled},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
-    position::Position,
+    position::{Position, amount, notional},
     types::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity,
-        fixed::check_float_precision,
         money::{MONEY_RAW_MAX, MONEY_RAW_MIN, MoneyRaw},
     },
 };
@@ -631,12 +631,37 @@ impl Account for MarginAccount {
         fill: &OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
+        if let Some(commission) = fill.commission {
+            amount(commission)?;
+        }
+
+        let reduces = position.as_ref().is_some_and(|position| {
+            position.quantity.is_positive() && position.entry != fill.order_side
+        });
+
+        let net_pnl = fill_position_pnl(instrument, fill, position.as_ref())?;
         let mut pnls: Vec<Money> = Vec::new();
 
         // For premium-based instruments, realize the notional value as a cash flow on every fill
         if instrument.instrument_class().is_premium_based() {
-            let notional =
-                instrument.try_calculate_notional_value(fill.last_qty, fill.last_px, None)?;
+            let currency = if instrument.is_inverse() {
+                instrument
+                    .base_currency()
+                    .ok_or_else(|| anyhow::anyhow!("inverse instrument has no base currency"))?
+            } else {
+                instrument.cost_currency()
+            };
+
+            let notional = notional(
+                fill.last_qty,
+                fill.last_px,
+                instrument.multiplier(),
+                instrument
+                    .instrument_class()
+                    .divides_notional_by_price(instrument.is_inverse()),
+                currency,
+            )?;
+
             let pnl = if fill.order_side == OrderSide::Buy {
                 -notional
             } else {
@@ -646,19 +671,21 @@ impl Account for MarginAccount {
             return Ok(pnls);
         }
 
-        // For other instruments, only realize PnL on position reduction
-        if let Some(ref pos) = position
-            && pos.quantity.is_positive()
-            && pos.entry != fill.order_side
-        {
-            // Calculate and add PnL using the minimum of fill quantity and position quantity
-            // to avoid double-limiting that occurs in position.calculate_pnl()
-            let mut pnl_quantity = fill.last_qty.min(pos.quantity);
-            pnl_quantity.precision = fill.last_qty.precision;
-            check_float_precision(fill.last_px.precision)?;
-            let pnl =
-                pos.try_calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity)?;
-            pnls.push(pnl);
+        if let Some(net_pnl) = net_pnl {
+            // Portfolio deducts commission separately, after the commission-inclusive projection
+            let pnl = match fill
+                .commission
+                .filter(|fee| fee.currency == net_pnl.currency)
+            {
+                Some(fee) => net_pnl
+                    .checked_add(fee)
+                    .ok_or_else(|| anyhow::anyhow!("position gross PnL increment overflow"))?,
+                None => net_pnl,
+            };
+
+            if reduces || !pnl.is_zero() {
+                pnls.push(pnl);
+            }
         }
 
         Ok(pnls)
@@ -1515,15 +1542,73 @@ mod tests {
         assert_eq!(pnls.len(), 0);
     }
 
+    #[rstest]
+    #[case(OrderSide::Buy, "0.1234", OrderSide::Sell, "0.1235")]
+    #[case(OrderSide::Sell, "0.1235", OrderSide::Buy, "0.1234")]
+    fn test_calculate_pnls_preserves_micro_profit(
+        margin_account: MarginAccount,
+        #[case] opening_side: OrderSide,
+        #[case] opening_px: &str,
+        #[case] closing_side: OrderSide,
+        #[case] closing_px: &str,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let opening = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(PositionId::from("P-MICRO"))
+            .order_side(opening_side)
+            .last_qty(Quantity::from("0.01"))
+            .last_px(Price::from(opening_px))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+        let mut position = Position::new(&instrument, opening);
+        let closing = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position.id)
+            .trade_id(TradeId::from("T-CLOSE-MICRO"))
+            .order_side(closing_side)
+            .last_qty(Quantity::from("0.01"))
+            .last_px(Price::from(closing_px))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+
+        let pnls = margin_account
+            .calculate_pnls(&instrument, &closing, Some(position.clone()))
+            .unwrap();
+        position.try_apply(&closing).unwrap();
+        let expected = Money::from_decimal_exact(dec!(0.000001), Currency::USD()).unwrap();
+
+        assert_eq!(pnls, vec![expected]);
+        assert_eq!(position.realized_pnl, Some(expected));
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_calculate_pnls_rejects_opening_product_underflow(margin_account: MarginAccount) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .last_qty(Quantity::from("0.0000000000000001"))
+            .last_px(Price::from("0.0000000000000001"))
+            .commission(Money::from("1 USD"))
+            .build();
+
+        let result = margin_account.calculate_pnls(&instrument, &fill, None);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "position proportional arithmetic underflow"
+        );
+    }
+
     #[cfg(feature = "defi")]
     #[rstest]
-    #[case::precision_16("50001.0000000000000000", None)]
-    #[case::precision_17("50001.00000000000000000", Some(17))]
-    #[case::precision_18("50001.000000000000000000", Some(18))]
-    fn test_calculate_pnls_checks_reducing_fill_price_float_precision(
+    #[case::precision_16("50001.0000000000000000")]
+    #[case::precision_17("50001.00000000000000000")]
+    #[case::precision_18("50001.000000000000000000")]
+    fn test_calculate_pnls_preserves_high_precision_reducing_price(
         margin_account: MarginAccount,
         #[case] last_px: &str,
-        #[case] expected_error_precision: Option<u8>,
     ) {
         let btcusdt = currency_pair_btcusdt();
         let instrument = InstrumentAny::CurrencyPair(btcusdt.clone());
@@ -1540,7 +1625,7 @@ mod tests {
             .instrument_id(btcusdt.id)
             .trade_id(TradeId::from("T-2"))
             .order_side(OrderSide::Sell)
-            .last_qty(Quantity::from("1.000000"))
+            .last_qty(Quantity::from("2.000000000000000001"))
             .last_px(Price::from(last_px))
             .currency(btcusdt.quote_currency)
             .position_id(PositionId::from("P-1"))
@@ -1548,13 +1633,7 @@ mod tests {
 
         let result = margin_account.calculate_pnls(&instrument, &fill_close, Some(position));
 
-        match expected_error_precision {
-            None => assert_eq!(result.unwrap(), vec![Money::from("1 USDT")]),
-            Some(precision) => assert_eq!(
-                result.unwrap_err().to_string(),
-                format!("Fixed-point precision {precision} exceeds maximum float precision 16")
-            ),
-        }
+        assert_eq!(result.unwrap(), vec![Money::from("1 USDT")]);
     }
 
     #[rstest]

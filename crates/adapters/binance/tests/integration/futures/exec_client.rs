@@ -104,6 +104,7 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use parking_lot::Mutex;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::json;
 
 fn has_auth_headers(headers: &HeaderMap) -> bool {
@@ -6350,14 +6351,14 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
         assert_eq!(long_position.side, PositionSide::Long);
         assert_eq!(long_position.quantity, long_qty);
         assert_eq!(long_position.signed_decimal_qty(), long_qty.as_decimal());
-        assert_eq!(long_position.avg_px_open, 50000.0);
+        assert_eq!(long_position.avg_px_open, dec!(50000));
         assert_eq!(short_position.id, short_position_id);
         assert_eq!(short_position.account_id, account_id);
         assert_eq!(short_position.instrument_id, instrument_id);
         assert_eq!(short_position.side, PositionSide::Short);
         assert_eq!(short_position.quantity, short_qty);
         assert_eq!(short_position.signed_decimal_qty(), -short_qty.as_decimal());
-        assert_eq!(short_position.avg_px_open, 52000.0);
+        assert_eq!(short_position.avg_px_open, dec!(52000));
 
         if expected_fill_count > 0 {
             assert_eq!(long_position.events[0].trade_id, TradeId::from("12345678"));

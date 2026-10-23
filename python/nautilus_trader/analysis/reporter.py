@@ -177,7 +177,17 @@ class ReportProvider:
         # Preserve source nanoseconds: pandas coerces mixed int/None columns to float64
         ts_closed = [data[i]["ts_closed"] for i in report.index]
         report = report.set_index("position_id")
-        for col in ("signed_qty", "quote_currency", "base_currency", "settlement_currency"):
+
+        for col in (
+            "signed_qty",
+            "quote_currency",
+            "base_currency",
+            "settlement_currency",
+            "replay_events",
+            "fill_voids",
+            "instrument_class",
+            "is_currency_pair",
+        ):
             if col in report.columns:
                 del report[col]
         report["ts_opened"] = [_ns_to_dt(ts) for ts in report["ts_opened"]]

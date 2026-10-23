@@ -19,12 +19,14 @@ use std::sync::LazyLock;
 
 use ahash::AHashSet;
 use nautilus_model::{
-    enums::{OrderSide, OrderType, PositionSide, TimeInForce},
+    enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{ClientId, Venue},
 };
 use ustr::Ustr;
 
-use super::enums::{OKXBookChannel, OKXInstrumentType, OKXTradeMode, OKXVipLevel};
+use super::enums::{
+    OKXBookChannel, OKXInstrumentType, OKXTargetCurrency, OKXTradeMode, OKXVipLevel,
+};
 
 /// Venue identifier string.
 pub const OKX: &str = "OKX";
@@ -156,6 +158,91 @@ pub(crate) fn okx_reduce_only_wire_value(
         )),
         OKXInstrumentType::Any => Ok(Some(true)),
     }
+}
+
+/// Resolves explicit sizing for algo orders.
+///
+/// # Errors
+///
+/// Returns an error if the requested quantity denomination has no supported wire representation.
+pub(crate) fn okx_algo_target_currency(
+    instrument_type: OKXInstrumentType,
+    td_mode: OKXTradeMode,
+    order_side: OrderSide,
+    order_type: OrderType,
+    quote_quantity: bool,
+) -> Result<Option<OKXTargetCurrency>, String> {
+    if !OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type) {
+        return Ok(None);
+    }
+
+    if instrument_type == OKXInstrumentType::Spot && order_side == OrderSide::Buy {
+        if matches!(
+            order_type,
+            OrderType::StopMarket | OrderType::MarketIfTouched
+        ) {
+            return Ok(Some(if quote_quantity {
+                OKXTargetCurrency::QuoteCcy
+            } else {
+                OKXTargetCurrency::BaseCcy
+            }));
+        }
+
+        if order_type == OrderType::TrailingStopMarket {
+            return if quote_quantity {
+                Ok(None)
+            } else {
+                Err(format!(
+                    "OKX {instrument_type} {order_type} algo buys require quote quantity in {td_mode} mode"
+                ))
+            };
+        }
+    }
+
+    if quote_quantity {
+        return Err(format!(
+            "OKX {instrument_type} {order_type} algo orders do not support quote quantity in {td_mode} mode"
+        ));
+    }
+
+    Ok(None)
+}
+
+/// Validates a native algo order's trigger feed.
+///
+/// # Errors
+///
+/// Returns an error if OKX cannot represent the requested trigger feed.
+pub(crate) fn validate_algo_trigger_type(
+    instrument_type: OKXInstrumentType,
+    td_mode: OKXTradeMode,
+    order_type: OrderType,
+    trigger_type: Option<TriggerType>,
+) -> Result<(), String> {
+    if !OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type) {
+        return Ok(());
+    }
+
+    let Some(trigger_type) = trigger_type else {
+        return Ok(());
+    };
+
+    let supported = match trigger_type {
+        TriggerType::Default | TriggerType::LastPrice => true,
+        TriggerType::MarkPrice | TriggerType::IndexPrice => {
+            (instrument_type != OKXInstrumentType::Spot || td_mode != OKXTradeMode::Cash)
+                && order_type != OrderType::TrailingStopMarket
+        }
+        _ => false,
+    };
+
+    if !supported {
+        return Err(format!(
+            "OKX {instrument_type} {order_type} algo orders do not support {trigger_type} triggers"
+        ));
+    }
+
+    Ok(())
 }
 
 /// OKX supported order time in force.
@@ -436,6 +523,264 @@ mod tests {
         assert!(err.contains("at most 32"));
         assert!(err.contains("was 35"));
         assert!(err.contains("use_uuid_client_order_ids"));
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, false, Some(OKXTargetCurrency::BaseCcy))]
+    #[case(OrderSide::Buy, true, Some(OKXTargetCurrency::QuoteCcy))]
+    #[case(OrderSide::Sell, false, None)]
+    fn test_okx_algo_target_currency_cash_market_orders(
+        #[case] side: OrderSide,
+        #[case] quote_quantity: bool,
+        #[case] expected: Option<OKXTargetCurrency>,
+        #[values(OrderType::StopMarket, OrderType::MarketIfTouched)] order_type: OrderType,
+    ) {
+        assert_eq!(
+            okx_algo_target_currency(
+                OKXInstrumentType::Spot,
+                OKXTradeMode::Cash,
+                side,
+                order_type,
+                quote_quantity,
+            ),
+            Ok(expected),
+        );
+    }
+
+    #[rstest]
+    fn test_okx_algo_target_currency_denies_quote_sells(
+        #[values(
+            OrderType::StopMarket,
+            OrderType::MarketIfTouched,
+            OrderType::TrailingStopMarket
+        )]
+        order_type: OrderType,
+        #[values(OKXTradeMode::Cash, OKXTradeMode::Cross, OKXTradeMode::Isolated)]
+        trade_mode: OKXTradeMode,
+    ) {
+        assert_eq!(
+            okx_algo_target_currency(
+                OKXInstrumentType::Spot,
+                trade_mode,
+                OrderSide::Sell,
+                order_type,
+                true,
+            ),
+            Err(format!(
+                "OKX Spot {order_type} algo orders do not support quote quantity in {trade_mode} mode"
+            )),
+        );
+    }
+
+    #[rstest]
+    #[case(OKXInstrumentType::Swap, OrderType::StopMarket)]
+    #[case(OKXInstrumentType::Spot, OrderType::StopLimit)]
+    #[case(OKXInstrumentType::Spot, OrderType::LimitIfTouched)]
+    fn test_okx_algo_target_currency_preserves_base_routes(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] order_type: OrderType,
+    ) {
+        assert_eq!(
+            okx_algo_target_currency(
+                instrument_type,
+                OKXTradeMode::Cash,
+                OrderSide::Buy,
+                order_type,
+                false,
+            ),
+            Ok(None),
+        );
+    }
+
+    #[rstest]
+    fn test_okx_algo_target_currency_spot_trailing_buy_uses_native_quote_size(
+        #[values(OKXTradeMode::Cash, OKXTradeMode::Cross, OKXTradeMode::Isolated)]
+        trade_mode: OKXTradeMode,
+    ) {
+        assert_eq!(
+            okx_algo_target_currency(
+                OKXInstrumentType::Spot,
+                trade_mode,
+                OrderSide::Buy,
+                OrderType::TrailingStopMarket,
+                true,
+            ),
+            Ok(None),
+        );
+    }
+
+    #[rstest]
+    fn test_okx_algo_target_currency_does_not_restrict_ordinary_market_orders(
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+        #[values(false, true)] quote_quantity: bool,
+    ) {
+        assert_eq!(
+            okx_algo_target_currency(
+                OKXInstrumentType::Spot,
+                OKXTradeMode::Cash,
+                side,
+                OrderType::Market,
+                quote_quantity,
+            ),
+            Ok(None),
+        );
+    }
+
+    #[rstest]
+    #[case(OKXTradeMode::Cross, false, OKXTargetCurrency::BaseCcy)]
+    #[case(OKXTradeMode::Cross, true, OKXTargetCurrency::QuoteCcy)]
+    #[case(OKXTradeMode::Isolated, false, OKXTargetCurrency::BaseCcy)]
+    #[case(OKXTradeMode::Isolated, true, OKXTargetCurrency::QuoteCcy)]
+    fn test_okx_algo_target_currency_non_cash_spot_buys(
+        #[case] trade_mode: OKXTradeMode,
+        #[case] quote_quantity: bool,
+        #[case] expected: OKXTargetCurrency,
+        #[values(OrderType::StopMarket, OrderType::MarketIfTouched)] order_type: OrderType,
+    ) {
+        assert_eq!(
+            okx_algo_target_currency(
+                OKXInstrumentType::Spot,
+                trade_mode,
+                OrderSide::Buy,
+                order_type,
+                quote_quantity,
+            ),
+            Ok(Some(expected)),
+        );
+    }
+
+    #[rstest]
+    #[case(OKXInstrumentType::Spot, OrderType::StopLimit)]
+    #[case(OKXInstrumentType::Spot, OrderType::LimitIfTouched)]
+    #[case(OKXInstrumentType::Swap, OrderType::StopMarket)]
+    #[case(OKXInstrumentType::Futures, OrderType::MarketIfTouched)]
+    fn test_okx_algo_target_currency_denies_unsupported_quote_orders(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] order_type: OrderType,
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+        #[values(OKXTradeMode::Cash, OKXTradeMode::Cross, OKXTradeMode::Isolated)]
+        trade_mode: OKXTradeMode,
+    ) {
+        assert_eq!(
+            okx_algo_target_currency(instrument_type, trade_mode, side, order_type, true),
+            Err(format!(
+                "OKX {instrument_type} {order_type} algo orders do not support quote quantity in {trade_mode} mode"
+            )),
+        );
+    }
+
+    #[rstest]
+    fn test_okx_algo_target_currency_denies_base_spot_trailing_buy() {
+        assert_eq!(
+            okx_algo_target_currency(
+                OKXInstrumentType::Spot,
+                OKXTradeMode::Cash,
+                OrderSide::Buy,
+                OrderType::TrailingStopMarket,
+                false,
+            ),
+            Err(
+                "OKX Spot TRAILING_STOP_MARKET algo buys require quote quantity in Cash mode"
+                    .to_string()
+            ),
+        );
+    }
+
+    #[rstest]
+    #[case(OKXInstrumentType::Spot, OrderType::StopMarket, None)]
+    #[case(
+        OKXInstrumentType::Spot,
+        OrderType::StopLimit,
+        Some(TriggerType::Default)
+    )]
+    #[case(
+        OKXInstrumentType::Spot,
+        OrderType::MarketIfTouched,
+        Some(TriggerType::LastPrice)
+    )]
+    #[case(
+        OKXInstrumentType::Spot,
+        OrderType::TrailingStopMarket,
+        Some(TriggerType::LastPrice)
+    )]
+    #[case(
+        OKXInstrumentType::Swap,
+        OrderType::StopMarket,
+        Some(TriggerType::MarkPrice)
+    )]
+    #[case(
+        OKXInstrumentType::Futures,
+        OrderType::LimitIfTouched,
+        Some(TriggerType::IndexPrice)
+    )]
+    fn test_validate_algo_trigger_type_accepts_supported_feeds(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] order_type: OrderType,
+        #[case] trigger_type: Option<TriggerType>,
+    ) {
+        assert_eq!(
+            validate_algo_trigger_type(
+                instrument_type,
+                OKXTradeMode::Cash,
+                order_type,
+                trigger_type
+            ),
+            Ok(())
+        );
+    }
+
+    #[rstest]
+    #[case(OKXInstrumentType::Spot, OrderType::StopMarket, TriggerType::MarkPrice)]
+    #[case(
+        OKXInstrumentType::Spot,
+        OrderType::MarketIfTouched,
+        TriggerType::IndexPrice
+    )]
+    #[case(OKXInstrumentType::Spot, OrderType::StopLimit, TriggerType::MarkPrice)]
+    #[case(
+        OKXInstrumentType::Spot,
+        OrderType::LimitIfTouched,
+        TriggerType::IndexPrice
+    )]
+    #[case(OKXInstrumentType::Swap, OrderType::StopMarket, TriggerType::BidAsk)]
+    #[case(
+        OKXInstrumentType::Swap,
+        OrderType::TrailingStopMarket,
+        TriggerType::MarkPrice
+    )]
+    fn test_validate_algo_trigger_type_denies_unsupported_feeds(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] order_type: OrderType,
+        #[case] trigger_type: TriggerType,
+    ) {
+        assert_eq!(
+            validate_algo_trigger_type(
+                instrument_type,
+                OKXTradeMode::Cash,
+                order_type,
+                Some(trigger_type)
+            ),
+            Err(format!(
+                "OKX {instrument_type} {order_type} algo orders do not support {trigger_type} triggers"
+            )),
+        );
+    }
+
+    #[rstest]
+    fn test_validate_algo_trigger_type_allows_non_cash_margin_feeds(
+        #[values(OKXTradeMode::Cross, OKXTradeMode::Isolated)] trade_mode: OKXTradeMode,
+        #[values(OrderType::StopMarket, OrderType::MarketIfTouched)] order_type: OrderType,
+        #[values(TriggerType::MarkPrice, TriggerType::IndexPrice)] trigger_type: TriggerType,
+    ) {
+        assert_eq!(
+            validate_algo_trigger_type(
+                OKXInstrumentType::Spot,
+                trade_mode,
+                order_type,
+                Some(trigger_type),
+            ),
+            Ok(()),
+        );
     }
 
     #[rstest]

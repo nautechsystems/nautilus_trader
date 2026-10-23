@@ -23,10 +23,13 @@
 //! also deletes the levels beyond those prices, and the venue's later removals
 //! delete nothing. Other `price_change` batches remain wire-faithful.
 //!
-//! With `compute_effective_deltas` enabled, book snapshots emit only the net
-//! diff against the local book (an empty diff emits nothing), and book snapshots,
-//! price changes, and best bid/ask events older than that book are ignored. After
-//! an epoch reset, the next snapshot seeds the book unchanged.
+//! For book-delta output, both modes ignore snapshots and price changes older than the retained mark.
+//! A book-delta unsubscribe, shard reconnect, or tick-size change resets it; recovery cycles retain it.
+//! Verified snapshot metadata enables incremental hash checks before publication. With
+//! `compute_effective_deltas` enabled, snapshots emit only the net diff against published state;
+//! an empty diff emits nothing. An epoch
+//! reset or discarded unpublished group requires a full snapshot reseed. In effective mode,
+//! best bid/ask events older than the maintained book are also ignored.
 //!
 //! Tick-size changes are handled as book epoch transitions: the local order
 //! book is dropped, incremental `price_change` deltas are gated through the
@@ -36,10 +39,11 @@
 //! `last_quotes` is preserved so sizes carry forward only at matching top prices. See
 //! `docs/integrations/polymarket.md` for the full description.
 //!
-//! A snapshot hash mismatch reuses the same book-delta gate and triggers recovery
-//! until a later valid snapshot arrives. During recovery it fails the waiting
-//! replacement attempt, so the runner retries without waiting for the snapshot
-//! deadline. The mismatched snapshot is not parsed, applied, or emitted as a quote.
+//! A rejected snapshot hash drops the comparison book and gates book deltas. Without an armed
+//! snapshot deadline or running recovery, it starts recovery immediately; an armed deadline starts
+//! recovery when it expires. During recovery, rejection fails the waiting replacement attempt so the
+//! runner retries without waiting for that attempt's deadline. Rejected snapshot levels are not
+//! parsed, applied, or emitted as a quote.
 
 use std::sync::Arc;
 
@@ -47,12 +51,12 @@ use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::one::Ref};
 use nautilus_common::{
     live::{
-        dst::time::{Duration, Instant},
+        dst::time::{self, Duration, Instant},
         sender::EventSender,
     },
     messages::DataEvent,
 };
-use nautilus_core::{AtomicMap, time::AtomicTime};
+use nautilus_core::{AtomicMap, UnixNanos, time::AtomicTime};
 #[cfg(test)]
 use nautilus_live::task::TaskGroup;
 use nautilus_live::task::TaskSpawner;
@@ -79,7 +83,7 @@ use super::{
     spawn_task,
 };
 use crate::{
-    book::BookSequenceOutcome,
+    book::{BookSequenceOutcome, integrity::BookIntegrity},
     filters::InstrumentFilter,
     http::{
         gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
@@ -263,6 +267,10 @@ fn handle_book_reconnect(ctx: &WsMessageContext, shard_id: Option<usize>) {
     }
 
     for instrument_id in &instrument_ids {
+        ctx.subscriptions
+            .book_integrity
+            .lock()
+            .remove(instrument_id);
         ctx.subscriptions.order_books.remove(instrument_id);
     }
 
@@ -365,36 +373,87 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
-            if let Some(book) = comparison_book(ctx, instrument_id) {
-                let ts_event = match parse_timestamp_ms(&snap.timestamp) {
-                    Ok(ts) => ts,
-                    Err(e) => {
-                        log::error!("Failed to parse book snapshot timestamp: {e}");
-                        return;
-                    }
-                };
+            let ts_event = match parse_timestamp_ms(&snap.timestamp) {
+                Ok(timestamp) => timestamp,
+                Err(e) => {
+                    log::error!("Failed to parse book snapshot timestamp: {e}");
+                    return;
+                }
+            };
 
-                if ts_event < book.ts_last {
-                    log::debug!(
-                        "Ignoring stale book snapshot for {instrument_id}: ts_event={ts_event} < ts_last={}",
-                        book.ts_last,
+            if let Some(book) = ctx.subscriptions.order_books.get(&instrument_id)
+                && ts_event < book.ts_last
+            {
+                log::debug!(
+                    "Ignoring stale book snapshot for {instrument_id}: ts_event={ts_event} < ts_last={}",
+                    book.ts_last
+                );
+                return;
+            }
+
+            let mut integrity = ctx.subscriptions.book_integrity.lock();
+            let mut state = ctx
+                .subscriptions
+                .active_delta_subs
+                .contains(&instrument_id)
+                .then(|| integrity.entry(instrument_id).or_default());
+
+            if let Some(state) = state.as_mut()
+                && state.is_stale(ts_event)
+            {
+                return;
+            }
+
+            let snap = match state.as_ref() {
+                Some(state) => {
+                    state.resolve_snapshot(snap, meta.min_order_size.as_deref(), meta.neg_risk)
+                }
+                None => snap,
+            };
+
+            let verified = match verify_book_snapshot_hash(
+                &snap,
+                meta.min_order_size.as_deref(),
+                meta.neg_risk,
+            ) {
+                Ok(false)
+                    if state
+                        .as_ref()
+                        .is_some_and(|state| state.requires_verification()) =>
+                {
+                    if let Some(state) = state.as_mut() {
+                        state.discard_pending();
+                    }
+
+                    ctx.subscriptions.order_books.remove(&instrument_id);
+                    drop(integrity);
+                    reject_book_snapshot(
+                        ctx,
+                        instrument_id,
+                        PolymarketWsError::InvalidSnapshot(
+                            "Missing book snapshot hash preimage".to_string(),
+                        ),
                     );
                     return;
                 }
-            }
+                Ok(verified) => verified,
+                Err(e) => {
+                    log::error!("Rejected book snapshot for {instrument_id}: {e}");
 
-            if let Err(e) =
-                verify_book_snapshot_hash(&snap, meta.min_order_size.as_deref(), meta.neg_risk)
-            {
-                log::error!("Rejected book snapshot for {instrument_id}: {e}");
-                reject_book_snapshot(
-                    ctx,
-                    instrument_id,
-                    PolymarketWsError::InvalidSnapshot(e.to_string()),
-                );
+                    if let Some(state) = state.as_mut() {
+                        state.discard_pending();
+                        ctx.subscriptions.order_books.remove(&instrument_id);
+                    }
 
-                return;
-            }
+                    drop(integrity);
+                    reject_book_snapshot(
+                        ctx,
+                        instrument_id,
+                        PolymarketWsError::InvalidSnapshot(e.to_string()),
+                    );
+                    return;
+                }
+            };
 
             let ts_init = ctx.clock.get_time_ns();
 
@@ -413,15 +472,16 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     meta.size_precision,
                     ts_init,
                 ) {
-                    Ok(deltas) => match comparison_book(ctx, instrument_id)
-                        .filter(|book| book.update_count > 0)
-                    {
+                    Ok(deltas) => match comparison_book(ctx, instrument_id).filter(|book| {
+                        book.update_count > 0
+                            && !state.as_ref().is_some_and(|state| state.has_pending())
+                    }) {
                         Some(book) => {
                             let mut scratch = book.clone();
                             drop(book);
 
                             match apply_snapshot_and_diff(&mut scratch, &deltas) {
-                                Ok(effective) => Some((effective, Some(scratch))),
+                                Ok(effective) => Some((effective, scratch)),
                                 Err(e) => {
                                     log::error!(
                                         "Failed to apply book snapshot for {instrument_id}: {e}"
@@ -433,12 +493,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         None => {
                             let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
                             match book.apply_deltas(&deltas) {
-                                Ok(()) => Some((Some(deltas), Some(book))),
+                                Ok(()) => Some((Some(deltas), book)),
                                 Err(e) => {
                                     log::error!(
                                         "Failed to apply book snapshot for {instrument_id}: {e}"
                                     );
-                                    Some((Some(deltas), None))
+                                    None
                                 }
                             }
                         }
@@ -460,8 +520,13 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                             instrument_id,
                             Instant::now(),
                         ) {
-                            if let Some(book) = baseline {
-                                ctx.subscriptions.order_books.insert(instrument_id, book);
+                            ctx.subscriptions
+                                .order_books
+                                .insert(instrument_id, baseline);
+
+                            if let Some(state) = state.as_mut() {
+                                state.observe(ts_event);
+                                state.accept_snapshot(snap.clone(), verified);
                             }
 
                             if let Some(deltas) = emit {
@@ -561,71 +626,18 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
 
                 let changes = std::mem::take(&mut groups[group_index].1);
-
                 if !changes.is_empty()
                     && ctx.subscriptions.active_delta_subs.contains(&instrument_id)
                 {
-                    match ctx
-                        .subscriptions
-                        .book_sync
-                        .validate_incremental_if_subscribed(
-                            &ctx.subscriptions.active_delta_subs,
-                            instrument_id,
-                            Instant::now(),
-                        ) {
-                        BookSequenceOutcome::Accept => {
-                            let parsed = parse_book_deltas(
-                                &changes,
-                                instrument_id,
-                                meta.price_precision,
-                                meta.size_precision,
-                                ts_event,
-                                ts_init,
-                            )
-                            .into_iter()
-                            .filter_map(|result| match result {
-                                Ok(delta) => Some(delta),
-                                Err(e) => {
-                                    log::error!(
-                                        "Failed to parse book delta for {instrument_id}: {e}"
-                                    );
-                                    None
-                                }
-                            })
-                            .collect::<Vec<_>>();
-
-                            if !parsed.is_empty() {
-                                let mut deltas = OrderBookDeltas::new(instrument_id, parsed);
-                                if let Some(mut book) =
-                                    ctx.subscriptions.order_books.get_mut(&instrument_id)
-                                    && let Some(change) = changes.last()
-                                {
-                                    deltas = apply_price_change(
-                                        &mut book,
-                                        deltas,
-                                        change,
-                                        meta.price_precision,
-                                        meta.size_precision,
-                                    );
-                                }
-
-                                let data: NautilusData = deltas.into();
-                                if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
-                                    log::error!("Failed to emit book deltas: {e}");
-                                }
-                            }
-                        }
-                        BookSequenceOutcome::Suppress => {
-                            log::debug!(
-                                "Dropping book deltas for {instrument_id}: awaiting valid snapshot",
-                            );
-                        }
-                        BookSequenceOutcome::Recover => {
-                            log::debug!(
-                                "Dropping book deltas for {instrument_id}: awaiting valid snapshot",
-                            );
-                            start_book_recovery(ctx, instrument_id);
-                        }
+                    for changes in changes.chunk_by(|left, right| left.hash == right.hash) {
+                        handle_book_changes(
+                            ctx,
+                            meta,
+                            changes,
+                            &quotes.timestamp,
+                            ts_event,
+                            ts_init,
+                        );
                     }
                 }
 
@@ -819,6 +831,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
             // Book epoch transition; see module docs.
             let instrument_id = meta.instrument_id;
+            ctx.subscriptions
+                .book_integrity
+                .lock()
+                .remove(&instrument_id);
             ctx.subscriptions.order_books.remove(&instrument_id);
 
             request_book_recovery(ctx, instrument_id);
@@ -1262,6 +1278,221 @@ fn emit_quote_if_changed(ctx: &WsMessageContext, instrument_id: InstrumentId, qu
         {
             log::error!("Failed to emit quote tick: {e}");
         }
+    }
+}
+
+fn handle_book_changes(
+    ctx: &WsMessageContext,
+    meta: TokenMeta,
+    changes: &[&PolymarketQuote],
+    timestamp: &str,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) {
+    let instrument_id = meta.instrument_id;
+    let mut integrity = ctx.subscriptions.book_integrity.lock();
+    if !ctx.subscriptions.active_delta_subs.contains(&instrument_id) {
+        return;
+    }
+
+    let state = integrity.entry(instrument_id).or_default();
+    if !state.observe(ts_event) {
+        return;
+    }
+
+    let outcome = ctx
+        .subscriptions
+        .book_sync
+        .validate_incremental_if_subscribed(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            Instant::now(),
+        );
+
+    match outcome {
+        BookSequenceOutcome::Suppress => return,
+        BookSequenceOutcome::Recover => {
+            drop(integrity);
+            start_book_recovery(ctx, instrument_id);
+            return;
+        }
+        BookSequenceOutcome::Accept => {}
+    }
+
+    let result = apply_book_changes(ctx, meta, changes, timestamp, ts_event, ts_init, state);
+
+    match result {
+        Ok(Some(deltas)) => {
+            drop(integrity);
+
+            if let Err(e) = ctx.data_sender.send(DataEvent::Data(deltas.into())) {
+                log::error!("Failed to emit book deltas: {e}");
+            }
+        }
+        Ok(None) => {
+            let monitor = if state.monitor_running {
+                None
+            } else {
+                state.deadline().map(|deadline| {
+                    state.monitor_running = true;
+                    (deadline, state.cancellation.clone())
+                })
+            };
+
+            drop(integrity);
+
+            if let Some((deadline, cancellation)) = monitor {
+                spawn_integrity_monitor(ctx, instrument_id, deadline, cancellation);
+            }
+        }
+        Err(e) => {
+            log::warn!("Book hash group for {instrument_id} is unverifiable: {e}");
+            state.discard_pending();
+            ctx.subscriptions.order_books.remove(&instrument_id);
+            let outcome = ctx.subscriptions.book_sync.request_recovery_if_subscribed(
+                &ctx.subscriptions.active_delta_subs,
+                instrument_id,
+                Instant::now(),
+            );
+            drop(integrity);
+
+            if outcome == BookSequenceOutcome::Recover {
+                start_book_recovery(ctx, instrument_id);
+            }
+        }
+    }
+}
+
+fn apply_book_changes(
+    ctx: &WsMessageContext,
+    meta: TokenMeta,
+    changes: &[&PolymarketQuote],
+    timestamp: &str,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    state: &mut BookIntegrity,
+) -> anyhow::Result<Option<OrderBookDeltas>> {
+    let instrument_id = meta.instrument_id;
+
+    let Some(change) = changes.last() else {
+        return Ok(None);
+    };
+
+    state.check_group(ts_event, &change.hash)?;
+    let mut parsed = Vec::with_capacity(changes.len());
+
+    for result in parse_book_deltas(
+        changes,
+        instrument_id,
+        meta.price_precision,
+        meta.size_precision,
+        ts_event,
+        ts_init,
+    ) {
+        match result {
+            Ok(delta) => parsed.push(delta),
+            Err(e) if state.requires_verification() => return Err(e),
+            Err(e) => log::error!("Failed to parse book delta for {instrument_id}: {e}"),
+        }
+    }
+
+    if parsed.is_empty() {
+        return Ok(None);
+    }
+
+    let deltas = OrderBookDeltas::new(instrument_id, parsed);
+
+    let Some(mut book) = ctx.subscriptions.order_books.get_mut(&instrument_id) else {
+        anyhow::bail!("Accepted snapshot has no cached book");
+    };
+
+    let deltas = apply_price_change(
+        &mut book,
+        deltas,
+        change,
+        meta.price_precision,
+        meta.size_precision,
+    );
+    state.validate(
+        &book,
+        deltas,
+        timestamp,
+        &change.hash,
+        ctx.book_snapshot_timeout,
+    )
+}
+
+fn spawn_integrity_monitor(
+    ctx: &WsMessageContext,
+    instrument_id: InstrumentId,
+    mut deadline: Instant,
+    cancellation: CancellationToken,
+) {
+    let subscriptions = ctx.subscriptions.clone();
+    let tasks = ctx.tasks.clone();
+    let shutdown = tasks.cancellation_token();
+    let snapshot_timeout = ctx.book_snapshot_timeout;
+    if let Err(e) = ctx.tasks.spawn(async move {
+        loop {
+            tokio::select! {
+                biased;
+                () = shutdown.cancelled() => return,
+                () = cancellation.cancelled() => return,
+                () = time::sleep_until(deadline) => {}
+            }
+            let mut integrity = subscriptions.book_integrity.lock();
+
+            if cancellation.is_cancelled() {
+                return;
+            }
+
+            let Some(state) = integrity.get_mut(&instrument_id) else {
+                return;
+            };
+
+            let Some(current_deadline) = state.deadline() else {
+                state.monitor_running = false;
+                return;
+            };
+
+            if current_deadline > Instant::now() {
+                deadline = current_deadline;
+                continue;
+            }
+
+            log::warn!(
+                "Book hash group for {instrument_id} remained unverifiable until its deadline"
+            );
+            state.monitor_running = false;
+            state.discard_pending();
+            subscriptions.order_books.remove(&instrument_id);
+            let outcome = subscriptions.book_sync.request_recovery_if_subscribed(
+                &subscriptions.active_delta_subs,
+                instrument_id,
+                Instant::now(),
+            );
+            drop(integrity);
+
+            if outcome == BookSequenceOutcome::Recover {
+                let token_id = subscriptions
+                    .instruments
+                    .get_cloned(&instrument_id)
+                    .map(|instrument| instrument.raw_symbol().as_str().to_string());
+                crate::book::recovery::start_recovery(
+                    instrument_id,
+                    token_id,
+                    &subscriptions.active_delta_subs,
+                    &subscriptions.book_sync,
+                    &subscriptions.ws_client,
+                    snapshot_timeout,
+                    &tasks,
+                );
+            }
+
+            return;
+        }
+    }) {
+        log::debug!("Skipping Polymarket integrity monitor after shutdown began: {e}");
     }
 }
 
@@ -1834,12 +2065,12 @@ mod tests {
             opening_order_id: ClientOrderId::from("ENTRY-1"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 1.0,
+            signed_qty: 1.into(),
             quantity: Quantity::from("1"),
             last_qty: Quantity::from("1"),
             last_px: Price::from("0.75"),
             currency: Currency::pUSD(),
-            avg_px_open: 0.75,
+            avg_px_open: "0.75".parse().unwrap(),
             realized_pnl: None,
             event_id: UUID4::new(),
             ts_event: UnixNanos::from(1),
@@ -4330,6 +4561,22 @@ mod tests {
             .book_sync
             .claim_recovery(other_id)
             .unwrap();
+        let closed_integrity_cancellation = ctx
+            .subscriptions
+            .book_integrity
+            .lock()
+            .entry(no.id())
+            .or_default()
+            .cancellation
+            .clone();
+        let other_integrity_cancellation = ctx
+            .subscriptions
+            .book_integrity
+            .lock()
+            .entry(other_id)
+            .or_default()
+            .cancellation
+            .clone();
         assert!(upsert_data_resolve_watch_entry_from_instrument(
             &ctx.resolve_poll_watchlist,
             &yes,
@@ -4356,6 +4603,17 @@ mod tests {
         assert!(!ctx.subscriptions.active_delta_subs.contains(&no.id()));
         assert!(closed_recovery.cancellation.is_cancelled());
         assert!(!other_recovery.cancellation.is_cancelled());
+        assert!(closed_integrity_cancellation.is_cancelled());
+        assert!(!other_integrity_cancellation.is_cancelled());
+        assert_eq!(
+            ctx.subscriptions
+                .book_integrity
+                .lock()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![other_id],
+        );
         assert!(ctx.subscriptions.active_delta_subs.contains(&other_id));
         assert!(
             ctx.subscriptions
@@ -5813,6 +6071,111 @@ mod tests {
         };
 
         assert_eq!(operations, expected_operations);
+        assert!(
+            payloads
+                .iter()
+                .all(|payload| payload["assets_ids"] == serde_json::json!([TEST_TOKEN_ID_YES]))
+        );
+    }
+
+    #[rstest]
+    #[case::deadline(1, true, false, true)]
+    #[case::disabled(0, false, false, true)]
+    #[case::received(1, false, true, true)]
+    #[case::auto_load(1, true, false, false)]
+    #[case::auto_load_disabled(0, false, false, false)]
+    #[tokio::test]
+    async fn fresh_book_subscription_recovers_a_missing_snapshot(
+        #[case] timeout_secs: u64,
+        #[case] recovers: bool,
+        #[case] received: bool,
+        #[case] cached: bool,
+    ) {
+        let state = TestServerState::default();
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        client.config.book_snapshot_timeout_secs = timeout_secs;
+        client.config.auto_load_debounce_ms = 1;
+        let market = gamma_market_recheck_fixture_value();
+        *state.gamma_response.lock().await = Some(serde_json::json!([market.clone()]));
+        let instrument = instrument_from_gamma_fixture(market);
+        let instrument_id = instrument.id();
+
+        if cached {
+            cache_instrument_unchecked(
+                &client.instruments,
+                &client.subscriptions.token_meta,
+                &instrument,
+            );
+        }
+
+        client
+            .subscribe_book_deltas(SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            ))
+            .expect("subscribe book deltas");
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.market_payloads.lock().await.is_empty() }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        if received {
+            assert!(
+                client
+                    .subscriptions
+                    .book_sync
+                    .record_snapshot_if_subscribed(
+                        &client.subscriptions.active_delta_subs,
+                        instrument_id,
+                        Instant::now(),
+                    )
+            );
+        }
+
+        if recovers {
+            wait_until_async(
+                || {
+                    let state = state.clone();
+                    async move { state.market_payloads.lock().await.len() >= 3 }
+                },
+                StdDuration::from_secs(3),
+            )
+            .await;
+        } else {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+        }
+
+        let payloads = state.market_payloads.lock().await.clone();
+        client
+            .ws_client
+            .disconnect()
+            .await
+            .expect("disconnect failed");
+        let operations = payloads
+            .iter()
+            .map(|payload| payload["operation"].as_str())
+            .collect::<Vec<_>>();
+
+        let expected = if recovers {
+            vec![None, Some("unsubscribe"), Some("subscribe")]
+        } else {
+            vec![None]
+        };
+
+        assert_eq!(operations, expected);
         assert!(
             payloads
                 .iter()
@@ -10924,11 +11287,14 @@ mod tests {
     #[rstest]
     #[case::valid(None)]
     #[case::invalid_hash(Some("invalid"))]
-    fn stale_snapshot_is_ignored_before_book_and_quote_paths(#[case] hash: Option<&str>) {
+    fn stale_snapshot_is_ignored_before_book_and_quote_paths(
+        #[case] hash: Option<&str>,
+        #[values(false, true)] compute_effective_deltas: bool,
+    ) {
         let asset_id = "0xTOKEN_BBA_STALE_BOOK";
         let market = "0xMARKET";
         let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
-        ctx.compute_effective_deltas = true;
+        ctx.compute_effective_deltas = compute_effective_deltas;
         ctx.subscriptions.active_delta_subs.insert(instrument_id);
 
         handle_market_message(
@@ -10973,7 +11339,14 @@ mod tests {
         assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
         assert_eq!(quotes[0].bid_price, Price::from("0.51"));
         assert_eq!(quotes[0].ask_price, Price::from("0.52"));
-        assert_eq!(quotes[0].bid_size, Quantity::from("50.00"));
+
+        let bid_size = if compute_effective_deltas {
+            Quantity::from("50.00")
+        } else {
+            Quantity::from("0.00")
+        };
+
+        assert_eq!(quotes[0].bid_size, bid_size);
         assert_eq!(quotes[0].ask_size, Quantity::from("300.00"));
 
         let book = ctx.subscriptions.order_books.get(&instrument_id).unwrap();
@@ -11248,6 +11621,9 @@ mod tests {
         );
         handle_market_message(snap, &ctx);
         assert!(ctx.subscriptions.order_books.contains_key(&instrument_id));
+        let integrity_cancellation = ctx.subscriptions.book_integrity.lock()[&instrument_id]
+            .cancellation
+            .clone();
 
         while data_rx.try_recv().is_ok() {}
 
@@ -11255,6 +11631,13 @@ mod tests {
         handle_market_message(change, &ctx);
 
         assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        assert!(integrity_cancellation.is_cancelled());
+        assert!(
+            !ctx.subscriptions
+                .book_integrity
+                .lock()
+                .contains_key(&instrument_id)
+        );
         assert!(ctx.subscriptions.last_quotes.contains_key(&instrument_id));
         assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
 
@@ -11306,12 +11689,22 @@ mod tests {
             "price_change while pending must not emit any events: {events:?}",
         );
 
-        let snap = make_snapshot(
+        let MarketWsMessage::Book(mut snapshot) = make_snapshot(
             market,
             asset_id_str,
             &[("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")],
-        );
-        handle_market_message(snap, &ctx);
+        ) else {
+            unreachable!("make_snapshot must return a book message");
+        };
+
+        handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+        assert!(!recovery.is_accepted());
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        assert!(data_rx.try_recv().is_err());
+
+        snapshot.timestamp = "1700000002000".to_string();
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
 
         assert!(recovery.is_accepted());
         assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
@@ -11842,6 +12235,936 @@ mod tests {
         );
     }
 
+    #[rstest]
+    fn integrity_hash_group_emits_one_verified_batch(
+        #[values(false, true)] effective: bool,
+        #[values(0, 10)] timeout_secs: u64,
+    ) {
+        let (mut ctx, mut rx, instrument_id, snapshot) = integrity_context(effective);
+        ctx.book_snapshot_timeout = Duration::from_secs(timeout_secs);
+        let mut final_snapshot = snapshot.clone();
+        final_snapshot.timestamp = "1700000002000".to_string();
+        final_snapshot.bids = vec![level("0.4", "17"), level("0.5", "29")];
+        hash_snapshot(&mut final_snapshot);
+        let hash = final_snapshot.hash.as_deref().unwrap();
+        let mut consumer = OrderBook::new(instrument_id, BookType::L2_MBP);
+        consumer
+            .apply_deltas(&collect_delta_batches(&mut rx)[0])
+            .unwrap();
+
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", hash), &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        handle_market_message(integrity_change(&snapshot, "0.5", "29", hash), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas.len(), 2);
+        assert_eq!(
+            batches[0]
+                .deltas
+                .iter()
+                .map(|delta| delta.flags)
+                .collect::<Vec<_>>(),
+            vec![0, RecordFlag::F_LAST as u8]
+        );
+        consumer.apply_deltas(&batches[0]).unwrap();
+        assert_eq!(
+            consumer.bids_as_map(None),
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .bids_as_map(None)
+        );
+        assert_eq!(
+            consumer.asks_as_map(None),
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .asks_as_map(None)
+        );
+        assert_eq!(
+            consumer.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                ("0.5".parse().unwrap(), "29".parse().unwrap()),
+                ("0.4".parse().unwrap(), "17".parse().unwrap())
+            ]
+        );
+        assert!(!ctx.subscriptions.book_integrity.lock()[&instrument_id].has_pending());
+    }
+
+    #[rstest]
+    fn integrity_unresolved_group_gates_and_preserves_high_water(
+        #[values(false, true)] effective: bool,
+        #[values(false, true)] newer_timestamp: bool,
+    ) {
+        let (ctx, mut rx, instrument_id, snapshot) = integrity_context(effective);
+        collect_delta_batches(&mut rx);
+        ctx.subscriptions.book_sync.seed_pending_snapshots(
+            &ctx.subscriptions.active_delta_subs,
+            &[instrument_id],
+            Duration::from_secs(60),
+            Instant::now(),
+        );
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", "unresolved"), &ctx);
+        let mut next = integrity_change(&snapshot, "0.5", "29", "distinct-hash");
+        if newer_timestamp {
+            let MarketWsMessage::PriceChange(change) = &mut next else {
+                unreachable!()
+            };
+
+            change.timestamp = "1700000003000".to_string();
+        }
+
+        handle_market_message(next, &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+
+        let mut replacement = snapshot;
+        replacement.timestamp = "1700000004000".to_string();
+        hash_snapshot(&mut replacement);
+        handle_market_message(MarketWsMessage::Book(replacement), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    fn integrity_snapshot_replaces_unpublished_changes_with_full_reseed(
+        #[values(false, true)] effective: bool,
+    ) {
+        let (ctx, mut rx, instrument_id, mut snapshot) = integrity_context(effective);
+        collect_delta_batches(&mut rx);
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", "unresolved"), &ctx);
+        snapshot.timestamp = "1700000002000".to_string();
+        snapshot.bids = vec![level("0.4", "17"), level("0.5", "29")];
+        hash_snapshot(&mut snapshot);
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        assert_eq!(batches[0].deltas.len(), 5);
+        assert!(!ctx.subscriptions.book_integrity.lock()[&instrument_id].has_pending());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn integrity_quiet_group_expires_only_with_positive_timeout(
+        #[values(0, 20)] timeout_ms: u64,
+    ) {
+        let (mut ctx, mut rx, instrument_id, snapshot) = integrity_context(false);
+        collect_delta_batches(&mut rx);
+        ctx.book_snapshot_timeout = Duration::from_millis(timeout_ms);
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", "unresolved"), &ctx);
+
+        if timeout_ms == 0 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+            assert!(ctx.subscriptions.order_books.contains_key(&instrument_id));
+            assert!(!ctx.subscriptions.book_integrity.lock()[&instrument_id].monitor_running);
+        } else {
+            wait_until_async(
+                || async { ctx.subscriptions.book_sync.book_gated(instrument_id) },
+                Duration::from_secs(2),
+            )
+            .await;
+            assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+            assert!(!ctx.subscriptions.book_integrity.lock()[&instrument_id].has_pending());
+        }
+
+        assert!(collect_delta_batches(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn integrity_incomplete_snapshot_reuses_verified_context() {
+        let (ctx, mut rx, instrument_id, mut snapshot) = integrity_context(false);
+        collect_delta_batches(&mut rx);
+        snapshot.timestamp = "1700000002000".to_string();
+        hash_snapshot(&mut snapshot);
+        snapshot.tick_size = None;
+        snapshot.last_trade_price = None;
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        assert!(ctx.subscriptions.book_integrity.lock()[&instrument_id].requires_verification());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn integrity_disconnect_reseeds_unpublished_book_and_retains_published_baseline(
+        #[values(false, true)] effective: bool,
+        #[values("1700000001000", "1700000002000")] timestamp: &str,
+    ) {
+        let (mut ctx, mut rx, instrument_id, snapshot) = integrity_context(effective);
+        let mut consumer = OrderBook::new(instrument_id, BookType::L2_MBP);
+        consumer
+            .apply_deltas(&collect_delta_batches(&mut rx)[0])
+            .unwrap();
+        let other_id = seed_instrument(
+            &ctx,
+            "0xPUBLISHED",
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        )
+        .id();
+        ctx.subscriptions.active_delta_subs.insert(other_id);
+        let mut published = snapshot.clone();
+        published.asset_id = Ustr::from("0xPUBLISHED");
+        published.bids[0].size = "53".to_string();
+        published.asks[0].size = "67".to_string();
+        hash_snapshot(&mut published);
+        handle_market_message(MarketWsMessage::Book(published), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        let published_bids = ctx
+            .subscriptions
+            .order_books
+            .get(&other_id)
+            .unwrap()
+            .bids_as_map(None);
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", "unresolved"), &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert_eq!(
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .bids_as_map(None)
+                .get(&rust_decimal::Decimal::new(4, 1))
+                .copied(),
+            Some(rust_decimal::Decimal::from(17))
+        );
+        assert_eq!(
+            consumer
+                .bids_as_map(None)
+                .get(&rust_decimal::Decimal::new(4, 1))
+                .copied(),
+            Some(rust_decimal::Decimal::from(11))
+        );
+        let cancellation = ctx.subscriptions.book_integrity.lock()[&instrument_id]
+            .cancellation
+            .clone();
+        let (mut client, _client_rx) = create_test_client("127.0.0.1:1".parse().unwrap());
+        client.instruments = ctx.instruments.clone();
+        client.subscriptions = ctx.subscriptions.clone();
+        client.tasks = ctx.task_group.take().unwrap();
+        client.cancellation_token = ctx.cancellation_token.clone();
+        assert_eq!(client.tasks.len(), 1);
+        client.disconnect().await.unwrap();
+        assert!(cancellation.is_cancelled());
+        assert!(ctx.subscriptions.book_integrity.lock().is_empty());
+        assert_eq!(
+            ctx.subscriptions
+                .order_books
+                .get(&other_id)
+                .unwrap()
+                .bids_as_map(None),
+            published_bids
+        );
+        client.tasks.start_generation().unwrap();
+        client.cancellation_token = client.tasks.cancellation_token();
+        ctx.tasks = client.tasks.spawner().unwrap();
+        ctx.cancellation_token = client.cancellation_token.clone();
+        let mut replacement = snapshot;
+        replacement.timestamp = timestamp.to_string();
+        replacement.bids[0].size = "17".to_string();
+        hash_snapshot(&mut replacement);
+        handle_market_message(MarketWsMessage::Book(replacement), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        consumer.apply_deltas(&batches[0]).unwrap();
+        assert_eq!(
+            consumer.bids_as_map(None),
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .bids_as_map(None)
+        );
+        assert_eq!(
+            consumer.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                ("0.5".parse().unwrap(), "23".parse().unwrap()),
+                ("0.4".parse().unwrap(), "17".parse().unwrap())
+            ]
+        );
+        assert_eq!(
+            consumer.asks_as_map(None),
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .asks_as_map(None)
+        );
+    }
+
+    #[rstest]
+    fn integrity_invalid_snapshot_cannot_advance_accepted_timestamp() {
+        let (ctx, mut rx, instrument_id, snapshot) = integrity_context(false);
+        collect_delta_batches(&mut rx);
+        ctx.subscriptions.book_sync.seed_pending_snapshots(
+            &ctx.subscriptions.active_delta_subs,
+            &[instrument_id],
+            Duration::from_secs(60),
+            Instant::now(),
+        );
+        let mut corrupt = snapshot.clone();
+        corrupt.timestamp = "1800000000000".to_string();
+        handle_market_message(MarketWsMessage::Book(corrupt), &ctx);
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    #[case::snapshot(true)]
+    #[case::incremental(false)]
+    fn integrity_verified_preimage_rejects_missing_hash(#[case] snapshot_event: bool) {
+        let (ctx, mut rx, instrument_id, snapshot) = integrity_context(false);
+        collect_delta_batches(&mut rx);
+
+        if snapshot_event {
+            ctx.subscriptions.active_quote_subs.insert(instrument_id);
+        }
+
+        ctx.subscriptions.book_sync.seed_pending_snapshots(
+            &ctx.subscriptions.active_delta_subs,
+            &[instrument_id],
+            Duration::from_secs(60),
+            Instant::now(),
+        );
+        let mut unverified = snapshot.clone();
+        unverified.hash = None;
+        let message = if snapshot_event {
+            MarketWsMessage::Book(unverified)
+        } else {
+            integrity_change(&snapshot, "0.4", "17", "")
+        };
+
+        handle_market_message(message, &ctx);
+        assert!(rx.try_recv().is_err());
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        let mut replacement = snapshot;
+        replacement.timestamp = "1700000003000".to_string();
+        hash_snapshot(&mut replacement);
+        handle_market_message(MarketWsMessage::Book(replacement), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    fn integrity_malformed_change_recovers_without_publishing_partial_group(
+        #[values(false, true)] effective: bool,
+    ) {
+        let (ctx, mut rx, instrument_id, mut snapshot) = integrity_context(effective);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        ctx.subscriptions.book_sync.seed_pending_snapshots(
+            &ctx.subscriptions.active_delta_subs,
+            &[instrument_id],
+            Duration::from_secs(60),
+            Instant::now(),
+        );
+        snapshot.timestamp = "1700000002000".to_string();
+        snapshot.bids[0].size = "17".to_string();
+        hash_snapshot(&mut snapshot);
+
+        let MarketWsMessage::PriceChange(mut changes) =
+            integrity_change(&snapshot, "0.4", "17", snapshot.hash.as_deref().unwrap())
+        else {
+            unreachable!("integrity_change must return a price change message");
+        };
+
+        let mut malformed = changes.price_changes[0].clone();
+        malformed.price = "invalid".to_string();
+        malformed.side = PolymarketOrderSide::Sell;
+        malformed.size = "0".to_string();
+        changes.price_changes.push(malformed);
+        handle_market_message(MarketWsMessage::PriceChange(changes), &ctx);
+
+        assert!(rx.try_recv().is_err());
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+
+        snapshot.timestamp = "1700000003000".to_string();
+        hash_snapshot(&mut snapshot);
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert_eq!(
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .bids_as_map(None)[&rust_decimal::Decimal::new(4, 1)],
+            rust_decimal::Decimal::from(17),
+        );
+    }
+
+    #[rstest]
+    fn integrity_buffered_crossing_preserves_normalized_deletions(
+        #[values(false, true)] effective: bool,
+    ) {
+        let (ctx, mut rx, instrument_id, snapshot) = integrity_context(effective);
+        let mut consumer = OrderBook::new(instrument_id, BookType::L2_MBP);
+        consumer
+            .apply_deltas(&collect_delta_batches(&mut rx)[0])
+            .unwrap();
+        let mut final_snapshot = snapshot.clone();
+        final_snapshot.timestamp = "1700000002000".to_string();
+        final_snapshot.bids = vec![level("0.4", "13"), level("0.5", "23"), level("0.75", "17")];
+        final_snapshot.asks = vec![level("0.8", "41")];
+        hash_snapshot(&mut final_snapshot);
+        let hash = final_snapshot.hash.as_deref().unwrap();
+        let mut crossing = integrity_change(&snapshot, "0.75", "17", hash);
+
+        let MarketWsMessage::PriceChange(change) = &mut crossing else {
+            unreachable!()
+        };
+
+        change.price_changes[0].best_bid = Some("0.75".to_string());
+        change.price_changes[0].best_ask = Some("0.8".to_string());
+        handle_market_message(crossing, &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        handle_market_message(integrity_change(&snapshot, "0.4", "13", hash), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(
+            batches[0]
+                .deltas
+                .iter()
+                .map(|delta| delta.action)
+                .collect::<Vec<_>>(),
+            vec![BookAction::Update, BookAction::Delete, BookAction::Update]
+        );
+        assert_eq!(
+            batches[0]
+                .deltas
+                .iter()
+                .map(|delta| delta.flags)
+                .collect::<Vec<_>>(),
+            vec![0, 0, RecordFlag::F_LAST as u8]
+        );
+        assert_eq!(batches[0].deltas[1].order.price, Price::from("0.70"));
+        assert_eq!(batches[0].deltas[1].order.size, Quantity::from("0.00"));
+        consumer.apply_deltas(&batches[0]).unwrap();
+        assert_eq!(
+            consumer.bids_as_map(None),
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .bids_as_map(None)
+        );
+        assert_eq!(
+            consumer.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![("0.8".parse().unwrap(), "41".parse().unwrap())]
+        );
+        assert!(!ctx.subscriptions.book_integrity.lock()[&instrument_id].has_pending());
+    }
+
+    #[rstest]
+    fn integrity_changed_trade_metadata_requires_verified_snapshot(
+        #[values(false, true)] effective: bool,
+    ) {
+        let (ctx, mut rx, instrument_id, snapshot) = integrity_context(effective);
+        collect_delta_batches(&mut rx);
+        ctx.subscriptions.book_sync.seed_pending_snapshots(
+            &ctx.subscriptions.active_delta_subs,
+            &[instrument_id],
+            Duration::from_secs(60),
+            Instant::now(),
+        );
+        let mut replacement = snapshot.clone();
+        replacement.timestamp = "1700000002000".to_string();
+        replacement.last_trade_price = Some("0.090".to_string());
+        replacement.bids[0].size = "17".to_string();
+        hash_snapshot(&mut replacement);
+        handle_market_message(
+            integrity_change(&snapshot, "0.4", "17", replacement.hash.as_deref().unwrap()),
+            &ctx,
+        );
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        let mut next = integrity_change(&snapshot, "0.5", "29", "later-hash");
+
+        let MarketWsMessage::PriceChange(change) = &mut next else {
+            unreachable!()
+        };
+
+        change.timestamp = "1700000003000".to_string();
+        handle_market_message(next, &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        replacement.timestamp = "1700000004000".to_string();
+        hash_snapshot(&mut replacement);
+        handle_market_message(MarketWsMessage::Book(replacement.clone()), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        ctx.subscriptions.active_trade_subs.insert(instrument_id);
+        handle_market_message(
+            MarketWsMessage::LastTradePrice(crate::websocket::messages::PolymarketTrade {
+                market: snapshot.market,
+                asset_id: snapshot.asset_id,
+                fee_rate_bps: "0".to_string(),
+                price: "0.080".to_string(),
+                side: PolymarketOrderSide::Buy,
+                size: "7".to_string(),
+                timestamp: "1700000001000".to_string(),
+                transaction_hash: None,
+            }),
+            &ctx,
+        );
+
+        replacement.timestamp = "1700000005000".to_string();
+        replacement.bids[1].size = "29".to_string();
+        hash_snapshot(&mut replacement);
+        let mut verified =
+            integrity_change(&snapshot, "0.5", "29", replacement.hash.as_deref().unwrap());
+
+        let MarketWsMessage::PriceChange(change) = &mut verified else {
+            unreachable!()
+        };
+
+        change.timestamp = replacement.timestamp;
+        handle_market_message(verified, &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].order.size, Quantity::from("29.00"));
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn integrity_unsubscribe_cancels_obsolete_monitor_before_resubscribe() {
+        let (mut ctx, mut rx, instrument_id, snapshot) = integrity_context(false);
+        ctx.book_snapshot_timeout = Duration::from_millis(20);
+        collect_delta_batches(&mut rx);
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", "unresolved"), &ctx);
+        let cancellation = ctx.subscriptions.book_integrity.lock()[&instrument_id]
+            .cancellation
+            .clone();
+        ctx.subscriptions.unsubscribe(
+            instrument_id,
+            crate::data::subscriptions::SubscriptionKind::Deltas,
+        );
+        assert!(cancellation.is_cancelled());
+        assert!(
+            !ctx.subscriptions
+                .book_integrity
+                .lock()
+                .contains_key(&instrument_id)
+        );
+        assert!(
+            ctx.subscriptions
+                .add_delta_subscription_intent(instrument_id, false)
+        );
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.book_integrity.lock()[&instrument_id].monitor_running);
+        ctx.wait_for_tasks().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn integrity_monitor_rechecks_new_pending_group_deadline() {
+        let (mut ctx, mut rx, instrument_id, snapshot) = integrity_context(false);
+        ctx.book_snapshot_timeout = Duration::from_millis(100);
+        collect_delta_batches(&mut rx);
+        let mut completed = snapshot.clone();
+        completed.timestamp = "1700000002000".to_string();
+        completed.bids = vec![level("0.4", "17"), level("0.5", "29")];
+        hash_snapshot(&mut completed);
+        let hash = completed.hash.as_deref().unwrap();
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", hash), &ctx);
+        let first_deadline = ctx.subscriptions.book_integrity.lock()[&instrument_id]
+            .deadline()
+            .unwrap();
+        handle_market_message(integrity_change(&snapshot, "0.5", "29", hash), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        // A changed timeout makes the new group's ownership window distinguishable without a sleep race.
+        ctx.book_snapshot_timeout = Duration::from_secs(1);
+        let mut next = integrity_change(&snapshot, "0.4", "31", "next-unresolved");
+
+        let MarketWsMessage::PriceChange(change) = &mut next else {
+            unreachable!()
+        };
+
+        change.timestamp = "1700000003000".to_string();
+        handle_market_message(next, &ctx);
+        let next_deadline = ctx.subscriptions.book_integrity.lock()[&instrument_id]
+            .deadline()
+            .unwrap();
+        assert!(next_deadline > first_deadline);
+        time::sleep_until(first_deadline + Duration::from_millis(20)).await;
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(ctx.subscriptions.book_integrity.lock()[&instrument_id].has_pending());
+        wait_until_async(
+            || async { ctx.subscriptions.book_sync.book_gated(instrument_id) },
+            Duration::from_secs(2),
+        )
+        .await;
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn integrity_pending_capacity_requests_recovery_before_unbounded_growth() {
+        let (mut ctx, mut rx, instrument_id, snapshot) = integrity_context(false);
+        ctx.book_snapshot_timeout = Duration::ZERO;
+        collect_delta_batches(&mut rx);
+
+        let MarketWsMessage::PriceChange(mut change) =
+            integrity_change(&snapshot, "0.4", "17", "unresolved")
+        else {
+            unreachable!()
+        };
+
+        change.price_changes = vec![change.price_changes[0].clone(); 4096];
+        handle_market_message(MarketWsMessage::PriceChange(change), &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(ctx.subscriptions.order_books.contains_key(&instrument_id));
+        assert!(ctx.subscriptions.book_integrity.lock()[&instrument_id].has_pending());
+        handle_market_message(integrity_change(&snapshot, "0.4", "17", "unresolved"), &ctx);
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        assert!(!ctx.subscriptions.book_integrity.lock()[&instrument_id].has_pending());
+        assert!(collect_delta_batches(&mut rx).is_empty());
+    }
+
+    #[rstest]
+    fn integrity_captured_missing_removal_recovers_without_publishing_phantom_bid(
+        #[values(false, true)] effective: bool,
+    ) {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_market_book_integrity.json"
+        ))
+        .unwrap();
+        let events = fixture["missing_removal"]["events"].as_array().unwrap();
+        let snapshot: PolymarketBookSnapshot = serde_json::from_value(events[0].clone()).unwrap();
+        let (mut ctx, mut rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = effective;
+
+        let instrument = seed_instrument_with_context(
+            &ctx,
+            snapshot.asset_id.as_str(),
+            Price::from("0.001"),
+            Quantity::from("0.000001"),
+            SeedInstrumentContext {
+                min_order_size: fixture["min_order_size"].as_str(),
+                neg_risk: fixture["neg_risk"].as_bool(),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let instrument_id = instrument.id();
+        ctx.subscriptions.active_delta_subs.insert(instrument_id);
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        ctx.subscriptions.book_sync.seed_pending_snapshots(
+            &ctx.subscriptions.active_delta_subs,
+            &[instrument_id],
+            Duration::from_secs(60),
+            Instant::now(),
+        );
+
+        for event in &events[1..] {
+            let change: PolymarketQuotes = serde_json::from_value(event.clone()).unwrap();
+            handle_market_message(MarketWsMessage::PriceChange(change), &ctx);
+        }
+
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        let replacement: PolymarketBookSnapshot =
+            serde_json::from_value(fixture["missing_removal"]["replacement"].clone()).unwrap();
+        // The captured independent replacement predates the final suppressed incremental.
+        let mut stale_replacement = replacement;
+        handle_market_message(MarketWsMessage::Book(stale_replacement.clone()), &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        stale_replacement.timestamp = "1792651539776".to_string();
+        stale_replacement.min_order_size = fixture["min_order_size"].as_str().map(str::to_string);
+        stale_replacement.neg_risk = fixture["neg_risk"].as_bool();
+        hash_snapshot(&mut stale_replacement);
+        handle_market_message(MarketWsMessage::Book(stale_replacement), &ctx);
+        let batches = collect_delta_batches(&mut rx);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].deltas[0].action, BookAction::Clear);
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(
+            !ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .bids_as_map(None)
+                .contains_key(&"0.152".parse::<rust_decimal::Decimal>().unwrap())
+        );
+    }
+
+    #[rstest]
+    fn integrity_captured_stale_snapshot_cannot_restore_deleted_ask(
+        #[values(false, true)] effective: bool,
+    ) {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_market_book_integrity.json"
+        ))
+        .unwrap();
+        let snapshot: PolymarketBookSnapshot =
+            serde_json::from_value(fixture["stale_snapshot"]["snapshot"].clone()).unwrap();
+        let change: PolymarketQuotes =
+            serde_json::from_value(fixture["stale_snapshot"]["newer_delete"].clone()).unwrap();
+        let (mut ctx, mut rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = effective;
+
+        let instrument = seed_instrument_with_context(
+            &ctx,
+            snapshot.asset_id.as_str(),
+            Price::from("0.001"),
+            Quantity::from("0.000001"),
+            SeedInstrumentContext {
+                min_order_size: fixture["min_order_size"].as_str(),
+                neg_risk: fixture["neg_risk"].as_bool(),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let instrument_id = instrument.id();
+        ctx.subscriptions.active_delta_subs.insert(instrument_id);
+        handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        handle_market_message(MarketWsMessage::PriceChange(change), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert_eq!(
+            ctx.subscriptions
+                .order_books
+                .get(&instrument_id)
+                .unwrap()
+                .best_ask_price(),
+            Some(Price::from("0.288"))
+        );
+    }
+
+    #[rstest]
+    fn integrity_captured_lagging_dump_preserves_verified_updates(
+        #[values(false, true)] effective: bool,
+    ) {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_market_book_integrity.json"
+        ))
+        .unwrap();
+        let captured = &fixture["lagging_dump"];
+        let snapshot: PolymarketBookSnapshot =
+            serde_json::from_value(captured["snapshot"].clone()).unwrap();
+        let newer: PolymarketQuotes =
+            serde_json::from_value(captured["newer_update"].clone()).unwrap();
+        let (mut ctx, mut rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = effective;
+
+        let instrument = seed_instrument_with_context(
+            &ctx,
+            snapshot.asset_id.as_str(),
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            SeedInstrumentContext {
+                min_order_size: fixture["min_order_size"].as_str(),
+                neg_risk: fixture["neg_risk"].as_bool(),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let instrument_id = instrument.id();
+        ctx.subscriptions.active_delta_subs.insert(instrument_id);
+        handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        handle_market_message(MarketWsMessage::PriceChange(newer), &ctx);
+        assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+        let baseline = ctx
+            .subscriptions
+            .order_books
+            .get(&instrument_id)
+            .unwrap()
+            .clone();
+        handle_market_message(MarketWsMessage::Book(snapshot), &ctx);
+        assert!(collect_delta_batches(&mut rx).is_empty());
+        let following = captured["following_updates"].as_array().unwrap();
+        assert_eq!(following.len(), 2);
+
+        for event in following {
+            let message: MarketWsMessage = serde_json::from_value(event.clone()).unwrap();
+            handle_market_message(message, &ctx);
+            assert_eq!(collect_delta_batches(&mut rx).len(), 1);
+            assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+            let integrity = ctx.subscriptions.book_integrity.lock();
+            assert!(integrity[&instrument_id].requires_verification());
+            assert!(!integrity[&instrument_id].has_pending());
+        }
+
+        let book = ctx.subscriptions.order_books.get(&instrument_id).unwrap();
+        assert_eq!(book.bids_as_map(None), baseline.bids_as_map(None));
+        assert_eq!(book.asks_as_map(None), baseline.asks_as_map(None));
+        assert_eq!(
+            book.asks_as_map(None)[&rust_decimal::Decimal::new(7, 2)],
+            rust_decimal::Decimal::new(6991471, 1),
+        );
+    }
+
+    fn integrity_context(
+        effective: bool,
+    ) -> (
+        TestWsContext,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        InstrumentId,
+        PolymarketBookSnapshot,
+    ) {
+        let (mut ctx, rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = effective;
+        let instrument = seed_instrument(
+            &ctx,
+            "0xINTEGRITY",
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = instrument.id();
+        ctx.subscriptions.active_delta_subs.insert(instrument_id);
+
+        let mut snapshot = PolymarketBookSnapshot {
+            market: Ustr::from("0xMARKET"),
+            asset_id: Ustr::from("0xINTEGRITY"),
+            bids: vec![level("0.4", "11"), level("0.5", "23")],
+            asks: vec![level("0.8", "41"), level("0.7", "37")],
+            timestamp: "1700000000000".to_string(),
+            hash: None,
+            min_order_size: Some("5".to_string()),
+            tick_size: Some("0.01".to_string()),
+            neg_risk: Some(false),
+            last_trade_price: Some("0.080".to_string()),
+        };
+
+        hash_snapshot(&mut snapshot);
+        handle_market_message(MarketWsMessage::Book(snapshot.clone()), &ctx);
+        (ctx, rx, instrument_id, snapshot)
+    }
+
+    fn hash_snapshot(snapshot: &mut PolymarketBookSnapshot) {
+        snapshot.hash = crate::websocket::parse::book_snapshot_hash(snapshot, None, None).unwrap();
+    }
+
+    fn integrity_change(
+        snapshot: &PolymarketBookSnapshot,
+        price: &str,
+        size: &str,
+        hash: &str,
+    ) -> MarketWsMessage {
+        MarketWsMessage::PriceChange(PolymarketQuotes {
+            market: snapshot.market,
+            timestamp: "1700000002000".to_string(),
+            price_changes: vec![PolymarketQuote {
+                asset_id: snapshot.asset_id,
+                price: price.to_string(),
+                size: size.to_string(),
+                side: PolymarketOrderSide::Buy,
+                hash: hash.to_string(),
+                best_bid: None,
+                best_ask: None,
+            }],
+        })
+    }
+
+    #[rstest]
+    fn snapshot_hash_mismatch_with_armed_deadline_accepts_valid_replay_without_resubscribe() {
+        let valid: PolymarketBookSnapshot = serde_json::from_str(include_str!(
+            "../../test_data/ws_book_snapshot_captured.json"
+        ))
+        .unwrap();
+        let asset_id = valid.asset_id.as_str();
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+
+        let instrument = seed_instrument_with_context(
+            &ctx,
+            asset_id,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            SeedInstrumentContext {
+                min_order_size: Some("5"),
+                neg_risk: Some(false),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        let instrument_id = instrument.id();
+        ctx.subscriptions.active_delta_subs.insert(instrument_id);
+        let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
+        ctx.subscriptions.ws_client =
+            crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(
+                ws_tx,
+                &[asset_id],
+            );
+        let now = Instant::now();
+        let timeout = Duration::from_secs(10);
+        assert!(ctx.subscriptions.book_sync.seed_missing_snapshot(
+            &ctx.subscriptions.active_delta_subs,
+            instrument_id,
+            timeout,
+            now,
+        ));
+
+        let mut divergent = valid.clone();
+        divergent.bids[0].size = "3149725.71".to_string();
+        handle_market_message(MarketWsMessage::Book(divergent), &ctx);
+
+        assert!(ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(!ctx.subscriptions.order_books.contains_key(&instrument_id));
+        assert!(data_rx.try_recv().is_err());
+
+        handle_market_message(MarketWsMessage::Book(valid.clone()), &ctx);
+        let events = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        let [DataEvent::Data(NautilusData::BookDeltas(deltas))] = events.as_slice() else {
+            panic!("expected one valid snapshot, received {events:?}");
+        };
+
+        let expected = parse_book_snapshot(
+            &valid,
+            instrument_id,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            deltas.ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(**deltas, expected);
+        assert!(!ctx.subscriptions.book_sync.book_gated(instrument_id));
+        assert!(
+            ctx.subscriptions
+                .book_sync
+                .take_expired_snapshots(&AHashSet::from_iter([instrument_id]), now + timeout)
+                .is_empty()
+        );
+        assert!(matches!(
+            ws_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
     // A replacement attempt waiting on its snapshot fails at once instead of at its deadline
     #[rstest]
     fn snapshot_hash_mismatch_rejects_waiting_recovery_attempt() {
@@ -11893,7 +13216,7 @@ mod tests {
     }
 
     #[rstest]
-    fn incomplete_snapshot_hash_preimage_resumes_deltas() {
+    fn integrity_incomplete_initial_snapshot_preimage_resumes_deltas() {
         let mut snapshot: PolymarketBookSnapshot = serde_json::from_str(include_str!(
             "../../test_data/ws_book_snapshot_captured.json"
         ))
@@ -12336,12 +13659,14 @@ mod tests {
     }
 
     #[rstest]
-    fn malformed_price_change_entry_preserves_other_updates() {
+    fn malformed_price_change_entry_preserves_other_updates(
+        #[values(false, true)] effective: bool,
+    ) {
         let asset_a = "0xTOKEN-BAD";
         let asset_b = "0xTOKEN-GOOD";
         let market = Ustr::from("0xMARKET");
         let (mut ctx, mut data_rx) = make_ws_ctx();
-        ctx.compute_effective_deltas = true;
+        ctx.compute_effective_deltas = effective;
         let instrument_a =
             seed_instrument(&ctx, asset_a, Price::from("0.001"), Quantity::from("0.01")).id();
         let instrument_b =
@@ -13225,10 +14550,8 @@ mod tests {
         assert_eq!(is_crossed(&book), crossed);
     }
 
-    // Wire mode keeps its local book only to prune crossed levels; events older than that book
-    // still emit, and `best_bid_ask` sizes still come from the last quote.
     #[rstest]
-    fn wire_mode_local_book_leaves_stale_and_best_bid_ask_paths_unchanged() {
+    fn wire_mode_rejects_stale_books_and_preserves_best_bid_ask_sizes() {
         let asset_id = "0xTOKEN_WIRE_BOOK";
         let market = "0xMARKET";
         let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
@@ -13309,14 +14632,14 @@ mod tests {
                 .iter()
                 .map(|batch| batch.deltas.len())
                 .collect::<Vec<_>>(),
-            vec![5]
+            Vec::<usize>::new()
         );
         assert_eq!(
             change_batches
                 .iter()
                 .map(|batch| batch.deltas.len())
                 .collect::<Vec<_>>(),
-            vec![1, 1]
+            vec![1]
         );
         assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
         assert_eq!(quotes[0].bid_price, Price::from("0.50"));
@@ -13326,35 +14649,17 @@ mod tests {
         assert_eq!(
             book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
             vec![
-                (
-                    rust_decimal::Decimal::new(50, 2),
-                    rust_decimal::Decimal::new(500, 2)
-                ),
-                (
-                    rust_decimal::Decimal::new(49, 2),
-                    rust_decimal::Decimal::new(700, 2)
-                ),
-                (
-                    rust_decimal::Decimal::new(48, 2),
-                    rust_decimal::Decimal::new(2000, 2)
-                ),
-                (
-                    rust_decimal::Decimal::new(47, 2),
-                    rust_decimal::Decimal::new(100, 2)
-                ),
+                ("0.51".parse().unwrap(), "50".parse().unwrap()),
+                ("0.50".parse().unwrap(), "200".parse().unwrap()),
+                ("0.49".parse().unwrap(), "100".parse().unwrap()),
+                ("0.47".parse().unwrap(), "1".parse().unwrap()),
             ]
         );
         assert_eq!(
             book.asks_as_map(None).into_iter().collect::<Vec<_>>(),
             vec![
-                (
-                    rust_decimal::Decimal::new(53, 2),
-                    rust_decimal::Decimal::new(600, 2)
-                ),
-                (
-                    rust_decimal::Decimal::new(54, 2),
-                    rust_decimal::Decimal::new(1200, 2)
-                ),
+                ("0.52".parse().unwrap(), "300".parse().unwrap()),
+                ("0.53".parse().unwrap(), "400".parse().unwrap()),
             ]
         );
     }
@@ -14470,6 +15775,12 @@ mod tests {
         let id_c = seed_instrument(&ctx, token_c, Price::from("0.01"), Quantity::from("1")).id();
         ctx.subscriptions.active_delta_subs.insert(id_a);
         ctx.subscriptions.active_delta_subs.insert(id_c);
+
+        let cancellations = {
+            let mut integrity = ctx.subscriptions.book_integrity.lock();
+            [id_a, id_b, id_c].map(|id| integrity.entry(id).or_default().cancellation.clone())
+        };
+
         ctx.subscriptions
             .order_books
             .insert(id_a, OrderBook::new(id_a, BookType::L2_MBP));
@@ -14499,6 +15810,17 @@ mod tests {
         // Subscribed but owned by another shard: untouched.
         assert!(ctx.subscriptions.order_books.contains_key(&id_c));
         assert!(!ctx.subscriptions.book_sync.book_gated(id_c));
+        assert!(cancellations[0].is_cancelled());
+        assert!(!cancellations[1].is_cancelled());
+        assert!(!cancellations[2].is_cancelled());
+        let retained = ctx
+            .subscriptions
+            .book_integrity
+            .lock()
+            .keys()
+            .copied()
+            .collect::<AHashSet<_>>();
+        assert_eq!(retained, AHashSet::from_iter([id_b, id_c]));
 
         let filter = AHashSet::from_iter([id_a, id_b, id_c]);
         let expired = ctx

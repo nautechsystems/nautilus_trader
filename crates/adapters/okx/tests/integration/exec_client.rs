@@ -4040,7 +4040,7 @@ async fn test_generate_order_status_reports_honors_open_only(
             .spawn(task.collection)
             .await
             .unwrap();
-        task.result.await.unwrap()
+        (task.finish)().unwrap()
     } else {
         client.generate_order_status_reports(&cmd).await.unwrap()
     };
@@ -4458,7 +4458,7 @@ async fn test_generate_fill_reports_includes_spreads_when_enabled(
             .spawn(task.collection)
             .await
             .unwrap();
-        task.result.await.unwrap()
+        (task.finish)().unwrap()
     } else {
         client.generate_fill_reports(cmd).await.unwrap()
     };
@@ -5157,7 +5157,7 @@ async fn test_generate_order_status_report_uses_targeted_lookup(
             .spawn(task.collection)
             .await
             .unwrap();
-        task.result.await.unwrap()
+        (task.finish)().unwrap()
     } else {
         client.generate_order_status_report(&command).await.unwrap()
     }

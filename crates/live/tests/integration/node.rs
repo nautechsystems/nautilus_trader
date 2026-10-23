@@ -94,6 +94,7 @@ use proptest::{
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 #[derive(Debug)]
 struct TestActor {
@@ -1432,7 +1433,7 @@ pub(crate) mod serial_tests {
         ) -> anyhow::Result<Vec<OrderStatusReport>> {
             let task = self.order_report_task();
             task.collection.await;
-            task.result.await
+            (task.finish)()
         }
 
         async fn generate_order_status_report(
@@ -3326,7 +3327,7 @@ pub(crate) mod serial_tests {
                 cache.positions_open(None, Some(&instrument_id), None, Some(&account_id), None);
             assert_eq!(positions.len(), 1);
             assert_eq!(positions[0].signed_decimal_qty(), Decimal::from(5));
-            assert_eq!(positions[0].avg_px_open, 3000.0);
+            assert_eq!(positions[0].avg_px_open, dec!(3000.0));
         } else {
             result.unwrap();
             assert_eq!(quantity_on_start.get(), Some(Decimal::ZERO));

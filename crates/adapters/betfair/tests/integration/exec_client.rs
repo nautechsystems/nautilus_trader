@@ -100,7 +100,7 @@ async fn generate_test_order_reports(
     nautilus_common::live::get_runtime()
         .spawn(task.collection)
         .await?;
-    task.result.await
+    (task.finish)()
 }
 
 async fn generate_test_fill_reports(
@@ -117,7 +117,7 @@ async fn generate_test_fill_reports(
     nautilus_common::live::get_runtime()
         .spawn(task.collection)
         .await?;
-    task.result.await
+    (task.finish)()
 }
 
 #[rstest]
@@ -4814,13 +4814,13 @@ async fn test_report_collection_with_borrowed_cache_and_dropped_result(#[case] f
 
     let collection = if fills {
         let task = client.generate_fill_reports_task(&fill_command).unwrap();
-        drop(task.result);
+        drop(task.finish);
         task.collection
     } else {
         let task = client
             .generate_order_status_reports_task(&order_command)
             .unwrap();
-        drop(task.result);
+        drop(task.finish);
         task.collection
     };
 
@@ -4926,7 +4926,7 @@ async fn test_fill_report_task_finishes_after_stream_fill_without_replay() {
         panic!("expected stream fill before finalization, was {event:?}");
     };
 
-    let reports = task.result.await.unwrap();
+    let reports = (task.finish)().unwrap();
     let replayed = generate_test_fill_reports(&client, command, true)
         .await
         .unwrap();

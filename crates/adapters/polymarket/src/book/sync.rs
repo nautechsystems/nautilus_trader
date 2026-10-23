@@ -18,7 +18,7 @@
 //! [`BookSyncTracker`] maps Polymarket book events onto the shared per-book [`BookSync`] lifecycle
 //! and decides whether to accept a snapshot or incremental, suppress it, or request recovery.
 //! Polymarket books carry no sequence numbers, so incremental `price_change` deltas are gated on
-//! an accepted `book` snapshot rather than linkage validated, and every snapshot replaces the book.
+//! an accepted `book` snapshot. The data client separately validates available book hashes.
 //!
 //! Claiming, accepting, and resetting recovery stay under the tracker's state lock so competing
 //! events cannot independently change ownership. Snapshot gates coordinate acceptance with
@@ -228,6 +228,25 @@ impl BookSyncTracker {
                     .arm_deadline(deadline)
             })
             .count()
+    }
+
+    pub(crate) fn seed_missing_snapshot(
+        &self,
+        active_delta_subs: &AtomicSet<InstrumentId>,
+        instrument_id: InstrumentId,
+        timeout: Duration,
+        now: Instant,
+    ) -> bool {
+        let mut books = self.books.lock();
+
+        if !active_delta_subs.contains(&instrument_id) {
+            return false;
+        }
+
+        let book = books.entry(instrument_id).or_insert_with(|| Book::new(now));
+        book.position().is_none()
+            && book.gap() == BookSequenceOutcome::Recover
+            && book.arm_deadline(now + timeout)
     }
 
     #[cfg(test)]
@@ -696,6 +715,88 @@ mod tests {
             is_tracked(&tracker, instrument_id),
             "tracking must persist so staleness stays observable"
         );
+    }
+
+    #[rstest]
+    #[case::missing(true, false, false, true)]
+    #[case::accepted(true, true, false, false)]
+    #[case::recovering(true, false, true, false)]
+    #[case::unsubscribed(false, false, false, false)]
+    fn seed_missing_snapshot_preserves_accepted_books_and_recovery(
+        #[case] subscribed: bool,
+        #[case] accepted: bool,
+        #[case] recovering: bool,
+        #[case] expected: bool,
+    ) {
+        let tracker = BookSyncTracker::default();
+        let instrument_id = instrument_id();
+        let subs = AtomicSet::new();
+        let now = Instant::now();
+        let timeout = Duration::from_secs(3);
+
+        if subscribed {
+            subs.insert(instrument_id);
+        }
+
+        if accepted {
+            assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
+        }
+
+        let owner = recovering.then(|| tracker.claim_recovery(instrument_id).unwrap());
+
+        let seeded = tracker.seed_missing_snapshot(&subs, instrument_id, timeout, now);
+        let pending = has_pending_snapshot(&tracker, instrument_id);
+        let expired =
+            tracker.take_expired_snapshots(&AHashSet::from_iter([instrument_id]), now + timeout);
+
+        assert_eq!(seeded, expected);
+        assert_eq!(pending, expected);
+        assert_eq!(expired.len(), usize::from(expected));
+
+        if expected {
+            assert_eq!(expired[0].instrument_id, instrument_id);
+            assert_eq!(expired[0].kind, BookSyncSignalKind::SnapshotMissing);
+        }
+
+        assert_eq!(is_tracked(&tracker, instrument_id), subscribed);
+
+        if let Some(owner) = owner {
+            assert!(owner.is_running());
+            assert!(tracker.claim_recovery(instrument_id).is_none());
+        }
+    }
+
+    #[rstest]
+    fn seed_missing_snapshot_preserves_armed_deadline() {
+        let tracker = BookSyncTracker::default();
+        let instrument_id = instrument_id();
+        let subs = AtomicSet::new();
+        subs.insert(instrument_id);
+        let now = Instant::now();
+
+        let first =
+            tracker.seed_missing_snapshot(&subs, instrument_id, Duration::from_secs(3), now);
+        let early = tracker.take_expired_snapshots(
+            &AHashSet::from_iter([instrument_id]),
+            now + Duration::from_secs(2),
+        );
+        let repeated = tracker.seed_missing_snapshot(
+            &subs,
+            instrument_id,
+            Duration::from_secs(20),
+            now + Duration::from_secs(2),
+        );
+        let expired = tracker.take_expired_snapshots(
+            &AHashSet::from_iter([instrument_id]),
+            now + Duration::from_secs(3),
+        );
+
+        assert!(first);
+        assert_eq!(early.len(), 0);
+        assert!(!repeated);
+        assert_eq!(expired.len(), 1);
+        assert_eq!(expired[0].instrument_id, instrument_id);
+        assert_eq!(expired[0].kind, BookSyncSignalKind::SnapshotMissing);
     }
 
     #[rstest]

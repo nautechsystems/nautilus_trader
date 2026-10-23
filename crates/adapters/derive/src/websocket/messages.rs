@@ -81,6 +81,15 @@ pub struct WsUnsubscribeParams {
     pub channels: Vec<DeriveWsChannel>,
 }
 
+/// Params for the persisted, wallet-wide `private/set_cancel_on_disconnect` setting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WsSetCancelOnDisconnectParams {
+    /// Owner EOA or multisig address of the authenticated session.
+    pub wallet: String,
+    /// Whether the venue enables cancel-on-disconnect for the wallet.
+    pub enabled: bool,
+}
+
 /// Derive WebSocket subscription channel topic.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DeriveWsChannel {
@@ -341,6 +350,25 @@ impl From<WsUnsubscribeParams> for WsRequestParams {
 
 /// Authorized subaccount IDs returned by `public/login`.
 pub type WsLoginResult = Vec<u64>;
+
+#[derive(Debug)]
+pub(super) struct WsSetCancelOnDisconnectResult;
+
+impl<'de> Deserialize<'de> for WsSetCancelOnDisconnectResult {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value != "ok" {
+            return Err(serde::de::Error::custom(
+                "expected cancel-on-disconnect result \"ok\"",
+            ));
+        }
+
+        Ok(Self)
+    }
+}
 
 /// Result payload returned by `subscribe`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -963,6 +991,8 @@ pub mod methods {
     /// Cancel every open order on the subaccount, optionally scoped to an
     /// instrument. Params: [`crate::http::query::DeriveCancelAllParams`].
     pub const PRIVATE_CANCEL_ALL: &str = "private/cancel_all";
+    /// Sets wallet-wide cancel-on-disconnect. Params: [`super::WsSetCancelOnDisconnectParams`].
+    pub const PRIVATE_SET_CANCEL_ON_DISCONNECT: &str = "private/set_cancel_on_disconnect";
     /// Atomically cancel one order and submit a replacement. Params:
     /// [`crate::http::query::DeriveReplaceParams`].
     pub const PRIVATE_REPLACE: &str = "private/replace";

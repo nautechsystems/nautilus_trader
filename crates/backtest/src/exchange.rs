@@ -1430,7 +1430,8 @@ impl SimulatedExchange {
                     return false;
                 }
             };
-            let side = if position.signed_qty > 0.0 {
+
+            let side = if position.signed_qty > Decimal::ZERO {
                 -Decimal::ONE
             } else {
                 Decimal::ONE

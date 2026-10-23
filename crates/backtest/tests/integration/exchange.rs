@@ -49,9 +49,14 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos, datetime::get_timezone};
-use nautilus_execution::models::{
-    fee::{FeeModelAny, MakerTakerFeeModel},
-    latency::{LatencyModelHandle, StaticLatencyModel},
+#[cfg(feature = "defi")]
+use nautilus_execution::order_manager::{OrderManagerAction, manager::OrderManager};
+use nautilus_execution::{
+    engine::ExecutionEngine,
+    models::{
+        fee::{FeeModelAny, MakerTakerFeeModel},
+        latency::{LatencyModelHandle, StaticLatencyModel},
+    },
 };
 use nautilus_model::{
     accounts::{Account, AccountAny, CashAccount, MarginAccount},
@@ -87,10 +92,15 @@ use nautilus_model::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MONEY_RAW_MAX,
     },
 };
+#[cfg(feature = "defi")]
+use nautilus_model::{
+    instruments::stubs::currency_pair_btcusdt, orders::stubs::OrderFilledTestBuilder,
+};
 use nautilus_testkit::cache::TestCacheDatabaseControl;
 use parking_lot::Mutex;
 use rstest::rstest;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 fn get_exchange(
@@ -2006,6 +2016,95 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
     assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
     assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
     assert_eq!(account_state.balances[0].total, Money::from("999 USDT"));
+}
+
+#[rstest]
+fn test_position_flip_retains_opening_leg_after_database_update_failure(audusd_sim: CurrencyPair) {
+    let (database, control) = TestCacheDatabaseControl::create();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    pre_populate_cash_account(&mut cache, "SIM-001");
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    cache.add_instrument(instrument.clone()).unwrap();
+    let opening_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-DB-OPEN"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let opening = TestOrderEventStubs::filled(
+        &opening_order,
+        &instrument,
+        Some(TradeId::from("T-DB-OPEN")),
+        Some(PositionId::from("P-DB-FLIP")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        Some(Money::zero(Currency::USD())),
+        Some(UnixNanos::from(1)),
+        Some(AccountId::from("SIM-001")),
+    );
+    let position = Position::new(&instrument, opening.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-DB-REVERSE"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(2))
+        .build();
+    cache
+        .add_order(order.clone(), Some(position.id), None, true)
+        .unwrap();
+    let cache = Rc::new(RefCell::new(cache));
+
+    let mut engine = ExecutionEngine::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        None,
+    );
+    let account_id = AccountId::from("SIM-001");
+    let venue_order_id = VenueOrderId::from("V-DB-REVERSE");
+    engine.process(&TestOrderEventStubs::submitted(&order, account_id));
+    engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        account_id,
+        venue_order_id,
+    ));
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-DB-REVERSE")),
+        Some(position.id),
+        Some(Price::from("2.00000")),
+        None,
+        None,
+        Some(Money::zero(Currency::USD())),
+        Some(UnixNanos::from(2)),
+        Some(account_id),
+    );
+    let (handler, saver) = get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_position_events("events.position.*".into(), handler, None);
+    control.set_fail_update_position(true);
+
+    engine.process(&fill);
+
+    let cache = cache.borrow();
+    let current = cache.position(&position.id).unwrap();
+    assert_eq!(current.signed_qty, dec!(-1));
+    assert_eq!(current.quantity, Quantity::from(1));
+    assert_eq!(current.avg_px_open, dec!(2));
+    let snapshots = cache.position_snapshots(Some(&position.id), None);
+    assert_eq!(snapshots.len(), 1);
+    assert!(snapshots[0].is_closed());
+    assert_eq!(snapshots[0].realized_pnl, Some(Money::from("1 USD")));
+    let events = saver.get_messages();
+
+    let [PositionEvent::PositionOpened(opened)] = events.as_slice() else {
+        panic!("expected one PositionOpened event");
+    };
+
+    assert_eq!(opened.position_id, position.id);
+    assert_eq!(opened.quantity, Quantity::from(1));
+    assert_eq!(opened.avg_px_open, dec!(2));
 }
 
 #[rstest]
@@ -4259,17 +4358,17 @@ fn rollover_records() -> Vec<InterestRateRecord> {
                 InterestRateRecord {
                     location: "AUS".to_string(),
                     time: time.to_string(),
-                    value: 0.75,
+                    value: dec!(0.75),
                 },
                 InterestRateRecord {
                     location: "GBR".to_string(),
                     time: time.to_string(),
-                    value: 0.50,
+                    value: dec!(0.50),
                 },
                 InterestRateRecord {
                     location: "USA".to_string(),
                     time: time.to_string(),
-                    value: 1.50,
+                    value: dec!(1.50),
                 },
             ]
         })
@@ -4349,6 +4448,14 @@ fn process_rollover(
             adjustments
         }
     }
+}
+
+fn rollover_amount(numerator: i32) -> Money {
+    let amount = (Decimal::from(numerator) / Decimal::from(365)).round_dp_with_strategy(
+        u32::from(Currency::USD().precision),
+        RoundingStrategy::MidpointNearestEven,
+    );
+    Money::from_decimal_exact(amount, Currency::USD()).unwrap()
 }
 
 fn add_fx_quote(
@@ -4649,7 +4756,7 @@ fn test_fx_rollover_retries_after_quote_arrives(audusd_sim: CurrencyPair) {
         .add_instrument(instrument.clone())
         .unwrap();
     let instruments = AHashMap::from([(instrument.id(), instrument.clone())]);
-    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let module = FXRolloverInterestModule::new(rollover_records());
     let rollover = rollover_timestamp(2020, 1, 15);
 
     assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
@@ -4701,11 +4808,12 @@ fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPa
         .add_instrument(instrument.clone())
         .unwrap();
     let instruments = AHashMap::from([(instrument.id(), instrument.clone())]);
+
     let records = [
-        ("AUS", "2024-01", 1.0),
-        ("USA", "2024-01", 2.0),
-        ("AUS", "2024-02", 5.0),
-        ("USA", "2024-02", 1.0),
+        ("AUS", "2024-01", dec!(1.0)),
+        ("USA", "2024-01", dec!(2.0)),
+        ("AUS", "2024-02", dec!(5.0)),
+        ("USA", "2024-02", dec!(1.0)),
     ]
     .into_iter()
     .map(|(location, time, value)| InterestRateRecord {
@@ -4714,7 +4822,8 @@ fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPa
         value,
     })
     .collect();
-    let module = FXRolloverInterestModule::new(records).unwrap();
+
+    let module = FXRolloverInterestModule::new(records);
 
     // Wednesday's rollover is not ready because the quote is absent.
     assert!(
@@ -4740,9 +4849,9 @@ fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPa
             rollover_timestamp(2024, 2, 2),
         ),
         vec![
-            Money::from("-8.22 USD"),
-            Money::from("10.96 USD"),
-            Money::from("32.88 USD"),
+            rollover_amount(-3000),
+            rollover_amount(4000),
+            rollover_amount(12000),
         ]
     );
 
@@ -4783,7 +4892,7 @@ fn test_fx_rollover_friday_to_monday_gap_books_monday_once(audusd_sim: CurrencyP
         .unwrap();
     add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
     let instruments = AHashMap::from([(instrument.id(), instrument)]);
-    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let module = FXRolloverInterestModule::new(rollover_records());
 
     assert_eq!(
         process_rollover(
@@ -4793,12 +4902,12 @@ fn test_fx_rollover_friday_to_monday_gap_books_monday_once(audusd_sim: CurrencyP
             &instruments,
             rollover_timestamp(2020, 1, 17),
         ),
-        vec![Money::from("-6.16 USD")]
+        vec![rollover_amount(-2250)]
     );
     let monday = rollover_timestamp(2020, 1, 20);
     assert_eq!(
         process_rollover(&module, &exchange, &cache, &instruments, monday),
-        vec![Money::from("-2.05 USD")]
+        vec![rollover_amount(-750)]
     );
     assert!(
         process_rollover(
@@ -4852,7 +4961,7 @@ fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
     );
     exchange.borrow_mut().process_quote_tick(&quote).unwrap();
     let instruments = AHashMap::from([(instrument.id(), instrument)]);
-    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let module = FXRolloverInterestModule::new(rollover_records());
     let ts_now = rollover_timestamp(2020, 1, 15);
 
     for _ in 0..2 {
@@ -4946,12 +5055,12 @@ fn test_missing_rates_skip_instrument_and_do_not_stall_later_days(
         .into_iter()
         .filter(|record| record.location != "GBR")
         .collect();
-    let module = FXRolloverInterestModule::new(records).unwrap();
+    let module = FXRolloverInterestModule::new(records);
     let first_day = rollover_timestamp(2020, 1, 15);
 
     assert_eq!(
         process_rollover(&module, &exchange, &cache, &instruments, first_day),
-        vec![Money::from("-6.16 USD")]
+        vec![rollover_amount(-2250)]
     );
 
     let only_missing = AHashMap::from([(missing_rates.id(), missing_rates)]);
@@ -5049,20 +5158,20 @@ fn test_unrepresentable_money_warns_once_without_error_across_recalculation(
         InterestRateRecord {
             location: "AUS".to_string(),
             time: "2020-01".to_string(),
-            value: f64::MAX,
+            value: Decimal::MAX,
         },
         InterestRateRecord {
             location: "GBR".to_string(),
             time: "2020-01".to_string(),
-            value: 0.5,
+            value: dec!(0.5),
         },
         InterestRateRecord {
             location: "USA".to_string(),
             time: "2020-01".to_string(),
-            value: 1.5,
+            value: dec!(1.5),
         },
     ];
-    let module = FXRolloverInterestModule::new(records).unwrap();
+    let module = FXRolloverInterestModule::new(records);
     let rollover = rollover_timestamp(2020, 1, 15);
 
     assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
@@ -5075,7 +5184,7 @@ fn test_unrepresentable_money_warns_once_without_error_across_recalculation(
             &instruments,
             rollover + DurationNanos::new(1),
         ),
-        vec![Money::from("-9.86 USD")]
+        vec![rollover_amount(-3600)]
     );
 
     let messages = CAPTURING_LOGGER.messages();
@@ -5132,7 +5241,7 @@ fn test_fx_rollover_is_atomic_across_instruments(
         .add_instrument(second.clone())
         .unwrap();
     let instruments = AHashMap::from([(first.id(), first.clone()), (second.id(), second.clone())]);
-    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let module = FXRolloverInterestModule::new(rollover_records());
     let rollover = rollover_timestamp(2020, 1, 15);
 
     add_fx_quote(&exchange, &cache, first.id(), "0.99990", "1.00010");
@@ -5176,7 +5285,7 @@ fn test_fx_rollover_distinguishes_same_ordinal_across_years(audusd_sim: Currency
         .unwrap();
     add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
     let instruments = AHashMap::from([(instrument.id(), instrument)]);
-    let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
+    let module = FXRolloverInterestModule::new(rollover_records());
 
     assert_eq!(
         process_rollover(
@@ -5281,6 +5390,93 @@ fn test_module_pre_process_and_process_call_order(crypto_perpetual_ethusdt: Cryp
 
     assert_eq!(counts.pre_process.get(), 2);
     assert_eq!(counts.process.get(), 1);
+}
+
+#[rstest]
+#[cfg(feature = "defi")]
+#[case("0.00000000000000001", "0.59999999999999999")]
+#[case("0.000000000000000001", "0.599999999999999999")]
+fn test_oto_quantity_preserves_wei_fee_dust(#[case] fee: &str, #[case] net_qty: &str) {
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut manager = OrderManager::new(clock, cache.clone(), true);
+    let mut instrument = currency_pair_btcusdt();
+    instrument.base_currency.precision = 18;
+    instrument.size_increment = Quantity::from("0.005000");
+    let commission =
+        Money::from_decimal_exact(fee.parse().unwrap(), instrument.base_currency).unwrap();
+    let instrument = InstrumentAny::CurrencyPair(instrument);
+    let position_id = PositionId::from("P-WEI-COMMISSION");
+    let parent_id = ClientOrderId::from("O-WEI-PARENT");
+    let child_id = ClientOrderId::from("O-WEI-CHILD");
+    let parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(parent_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("50000.00"))
+        .quantity(Quantity::from("0.600000"))
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .submit(true)
+        .build();
+    let child = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .client_order_id(child_id)
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("49000.00"))
+        .quantity(Quantity::from("0.600000"))
+        .reduce_only(true)
+        .parent_order_id(parent_id)
+        .build();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    for order in [&parent, &child] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), Some(position_id), None, false)
+            .unwrap();
+    }
+
+    let mut builder = OrderFilledTestBuilder::new(&parent, &instrument);
+    builder
+        .trade_id(TradeId::from("T-WEI-PARENT"))
+        .position_id(position_id)
+        .last_qty(Quantity::from("0.600000"))
+        .account_id(AccountId::from("ACCOUNT-001"))
+        .commission(commission);
+    let event = builder.build();
+    cache.borrow_mut().update_order(&event).unwrap();
+
+    let OrderEventAny::Filled(fill) = &event else {
+        panic!("expected a fill event");
+    };
+
+    let position = Position::new_checked(&instrument, fill.clone()).unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let actions = manager.handle_event(&event);
+
+    assert_eq!(actions.len(), 2);
+    assert!(matches!(
+        &actions[0],
+        OrderManagerAction::ModifyLocalQuantity { order, quantity }
+            if order.client_order_id() == child_id && *quantity == Quantity::from("0.595000")
+    ));
+    assert!(matches!(
+        &actions[1],
+        OrderManagerAction::SubmitToRisk(command)
+            if command.client_order_id == child_id && command.position_id == Some(position_id)
+    ));
+    assert_eq!(
+        cache.borrow().position(&position_id).unwrap().quantity,
+        Quantity::from(net_qty)
+    );
 }
 
 #[rstest]

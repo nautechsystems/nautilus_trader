@@ -377,7 +377,7 @@ fn get_open_position(position: &Position) -> PositionOpened {
         signed_qty: position.signed_qty,
         quantity: position.quantity,
         last_qty: position.quantity,
-        last_px: Price::new(position.avg_px_open, 0),
+        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         realized_pnl: position.realized_pnl,
@@ -398,11 +398,11 @@ fn get_closed_position(position: &Position) -> PositionClosed {
         closing_order_id: None,
         entry: position.entry,
         side: PositionSide::Flat,
-        signed_qty: 0.0,
+        signed_qty: 0.into(),
         quantity: Quantity::from("0"),
         peak_quantity: position.quantity,
         last_qty: position.quantity,
-        last_px: Price::new(position.avg_px_open, 0),
+        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         avg_px_close: Some(position.avg_px_open),
@@ -431,14 +431,14 @@ fn get_changed_position(position: &Position) -> PositionChanged {
         signed_qty: position.signed_qty,
         quantity: position.quantity,
         last_qty: position.quantity,
-        last_px: Price::new(position.avg_px_open, 0),
+        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         ts_event: 0.into(),
         ts_init: 0.into(),
         peak_quantity: position.quantity,
         avg_px_close: Some(position.avg_px_open),
-        realized_return: position.avg_px_open,
+        realized_return: position.avg_px_open.as_f64(),
         realized_pnl: Some(Money::new(10.0, Currency::USD())),
         unrealized_pnl: Money::new(10.0, Currency::USD()),
         event_id: UUID4::new(),
@@ -459,14 +459,14 @@ fn get_close_position(position: &Position) -> PositionClosed {
         signed_qty: position.signed_qty,
         quantity: position.quantity,
         last_qty: position.quantity,
-        last_px: Price::new(position.avg_px_open, 0),
+        last_px: Price::from_decimal_dp(position.avg_px_open, 0).unwrap(),
         currency: position.settlement_currency,
         avg_px_open: position.avg_px_open,
         ts_event: 0.into(),
         ts_init: 0.into(),
         peak_quantity: position.quantity,
         avg_px_close: Some(position.avg_px_open),
-        realized_return: position.avg_px_open,
+        realized_return: position.avg_px_open.as_f64(),
         realized_pnl: Some(Money::new(10.0, Currency::USD())),
         unrealized_pnl: Money::new(10.0, Currency::USD()),
         closing_order_id: Some(ClientOrderId::new("SSD")),
@@ -3837,7 +3837,7 @@ fn test_opening_one_long_position_updates_portfolio(
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
-        dec!(10510.0)
+        dec!(5896.11)
     );
     assert_eq!(
         portfolio
@@ -3861,7 +3861,7 @@ fn test_opening_one_long_position_updates_portfolio(
             .net_exposure(&instrument_audusd.id(), None, None, None)
             .unwrap()
             .as_decimal(),
-        dec!(10510.0)
+        dec!(5896.11)
     );
     assert_eq!(
         portfolio
@@ -3923,7 +3923,7 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
             .get(&Currency::USD())
             .unwrap()
             .as_decimal(),
-        dec!(10510.0)
+        dec!(5896.11)
     );
     assert_eq!(
         portfolio
@@ -3947,7 +3947,7 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
             .net_exposure(&instrument_audusd.id(), None, None, None)
             .unwrap()
             .as_decimal(),
-        dec!(10510.0)
+        dec!(5896.11)
     );
     assert_eq!(
         portfolio
@@ -4816,7 +4816,7 @@ fn test_position_records_account_currency_realized_pnl(
 
     let closed_position = Position {
         side: PositionSide::Flat,
-        signed_qty: 0.0,
+        signed_qty: 0.into(),
         quantity: Quantity::from("0"),
         ts_last: UnixNanos::from(1),
         ts_closed: Some(UnixNanos::from(1)),
@@ -4858,7 +4858,7 @@ fn test_position_records_account_currency_realized_pnl(
     // distinct cycle whose close must record again rather than dedup against the first.
     let reopened_closed_position = Position {
         side: PositionSide::Flat,
-        signed_qty: 0.0,
+        signed_qty: 0.into(),
         quantity: Quantity::from("0"),
         ts_opened: UnixNanos::from(2),
         ts_last: UnixNanos::from(3),

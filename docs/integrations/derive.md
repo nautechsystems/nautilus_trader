@@ -681,9 +681,10 @@ unverified. A successful reconnect or restart does not establish those cases.
 ##### Signature expiry
 
 API v3 accepts order signatures with lifetimes in [10 seconds, 120 days]. MMP orders have a 15-minute maximum.
-The adapter leaves MMP disabled and signs trigger orders with a fixed 31-day expiry. `signature_expiry_secs`
-controls ordinary orders and replacements, and must exceed 10 seconds to allow signing latency, with a maximum
-of 120 days. See [action signing](https://docs.derive.xyz/authentication/action-signing).
+The adapter signs trigger orders with a fixed 31-day expiry and leaves their MMP flag disabled.
+`signature_expiry_secs` controls ordinary orders and replacements. It must exceed 10 seconds to allow signing
+latency, with a maximum of 120 days, or 900 seconds when `cancel_on_disconnect=True`.
+See [action signing](https://docs.derive.xyz/authentication/action-signing).
 
 ##### Supported types
 
@@ -719,6 +720,58 @@ Size the trigger offset to comfortably exceed expected price movement during sub
 (for `ETH-PERP`, tens of dollars rather than a few cents). A too-tight offset produces
 spurious `11051` rejections.
 :::
+
+#### Cancel on disconnect
+
+Set `cancel_on_disconnect=True` to enable
+[cancel-on-disconnect (COD)](https://docs.derive.xyz/trading/cancel-on-disconnect) for resting GTC and
+post-only limit orders, including replacements.
+The session key needs `trade:all` (`Trade(All)`) across all subaccounts. Onboarding keys restricted to
+`trade:orderbook:all` do not qualify.
+
+```python
+from decimal import Decimal
+
+from nautilus_trader.adapters.derive import DeriveEnvironment
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
+
+exec_config = DeriveExecutionClientConfig(
+    environment=DeriveEnvironment.TESTNET,
+    max_fee_per_contract=Decimal("1000"),
+    cancel_on_disconnect=True,
+)
+```
+
+With this option enabled:
+
+- **Startup**: the client enables wallet-wide COD, waits up to 30 seconds for account confirmation, and
+  authenticates a fresh execution connection before becoming ready. Setup or login failure closes the
+  connections and fails startup without disabling the wallet setting. Allow the node's connection timeout
+  for confirmation and normal startup; its default is 60 seconds.
+- **Orders**: eligible submissions and replacements carry `mmp: true`. Signature expiry must be at most
+  900 seconds; the default is 600. IOC, FOK, market, and trigger orders keep their existing MMP flags.
+  MMP tags also apply any existing MMP thresholds and freeze rules; the adapter does not configure or reset MMP.
+- **Lifecycle**: the wallet setting persists and applies at login. Automatic reconnect uses that setting
+  without toggling it, and shutdown never disables it. Coordinate clients sharing the wallet; existing
+  connections and orders do not gain protection retroactively.
+
+The default, `False`, leaves the stored wallet setting and order MMP flags unchanged.
+
+:::warning
+COD cancels only the dropped connection's `mmp: true` orders and RFQ quotes, including on graceful server shutdown. Non-MMP, trigger, and algo orders
+remain outside its protection. Retain explicit cancellation and shutdown procedures.
+:::
+
+For manual control, use the low-level Rust `DeriveWebSocketClient::set_cancel_on_disconnect(enabled)`.
+Only `"ok"` confirms success; venue errors and malformed responses propagate. A timeout, lost reply, or
+malformed reply leaves the stored setting uncertain. Coordinate other clients and reassert the intended value:
+
+1. Wait until `private/get_account` reports the acknowledged `cancel_on_disconnect` value within your deadline.
+   Account reads can lag the acknowledgement.
+1. Call `disconnect()` then `connect()` on each affected client. A change does not affect existing connections.
+
+Low-level order conversion leaves MMP disabled. Set `mmp: Some(true)` on eligible payloads sent through
+`execution_handle().submit_order` and sign with a [lifetime of at most 15 minutes](#signature-expiry).
 
 #### Bulk cancellation
 
@@ -1202,14 +1255,15 @@ original error without retrying.
 fails before creating venue clients when the field is missing or non-positive.
 :::
 
-| Option                      | Default  | Description                                                                 |
-| --------------------------- | -------- | --------------------------------------------------------------------------- |
-| `max_fee_per_contract`      | Required | Positive per-contract USDC fee cap signed into each order.                  |
-| `domain_separator`          | `None`   | Optional EIP-712 domain separator override.                                 |
-| `action_typehash`           | `None`   | Optional EIP-712 action typehash override.                                  |
-| `trade_module_address`      | `None`   | Optional Trade module contract address override.                            |
-| `signature_expiry_secs`     | `600`    | Order/replace TTL; must be >10s and at most 120 days. Triggers use 31 days. |
-| `market_order_slippage_bps` | `50`     | Slippage bound for market-order limit prices.                               |
+| Option                      | Default  | Description                                                                         |
+| --------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `max_fee_per_contract`      | Required | Positive per-contract USDC fee cap signed into each order.                          |
+| `domain_separator`          | `None`   | Optional EIP-712 domain separator override.                                         |
+| `action_typehash`           | `None`   | Optional EIP-712 action typehash override.                                          |
+| `trade_module_address`      | `None`   | Optional Trade module contract address override.                                    |
+| `signature_expiry_secs`     | `600`    | Order/replace TTL; see [signature expiry](#signature-expiry). Triggers use 31 days. |
+| `market_order_slippage_bps` | `50`     | Slippage bound for market-order limit prices.                                       |
+| `cancel_on_disconnect`      | `False`  | Protect resting limit orders; see [cancel on disconnect](#cancel-on-disconnect).    |
 
 #### Matching request limits
 
