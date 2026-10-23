@@ -86,7 +86,10 @@ use nautilus_model::{
     },
     instruments::{
         Instrument, InstrumentAny,
-        stubs::{binary_option, btcusd_bybit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
+        stubs::{
+            binary_option, btcusd_bybit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            equity_aapl,
+        },
     },
     orders::{
         Order, OrderAny, OrderTestBuilder,
@@ -10064,6 +10067,67 @@ async fn test_mass_status_coarse_average_keeps_retained_position(
     let expected_unresolved = if unresolved {
         vec![format!(
             "account={account_id}, instrument={instrument_id}, venue_position_id=None, venue_quantity=8.928500: position recovery did not restore the reported average entry price",
+        )]
+    } else {
+        Vec::new()
+    };
+
+    assert!(result.events.is_empty());
+    assert_eq!(result.unresolved_positions, expected_unresolved);
+    assert_eq!(
+        ctx.cache.borrow().position_owned(&position.id),
+        Some(position)
+    );
+}
+
+// An equity held across the fill lookback: the cache keeps the fills' average (all at 40.66),
+// while the venue reports an average cost with commissions in it, rounded to the tick (40.67)
+#[rstest]
+#[case::marked(Some(2), false)]
+#[case::unmarked(None, true)]
+#[tokio::test]
+async fn test_mass_status_average_cost_with_commission_keeps_retained_position(
+    #[case] avg_px_open_precision: Option<u8>,
+    #[case] unresolved: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = InstrumentAny::Equity(equity_aapl());
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-EQUITY"),
+        OrderSide::Buy,
+        "2342",
+        "40.66",
+    );
+    ctx.add_instrument(instrument);
+    ctx.cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    let mut report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("2342"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(40.67)),
+    );
+    report.avg_px_open_precision = avg_px_open_precision;
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let expected_unresolved = if unresolved {
+        vec![format!(
+            "account={}, instrument={instrument_id}, venue_position_id=None, venue_quantity=2342: position recovery did not restore the reported average entry price",
+            test_account_id(),
         )]
     } else {
         Vec::new()
