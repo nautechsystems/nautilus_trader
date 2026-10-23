@@ -146,11 +146,40 @@ pub(crate) struct FillEvidence {
     pub(crate) missing_all: bool,
     /// Instruments with an execution that could not be turned into a fill report.
     pub(crate) missing_instruments: AHashSet<InstrumentId>,
+    /// Executions within the request's filters that arrived without a commission report.
+    pub(crate) missing_commissions: Vec<MissingCommission>,
+}
+
+/// An execution IB sent without its commission report, so its fill could not be reported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MissingCommission {
+    pub(crate) execution_id: String,
+    pub(crate) venue_order_id: VenueOrderId,
 }
 
 impl FillEvidence {
     fn is_complete_for(&self, instrument_id: &InstrumentId) -> bool {
         !self.missing_all && !self.missing_instruments.contains(instrument_id)
+    }
+
+    /// Returns the fill reports for a standalone fill query.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an execution within the query's filters has no commission report: a
+    /// query answered without that fill would let a position check synthesize it while the real
+    /// fill is still pending.
+    pub(crate) fn into_fill_reports(self) -> anyhow::Result<Vec<FillReport>> {
+        anyhow::ensure!(
+            self.missing_commissions.is_empty(),
+            "IB did not provide commission reports for execution IDs: {}",
+            self.missing_commissions
+                .iter()
+                .map(|missing| missing.execution_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        Ok(self.reports)
     }
 }
 
@@ -1401,6 +1430,7 @@ mod tests {
             combo_leg_reports: Vec::new(),
             missing_all,
             missing_instruments: missing_instruments.into_iter().collect(),
+            missing_commissions: Vec::new(),
         };
 
         let avg_px_open = rebuild_avg_px_open(
