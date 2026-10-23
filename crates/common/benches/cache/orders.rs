@@ -199,6 +199,8 @@ fn bench_position_purge(c: &mut Criterion) {
     for fill_count in [1_u64, 128, 10_000] {
         let position = position_for_purge(fill_count);
         let position_id = position.id;
+
+        group.throughput(Throughput::Elements(position.events.len() as u64));
         group.bench_function(BenchmarkId::from_parameter(fill_count), |b| {
             b.iter_batched_ref(
                 || {
@@ -214,6 +216,7 @@ fn bench_position_purge(c: &mut Criterion) {
                     cache
                 },
                 |cache| {
+                    // Timing includes final destruction of the cached position and its history
                     cache.purge_position(black_box(position_id));
                     assert!(!cache.position_exists(&position_id));
                 },
