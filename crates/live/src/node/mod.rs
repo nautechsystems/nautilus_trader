@@ -1874,6 +1874,8 @@ impl LiveNode {
                     }
                 }
                 Some(event) = system_evt_rx.recv() => {
+                    dispatch_priority.skip_time = false;
+
                     if is_shutting_down {
                         log::debug!("Residual system event: {event}");
                         residual_events += 1;
@@ -1881,6 +1883,8 @@ impl LiveNode {
                     event.dispatch(|event| self.process_system_event(event));
                 }
                 Some(command) = system_cmd_rx.recv() => {
+                    dispatch_priority.skip_time = false;
+
                     if is_shutting_down {
                         log::debug!("Residual system command: {command}");
                         residual_events += 1;
@@ -1888,6 +1892,7 @@ impl LiveNode {
                     command.dispatch(|command| self.process_system_command(command));
                 }
                 Some(evt) = exec_evt_rx.recv() => {
+                    dispatch_priority.skip_time = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1904,6 +1909,7 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = exec_cmd_rx.recv() => {
+                    dispatch_priority.skip_time = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1920,6 +1926,7 @@ impl LiveNode {
                     );
                 }
                 message = recv_external_msgbus_message(&mut external_msgbus_rx, &mut pending_external) => {
+                    dispatch_priority.skip_time = false;
                     let external_msgbus_start = dst::time::Instant::now();
 
                     match message {
@@ -1944,6 +1951,7 @@ impl LiveNode {
                     );
                 }
                 Some(evt) = data_evt_rx.recv(), if poll_data => {
+                    dispatch_priority.skip_time = false;
                     dispatch_priority.skip_data = true;
                     let dispatch_start = dst::time::Instant::now();
 
@@ -4640,8 +4648,11 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test]
-    async fn test_run_dispatch_progress_under_load(#[values(false, true)] execution: bool) {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_run_dispatch_progress_under_load(
+        #[values(false, true)] execution: bool,
+        #[values(false, true)] slow: bool,
+    ) {
         let config = LiveNodeConfig {
             delay_post_stop: Duration::ZERO,
             ..Default::default()
@@ -4650,6 +4661,11 @@ mod tests {
         let handle = node.handle();
         let stop = handle.clone();
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+            if slow {
+                // Make housekeeping ready after each timer callback
+                std::thread::sleep(Duration::from_millis(110));
+            }
+
             if event.ts_init == UnixNanos::from(8) {
                 // Check progress before shutdown can drain the queues
                 let snapshot = stop.metrics_snapshot();

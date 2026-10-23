@@ -464,18 +464,23 @@ impl AsyncRunner {
                     let _ = Self::handle_time_event(handler);
                 },
                 Some(event) = self.channels.system_evt_rx.recv() => {
+                    self.dispatch_priority.skip_time = false;
                     log::error!("System event {event} requires the LiveNode runner");
                 },
                 Some(command) = self.channels.system_cmd_rx.recv() => {
+                    self.dispatch_priority.skip_time = false;
                     log::error!("System command {command} requires the LiveNode runner");
                 },
                 Some(evt) = self.channels.exec_evt_rx.recv() => {
+                    self.dispatch_priority.skip_time = false;
                     Self::dispatch_exec_event(evt);
                 },
                 Some(cmd) = self.channels.exec_cmd_rx.recv() => {
+                    self.dispatch_priority.skip_time = false;
                     Self::handle_trading_command(cmd);
                 },
                 Some(evt) = self.channels.data_evt_rx.recv(), if poll_data => {
+                    self.dispatch_priority.skip_time = false;
                     self.dispatch_priority.skip_data = true;
                     Self::dispatch_data_event(evt);
                 },
@@ -639,7 +644,7 @@ impl AsyncRunner {
     }
 }
 
-/// Alternates data events and commands, yielding timer polling for at most one selection.
+/// Alternates data events and commands, yielding timers until another channel is serviced.
 #[derive(Debug, Default)]
 pub(crate) struct DispatchPriority {
     pub(crate) skip_time: bool,
@@ -647,10 +652,11 @@ pub(crate) struct DispatchPriority {
 }
 
 impl DispatchPriority {
-    pub(crate) fn next_poll(&mut self, data_empty: bool, commands_empty: bool) -> (bool, bool) {
-        let poll_time = !self.skip_time || (data_empty && commands_empty);
-        self.skip_time = false;
-        (poll_time, !self.skip_data || commands_empty)
+    pub(crate) fn next_poll(&self, data_empty: bool, commands_empty: bool) -> (bool, bool) {
+        (
+            !self.skip_time || (data_empty && commands_empty),
+            !self.skip_data || commands_empty,
+        )
     }
 }
 
@@ -728,18 +734,23 @@ impl AsyncRunner {
                 Some(PendingRunnerEvent::TimeEvent(message))
             }
             Some(event) = self.channels.system_evt_rx.recv() => {
+                self.dispatch_priority.skip_time = false;
                 Some(PendingRunnerEvent::SystemEvent(event))
             }
             Some(command) = self.channels.system_cmd_rx.recv() => {
+                self.dispatch_priority.skip_time = false;
                 Some(PendingRunnerEvent::SystemCommand(command))
             }
             Some(event) = self.channels.exec_evt_rx.recv() => {
+                self.dispatch_priority.skip_time = false;
                 Some(PendingRunnerEvent::ExecEvent(event))
             }
             Some(command) = self.channels.exec_cmd_rx.recv() => {
+                self.dispatch_priority.skip_time = false;
                 Some(PendingRunnerEvent::ExecCommand(command))
             }
             Some(event) = self.channels.data_evt_rx.recv(), if poll_data => {
+                self.dispatch_priority.skip_time = false;
                 self.dispatch_priority.skip_data = true;
                 Some(PendingRunnerEvent::DataEvent(event))
             }
