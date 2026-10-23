@@ -564,6 +564,16 @@ impl PolymarketDataClient {
         }
 
         self.subscriptions.book_sync.clear();
+        {
+            let mut integrity = self.subscriptions.book_integrity.lock();
+            for (instrument_id, state) in integrity.iter() {
+                if state.has_pending() {
+                    self.subscriptions.order_books.remove(instrument_id);
+                }
+            }
+
+            integrity.clear();
+        }
 
         if let Err(e) = self.polybolt_feed.disconnect().await {
             self.shutdown_errors.push(e.to_string());

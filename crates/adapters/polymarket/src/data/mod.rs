@@ -473,6 +473,12 @@ impl PolymarketDataClient {
                     snapshot_timeout,
                     &spawner,
                 );
+            } else if !was_open {
+                resolve_ctx.subscriptions.monitor_book_snapshot(
+                    instrument_id,
+                    snapshot_timeout,
+                    &spawner,
+                );
             }
         };
 

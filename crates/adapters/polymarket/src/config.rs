@@ -439,11 +439,14 @@ pub struct PolymarketDataClientConfig {
     /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
-    /// Maximum time to wait for a post-reconnect or recovery order book snapshot
-    /// in seconds.
+    /// Maximum wait for an initial, post-reconnect, or recovery book snapshot, and for an
+    /// unverified incremental hash group, in seconds.
     ///
-    /// Set to 0 to wait indefinitely: reconnected books stay gated until the
-    /// venue replays a snapshot, with no deadline monitor.
+    /// Set to 0 to disable initial, reconnect, and hash-group monitors, and per-attempt snapshot
+    /// deadlines within the retry budget. Updates without a baseline can still request recovery.
+    /// An unresolved group requests recovery when a different timestamp or hash arrives, or it
+    /// exceeds 4,096 deltas. During recovery, book output stays gated until a valid snapshot arrives.
+    /// Retry-budget and retry-ceiling limits still apply.
     #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
     pub book_snapshot_timeout_secs: u64,
     /// Interval for checking order book feed staleness in seconds.
