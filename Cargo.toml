@@ -413,9 +413,7 @@ days = 3
 trusted-base = "origin/develop"
 
 [workspace.metadata.cooldown.allow]
-rustls-webpki = "0.103.16"
-webpki-root-certs = "1.0.10"
-webpki-roots = "1.0.10"
+ctutils = "0.4.4"
 
 # -----------------------------------------------------------------------------
 # Profiles

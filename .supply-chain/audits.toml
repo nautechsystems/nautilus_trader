@@ -1882,6 +1882,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.2 -> 0.4.3"
 notes = "Reviewed checksum-verified published crates. Const Choice conversions retain black_box; signed casts become cast_unsigned/cast_signed. Deprecated vartime accessors delegate to the same conversions. MSRV is 1.87; unsafe remains forbidden and cmov is unchanged."
 
+[[audits.ctutils]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.3 -> 0.4.4"
+notes = "Reviewed the complete checksum-verified published delta. Fixes RUSTSEC-2026-0385 by routing Choice masks through the existing black_box conversion and using half-width u128 comparisons on 32-bit targets. The 150 unit tests and 41 property tests pass with all features, including comparison boundaries. Runtime dependencies and MSRV are unchanged; unsafe remains forbidden and no build script or ambient capabilities are added."
+
 [[audits.curve25519-dalek]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
