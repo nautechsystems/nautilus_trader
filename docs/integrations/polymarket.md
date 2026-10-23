@@ -1222,6 +1222,33 @@ Trades on Polymarket can have the following statuses:
 `CONFIRMED` and `FAILED` are terminal. The other statuses are provisional: the trade can still
 succeed or fail.
 
+### Taker fill prices
+
+When a taker trade includes a complete `maker_orders` collection, the adapter combines the
+executions into one taker fill with the original trade ID. It derives the fill price from the
+quantity-weighted average of the executions rather than applying the top-level trade price to
+the whole quantity. The same calculation applies to REST fill reports and user WebSocket fills.
+
+Same-token matches use the maker price directly. For complementary outcomes in the same binary
+market, a maker price `p` corresponds to a taker price of `1 - p`: BUY No can match BUY Yes through
+minting, and SELL No can match SELL Yes through merging.
+
+For example, buying 40 No shares against 35 Yes shares at `0.008` and 5 Yes shares at `0.006`
+gives effective No prices of `0.992` and `0.994`:
+
+```text
+notional = 35 * 0.992 + 5 * 0.994 = 39.690
+average fill price = 39.690 / 40 = 0.99225
+```
+
+The reported price can therefore carry more decimal places than the instrument's order price
+precision. This represents historical executions and does not change the tick size for new orders.
+See [Numeric precision](#numeric-precision) for the settlement amount check.
+
+If `maker_orders` is empty, the adapter uses the existing top-level size and price calculation.
+A nonempty collection must account for the complete taker quantity and contain consistent
+counterparty evidence; invalid evidence does not fall back to the top-level price.
+
 ### Settlement updates
 
 Once a trade is initially matched, subsequent status updates arrive through the user WebSocket. The execution
@@ -1379,6 +1406,23 @@ Financial wire values are decoded directly as decimals. Values outside the suppo
 domain-type range fail HTTP decoding or report construction. WebSocket and PolyBolt handlers log and
 skip invalid updates. Report construction does not substitute zero for an invalid price or quantity.
 
+For an aggregated taker fill, the reported price multiplied by the fill quantity must preserve
+the sum of execution notionals after rounding both amounts to six decimal places. The adapter
+checks neighboring representable average prices when rounding the average would change that
+settlement amount. Equal-price executions also undergo this check before the adapter accepts a
+price snapped to instrument precision.
+
+Standard-precision builds support up to nine decimal places for prices; high-precision builds
+support up to sixteen. In standard precision, some executions cannot be represented by one
+average price that preserves settlement cash, especially for large quantities. The adapter
+rejects those fills with `taker matched average cannot preserve the settlement notional` rather
+than reporting an inaccurate amount. The same check applies in high precision.
+
+This is a local fill-admission error, not a venue order rejection or cancellation: the trade may
+already have executed. The adapter logs invalid WebSocket evidence, does not apply it as a fill,
+and quarantines the trade for REST resolution. REST fill report construction returns an error.
+Do not interpret the absence of an applied fill as proof that the order did not trade.
+
 ## Fees
 
 The instrument provider and historical data loader use Gamma's `feeSchedule.rate` as the taker rate.
@@ -1424,8 +1468,14 @@ For the latest public schedule, see Polymarket's
 The live fee curve uses exact decimal arithmetic, so the exponent must be a whole number. Negative
 rates, fractional or negative exponents, and arithmetic overflow return errors.
 
-`FillReport.commission` is denominated in pUSD. It floors the platform fee to five decimal places
-from the wire size and price, not a price snapped to instrument precision, matching the venue charge.
+`FillReport.commission` is denominated in pUSD. For a taker trade with maker execution evidence,
+the adapter evaluates the fee curve for each execution's matched quantity and effective taker
+price, sums the unrounded fees, then floors the total to five decimal places once per trade.
+It does not evaluate the nonlinear fee curve at the average fill price or floor each execution
+fee separately. Without maker execution evidence, it uses the top-level wire size and price.
+Neither path uses a price snapped to instrument precision for the fee calculation.
+
+Commission is an estimate from the instrument's fee metadata, not a venue-reported charge.
 The venue adds BUY taker fees to the pUSD spend and deducts SELL taker fees from the pUSD proceeds,
 so the position quantity equals the shares filled. Maker commission remains zero.
 
@@ -1440,7 +1490,8 @@ exponent for the execution client's lifetime. A client reset clears those record
 after a schedule refresh uses the refreshed schedule.
 
 Later confirmation and fill reports for a retained trade recompute commission from that basis and
-the incoming wire size and price. They do not use fee schedules loaded after admission.
+the incoming execution evidence, using individual maker matches when present. They do not use
+fee schedules loaded after admission.
 
 When venue evidence is otherwise unchanged, the applied fill keeps its original quantity, price,
 and commission. The trade is neither quarantined nor hard-faulted.
