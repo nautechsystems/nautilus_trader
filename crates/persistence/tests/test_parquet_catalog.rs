@@ -5478,7 +5478,6 @@ fn test_rust_custom_data_roundtrip_with_hashmap_price_field() {
 /// (`type_name` + identifier + metadata).
 /// Same `type_name` with different identifiers must produce separate batches and be readable back.
 #[rstest]
-#[ignore = "Slow regression test (>120s) for custom data identifier batching; run manually when changing catalog custom data write/query paths"]
 fn test_write_data_enum_mixed_custom_data_identifiers() {
     use std::sync::Arc;
 
@@ -5563,6 +5562,183 @@ fn test_write_data_enum_mixed_custom_data_identifiers() {
 
     assert_eq!(loaded_a.len(), 2, "identifier A should have 2 items");
     assert_eq!(loaded_b.len(), 1, "identifier B should have 1 item");
+}
+
+fn custom_with_source(source: &str, ts_init: u64) -> Data {
+    let instrument_id = InstrumentId::from("RUST.A");
+    let metadata = Params::new([("source".to_string(), json!(source))].into());
+    let data_type = DataType::new(
+        "RustTestCustomData",
+        Some(metadata),
+        Some(instrument_id.to_string()),
+    );
+    let item = RustTestCustomData {
+        instrument_id,
+        value: ts_init as f64,
+        flag: true,
+        ts_event: UnixNanos::from(ts_init),
+        ts_init: UnixNanos::from(ts_init),
+    };
+    Data::Custom(CustomData::new(Arc::new(item), data_type))
+}
+
+fn catalog_relative_paths(temp_dir: &TempDir) -> Vec<String> {
+    snapshot_catalog_files(temp_dir)
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect()
+}
+
+/// Groups that differ only by metadata name the same file when their ranges match, so the write
+/// must fail before any file is written rather than skip the second group as an existing file.
+#[rstest]
+#[case::same_timestamps(
+    vec![custom_with_source("a", 5), custom_with_source("b", 5)],
+    None,
+    None,
+    "1970-01-01T00-00-00-000000005Z_1970-01-01T00-00-00-000000005Z.parquet"
+)]
+#[case::explicit_bounds(
+    vec![custom_with_source("a", 1), custom_with_source("b", 10)],
+    Some(UnixNanos::from(0)),
+    Some(UnixNanos::from(20)),
+    "1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000020Z.parquet"
+)]
+fn test_write_data_enum_rejects_custom_metadata_groups_sharing_a_file(
+    #[case] data: Vec<Data>,
+    #[case] start: Option<UnixNanos>,
+    #[case] end: Option<UnixNanos>,
+    #[case] filename: &str,
+) {
+    ensure_test_custom_data_registered();
+    let (temp_dir, catalog) = create_temp_catalog();
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.A"))
+        .unwrap();
+
+    let error = catalog
+        .write_data_enum(&data, start, end, Some(true))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot write custom data for RustTestCustomData with different metadata to the same \
+             file {}: a file holds one data type, so write each metadata value over a distinct range",
+            std::path::PathBuf::from(directory).join(filename).display(),
+        )
+    );
+    assert_eq!(catalog_relative_paths(&temp_dir), Vec::<String>::new());
+}
+
+/// The collision check covers every custom type name and runs before any file is written, so the
+/// files of a valid earlier type are not left on disk when a later type collides.
+#[rstest]
+fn test_write_data_enum_rejects_custom_collision_before_writing_other_custom_types() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, catalog) = create_temp_catalog();
+    let bytes = |identifier: &str, ts_init: u64| {
+        let item = RustTestBytesCustomData {
+            value: vec![1, 2],
+            ts_event: UnixNanos::from(ts_init),
+            ts_init: UnixNanos::from(ts_init),
+        };
+        Data::Custom(CustomData::new(
+            Arc::new(item),
+            DataType::new(
+                "RustTestBytesCustomData",
+                None,
+                Some(identifier.to_string()),
+            ),
+        ))
+    };
+    let data = vec![
+        bytes("X", 1),
+        bytes("Y", 2),
+        custom_with_source("a", 5),
+        custom_with_source("b", 5),
+    ];
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.A"))
+        .unwrap();
+
+    let error = catalog
+        .write_data_enum(&data, None, None, Some(false))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot write custom data for RustTestCustomData with different metadata to the same \
+             file {}: a file holds one data type, so write each metadata value over a distinct range",
+            std::path::PathBuf::from(directory)
+                .join("1970-01-01T00-00-00-000000005Z_1970-01-01T00-00-00-000000005Z.parquet")
+                .display(),
+        )
+    );
+    assert_eq!(catalog_relative_paths(&temp_dir), Vec::<String>::new());
+}
+
+#[rstest]
+fn test_write_data_enum_rejects_overlapping_custom_metadata_groups() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, catalog) = create_temp_catalog();
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.A"))
+        .unwrap();
+    let data = vec![
+        custom_with_source("a", 1),
+        custom_with_source("a", 3),
+        custom_with_source("b", 2),
+    ];
+
+    let error = catalog
+        .write_data_enum(&data, None, None, Some(false))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot write custom data for RustTestCustomData with different metadata over \
+             overlapping intervals [(1, 3), (2, 2)] in {directory}"
+        )
+    );
+    assert_eq!(catalog_relative_paths(&temp_dir), Vec::<String>::new());
+}
+
+#[rstest]
+fn test_write_data_enum_writes_custom_metadata_groups_with_disjoint_ranges() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let data = vec![custom_with_source("a", 1), custom_with_source("b", 10)];
+
+    catalog
+        .write_data_enum(&data, None, None, Some(false))
+        .unwrap();
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&["RUST.A".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(
+        catalog_relative_paths(&temp_dir),
+        vec![
+            "data/custom/RustTestCustomData/RUST.A/\
+             1970-01-01T00-00-00-000000001Z_1970-01-01T00-00-00-000000001Z.parquet"
+                .to_string(),
+            "data/custom/RustTestCustomData/RUST.A/\
+             1970-01-01T00-00-00-000000010Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+        ]
+    );
+    assert_eq!(loaded, data);
 }
 
 #[rstest]
