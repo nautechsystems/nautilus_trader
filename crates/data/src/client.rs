@@ -199,9 +199,7 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        self.client.connect().await?;
-        self.resume_retained_subscriptions();
-        Ok(())
+        self.client.connect().await
     }
 
     /// Disconnects the underlying client from the data provider.
@@ -271,20 +269,15 @@ impl DataClientAdapter {
         }
     }
 
-    /// Retries retained subscriptions that have no active physical feed.
-    pub(crate) fn resume_retained_subscriptions(&mut self) {
-        let commands: Vec<_> = self
-            .subscriptions_active
+    /// Returns retained subscriptions that have no active physical feed.
+    pub(crate) fn inactive_retained_subscriptions(&self) -> Vec<SubscribeCommand> {
+        self.subscriptions_active
             .iter()
             .filter(|(_, active)| {
                 active.owners > 0 && !self.has_active_subscription(&active.command)
             })
             .map(|(_, active)| active.command.clone())
-            .collect();
-
-        for command in commands {
-            self.execute_subscribe_intent(command);
-        }
+            .collect()
     }
 
     fn subscribe_retained(

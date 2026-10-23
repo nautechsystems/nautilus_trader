@@ -465,13 +465,18 @@ impl DataEngine {
         }
 
         self.is_stopped = false;
+        let mut resumed_clients = Vec::new();
 
         for client in self.get_clients_mut() {
             if client.start().is_err() {
                 log::error!("Failed to start data client {}", client.client_id());
             } else if was_stopped && client.is_connected() {
-                client.resume_retained_subscriptions();
+                resumed_clients.push(client.client_id());
             }
+        }
+
+        for client_id in resumed_clients {
+            self.resume_retained_subscriptions(client_id);
         }
 
         self.resume_option_chain_requests();
@@ -676,6 +681,8 @@ impl DataEngine {
         for (client_id, result) in results {
             if result.is_err() {
                 log::error!("Failed to connect data client {client_id}: connection failed");
+            } else {
+                self.resume_retained_subscriptions(client_id);
             }
         }
 
@@ -916,6 +923,31 @@ impl DataEngine {
         let (groups, result) = self.prepare_subscribe_groups(cmd);
         self.dispatch_subscribe_groups(&retained, groups);
         result
+    }
+
+    fn resume_retained_subscriptions(&mut self, client_id: ClientId) {
+        if self.is_stopped {
+            return;
+        }
+
+        let Some(client) = self.clients.get(&client_id) else {
+            return;
+        };
+        let commands = client.inactive_retained_subscriptions();
+
+        for command in commands {
+            match self.prepare_subscribe_member(&command) {
+                Ok(Some(prepared)) => {
+                    if let Some(client) = self.clients.get_mut(&client_id) {
+                        client.execute_subscribe_with_retained(prepared, command, true);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log::error!("Failed to prepare retained subscription for {client_id}: {e}");
+                }
+            }
+        }
     }
 
     fn retain_intent(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {

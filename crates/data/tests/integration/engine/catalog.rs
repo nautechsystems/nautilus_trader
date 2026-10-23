@@ -313,14 +313,19 @@ fn test_catalog_start_ns_prefill_trades_from_catalog(
 
 #[cfg(feature = "streaming")]
 #[rstest]
-fn test_catalog_start_ns_prefill_external_bars_from_catalog(
-    data_engine: Rc<RefCell<DataEngine>>,
+#[tokio::test]
+async fn test_catalog_start_ns_prefill_external_bars_from_catalog(
+    #[values(false, true)] replay: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
     venue: Venue,
 ) {
-    let mut data_engine = data_engine.borrow_mut();
+    let mut data_engine = DataEngine::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        None,
+    );
     let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
     let _catalog_dir = register_bar_catalog(&mut data_engine, bar_type, 3_000);
@@ -335,7 +340,17 @@ fn test_catalog_start_ns_prefill_external_bars_from_catalog(
         Some(correlation_id),
         None,
     );
-    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub.clone())));
+
+    if replay {
+        data_engine
+            .get_client(Some(&client_id), Some(&venue))
+            .unwrap()
+            .subscriptions_bars
+            .clear();
+        recorder.borrow_mut().clear();
+        data_engine.connect().await;
+    }
 
     let SubscribeCommand::Bars(recorded) =
         recorded_subscribe_command_with_correlation(&recorder, correlation_id)
@@ -343,6 +358,7 @@ fn test_catalog_start_ns_prefill_external_bars_from_catalog(
         panic!("expected bars subscribe");
     };
 
+    assert_eq!(recorded.command_id, sub.command_id);
     assert_eq!(
         recorded
             .params
@@ -350,6 +366,11 @@ fn test_catalog_start_ns_prefill_external_bars_from_catalog(
             .and_then(|params| params.get_u64("start_ns")),
         Some(3_001)
     );
+
+    let release =
+        SubscribeCommand::Bars(sub).into_unsubscribe(UUID4::new(), UnixNanos::default(), None);
+    data_engine.execute_unsubscribe(&release).unwrap();
+    assert!(data_engine.subscribed_bars().is_empty());
 }
 
 #[cfg(feature = "streaming")]
