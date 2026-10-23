@@ -23,7 +23,12 @@
 //!   offset locally for compatibility.
 //! - `next_cursor` is absent on the final page.
 //! - `condition_ids=` accepts at most 100 IDs per request, so `load_ids` for
-//!   larger sets chunks the request and unions the responses.
+//!   larger sets chunks the request and unions the responses. A full page of
+//!   exactly N requested IDs can still return a `next_cursor` even when every
+//!   ID is already present; following that cursor re-sends the same IDs plus
+//!   `after_cursor` and exceeds Gamma's ~8 KiB URI limit (HTTP 414). Paginated
+//!   fetches therefore stop once every requested condition ID has been
+//!   collected.
 
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 
@@ -64,6 +69,23 @@ const GAMMA_EVENTS_KEYSET_PAGE_LIMIT: u32 = 500;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GammaStop {
     CallerCapped,
+}
+
+/// Upper bound on markets collected for a paginated Gamma markets fetch.
+///
+/// When `condition_ids` is set, Gamma returns at most one market per ID, so the
+/// collect window is capped at that length (intersected with any caller
+/// `max_markets`). Without the ID cap, a full first page of exactly
+/// `condition_ids.len()` markets still returns a `next_cursor`, and following
+/// it with the same IDs exceeds Gamma's URI length limit (HTTP 414). See #5433.
+fn gamma_markets_collect_maximum(params: &GetGammaMarketsParams) -> Option<usize> {
+    let id_bound = params.condition_ids.as_ref().map(Vec::len);
+    match (params.max_markets.map(|value| value as usize), id_bound) {
+        (Some(caller), Some(ids)) => Some(caller.min(ids)),
+        (Some(caller), None) => Some(caller),
+        (None, Some(ids)) => Some(ids),
+        (None, None) => None,
+    }
 }
 
 /// Provides a raw HTTP client for the Polymarket Gamma API.
@@ -493,7 +515,7 @@ impl PolymarketGammaHttpClient {
         let protocol = CursorProtocol::<GammaStop>::gamma("Gamma market");
         let reducer = WindowedCollect::new(
             base_params.offset.unwrap_or(0) as usize,
-            base_params.max_markets.map(|value| value as usize),
+            gamma_markets_collect_maximum(&base_params),
             GammaStop::CallerCapped,
         );
         let paginator = Paginator::new("Gamma market", protocol, reducer);
@@ -1316,6 +1338,113 @@ mod tests {
             assert_eq!(schedule.rebate_rate, rebate);
             assert_eq!(schedule.exponent, Decimal::ONE);
             assert!(schedule.taker_only);
+        }
+    }
+
+    #[rstest]
+    #[case(None, None, None)]
+    #[case(Some(10), None, Some(10))]
+    #[case(None, Some(3), Some(3))]
+    #[case(Some(10), Some(3), Some(3))]
+    #[case(Some(2), Some(5), Some(2))]
+    fn test_gamma_markets_collect_maximum(
+        #[case] max_markets: Option<u32>,
+        #[case] condition_id_count: Option<usize>,
+        #[case] expected: Option<usize>,
+    ) {
+        let params = GetGammaMarketsParams {
+            max_markets,
+            condition_ids: condition_id_count
+                .map(|n| (0..n).map(|i| format!("0x{i:064x}")).collect()),
+            ..Default::default()
+        };
+        assert_eq!(gamma_markets_collect_maximum(&params), expected);
+    }
+
+    /// Regression for #5433: a full 100-ID `condition_ids` page returns
+    /// `next_cursor`, but following it with the same IDs hits HTTP 414.
+    /// The paginator must stop after the first page once every ID is in hand.
+    #[rstest]
+    #[tokio::test]
+    async fn test_condition_ids_batch_skips_redundant_cursor_follow_up() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use axum::{
+            Json, Router, extract::RawQuery, http::StatusCode, response::IntoResponse, routing::get,
+        };
+
+        let template: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
+        let condition_ids: Vec<String> = (0..100).map(|i| format!("0x{i:064x}")).collect();
+        let requests = std::sync::Arc::new(AtomicUsize::new(0));
+        let requests_state = requests.clone();
+        let ids_for_handler = condition_ids.clone();
+
+        let router = Router::new().route(
+            "/markets/keyset",
+            get(move |RawQuery(query): RawQuery| {
+                let requests = requests_state.clone();
+                let template = template.clone();
+                let ids_for_handler = ids_for_handler.clone();
+                async move {
+                    let n = requests.fetch_add(1, Ordering::SeqCst);
+                    let query = query.unwrap_or_default();
+                    if query.contains("after_cursor=") {
+                        // Mimic Gamma's 414 when the follow-up URI is too long.
+                        return StatusCode::URI_TOO_LONG.into_response();
+                    }
+                    assert_eq!(n, 0, "only the first page should be requested");
+                    let markets: Vec<serde_json::Value> = ids_for_handler
+                        .iter()
+                        .enumerate()
+                        .map(|(i, condition_id)| {
+                            let mut market = template.clone();
+                            market["id"] = format!("{i}").into();
+                            market["conditionId"] = condition_id.clone().into();
+                            market["clobTokenIds"] =
+                                serde_json::to_string(&[format!("3{i:075}"), format!("4{i:075}")])
+                                    .unwrap()
+                                    .into();
+                            market
+                        })
+                        .collect();
+                    // Full page: Gamma returns next_cursor even though every ID is present.
+                    Json(serde_json::json!({
+                        "markets": markets,
+                        "next_cursor": "a".repeat(216),
+                    }))
+                    .into_response()
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{address}")),
+            5,
+            RetryConfig::default(),
+        )
+        .unwrap();
+
+        let markets = client
+            .request_markets_by_params(GetGammaMarketsParams {
+                condition_ids: Some(condition_ids.clone()),
+                ..Default::default()
+            })
+            .await
+            .expect("full condition_ids batch must succeed without following next_cursor");
+
+        server.abort();
+        assert_eq!(markets.len(), 100);
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        let returned: std::collections::HashSet<_> = markets
+            .iter()
+            .map(|market| market.condition_id.as_str())
+            .collect();
+        for condition_id in &condition_ids {
+            assert!(returned.contains(condition_id.as_str()));
         }
     }
 }

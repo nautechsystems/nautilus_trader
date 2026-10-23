@@ -81,6 +81,10 @@ pub const BATCH_ORDER_LIMIT: usize = 15;
 pub const HTTP_RATE_LIMIT: u32 = 100;
 
 /// Maximum number of `condition_ids` accepted in a single Gamma `/markets` query.
+///
+/// Gamma accepts up to 100 IDs per request. Paginated fetches stop once every
+/// requested ID is collected so a full page's redundant `next_cursor` is not
+/// followed (re-sending 100 IDs plus `after_cursor` exceeds Gamma's URI limit).
 pub const GAMMA_CONDITION_IDS_BATCH_SIZE: usize = 100;
 
 pub const INVALID_API_KEY: &str = "Unauthorized/Invalid api key";
