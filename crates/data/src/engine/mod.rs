@@ -1386,17 +1386,17 @@ impl DataEngine {
 
     fn subscribe_external(&mut self, client_id: ClientId, cmd: &SubscribeCommand) {
         if self.is_stopped {
+            if let SubscribeCommand::OptionChain(command) = cmd {
+                self.retain_external_option_chain(client_id, command, cmd);
+                return;
+            }
+
             for member in split_subscribe(cmd.clone()) {
                 let key = (client_id, SubscriptionKey::from_subscribe(&member));
 
                 if self.subscriptions_external.contains(&key) {
-                    let owner_id = match &member {
-                        SubscribeCommand::OptionChain(command) => {
-                            command.correlation_id.unwrap_or(command.command_id)
-                        }
-                        _ => member.command_id(),
-                    };
-                    self.subscriptions_external.retain(key, owner_id, member);
+                    self.subscriptions_external
+                        .retain(key, member.command_id(), member);
                 }
             }
 

@@ -91,8 +91,17 @@ impl DataEngine {
             }
         }
 
+        if self.is_stopped && !self.subscriptions_external.contains(&current_key) {
+            return;
+        }
+
         self.subscriptions_external
             .retain(current_key.clone(), owner_id, subscribe.clone());
+
+        if self.is_stopped {
+            return;
+        }
+
         self.subscriptions_external
             .get_mut(&current_key)
             .expect("external option chain was retained")

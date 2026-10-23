@@ -158,6 +158,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
 
 #[rstest]
 fn test_external_option_chain_releases_after_final_owner(
+    #[values(false, true)] stopped: bool,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
@@ -198,14 +199,22 @@ fn test_external_option_chain_releases_after_final_owner(
     data_engine.execute(DataCommand::Subscribe(subscribe(
         UUID4::new(),
         "50000",
-        first_params,
+        first_params.clone(),
     )));
+
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(DataCommand::Subscribe(subscribe(
         UUID4::new(),
         "51000",
         second_params.clone(),
     )));
-    assert_eq!(subscribe_saver.get_messages().len(), 2);
+    assert_eq!(
+        subscribe_saver.get_messages().len(),
+        if stopped { 1 } else { 2 }
+    );
 
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
         UnsubscribeOptionChain::new(
@@ -237,11 +246,13 @@ fn test_external_option_chain_releases_after_final_owner(
     assert_eq!(command.client_id, Some(client_id));
     assert_eq!(command.venue, Some(venue));
     assert_eq!(command.ts_init, UnixNanos::from(2));
-    assert_eq!(command.params.as_ref(), Some(&second_params));
+    let expected_params = if stopped { first_params } else { second_params };
+    assert_eq!(command.params.as_ref(), Some(&expected_params));
 }
 
 #[rstest]
 fn test_external_option_chain_edit_moves_owner_to_new_client(
+    #[values(false, true)] stopped: bool,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
@@ -293,6 +304,10 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
         ),
     )));
 
+    if stopped {
+        data_engine.stop();
+    }
+
     let mut edit = SubscribeOptionChain::new(
         series_id,
         StrikeRange::Fixed(vec![Price::from("51000")]),
@@ -318,11 +333,15 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
     assert_eq!(initial_unsubscribe.params.as_ref(), Some(&initial_params));
     let edited_commands = edited_subscribe_saver.get_messages();
 
-    let [SubscribeCommand::OptionChain(edited_subscribe)] = edited_commands.as_slice() else {
-        panic!("expected one subscribe to the new external client, was {edited_commands:?}");
-    };
+    if stopped {
+        assert!(edited_commands.is_empty());
+    } else {
+        let [SubscribeCommand::OptionChain(edited_subscribe)] = edited_commands.as_slice() else {
+            panic!("expected one subscribe to the new external client, was {edited_commands:?}");
+        };
 
-    assert_eq!(edited_subscribe.correlation_id, Some(owner_id));
+        assert_eq!(edited_subscribe.correlation_id, Some(owner_id));
+    }
 
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
         UnsubscribeOptionChain::new(
@@ -342,7 +361,10 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
     assert_eq!(final_unsubscribe.series_id, series_id);
     assert_eq!(final_unsubscribe.client_id, Some(edited_client_id));
     assert_eq!(final_unsubscribe.ts_init, UnixNanos::from(3));
-    assert_eq!(final_unsubscribe.params.as_ref(), Some(&edited_params));
+    assert_eq!(
+        final_unsubscribe.params.as_ref(),
+        if stopped { None } else { Some(&edited_params) }
+    );
 }
 
 #[rstest]
