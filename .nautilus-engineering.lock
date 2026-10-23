@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "8df90825c489bee566008e17aae01d2258092fba"
+revision = "2f4d03d88c7a9bcf34a07c69b385708ca000ca72"
 manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -44,7 +44,7 @@ executable = false
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "0d973ccb43ccebe8644b84b8574dc05945aeb835ccb4019762bce5a13472b9ed"
+sha256 = "cf32781073b169a1cb9404fe4e9c54a729383df8c113eb2ba9f44a8be482037f"
 executable = false
 
 [[file]]
@@ -134,7 +134,7 @@ executable = true
 [[file]]
 artifact = "security-audit"
 path = "scripts/security-audit.py"
-sha256 = "c22b368bb0b3c1a9549aa8192fad7320dcfc328c1d6f7753a6ae67024267ba1f"
+sha256 = "00c190ea859d95941b60d8b4d8fe5721d2c2f80403d445b46d229bf44080b8d7"
 executable = false
 
 [[file]]
