@@ -3674,7 +3674,7 @@ fn test_fill_report_collector_uses_provider_resolved_stock_venue() {
         create_test_commission_report("exec-aapl-001", 1.25),
     )));
 
-    let (evidence, combo_executions) = collector.finish().unwrap();
+    let (evidence, combo_executions) = collector.finish();
 
     assert_eq!(evidence.reports.len(), 1);
     assert!(evidence.combo_leg_reports.is_empty());
@@ -5895,7 +5895,7 @@ fn collect_mes_session(
         )));
     }
 
-    let (evidence, combo_executions) = collector.finish().unwrap();
+    let (evidence, combo_executions) = collector.finish();
     assert!(combo_executions.is_empty());
     evidence
 }
@@ -6067,7 +6067,7 @@ fn test_fill_report_collector_marks_all_missing_on_stream_error() {
     let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
 
     collector.push(Err(ibapi::Error::ConnectionReset));
-    let (evidence, _) = collector.finish().unwrap();
+    let (evidence, _) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert!(evidence.missing_all);
@@ -6084,7 +6084,7 @@ fn test_fill_report_collector_marks_all_missing_on_commission_without_execution(
     collector.push(Ok(Executions::CommissionReport(
         create_test_commission_report("exec-unseen-001", 0.61),
     )));
-    let (evidence, _) = collector.finish().unwrap();
+    let (evidence, _) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert!(evidence.missing_all);
@@ -6104,7 +6104,7 @@ fn test_fill_report_collector_marks_instrument_missing_when_not_cached() {
     collector.push(Ok(Executions::CommissionReport(
         create_test_commission_report(MES_SESSION_EXECUTIONS[0].0, 0.61),
     )));
-    let (evidence, _) = collector.finish().unwrap();
+    let (evidence, _) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert!(!evidence.missing_all);
@@ -6115,11 +6115,16 @@ fn test_fill_report_collector_marks_instrument_missing_when_not_cached() {
 }
 
 #[rstest]
-fn test_fill_report_collector_fails_on_execution_without_commission() {
+fn test_fill_report_collector_marks_instrument_missing_on_execution_without_commission() {
     let (client, _, _) = create_test_execution_client();
     client.instrument_provider.insert_test_instrument(
         InstrumentAny::from(create_test_mes_instrument()),
         MES_CONTRACT_ID,
+        1,
+    );
+    client.instrument_provider.insert_test_instrument(
+        InstrumentAny::from(equity_aapl()),
+        265598,
         1,
     );
     let context = report_context(&client);
@@ -6129,10 +6134,27 @@ fn test_fill_report_collector_fails_on_execution_without_commission() {
     collector.push(Ok(Executions::ExecutionData(
         create_test_mes_execution_data(0),
     )));
+    collector.push(Ok(Executions::ExecutionData(
+        create_test_stock_execution_data(0, 123, "exec-aapl-001"),
+    )));
+    collector.push(Ok(Executions::CommissionReport(
+        create_test_commission_report("exec-aapl-001", 1.25),
+    )));
+    let (evidence, _) = collector.finish();
 
+    // The other instrument keeps its fill
     assert_eq!(
-        collector.finish().unwrap_err().to_string(),
-        "IB did not provide commission reports for execution IDs: 0000e1a7.6acc4ab7.01.01"
+        evidence
+            .reports
+            .iter()
+            .map(|report| report.trade_id)
+            .collect::<Vec<_>>(),
+        vec![TradeId::from("exec-aapl-001")]
+    );
+    assert!(!evidence.missing_all);
+    assert_eq!(
+        evidence.missing_instruments,
+        AHashSet::from([InstrumentId::from("MESZ6.CME")])
     );
 }
 
@@ -6157,7 +6179,7 @@ fn test_fill_report_collector_moves_combo_leg_fills_to_evidence() {
     collector.push(Ok(Executions::CommissionReport(
         create_test_commission_report("exec-leg-001", 0.65),
     )));
-    let (evidence, combo_executions) = collector.finish().unwrap();
+    let (evidence, combo_executions) = collector.finish();
 
     assert!(evidence.reports.is_empty());
     assert_eq!(evidence.combo_leg_reports.len(), 1);

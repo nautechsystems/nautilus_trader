@@ -379,7 +379,7 @@ impl IbReportClient {
             collector.push(exec_result);
         }
 
-        let (mut evidence, combo_executions) = collector.finish()?;
+        let (mut evidence, combo_executions) = collector.finish();
 
         if !combo_executions.is_empty() {
             self.resolve_combo_fill_reports(
@@ -685,20 +685,22 @@ impl<'a> FillReportCollector<'a> {
     ///
     /// The combo leg executions move from the fill reports to the evidence's combo leg reports:
     /// they share the combo's order IDs, so they would fill the spread order at leg prices.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if an execution has no commission report.
-    pub(super) fn finish(mut self) -> anyhow::Result<(FillEvidence, Vec<ExecutionData>)> {
-        anyhow::ensure!(
-            self.pending_exec_data.is_empty(),
-            "IB did not provide commission reports for execution IDs: {}",
-            self.pending_exec_data
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+    pub(super) fn finish(mut self) -> (FillEvidence, Vec<ExecutionData>) {
+        // An execution without its commission report leaves its instrument's fills incomplete
+        // rather than failing reconciliation, like an execution that cannot be parsed.
+        for (execution_id, exec_data) in std::mem::take(&mut self.pending_exec_data) {
+            tracing::warn!("IB did not provide a commission report for execution {execution_id}");
+
+            match self
+                .context
+                .resolve_historical_execution_instrument_id(&exec_data)
+            {
+                Ok(instrument_id) => {
+                    self.evidence.missing_instruments.insert(instrument_id);
+                }
+                Err(_) => self.evidence.missing_all = true,
+            }
+        }
 
         // A commission report without its execution means an execution never arrived
         if !self.pending_commissions.is_empty() {
@@ -718,7 +720,7 @@ impl<'a> FillReportCollector<'a> {
             })
             .collect();
 
-        Ok((self.evidence, self.combo_executions))
+        (self.evidence, self.combo_executions)
     }
 
     fn add_fill(&mut self, exec_data: &ExecutionData, commission: f64, commission_currency: &str) {
