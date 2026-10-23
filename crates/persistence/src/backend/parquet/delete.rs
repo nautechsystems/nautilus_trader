@@ -20,6 +20,8 @@
     reason = "delete operations forward catalog/storage errors and operate on validated batches"
 )]
 
+use std::collections::BTreeMap;
+
 use ahash::AHashSet;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
@@ -37,7 +39,6 @@ use crate::{
     catalog::types::{
         HasCatalogDataType, data_type_from_data_path_prefix, parquet_data_path_prefix,
     },
-    common::custom::group_custom_data_by_type,
 };
 
 /// Kind of deletion operation to execute.
@@ -321,6 +322,7 @@ impl ParquetDataCatalog {
 
         // Execute all operations
         let mut files_to_remove = AHashSet::<String>::new();
+        let mut preserved_by_range = BTreeMap::<(u64, u64), Vec<T>>::new();
 
         for operation in operations_to_execute {
             // Reset the session before each operation to ensure fresh data is loaded
@@ -329,7 +331,7 @@ impl ParquetDataCatalog {
 
             match operation.kind {
                 DeleteOperationKind::SplitBefore | DeleteOperationKind::SplitAfter => {
-                    // Query the data preserved by the split and write it
+                    // Query the data preserved by the split
                     // Use optimize_file_loading=false for precise file control during split operations
                     let instrument_ids = identifier.map(|id| vec![id.to_string()]);
                     let preserved_data = self.query::<T>(
@@ -342,14 +344,10 @@ impl ParquetDataCatalog {
                     )?;
 
                     if !preserved_data.is_empty() {
-                        let start_ts = UnixNanos::from(operation.file_start_ns);
-                        let end_ts = UnixNanos::from(operation.file_end_ns);
-                        self.write_to_parquet(
-                            &preserved_data,
-                            Some(start_ts),
-                            Some(end_ts),
-                            Some(true),
-                        )?;
+                        preserved_by_range
+                            .entry((operation.file_start_ns, operation.file_end_ns))
+                            .or_default()
+                            .extend(preserved_data);
                     }
                 }
                 DeleteOperationKind::Remove => {}
@@ -359,6 +357,18 @@ impl ParquetDataCatalog {
             for file in operation.files {
                 files_to_remove.insert(file);
             }
+        }
+
+        // Splits of overlapping files can target the same file, so each range is written once
+        // with the rows of all its splits; writing them in turn would skip all but the first
+        for ((start_ns, end_ns), mut preserved_data) in preserved_by_range {
+            preserved_data.sort_by_key(HasTsInit::ts_init);
+            self.write_to_parquet(
+                &preserved_data,
+                Some(UnixNanos::from(start_ns)),
+                Some(UnixNanos::from(end_ns)),
+                Some(true),
+            )?;
         }
 
         for file in files_to_remove {
@@ -408,6 +418,7 @@ impl ParquetDataCatalog {
 
         // Execute all operations
         let mut files_to_remove = AHashSet::<String>::new();
+        let mut preserved_by_range = BTreeMap::<(u64, u64), Vec<CustomData>>::new();
 
         for operation in operations_to_execute {
             // Reset the session before each operation
@@ -415,7 +426,7 @@ impl ParquetDataCatalog {
 
             match operation.kind {
                 DeleteOperationKind::SplitBefore | DeleteOperationKind::SplitAfter => {
-                    // Query the custom data preserved by the split and write it
+                    // Query the custom data preserved by the split
                     let instrument_ids = identifier.map(|id| vec![id.to_string()]);
                     let preserved_data = self.query_custom_data_dynamic(
                         type_name,
@@ -427,27 +438,13 @@ impl ParquetDataCatalog {
                         false,
                     )?;
 
-                    if !preserved_data.is_empty() {
-                        let custom_items: Vec<CustomData> = preserved_data
-                            .into_iter()
-                            .filter_map(|data| match data {
-                                Data::Custom(c) => Some(c),
-                                _ => None,
-                            })
-                            .collect();
-
-                        let start_ts = UnixNanos::from(operation.file_start_ns);
-                        let end_ts = UnixNanos::from(operation.file_end_ns);
-
-                        for items in group_custom_data_by_type(custom_items.iter()) {
-                            self.write_custom_data_refs_batch(
-                                &items,
-                                Some(start_ts),
-                                Some(end_ts),
-                                Some(true),
-                            )?;
-                        }
-                    }
+                    preserved_by_range
+                        .entry((operation.file_start_ns, operation.file_end_ns))
+                        .or_default()
+                        .extend(preserved_data.into_iter().filter_map(|data| match data {
+                            Data::Custom(c) => Some(c),
+                            _ => None,
+                        }));
                 }
                 DeleteOperationKind::Remove => {}
             }
@@ -456,6 +453,25 @@ impl ParquetDataCatalog {
             for file in operation.files {
                 files_to_remove.insert(file);
             }
+        }
+
+        // Splits of overlapping files can target the same file, so each range is written once
+        // with the rows of all its splits. Every group is checked before any file is written, so
+        // groups with different metadata that would share a file fail the delete without changes.
+        let mut writes = Vec::new();
+
+        for ((start_ns, end_ns), mut custom_items) in preserved_by_range {
+            custom_items.sort_by_key(|custom| custom.data.ts_init());
+            writes.extend(self.prepare_custom_data_groups(
+                &custom_items,
+                Some(UnixNanos::from(start_ns)),
+                Some(UnixNanos::from(end_ns)),
+                Some(true),
+            )?);
+        }
+
+        for write in &writes {
+            self.write_custom_data_prepared(write, Some(true))?;
         }
 
         for file in files_to_remove {

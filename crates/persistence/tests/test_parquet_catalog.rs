@@ -4020,6 +4020,65 @@ fn test_delete_data_range_partial_file_overlap_start() {
     assert_eq!(remaining_data[1].ts_init.as_u64(), 3_000_000_000);
 }
 
+/// Splits of overlapping files that target the same file are written together, so neither split
+/// is skipped as an existing file before its source is removed.
+#[rstest]
+fn test_delete_data_range_merges_splits_sharing_a_file() {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    catalog
+        .write_to_parquet(
+            &[create_quote_tick(1), create_quote_tick(4)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(10)),
+            Some(true),
+        )
+        .unwrap();
+    catalog
+        .write_to_parquet(
+            &[create_quote_tick(2), create_quote_tick(5)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(20)),
+            Some(true),
+        )
+        .unwrap();
+
+    catalog
+        .delete_data_range(
+            &NautilusDataType::QuoteTick,
+            Some("ETH/USDT.BINANCE"),
+            Some(UnixNanos::from(3)),
+            Some(UnixNanos::from(3)),
+        )
+        .unwrap();
+    let remaining = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(
+        catalog_relative_paths(&temp_dir),
+        vec![
+            "data/quotes/ETHUSDT.BINANCE/\
+             1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet"
+                .to_string(),
+            "data/quotes/ETHUSDT.BINANCE/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+            "data/quotes/ETHUSDT.BINANCE/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000020Z.parquet"
+                .to_string(),
+        ]
+    );
+    assert_eq!(
+        remaining,
+        vec![
+            create_quote_tick(1),
+            create_quote_tick(2),
+            create_quote_tick(4),
+            create_quote_tick(5),
+        ]
+    );
+}
+
 #[rstest]
 fn test_delete_data_range_partial_file_overlap_end() {
     let (_temp_dir, mut catalog) = create_temp_catalog();
@@ -5624,7 +5683,7 @@ fn test_write_data_enum_rejects_custom_metadata_groups_sharing_a_file(
         error.to_string(),
         format!(
             "Cannot write custom data for RustTestCustomData with different metadata to the same \
-             file {}: a file holds one data type, so write each metadata value over a distinct range",
+             file {}: a file holds one data type",
             std::path::PathBuf::from(directory).join(filename).display(),
         )
     );
@@ -5670,7 +5729,7 @@ fn test_write_data_enum_rejects_custom_collision_before_writing_other_custom_typ
         error.to_string(),
         format!(
             "Cannot write custom data for RustTestCustomData with different metadata to the same \
-             file {}: a file holds one data type, so write each metadata value over a distinct range",
+             file {}: a file holds one data type",
             std::path::PathBuf::from(directory)
                 .join("1970-01-01T00-00-00-000000005Z_1970-01-01T00-00-00-000000005Z.parquet")
                 .display(),
@@ -5739,6 +5798,153 @@ fn test_write_data_enum_writes_custom_metadata_groups_with_disjoint_ranges() {
         ]
     );
     assert_eq!(loaded, data);
+}
+
+/// Consolidation names one file per period, so metadata groups in that period would share it.
+#[rstest]
+fn test_consolidate_data_by_period_rejects_custom_metadata_groups_sharing_a_file() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let data = vec![custom_with_source("a", 1), custom_with_source("b", 10)];
+    catalog
+        .write_data_enum(&data, None, None, Some(false))
+        .unwrap();
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.A"))
+        .unwrap();
+    let files_before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .consolidate_data_by_period(
+            &CatalogDataType::Data(NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            }),
+            Some("RUST.A"),
+            Some(1_000_000_000),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot write custom data for RustTestCustomData with different metadata to the same \
+             file {}: a file holds one data type",
+            std::path::PathBuf::from(directory)
+                .join("1970-01-01T00-00-00-000000001Z_1970-01-01T00-00-00-000000010Z.parquet")
+                .display(),
+        )
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
+}
+
+// Writes two overlapping custom files whose split before a deletion at ts 3 both target [0, 2].
+fn write_custom_files_with_shared_split(catalog: &ParquetDataCatalog, second_source: &str) {
+    catalog
+        .write_data_enum(
+            &[custom_with_source("a", 1), custom_with_source("a", 4)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(10)),
+            Some(true),
+        )
+        .unwrap();
+    catalog
+        .write_data_enum(
+            &[
+                custom_with_source(second_source, 2),
+                custom_with_source(second_source, 5),
+            ],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(20)),
+            Some(true),
+        )
+        .unwrap();
+}
+
+fn delete_rust_test_custom_data_at_3(catalog: &mut ParquetDataCatalog) -> anyhow::Result<()> {
+    catalog.delete_data_range(
+        &NautilusDataType::Custom {
+            type_name: "RustTestCustomData".to_string(),
+        },
+        Some("RUST.A"),
+        Some(UnixNanos::from(3)),
+        Some(UnixNanos::from(3)),
+    )
+}
+
+/// Splits of overlapping files that target the same file are written together, so neither split
+/// is skipped as an existing file before its source is removed.
+#[rstest]
+fn test_delete_data_range_merges_custom_splits_sharing_a_file() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    write_custom_files_with_shared_split(&catalog, "a");
+
+    delete_rust_test_custom_data_at_3(&mut catalog).unwrap();
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&["RUST.A".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(
+        catalog_relative_paths(&temp_dir),
+        vec![
+            "data/custom/RustTestCustomData/RUST.A/\
+             1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet"
+                .to_string(),
+            "data/custom/RustTestCustomData/RUST.A/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+            "data/custom/RustTestCustomData/RUST.A/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000020Z.parquet"
+                .to_string(),
+        ]
+    );
+    assert_eq!(
+        loaded,
+        vec![
+            custom_with_source("a", 1),
+            custom_with_source("a", 2),
+            custom_with_source("a", 4),
+            custom_with_source("a", 5),
+        ]
+    );
+}
+
+/// Splits with different metadata cannot share a file, so the delete fails before it writes or
+/// removes any file.
+#[rstest]
+fn test_delete_data_range_rejects_custom_metadata_splits_sharing_a_file() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    write_custom_files_with_shared_split(&catalog, "b");
+    let directory = catalog
+        .make_path_custom_data("RustTestCustomData", Some("RUST.A"))
+        .unwrap();
+    let files_before = snapshot_catalog_files(&temp_dir);
+
+    let error = delete_rust_test_custom_data_at_3(&mut catalog).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot write custom data for RustTestCustomData with different metadata to the same \
+             file {}: a file holds one data type",
+            std::path::PathBuf::from(directory)
+                .join("1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet")
+                .display(),
+        )
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
 }
 
 #[rstest]
