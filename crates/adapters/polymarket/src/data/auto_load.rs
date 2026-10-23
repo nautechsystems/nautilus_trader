@@ -100,12 +100,15 @@ impl Drop for AutoLoadScheduledGuard {
 
 impl PolymarketDataClient {
     pub(super) fn resume_resolution_subscriptions(&self) {
-        let status_ids = self.subscriptions.active_instrument_status_subs.load();
-        let close_ids = self.subscriptions.active_instrument_close_subs.load();
-        let mut instrument_ids = status_ids.union(&close_ids).copied().collect::<Vec<_>>();
+        let mut instrument_ids = self
+            .subscriptions
+            .active_instrument_status_subs
+            .iter()
+            .chain(self.subscriptions.active_instrument_close_subs.iter())
+            .map(|id| *id)
+            .collect::<Vec<_>>();
         instrument_ids.sort_unstable();
-        drop(status_ids);
-        drop(close_ids);
+        instrument_ids.dedup();
 
         for instrument_id in instrument_ids {
             let needs_load = {

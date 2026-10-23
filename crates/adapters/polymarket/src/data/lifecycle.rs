@@ -34,8 +34,9 @@ use super::{
 use crate::{
     data_types::register_polymarket_custom_data,
     resolve::{
-        ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
-        fetch_and_apply_resolutions_by_condition_ids, pause_and_reconcile_resolve_watch_entries,
+        ResolveBatchErrorMode, ResolveWatchSelectionMode, ResolveWatchlist,
+        collect_resolve_watch_selection, fetch_and_apply_resolutions_by_condition_ids,
+        pause_and_reconcile_resolve_watch_entries,
         update_resolve_watchlist_from_position_event_serialized,
     },
     websocket::messages::PolymarketWsMessage,
@@ -259,20 +260,22 @@ impl PolymarketDataClient {
                         subscriptions.retire_expired(now_ns)
                         .await;
 
-                        let snapshot = watchlist.load();
-                        let watched_conditions = snapshot.len();
-                        let watched_instruments = snapshot
-                            .values()
-                            .map(|entry| entry.tracked.len())
-                            .sum::<usize>();
-                        let selection = collect_resolve_watch_selection(
-                            &snapshot,
-                            now_ns,
-                            grace_secs,
-                            max_wait_secs,
-                            ResolveWatchSelectionMode::AutoPoll,
-                        );
-                        drop(snapshot);
+                        let (watched_conditions, watched_instruments, selection) = {
+                            let snapshot = watchlist.read();
+                            let watched_conditions = snapshot.len();
+                            let watched_instruments = snapshot
+                                .values()
+                                .map(|entry| entry.tracked.len())
+                                .sum::<usize>();
+                            let selection = collect_resolve_watch_selection(
+                                &snapshot,
+                                now_ns,
+                                grace_secs,
+                                max_wait_secs,
+                                ResolveWatchSelectionMode::AutoPoll,
+                            );
+                            (watched_conditions, watched_instruments, selection)
+                        };
 
                         if !selection.pause_condition_ids.is_empty() {
                             log::warn!(
@@ -427,7 +430,7 @@ impl PolymarketDataClient {
 
         // Fence callbacks which resume after cancellation without yielding to the task runner
         update_guard.retire_generation();
-        self.resolve_poll_watchlist = std::sync::Arc::new(AtomicMap::new());
+        self.resolve_poll_watchlist = std::sync::Arc::new(ResolveWatchlist::default());
         self.pending_resolutions.clear();
         self.deferred_resolutions.rcu(|entries| entries.clear());
         self.instruments = std::sync::Arc::new(AtomicMap::new());
@@ -575,9 +578,7 @@ impl PolymarketDataClient {
             && !self.polybolt_feed.has_retained_tasks().await;
 
         if drained {
-            self.subscriptions
-                .ws_open_tokens
-                .rcu(|tokens| tokens.clear());
+            self.subscriptions.ws_open_tokens.clear();
 
             if self.reset_pending {
                 self.ws_client.clear_reconnect_state();
@@ -1606,7 +1607,10 @@ mod tests {
                 expected_ids.insert(instrument_id);
             }
 
-            assert_eq!(**set.load(), expected_ids);
+            assert_eq!(
+                set.iter().map(|id| *id).collect::<ahash::AHashSet<_>>(),
+                expected_ids
+            );
         }
 
         let mut expected_pending = ahash::AHashSet::from_iter([unrelated_id]);
@@ -1943,6 +1947,7 @@ mod tests {
         assert!(
             client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-POLL".to_string())
         );
     }
@@ -1992,7 +1997,7 @@ mod tests {
                 .last_quotes
                 .contains_key(&instrument_id)
         );
-        assert!(client.resolve_poll_watchlist.load().is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
     }
 
     #[rstest]
@@ -2103,6 +2108,7 @@ mod tests {
         // Settlement drops the watch entry, so the next cycle must revisit the condition
         client
             .resolve_poll_watchlist
+            .write()
             .remove(&"0xCOND-WATCH".to_string());
 
         wait_until_async(
@@ -2180,7 +2186,7 @@ mod tests {
                         .all(|id| !client.subscriptions.book_sync.book_gated(*id))
                     && client.subscriptions.pending_auto_loads.lock().is_empty()
                     && client.instruments.load().len() == watched_count
-                    && client.resolve_poll_watchlist.load().len() == watched_count
+                    && client.resolve_poll_watchlist.read().len() == watched_count
             },
             tokio::time::Duration::from_secs(5),
         )
@@ -2214,7 +2220,7 @@ mod tests {
         );
         assert!(client.subscriptions.pending_auto_loads.lock().is_empty());
         assert_eq!(client.instruments.load().len(), watched_count);
-        assert_eq!(client.resolve_poll_watchlist.load().len(), watched_count);
+        assert_eq!(client.resolve_poll_watchlist.read().len(), watched_count);
     }
 
     #[rstest]
@@ -2479,7 +2485,7 @@ mod tests {
 
             // Quote-only churn opens no position, so nothing reaches the resolution watchlist and
             // no instrument is retained as watchlist metadata.
-            assert_eq!(client.resolve_poll_watchlist.len(), 0);
+            assert_eq!(client.resolve_poll_watchlist.read().len(), 0);
 
             let sweep_events = sandbox
                 .test_clock
@@ -2525,7 +2531,7 @@ mod tests {
                 );
             }
 
-            assert_eq!(client.resolve_poll_watchlist.len(), 0);
+            assert_eq!(client.resolve_poll_watchlist.read().len(), 0);
         }
 
         // Neither sweep settles: an expired quote-only instrument has no exposure to close.

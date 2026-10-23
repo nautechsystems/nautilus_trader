@@ -16,9 +16,9 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use nautilus_common::cache::InstrumentLookupError;
-use nautilus_core::{AtomicMap, AtomicSet};
+use nautilus_core::AtomicMap;
 use nautilus_model::{
     data::QuoteTick,
     enums::BookType,
@@ -33,7 +33,7 @@ use super::instruments::TokenMeta;
 use crate::{
     book::sync::BookSyncTracker,
     resolve::{
-        ResolveWatchEntry, StrictResolvedMarket, remove_data_resolve_watch_entry,
+        ResolveWatchEntry, ResolveWatchlist, StrictResolvedMarket, remove_data_resolve_watch_entry,
         upsert_data_resolve_watch_entry_from_instrument,
     },
     websocket::pool::PolymarketMarketPoolHandle,
@@ -42,7 +42,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct DataSubscriptions {
     pub(super) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    pub(super) watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
+    pub(super) watchlist: Arc<ResolveWatchlist>,
     pub(super) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
     pub(super) owner_lock: Arc<Mutex<()>>,
     pub(super) ws_client: PolymarketMarketPoolHandle,
@@ -50,13 +50,13 @@ pub(crate) struct DataSubscriptions {
     pub(super) token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     pub(super) order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     pub(super) last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
-    pub(super) active_quote_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(super) active_delta_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(super) active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(super) active_instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(super) active_instrument_close_subs: Arc<AtomicSet<InstrumentId>>,
+    pub(super) active_quote_subs: Arc<DashSet<InstrumentId>>,
+    pub(super) active_delta_subs: Arc<DashSet<InstrumentId>>,
+    pub(super) active_trade_subs: Arc<DashSet<InstrumentId>>,
+    pub(super) active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
+    pub(super) active_instrument_close_subs: Arc<DashSet<InstrumentId>>,
     pub(super) book_sync: BookSyncTracker,
-    pub(super) ws_open_tokens: Arc<AtomicSet<Ustr>>,
+    pub(super) ws_open_tokens: Arc<DashSet<Ustr>>,
     pub(super) ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     pub(super) pending_auto_loads: Arc<Mutex<AHashSet<InstrumentId>>>,
     pub(super) closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
@@ -65,7 +65,7 @@ pub(crate) struct DataSubscriptions {
 impl DataSubscriptions {
     pub(crate) fn new(
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-        watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
+        watchlist: Arc<ResolveWatchlist>,
         deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
         owner_lock: Arc<Mutex<()>>,
         ws_client: PolymarketMarketPoolHandle,
@@ -81,13 +81,13 @@ impl DataSubscriptions {
             token_meta: Arc::new(DashMap::new()),
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
-            active_quote_subs: Arc::new(AtomicSet::new()),
-            active_delta_subs: Arc::new(AtomicSet::new()),
-            active_trade_subs: Arc::new(AtomicSet::new()),
-            active_instrument_status_subs: Arc::new(AtomicSet::new()),
-            active_instrument_close_subs: Arc::new(AtomicSet::new()),
+            active_quote_subs: Arc::new(DashSet::new()),
+            active_delta_subs: Arc::new(DashSet::new()),
+            active_trade_subs: Arc::new(DashSet::new()),
+            active_instrument_status_subs: Arc::new(DashSet::new()),
+            active_instrument_close_subs: Arc::new(DashSet::new()),
             book_sync: BookSyncTracker::default(),
-            ws_open_tokens: Arc::new(AtomicSet::new()),
+            ws_open_tokens: Arc::new(DashSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
             pending_auto_loads: Arc::new(Mutex::new(AHashSet::new())),
             closed_condition_ids: Arc::new(Mutex::new(AHashSet::new())),
@@ -178,11 +178,11 @@ impl DataSubscriptions {
             .any(|set| set.contains(&instrument_id))
     }
 
-    pub(crate) fn status_subscriptions(&self) -> &Arc<AtomicSet<InstrumentId>> {
+    pub(crate) fn status_subscriptions(&self) -> &Arc<DashSet<InstrumentId>> {
         &self.active_instrument_status_subs
     }
 
-    pub(crate) fn close_subscriptions(&self) -> &Arc<AtomicSet<InstrumentId>> {
+    pub(crate) fn close_subscriptions(&self) -> &Arc<DashSet<InstrumentId>> {
         &self.active_instrument_close_subs
     }
 
@@ -205,7 +205,7 @@ impl DataSubscriptions {
         targets: &mut AHashMap<InstrumentId, String>,
     ) {
         for subscriptions in self.intents() {
-            for instrument_id in subscriptions.load().iter().copied() {
+            for instrument_id in subscriptions.iter().map(|id| *id) {
                 if !crate::providers::extract_condition_id(&instrument_id)
                     .is_ok_and(|candidate| candidate == condition_id)
                 {
@@ -239,19 +239,19 @@ impl DataSubscriptions {
             &self.active_instrument_status_subs,
             &self.active_instrument_close_subs,
         ] {
-            subscriptions.rcu(|entries| {
-                entries.retain(|id| {
-                    deferred_ids.contains(id)
-                        || (!matches_condition(id) && !tracked_ids.contains(id))
-                });
+            subscriptions.retain(|id| {
+                deferred_ids.contains(id) || (!matches_condition(id) && !tracked_ids.contains(id))
             });
         }
 
         let mut resolved_books = Vec::new();
-        self.active_delta_subs.rcu(|entries| {
-            resolved_books = entries
-                .extract_if(|id| matches_condition(id) || tracked_ids.contains(id))
-                .collect();
+        self.active_delta_subs.retain(|id| {
+            if matches_condition(id) || tracked_ids.contains(id) {
+                resolved_books.push(*id);
+                false
+            } else {
+                true
+            }
         });
 
         // Dropping synchronization state cancels its snapshot wait and recovery episode
@@ -260,9 +260,7 @@ impl DataSubscriptions {
         }
 
         for subscriptions in [&self.active_quote_subs, &self.active_trade_subs] {
-            subscriptions.rcu(|entries| {
-                entries.retain(|id| !matches_condition(id) && !tracked_ids.contains(id));
-            });
+            subscriptions.retain(|id| !matches_condition(id) && !tracked_ids.contains(id));
         }
 
         self.closed_condition_ids
@@ -286,7 +284,7 @@ impl DataSubscriptions {
             && (self.active_instrument_status_subs.contains(&instrument_id)
                 || self.active_instrument_close_subs.contains(&instrument_id))
             && {
-                let watchlist = self.watchlist.load();
+                let watchlist = self.watchlist.read();
 
                 let has_active_data_owner = |entry: &ResolveWatchEntry| {
                     !entry.paused
@@ -326,7 +324,7 @@ impl DataSubscriptions {
         }
     }
 
-    fn intent(&self, kind: SubscriptionKind) -> &Arc<AtomicSet<InstrumentId>> {
+    fn intent(&self, kind: SubscriptionKind) -> &Arc<DashSet<InstrumentId>> {
         match kind {
             SubscriptionKind::Deltas => &self.active_delta_subs,
             SubscriptionKind::Quotes => &self.active_quote_subs,
@@ -368,7 +366,7 @@ impl DataSubscriptions {
             .ok()
             .or_else(|| {
                 self.watchlist
-                    .load()
+                    .read()
                     .values()
                     .flat_map(|entry| entry.tracked.values())
                     .find(|tracked| tracked.instrument_id == instrument_id)
@@ -414,7 +412,7 @@ impl DataSubscriptions {
         true
     }
 
-    pub(super) fn intents(&self) -> [&Arc<AtomicSet<InstrumentId>>; 5] {
+    pub(super) fn intents(&self) -> [&Arc<DashSet<InstrumentId>>; 5] {
         [
             &self.active_quote_subs,
             &self.active_delta_subs,
@@ -448,6 +446,7 @@ pub(crate) fn resolve_token_id_from(
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_model::{identifiers::Symbol, instruments::stubs::binary_option};
     use rstest::rstest;
 
     use super::*;
@@ -479,7 +478,7 @@ mod tests {
     fn make_subscriptions(ws_client: PolymarketMarketPoolHandle) -> DataSubscriptions {
         DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::new(ResolveWatchlist::default()),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -495,9 +494,9 @@ mod tests {
         Ustr::from("0xCOND-0xTOKEN")
     }
 
-    fn resolution_watch(instrument_id: InstrumentId) -> Arc<AtomicMap<String, ResolveWatchEntry>> {
-        let watchlist = Arc::new(AtomicMap::new());
-        watchlist.insert(
+    fn resolution_watch(instrument_id: InstrumentId) -> Arc<ResolveWatchlist> {
+        let watchlist = Arc::new(ResolveWatchlist::default());
+        watchlist.write().insert(
             "0xCOND".to_string(),
             ResolveWatchEntry {
                 condition_id: "0xCOND".to_string(),
@@ -527,7 +526,7 @@ mod tests {
         let inst = instrument_id();
         subscriptions.active_quote_subs.insert(inst);
 
-        subscriptions.watchlist = Arc::new(AtomicMap::new());
+        subscriptions.watchlist = Arc::new(ResolveWatchlist::default());
         subscriptions.subscribe_new_markets = false;
         subscriptions
             .reconcile(inst, inst.symbol.as_str().to_string())
@@ -618,7 +617,7 @@ mod tests {
         let mut subscriptions = make_subscriptions(ws);
         let inst = instrument_id();
         let watchlist = resolution_watch(inst);
-        watchlist.rcu(|entries| entries.get_mut("0xCOND").unwrap().paused = paused);
+        watchlist.write().get_mut("0xCOND").unwrap().paused = paused;
         subscriptions.active_instrument_status_subs.insert(inst);
         subscriptions
             .closed_condition_ids
@@ -655,8 +654,7 @@ mod tests {
     ) {
         let (ws, mut rx) = make_handle();
         let mut subscriptions = make_subscriptions(ws);
-        let watchlist = Arc::new(AtomicMap::new());
-        let mut entries = ahash::AHashMap::new();
+        let mut instruments = AHashMap::new();
         let mut targets = Vec::new();
 
         for index in 0..count {
@@ -664,41 +662,28 @@ mod tests {
             let token_id = format!("0xTOKEN{index}");
             let instrument_id =
                 InstrumentId::from(format!("{condition_id}-{token_id}.POLYMARKET").as_str());
-            entries.insert(
-                condition_id.clone(),
-                ResolveWatchEntry {
-                    condition_id,
-                    expiration_ns: UnixNanos::from(u64::MAX),
-                    tracked: ahash::AHashMap::from_iter([(
-                        token_id.clone(),
-                        crate::resolve::TrackedInstrument {
-                            instrument_id,
-                            token_id: token_id.clone(),
-                            price_precision: 4,
-                            open_position_ids: AHashSet::new(),
-                            has_data_subscription: true,
-                        },
-                    )]),
-                    paused: false,
-                },
-            );
+            let mut instrument = binary_option();
+            instrument.id = instrument_id;
+            instrument.raw_symbol = Symbol::new(&token_id);
+            instrument.expiration_ns = UnixNanos::from(u64::MAX);
+            instruments.insert(instrument_id, InstrumentAny::BinaryOption(instrument));
             targets.push((instrument_id, token_id));
         }
-        watchlist.store(entries);
-        subscriptions
-            .active_instrument_status_subs
-            .store(targets.iter().map(|(id, _)| *id).collect());
-        subscriptions.ws_open_tokens.store(
-            targets
-                .iter()
-                .map(|(_, token_id)| Ustr::from(token_id.as_str()))
-                .collect(),
-        );
+        subscriptions.instruments.store(instruments);
+
+        for (id, token_id) in &targets {
+            assert!(
+                subscriptions.add_resolution_subscription_intent(*id, SubscriptionKind::Status)
+            );
+            subscriptions
+                .ws_open_tokens
+                .insert(Ustr::from(token_id.as_str()));
+        }
+        assert_eq!(subscriptions.watchlist.read().len(), count);
+        subscriptions.subscribe_new_markets = true;
         let started = std::time::Instant::now();
 
         for (instrument_id, token_id) in &targets {
-            subscriptions.watchlist = watchlist.clone();
-            subscriptions.subscribe_new_markets = true;
             subscriptions
                 .reconcile(*instrument_id, token_id.clone())
                 .await;
@@ -721,7 +706,7 @@ mod tests {
         let inst = instrument_id();
         subscriptions.ws_open_tokens.insert(token_ustr());
 
-        subscriptions.watchlist = Arc::new(AtomicMap::new());
+        subscriptions.watchlist = Arc::new(ResolveWatchlist::default());
         subscriptions.subscribe_new_markets = false;
         subscriptions
             .reconcile(inst, inst.symbol.as_str().to_string())
@@ -758,7 +743,7 @@ mod tests {
             subscriptions.ws_open_tokens.insert(token_ustr());
         }
 
-        subscriptions.watchlist = Arc::new(AtomicMap::new());
+        subscriptions.watchlist = Arc::new(ResolveWatchlist::default());
         subscriptions.subscribe_new_markets = false;
         subscriptions
             .reconcile(inst, inst.symbol.as_str().to_string())
@@ -783,7 +768,7 @@ mod tests {
         let inst = instrument_id();
         subscriptions.active_quote_subs.insert(inst);
 
-        subscriptions.watchlist = Arc::new(AtomicMap::new());
+        subscriptions.watchlist = Arc::new(ResolveWatchlist::default());
         subscriptions.subscribe_new_markets = false;
         subscriptions
             .reconcile(inst, inst.symbol.as_str().to_string())
@@ -814,7 +799,7 @@ mod tests {
             subscriptions.active_trade_subs.insert(inst);
         }
 
-        subscriptions.watchlist = Arc::new(AtomicMap::new());
+        subscriptions.watchlist = Arc::new(ResolveWatchlist::default());
         subscriptions.subscribe_new_markets = false;
         subscriptions
             .reconcile(inst, inst.symbol.as_str().to_string())
