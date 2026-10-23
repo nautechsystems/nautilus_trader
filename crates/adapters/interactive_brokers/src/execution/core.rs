@@ -110,7 +110,10 @@ pub(super) use super::{
     reports::{IbReportClient, IbReportContext},
     transform::nautilus_order_to_ib_order,
 };
-use super::{incarnations::OrderIncarnationGroup, parse::parse_order_data_to_report};
+use super::{
+    incarnations::OrderIncarnationGroup,
+    parse::{FillEvidence, parse_order_data_to_report},
+};
 pub(super) use crate::{
     common::shared_client::{SharedClientHandle, get_or_connect},
     config::InteractiveBrokersExecutionClientConfig,
@@ -1452,43 +1455,19 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let report_client = self.report_client()?;
-        let (mut order_reports, fill_evidence, mut position_reports) = tokio::try_join!(
+        let (order_reports, fill_evidence, position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
             report_client.generate_fill_evidence(fill_cmd),
             self.generate_position_status_reports(&position_cmd),
         )?;
 
-        tracing::info!(
-            "generate_mass_status: {} order reports, {} fill reports, {} position reports",
-            order_reports.len(),
-            fill_evidence.reports.len(),
-            position_reports.len()
-        );
-
-        let mut mass_status = ExecutionMassStatus::new(
-            self.core.client_id,
-            self.core.account_id,
-            self.core.venue,
+        Ok(Some(self.assemble_mass_status(
             ts_now,
-            Some(UUID4::new()),
-        );
-        // IB `reqExecutions` and completed orders are session-scoped, so without a
-        // configured lookback the actual venue bound is unknown and the report set
-        // cannot be claimed complete.
-        mass_status.set_report_window(start, start.is_some());
-
-        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
-        parse::fill_position_avg_px_from_fills(
-            &mut position_reports,
-            &fill_evidence,
-            &self.instrument_provider,
-        );
-        let fill_reports = fill_evidence.reports;
-        mass_status.add_order_reports(order_reports);
-        mass_status.add_fill_reports(fill_reports);
-        mass_status.add_position_reports(position_reports);
-
-        Ok(Some(mass_status))
+            start,
+            order_reports,
+            fill_evidence,
+            position_reports,
+        )))
     }
 
     fn query_account(&self, _cmd: QueryAccount) -> anyhow::Result<()> {
@@ -2240,6 +2219,100 @@ impl InteractiveBrokersExecutionClient {
                 tracing::warn!("Failed to send account state: {e}");
             }
         }
+    }
+
+    // An instrument with an execution missing its commission report is left out: its orders,
+    // fills, and position reports. Startup would otherwise infer the missing fill from the order
+    // report or synthesize it from the position without the venue commission, and with the
+    // position report gone, a bounded mass status would apply its other fills to orders only.
+    // A combo's leg instruments go with it. Leaving them out defers the instrument until IB
+    // reports the commission.
+    pub(super) fn assemble_mass_status(
+        &self,
+        ts_now: UnixNanos,
+        start: Option<UnixNanos>,
+        mut order_reports: Vec<OrderStatusReport>,
+        mut fill_evidence: FillEvidence,
+        mut position_reports: Vec<PositionStatusReport>,
+    ) -> ExecutionMassStatus {
+        let deferred_orders: AHashSet<VenueOrderId> = fill_evidence
+            .missing_commissions
+            .iter()
+            .map(|missing| missing.venue_order_id)
+            .collect();
+        let mut deferred_instruments: AHashSet<InstrumentId> = fill_evidence
+            .missing_commissions
+            .iter()
+            .filter_map(|missing| missing.instrument_id)
+            .collect();
+        // The order's own instrument covers an execution whose contract did not resolve, and a
+        // combo's other legs go with its spread
+        deferred_instruments.extend(
+            order_reports
+                .iter()
+                .filter(|report| deferred_orders.contains(&report.venue_order_id))
+                .map(|report| report.instrument_id),
+        );
+        deferred_instruments.extend(
+            fill_evidence
+                .combo_leg_reports
+                .iter()
+                .filter(|report| deferred_orders.contains(&report.venue_order_id))
+                .map(|report| report.instrument_id),
+        );
+
+        if !deferred_orders.is_empty() {
+            tracing::warn!(
+                orders = ?deferred_orders,
+                instruments = ?deferred_instruments,
+                "Deferring IB instruments with executions missing commission reports",
+            );
+            let is_deferred = |venue_order_id: &VenueOrderId, instrument_id: &InstrumentId| {
+                deferred_orders.contains(venue_order_id)
+                    || deferred_instruments.contains(instrument_id)
+            };
+            order_reports
+                .retain(|report| !is_deferred(&report.venue_order_id, &report.instrument_id));
+            fill_evidence
+                .reports
+                .retain(|report| !is_deferred(&report.venue_order_id, &report.instrument_id));
+            position_reports.retain(|report| !deferred_instruments.contains(&report.instrument_id));
+        }
+
+        tracing::info!(
+            "generate_mass_status: {} order reports, {} fill reports, {} position reports",
+            order_reports.len(),
+            fill_evidence.reports.len(),
+            position_reports.len()
+        );
+
+        let mut mass_status = ExecutionMassStatus::new(
+            self.core.client_id,
+            self.core.account_id,
+            self.core.venue,
+            ts_now,
+            Some(UUID4::new()),
+        );
+        // IB `reqExecutions` and completed orders are session-scoped, so without a
+        // configured lookback the actual venue bound is unknown and the report set
+        // cannot be claimed complete. Nor can it when an instrument was deferred.
+        mass_status.set_report_window(
+            start,
+            start.is_some() && fill_evidence.missing_commissions.is_empty(),
+        );
+
+        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
+        parse::fill_position_avg_px_from_fills(
+            &mut position_reports,
+            &fill_evidence,
+            &self.instrument_provider,
+        );
+        let fill_reports = fill_evidence.reports;
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+        mass_status.add_position_reports(position_reports);
+
+        mass_status
     }
 
     // Returns an error while disconnected, so the report hooks fall back to the inline path
