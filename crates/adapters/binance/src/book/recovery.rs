@@ -240,21 +240,16 @@ mod tests {
             &tasks.spawner().unwrap(),
         );
 
-        wait_until_async(
-            || {
-                let accepted = recovery.is_accepted();
-                async move { accepted }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        let event = rx.try_recv().unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
 
         let DataEvent::Data(Data::BookDeltas(deltas)) = event else {
             panic!("expected order book deltas");
         };
 
+        assert!(recovery.is_accepted());
         assert_eq!(deltas.sequence, 100);
         assert!(rx.try_recv().is_err());
         assert_eq!(fetches.load(Ordering::SeqCst), 2);
@@ -374,21 +369,16 @@ mod tests {
         // diff on the new stream
         tracker.reset_on_reconnect();
 
-        wait_until_async(
-            || {
-                let accepted = recovery.is_accepted();
-                async move { accepted }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        let event = rx.try_recv().unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
 
         let DataEvent::Data(Data::BookDeltas(deltas)) = event else {
             panic!("expected order book deltas");
         };
 
+        assert!(recovery.is_accepted());
         assert_eq!(deltas.sequence, 100);
         assert_eq!(fetches.load(Ordering::SeqCst), 1);
         assert!(rx.try_recv().is_err());

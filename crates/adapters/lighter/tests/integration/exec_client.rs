@@ -8957,6 +8957,7 @@ async fn test_order_batches_chunk_rejections_are_isolated(
         cache_order(&cache, order.clone());
     }
 
+    let mut completions = state.send_tx_completed.subscribe();
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client
         .submit_order_list(submit_order_list_command(&orders, "OL-CHUNK-REJECT"))
@@ -8965,6 +8966,7 @@ async fn test_order_batches_chunk_rejections_are_isolated(
 
     for i in 0..sizes.len() {
         await_send_tx_count(&state, i + 1).await;
+        await_send_tx_completions(&mut completions, 1).await;
         let frames = state.send_txs().await;
         let frame = &frames[i];
         let hashes: Vec<_> = batch_tx_infos(frame)
@@ -9085,11 +9087,13 @@ async fn test_order_batches_chunk_interleaves_with_single(#[case] lost_ack: bool
         cache_order(&cache, order.clone());
     }
 
+    let mut completions = state.send_tx_completed.subscribe();
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client
         .submit_order_list(submit_order_list_command(&orders[..31], "OL-CHUNK-SINGLE"))
         .unwrap();
     await_send_tx_count(&state, 1).await;
+    await_send_tx_completions(&mut completions, 1).await;
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client.submit_order(submit_command(&orders[31])).unwrap();
     await_send_tx_count(&state, 2).await;
@@ -9775,7 +9779,7 @@ async fn test_acknowledged_modify_unavailable_retains_outcome() {
 
 #[rstest]
 #[case::immediate_nonce_refresh(0)]
-#[case::delayed_nonce_refresh(3_200)]
+#[case::delayed_nonce_refresh(7_200)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
     #[case] nonce_delay_ms: u64,
@@ -9784,7 +9788,7 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
     let registry = SocketReconnectRegistry::default();
     let mut config = build_config(addr);
     // Keep old lookups in flight through both the nonce refresh and resumed-send waits
-    config.http_timeout_secs = 15;
+    config.http_timeout_secs = 30;
     let (mut client, mut rx, cache) = registry.scope(|| build_client_with(config));
     client.connect().await.unwrap();
     let mut modifies = Vec::new();
@@ -9857,6 +9861,7 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
 
     assert_eq!(state.send_txs().await.len(), 17);
     let mut nonce_responses = state.next_nonce_response_ready.subscribe();
+    let mut completions = state.send_tx_completed.subscribe();
     state.next_nonce.store(first_nonce + 15, Ordering::Release);
     state
         .next_nonce_response_delay_ms
@@ -9868,13 +9873,20 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes(
         handle.request_reconnect(),
         SocketReconnectRequestOutcome::Accepted
     );
-    let nonce = tokio::time::timeout(Duration::from_secs(5), nonce_responses.recv())
-        .await
-        .expect("post-reconnect nonce response ready")
-        .expect("nonce response notification");
+    let nonce = tokio::time::timeout(
+        Duration::from_millis(nonce_delay_ms) + Duration::from_secs(5),
+        nonce_responses.recv(),
+    )
+    .await
+    .expect("post-reconnect nonce response ready")
+    .expect("nonce response notification");
     assert_eq!(nonce, first_nonce + 15);
-    // Keep nonce lookup latency outside the resumed-send deadline
-    await_send_tx_count(&state, 18).await;
+    // A nonce response does not wake the batch signer from its retry backoff
+    tokio::time::timeout(Duration::from_secs(15), completions.recv())
+        .await
+        .expect("post-reconnect batch handling completed")
+        .expect("batch completion notification");
+    assert_eq!(state.send_txs().await.len(), 18);
     state.tx_response_blocked.store(false, Ordering::Release);
     state.tx_response_release.notify_waiters();
     let mut outcomes = Vec::new();
@@ -11441,6 +11453,7 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
     );
 
     if reconnect {
+        let subscribe_count = state.subscribes().await.len();
         let handle = registry
             .handle(client_id(), Ustr::from("lighter-user-streams"))
             .unwrap();
@@ -11448,7 +11461,7 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
             handle.request_reconnect(),
             SocketReconnectRequestOutcome::Accepted
         );
-        await_connection_count(&state, 2).await;
+        await_subscribe_count(&state, subscribe_count + 5).await;
     } else {
         let mut entry = account_all_orders_open_entry(
             index,
