@@ -1903,6 +1903,7 @@ fn test_external_client_subscribe_registers_streamable_payload_types(
 
 #[rstest]
 fn test_external_client_releases_after_final_owner(
+    #[values(false, true)] stopped: bool,
     audusd_sim: CurrencyPair,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
@@ -1942,11 +1943,16 @@ fn test_external_client_releases_after_final_owner(
     msgbus::subscribe_any(topic.as_str().into(), subscribe_handler, None);
 
     data_engine.execute(DataCommand::Subscribe(first_subscribe.clone()));
+
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(DataCommand::Subscribe(second_subscribe));
 
     assert_eq!(
         serde_json::to_value(subscribe_saver.get_messages()).unwrap(),
-        serde_json::to_value([first_subscribe]).unwrap(),
+        serde_json::to_value([first_subscribe.clone()]).unwrap(),
     );
 
     let (unsubscribe_handler, unsubscribe_saver) =
@@ -1990,6 +1996,17 @@ fn test_external_client_releases_after_final_owner(
     assert_eq!(command.command_id, final_command_id);
     assert_eq!(command.ts_init, UnixNanos::from(4));
     assert_eq!(command.params.as_ref(), Some(&first_params));
+
+    if stopped {
+        let subscribe = first_subscribe
+            .with_instrument_ids(InstrumentId::from("EUR/USD.SIM"))
+            .unwrap();
+        data_engine.execute(DataCommand::Subscribe(subscribe.clone()));
+        assert_eq!(subscribe_saver.get_messages().len(), 1);
+        data_engine.start();
+        data_engine.execute(DataCommand::Subscribe(subscribe));
+        assert_eq!(subscribe_saver.get_messages().len(), 2);
+    }
 }
 
 #[rstest]
@@ -3459,7 +3476,12 @@ fn test_synthetic_trades_release_after_final_owner(
 
 #[cfg(feature = "defi")]
 #[rstest]
+#[case::running(false, false)]
+#[case::queued_after_stop(true, false)]
+#[case::direct_after_stop(true, true)]
 fn test_execute_subscribe_blocks(
+    #[case] stopped: bool,
+    #[case] direct: bool,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -3480,18 +3502,50 @@ fn test_execute_subscribe_blocks(
 
     let blockchain = Blockchain::Ethereum;
 
-    let sub_cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
+    let sub = SubscribeBlocks {
         chain: blockchain,
         client_id: Some(client_id),
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
-    }));
+    };
+    let sub_cmd = DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(sub.clone()));
 
     data_engine.execute(sub_cmd.clone());
 
     assert!(data_engine.subscribed_blocks().contains(&blockchain));
     {
+        assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+    }
+
+    if stopped {
+        data_engine.stop();
+        let temporary = DefiSubscribeCommand::Blocks(SubscribeBlocks {
+            command_id: UUID4::new(),
+            ..sub.clone()
+        });
+
+        for _ in 0..2 {
+            if direct {
+                data_engine
+                    .execute_defi_subscribe(temporary.clone())
+                    .unwrap();
+            } else {
+                data_engine.execute(DataCommand::DefiSubscribe(temporary.clone()));
+            }
+        }
+
+        data_engine
+            .execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks {
+                chain: Blockchain::Arbitrum,
+                command_id: UUID4::new(),
+                ..sub
+            }))
+            .unwrap();
+        data_engine.execute(DataCommand::DefiUnsubscribe(
+            temporary.into_unsubscribe(UUID4::new(), UnixNanos::default()),
+        ));
+        assert_eq!(data_engine.subscribed_blocks(), vec![blockchain]);
         assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
     }
 

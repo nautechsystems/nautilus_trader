@@ -178,7 +178,7 @@ pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     config: DataEngineConfig,
-    is_stopped: bool,
+    pub(crate) is_stopped: bool,
     msgbus_priority: u32,
     subscriptions_external: SubscriptionRegistry<(ClientId, SubscriptionKey), SubscribeCommand>,
     clients: IndexMap<ClientId, DataClientAdapter>,
@@ -826,7 +826,7 @@ impl DataEngine {
             #[cfg(feature = "defi")]
             DataCommand::DefiRequest(_) => self.request_count += 1,
             #[cfg(feature = "defi")]
-            DataCommand::DefiSubscribe(_) if self.is_stopped => return,
+            DataCommand::DefiSubscribe(_) if self.is_stopped => {}
             #[cfg(feature = "defi")]
             DataCommand::DefiSubscribe(_) | DataCommand::DefiUnsubscribe(_) => {
                 self.command_count += 1;
@@ -909,10 +909,7 @@ impl DataEngine {
         if let Some(client_id) = cmd.client_id().copied()
             && self.is_external_client(client_id)
         {
-            if !self.is_stopped {
-                self.subscribe_external(client_id, &cmd);
-            }
-
+            self.subscribe_external(client_id, &cmd);
             return Ok(());
         }
 
@@ -1378,6 +1375,24 @@ impl DataEngine {
     }
 
     fn subscribe_external(&mut self, client_id: ClientId, cmd: &SubscribeCommand) {
+        if self.is_stopped {
+            for member in split_subscribe(cmd.clone()) {
+                let key = (client_id, SubscriptionKey::from_subscribe(&member));
+
+                if self.subscriptions_external.contains(&key) {
+                    let owner_id = match &member {
+                        SubscribeCommand::OptionChain(command) => {
+                            command.correlation_id.unwrap_or(command.command_id)
+                        }
+                        _ => member.command_id(),
+                    };
+                    self.subscriptions_external.retain(key, owner_id, member);
+                }
+            }
+
+            return;
+        }
+
         let dispatch = match cmd {
             SubscribeCommand::OptionChain(command) => {
                 self.retain_external_option_chain(client_id, command, cmd);
