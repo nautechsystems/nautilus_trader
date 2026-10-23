@@ -43,7 +43,6 @@ use crate::{
         CatalogDataType, HasCatalogDataType, parquet_catalog_data_type_path_prefixes,
         parquet_data_path_prefix,
     },
-    common::custom::group_custom_data_by_type,
 };
 
 /// Information about a consolidation query to be executed.
@@ -1062,18 +1061,11 @@ impl ParquetDataCatalog {
                 })
                 .collect();
 
-            // Write consolidated data for each type
+            // Write consolidated data for each type, rejecting metadata groups that would share
+            // the period file before any of them is written or a source file is deleted
             let start_ts = UnixNanos::from(final_start_ns);
             let end_ts = UnixNanos::from(final_end_ns);
-
-            for items in group_custom_data_by_type(custom_items.iter()) {
-                self.write_custom_data_refs_batch(
-                    &items,
-                    Some(start_ts),
-                    Some(end_ts),
-                    Some(true),
-                )?;
-            }
+            self.write_custom_data_groups(&custom_items, Some(start_ts), Some(end_ts), Some(true))?;
 
             // Delete files fully consumed by this period; keep straddlers so no data is lost
             for file in existing_files.clone() {
