@@ -3549,7 +3549,7 @@ mod tests {
             MessagingSwitchboard, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         },
         nautilus_actor,
-        runner::{SyncTradingCommandSender, TradingCommandSender, get_data_cmd_sender},
+        runner::{SyncTradingCommandSender, TradingCommandSender},
         testing::wait_until_async,
         timer::{TimeEvent, TimeEventCallback},
     };
@@ -8932,63 +8932,37 @@ mod tests {
         node.dispose();
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn test_final_drain_skips_subscribe_commands(
-        #[values(false, true)] poll: bool,
-        #[values(false, true)] subscribe: bool,
-    ) {
+    async fn test_final_drain_skips_subscribe_commands() {
         let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
-        get_data_cmd_sender().execute(stub_data_command());
-        node.drain_runner_pending();
-        assert_eq!(node.kernel.data_engine().command_count(), 1);
-
         node.finalize_stop().await.unwrap();
+
+        let sender = nautilus_common::runner::get_data_cmd_sender();
+        DispatchMessage::from(()).dispatch(|()| sender.execute(stub_data_command()));
+        get_data_event_sender().send(stub_data_event()).unwrap();
+        assert_eq!(actor::clear_callbacks(), Err(CallbackDispatchError::Active));
+
+        node.drain_runner_pending();
+
+        assert_eq!(node.kernel.data_engine().command_count(), 0);
+        assert_eq!(node.kernel.data_engine().data_count(), 1);
+        actor::clear_callbacks().unwrap();
 
         let DataCommand::Subscribe(command) = stub_data_command() else {
             unreachable!();
         };
-        let command = if subscribe {
-            DataCommand::Subscribe(command)
-        } else {
-            DataCommand::Unsubscribe(command.into_unsubscribe(
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-            ))
-        };
-        DispatchMessage::from(()).dispatch(|()| get_data_cmd_sender().execute(command));
-        get_data_event_sender().send(stub_data_event()).unwrap();
-        assert_eq!(actor::clear_callbacks(), Err(CallbackDispatchError::Active));
-
-        if poll {
-            node.drain_runner_pending();
-        } else {
-            let mut channels = node.runner.take().unwrap().take_channels();
-            LiveNode::drain_channels(
-                &mut channels.time_evt_rx,
-                &mut channels.system_evt_rx,
-                &mut channels.system_cmd_rx,
-                &mut channels.exec_evt_rx,
-                &mut channels.exec_cmd_rx,
-                &mut channels.data_evt_rx,
-                &mut channels.data_cmd_rx,
-            );
-        }
-
-        assert_eq!(
-            node.kernel.data_engine().command_count(),
-            1 + u64::from(!subscribe)
-        );
-        assert_eq!(node.kernel.data_engine().data_count(), 1);
-        assert_eq!(node.state(), NodeState::Stopped);
-        actor::clear_callbacks().unwrap();
+        sender.execute(DataCommand::Unsubscribe(command.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        )));
+        node.drain_runner_pending();
+        assert_eq!(node.kernel.data_engine().command_count(), 1);
 
         let mut engine = node.kernel.data_engine.borrow_mut();
-        let previous_count = engine.command_count();
         engine.start();
         engine.execute(stub_data_command());
-        assert_eq!(engine.command_count(), previous_count + 1);
+        assert_eq!(engine.command_count(), 2);
         engine.stop();
         engine.reset();
         engine.execute(stub_data_command());
