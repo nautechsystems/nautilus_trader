@@ -269,6 +269,22 @@ impl DataClientAdapter {
         }
     }
 
+    /// Retries retained subscriptions that have no active physical feed.
+    pub(crate) fn resume_retained_subscriptions(&mut self) {
+        let commands: Vec<_> = self
+            .subscriptions_active
+            .iter()
+            .filter(|(_, active)| {
+                active.owners > 0 && !self.has_active_subscription(&active.command)
+            })
+            .map(|(_, active)| active.command.clone())
+            .collect();
+
+        for command in commands {
+            self.execute_subscribe_intent(command);
+        }
+    }
+
     fn subscribe_retained(
         &mut self,
         cmd: SubscribeCommand,

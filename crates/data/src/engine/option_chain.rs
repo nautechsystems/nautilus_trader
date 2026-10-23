@@ -228,11 +228,15 @@ impl DataEngine {
 
             for cmd in commands {
                 match cmd {
-                    DeferredCommand::Subscribe(_) if self.is_stopped => {}
                     DeferredCommand::Subscribe(sub) => {
+                        let is_stopped = self.is_stopped;
                         let client = self.get_command_client(sub.client_id(), sub.venue());
                         if let Some(client) = client {
-                            client.execute_subscribe(sub);
+                            if is_stopped {
+                                client.retain_intent(&sub);
+                            } else {
+                                client.execute_subscribe(sub);
+                            }
                         }
                     }
                     DeferredCommand::Unsubscribe(unsub) => {

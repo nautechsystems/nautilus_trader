@@ -458,11 +458,19 @@ impl DataEngine {
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
     pub fn start(&mut self) {
+        let was_stopped = self.is_stopped;
+
+        if was_stopped {
+            self.drain_deferred_commands();
+        }
+
         self.is_stopped = false;
 
         for client in self.get_clients_mut() {
             if client.start().is_err() {
                 log::error!("Failed to start data client {}", client.client_id());
+            } else if was_stopped {
+                client.resume_retained_subscriptions();
             }
         }
 

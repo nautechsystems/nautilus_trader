@@ -944,6 +944,7 @@ fn test_option_chain_settles_rebalance_before_retirement(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     #[case] edit: bool,
+    #[values(false, true)] stopped: bool,
 ) {
     let _ = msgbus::get_message_bus();
     let engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
@@ -1010,11 +1011,8 @@ fn test_option_chain_settles_rebalance_before_retirement(
                 None,
             ),
         ));
-    engine
-        .borrow_mut()
-        .process_data(Data::OptionGreeks(make_option_chain_greeks(
-            old_id, 51000.0,
-        )));
+    let greeks = make_option_chain_greeks(old_id, 51000.0);
+    engine.borrow_mut().process_data(Data::OptionGreeks(greeks));
     recorder.borrow_mut().clear();
 
     let events = clock
@@ -1028,6 +1026,19 @@ fn test_option_chain_settles_rebalance_before_retirement(
     }
 
     assert!(recorder.borrow().is_empty());
+
+    if stopped {
+        engine.borrow_mut().stop();
+        engine.borrow_mut().process_data(Data::OptionGreeks(greeks));
+        assert!(
+            !recorder
+                .borrow()
+                .iter()
+                .any(|cmd| matches!(cmd, DataCommand::Subscribe(_)))
+        );
+        recorder.borrow_mut().clear();
+        engine.borrow_mut().start();
+    }
 
     if edit {
         engine.borrow_mut().execute(make_subscribe_option_chain(
@@ -2022,8 +2033,12 @@ fn test_option_chain_reference_price_timeout_tracks_concurrent_requests(
 }
 
 #[rstest]
+#[case::running(false, false)]
+#[case::restart(true, false)]
+#[case::cancel(true, true)]
 fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
-    #[values(false, true)] stopped: bool,
+    #[case] stopped: bool,
+    #[case] cancel: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -2105,6 +2120,25 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         .process_data(Data::OptionGreeks(greeks));
     assert_eq!(cache.borrow().option_greeks(&sample_id), Some(&greeks));
 
+    if stopped {
+        assert!(matches!(
+            recorder.borrow().as_slice(),
+            [DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(cmd))]
+                if cmd.instrument_ids == [sample_id]
+        ));
+
+        if cancel {
+            data_engine
+                .borrow_mut()
+                .execute(make_unsubscribe_option_chain(
+                    series_id,
+                    Some(client_id),
+                    Some(venue),
+                ));
+        }
+        data_engine.borrow_mut().start();
+    }
+
     let recorded = recorder.borrow();
     let quote_subscriptions = recorded
         .iter()
@@ -2131,12 +2165,13 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         })
         .collect();
 
-    assert_eq!(quote_subscriptions, if stopped { 0 } else { 2 });
-    assert_eq!(greeks_subscriptions, if stopped { 0 } else { 2 });
+    assert_eq!(quote_subscriptions, if cancel { 0 } else { 2 });
+    assert_eq!(greeks_subscriptions, if cancel { 0 } else { 2 });
     assert_eq!(greeks_unsubscriptions, vec![sample_id]);
 
-    if stopped {
+    if cancel {
         assert_eq!(recorded.len(), 1);
+        assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
     }
 }
 
