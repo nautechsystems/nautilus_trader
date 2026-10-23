@@ -4331,6 +4331,7 @@ fn test_distinct_book_deltas_keys_share_physical_subscription(
 #[case::greeks("greeks")]
 fn test_subscribe_synthetic_instrument_rejected(
     #[case] variant: &str,
+    #[values(false, true)] stopped: bool,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -4349,9 +4350,17 @@ fn test_subscribe_synthetic_instrument_rejected(
         &mut data_engine,
     );
 
+    if stopped {
+        data_engine.stop();
+    }
+
     let synth_id = synthetic_instrument_id();
     let cmd = build_synthetic_subscribe(variant, synth_id, client_id, venue, UnixNanos::default());
     data_engine.execute(cmd);
+
+    if stopped {
+        data_engine.start();
+    }
 
     assert!(
         recorder.borrow().is_empty(),
@@ -4360,8 +4369,8 @@ fn test_subscribe_synthetic_instrument_rejected(
     );
     assert_eq!(
         data_engine.command_count(),
-        1,
-        "Rejected subscribe must still count as a command"
+        u64::from(!stopped),
+        "Only running commands count as executed"
     );
     assert!(!data_engine.subscribed_instruments().contains(&synth_id));
     assert!(

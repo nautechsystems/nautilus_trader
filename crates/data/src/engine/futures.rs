@@ -640,15 +640,8 @@ impl DataEngine {
             true,
         );
 
-        if let Some(DataCommand::Subscribe(command)) = sub_child {
-            if self.is_stopped {
-                if let Some(client) = self.get_command_client(command.client_id(), command.venue())
-                {
-                    client.retain_intent(&command);
-                }
-            } else {
-                self.execute(DataCommand::Subscribe(command));
-            }
+        if let Some(child) = sub_child {
+            self.execute(child);
         }
 
         self.schedule_continuous_future_transition(target_key);

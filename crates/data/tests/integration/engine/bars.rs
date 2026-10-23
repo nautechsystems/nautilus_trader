@@ -710,6 +710,8 @@ fn test_bar_list_native_failure_continues_independent_members(
         error.to_string(),
         "Cannot subscribe for externally aggregated synthetic instrument bar data"
     );
+    engine.stop();
+    engine.start();
     assert_eq!(
         AHashSet::from_iter(engine.subscribed_bars()),
         AHashSet::from_iter([first, last])
@@ -778,11 +780,15 @@ fn test_skipped_bar_release_preserves_other_owner(
     assert_eq!(engine.subscribed_bars(), vec![owned]);
     assert_eq!(recorder.borrow().len(), 1);
 
-    let types = if scalar {
+    let mut types = if scalar {
         vec![owned]
     } else {
         vec![invalid, owned]
     };
+
+    if continuous_future && !scalar {
+        types.push(BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL"));
+    }
 
     let params = if continuous_future || scalar {
         Some(params_from_json(
@@ -814,6 +820,8 @@ fn test_skipped_bar_release_preserves_other_owner(
             "Cannot subscribe for externally aggregated synthetic instrument bar data".to_string()
         }
     );
+    engine.stop();
+    engine.start();
     assert_eq!(engine.subscribed_bars(), vec![owned]);
     assert_eq!(recorder.borrow().len(), 1);
     engine

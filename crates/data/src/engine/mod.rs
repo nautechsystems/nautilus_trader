@@ -977,25 +977,40 @@ impl DataEngine {
             | SubscribeCommand::BookDepth(_)
             | SubscribeCommand::BookSnapshots(_)
             | SubscribeCommand::OptionChain(_) => false,
+            SubscribeCommand::Instrument(_)
+            | SubscribeCommand::InstrumentStatus(_)
+            | SubscribeCommand::InstrumentClose(_)
+            | SubscribeCommand::OptionGreeks(_)
+                if cmd
+                    .instrument_ids()
+                    .is_some_and(|ids| ids.iter().any(InstrumentId::is_synthetic)) =>
+            {
+                false
+            }
             _ => is_stopped,
         };
 
         if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
             if let SubscribeCommand::Bars(command) = cmd {
-                if is_stopped && has_continuous_future_params(command.params.as_ref()) {
-                    return Ok(());
-                }
-
+                let continuous_future = has_continuous_future_params(command.params.as_ref());
                 let external: Vec<_> = command
                     .bar_types
                     .iter()
                     .copied()
-                    .filter(BarType::is_externally_aggregated)
+                    .filter(|bar_type| {
+                        bar_type.is_externally_aggregated()
+                            && !bar_type.instrument_id().is_synthetic()
+                    })
                     .collect();
 
                 if !external.is_empty() {
                     let intent = SubscribeCommand::Bars(command.with_bar_types(external));
-                    client.retain_intent(&intent);
+
+                    for member in split_subscribe(intent) {
+                        if !continuous_future || client.has_retained_subscription(&member) {
+                            client.retain_intent(&member);
+                        }
+                    }
                 }
             } else if retain_intent {
                 client.retain_intent(cmd);
