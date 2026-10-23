@@ -575,6 +575,11 @@ Replies to execution queries (`reqExecutions`) also arrive on IB's order update 
 treats only unsolicited execution details there as live fills, so startup and periodic execution
 queries do not apply the same fills again.
 
+A live fill waits for its commission report, except a combo-level fill, which carries no commission.
+If the report has not arrived after about 5 seconds, the fill is emitted with zero commission. A report
+for that execution arriving later is logged as a warning and not applied, since an emitted fill cannot
+be amended.
+
 ## Symbology and instruments
 
 `InteractiveBrokersInstrumentProviderConfig.symbology_method` selects one of two public methods:
