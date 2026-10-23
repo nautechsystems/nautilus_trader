@@ -678,7 +678,7 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     if stopped {
         assert!(explicit_recorder.borrow().is_empty());
         assert!(routed_recorder.borrow().is_empty());
-        return;
+        data_engine.borrow_mut().start();
     }
 
     let recorded = explicit_recorder.borrow();
@@ -1692,18 +1692,37 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
         data_engine.borrow_mut().stop();
     }
 
-    data_engine
-        .borrow_mut()
-        .response(DataResponse::OptionChainReferencePrice(
-            OptionChainReferencePriceResponse::new(
-                request_id,
-                client_id,
-                series_id,
-                price,
-                UnixNanos::from(1),
-                None,
-            ),
-        ));
+    let respond = |request_id| {
+        data_engine
+            .borrow_mut()
+            .response(DataResponse::OptionChainReferencePrice(
+                OptionChainReferencePriceResponse::new(
+                    request_id,
+                    client_id,
+                    series_id,
+                    price,
+                    UnixNanos::from(1),
+                    None,
+                ),
+            ));
+    };
+    respond(request_id);
+
+    if stopped {
+        assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
+        assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+        assert_eq!(clock.borrow().timer_count(), 0);
+        assert!(recorder.borrow().is_empty());
+
+        data_engine.borrow_mut().start();
+        let resumed_request_id = option_chain_reference_price_request_id(&recorder);
+        assert_ne!(resumed_request_id, request_id);
+        assert_eq!(clock.borrow().timer_count(), 1);
+        respond(request_id);
+        assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
+        assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+        respond(resumed_request_id);
+    }
 
     let quote_subscriptions = recorder
         .borrow()
@@ -1711,19 +1730,9 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
         .filter(|cmd| matches!(cmd, DataCommand::Subscribe(SubscribeCommand::Quotes(_))))
         .count();
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
-    assert_eq!(
-        data_engine.borrow().has_option_chain_manager(&series_id),
-        !stopped
-    );
-    assert_eq!(clock.borrow().timer_count(), 0);
-    assert_eq!(
-        quote_subscriptions,
-        if stopped || price.is_none() { 0 } else { 6 }
-    );
-
-    if stopped {
-        assert!(recorder.borrow().is_empty());
-    }
+    assert!(data_engine.borrow().has_option_chain_manager(&series_id));
+    assert_eq!(clock.borrow().timer_count(), usize::from(stopped));
+    assert_eq!(quote_subscriptions, if price.is_none() { 0 } else { 6 });
 }
 
 #[rstest]
@@ -1759,6 +1768,7 @@ fn test_option_chain_without_sample_bootstraps_from_live_data(
 
 #[rstest]
 fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
+    #[values(false, true)] stopped: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1807,6 +1817,10 @@ fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
     assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
 
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
     data_engine
         .borrow_mut()
         .execute(make_unsubscribe_option_chain(
@@ -1827,6 +1841,9 @@ fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
             ),
         ));
 
+    recorder.borrow_mut().clear();
+    data_engine.borrow_mut().start();
+    assert!(recorder.borrow().is_empty());
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
     assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
     assert_eq!(clock.borrow().timer_count(), 0);

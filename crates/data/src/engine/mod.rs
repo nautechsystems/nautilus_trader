@@ -469,10 +469,12 @@ impl DataEngine {
         for client in self.get_clients_mut() {
             if client.start().is_err() {
                 log::error!("Failed to start data client {}", client.client_id());
-            } else if was_stopped {
+            } else if was_stopped && client.is_connected() {
                 client.resume_retained_subscriptions();
             }
         }
+
+        self.resume_option_chain_requests();
 
         for ((_, request_id), aggregator) in &self.bar_aggregators {
             // Request-scoped or historical aggregators run on private clocks;
@@ -496,7 +498,7 @@ impl DataEngine {
     /// Stops all registered data clients and bar aggregator timers.
     pub fn stop(&mut self) {
         self.is_stopped = true;
-        self.cancel_pending_option_chain_requests(None);
+        self.suspend_option_chain_requests();
 
         for client in self.get_clients_mut() {
             if client.stop().is_err() {
@@ -676,6 +678,8 @@ impl DataEngine {
                 log::error!("Failed to connect data client {client_id}: connection failed");
             }
         }
+
+        self.resume_option_chain_requests();
     }
 
     /// Disconnects all registered data clients concurrently.

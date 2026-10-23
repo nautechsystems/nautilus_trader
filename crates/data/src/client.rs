@@ -199,7 +199,9 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        self.client.connect().await
+        self.client.connect().await?;
+        self.resume_retained_subscriptions();
+        Ok(())
     }
 
     /// Disconnects the underlying client from the data provider.
