@@ -34,8 +34,8 @@
 //! - **Data commands**: subscribe/unsubscribe requests to data clients.
 //!
 //! Both `AsyncRunner::run` and `LiveNode::run` use a `biased;` select with
-//! system and execution branches polled ahead of data branches. System and
-//! execution events precede their commands. Timer and data channels rotate when busy.
+//! system and execution branches polled ahead of data branches. Within each
+//! system or execution channel pair, events precede commands. Timer and data channels rotate.
 //!
 //! The runner can drive the event loop in two ways:
 //!
@@ -230,7 +230,8 @@ pub(crate) enum PendingRunnerEvent {
 
 pub struct AsyncRunner {
     channels: AsyncRunnerChannels,
-    dispatch_priority: DispatchPriority,
+    skip_time: bool,
+    skip_data: bool,
     time_evt_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<TimeEventMessage>>,
     system_evt_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<SystemEvent>>,
     system_cmd_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<SystemCommand>>,
@@ -299,7 +300,8 @@ impl AsyncRunner {
                 data_evt_rx,
                 data_cmd_rx,
             },
-            dispatch_priority: DispatchPriority::default(),
+            skip_time: false,
+            skip_data: false,
             time_evt_tx,
             system_evt_tx,
             system_cmd_tx,
@@ -446,10 +448,10 @@ impl AsyncRunner {
 
         loop {
             let callbacks_pending = drain_callbacks().await?;
-            let (poll_time, poll_data) = self.dispatch_priority.next_poll(
-                self.channels.data_evt_rx.is_empty(),
-                self.channels.data_cmd_rx.is_empty(),
-            );
+            let commands_empty = self.channels.data_cmd_rx.is_empty();
+            let poll_time =
+                !self.skip_time || (self.channels.data_evt_rx.is_empty() && commands_empty);
+            let poll_data = !self.skip_data || commands_empty;
 
             tokio::select! {
                 biased;
@@ -460,32 +462,33 @@ impl AsyncRunner {
                 },
                 () = std::future::ready(()), if callbacks_pending => {},
                 Some(handler) = self.channels.time_evt_rx.recv(), if poll_time => {
-                    self.dispatch_priority.skip_time = true;
+                    self.skip_time = true;
                     let _ = Self::handle_time_event(handler);
                 },
                 Some(event) = self.channels.system_evt_rx.recv() => {
-                    self.dispatch_priority.skip_time = false;
+                    self.skip_time = false;
                     log::error!("System event {event} requires the LiveNode runner");
                 },
                 Some(command) = self.channels.system_cmd_rx.recv() => {
-                    self.dispatch_priority.skip_time = false;
+                    self.skip_time = false;
                     log::error!("System command {command} requires the LiveNode runner");
                 },
                 Some(evt) = self.channels.exec_evt_rx.recv() => {
-                    self.dispatch_priority.skip_time = false;
+                    self.skip_time = false;
                     Self::dispatch_exec_event(evt);
                 },
                 Some(cmd) = self.channels.exec_cmd_rx.recv() => {
-                    self.dispatch_priority.skip_time = false;
+                    self.skip_time = false;
                     Self::handle_trading_command(cmd);
                 },
                 Some(evt) = self.channels.data_evt_rx.recv(), if poll_data => {
-                    self.dispatch_priority.skip_time = false;
-                    self.dispatch_priority.skip_data = true;
+                    self.skip_time = false;
+                    self.skip_data = true;
                     Self::dispatch_data_event(evt);
                 },
                 Some(cmd) = self.channels.data_cmd_rx.recv() => {
-                    self.dispatch_priority = DispatchPriority::default();
+                    self.skip_time = false;
+                    self.skip_data = false;
                     Self::handle_data_command(cmd);
                 },
                 else => {
@@ -644,22 +647,6 @@ impl AsyncRunner {
     }
 }
 
-/// Alternates data events and commands, yielding timers until another channel is serviced.
-#[derive(Debug, Default)]
-pub(crate) struct DispatchPriority {
-    pub(crate) skip_time: bool,
-    pub(crate) skip_data: bool,
-}
-
-impl DispatchPriority {
-    pub(crate) fn next_poll(&self, data_empty: bool, commands_empty: bool) -> (bool, bool) {
-        (
-            !self.skip_time || (data_empty && commands_empty),
-            !self.skip_data || commands_empty,
-        )
-    }
-}
-
 #[cfg(feature = "node")]
 impl AsyncRunner {
     pub(crate) fn poll_pending(&mut self, mut process: impl FnMut(PendingRunnerEvent)) -> usize {
@@ -722,40 +709,40 @@ impl AsyncRunner {
     }
 
     pub(crate) async fn recv(&mut self) -> Option<PendingRunnerEvent> {
-        let (poll_time, poll_data) = self.dispatch_priority.next_poll(
-            self.channels.data_evt_rx.is_empty(),
-            self.channels.data_cmd_rx.is_empty(),
-        );
+        let commands_empty = self.channels.data_cmd_rx.is_empty();
+        let poll_time = !self.skip_time || (self.channels.data_evt_rx.is_empty() && commands_empty);
+        let poll_data = !self.skip_data || commands_empty;
         tokio::select! {
             biased;
 
             Some(message) = self.channels.time_evt_rx.recv(), if poll_time => {
-                self.dispatch_priority.skip_time = true;
+                self.skip_time = true;
                 Some(PendingRunnerEvent::TimeEvent(message))
             }
             Some(event) = self.channels.system_evt_rx.recv() => {
-                self.dispatch_priority.skip_time = false;
+                self.skip_time = false;
                 Some(PendingRunnerEvent::SystemEvent(event))
             }
             Some(command) = self.channels.system_cmd_rx.recv() => {
-                self.dispatch_priority.skip_time = false;
+                self.skip_time = false;
                 Some(PendingRunnerEvent::SystemCommand(command))
             }
             Some(event) = self.channels.exec_evt_rx.recv() => {
-                self.dispatch_priority.skip_time = false;
+                self.skip_time = false;
                 Some(PendingRunnerEvent::ExecEvent(event))
             }
             Some(command) = self.channels.exec_cmd_rx.recv() => {
-                self.dispatch_priority.skip_time = false;
+                self.skip_time = false;
                 Some(PendingRunnerEvent::ExecCommand(command))
             }
             Some(event) = self.channels.data_evt_rx.recv(), if poll_data => {
-                self.dispatch_priority.skip_time = false;
-                self.dispatch_priority.skip_data = true;
+                self.skip_time = false;
+                self.skip_data = true;
                 Some(PendingRunnerEvent::DataEvent(event))
             }
             Some(command) = self.channels.data_cmd_rx.recv() => {
-                self.dispatch_priority = DispatchPriority::default();
+                self.skip_time = false;
+                self.skip_data = false;
                 Some(PendingRunnerEvent::DataCommand(command))
             }
             else => None,
@@ -1045,7 +1032,8 @@ mod tests {
                 data_evt_rx,
                 data_cmd_rx,
             },
-            dispatch_priority: DispatchPriority::default(),
+            skip_time: false,
+            skip_data: false,
             time_evt_tx,
             system_evt_tx,
             system_cmd_tx,
@@ -1331,9 +1319,7 @@ mod tests {
                         let _ = AsyncRunner::handle_time_event(event);
                     }
                     PendingRunnerEvent::DataEvent(event) => AsyncRunner::dispatch_data_event(event),
-                    PendingRunnerEvent::DataCommand(command) => {
-                        AsyncRunner::handle_data_command(command);
-                    }
+                    PendingRunnerEvent::DataCommand(cmd) => AsyncRunner::handle_data_command(cmd),
                     PendingRunnerEvent::ExecEvent(event) => AsyncRunner::dispatch_exec_event(event),
                     _ => panic!("Unexpected runner event"),
                 }

@@ -337,8 +337,7 @@ final post-loop drain.
 The live runner's seven internal message channels are separate and unbounded. When several message
 channels are ready together, the runner polls eligible branches in this order:
 
-1. Time events.
-1. System events and commands.
+1. Time and system work.
 1. Execution events.
 1. Execution commands.
 1. External message-bus ingress.

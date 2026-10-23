@@ -137,7 +137,7 @@ use crate::{
             ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
         },
     },
-    runner::{AsyncRunner, AsyncRunnerChannels, DispatchPriority, PendingRunnerEvent},
+    runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
 };
 
@@ -1591,7 +1591,8 @@ impl LiveNode {
             .as_ref()
             .map(|config| QueueMonitor::new(config, metrics.snapshot()));
         let mut dispatches_since_yield = 0usize;
-        let mut dispatch_priority = DispatchPriority::default();
+        let mut skip_time = false;
+        let mut skip_data = false;
 
         let dispatch_result = loop {
             let callbacks_pending = match drain_callbacks().await {
@@ -1612,8 +1613,9 @@ impl LiveNode {
             let shutdown_deadline = self.shutdown_deadline;
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
             let is_running = self.state() == NodeState::Running;
-            let (poll_time, poll_data) =
-                dispatch_priority.next_poll(data_evt_rx.is_empty(), data_cmd_rx.is_empty());
+            let commands_empty = data_cmd_rx.is_empty();
+            let poll_time = !skip_time || (data_evt_rx.is_empty() && commands_empty);
+            let poll_data = !skip_data || commands_empty;
 
             tokio::select! {
                 biased;
@@ -1855,7 +1857,7 @@ impl LiveNode {
                 // submit, etc.) is not delayed behind a market data backlog
                 // when the biased select polls receivers each iteration.
                 Some(handler) = time_evt_rx.recv(), if poll_time => {
-                    dispatch_priority.skip_time = true;
+                    skip_time = true;
                     let dispatch_start = dst::time::Instant::now();
                     let dispatched = AsyncRunner::handle_time_event(handler);
 
@@ -1874,7 +1876,7 @@ impl LiveNode {
                     }
                 }
                 Some(event) = system_evt_rx.recv() => {
-                    dispatch_priority.skip_time = false;
+                    skip_time = false;
 
                     if is_shutting_down {
                         log::debug!("Residual system event: {event}");
@@ -1883,7 +1885,7 @@ impl LiveNode {
                     event.dispatch(|event| self.process_system_event(event));
                 }
                 Some(command) = system_cmd_rx.recv() => {
-                    dispatch_priority.skip_time = false;
+                    skip_time = false;
 
                     if is_shutting_down {
                         log::debug!("Residual system command: {command}");
@@ -1892,7 +1894,7 @@ impl LiveNode {
                     command.dispatch(|command| self.process_system_command(command));
                 }
                 Some(evt) = exec_evt_rx.recv() => {
-                    dispatch_priority.skip_time = false;
+                    skip_time = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1909,7 +1911,7 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = exec_cmd_rx.recv() => {
-                    dispatch_priority.skip_time = false;
+                    skip_time = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1926,7 +1928,7 @@ impl LiveNode {
                     );
                 }
                 message = recv_external_msgbus_message(&mut external_msgbus_rx, &mut pending_external) => {
-                    dispatch_priority.skip_time = false;
+                    skip_time = false;
                     let external_msgbus_start = dst::time::Instant::now();
 
                     match message {
@@ -1951,8 +1953,8 @@ impl LiveNode {
                     );
                 }
                 Some(evt) = data_evt_rx.recv(), if poll_data => {
-                    dispatch_priority.skip_time = false;
-                    dispatch_priority.skip_data = true;
+                    skip_time = false;
+                    skip_data = true;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1968,7 +1970,8 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = data_cmd_rx.recv() => {
-                    dispatch_priority = DispatchPriority::default();
+                    skip_time = false;
+                    skip_data = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
