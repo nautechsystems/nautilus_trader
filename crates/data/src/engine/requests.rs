@@ -347,12 +347,6 @@ pub(super) fn has_continuous_future_params(params: Option<&Params>) -> bool {
     params.is_some_and(|params| params.contains_key(CONTINUOUS_FUTURE_TRANSITIONS))
 }
 
-pub(super) fn continuous_future_parent_request_id(params: Option<&Params>) -> Option<UUID4> {
-    params
-        .and_then(|params| params.get_str(CONTINUOUS_FUTURE_PARENT_REQUEST_ID))
-        .and_then(|value| UUID4::from_str(value).ok())
-}
-
 pub(super) fn continuous_future_request_from_bars(
     request: &RequestBars,
 ) -> anyhow::Result<Option<ContinuousFutureRequest>> {
@@ -466,7 +460,7 @@ fn continuous_future_bar_types(
     params: &Params,
 ) -> anyhow::Result<Vec<BarType>> {
     let Some(value) = params.get(BAR_TYPES) else {
-        return Ok(vec![request.bar_type]);
+        return Ok(vec![request.single_bar_type()?]);
     };
 
     let values = value

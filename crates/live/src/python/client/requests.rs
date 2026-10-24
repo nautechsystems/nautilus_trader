@@ -26,7 +26,10 @@ use nautilus_common::messages::data::{
     RequestFundingRates, RequestInstrument, RequestInstruments, RequestOptionChainReferencePrice,
     RequestQuotes, RequestTrades,
 };
-use nautilus_core::{UUID4, python::params::params_to_pydict};
+use nautilus_core::{
+    UUID4,
+    python::{params::params_to_pydict, to_pyvalue_err},
+};
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
@@ -109,29 +112,34 @@ request!(PyRequestInstruments, RequestInstruments, "RequestInstruments", Option<
 request_window!(PyRequestInstruments);
 
 request!(PyRequestInstrument, RequestInstrument, "RequestInstrument", Option<ClientId>, {
-    instrument_id: InstrumentId = |request: &RequestInstrument| request.instrument_id
+    instrument_ids: Vec<InstrumentId> = |request: &RequestInstrument| request.instrument_ids.clone(),
+    instrument_id: PyResult<InstrumentId> = |request: &RequestInstrument| request.single_instrument_id().map_err(to_pyvalue_err)
 });
 request_window!(PyRequestInstrument);
 
 request!(PyRequestBookSnapshot, RequestBookSnapshot, "RequestBookSnapshot", Option<ClientId>, {
-    instrument_id: InstrumentId = |request: &RequestBookSnapshot| request.instrument_id,
+    instrument_ids: Vec<InstrumentId> = |request: &RequestBookSnapshot| request.instrument_ids.clone(),
+    instrument_id: PyResult<InstrumentId> = |request: &RequestBookSnapshot| request.single_instrument_id().map_err(to_pyvalue_err),
     depth: Option<usize> = |request: &RequestBookSnapshot| request.depth.map(NonZero::get)
 });
 
 request!(PyRequestQuotes, RequestQuotes, "RequestQuotes", Option<ClientId>, {
-    instrument_id: InstrumentId = |request: &RequestQuotes| request.instrument_id,
+    instrument_ids: Vec<InstrumentId> = |request: &RequestQuotes| request.instrument_ids.clone(),
+    instrument_id: PyResult<InstrumentId> = |request: &RequestQuotes| request.single_instrument_id().map_err(to_pyvalue_err),
     limit: Option<usize> = |request: &RequestQuotes| request.limit.map(NonZero::get)
 });
 request_window!(PyRequestQuotes);
 
 request!(PyRequestTrades, RequestTrades, "RequestTrades", Option<ClientId>, {
-    instrument_id: InstrumentId = |request: &RequestTrades| request.instrument_id,
+    instrument_ids: Vec<InstrumentId> = |request: &RequestTrades| request.instrument_ids.clone(),
+    instrument_id: PyResult<InstrumentId> = |request: &RequestTrades| request.single_instrument_id().map_err(to_pyvalue_err),
     limit: Option<usize> = |request: &RequestTrades| request.limit.map(NonZero::get)
 });
 request_window!(PyRequestTrades);
 
 request!(PyRequestFundingRates, RequestFundingRates, "RequestFundingRates", Option<ClientId>, {
-    instrument_id: InstrumentId = |request: &RequestFundingRates| request.instrument_id,
+    instrument_ids: Vec<InstrumentId> = |request: &RequestFundingRates| request.instrument_ids.clone(),
+    instrument_id: PyResult<InstrumentId> = |request: &RequestFundingRates| request.single_instrument_id().map_err(to_pyvalue_err),
     limit: Option<usize> = |request: &RequestFundingRates| request.limit.map(NonZero::get)
 });
 request_window!(PyRequestFundingRates);
@@ -142,20 +150,23 @@ request!(PyRequestOptionChainReferencePrice, RequestOptionChainReferencePrice, "
 });
 
 request!(PyRequestBars, RequestBars, "RequestBars", Option<ClientId>, {
-    bar_type: BarType = |request: &RequestBars| request.bar_type,
+    bar_types: Vec<BarType> = |request: &RequestBars| request.bar_types.clone(),
+    bar_type: PyResult<BarType> = |request: &RequestBars| request.single_bar_type().map_err(to_pyvalue_err),
     limit: Option<usize> = |request: &RequestBars| request.limit.map(NonZero::get)
 });
 request_window!(PyRequestBars);
 
 request!(PyRequestBookDepth, RequestBookDepth, "RequestBookDepth", Option<ClientId>, {
-    instrument_id: InstrumentId = |request: &RequestBookDepth| request.instrument_id,
+    instrument_ids: Vec<InstrumentId> = |request: &RequestBookDepth| request.instrument_ids.clone(),
+    instrument_id: PyResult<InstrumentId> = |request: &RequestBookDepth| request.single_instrument_id().map_err(to_pyvalue_err),
     limit: Option<usize> = |request: &RequestBookDepth| request.limit.map(NonZero::get),
     depth: Option<usize> = |request: &RequestBookDepth| request.depth.map(NonZero::get)
 });
 request_window!(PyRequestBookDepth);
 
 request!(PyRequestBookDeltas, RequestBookDeltas, "RequestBookDeltas", Option<ClientId>, {
-    instrument_id: InstrumentId = |request: &RequestBookDeltas| request.instrument_id,
+    instrument_ids: Vec<InstrumentId> = |request: &RequestBookDeltas| request.instrument_ids.clone(),
+    instrument_id: PyResult<InstrumentId> = |request: &RequestBookDeltas| request.single_instrument_id().map_err(to_pyvalue_err),
     limit: Option<usize> = |request: &RequestBookDeltas| request.limit.map(NonZero::get)
 });
 request_window!(PyRequestBookDeltas);

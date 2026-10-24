@@ -1333,7 +1333,7 @@ async fn test_request_bounded_aggregate_trades_routes_spot_bounds() {
         Some("1700000000999")
     );
     assert_eq!(query.get("limit").map(String::as_str), Some("456"));
-    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.instrument_ids, vec![instrument_id]);
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.data[0].price.as_decimal(), dec!(42001.23));
     assert_eq!(response.data[0].size.as_decimal(), dec!(0.12345));

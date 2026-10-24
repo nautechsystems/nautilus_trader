@@ -39,11 +39,12 @@ use nautilus_common::{
     enums::ComponentState,
     messages::{
         data::{
-            ensure_routable_bar_types, ensure_routable_instrument_ids, ensure_subscription_routes,
-            quote_routing,
+            DataResponseEnvelope, ensure_routable_bar_types, ensure_routable_instrument_ids,
+            ensure_subscription_routes, quote_routing,
         },
         system::{QueueStateChanged, SocketStateChanged},
     },
+    msgbus::TypedHandler,
     python::{
         actor::{extract_bar_types, extract_instrument_ids},
         cache::PyCache,
@@ -52,6 +53,7 @@ use nautilus_common::{
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::{PyLogger, format_exception},
         order_factory::PyOrderFactory,
+        response::PyDataResponse,
         wrappers::{get_python_message_bus, retain_python_wrapper},
     },
     runner::SystemChannel,
@@ -1109,6 +1111,13 @@ impl Strategy for PyStrategyInner {
 }
 
 impl DataActor for PyStrategyInner {
+    fn response_handler(&self) -> TypedHandler<DataResponseEnvelope> {
+        nautilus_common::python::response::response_handler(
+            self.core().actor_id().inner(),
+            Self::python_instance,
+        )
+    }
+
     fn on_start(&mut self) -> anyhow::Result<()> {
         Strategy::on_start(self)?;
         self.dispatch_on_start()
@@ -2483,6 +2492,10 @@ impl PyStrategy {
     fn py_on_position_closed(_slf: &Bound<'_, Self>, event: PositionClosed) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_data_response")]
+    fn py_on_data_response(_slf: &Bound<'_, Self>, response: Py<PyDataResponse>) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
     fn py_on_historical_data(_slf: &Bound<'_, Self>, data: Py<PyAny>) {
         // Default implementation - can be overridden in Python subclasses
@@ -3555,12 +3568,16 @@ impl PyStrategy {
     #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None))]
     fn py_request_instrument(
         &mut self,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
@@ -3613,11 +3630,15 @@ impl PyStrategy {
     #[pyo3(signature = (instrument_id, depth=None, client_id=None, params=None))]
     fn py_request_book_snapshot(
         &mut self,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
@@ -3642,13 +3663,17 @@ impl PyStrategy {
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
     fn py_request_book_deltas(
         &mut self,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
@@ -3675,7 +3700,10 @@ impl PyStrategy {
     #[expect(clippy::too_many_arguments)]
     fn py_request_book_depth(
         &mut self,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
@@ -3683,6 +3711,7 @@ impl PyStrategy {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
@@ -3710,13 +3739,17 @@ impl PyStrategy {
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
     fn py_request_quotes(
         &mut self,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
@@ -3742,13 +3775,17 @@ impl PyStrategy {
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
     fn py_request_trades(
         &mut self,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
@@ -3774,13 +3811,17 @@ impl PyStrategy {
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
     fn py_request_funding_rates(
         &mut self,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {
@@ -3806,13 +3847,15 @@ impl PyStrategy {
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None))]
     fn py_request_bars(
         &mut self,
-        bar_type: BarType,
+        #[gen_stub(override_type(type_repr = "model.BarType | typing.Sequence[model.BarType]"))]
+        bar_type: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let bar_type = extract_bar_types(bar_type)?;
         self.ensure_registered_for_data()?;
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
             match params {

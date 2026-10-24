@@ -73,18 +73,19 @@ use crate::{
     logging::{CMD, RECV},
     messages::{
         data::{
-            IntoBarTypes, IntoInstrumentIds, ensure_routable_bar_types,
+            DataResponseEnvelope, IntoBarTypes, IntoInstrumentIds, ensure_routable_bar_types,
             ensure_routable_instrument_ids, ensure_subscription_routes, quote_routing,
         },
         execution::TradingCommand,
         system::{QueueStateChanged, SocketStateChanged},
     },
-    msgbus::{self, ShareableMessageHandler},
+    msgbus::{self, ShareableMessageHandler, TypedHandler},
     python::{
         cache::PyCache,
         clock::PyClock,
         indicators::{registered_python_indicators, wrap_python_indicator},
         logging::{PyLogger, format_exception},
+        response::PyDataResponse,
         wrappers::{get_python_message_bus, retain_python_wrapper},
     },
     runner::SystemChannel,
@@ -1023,6 +1024,13 @@ pub fn register_python_exec_algorithm_endpoint(exec_algorithm_id: ExecAlgorithmI
 }
 
 impl DataActor for PyDataActorInner {
+    fn response_handler(&self) -> TypedHandler<DataResponseEnvelope> {
+        crate::python::response::response_handler(
+            self.core().actor_id().inner(),
+            Self::python_instance,
+        )
+    }
+
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.dispatch_on_start()
             .map_err(|e| anyhow::anyhow!("Python on_start failed:\n{}", format_exception(&e)))
@@ -2576,12 +2584,16 @@ impl PyDataActor {
     fn py_request_instrument(
         &mut self,
         py: Python<'_>,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let request_id = DataActor::request_instrument(
@@ -2620,11 +2632,15 @@ impl PyDataActor {
     fn py_request_book_snapshot(
         &mut self,
         py: Python<'_>,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let depth = depth.and_then(NonZeroUsize::new);
@@ -2646,13 +2662,17 @@ impl PyDataActor {
     fn py_request_book_deltas(
         &mut self,
         py: Python<'_>,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
@@ -2675,7 +2695,10 @@ impl PyDataActor {
     fn py_request_book_depth(
         &mut self,
         py: Python<'_>,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
@@ -2683,6 +2706,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
@@ -2707,13 +2731,17 @@ impl PyDataActor {
     fn py_request_quotes(
         &mut self,
         py: Python<'_>,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
@@ -2736,13 +2764,17 @@ impl PyDataActor {
     fn py_request_trades(
         &mut self,
         py: Python<'_>,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
@@ -2765,13 +2797,17 @@ impl PyDataActor {
     fn py_request_funding_rates(
         &mut self,
         py: Python<'_>,
-        instrument_id: InstrumentId,
+        #[gen_stub(override_type(
+            type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
+        ))]
+        instrument_id: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let instrument_id = extract_instrument_ids(instrument_id)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
@@ -2794,13 +2830,15 @@ impl PyDataActor {
     fn py_request_bars(
         &mut self,
         py: Python<'_>,
-        bar_type: BarType,
+        #[gen_stub(override_type(type_repr = "model.BarType | typing.Sequence[model.BarType]"))]
+        bar_type: &Bound<'_, PyAny>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
     ) -> PyResult<String> {
+        let bar_type = extract_bar_types(bar_type)?;
         self.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
@@ -2822,6 +2860,10 @@ impl PyDataActor {
     fn py_reconnect_socket(&self, client_id: ClientId, endpoint: &str) -> PyResult<()> {
         DataActor::reconnect_socket(self.inner(), client_id, endpoint).map_err(to_pyruntime_err)
     }
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_data_response")]
+    fn py_on_data_response(_slf: &Bound<'_, Self>, response: Py<PyDataResponse>) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_data")]
@@ -3352,7 +3394,8 @@ mod tests {
         Bound, IntoPyObjectExt, Py, PyAny, PyRef, PyResult, Python,
         ffi::c_str,
         types::{
-            PyAnyMethods, PyBytes, PyDict, PyList, PyTuple, PyWeakrefMethods, PyWeakrefReference,
+            PyAnyMethods, PyBytes, PyDict, PyList, PyModule, PyTuple, PyWeakrefMethods,
+            PyWeakrefReference,
         },
     };
     use rstest::{fixture, rstest};
@@ -4791,6 +4834,151 @@ class CapturingActor:
     }
 
     #[rstest]
+    #[case("request_instrument", "Instrument")]
+    #[case("request_book_snapshot", "BookSnapshot")]
+    #[case("request_book_deltas", "BookDeltas")]
+    #[case("request_book_depth", "BookDepth")]
+    #[case("request_quotes", "Quotes")]
+    #[case("request_trades", "Trades")]
+    #[case("request_funding_rates", "FundingRates")]
+    #[case("request_bars", "Bars")]
+    fn test_python_request_identifier_shapes(
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        #[case] method: &str,
+        #[case] variant: &str,
+        #[values("scalar", "list", "tuple")] shape: &str,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+
+            let (first, second, key) = if variant == "Bars" {
+                let first = BarType::from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL").unwrap();
+                let second = BarType::from_str("NZD/USD.SIM-5-MINUTE-LAST-EXTERNAL").unwrap();
+                (
+                    first.into_py_any(py).unwrap(),
+                    second.into_py_any(py).unwrap(),
+                    "bar_types",
+                )
+            } else {
+                (
+                    InstrumentId::from("AUD/USD.SIM").into_py_any(py).unwrap(),
+                    InstrumentId::from("NZD/USD.SIM").into_py_any(py).unwrap(),
+                    "instrument_ids",
+                )
+            };
+
+            let argument = match shape {
+                "scalar" => first.bind(py).clone(),
+                "list" => PyList::new(py, [&first, &second, &first])
+                    .unwrap()
+                    .into_any(),
+                "tuple" => PyTuple::new(py, [&first, &second, &first])
+                    .unwrap()
+                    .into_any(),
+                _ => unreachable!(),
+            };
+
+            let result = actor.bind(py).call_method1(method, (&argument,));
+            let commands = saver.get_messages();
+
+            let root = result
+                .unwrap()
+                .extract::<String>()
+                .unwrap()
+                .parse::<UUID4>()
+                .unwrap();
+            assert_eq!(commands.len(), 1);
+
+            let DataCommand::Request(command) = &commands[0] else {
+                panic!("expected request");
+            };
+
+            assert_eq!(command.request_id(), &root);
+            let wire = serde_json::to_value(command).unwrap();
+
+            let count = if shape == "scalar" { 1 } else { 2 };
+
+            let expected = if variant == "Bars" {
+                serde_json::to_value(
+                    [
+                        "AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL",
+                        "NZD/USD.SIM-5-MINUTE-LAST-EXTERNAL",
+                    ][..count]
+                        .to_vec(),
+                )
+                .unwrap()
+            } else {
+                serde_json::to_value(["AUD/USD.SIM", "NZD/USD.SIM"][..count].to_vec()).unwrap()
+            };
+
+            assert_eq!(wire[variant][key], expected);
+            assert!(actor.borrow(py).inner().core.is_pending_request(&root));
+        });
+    }
+
+    #[rstest]
+    fn test_python_request_rejects_invalid_identifiers_before_dispatch(
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        #[values(
+            "request_instrument",
+            "request_book_snapshot",
+            "request_book_deltas",
+            "request_book_depth",
+            "request_quotes",
+            "request_trades",
+            "request_funding_rates",
+            "request_bars"
+        )]
+        method: &str,
+        #[values(false, true)] empty: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+
+            let argument = if empty {
+                PyList::empty(py)
+            } else {
+                PyList::new(py, [42]).unwrap()
+            };
+
+            let error = actor
+                .bind(py)
+                .call_method1(method, (argument,))
+                .unwrap_err();
+
+            let expected = match (method == "request_bars", empty) {
+                (true, true) => "ValueError: bar types cannot be empty",
+                (false, true) => "ValueError: instrument IDs cannot be empty",
+                (true, false) => "TypeError: expected BarType or a sequence of BarType values",
+                (false, false) => {
+                    "TypeError: expected InstrumentId or a sequence of InstrumentId values"
+                }
+            };
+
+            assert_eq!(error.to_string(), expected);
+            assert!(saver.get_messages().is_empty());
+        });
+    }
+
+    #[rstest]
     fn test_data_actor_trait_implementation(
         clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
@@ -5219,6 +5407,111 @@ class CapturingActor:
             U256::from(101u64),
             U256::from(201u64),
         )
+    }
+
+    #[rstest]
+    fn test_python_response_hook_can_submit_next_request(
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+class ResponseActor:
+    def __init__(self, native):
+        self.native = native
+        self.events = []
+        self.next_request = None
+    def on_historical_quotes(self, quotes):
+        self.events.append("quotes")
+        self.native.request_instrument(quotes[0].instrument_id)
+    def on_data_response(self, response):
+        self.events.append("complete")
+        self.next_request = self.native.request_trades(response.data[0].instrument_id)
+"#
+                ),
+                c_str!("response_actor.py"),
+                c_str!("response_actor"),
+            )
+            .unwrap();
+            let tracker = module
+                .getattr("ResponseActor")
+                .unwrap()
+                .call1((actor.clone_ref(py),))
+                .unwrap();
+            actor.borrow_mut(py).set_python_instance(&tracker).unwrap();
+            actor.borrow(py).register_in_global_registries().unwrap();
+            let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+            let quote = sample_quote();
+            let root = actor
+                .bind(py)
+                .call_method1("request_quotes", (quote.instrument_id,))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            let root: UUID4 = root.parse().unwrap();
+
+            let response = QuotesResponse::new(
+                root,
+                ClientId::new("HISTORY"),
+                quote.instrument_id,
+                vec![quote],
+                None,
+                None,
+                UnixNanos::from(47),
+                None,
+            );
+            msgbus::send_response(
+                &root,
+                &crate::messages::data::DataResponse::Quotes(response),
+            );
+            let commands = saver.get_messages();
+            assert_eq!(commands.len(), 3);
+            assert!(
+                matches!(&commands[1], DataCommand::Request(crate::messages::data::RequestCommand::Instrument(r)) if r.instrument_ids == vec![quote.instrument_id])
+            );
+
+            let DataCommand::Request(crate::messages::data::RequestCommand::Trades(next)) =
+                &commands[2]
+            else {
+                panic!("expected chained trade request");
+            };
+
+            assert_eq!(
+                tracker
+                    .getattr("events")
+                    .unwrap()
+                    .extract::<Vec<String>>()
+                    .unwrap(),
+                vec!["quotes", "complete"]
+            );
+            assert_eq!(
+                tracker
+                    .getattr("next_request")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                next.request_id.to_string()
+            );
+            assert!(!actor.borrow(py).inner().core.is_pending_request(&root));
+            assert!(
+                actor
+                    .borrow(py)
+                    .inner()
+                    .core
+                    .is_pending_request(&next.request_id)
+            );
+        });
     }
 
     const TRACKING_ACTOR_CODE: &std::ffi::CStr = c_str!(

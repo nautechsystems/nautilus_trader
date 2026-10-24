@@ -75,6 +75,7 @@ pub enum BusPayloadType {
     UnsubscribeCommand,
     RequestCommand,
     DataResponse,
+    DataResponseEnvelope,
     TradingCommand,
     GenerateExecutionMassStatus,
     OrderStatusReport,
@@ -113,6 +114,7 @@ impl BusPayloadType {
         Self::UnsubscribeCommand,
         Self::RequestCommand,
         Self::DataResponse,
+        Self::DataResponseEnvelope,
         Self::TradingCommand,
         Self::GenerateExecutionMassStatus,
         Self::OrderStatusReport,
@@ -157,6 +159,7 @@ impl BusPayloadType {
             Self::UnsubscribeCommand => "UnsubscribeCommand",
             Self::RequestCommand => "RequestCommand",
             Self::DataResponse => "DataResponse",
+            Self::DataResponseEnvelope => "DataResponseEnvelope",
             Self::TradingCommand => "TradingCommand",
             Self::GenerateExecutionMassStatus => "GenerateExecutionMassStatus",
             Self::OrderStatusReport => "OrderStatusReport",
@@ -222,6 +225,7 @@ impl BusPayloadType {
             "UnsubscribeCommand" => Some(Self::UnsubscribeCommand),
             "RequestCommand" => Some(Self::RequestCommand),
             "DataResponse" => Some(Self::DataResponse),
+            "DataResponseEnvelope" => Some(Self::DataResponseEnvelope),
             "TradingCommand" => Some(Self::TradingCommand),
             "GenerateExecutionMassStatus" => Some(Self::GenerateExecutionMassStatus),
             "OrderStatusReport" => Some(Self::OrderStatusReport),
@@ -241,6 +245,7 @@ impl BusPayloadType {
                 | Self::UnsubscribeCommand
                 | Self::RequestCommand
                 | Self::DataResponse
+                | Self::DataResponseEnvelope
                 | Self::TradingCommand
                 | Self::GenerateExecutionMassStatus
                 | Self::OrderStatusReport

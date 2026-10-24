@@ -154,7 +154,7 @@ impl UnsubscribeInstrument {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -279,7 +279,7 @@ impl UnsubscribeBookDeltas {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -365,7 +365,7 @@ impl UnsubscribeBookDepth {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -448,7 +448,7 @@ impl UnsubscribeBookSnapshots {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -534,7 +534,7 @@ impl UnsubscribeQuotes {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -620,7 +620,7 @@ impl UnsubscribeTrades {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -702,7 +702,7 @@ impl UnsubscribeBars {
     ///
     /// Returns an error if the command does not contain exactly one bar type.
     pub fn single_bar_type(&self) -> anyhow::Result<BarType> {
-        single_bar_type(&self.bar_types)
+        single_bar_type(&self.bar_types, "subscription")
     }
 }
 
@@ -788,7 +788,7 @@ impl UnsubscribeMarkPrices {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -874,7 +874,7 @@ impl UnsubscribeIndexPrices {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -960,7 +960,7 @@ impl UnsubscribeFundingRates {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -1046,7 +1046,7 @@ impl UnsubscribeInstrumentStatus {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -1132,7 +1132,7 @@ impl UnsubscribeOptionGreeks {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 
@@ -1218,7 +1218,7 @@ impl UnsubscribeInstrumentClose {
     ///
     /// Returns an error if the command does not contain exactly one instrument.
     pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
-        single_instrument_id(&self.instrument_ids)
+        single_instrument_id(&self.instrument_ids, "subscription")
     }
 }
 

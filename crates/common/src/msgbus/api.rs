@@ -69,7 +69,7 @@ use super::{
 use crate::{
     actor::PublicationScope,
     messages::{
-        data::{DataCommand, DataResponse},
+        data::{DataCommand, DataResponse, DataResponseEnvelope},
         execution::{ExecutionReport, TradingCommand},
     },
 };
@@ -87,7 +87,10 @@ pub fn register_any(endpoint: MStr<Endpoint>, handler: ShareableMessageHandler) 
 }
 
 /// Registers a response handler for a correlation ID.
-pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessageHandler) {
+pub fn register_response_handler(
+    correlation_id: &UUID4,
+    handler: TypedHandler<DataResponseEnvelope>,
+) {
     if let Err(e) = get_message_bus()
         .borrow_mut()
         .register_response_handler(correlation_id, handler)
@@ -1347,32 +1350,34 @@ fn send_any_inner(endpoint: MStr<Endpoint>, message: &dyn Any, fn_name: &str) {
 
 /// Sends the [`DataResponse`] to the registered correlation ID handler.
 pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
+    let source = (correlation_id != message.correlation_id()).then_some(*message.correlation_id());
+    let envelope = DataResponseEnvelope::new(message.clone(), true, source)
+        .with_correlation_id(*correlation_id);
+    send_response_envelope(&envelope);
+}
+
+/// Delivers an envelope and removes its correlation handler only on completion.
+pub fn send_response_envelope(message: &DataResponseEnvelope) {
+    let correlation_id = message.correlation_id();
     dispatch_tap_response(correlation_id, message);
 
     let handler = {
         let bus = get_message_bus();
         let mut bus = bus.borrow_mut();
-        let handler = bus.take_response_handler(correlation_id);
+        let handler = if message.completed() {
+            bus.take_response_handler(correlation_id)
+        } else {
+            bus.get_response_handler(correlation_id).cloned()
+        };
+
         bus.increment_res_count();
         handler
     };
 
     if let Some(handler) = handler {
-        match message {
-            DataResponse::Data(resp) => handler.0.handle(resp),
-            DataResponse::Instrument(resp) => handler.0.handle(resp.as_ref()),
-            DataResponse::Instruments(resp) => handler.0.handle(resp),
-            DataResponse::Book(resp) => handler.0.handle(resp),
-            DataResponse::BookDeltas(resp) => handler.0.handle(resp),
-            DataResponse::BookDepth(resp) => handler.0.handle(resp),
-            DataResponse::Quotes(resp) => handler.0.handle(resp),
-            DataResponse::Trades(resp) => handler.0.handle(resp),
-            DataResponse::FundingRates(resp) => handler.0.handle(resp),
-            DataResponse::OptionChainReferencePrice(resp) => handler.0.handle(resp),
-            DataResponse::Bars(resp) => handler.0.handle(resp),
-        }
+        handler.0.handle(message);
     } else {
-        log::error!("send_response: handler not found for correlation_id '{correlation_id}'");
+        log::debug!("Response handler not found for correlation_id '{correlation_id}'");
     }
 }
 
@@ -1630,10 +1635,11 @@ mod tests {
         messages::{
             data::{
                 BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse,
-                CustomDataResponse, DataCommand, DataResponse, FundingRatesResponse,
-                InstrumentResponse, InstrumentsResponse, OptionChainReferencePriceResponse,
-                QuotesResponse, RequestCommand, RequestQuotes, SubscribeCommand, SubscribeQuotes,
-                TradesResponse, UnsubscribeCommand, UnsubscribeQuotes,
+                CustomDataResponse, DataCommand, DataResponse, DataResponseEnvelope,
+                FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+                OptionChainReferencePriceResponse, QuotesResponse, RequestCommand, RequestQuotes,
+                SubscribeCommand, SubscribeQuotes, TradesResponse, UnsubscribeCommand,
+                UnsubscribeQuotes,
             },
             execution::{CancelAllOrders, GenerateExecutionMassStatus, TradingCommand},
         },
@@ -1728,10 +1734,7 @@ mod tests {
         set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
     }
 
-    fn assert_response_handler_is_consumed<T>(response: &DataResponse)
-    where
-        T: 'static,
-    {
+    fn assert_response_handler_is_consumed(response: &DataResponse) {
         reset_message_bus();
 
         let correlation_id = *response.correlation_id();
@@ -1740,7 +1743,7 @@ mod tests {
         let handler_calls = calls.clone();
         register_response_handler(
             &correlation_id,
-            ShareableMessageHandler::from_typed(move |_response: &T| {
+            TypedHandler::from(move |_response: &DataResponseEnvelope| {
                 handler_calls.set(handler_calls.get() + 1);
             }),
         );
@@ -3787,8 +3790,8 @@ mod tests {
         let resp = DataResponse::Quotes(QuotesResponse {
             correlation_id: UUID4::new(),
             client_id: ClientId::new("SIM"),
-            instrument_id: InstrumentId::from("TEST.VENUE"),
-            data: vec![],
+            instrument_ids: vec![InstrumentId::from("TEST.VENUE")],
+            data: (vec![]).into(),
             start: None,
             end: None,
             ts_init: 0.into(),
@@ -3810,8 +3813,8 @@ mod tests {
         let resp = DataResponse::Quotes(QuotesResponse {
             correlation_id: UUID4::new(),
             client_id: ClientId::new("SIM"),
-            instrument_id: InstrumentId::from("TEST.VENUE"),
-            data: vec![],
+            instrument_ids: vec![InstrumentId::from("TEST.VENUE")],
+            data: (vec![]).into(),
             start: None,
             end: None,
             ts_init: 0.into(),
@@ -3832,23 +3835,21 @@ mod tests {
         let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<CustomDataResponse>(&DataResponse::Data(
-            CustomDataResponse::new(
-                correlation_id,
-                client_id,
-                Some(venue),
-                DataType::new("TestData", None, None),
-                Vec::<u8>::new(),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
-            ),
-        ));
+        assert_response_handler_is_consumed(&DataResponse::Data(CustomDataResponse::new(
+            correlation_id,
+            client_id,
+            Some(venue),
+            DataType::new("TestData", None, None),
+            Vec::<u8>::new(),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<InstrumentResponse>(&DataResponse::Instrument(
-            Box::new(InstrumentResponse::new(
+        assert_response_handler_is_consumed(&DataResponse::Instrument(Box::new(
+            InstrumentResponse::new(
                 correlation_id,
                 client_id,
                 instrument_id,
@@ -3857,95 +3858,83 @@ mod tests {
                 None,
                 UnixNanos::default(),
                 None,
-            )),
-        ));
-
-        let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<InstrumentsResponse>(&DataResponse::Instruments(
-            InstrumentsResponse::new(
-                correlation_id,
-                client_id,
-                venue,
-                Vec::new(),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
             ),
-        ));
+        )));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<BookResponse>(&DataResponse::Book(
-            BookResponse::new(
-                correlation_id,
-                client_id,
-                instrument_id,
-                OrderBook::new(instrument_id, BookType::L2_MBP),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
-            ),
-        ));
+        assert_response_handler_is_consumed(&DataResponse::Instruments(InstrumentsResponse::new(
+            correlation_id,
+            client_id,
+            venue,
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<BookDeltasResponse>(&DataResponse::BookDeltas(
-            BookDeltasResponse::new(
-                correlation_id,
-                client_id,
-                instrument_id,
-                Vec::new(),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
-            ),
-        ));
+        assert_response_handler_is_consumed(&DataResponse::Book(BookResponse::new(
+            correlation_id,
+            client_id,
+            instrument_id,
+            OrderBook::new(instrument_id, BookType::L2_MBP),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<BookDepthResponse>(&DataResponse::BookDepth(
-            BookDepthResponse::new(
-                correlation_id,
-                client_id,
-                instrument_id,
-                Vec::new(),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
-            ),
-        ));
+        assert_response_handler_is_consumed(&DataResponse::BookDeltas(BookDeltasResponse::new(
+            correlation_id,
+            client_id,
+            instrument_id,
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<QuotesResponse>(&DataResponse::Quotes(
-            QuotesResponse::new(
-                correlation_id,
-                client_id,
-                instrument_id,
-                Vec::new(),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
-            ),
-        ));
+        assert_response_handler_is_consumed(&DataResponse::BookDepth(BookDepthResponse::new(
+            correlation_id,
+            client_id,
+            instrument_id,
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<TradesResponse>(&DataResponse::Trades(
-            TradesResponse::new(
-                correlation_id,
-                client_id,
-                instrument_id,
-                Vec::new(),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
-            ),
-        ));
+        assert_response_handler_is_consumed(&DataResponse::Quotes(QuotesResponse::new(
+            correlation_id,
+            client_id,
+            instrument_id,
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<FundingRatesResponse>(&DataResponse::FundingRates(
+        assert_response_handler_is_consumed(&DataResponse::Trades(TradesResponse::new(
+            correlation_id,
+            client_id,
+            instrument_id,
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
+
+        let correlation_id = UUID4::new();
+        assert_response_handler_is_consumed(&DataResponse::FundingRates(
             FundingRatesResponse::new(
                 correlation_id,
                 client_id,
@@ -3959,8 +3948,8 @@ mod tests {
         ));
 
         let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<OptionChainReferencePriceResponse>(
-            &DataResponse::OptionChainReferencePrice(OptionChainReferencePriceResponse::new(
+        assert_response_handler_is_consumed(&DataResponse::OptionChainReferencePrice(
+            OptionChainReferencePriceResponse::new(
                 correlation_id,
                 client_id,
                 OptionSeriesId::new_derived(
@@ -3972,22 +3961,20 @@ mod tests {
                 Some(Price::from("50123.45")),
                 UnixNanos::default(),
                 None,
-            )),
-        );
-
-        let correlation_id = UUID4::new();
-        assert_response_handler_is_consumed::<BarsResponse>(&DataResponse::Bars(
-            BarsResponse::new(
-                correlation_id,
-                client_id,
-                bar_type,
-                Vec::new(),
-                None,
-                None,
-                UnixNanos::default(),
-                None,
             ),
         ));
+
+        let correlation_id = UUID4::new();
+        assert_response_handler_is_consumed(&DataResponse::Bars(BarsResponse::new(
+            correlation_id,
+            client_id,
+            bar_type,
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::default(),
+            None,
+        )));
     }
 
     #[rstest]
@@ -4001,12 +3988,12 @@ mod tests {
         let second_handler_calls = second_calls.clone();
         register_response_handler(
             &correlation_id,
-            ShareableMessageHandler::from_typed(move |_response: &QuotesResponse| {
+            TypedHandler::from(move |_response: &DataResponseEnvelope| {
                 first_handler_calls.set(first_handler_calls.get() + 1);
                 let second_handler_calls = second_handler_calls.clone();
                 register_response_handler(
                     &correlation_id,
-                    ShareableMessageHandler::from_typed(move |_response: &QuotesResponse| {
+                    TypedHandler::from(move |_response: &DataResponseEnvelope| {
                         second_handler_calls.set(second_handler_calls.get() + 1);
                     }),
                 );
@@ -4538,7 +4525,7 @@ mod tests {
         let handler_calls_clone = handler_calls.clone();
         register_response_handler(
             &correlation_id,
-            ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {
+            TypedHandler::from(move |_resp: &DataResponseEnvelope| {
                 handler_calls_clone.set(handler_calls_clone.get() + 1);
             }),
         );
@@ -4546,8 +4533,8 @@ mod tests {
         let response = DataResponse::Quotes(QuotesResponse {
             correlation_id,
             client_id: ClientId::new("SIM"),
-            instrument_id: InstrumentId::from("TEST.VENUE"),
-            data: vec![],
+            instrument_ids: vec![InstrumentId::from("TEST.VENUE")],
+            data: (vec![]).into(),
             start: None,
             end: None,
             ts_init: 0.into(),
@@ -4586,13 +4573,13 @@ mod tests {
         let correlation_id = UUID4::new();
         register_response_handler(
             &correlation_id,
-            ShareableMessageHandler::from_typed(|_resp: &QuotesResponse| {}),
+            TypedHandler::from(|_resp: &DataResponseEnvelope| {}),
         );
         let response = DataResponse::Quotes(QuotesResponse {
             correlation_id,
             client_id: ClientId::new("SIM"),
-            instrument_id: InstrumentId::from("TEST.VENUE"),
-            data: vec![],
+            instrument_ids: vec![InstrumentId::from("TEST.VENUE")],
+            data: (vec![]).into(),
             start: None,
             end: None,
             ts_init: 0.into(),

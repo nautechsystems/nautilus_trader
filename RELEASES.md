@@ -4,10 +4,14 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added batched data subscriptions and unsubscriptions, thanks @faysou
+- Added batched historical instrument, quote, and trade requests, thanks @faysou
+- Added `on_data_response` hooks for historical completion and partial failures, thanks @faysou
+- Added historical request catalog write-back with confirmed source coverage, thanks @faysou
+- Added native external MessageBus data requests and replies for JSON and MessagePack
 - Added `LiveNode::add_python_exec_algorithm_from_config` for embedded Python execution algorithms
 - Added `LiveNode::add_python_strategy_from_config` for embedded Python strategies
 - Added `nautilus_pyo3::register_embedded_module` for embedded Python
-- Added native external MessageBus data requests and replies for JSON and MessagePack
 - Added `Money::from_decimal_exact` and `Money::from_str_exact` for fractional amounts beyond currency precision
 - Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
 - Added accumulation of fractional `Money` commissions beyond currency precision
@@ -34,6 +38,10 @@ Released on TBD (UTC).
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
+- Changed request and subscription fields to `instrument_ids` and `bar_types` lists, thanks @faysou
+- Changed quote and trade response fields to `instrument_ids` lists, thanks @faysou
+- Changed quote, trade, bar, book-delta, book-depth, and funding responses to `BatchView<T>`, thanks @faysou
+- Changed correlated response handlers to `TypedHandler<DataResponseEnvelope>`, thanks @faysou
 - Changed backtest registration to reject conflicting definitions for an instrument ID (#5407), thanks @mahimn01
 - Changed `nautilus-pyo3` without default features to omit standard adapter bindings; enable `adapters` to include them
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches

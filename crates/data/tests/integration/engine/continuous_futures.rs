@@ -66,7 +66,7 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
         ]
     }));
     let (response_handler, response_saver) =
-        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-external-bars")));
+        get_response_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-external-bars")));
     msgbus::register_response_handler(&parent_id, response_handler);
 
     let request = RequestBars::new(
@@ -86,7 +86,7 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
     let child = recorded_bars_request(&recorder, 0);
     let parent_id_str = parent_id.to_string();
     assert_eq!(
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
     );
     assert_eq!(
@@ -99,9 +99,9 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![make_bar(
-            child.bar_type,
+            child.single_bar_type().unwrap(),
             "100.00",
             "101.00",
             "99.00",
@@ -124,15 +124,15 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
 
     let child = recorded_bars_request(&recorder, 1);
     assert_eq!(
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         BarType::from("ESM24.GLBX-1-MINUTE-LAST-EXTERNAL")
     );
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![make_bar(
-            child.bar_type,
+            child.single_bar_type().unwrap(),
             "96.00",
             "97.00",
             "95.50",
@@ -155,15 +155,15 @@ fn test_continuous_future_request_adjusts_external_bars_across_transitions(
 
     let child = recorded_bars_request(&recorder, 2);
     assert_eq!(
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         BarType::from("ESU24.GLBX-1-MINUTE-LAST-EXTERNAL")
     );
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![make_bar(
-            child.bar_type,
+            child.single_bar_type().unwrap(),
             "106.00",
             "107.00",
             "105.50",
@@ -341,16 +341,16 @@ fn test_continuous_future_request_inserts_history_behind_newer_live_bar(
 
     let child = recorded_bars_request(&recorder, 0);
     assert_eq!(
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
     );
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![
             make_bar(
-                child.bar_type,
+                child.single_bar_type().unwrap(),
                 "100.00",
                 "100.00",
                 "100.00",
@@ -359,7 +359,7 @@ fn test_continuous_future_request_inserts_history_behind_newer_live_bar(
                 minute(0),
             ),
             make_bar(
-                child.bar_type,
+                child.single_bar_type().unwrap(),
                 "101.00",
                 "101.00",
                 "101.00",
@@ -431,7 +431,7 @@ fn test_continuous_future_request_applies_ratio_to_external_bars(
         ]
     }));
     let (response_handler, response_saver) =
-        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-ratio-bars")));
+        get_response_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-ratio-bars")));
     msgbus::register_response_handler(&parent_id, response_handler);
 
     let request = RequestBars::new(
@@ -452,9 +452,9 @@ fn test_continuous_future_request_applies_ratio_to_external_bars(
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![make_bar(
-            child.bar_type,
+            child.single_bar_type().unwrap(),
             "100.00",
             "101.00",
             "99.00",
@@ -479,9 +479,9 @@ fn test_continuous_future_request_applies_ratio_to_external_bars(
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![make_bar(
-            child.bar_type,
+            child.single_bar_type().unwrap(),
             "55.00",
             "56.00",
             "54.50",
@@ -549,7 +549,7 @@ fn test_continuous_future_request_preserves_bar_type_chain(
         ]
     }));
     let (response_handler, response_saver) =
-        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-chain-bars")));
+        get_response_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-chain-bars")));
     msgbus::register_response_handler(&parent_id, response_handler);
 
     let request = RequestBars::new(
@@ -568,18 +568,50 @@ fn test_continuous_future_request_preserves_bar_type_chain(
 
     let child = recorded_bars_request(&recorder, 0);
     assert_eq!(
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         BarType::from("ESH24.GLBX-1-TICK-LAST-EXTERNAL")
     );
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![
-            make_bar(child.bar_type, "100.00", "100.00", "100.00", "100.00", 1, 1),
-            make_bar(child.bar_type, "101.00", "101.00", "101.00", "101.00", 1, 2),
-            make_bar(child.bar_type, "102.00", "102.00", "102.00", "102.00", 1, 3),
-            make_bar(child.bar_type, "103.00", "103.00", "103.00", "103.00", 1, 4),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "100.00",
+                "100.00",
+                "100.00",
+                "100.00",
+                1,
+                1,
+            ),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "101.00",
+                "101.00",
+                "101.00",
+                "101.00",
+                1,
+                2,
+            ),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "102.00",
+                "102.00",
+                "102.00",
+                "102.00",
+                1,
+                3,
+            ),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "103.00",
+                "103.00",
+                "103.00",
+                "103.00",
+                1,
+                4,
+            ),
         ],
         None,
         None,
@@ -589,18 +621,50 @@ fn test_continuous_future_request_preserves_bar_type_chain(
 
     let child = recorded_bars_request(&recorder, 1);
     assert_eq!(
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         BarType::from("ESM24.GLBX-1-TICK-LAST-EXTERNAL")
     );
     data_engine.response(DataResponse::Bars(BarsResponse::new(
         child.request_id,
         client_id,
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         vec![
-            make_bar(child.bar_type, "95.00", "95.00", "95.00", "95.00", 1, 51),
-            make_bar(child.bar_type, "96.00", "96.00", "96.00", "96.00", 1, 52),
-            make_bar(child.bar_type, "97.00", "97.00", "97.00", "97.00", 1, 53),
-            make_bar(child.bar_type, "98.00", "98.00", "98.00", "98.00", 1, 54),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "95.00",
+                "95.00",
+                "95.00",
+                "95.00",
+                1,
+                51,
+            ),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "96.00",
+                "96.00",
+                "96.00",
+                "96.00",
+                1,
+                52,
+            ),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "97.00",
+                "97.00",
+                "97.00",
+                "97.00",
+                1,
+                53,
+            ),
+            make_bar(
+                child.single_bar_type().unwrap(),
+                "98.00",
+                "98.00",
+                "98.00",
+                "98.00",
+                1,
+                54,
+            ),
         ],
         None,
         None,
@@ -664,7 +728,7 @@ fn test_continuous_future_request_uses_quote_tick_source(
         ]
     }));
     let (response_handler, response_saver) =
-        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-quote-bars")));
+        get_response_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-quote-bars")));
     msgbus::register_response_handler(&parent_id, response_handler);
 
     let request = RequestBars::new(
@@ -683,7 +747,7 @@ fn test_continuous_future_request_uses_quote_tick_source(
 
     let child = recorded_quotes_request(&recorder, 0);
     let parent_id_str = parent_id.to_string();
-    assert_eq!(child.instrument_id, esh);
+    assert_eq!(child.single_instrument_id().unwrap(), esh);
     assert_eq!(
         child
             .params
@@ -694,8 +758,13 @@ fn test_continuous_future_request_uses_quote_tick_source(
     data_engine.response(DataResponse::Quotes(QuotesResponse::new(
         child.request_id,
         client_id,
-        child.instrument_id,
-        vec![make_quote(child.instrument_id, "100.00", "100.25", 1)],
+        child.single_instrument_id().unwrap(),
+        vec![make_quote(
+            child.single_instrument_id().unwrap(),
+            "100.00",
+            "100.25",
+            1,
+        )],
         None,
         None,
         UnixNanos::from(1),
@@ -703,12 +772,17 @@ fn test_continuous_future_request_uses_quote_tick_source(
     )));
 
     let child = recorded_quotes_request(&recorder, 1);
-    assert_eq!(child.instrument_id, esm);
+    assert_eq!(child.single_instrument_id().unwrap(), esm);
     data_engine.response(DataResponse::Quotes(QuotesResponse::new(
         child.request_id,
         client_id,
-        child.instrument_id,
-        vec![make_quote(child.instrument_id, "111.00", "111.25", 11)],
+        child.single_instrument_id().unwrap(),
+        vec![make_quote(
+            child.single_instrument_id().unwrap(),
+            "111.00",
+            "111.25",
+            11,
+        )],
         None,
         None,
         UnixNanos::from(11),
@@ -764,7 +838,7 @@ fn test_continuous_future_request_start_after_end_emits_empty_parent_response(
         ]
     }));
     let (response_handler, response_saver) =
-        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-empty-bounds")));
+        get_response_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-empty-bounds")));
     msgbus::register_response_handler(&parent_id, response_handler);
 
     let request = RequestBars::new(
@@ -853,7 +927,7 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
     };
 
     let (response_handler, response_saver) =
-        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-future-response")));
+        get_response_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-future-response")));
     msgbus::register_response_handler(&parent_id, response_handler);
 
     let request = RequestBars::new(
@@ -872,7 +946,10 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
         .unwrap();
 
     let first_child = recorded_trades_request(&recorder, 0);
-    assert_eq!(first_child.instrument_id, pre_instrument_id);
+    assert_eq!(
+        first_child.single_instrument_id().unwrap(),
+        pre_instrument_id
+    );
     assert_eq!(first_child.start.map(|dt| dt.as_nanosecond()), Some(0));
     assert_eq!(first_child.end.map(|dt| dt.as_nanosecond()), Some(9));
     let first_child_params_ref = first_child.params.as_ref().unwrap();
@@ -901,7 +978,10 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
     assert_eq!(recorder.borrow().len(), 2);
 
     let second_child = recorded_trades_request(&recorder, 1);
-    assert_eq!(second_child.instrument_id, post_instrument_id);
+    assert_eq!(
+        second_child.single_instrument_id().unwrap(),
+        post_instrument_id
+    );
     assert_eq!(second_child.start.map(|dt| dt.as_nanosecond()), Some(10));
     assert_eq!(second_child.end.map(|dt| dt.as_nanosecond()), Some(20));
     let mut second_response_params = IndexMap::clone(second_child.params.as_ref().unwrap());
@@ -966,7 +1046,7 @@ fn test_continuous_future_request_walks_segments_and_applies_adjustments(
 
     match recorder.borrow()[2].clone() {
         DataCommand::Request(RequestCommand::Trades(request)) => {
-            assert_eq!(request.instrument_id, pre_instrument_id);
+            assert_eq!(request.single_instrument_id().unwrap(), pre_instrument_id);
         }
         other => panic!("Expected repeated continuous future child request, was {other:?}"),
     }
@@ -1021,6 +1101,7 @@ fn test_continuous_future_request_cleans_up_after_first_dispatch_error(
     );
     let result = data_engine.execute_request(RequestCommand::Bars(request));
 
+    assert_eq!(stub_msgbus.borrow().res_count(), 1);
     let err = result.expect_err("first child dispatch should fail");
     assert_eq!(
         err.to_string(),
@@ -1057,7 +1138,7 @@ fn test_continuous_future_request_cleans_up_after_first_dispatch_error(
 
     let child = recorded_trades_request(&recorder, 0);
     assert_eq!(recorder.borrow().len(), 1);
-    assert_eq!(child.instrument_id, pre_instrument_id);
+    assert_eq!(child.single_instrument_id().unwrap(), pre_instrument_id);
 }
 
 #[rstest]
@@ -1072,7 +1153,7 @@ fn test_continuous_future_request_emits_parent_response_on_later_dispatch_error(
     let post_instrument_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache, None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
@@ -1099,8 +1180,9 @@ fn test_continuous_future_request_emits_parent_response_on_later_dispatch_error(
             }
         ]
     }));
-    let (response_handler, response_saver) =
-        get_any_saving_handler::<BarsResponse>(Some(Ustr::from("continuous-dispatch-error")));
+    let (response_handler, response_saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(
+        Some(Ustr::from("continuous-dispatch-error")),
+    );
     msgbus::register_response_handler(&parent_id, response_handler);
 
     let request = RequestBars::new(
@@ -1122,19 +1204,39 @@ fn test_continuous_future_request_emits_parent_response_on_later_dispatch_error(
     data_engine.response(DataResponse::Trades(TradesResponse::new(
         child.request_id,
         client_id,
-        child.instrument_id,
-        vec![make_trade(child.instrument_id, "100.00", 1, "pre-1", 1)],
+        child.single_instrument_id().unwrap(),
+        vec![make_trade(
+            child.single_instrument_id().unwrap(),
+            "100.00",
+            1,
+            "pre-1",
+            1,
+        )],
         Some(UnixNanos::from(0)),
         Some(UnixNanos::from(9)),
         UnixNanos::from(1),
         child.params,
     )));
 
+    assert_eq!(stub_msgbus.borrow().res_count(), 1);
     let responses = response_saver.get_messages();
     assert_eq!(responses.len(), 1);
-    assert_eq!(responses[0].correlation_id, parent_id);
-    assert!(responses[0].data.is_empty());
-    assert_eq!(response_data_count(&responses[0]), Some(1));
+    assert_eq!(responses[0].correlation_id(), &parent_id);
+    assert!(responses[0].completed());
+    assert!(responses[0].response().is_none());
+    let reason = format!(
+        "Cannot handle request: no client found for {:?} {:?}",
+        Some(client_id),
+        Some(venue)
+    );
+    assert_eq!(responses[0].failure_reason(), Some(reason.as_str()));
+    assert_eq!(
+        cache
+            .borrow()
+            .trade(&pre_instrument_id)
+            .map(|trade| trade.ts_init),
+        Some(UnixNanos::from(1))
+    );
     assert_eq!(recorder.borrow().len(), 1);
 }
 
@@ -1956,4 +2058,225 @@ fn test_bar_list_continuous_futures_share_and_release_child_source(
         Vec::<InstrumentId>::new()
     );
     assert_eq!(clock.borrow().timer_count(), 0);
+}
+
+#[rstest]
+fn test_continuous_future_request_waits_for_completed_segment(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let first = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let second = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let mut engine = DataEngine::new(data_engine_clock_at(20), Rc::clone(&cache), None);
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        Rc::clone(&cache),
+        client_id,
+        first.venue,
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let root = UUID4::new();
+    let params = Some(params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [{"transition_time_ns": 10, "pre_instrument_id": first.to_string(), "post_instrument_id": second.to_string(), "pre_price": "100.00", "post_price": "110.00"}]
+    })));
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&root, handler);
+    engine
+        .execute_request(RequestCommand::Bars(RequestBars::new(
+            BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL"),
+            Some(UnixNanos::from(0).to_datetime_utc()),
+            Some(UnixNanos::from(20).to_datetime_utc()),
+            None,
+            Some(client_id),
+            root,
+            UnixNanos::from(0),
+            params,
+        )))
+        .unwrap();
+    let child = recorded_trades_request(&recorder, 0);
+    let first_trade = make_trade(first, "100.00", 1, "first", 1);
+    let second_trade = make_trade(first, "101.00", 1, "second", 2);
+
+    for trade in [first_trade, second_trade] {
+        let response = TradesResponse::new(
+            child.request_id,
+            client_id,
+            first,
+            vec![trade],
+            None,
+            None,
+            trade.ts_init,
+            child.params.clone(),
+        );
+        engine.response_envelope(DataResponseEnvelope::new(
+            DataResponse::Trades(response),
+            false,
+            None,
+        ));
+        assert_eq!(recorder.borrow().len(), 1);
+        assert!(saver.get_messages().is_empty());
+    }
+
+    engine.response_envelope(DataResponseEnvelope::terminal(child.request_id, None));
+    assert_eq!(recorder.borrow().len(), 2);
+    let child = recorded_trades_request(&recorder, 1);
+    assert_eq!(child.instrument_ids, vec![second]);
+    engine.response_envelope(DataResponseEnvelope::terminal(child.request_id, None));
+
+    let replies = saver.get_messages();
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].correlation_id(), &root);
+    assert!(replies[0].completed());
+    assert_eq!(replies[0].failure_reason(), None);
+    assert_eq!(replies[0].response().unwrap().record_count(), Some(0));
+    assert_eq!(
+        replies[0]
+            .response()
+            .unwrap()
+            .params()
+            .unwrap()
+            .get("data_count"),
+        Some(&json!(2))
+    );
+    assert_eq!(cache.borrow().trade(&first), Some(&second_trade));
+    assert!(
+        msgbus::get_message_bus()
+            .borrow()
+            .get_response_handler(&root)
+            .is_none()
+    );
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+#[case::dispatch(false, true)]
+#[case::asynchronous(false, false)]
+#[case::catalog_read(true, false)]
+fn test_continuous_future_catalog_segment_preserves_failure_and_cleans_up(
+    #[case] read_failure: bool,
+    #[case] dispatch_failure: bool,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    use nautilus_common::messages::data::DataRequestFailed;
+    use nautilus_model::data::NautilusDataType;
+    use nautilus_persistence::catalog::traits::{CatalogQuery, CatalogReader};
+
+    let _ = stub_msgbus;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let first = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let second = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let mut engine = DataEngine::new(data_engine_clock_at(20), Rc::clone(&cache), None);
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+
+    if dispatch_failure {
+        engine.register_client(
+            DataClientAdapter::new(
+                client_id,
+                Some(first.venue),
+                true,
+                true,
+                Box::new(FailingRequestDataClient::new(
+                    client_id,
+                    Some(first.venue),
+                    "secret cause",
+                )),
+            ),
+            None,
+        );
+    } else {
+        register_mock_client(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            client_id,
+            first.venue,
+            None,
+            &recorder,
+            &mut engine,
+        );
+    }
+
+    let directory = CatalogTempDir::new("continuous-segment-failure");
+    let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+    let cached = [
+        make_trade(first, "100.00", 1, "cached-1", 1),
+        make_trade(first, "101.00", 1, "cached-2", 2),
+    ];
+    let path = catalog
+        .write_to_parquet(
+            &cached,
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(if read_failure { 9 } else { 5 })),
+            None,
+        )
+        .unwrap();
+
+    let expected_reason = if read_failure {
+        std::fs::write(directory.path().join(path), b"invalid parquet").unwrap();
+        let query = CatalogQuery::new(NautilusDataType::TradeTick)
+            .with_identifiers(Some(vec![first.to_string()]))
+            .with_range(Some(UnixNanos::from(0)), Some(UnixNanos::from(9)));
+        CatalogReader::query_batch(&mut catalog, &query)
+            .unwrap_err()
+            .to_string()
+    } else if dispatch_failure {
+        format!("Data client {client_id} request failed")
+    } else {
+        "source unavailable".to_owned()
+    };
+
+    engine.register_catalog(Box::new(catalog), None);
+    let root = UUID4::new();
+    let params = Some(params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [{"transition_time_ns": 10, "pre_instrument_id": first.to_string(), "post_instrument_id": second.to_string(), "pre_price": "100.00", "post_price": "110.00"}]
+    })));
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&root, handler);
+    engine
+        .execute_request(RequestCommand::Bars(RequestBars::new(
+            BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL"),
+            Some(UnixNanos::from(0).to_datetime_utc()),
+            Some(UnixNanos::from(9).to_datetime_utc()),
+            None,
+            Some(client_id),
+            root,
+            UnixNanos::from(0),
+            params,
+        )))
+        .unwrap();
+
+    if !read_failure && !dispatch_failure {
+        let child = recorded_trades_request(&recorder, 0);
+        assert!(saver.get_messages().is_empty());
+        engine.request_failed(DataRequestFailed {
+            request_id: child.request_id,
+            reason: expected_reason.clone(),
+            response: None,
+        });
+    }
+
+    let replies = saver.get_messages();
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].correlation_id(), &root);
+    assert!(replies[0].completed());
+    assert_eq!(replies[0].failure_reason(), Some(expected_reason.as_str()));
+    assert!(replies[0].response().is_none());
+    assert_eq!(engine.request_pipeline_count(), 0);
+    assert_eq!(
+        cache.borrow().trade(&first),
+        if read_failure { None } else { Some(&cached[1]) }
+    );
+    assert!(
+        msgbus::get_message_bus()
+            .borrow()
+            .get_response_handler(&root)
+            .is_none()
+    );
 }

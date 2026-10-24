@@ -22,6 +22,7 @@ __all__ = [
     "CustomData",
     "DataActor",
     "DataActorConfig",
+    "DataResponse",
     "Environment",
     "FifoCache",
     "FileWriterConfig",
@@ -986,7 +987,7 @@ class DataActor:
     ) -> str: ...
     def request_instrument(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
@@ -1002,14 +1003,14 @@ class DataActor:
     ) -> str: ...
     def request_book_snapshot(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         depth: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
     def request_book_deltas(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         limit: int | None = None,
@@ -1018,7 +1019,7 @@ class DataActor:
     ) -> str: ...
     def request_book_depth(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         limit: int | None = None,
@@ -1028,7 +1029,7 @@ class DataActor:
     ) -> str: ...
     def request_quotes(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         limit: int | None = None,
@@ -1037,7 +1038,7 @@ class DataActor:
     ) -> str: ...
     def request_trades(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         limit: int | None = None,
@@ -1046,7 +1047,7 @@ class DataActor:
     ) -> str: ...
     def request_funding_rates(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         limit: int | None = None,
@@ -1055,7 +1056,7 @@ class DataActor:
     ) -> str: ...
     def request_bars(
         self,
-        bar_type: model.BarType,
+        bar_type: model.BarType | typing.Sequence[model.BarType],
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
         limit: int | None = None,
@@ -1063,6 +1064,7 @@ class DataActor:
         params: dict | None = None,
     ) -> str: ...
     def reconnect_socket(self, client_id: model.ClientId, endpoint: str) -> None: ...
+    def on_data_response(self, response: DataResponse) -> None: ...
     def on_historical_data(self, data: typing.Any) -> None: ...
     def on_historical_book_deltas(self, deltas: typing.Sequence[model.OrderBookDelta]) -> None: ...
     def on_historical_book_depth(self, depths: typing.Sequence[model.OrderBookDepth]) -> None: ...
@@ -1157,6 +1159,31 @@ class DataActor:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+
+@typing.final
+class DataResponse:
+    @property
+    def correlation_id(self) -> str: ...
+    @property
+    def completed(self) -> bool: ...
+    @property
+    def sub_correlation_id(self) -> str | None: ...
+    @property
+    def failure_reason(self) -> str | None: ...
+    @property
+    def kind(self) -> model.NautilusDataType | None: ...
+    @property
+    def client_id(self) -> model.ClientId | None: ...
+    @property
+    def params(self) -> dict | None: ...
+    @property
+    def start(self) -> int | None: ...
+    @property
+    def end(self) -> int | None: ...
+    @property
+    def ts_init(self) -> int | None: ...
+    @property
+    def data(self) -> typing.Any: ...
 
 @typing.final
 class FifoCache:

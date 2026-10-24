@@ -2167,10 +2167,10 @@ async fn request_quotes_returns_correlated_ticks() {
 
         assert_eq!(response.correlation_id, request_id);
         assert_eq!(response.client_id, client_id());
-        assert_eq!(response.instrument_id, instrument_id());
+        assert_eq!(response.instrument_ids, vec![instrument_id()]);
         assert_eq!(
-            response.data,
-            vec![QuoteTick::new(
+            response.data.as_ref(),
+            &vec![QuoteTick::new(
                 instrument_id(),
                 Price::from("85988.48"),
                 Price::from("85988.49"),
@@ -2232,10 +2232,10 @@ async fn request_trades_returns_correlated_ticks() {
 
         assert_eq!(response.correlation_id, request_id);
         assert_eq!(response.client_id, client_id());
-        assert_eq!(response.instrument_id, instrument_id());
+        assert_eq!(response.instrument_ids, vec![instrument_id()]);
         assert_eq!(
-            response.data,
-            vec![TradeTick::new(
+            response.data.as_ref(),
+            &vec![TradeTick::new(
                 instrument_id(),
                 Price::from("85988.49"),
                 Quantity::from("0.01000000"),
@@ -2382,7 +2382,7 @@ async fn request_bars_returns_only_closed_periods_at_instrument_precision() {
             assert_eq!(response.start, Some(nanos(HISTORY_START)));
             assert_eq!(response.end, end.map(|end| nanos(&end.to_string())));
             assert_eq!(response.params, Some(params()));
-            responses.push(response.data);
+            responses.push(response.data.to_vec());
         }
 
         let closed_bar = Bar::new(

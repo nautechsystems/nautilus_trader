@@ -4049,7 +4049,9 @@ mod tests {
     #[tokio::test]
     async fn test_external_startup_dispatches_correlated_response_before_buffered_traffic() {
         use bytes::Bytes;
-        use nautilus_common::messages::data::{CustomDataResponse, DataResponse};
+        use nautilus_common::messages::data::{
+            CustomDataResponse, DataResponse, DataResponseEnvelope,
+        };
         use nautilus_model::data::DataType;
 
         let (egress, publications, _) = CapturingExternalEgress::new();
@@ -4091,7 +4093,11 @@ mod tests {
         let done = Rc::new(RefCell::new(Some(done)));
         msgbus::register_response_handler(
             &id,
-            ShareableMessageHandler::from_typed::<CustomDataResponse, _>(move |reply| {
+            TypedHandler::from(move |envelope: &DataResponseEnvelope| {
+                let Some(DataResponse::Data(reply)) = envelope.response() else {
+                    panic!("expected custom reply");
+                };
+
                 done.borrow_mut()
                     .take()
                     .unwrap()

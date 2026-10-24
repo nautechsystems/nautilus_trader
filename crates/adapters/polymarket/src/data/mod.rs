@@ -544,8 +544,7 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        request_instrument(self, request);
-        Ok(())
+        request_instrument(self, request)
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {

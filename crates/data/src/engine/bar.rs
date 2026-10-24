@@ -202,7 +202,11 @@ impl DataEngine {
         true
     }
 
-    pub(super) fn process_request_bar_aggregation_response(&mut self, resp: &DataResponse) {
+    pub(super) fn process_request_bar_aggregation_response(
+        &mut self,
+        resp: &DataResponse,
+        completed: bool,
+    ) {
         let correlation_id = *resp.correlation_id();
 
         let Some(state) = self.request_bar_aggregations.get(&correlation_id).cloned() else {
@@ -211,24 +215,26 @@ impl DataEngine {
 
         match resp {
             DataResponse::Quotes(r) => {
-                for quote in &r.data {
+                for quote in r.data.iter() {
                     self.update_request_bar_aggregators_from_quote(&state, correlation_id, *quote);
                 }
             }
             DataResponse::Trades(r) => {
-                for trade in &r.data {
+                for trade in r.data.iter() {
                     self.update_request_bar_aggregators_from_trade(&state, correlation_id, *trade);
                 }
             }
             DataResponse::Bars(r) => {
-                for bar in &r.data {
+                for bar in r.data.iter() {
                     self.update_request_bar_aggregators_from_bar(&state, correlation_id, *bar);
                 }
             }
             _ => {}
         }
 
-        self.cleanup_request_bar_aggregators(&correlation_id);
+        if completed {
+            self.cleanup_request_bar_aggregators(&correlation_id);
+        }
     }
 
     pub(super) fn update_request_bar_aggregators_from_quote(

@@ -452,7 +452,9 @@ stay local when no external streams are configured.
 Application code publishes native requests and replies with Rust `msgbus::publish_any`.
 The `DataEngine` does not forward requests for external clients, and `send_response` stays local.
 To route inbound replies to pending request callbacks, register `BusPayloadType::DataResponse`
-for streaming and subscribe a topic handler that calls `msgbus::send_response`.
+for streaming and subscribe a topic handler that calls `msgbus::send_response`. This completes the request.
+For intermediate or payload-free terminal replies, register `BusPayloadType::DataResponseEnvelope`
+and call `msgbus::send_response_envelope` from the topic handler.
 
 Native replies use the shared JSON/MessagePack response representation keyed by response kind.
 Book replies preserve all orders, metadata, and each side's unfinished L1 batch state. Their encoding

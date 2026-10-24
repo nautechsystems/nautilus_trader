@@ -37,14 +37,15 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, BookDeltasResponse, BookDepthResponse, InstrumentResponse,
-            InstrumentsResponse, IntoInstrumentIds, QuotesResponse, RequestBars, RequestBookDeltas,
-            RequestBookDepth, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
-            SubscribeInstrument, SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades,
-            SubscriptionError, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth, UnsubscribeCustomData, UnsubscribeInstrumentStatus,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookDeltasResponse, BookDepthResponse, DataRequestFailed,
+            DataResponseEnvelope, InstrumentResponse, InstrumentsResponse, IntoInstrumentIds,
+            QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestInstrument,
+            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+            SubscribeBookDepth, SubscribeCustomData, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, SubscriptionError,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+            UnsubscribeCustomData, UnsubscribeInstrumentStatus, UnsubscribeQuotes,
+            UnsubscribeTrades,
         },
     },
 };
@@ -55,7 +56,7 @@ use nautilus_core::{
 };
 use nautilus_live::task::TaskGroup;
 use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType, custom::CustomDataTrait},
+    data::{BarSpecification, BarType, CustomData, Data, DataType, custom::CustomDataTrait},
     enums::{BarAggregation, PriceType},
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -68,7 +69,7 @@ use crate::{
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
     loader::DatabentoDataLoader,
-    symbology::{infer_symbology_type, instrument_id_to_symbol_string},
+    symbology::{check_consistent_symbology, infer_symbology_type, instrument_id_to_symbol_string},
     types::{DatabentoImbalance, DatabentoStatistics, Dataset, PublisherId},
 };
 
@@ -867,24 +868,10 @@ impl DataClient for DatabentoDataClient {
                         request_params,
                     ));
 
-                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send instruments response: {e}");
-                    }
+                    send_data_response(&data_sender, response, "instruments");
                 }
                 Err(e) => {
-                    log::error!("Failed to request instruments: {e}");
-                    let response = DataResponse::Instruments(InstrumentsResponse::new(
-                        request_id,
-                        client_id,
-                        venue,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
-
-                    send_data_response(&data_sender, response, "empty instruments");
+                    send_request_result(&data_sender, request_id, None, &[e.to_string()]);
                 }
             }
         });
@@ -893,237 +880,257 @@ impl DataClient for DatabentoDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log::debug!("Request instrument: {request:?}");
-
-        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
+        let groups = self.group_request_instruments(&request.instrument_ids)?;
         let historical_client = self.historical.clone();
         let data_sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
-        let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let start_nanos = datetime_to_unix_nanos(request.start);
-        let end_nanos = datetime_to_unix_nanos(request.end);
-        let request_params = request.params;
-        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
-
+        let start = datetime_to_unix_nanos(request.start);
+        let end = datetime_to_unix_nanos(request.end);
+        let (query_start, query_end) = resolve_request_time_range(start, end);
         self.spawn_task(async move {
-            let query_params =
-                instrument_query_params(dataset, instrument_id, query_start, query_end);
+            let mut data = Vec::new();
+            let mut failures = Vec::new();
 
-            match historical_client.get_range_instruments(query_params).await {
-                Ok(instruments) => {
-                    let instrument = requested_instrument(instruments, instrument_id);
+            for (dataset, ids) in groups {
+                let symbols = historical_client.prepare_symbols_from_instrument_ids(&ids);
 
-                    let Some(instrument) = instrument else {
-                        log::error!("Instrument not found: {instrument_id}");
-                        return;
-                    };
+                let params = RangeQueryParams {
+                    dataset: dataset.clone(),
+                    symbols,
+                    start: query_start,
+                    end: query_end,
+                    limit: None,
+                    price_precision: None,
+                };
 
-                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                        request_id,
-                        client_id,
-                        instrument.id(),
-                        instrument,
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    )));
-
-                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send instrument response: {e}");
+                match historical_client.get_range_instruments(params).await {
+                    Ok(instruments) => {
+                        for id in ids {
+                            if let Some(instrument) = requested_instrument(&instruments, id) {
+                                data.push(instrument);
+                            } else {
+                                failures.push(format!("Instrument not found: {id}"));
+                            }
+                        }
                     }
-                }
-                Err(e) => {
-                    log::error!("Failed to request instrument {instrument_id}: {e}");
+                    Err(e) => failures.push(format!("Dataset {dataset}: {e}")),
                 }
             }
+
+            let ts_init = get_atomic_clock_realtime().get_time_ns();
+
+            let response = if request.instrument_ids.len() == 1 && data.len() == 1 {
+                let instrument = data.remove(0);
+                Some(DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                    request.request_id,
+                    client_id,
+                    instrument.id(),
+                    instrument,
+                    start,
+                    end,
+                    ts_init,
+                    request.params,
+                ))))
+            } else if request.instrument_ids.len() > 1 {
+                Some(DataResponse::Instruments(InstrumentsResponse::new(
+                    request.request_id,
+                    client_id,
+                    *DATABENTO_VENUE,
+                    data,
+                    start,
+                    end,
+                    ts_init,
+                    request.params,
+                )))
+            } else {
+                None
+            };
+
+            send_request_result(&data_sender, request.request_id, response, &failures);
         });
 
         Ok(())
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
-        log::debug!("Request quotes: {request:?}");
-
+        anyhow::ensure!(
+            request.instrument_ids.len() == 1 || request.limit.is_none(),
+            "A record limit is unsupported for multi-instrument requests"
+        );
+        let groups = self.group_request_instruments(&request.instrument_ids)?;
         let historical_client = self.historical.clone();
         let data_sender = self.data_sender.clone();
-        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
-        let instrument_id = request.instrument_id;
-        let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
-        let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let start_nanos = datetime_to_unix_nanos(request.start);
-        let end_nanos = datetime_to_unix_nanos(request.end);
-        let limit = request.limit.map(|limit| limit.get() as u64);
-        let request_params = request.params;
-        let price_precision = price_precision_from_params(request_params.as_ref())?;
-        let schema = schema_from_params(request_params.as_ref(), dbn::Schema::Mbp1, QUOTE_SCHEMAS)?
+        let start = datetime_to_unix_nanos(request.start);
+        let end = datetime_to_unix_nanos(request.end);
+        let limit = request.limit.map(|value| value.get() as u64);
+        let precision = price_precision_from_params(request.params.as_ref())?;
+        let schema = schema_from_params(request.params.as_ref(), dbn::Schema::Mbp1, QUOTE_SCHEMAS)?
             .to_string();
-        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
-
+        let (query_start, query_end) = resolve_request_time_range(start, end);
         self.spawn_task(async move {
-            seed_price_precision_if_needed(
-                &historical_client,
-                dataset.as_str(),
-                instrument_id,
-                query_start,
-                query_end,
-                price_precision,
-            )
-            .await;
+            let mut data = Vec::new();
+            let mut failures = Vec::new();
 
-            let params = RangeQueryParams {
-                dataset,
-                symbols,
-                start: query_start,
-                end: query_end,
-                limit,
-                price_precision,
-            };
-
-            match historical_client
-                .get_range_quotes(params, Some(schema))
-                .await
-            {
-                Ok(quotes) => {
-                    log::debug!("Retrieved {} quotes", quotes.len());
-                    let response = DataResponse::Quotes(QuotesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        quotes,
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
-
-                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send quotes response: {e}");
-                    }
+            for (dataset, ids) in groups {
+                for &id in &ids {
+                    seed_price_precision_if_needed(
+                        &historical_client,
+                        &dataset,
+                        id,
+                        query_start,
+                        query_end,
+                        precision,
+                    )
+                    .await;
                 }
-                Err(e) => {
-                    log::error!("Failed to request quotes: {e}");
-                    let response = DataResponse::Quotes(QuotesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
 
-                    send_data_response(&data_sender, response, "empty quotes");
+                let symbols = historical_client.prepare_symbols_from_instrument_ids(&ids);
+
+                let params = RangeQueryParams {
+                    dataset: dataset.clone(),
+                    symbols,
+                    start: query_start,
+                    end: query_end,
+                    limit,
+                    price_precision: precision,
+                };
+
+                match historical_client
+                    .get_range_quotes(params, Some(schema.clone()))
+                    .await
+                {
+                    Ok(rows) => data.extend(rows),
+                    Err(e) => failures.push(format!("Dataset {dataset}: {e}")),
                 }
             }
+
+            data.sort_by_key(|row| (row.ts_init, row.instrument_id));
+            let response = DataResponse::Quotes(QuotesResponse::new(
+                request.request_id,
+                client_id,
+                request.instrument_ids,
+                data,
+                start,
+                end,
+                get_atomic_clock_realtime().get_time_ns(),
+                request.params,
+            ));
+            send_request_result(&data_sender, request.request_id, Some(response), &failures);
         });
 
         Ok(())
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        log::debug!("Request trades: {request:?}");
-
+        anyhow::ensure!(
+            request.instrument_ids.len() == 1 || request.limit.is_none(),
+            "A record limit is unsupported for multi-instrument requests"
+        );
+        let groups = self.group_request_instruments(&request.instrument_ids)?;
         let historical_client = self.historical.clone();
         let data_sender = self.data_sender.clone();
-        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
-        let instrument_id = request.instrument_id;
-        let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
-        let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let start_nanos = datetime_to_unix_nanos(request.start);
-        let end_nanos = datetime_to_unix_nanos(request.end);
-        let limit = request.limit.map(|limit| limit.get() as u64);
-        let request_params = request.params;
-        let price_precision = price_precision_from_params(request_params.as_ref())?;
+        let start = datetime_to_unix_nanos(request.start);
+        let end = datetime_to_unix_nanos(request.end);
+        let limit = request.limit.map(|value| value.get() as u64);
+        let precision = price_precision_from_params(request.params.as_ref())?;
         let schema =
-            schema_from_params(request_params.as_ref(), dbn::Schema::Trades, TRADE_SCHEMAS)?
+            schema_from_params(request.params.as_ref(), dbn::Schema::Trades, TRADE_SCHEMAS)?
                 .to_string();
-        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
-
+        let (query_start, query_end) = resolve_request_time_range(start, end);
         self.spawn_task(async move {
-            seed_price_precision_if_needed(
-                &historical_client,
-                dataset.as_str(),
-                instrument_id,
-                query_start,
-                query_end,
-                price_precision,
-            )
-            .await;
+            let mut data = Vec::new();
+            let mut failures = Vec::new();
 
-            let params = RangeQueryParams {
-                dataset,
-                symbols,
-                start: query_start,
-                end: query_end,
-                limit,
-                price_precision,
-            };
-
-            match historical_client
-                .get_range_trades(params, Some(schema))
-                .await
-            {
-                Ok(trades) => {
-                    log::debug!("Retrieved {} trades", trades.len());
-                    let response = DataResponse::Trades(TradesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        trades,
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
-
-                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send trades response: {e}");
-                    }
+            for (dataset, ids) in groups {
+                for &id in &ids {
+                    seed_price_precision_if_needed(
+                        &historical_client,
+                        &dataset,
+                        id,
+                        query_start,
+                        query_end,
+                        precision,
+                    )
+                    .await;
                 }
-                Err(e) => {
-                    log::error!("Failed to request trades: {e}");
-                    let response = DataResponse::Trades(TradesResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
 
-                    send_data_response(&data_sender, response, "empty trades");
+                let symbols = historical_client.prepare_symbols_from_instrument_ids(&ids);
+
+                let params = RangeQueryParams {
+                    dataset: dataset.clone(),
+                    symbols,
+                    start: query_start,
+                    end: query_end,
+                    limit,
+                    price_precision: precision,
+                };
+
+                match historical_client
+                    .get_range_trades(params, Some(schema.clone()))
+                    .await
+                {
+                    Ok(rows) => data.extend(rows),
+                    Err(e) => failures.push(format!("Dataset {dataset}: {e}")),
                 }
             }
+
+            data.sort_by_key(|row| (row.ts_init, row.instrument_id));
+            let response = DataResponse::Trades(TradesResponse::new(
+                request.request_id,
+                client_id,
+                request.instrument_ids,
+                data,
+                start,
+                end,
+                get_atomic_clock_realtime().get_time_ns(),
+                request.params,
+            ));
+            send_request_result(&data_sender, request.request_id, Some(response), &failures);
         });
 
         Ok(())
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+        let bar_type = request.single_bar_type()?;
+        let aggregation = bar_type.spec().aggregation;
+        anyhow::ensure!(
+            matches!(
+                aggregation,
+                BarAggregation::Second
+                    | BarAggregation::Minute
+                    | BarAggregation::Hour
+                    | BarAggregation::Day
+            ),
+            "Unsupported bar aggregation: {aggregation:?}"
+        );
+
         log::debug!("Request bars: {request:?}");
 
         let historical_client = self.historical.clone();
         let data_sender = self.data_sender.clone();
-        let instrument_id = request.bar_type.instrument_id();
+        let instrument_id = bar_type.instrument_id();
         let dataset = self.get_dataset_for_venue(instrument_id.venue)?;
         let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let bar_type = request.bar_type;
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
         let limit = request.limit.map(|limit| limit.get() as u64);
         let request_params = request.params;
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let timestamp_on_close = self.config.bars_timestamp_on_close;
-        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
+        let spec = BarSpecification::new(1, aggregation, PriceType::Last);
+        let interval = DurationNanos::try_from(spec.timedelta()).expect("supported OHLCV interval");
+        let (start, end) = resolve_request_bounds(start_nanos, end_nanos);
+
+        // Databento indexes bars by open, while ts_init always records the close
+        let (query_start, query_end) = resolve_request_time_range(
+            Some(start.saturating_sub(interval)),
+            Some(end.saturating_sub(interval)),
+        );
 
         self.spawn_task(async move {
             seed_price_precision_if_needed(
@@ -1143,32 +1150,6 @@ impl DataClient for DatabentoDataClient {
                 end: query_end,
                 limit,
                 price_precision,
-            };
-
-            let aggregation = match bar_type.spec().aggregation {
-                BarAggregation::Second => BarAggregation::Second,
-                BarAggregation::Minute => BarAggregation::Minute,
-                BarAggregation::Hour => BarAggregation::Hour,
-                BarAggregation::Day => BarAggregation::Day,
-                _ => {
-                    log::error!(
-                        "Unsupported bar aggregation: {:?}",
-                        bar_type.spec().aggregation
-                    );
-                    let response = DataResponse::Bars(BarsResponse::new(
-                        request_id,
-                        client_id,
-                        bar_type,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
-
-                    send_data_response(&data_sender, response, "empty bars");
-                    return;
-                }
             };
 
             match historical_client
@@ -1188,24 +1169,10 @@ impl DataClient for DatabentoDataClient {
                         request_params,
                     ));
 
-                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send bars response: {e}");
-                    }
+                    send_data_response(&data_sender, response, "bars");
                 }
                 Err(e) => {
-                    log::error!("Failed to request bars: {e}");
-                    let response = DataResponse::Bars(BarsResponse::new(
-                        request_id,
-                        client_id,
-                        bar_type,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
-
-                    send_data_response(&data_sender, response, "empty bars");
+                    send_request_result(&data_sender, request_id, None, &[e.to_string()]);
                 }
             }
         });
@@ -1214,12 +1181,13 @@ impl DataClient for DatabentoDataClient {
     }
 
     fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Request book depth: {request:?}");
 
         let historical_client = self.historical.clone();
         let data_sender = self.data_sender.clone();
-        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
-        let instrument_id = request.instrument_id;
+        let dataset = self.get_dataset_for_venue(instrument_id.venue)?;
         let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1271,19 +1239,7 @@ impl DataClient for DatabentoDataClient {
                     send_data_response(&data_sender, response, "book depth");
                 }
                 Err(e) => {
-                    log::error!("Failed to request order book depths: {e}");
-                    let response = DataResponse::BookDepth(BookDepthResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
-
-                    send_data_response(&data_sender, response, "empty book depth");
+                    send_request_result(&data_sender, request_id, None, &[e.to_string()]);
                 }
             }
         });
@@ -1292,12 +1248,13 @@ impl DataClient for DatabentoDataClient {
     }
 
     fn request_book_deltas(&self, request: RequestBookDeltas) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Request book deltas: {request:?}");
 
         let historical_client = self.historical.clone();
         let data_sender = self.data_sender.clone();
-        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
-        let instrument_id = request.instrument_id;
+        let dataset = self.get_dataset_for_venue(instrument_id.venue)?;
         let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1342,28 +1299,10 @@ impl DataClient for DatabentoDataClient {
                         request_params,
                     );
 
-                    for response in partition_book_deltas_response(response) {
-                        send_data_response(
-                            &data_sender,
-                            DataResponse::BookDeltas(response),
-                            "book deltas",
-                        );
-                    }
+                    send_book_deltas_response(&data_sender, response);
                 }
                 Err(e) => {
-                    log::error!("Failed to request order book deltas: {e}");
-                    let response = DataResponse::BookDeltas(BookDeltasResponse::new(
-                        request_id,
-                        client_id,
-                        instrument_id,
-                        Vec::new(),
-                        start_nanos,
-                        end_nanos,
-                        get_atomic_clock_realtime().get_time_ns(),
-                        request_params,
-                    ));
-
-                    send_data_response(&data_sender, response, "empty book deltas");
+                    send_request_result(&data_sender, request_id, None, &[e.to_string()]);
                 }
             }
         });
@@ -1383,21 +1322,7 @@ impl DatabentoDataClient {
         let price_precision = price_precision_from_params(params)?;
         let schema = schema_from_params(params, default_schema, schemas)?;
         let ids = instrument_ids.into_instrument_ids()?;
-        let mut groups: IndexMap<String, Vec<InstrumentId>> = IndexMap::new();
-        let mut symbol_venues = AHashMap::new();
-
-        for id in ids {
-            let dataset = self.get_dataset_for_venue(id.venue)?;
-            if let Some(venue) = symbol_venues.insert(id.symbol, id.venue) {
-                anyhow::ensure!(
-                    venue == id.venue,
-                    "subscription identifiers share raw symbol {} across different venues",
-                    id.symbol
-                );
-            }
-
-            groups.entry(dataset).or_default().push(id);
-        }
+        let groups = self.group_instruments(&ids)?;
 
         let mut accepted = Vec::new();
         let mut failure = None;
@@ -1421,6 +1346,42 @@ impl DatabentoDataClient {
             Some(e) => Err(SubscriptionError::instruments(accepted, e).into()),
             None => Ok(()),
         }
+    }
+
+    fn group_request_instruments(
+        &self,
+        ids: &[InstrumentId],
+    ) -> anyhow::Result<IndexMap<String, Vec<InstrumentId>>> {
+        let groups = self.group_instruments(ids)?;
+        for ids in groups.values() {
+            let symbols = ids.iter().map(|id| id.symbol.as_str()).collect::<Vec<_>>();
+            check_consistent_symbology(&symbols)?;
+        }
+
+        Ok(groups)
+    }
+
+    fn group_instruments(
+        &self,
+        ids: &[InstrumentId],
+    ) -> anyhow::Result<IndexMap<String, Vec<InstrumentId>>> {
+        let mut groups: IndexMap<String, Vec<InstrumentId>> = IndexMap::new();
+        let mut symbol_venues = AHashMap::new();
+
+        for &id in ids {
+            let dataset = self.get_dataset_for_venue(id.venue)?;
+            if let Some(venue) = symbol_venues.insert(id.symbol, id.venue) {
+                anyhow::ensure!(
+                    venue == id.venue,
+                    "Identifiers share raw symbol {} across different venues",
+                    id.symbol
+                );
+            }
+
+            groups.entry(dataset).or_default().push(id);
+        }
+
+        Ok(groups)
     }
 
     fn subscribe_dataset(
@@ -1508,22 +1469,24 @@ fn resolve_request_time_range(
     start_nanos: Option<UnixNanos>,
     end_nanos: Option<UnixNanos>,
 ) -> (UnixNanos, Option<UnixNanos>) {
-    let mut end = end_nanos.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
+    let (start, end) = resolve_request_bounds(start_nanos, end_nanos);
+
+    // Engine bounds include the end; Databento's query excludes it
+    (start, Some(end.saturating_add(DurationNanos::new(1))))
+}
+
+fn resolve_request_bounds(
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+) -> (UnixNanos, UnixNanos) {
+    let end = end_nanos.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
     let mut start = start_nanos.unwrap_or_else(|| start_of_utc_day(end));
 
     if start > end {
         start = end;
     }
 
-    if start == end {
-        if end.is_zero() {
-            end += DurationNanos::new(1);
-        } else {
-            start -= DurationNanos::new(1);
-        }
-    }
-
-    (start, Some(end))
+    (start, end)
 }
 
 fn start_of_utc_day(timestamp: UnixNanos) -> UnixNanos {
@@ -1555,20 +1518,59 @@ async fn seed_price_precision_if_needed(
     }
 }
 
+fn send_request_result(
+    data_sender: &EventSender<DataEvent>,
+    request_id: nautilus_core::UUID4,
+    response: Option<DataResponse>,
+    failures: &[String],
+) {
+    let event = if failures.is_empty() {
+        let Some(response) = response else {
+            return;
+        };
+
+        let envelope = DataResponseEnvelope::new(response, true, None);
+        DataEvent::ResponseEnvelope(envelope)
+    } else {
+        DataEvent::RequestFailed(DataRequestFailed {
+            request_id,
+            reason: failures.join("; "),
+            response,
+        })
+    };
+
+    if let Err(e) = data_sender.send(event) {
+        log::error!("Failed to send request result: {e}");
+    }
+}
+
 fn send_data_response(data_sender: &EventSender<DataEvent>, response: DataResponse, label: &str) {
-    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+    let envelope = DataResponseEnvelope::new(response, true, None);
+    if let Err(e) = data_sender.send(DataEvent::ResponseEnvelope(envelope)) {
         log::error!("Failed to send {label} response: {e}");
     }
 }
 
-fn partition_book_deltas_response(mut response: BookDeltasResponse) -> Vec<BookDeltasResponse> {
+fn send_book_deltas_response(sender: &EventSender<DataEvent>, response: BookDeltasResponse) {
+    let responses = partition_book_deltas_response(response);
+    let last = responses.len() - 1;
+    for (index, response) in responses.into_iter().enumerate() {
+        let envelope =
+            DataResponseEnvelope::new(DataResponse::BookDeltas(response), index == last, None);
+
+        if let Err(e) = sender.send(DataEvent::ResponseEnvelope(envelope)) {
+            log::error!("Failed to send book deltas response: {e}");
+        }
+    }
+}
+
+fn partition_book_deltas_response(response: BookDeltasResponse) -> Vec<BookDeltasResponse> {
     if response.data.is_empty() {
         return vec![response];
     }
 
     let mut partitions = IndexMap::new();
-
-    for delta in std::mem::take(&mut response.data) {
+    for delta in response.data.iter().copied() {
         partitions
             .entry(delta.instrument_id)
             .or_insert_with(Vec::new)
@@ -1580,20 +1582,21 @@ fn partition_book_deltas_response(mut response: BookDeltasResponse) -> Vec<BookD
         .map(|(instrument_id, data)| {
             let mut child = response.clone();
             child.instrument_id = instrument_id;
-            child.data = data;
+            child.data = data.into();
             child
         })
         .collect()
 }
 
 fn requested_instrument(
-    instruments: Vec<InstrumentAny>,
+    instruments: &[InstrumentAny],
     instrument_id: InstrumentId,
 ) -> Option<InstrumentAny> {
     instruments
-        .into_iter()
+        .iter()
         .rev()
         .find(|instrument| instrument.id() == instrument_id)
+        .cloned()
 }
 
 fn price_precision_from_params(params: Option<&Params>) -> anyhow::Result<Option<u8>> {
@@ -1730,7 +1733,7 @@ mod tests {
     };
     use nautilus_core::UUID4;
     use nautilus_model::{
-        data::OrderBookDelta,
+        data::{BatchView, NautilusDataType, OrderBookDelta, QuoteTick},
         enums::BookType,
         identifiers::{ClientId, InstrumentId},
         instruments::{CurrencyPair, InstrumentAny},
@@ -1773,6 +1776,423 @@ mod tests {
             get_atomic_clock_realtime(),
         )
         .expect("test client should initialize")
+    }
+
+    #[rstest]
+    #[case::quotes(NautilusDataType::QuoteTick, true)]
+    #[case::trades(NautilusDataType::TradeTick, true)]
+    #[case::bars_close(NautilusDataType::Bar, true)]
+    #[case::bars_open(NautilusDataType::Bar, false)]
+    #[tokio::test]
+    #[ignore = "Requires DATABENTO_API_KEY and GLBX.MDP3 historical access"]
+    async fn test_historical_request_list_live(
+        #[case] kind: NautilusDataType,
+        #[case] timestamp_on_close: bool,
+    ) {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let api_key = std::env::var("DATABENTO_API_KEY").unwrap();
+
+        let config = DatabentoDataClientConfig::new(
+            api_key,
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            timestamp_on_close,
+        );
+        let client_id = ClientId::from("DATABENTO-HISTORY");
+        let client =
+            DatabentoDataClient::new(client_id, config, get_atomic_clock_realtime()).unwrap();
+        let mut ids = vec![
+            InstrumentId::from("ESM4.GLBX"),
+            InstrumentId::from("NQM4.GLBX"),
+        ];
+        let start = UnixNanos::from(1_717_423_200_000_000_000);
+
+        let end = if kind == NautilusDataType::Bar {
+            ids.truncate(1);
+            start
+        } else {
+            start + DurationNanos::from_secs(1)
+        };
+
+        let request_id = UUID4::new();
+        let params = Params::new([(PRICE_PRECISION_PARAM.to_owned(), json!(2))].into());
+        let bar_type = "ESM4.GLBX-1-MINUTE-LAST-EXTERNAL"
+            .parse::<BarType>()
+            .unwrap();
+
+        match kind {
+            NautilusDataType::QuoteTick => client
+                .request_quotes(RequestQuotes::new(
+                    ids.clone(),
+                    Some(start.to_datetime_utc()),
+                    Some(end.to_datetime_utc()),
+                    None,
+                    Some(client_id),
+                    request_id,
+                    UnixNanos::from(37),
+                    Some(params.clone()),
+                ))
+                .unwrap(),
+            NautilusDataType::TradeTick => client
+                .request_trades(RequestTrades::new(
+                    ids.clone(),
+                    Some(start.to_datetime_utc()),
+                    Some(end.to_datetime_utc()),
+                    None,
+                    Some(client_id),
+                    request_id,
+                    UnixNanos::from(37),
+                    Some(params.clone()),
+                ))
+                .unwrap(),
+            NautilusDataType::Bar => client
+                .request_bars(RequestBars::new(
+                    [bar_type],
+                    Some(start.to_datetime_utc()),
+                    Some(end.to_datetime_utc()),
+                    None,
+                    Some(client_id),
+                    request_id,
+                    UnixNanos::from(37),
+                    Some(params.clone()),
+                ))
+                .unwrap(),
+            _ => panic!("unexpected live request kind"),
+        }
+
+        let event = tokio::time::timeout(Duration::from_secs(60), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let DataEvent::ResponseEnvelope(envelope) = event else {
+            panic!("expected successful historical envelope, received {event:?}");
+        };
+
+        let response = envelope.response().unwrap();
+
+        let (response_ids, rows) = match (kind, response) {
+            (NautilusDataType::QuoteTick, DataResponse::Quotes(response)) => (
+                response.instrument_ids.clone(),
+                response
+                    .data
+                    .iter()
+                    .map(|row| (row.ts_init, row.instrument_id))
+                    .collect::<Vec<_>>(),
+            ),
+            (NautilusDataType::TradeTick, DataResponse::Trades(response)) => (
+                response.instrument_ids.clone(),
+                response
+                    .data
+                    .iter()
+                    .map(|row| (row.ts_init, row.instrument_id))
+                    .collect::<Vec<_>>(),
+            ),
+            (NautilusDataType::Bar, DataResponse::Bars(response)) => {
+                let expected_event = if timestamp_on_close {
+                    start
+                } else {
+                    start - DurationNanos::from_mins(1)
+                };
+
+                assert_eq!(response.bar_type, bar_type);
+                assert_eq!(response.data.len(), 1);
+                assert_eq!(response.data[0].bar_type, bar_type);
+                assert_eq!(response.data[0].ts_init, start);
+                assert_eq!(response.data[0].ts_event, expected_event);
+                (
+                    vec![response.bar_type.instrument_id()],
+                    response
+                        .data
+                        .iter()
+                        .map(|row| (row.ts_init, row.bar_type.instrument_id()))
+                        .collect::<Vec<_>>(),
+                )
+            }
+            _ => panic!("unexpected historical response variant"),
+        };
+
+        let mut actual_ids = rows.iter().map(|(_, id)| *id).collect::<Vec<_>>();
+        actual_ids.sort_unstable();
+        actual_ids.dedup();
+        let mut expected_ids = ids.clone();
+        expected_ids.sort_unstable();
+
+        assert_eq!(envelope.correlation_id(), &request_id);
+        assert!(envelope.completed());
+        assert_eq!(envelope.sub_correlation_id(), None);
+        assert_eq!(envelope.failure_reason(), None);
+        assert_eq!(response.correlation_id(), &request_id);
+        assert_eq!(response.client_id(), &client_id);
+        assert_eq!(response.start(), Some(start));
+        assert_eq!(response.end(), Some(end));
+        assert_eq!(response.params(), Some(&params));
+        assert_eq!(response_ids, ids);
+        assert_eq!(actual_ids, expected_ids);
+        assert!(rows.is_sorted());
+        assert!(rows.iter().all(|(ts, _)| *ts >= start && *ts <= end));
+        assert_eq!(
+            receiver.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+    }
+
+    #[rstest]
+    #[case::raw("ESM4.GLBX", "NQM4.GLBX")]
+    #[case::parent("ES.FUT.GLBX", "NQ.FUT.GLBX")]
+    fn test_historical_request_groups_keep_dataset_and_input_order(
+        #[case] first: &str,
+        #[case] third: &str,
+    ) {
+        let client = test_data_client();
+        let first = InstrumentId::from(first);
+        let second = InstrumentId::from("AAPL.EQUS");
+        let third = InstrumentId::from(third);
+        let groups = client
+            .group_request_instruments(&[first, second, third])
+            .unwrap();
+        assert_eq!(
+            groups.into_iter().collect::<Vec<_>>(),
+            vec![
+                ("GLBX.MDP3".to_owned(), vec![first, third]),
+                ("EQUS.MINI".to_owned(), vec![second])
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case::instruments(NautilusDataType::Instrument)]
+    #[case::quotes(NautilusDataType::QuoteTick)]
+    #[case::trades(NautilusDataType::TradeTick)]
+    #[tokio::test]
+    async fn test_historical_requests_reject_mixed_symbology_before_dispatch(
+        #[case] kind: NautilusDataType,
+        #[values(false, true)] earlier_dataset: bool,
+    ) {
+        let client = test_data_client();
+        let mut ids = Vec::new();
+        if earlier_dataset {
+            ids.push(InstrumentId::from("AAPL.EQUS"));
+        }
+
+        ids.extend([
+            InstrumentId::from("ES.FUT.GLBX"),
+            InstrumentId::from("ESM4.GLBX"),
+        ]);
+        let request_id = UUID4::new();
+
+        let result = match kind {
+            NautilusDataType::Instrument => client.request_instrument(RequestInstrument::new(
+                ids,
+                None,
+                None,
+                None,
+                request_id,
+                UnixNanos::from(37),
+                None,
+            )),
+            NautilusDataType::QuoteTick => client.request_quotes(RequestQuotes::new(
+                ids,
+                None,
+                None,
+                None,
+                None,
+                request_id,
+                UnixNanos::from(37),
+                None,
+            )),
+            NautilusDataType::TradeTick => client.request_trades(RequestTrades::new(
+                ids,
+                None,
+                None,
+                None,
+                None,
+                request_id,
+                UnixNanos::from(37),
+                None,
+            )),
+            _ => panic!("unexpected historical request kind"),
+        };
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Inconsistent symbology types: 'parent' for ES.FUT vs 'raw_symbol' for ESM4"
+        );
+        assert!(client.task_handles.is_empty());
+    }
+
+    #[rstest]
+    #[case::quotes(true)]
+    #[case::trades(false)]
+    fn test_historical_request_lists_reject_limit_before_dispatch(#[case] quotes: bool) {
+        let client = test_data_client();
+        let ids = [
+            InstrumentId::from("ESM4.GLBX"),
+            InstrumentId::from("AAPL.EQUS"),
+        ];
+
+        let result = if quotes {
+            client.request_quotes(RequestQuotes::new(
+                ids,
+                None,
+                None,
+                NonZeroUsize::new(5),
+                None,
+                UUID4::new(),
+                UnixNanos::from(37),
+                None,
+            ))
+        } else {
+            client.request_trades(RequestTrades::new(
+                ids,
+                None,
+                None,
+                NonZeroUsize::new(5),
+                None,
+                UUID4::new(),
+                UnixNanos::from(37),
+                None,
+            ))
+        };
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "A record limit is unsupported for multi-instrument requests"
+        );
+    }
+
+    #[rstest]
+    fn test_historical_bars_reject_unsupported_aggregation_before_dispatch() {
+        let client = test_data_client();
+
+        let request = RequestBars::new(
+            BarType::from("ESM4.GLBX-100-TICK-LAST-EXTERNAL"),
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(37),
+            None,
+        );
+        assert_eq!(
+            client.request_bars(request).unwrap_err().to_string(),
+            "Unsupported bar aggregation: Tick"
+        );
+        assert!(client.task_handles.is_empty());
+    }
+
+    #[rstest]
+    fn test_dataset_failure_preserves_successful_group_rows() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let sender: EventSender<DataEvent> = sender.into();
+        let root = UUID4::new();
+        let first = InstrumentId::from("ESM6.GLBX");
+        let second = InstrumentId::from("AAPL.EQUS");
+
+        let quote = QuoteTick {
+            instrument_id: first,
+            ts_init: UnixNanos::from(17),
+            ..Default::default()
+        };
+
+        let response = QuotesResponse::new(
+            root,
+            ClientId::from("HISTORY"),
+            [first, second],
+            vec![quote],
+            Some(UnixNanos::from(11)),
+            Some(UnixNanos::from(29)),
+            UnixNanos::from(31),
+            None,
+        );
+
+        send_request_result(
+            &sender,
+            root,
+            Some(DataResponse::Quotes(response)),
+            &["Dataset EQUS: source unavailable".to_owned()],
+        );
+
+        let DataEvent::RequestFailed(failure) = receiver.try_recv().unwrap() else {
+            panic!("Expected failed dataset result");
+        };
+
+        assert_eq!(failure.request_id, root);
+        assert_eq!(failure.reason, "Dataset EQUS: source unavailable");
+
+        let Some(DataResponse::Quotes(response)) = failure.response else {
+            panic!("Expected successful sibling rows");
+        };
+
+        assert_eq!(response.correlation_id, root);
+        assert_eq!(response.client_id, ClientId::from("HISTORY"));
+        assert_eq!(response.instrument_ids, vec![first, second]);
+        assert_eq!(response.data.as_ref(), &[quote]);
+        assert_eq!(response.start, Some(UnixNanos::from(11)));
+        assert_eq!(response.end, Some(UnixNanos::from(29)));
+        assert_eq!(response.ts_init, UnixNanos::from(31));
+        assert_eq!(response.params, None);
+        assert_eq!(
+            receiver.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+    }
+
+    #[rstest]
+    fn test_book_reply_completes_after_all_partitioned_payloads() {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let sender: EventSender<DataEvent> = sender.into();
+        let root = UUID4::new();
+        let first = InstrumentId::from("ESM6.GLBX");
+        let second = InstrumentId::from("ESU6.GLBX");
+        let a = OrderBookDelta::clear(first, 11, UnixNanos::from(13), UnixNanos::from(17));
+        let b = OrderBookDelta::clear(second, 19, UnixNanos::from(23), UnixNanos::from(29));
+        let c = OrderBookDelta::clear(first, 31, UnixNanos::from(37), UnixNanos::from(41));
+
+        let response = BookDeltasResponse::new(
+            root,
+            ClientId::from("HISTORY"),
+            InstrumentId::from("ES.FUT.GLBX"),
+            vec![a, b, c],
+            None,
+            None,
+            UnixNanos::from(43),
+            None,
+        );
+        send_book_deltas_response(&sender, response);
+
+        let DataEvent::ResponseEnvelope(left) = receiver.try_recv().unwrap() else {
+            panic!("expected first envelope");
+        };
+
+        let DataEvent::ResponseEnvelope(right) = receiver.try_recv().unwrap() else {
+            panic!("expected final envelope");
+        };
+
+        let Some(DataResponse::BookDeltas(left_payload)) = left.response() else {
+            panic!("expected first book");
+        };
+
+        let Some(DataResponse::BookDeltas(right_payload)) = right.response() else {
+            panic!("expected second book");
+        };
+
+        assert_eq!(
+            (left.correlation_id(), right.correlation_id()),
+            (&root, &root)
+        );
+        assert!(!left.completed());
+        assert!(right.completed());
+        assert_eq!(left_payload.instrument_id, first);
+        assert_eq!(right_payload.instrument_id, second);
+        assert_eq!(left_payload.data.as_ref(), &vec![a, c]);
+        assert_eq!(right_payload.data.as_ref(), &vec![b]);
+        assert_eq!(
+            receiver.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
     }
 
     #[rstest]
@@ -2117,17 +2537,154 @@ mod tests {
         let (start, resolved_end) = resolve_request_time_range(None, Some(end));
 
         assert_eq!(start, UnixNanos::from(1_706_400_000_000_000_000));
-        assert_eq!(resolved_end, Some(end));
+        assert_eq!(resolved_end, Some(end + DurationNanos::new(1)));
     }
 
     #[rstest]
-    fn test_resolve_request_time_range_makes_empty_interval_non_empty() {
-        let end = UnixNanos::from(1_706_443_200_000_000_001);
+    #[case::range(17, 23, 17, 24)]
+    #[case::point(17, 17, 17, 18)]
+    #[case::zero(0, 0, 0, 1)]
+    #[case::inverted(23, 17, 17, 18)]
+    fn test_resolve_request_time_range_converts_inclusive_bounds(
+        #[case] start: u64,
+        #[case] end: u64,
+        #[case] expected_start: u64,
+        #[case] expected_end: u64,
+    ) {
+        let (start, end) = resolve_request_time_range(Some(start.into()), Some(end.into()));
 
-        let (start, resolved_end) = resolve_request_time_range(Some(end), Some(end));
+        assert_eq!(start, UnixNanos::from(expected_start));
+        assert_eq!(end, Some(UnixNanos::from(expected_end)));
+    }
 
-        assert_eq!(start, end - DurationNanos::new(1));
-        assert_eq!(resolved_end, Some(end));
+    #[rstest]
+    #[case::quotes(false, true, false)]
+    #[case::bars_close(true, true, false)]
+    #[case::bars_open(true, false, false)]
+    #[case::bars_default_start(true, true, true)]
+    #[tokio::test]
+    async fn test_historical_request_sends_inclusive_bounds(
+        #[case] bars: bool,
+        #[case] timestamp_on_close: bool,
+        #[case] missing_start: bool,
+    ) {
+        let filename = if bars {
+            "test_data.ohlcv-1m.dbn.zst"
+        } else {
+            "test_data.mbp-1.dbn.zst"
+        };
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join(filename);
+        let decoder = Decoder::from_zstd_file(path).unwrap();
+        let mut metadata = decoder.metadata().clone();
+        metadata.dataset = "GLBX.MDP3".to_owned();
+        let mut body = Vec::new();
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut body, &metadata).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(serve_historical_response(listener, body));
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        let mut config = DatabentoDataClientConfig::new(
+            "32-character-with-lots-of-filler",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            true,
+            timestamp_on_close,
+        );
+        config.historical_base_url = Some(base_url);
+        let client_id = ClientId::from("DATABENTO-BOUNDS");
+        let client =
+            DatabentoDataClient::new(client_id, config, get_atomic_clock_realtime()).unwrap();
+        let id = InstrumentId::from("ESM4.GLBX");
+        let start = UnixNanos::from(1_717_423_200_000_000_000);
+        let request_start = (!missing_start).then_some(start);
+        let end = start + DurationNanos::from_secs(60) + DurationNanos::new(123);
+        let request_id = UUID4::new();
+        let params = Params::new([(PRICE_PRECISION_PARAM.to_owned(), json!(2))].into());
+
+        if bars {
+            let bar_type = "ESM4.GLBX-1-MINUTE-LAST-EXTERNAL"
+                .parse::<BarType>()
+                .unwrap();
+            client
+                .request_bars(RequestBars::new(
+                    bar_type,
+                    request_start.map(|timestamp| timestamp.to_datetime_utc()),
+                    Some(end.to_datetime_utc()),
+                    None,
+                    Some(client_id),
+                    request_id,
+                    UnixNanos::from(37),
+                    Some(params.clone()),
+                ))
+                .unwrap();
+        } else {
+            client
+                .request_quotes(RequestQuotes::new(
+                    id,
+                    request_start.map(|timestamp| timestamp.to_datetime_utc()),
+                    Some(end.to_datetime_utc()),
+                    None,
+                    Some(client_id),
+                    request_id,
+                    UnixNanos::from(37),
+                    Some(params.clone()),
+                ))
+                .unwrap();
+        }
+
+        let event = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let DataEvent::ResponseEnvelope(envelope) = event else {
+            panic!("expected completed response, received {event:?}");
+        };
+
+        let response = envelope.response().unwrap();
+        let request = server.await.unwrap();
+        let fields: AHashMap<_, _> = request
+            .split('&')
+            .map(|field| field.split_once('=').unwrap())
+            .collect();
+
+        let offset = if bars {
+            DurationNanos::from_secs(60)
+        } else {
+            DurationNanos::new(0)
+        };
+
+        let expected_start = if missing_start {
+            UnixNanos::from(1_717_372_800_000_000_000)
+        } else {
+            start
+        };
+
+        assert_eq!(fields["dataset"], "GLBX.MDP3");
+        assert_eq!(fields["schema"], if bars { "ohlcv-1m" } else { "mbp-1" });
+        assert_eq!(fields["symbols"], "ESM4");
+        assert_eq!(fields["start"], (expected_start - offset).to_string());
+        assert_eq!(
+            fields["end"],
+            (end - offset + DurationNanos::new(1)).to_string()
+        );
+        assert_eq!(envelope.correlation_id(), &request_id);
+        assert!(envelope.completed());
+        assert_eq!(envelope.failure_reason(), None);
+        assert_eq!(response.start(), request_start);
+        assert_eq!(response.end(), Some(end));
+        assert_eq!(response.client_id(), &client_id);
+        assert_eq!(response.params(), Some(&params));
+        assert_eq!(response.record_count(), Some(0));
     }
 
     #[rstest]
@@ -2138,7 +2695,7 @@ mod tests {
             currency_pair("BTCUSDT.BINANCE"),
         ];
 
-        let instrument = requested_instrument(instruments, requested_id).expect("instrument");
+        let instrument = requested_instrument(&instruments, requested_id).expect("instrument");
 
         assert_eq!(instrument.id(), requested_id);
     }
@@ -2151,7 +2708,7 @@ mod tests {
             currency_pair_with_ts_init("BTCUSDT.BINANCE", UnixNanos::from(2)),
         ];
 
-        let instrument = requested_instrument(instruments, requested_id).expect("instrument");
+        let instrument = requested_instrument(&instruments, requested_id).expect("instrument");
 
         assert_eq!(instrument.ts_init(), UnixNanos::from(2));
     }
@@ -2160,7 +2717,7 @@ mod tests {
     fn test_requested_instrument_returns_none_on_miss() {
         let instruments = vec![currency_pair("ETHUSDT.BINANCE")];
 
-        let instrument = requested_instrument(instruments, InstrumentId::from("BTCUSDT.BINANCE"));
+        let instrument = requested_instrument(&instruments, InstrumentId::from("BTCUSDT.BINANCE"));
 
         assert!(instrument.is_none());
     }
@@ -2190,7 +2747,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_partition_book_deltas_response_by_child_instrument() {
+    fn test_partition_book_deltas_response_by_child_instrument(
+        #[values(false, true)] narrowed: bool,
+    ) {
         let correlation_id = UUID4::new();
         let client_id = ClientId::from("DATABENTO-TEST");
         let parent = InstrumentId::from("ES.FUT.GLBX");
@@ -2203,11 +2762,26 @@ mod tests {
         ];
         let params = Params::new([(PRICE_PRECISION_PARAM.to_string(), json!(5))].into());
 
+        let rows = if narrowed {
+            let hidden = OrderBookDelta::clear(
+                InstrumentId::from("HIDDEN.GLBX"),
+                4,
+                UnixNanos::from(5_000),
+                UnixNanos::from(5_000),
+            );
+            let mut backing = vec![hidden];
+            backing.extend_from_slice(&deltas);
+            backing.push(hidden);
+            BatchView::new(Arc::new(backing), 1..4)
+        } else {
+            deltas.clone().into()
+        };
+
         let response = BookDeltasResponse::new(
             correlation_id,
             client_id,
             parent,
-            deltas.clone(),
+            rows,
             Some(UnixNanos::from(500)),
             Some(UnixNanos::from(4_000)),
             UnixNanos::from(5_000),
@@ -2223,8 +2797,8 @@ mod tests {
         assert_eq!(responses[1].client_id, client_id);
         assert_eq!(responses[0].instrument_id, child_a);
         assert_eq!(responses[1].instrument_id, child_b);
-        assert_eq!(responses[0].data, vec![deltas[0], deltas[2]]);
-        assert_eq!(responses[1].data, vec![deltas[1]]);
+        assert_eq!(responses[0].data.as_ref(), &vec![deltas[0], deltas[2]]);
+        assert_eq!(responses[1].data.as_ref(), &vec![deltas[1]]);
         assert_eq!(responses[0].start, Some(UnixNanos::from(500)));
         assert_eq!(responses[1].start, Some(UnixNanos::from(500)));
         assert_eq!(responses[0].end, Some(UnixNanos::from(4_000)));
@@ -2263,7 +2837,7 @@ mod tests {
         assert_eq!(responses[0].correlation_id, correlation_id);
         assert_eq!(responses[0].client_id, client_id);
         assert_eq!(responses[0].instrument_id, instrument_id);
-        assert_eq!(responses[0].data, vec![delta]);
+        assert_eq!(responses[0].data.as_ref(), &vec![delta]);
         assert_eq!(responses[0].start, Some(UnixNanos::from(500)));
         assert_eq!(responses[0].end, Some(UnixNanos::from(1_500)));
         assert_eq!(responses[0].ts_init, UnixNanos::from(2_000));
@@ -2524,7 +3098,7 @@ mod tests {
             #[case::unknown_dataset("UNKNOWN.UNKNOWN", "No dataset found for venue: UNKNOWN")]
             #[case::ambiguous_symbol(
                 "ESM4.XCBO",
-                "subscription identifiers share raw symbol ESM4 across different venues"
+                "Identifiers share raw symbol ESM4 across different venues"
             )]
             fn $validation_test(#[case] invalid_id: &str, #[case] error: &str) {
                 let mut client = test_data_client();

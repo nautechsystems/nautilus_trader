@@ -1384,11 +1384,12 @@ mod tests {
         clock::VirtualClock,
         messages::{
             data::{
-                DataCommand, DataResponse, QuotesResponse, RequestCommand, RequestQuotes,
-                SubscribeCommand, SubscribeQuotes,
+                DataCommand, DataResponse, DataResponseEnvelope, QuotesResponse, RequestCommand,
+                RequestQuotes, SubscribeCommand, SubscribeQuotes,
             },
             execution::{SubmitOrder, TradingCommand},
         },
+        msgbus::TypedHandler,
         timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
     };
     use nautilus_core::time::get_atomic_clock_static;
@@ -3399,7 +3400,7 @@ mod tests {
         match (decoded_request, request) {
             (RequestCommand::Quotes(decoded), RequestCommand::Quotes(expected)) => {
                 assert_eq!(decoded.request_id, expected.request_id);
-                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.instrument_ids, expected.instrument_ids);
                 assert_eq!(decoded.client_id, expected.client_id);
                 assert_eq!(decoded.ts_init, expected.ts_init);
             }
@@ -3432,8 +3433,7 @@ mod tests {
     }
 
     // `send_response` dispatches through a correlation handler rather than an endpoint
-    // or pub/sub topic. The bus tap must still capture the `DataResponse` envelope and
-    // stamp the inner response category as the payload type.
+    // or pub/sub topic. Capture retains the completion envelope and its typed payload.
     #[rstest]
     fn bus_tap_captures_data_response_sent_through_correlation_handler() {
         let tmp = TempDir::new().expect("tempdir");
@@ -3460,7 +3460,7 @@ mod tests {
         let handler_called_clone = Rc::clone(&handler_called);
         msgbus::register_response_handler(
             &correlation_id,
-            msgbus::ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {
+            TypedHandler::from(move |_resp: &DataResponseEnvelope| {
                 *handler_called_clone.borrow_mut() = true;
             }),
         );
@@ -3486,14 +3486,24 @@ mod tests {
             .scan_seq(2)
             .expect("scan")
             .expect("captured response present");
-        assert_eq!(captured.payload_type.as_str(), "QuotesResponse");
+        assert_eq!(captured.payload_type.as_str(), "DataResponseEnvelope");
         assert_eq!(captured.topic, MessagingSwitchboard::data_response_topic());
 
-        let decoded: QuotesResponse =
-            rmp_serde::from_slice(&captured.payload).expect("decode QuotesResponse");
+        let envelope: crate::capture::builtins::ResponseEnvelopeCapture =
+            rmp_serde::from_slice(&captured.payload).expect("decode response envelope");
+        assert_eq!(envelope.correlation_id, correlation_id);
+        assert!(envelope.completed);
+        assert_eq!(envelope.sub_correlation_id, None);
+        assert_eq!(envelope.failure_reason, None);
+        assert_eq!(
+            envelope.payload_type.as_ref().map(Ustr::as_str),
+            Some("QuotesResponse")
+        );
+        let decoded: QuotesResponse = rmp_serde::from_slice(envelope.payload.as_ref().unwrap())
+            .expect("decode quotes payload");
         assert_eq!(decoded.correlation_id, response.correlation_id);
         assert_eq!(decoded.client_id, response.client_id);
-        assert_eq!(decoded.instrument_id, response.instrument_id);
+        assert_eq!(decoded.instrument_ids, response.instrument_ids);
         assert_eq!(decoded.ts_init, response.ts_init);
         assert!(decoded.data.is_empty());
     }

@@ -3954,6 +3954,7 @@ def add_data_client():
         }
 
         fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+            let bar_type = request.single_bar_type()?;
             self.request_count.fetch_add(1, Ordering::Relaxed);
 
             if get_message_bus()
@@ -3971,8 +3972,8 @@ def add_data_client():
             let response = BarsResponse::new(
                 request.request_id,
                 client_id,
-                request.bar_type,
-                vec![Self::make_bar(request.bar_type)],
+                bar_type,
+                vec![Self::make_bar(bar_type)],
                 None,
                 None,
                 UnixNanos::from(1_700_000_000_000_000_002u64),

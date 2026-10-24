@@ -244,6 +244,17 @@ its schema from the bar aggregation, and `subscribe_data()` from the data type n
 listed. The matching historical requests, `request_quotes()` and `request_trades()`, take the same
 `schema` values and defaults.
 
+`request_instrument()`, `request_quotes()`, and `request_trades()` accept identifier lists. The adapter
+groups identifiers by dataset and preserves successful groups if another group fails. Check
+`on_data_response()` for the completion state and failure reason. Quote and trade requests with
+multiple IDs do not accept a record limit.
+
+Book and bar requests require one list member. A parent-symbol `request_book_deltas()` can return
+several book payloads under the same correlation ID; completion follows the last payload.
+
+Actor and Strategy historical requests include both bounds on `ts_init`. Bar requests select bars
+by close time even when `bars_timestamp_on_close=False`.
+
 :::warning
 The "Available Databento schemas" column lists adapter-supported choices for
 that Nautilus subscription method. The selected dataset must also support the

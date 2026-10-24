@@ -1663,7 +1663,7 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
         expected_end.as_deref()
     );
     assert_eq!(query.get("limit").map(String::as_str), Some("456"));
-    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.instrument_ids, vec![instrument_id]);
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.data[0].price.as_decimal(), expected_price);
     assert_eq!(response.data[0].size.as_decimal(), expected_size);

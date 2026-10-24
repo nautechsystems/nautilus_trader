@@ -27,9 +27,12 @@ use ahash::AHashMap;
 use nautilus_core::UUID4;
 use ustr::Ustr;
 
-use crate::msgbus::{
-    Handler, IntoHandler, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
-    typed_handler::shareable_handler,
+use crate::{
+    messages::data::{DataResponse, DataResponseEnvelope},
+    msgbus::{
+        Handler, IntoHandler, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
+        typed_handler::shareable_handler,
+    },
 };
 
 /// Minimal message payload for message bus tests.
@@ -168,6 +171,40 @@ pub fn get_any_saving_handler<T: Clone + 'static>(
 
 // Type alias for backward compatibility
 pub type MessageSavingHandler<T> = AnySavingHandler<T>;
+
+/// Saves typed payloads from terminal historical envelopes for payload-focused tests.
+#[must_use]
+pub fn get_response_saving_handler<T: Clone + 'static>(
+    id: Option<Ustr>,
+) -> (TypedHandler<DataResponseEnvelope>, AnySavingHandler<T>) {
+    let (payload_handler, saver) = get_any_saving_handler::<T>(id);
+
+    let handler = TypedHandler::from(move |envelope: &DataResponseEnvelope| {
+        if !envelope.completed() {
+            return;
+        }
+
+        let Some(response) = envelope.response() else {
+            return;
+        };
+
+        match response {
+            DataResponse::Data(r) => payload_handler.0.handle(r),
+            DataResponse::Instrument(r) => payload_handler.0.handle(r.as_ref()),
+            DataResponse::Instruments(r) => payload_handler.0.handle(r),
+            DataResponse::Book(r) => payload_handler.0.handle(r),
+            DataResponse::BookDeltas(r) => payload_handler.0.handle(r),
+            DataResponse::BookDepth(r) => payload_handler.0.handle(r),
+            DataResponse::Quotes(r) => payload_handler.0.handle(r),
+            DataResponse::Trades(r) => payload_handler.0.handle(r),
+            DataResponse::FundingRates(r) => payload_handler.0.handle(r),
+            DataResponse::OptionChainReferencePrice(r) => payload_handler.0.handle(r),
+            DataResponse::Bars(r) => payload_handler.0.handle(r),
+        }
+    });
+
+    (handler, saver)
+}
 
 /// Typed handler which saves the messages it receives (no downcast needed).
 #[derive(Debug, Clone)]

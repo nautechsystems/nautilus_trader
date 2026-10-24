@@ -396,7 +396,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_request_instruments_logs_not_implemented_warning() {
+    fn test_request_instruments_returns_unsupported_error() {
         let _guard = start_request_warn_capture();
 
         let client_id = ClientId::new("BACKTEST");
@@ -415,18 +415,11 @@ mod tests {
         );
 
         let result = client.request_instruments(request);
-        let expected = format!(
-            "Handler not implemented: client BACKTEST, command {}",
-            std::any::type_name::<RequestInstruments>()
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Data client BACKTEST does not support RequestInstruments"
         );
-
-        assert!(result.is_ok());
-        assert!(
-            REQUEST_WARN_CAPTURE
-                .messages()
-                .iter()
-                .any(|message| message == &expected),
-        );
+        assert!(REQUEST_WARN_CAPTURE.messages().is_empty());
     }
     #[rstest]
     fn test_option_chain_reference_price_is_unsupported() {

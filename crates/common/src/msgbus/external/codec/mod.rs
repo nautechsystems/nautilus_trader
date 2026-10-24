@@ -109,7 +109,7 @@ where
                 BusPayloadType::RequestCommand => {
                     anyhow::bail!("data request encoding is not supported: {encoding}");
                 }
-                BusPayloadType::DataResponse => {
+                BusPayloadType::DataResponse | BusPayloadType::DataResponseEnvelope => {
                     anyhow::bail!("data response encoding is not supported: {encoding}");
                 }
                 _ => Ok(None),

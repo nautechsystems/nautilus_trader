@@ -286,9 +286,10 @@ Update command readers in both subscribe and unsubscribe hooks:
 Replace scalar `command.instrument_id` and `command.bar_type` readers. The properties are read-only and
 return list copies; mutating a copy does not change the command. Bar lists contain full requested types.
 
-Actor and Strategy calls keep the scalar keyword for both scalar and collection inputs. Historical
-requests, including `RequestBars`, retain scalar inputs. Custom data and venue-wide instrument hooks
-keep their existing command fields.
+Actor and Strategy calls keep the singular keyword for scalar and collection inputs. Historical
+request hooks read `request.instrument_ids` or `request.bar_types`. Their scalar accessors raise
+`ValueError` when the request has multiple members. Custom data and venue-wide instrument hooks keep
+their existing fields.
 
 Compatible direct members reach each hook as one ordered list for both subscribe and unsubscribe.
 For each hook:
@@ -331,8 +332,12 @@ response. Response classes in `nautilus_trader.live` are:
 - **Funding and bars**: `FundingRatesResponse`, `BarsResponse`.
 - **Options**: `OptionChainReferencePriceResponse`.
 
-An **empty response still completes the adapter's response path**. Windowed requests expose UTC `start`/`end`
-datetimes and exact `start_ns`/`end_ns`. Response bounds use integer nanoseconds. `RequestBookSnapshot` and
+Call `_handle_response` only after a successful fetch. An empty response completes the request and,
+with `update_catalog=True`, can record known-empty coverage. If the fetch fails, raise an exception
+instead. Its message becomes the requester-visible `failure_reason`.
+
+Windowed requests expose UTC `start`/`end` datetimes and exact `start_ns`/`end_ns`.
+Response bounds use integer nanoseconds. `RequestBookSnapshot` and
 `RequestOptionChainReferencePrice` have no time-window fields.
 
 ### Instrument providers

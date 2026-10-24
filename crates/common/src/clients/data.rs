@@ -571,9 +571,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the data request fails.
-    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_data(&self, _request: RequestCustomData) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestCustomData",
+            self.client_id()
+        )
     }
 
     /// Requests a list of instruments from the provider for a given venue.
@@ -581,9 +583,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the instruments request fails.
-    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_instruments(&self, _request: RequestInstruments) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestInstruments",
+            self.client_id()
+        )
     }
 
     /// Requests detailed data for a single instrument.
@@ -591,9 +595,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the instrument request fails.
-    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_instrument(&self, _request: RequestInstrument) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestInstrument",
+            self.client_id()
+        )
     }
 
     /// Requests a snapshot of the order book for a specified instrument.
@@ -601,9 +607,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the book snapshot request fails.
-    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_book_snapshot(&self, _request: RequestBookSnapshot) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestBookSnapshot",
+            self.client_id()
+        )
     }
 
     /// Requests historical or streaming quote data for a specified instrument.
@@ -611,9 +619,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the quotes request fails.
-    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_quotes(&self, _request: RequestQuotes) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestQuotes",
+            self.client_id()
+        )
     }
 
     /// Requests historical or streaming trade data for a specified instrument.
@@ -621,9 +631,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the trades request fails.
-    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_trades(&self, _request: RequestTrades) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestTrades",
+            self.client_id()
+        )
     }
 
     /// Requests historical or streaming funding rate data for a specified instrument.
@@ -631,9 +643,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the trades request fails.
-    fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_funding_rates(&self, _request: RequestFundingRates) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestFundingRates",
+            self.client_id()
+        )
     }
 
     /// Requests a reference price for an option-chain bootstrap.
@@ -654,9 +668,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the bars request fails.
-    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_bars(&self, _request: RequestBars) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestBars",
+            self.client_id()
+        )
     }
 
     /// Requests historical order book depth data for a specified instrument.
@@ -664,9 +680,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the order book depths request fails.
-    fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_book_depth(&self, _request: RequestBookDepth) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestBookDepth",
+            self.client_id()
+        )
     }
 
     /// Requests historical order book delta data for a specified instrument.
@@ -674,9 +692,11 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the order book deltas request fails.
-    fn request_book_deltas(&self, request: RequestBookDeltas) -> anyhow::Result<()> {
-        log_not_implemented(self.client_id(), &request);
-        Ok(())
+    fn request_book_deltas(&self, _request: RequestBookDeltas) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Data client {} does not support RequestBookDeltas",
+            self.client_id()
+        )
     }
 
     #[cfg(feature = "defi")]
