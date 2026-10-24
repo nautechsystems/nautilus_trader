@@ -137,6 +137,7 @@ impl DataEngine {
             return Ok(());
         }
 
+        let is_stopped = self.is_stopped;
         let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -145,6 +146,11 @@ impl DataEngine {
             );
             return Ok(());
         };
+
+        if is_stopped {
+            client.retain_existing_defi_intent(cmd);
+            return Ok(());
+        }
 
         #[rustfmt::skip]
         let pool = match &cmd {

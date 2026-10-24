@@ -820,6 +820,122 @@ impl DataClient for ConnectionDataClient {
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_retained_subscriptions_resume_after_connect(
+    #[values(false, true)] direct: bool,
+    #[values(None, Some(false), Some(true))] late_spread: Option<bool>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut engine = DataEngine::new(clock, Rc::clone(&cache), None);
+    let client_id = ClientId::from("CONNECTION");
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let client = ConnectionDataClient {
+        client_id,
+        error_message: None,
+        error_operation: None,
+        barrier: Rc::new(tokio::sync::Barrier::new(1)),
+        connected: false,
+        calls: Rc::clone(&calls),
+    };
+    engine.register_client(
+        DataClientAdapter::new(client_id, None, true, true, Box::new(client)),
+        None,
+    );
+    let instrument_id = InstrumentId::from(if late_spread.is_some() {
+        "(1)ESM4___((1))ESU4.GLBX"
+    } else {
+        "BTCUSDT.BINANCE"
+    });
+    let sub = SubscribeQuotes::new(
+        instrument_id,
+        Some(client_id),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        late_spread.map(|_| params_from_json(json!({"aggregate_spread_quotes": true}))),
+    );
+    engine
+        .execute_subscribe(SubscribeCommand::Quotes(sub.clone()))
+        .unwrap();
+    engine.stop();
+
+    // Preserve ownership while simulating an inactive feed after shutdown
+    engine
+        .get_client(Some(&client_id), None)
+        .unwrap()
+        .subscriptions_quotes
+        .clear();
+    calls.borrow_mut().clear();
+
+    if late_spread.is_some() {
+        let mut spread = futures_spread_es();
+        spread.id = instrument_id;
+        cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::FuturesSpread(spread))
+            .unwrap();
+    }
+
+    let temporary = SubscribeCommand::Quotes(SubscribeQuotes {
+        command_id: UUID4::new(),
+        params: late_spread
+            .map(|aggregate| params_from_json(json!({"aggregate_spread_quotes": aggregate}))),
+        ..sub.clone()
+    });
+
+    if direct {
+        engine.execute_subscribe(temporary.clone()).unwrap();
+    } else {
+        engine.execute(DataCommand::Subscribe(temporary.clone()));
+    }
+
+    let release = temporary.into_unsubscribe(UUID4::new(), UnixNanos::default(), None);
+    engine.execute(DataCommand::Unsubscribe(release));
+    engine.start();
+
+    assert_eq!(*calls.borrow(), vec![(client_id, "start")]);
+    assert!(engine.subscribed_quotes().is_empty());
+
+    engine.connect().await;
+    engine.connect().await;
+
+    assert_eq!(
+        *calls.borrow(),
+        vec![
+            (client_id, "start"),
+            (client_id, "connect"),
+            (client_id, "subscribe"),
+            (client_id, "connect"),
+        ]
+    );
+    assert_eq!(engine.subscribed_quotes(), vec![instrument_id]);
+
+    if late_spread.is_some() {
+        for leg in ["ESM4.GLBX", "ESU4.GLBX"] {
+            let topic = switchboard::get_quotes_topic(InstrumentId::from(leg));
+            assert_eq!(msgbus::exact_subscriber_count_quotes(topic), 0);
+        }
+    }
+
+    let release =
+        SubscribeCommand::Quotes(sub).into_unsubscribe(UUID4::new(), UnixNanos::default(), None);
+    engine.execute(DataCommand::Unsubscribe(release));
+    assert!(engine.subscribed_quotes().is_empty());
+    assert_eq!(calls.borrow().last(), Some(&(client_id, "unsubscribe")));
+
+    calls.borrow_mut().clear();
+    engine.connect().await;
+    engine.connect().await;
+    assert_eq!(
+        *calls.borrow(),
+        vec![(client_id, "connect"), (client_id, "connect")]
+    );
+    assert!(engine.subscribed_quotes().is_empty());
+}
+
+#[rstest]
 #[case(Some("password=SYN-password bearer=SYN-token"))]
 #[case(Some("https://SYN-user:SYN-password@example.invalid/SYN-path?token=SYN-token"))]
 #[case(None)]

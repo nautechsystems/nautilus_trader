@@ -1285,6 +1285,7 @@ fn test_subscribe_continuous_future_bars_external_uses_bar_source(
 
 #[rstest]
 fn test_continuous_future_subscription_transition_swaps_source(
+    #[values(false, true)] stopped: bool,
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -1330,8 +1331,18 @@ fn test_continuous_future_subscription_transition_swaps_source(
         .borrow_mut()
         .advance_time(UnixNanos::from(transition_ns), true);
     let handlers = test_clock.borrow().match_handlers(events);
+
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
     for handler in handlers {
         handler.callback.call(handler.event);
+    }
+
+    if stopped {
+        assert_eq!(recorder.borrow().len(), 2);
+        data_engine.borrow_mut().start();
     }
 
     // Recorder now has unsub(pre) and sub(post)
@@ -1368,6 +1379,7 @@ fn test_continuous_future_subscription_transition_swaps_source(
 
 #[rstest]
 fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
+    #[values(false, true)] stopped: bool,
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
 ) {
@@ -1396,6 +1408,18 @@ fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
         .execute(DataCommand::Subscribe(SubscribeCommand::Bars(sub)));
     assert_eq!(recorder.borrow().len(), 1);
 
+    if stopped {
+        let events = test_clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(10), true);
+        let handlers = test_clock.borrow().match_handlers(events);
+        data_engine.borrow_mut().stop();
+
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+    }
+
     let unsub = UnsubscribeBars::new(
         target_bar_type,
         Some(client_id),
@@ -1408,6 +1432,10 @@ fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
     data_engine
         .borrow_mut()
         .execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(unsub)));
+
+    if stopped {
+        data_engine.borrow_mut().start();
+    }
 
     assert_eq!(recorder.borrow().len(), 2);
 

@@ -158,6 +158,7 @@ fn test_reset_clears_book_and_option_chain_state_and_allows_resubscribe(
 
 #[rstest]
 fn test_external_option_chain_releases_after_final_owner(
+    #[values(false, true)] stopped: bool,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
@@ -198,14 +199,22 @@ fn test_external_option_chain_releases_after_final_owner(
     data_engine.execute(DataCommand::Subscribe(subscribe(
         UUID4::new(),
         "50000",
-        first_params,
+        first_params.clone(),
     )));
+
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(DataCommand::Subscribe(subscribe(
         UUID4::new(),
         "51000",
         second_params.clone(),
     )));
-    assert_eq!(subscribe_saver.get_messages().len(), 2);
+    assert_eq!(
+        subscribe_saver.get_messages().len(),
+        if stopped { 1 } else { 2 }
+    );
 
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
         UnsubscribeOptionChain::new(
@@ -237,11 +246,13 @@ fn test_external_option_chain_releases_after_final_owner(
     assert_eq!(command.client_id, Some(client_id));
     assert_eq!(command.venue, Some(venue));
     assert_eq!(command.ts_init, UnixNanos::from(2));
-    assert_eq!(command.params.as_ref(), Some(&second_params));
+    let expected_params = if stopped { first_params } else { second_params };
+    assert_eq!(command.params.as_ref(), Some(&expected_params));
 }
 
 #[rstest]
 fn test_external_option_chain_edit_moves_owner_to_new_client(
+    #[values(false, true)] stopped: bool,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
     venue: Venue,
@@ -293,6 +304,10 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
         ),
     )));
 
+    if stopped {
+        data_engine.stop();
+    }
+
     let mut edit = SubscribeOptionChain::new(
         series_id,
         StrikeRange::Fixed(vec![Price::from("51000")]),
@@ -318,11 +333,15 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
     assert_eq!(initial_unsubscribe.params.as_ref(), Some(&initial_params));
     let edited_commands = edited_subscribe_saver.get_messages();
 
-    let [SubscribeCommand::OptionChain(edited_subscribe)] = edited_commands.as_slice() else {
-        panic!("expected one subscribe to the new external client, was {edited_commands:?}");
-    };
+    if stopped {
+        assert!(edited_commands.is_empty());
+    } else {
+        let [SubscribeCommand::OptionChain(edited_subscribe)] = edited_commands.as_slice() else {
+            panic!("expected one subscribe to the new external client, was {edited_commands:?}");
+        };
 
-    assert_eq!(edited_subscribe.correlation_id, Some(owner_id));
+        assert_eq!(edited_subscribe.correlation_id, Some(owner_id));
+    }
 
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::OptionChain(
         UnsubscribeOptionChain::new(
@@ -342,7 +361,10 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
     assert_eq!(final_unsubscribe.series_id, series_id);
     assert_eq!(final_unsubscribe.client_id, Some(edited_client_id));
     assert_eq!(final_unsubscribe.ts_init, UnixNanos::from(3));
-    assert_eq!(final_unsubscribe.params.as_ref(), Some(&edited_params));
+    assert_eq!(
+        final_unsubscribe.params.as_ref(),
+        if stopped { None } else { Some(&edited_params) }
+    );
 }
 
 #[rstest]
@@ -621,6 +643,7 @@ fn test_subscribe_option_chain_filters_by_underlying(
 
 #[rstest]
 fn test_option_chain_new_instrument_uses_subscription_client(
+    #[values(false, true)] stopped: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -665,9 +688,20 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     explicit_recorder.borrow_mut().clear();
     routed_recorder.borrow_mut().clear();
 
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
     let put = make_btc_option("50000.000", OptionKind::Put);
     let put_id = put.id();
     data_engine.borrow_mut().process(&put);
+    assert_eq!(cache.borrow().instrument(&put_id), Some(&put));
+
+    if stopped {
+        assert!(explicit_recorder.borrow().is_empty());
+        assert!(routed_recorder.borrow().is_empty());
+        data_engine.borrow_mut().start();
+    }
 
     let recorded = explicit_recorder.borrow();
     assert_eq!(recorded.len(), 3);
@@ -932,6 +966,7 @@ fn test_option_chain_settles_rebalance_before_retirement(
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     #[case] edit: bool,
+    #[values(false, true)] stopped: bool,
 ) {
     let _ = msgbus::get_message_bus();
     let engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
@@ -998,11 +1033,8 @@ fn test_option_chain_settles_rebalance_before_retirement(
                 None,
             ),
         ));
-    engine
-        .borrow_mut()
-        .process_data(Data::OptionGreeks(make_option_chain_greeks(
-            old_id, 51000.0,
-        )));
+    let greeks = make_option_chain_greeks(old_id, 51000.0);
+    engine.borrow_mut().process_data(Data::OptionGreeks(greeks));
     recorder.borrow_mut().clear();
 
     let events = clock
@@ -1016,6 +1048,19 @@ fn test_option_chain_settles_rebalance_before_retirement(
     }
 
     assert!(recorder.borrow().is_empty());
+
+    if stopped {
+        engine.borrow_mut().stop();
+        engine.borrow_mut().process_data(Data::OptionGreeks(greeks));
+        assert!(
+            !recorder
+                .borrow()
+                .iter()
+                .any(|cmd| matches!(cmd, DataCommand::Subscribe(_)))
+        );
+        recorder.borrow_mut().clear();
+        engine.borrow_mut().start();
+    }
 
     if edit {
         engine.borrow_mut().execute(make_subscribe_option_chain(
@@ -1618,6 +1663,8 @@ fn test_subscribe_option_chain_atm_relative_requests_reference_price(
 })]
 fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
     #[case] strike_range: StrikeRange,
+    #[values(false, true)] stopped: bool,
+    #[values(Some(Price::from("50000.000")), None)] price: Option<Price>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1652,7 +1699,7 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
             SubscribeOptionChain::new(
                 series_id,
                 strike_range,
-                None,
+                stopped.then_some(1000),
                 UUID4::new(),
                 UnixNanos::default(),
                 Some(client_id),
@@ -1663,18 +1710,41 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
     let request_id = option_chain_reference_price_request_id(&recorder);
     recorder.borrow_mut().clear();
 
-    data_engine
-        .borrow_mut()
-        .response(DataResponse::OptionChainReferencePrice(
-            OptionChainReferencePriceResponse::new(
-                request_id,
-                client_id,
-                series_id,
-                Some(Price::from("50000.000")),
-                UnixNanos::from(1),
-                None,
-            ),
-        ));
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
+    let respond = |request_id| {
+        data_engine
+            .borrow_mut()
+            .response(DataResponse::OptionChainReferencePrice(
+                OptionChainReferencePriceResponse::new(
+                    request_id,
+                    client_id,
+                    series_id,
+                    price,
+                    UnixNanos::from(1),
+                    None,
+                ),
+            ));
+    };
+    respond(request_id);
+
+    if stopped {
+        assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
+        assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+        assert_eq!(clock.borrow().timer_count(), 0);
+        assert!(recorder.borrow().is_empty());
+
+        data_engine.borrow_mut().start();
+        let resumed_request_id = option_chain_reference_price_request_id(&recorder);
+        assert_ne!(resumed_request_id, request_id);
+        assert_eq!(clock.borrow().timer_count(), 1);
+        respond(request_id);
+        assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
+        assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+        respond(resumed_request_id);
+    }
 
     let quote_subscriptions = recorder
         .borrow()
@@ -1683,8 +1753,8 @@ fn test_option_chain_reference_price_response_bootstraps_dynamic_range(
         .count();
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
     assert!(data_engine.borrow().has_option_chain_manager(&series_id));
-    assert_eq!(clock.borrow().timer_count(), 0);
-    assert_eq!(quote_subscriptions, 6);
+    assert_eq!(clock.borrow().timer_count(), usize::from(stopped));
+    assert_eq!(quote_subscriptions, if price.is_none() { 0 } else { 6 });
 }
 
 #[rstest]
@@ -1720,6 +1790,7 @@ fn test_option_chain_without_sample_bootstraps_from_live_data(
 
 #[rstest]
 fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
+    #[values(false, true)] stopped: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1768,6 +1839,10 @@ fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 1);
     assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
 
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
     data_engine
         .borrow_mut()
         .execute(make_unsubscribe_option_chain(
@@ -1788,6 +1863,9 @@ fn test_unsubscribe_option_chain_cancels_pending_reference_price_request(
             ),
         ));
 
+    recorder.borrow_mut().clear();
+    data_engine.borrow_mut().start();
+    assert!(recorder.borrow().is_empty());
     assert_eq!(data_engine.borrow().pending_option_chain_request_count(), 0);
     assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
     assert_eq!(clock.borrow().timer_count(), 0);
@@ -1994,7 +2072,12 @@ fn test_option_chain_reference_price_timeout_tracks_concurrent_requests(
 }
 
 #[rstest]
+#[case::running(false, false)]
+#[case::restart(true, false)]
+#[case::cancel(true, true)]
 fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
+    #[case] stopped: bool,
+    #[case] cancel: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -2066,11 +2149,34 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
     }));
     recorder.borrow_mut().clear();
 
+    if stopped {
+        data_engine.borrow_mut().stop();
+    }
+
+    let greeks = make_option_chain_greeks(sample_id, 50000.0);
     data_engine
         .borrow_mut()
-        .process_data(Data::OptionGreeks(make_option_chain_greeks(
-            sample_id, 50000.0,
-        )));
+        .process_data(Data::OptionGreeks(greeks));
+    assert_eq!(cache.borrow().option_greeks(&sample_id), Some(&greeks));
+
+    if stopped {
+        assert!(matches!(
+            recorder.borrow().as_slice(),
+            [DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(cmd))]
+                if cmd.instrument_ids == [sample_id]
+        ));
+
+        if cancel {
+            data_engine
+                .borrow_mut()
+                .execute(make_unsubscribe_option_chain(
+                    series_id,
+                    Some(client_id),
+                    Some(venue),
+                ));
+        }
+        data_engine.borrow_mut().start();
+    }
 
     let recorded = recorder.borrow();
     let quote_subscriptions = recorded
@@ -2098,9 +2204,14 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         })
         .collect();
 
-    assert_eq!(quote_subscriptions, 2);
-    assert_eq!(greeks_subscriptions, 2);
+    assert_eq!(quote_subscriptions, if cancel { 0 } else { 2 });
+    assert_eq!(greeks_subscriptions, if cancel { 0 } else { 2 });
     assert_eq!(greeks_unsubscriptions, vec![sample_id]);
+
+    if cancel {
+        assert_eq!(recorded.len(), 1);
+        assert!(!data_engine.borrow().has_option_chain_manager(&series_id));
+    }
 }
 
 #[rstest]

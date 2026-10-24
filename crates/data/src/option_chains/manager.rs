@@ -529,8 +529,8 @@ impl OptionChainManager {
 
     /// Adds a dynamically discovered instrument to this option chain.
     ///
-    /// Registers msgbus handlers and forwards wire-level subscriptions via
-    /// `client` when the instrument falls in the active range.
+    /// Registers msgbus handlers for active instruments and forwards subscriptions via `client`,
+    /// or defers them if no client is supplied.
     /// Returns `true` if the instrument was newly inserted.
     pub fn add_instrument(
         &mut self,
@@ -546,8 +546,13 @@ impl OptionChainManager {
 
         if self.aggregator.active_ids().contains(&instrument_id) {
             self.register_handlers_for_instrument(instrument_id);
-            let venue = self.aggregator.series_id().venue;
-            Self::forward_instrument_subscriptions(client, instrument_id, venue, clock);
+
+            if let Some(client) = client {
+                let venue = self.aggregator.series_id().venue;
+                Self::forward_instrument_subscriptions(Some(client), instrument_id, venue, clock);
+            } else {
+                self.push_subscribe_commands(instrument_id);
+            }
         }
 
         log::info!(

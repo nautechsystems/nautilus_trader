@@ -39,7 +39,10 @@ impl DataEngine {
     /// Returns the count of pending option-chain bootstrap requests.
     #[must_use]
     pub fn pending_option_chain_request_count(&self) -> usize {
-        self.pending_option_chain_requests.len()
+        self.pending_option_chain_requests
+            .values()
+            .filter(|pending| pending.deadline_ns.is_some())
+            .count()
     }
 
     pub(super) fn retain_external_option_chain(
@@ -88,8 +91,17 @@ impl DataEngine {
             }
         }
 
+        if self.is_stopped && !self.subscriptions_external.contains(&current_key) {
+            return;
+        }
+
         self.subscriptions_external
             .retain(current_key.clone(), owner_id, subscribe.clone());
+
+        if self.is_stopped {
+            return;
+        }
+
         self.subscriptions_external
             .get_mut(&current_key)
             .expect("external option chain was retained")
@@ -156,7 +168,11 @@ impl DataEngine {
 
         let clock = Rc::clone(&self.clock);
         let client_id = manager_rc.borrow().client_id();
-        let client = self.get_command_client(client_id.as_ref(), Some(&venue));
+        let client = if self.is_stopped {
+            None
+        } else {
+            self.get_command_client(client_id.as_ref(), Some(&venue))
+        };
 
         if manager_rc
             .borrow_mut()
@@ -225,9 +241,14 @@ impl DataEngine {
             for cmd in commands {
                 match cmd {
                     DeferredCommand::Subscribe(sub) => {
+                        let is_stopped = self.is_stopped;
                         let client = self.get_command_client(sub.client_id(), sub.venue());
                         if let Some(client) = client {
-                            client.execute_subscribe(sub);
+                            if is_stopped {
+                                client.retain_intent(&sub);
+                            } else {
+                                client.execute_subscribe(sub);
+                            }
                         }
                     }
                     DeferredCommand::Unsubscribe(unsub) => {
@@ -346,7 +367,7 @@ impl DataEngine {
                 PendingOptionChainRequest {
                     command: cmd.clone(),
                     sample_instrument_id: instrument_id,
-                    deadline_ns,
+                    deadline_ns: Some(deadline_ns),
                 },
             );
 
@@ -375,7 +396,7 @@ impl DataEngine {
         let Some(deadline_ns) = self
             .pending_option_chain_requests
             .values()
-            .map(|pending| pending.deadline_ns)
+            .filter_map(|pending| pending.deadline_ns)
             .min()
         else {
             self.clock
@@ -429,13 +450,48 @@ impl DataEngine {
         self.clock
             .borrow_mut()
             .cancel_timer(OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT_TIMER);
-        let mut pending: Vec<PendingOptionChainRequest> =
-            mem::take(&mut self.pending_option_chain_requests)
-                .into_values()
-                .collect();
+        let mut pending: Vec<PendingOptionChainRequest> = self
+            .pending_option_chain_requests
+            .extract_if(|_, pending| pending.deadline_ns.is_some())
+            .map(|(_, pending)| pending)
+            .collect();
         pending.sort_unstable_by_key(|pending| pending.command.series_id);
         for pending in pending {
             self.create_option_chain_manager_with_greeks_bootstrap(pending);
+        }
+    }
+
+    pub(super) fn suspend_option_chain_requests(&mut self) {
+        for pending in self.pending_option_chain_requests.values_mut() {
+            pending.deadline_ns = None;
+        }
+
+        self.maintain_option_chain_reference_price_timeout();
+    }
+
+    pub(super) fn resume_option_chain_requests(&mut self) {
+        if self.is_stopped {
+            return;
+        }
+
+        let pending: Vec<_> = self
+            .pending_option_chain_requests
+            .extract_if(|_, pending| pending.deadline_ns.is_none())
+            .collect();
+
+        for (request_id, pending) in pending {
+            if self
+                .get_client(
+                    pending.command.client_id.as_ref(),
+                    Some(&pending.command.series_id.venue),
+                )
+                .is_some_and(|client| client.is_connected())
+            {
+                self.subscribe_option_chain(&pending.command);
+            } else {
+                self.pending_option_chain_requests
+                    .insert(request_id, pending);
+            }
         }
     }
 
@@ -468,7 +524,10 @@ impl DataEngine {
             .pending_option_chain_requests
             .iter()
             .filter_map(|(request_id, pending)| {
-                (pending.deadline_ns <= now_ns).then_some((pending.command.series_id, *request_id))
+                pending
+                    .deadline_ns
+                    .is_some_and(|deadline_ns| deadline_ns <= now_ns)
+                    .then_some((pending.command.series_id, *request_id))
             })
             .collect();
 
@@ -720,7 +779,11 @@ impl DataEngine {
         correlation_id: &UUID4,
         resp: &OptionChainReferencePriceResponse,
     ) {
-        let Some(pending) = self.pending_option_chain_requests.get(correlation_id) else {
+        let Some(pending) = self
+            .pending_option_chain_requests
+            .get(correlation_id)
+            .filter(|pending| pending.deadline_ns.is_some())
+        else {
             log::debug!(
                 "No pending option chain request for correlation_id={correlation_id}, ignoring"
             );
@@ -784,7 +847,8 @@ impl OptionChainBootstrapper {
 pub(super) struct PendingOptionChainRequest {
     command: SubscribeOptionChain,
     sample_instrument_id: InstrumentId,
-    deadline_ns: UnixNanos,
+    // Suspended subscriptions retain intent without an active request or timeout
+    deadline_ns: Option<UnixNanos>,
 }
 
 #[derive(Debug)]

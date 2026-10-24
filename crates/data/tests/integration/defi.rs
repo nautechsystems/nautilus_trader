@@ -49,10 +49,18 @@ use crate::common::{defi::make_initialized_pool_and_swap, mocks::MockDataClient}
 #[rstest]
 #[case::first_subscriber_retires_first(0)]
 #[case::second_subscriber_retires_first(1)]
-fn test_shared_pool_demand_survives_until_final_owner_retires(#[case] first: usize) {
+fn test_shared_pool_demand_survives_until_final_owner_retires(
+    #[case] first: usize,
+    #[values(false, true)] stopped: bool,
+) {
     let mut fixture = DefiFixture::new(true);
     let client_id = fixture.client_ids[0];
     fixture.subscribe(0, PoolShape::Swaps, client_id);
+
+    if stopped {
+        fixture.engine.borrow_mut().stop();
+    }
+
     fixture.subscribe(1, PoolShape::Swaps, client_id);
 
     fixture.actors[first].dispose().unwrap();

@@ -466,6 +466,7 @@ fn test_unsubscribe_spread_quotes_removes_leg_handlers(
 
 #[rstest]
 fn test_spread_quotes_release_after_final_owner_with_first_route(
+    #[values(false, true)] stopped: bool,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -494,20 +495,24 @@ fn test_spread_quotes_release_after_final_owner_with_first_route(
     second_params.insert("owner".to_string(), serde_json::json!(2));
     let second_params = Params::new(second_params);
 
-    for params in [first_params.clone(), second_params.clone()] {
-        data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Quotes(
-            SubscribeQuotes::new(
-                spread_id,
-                Some(client_id),
-                Some(venue),
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                Some(params),
-            ),
-        )));
+    let subscribe = |params| {
+        DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
+            spread_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params),
+        )))
+    };
+    data_engine.execute(subscribe(first_params.clone()));
+
+    if stopped {
+        data_engine.stop();
     }
 
+    data_engine.execute(subscribe(second_params.clone()));
     assert_eq!(recorder.borrow().len(), 2);
 
     let unsubscribe = |params| {
@@ -558,6 +563,17 @@ fn test_spread_quotes_release_after_final_owner_with_first_route(
         msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_b)),
         0,
     );
+    drop(recorded);
+
+    if stopped {
+        data_engine.execute(subscribe(first_params));
+        data_engine.start();
+        assert_eq!(recorder.borrow().len(), 4);
+        assert_eq!(
+            msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(leg_a)),
+            0,
+        );
+    }
 }
 
 #[rstest]

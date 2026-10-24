@@ -111,6 +111,7 @@ fn test_unsubscribe_depth_keeps_deltas_book_updater(
 
 #[rstest]
 fn test_book_depth_releases_after_final_route_owner(
+    #[values(false, true)] stopped: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
@@ -131,7 +132,11 @@ fn test_book_depth_releases_after_final_route_owner(
     );
     let depth_topic = switchboard::get_book_depth_topic(audusd_sim.id);
 
-    for _ in 0..2 {
+    for index in 0..2 {
+        if stopped && index == 1 {
+            data_engine.stop();
+        }
+
         data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDepth(
             SubscribeBookDepth::new(
                 audusd_sim.id,
@@ -1071,6 +1076,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
 
 #[rstest]
 fn test_shared_book_snapshot_retries_source_after_client_failure(
+    #[values(false, true)] stopped: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
@@ -1112,10 +1118,28 @@ fn test_shared_book_snapshot_retries_source_after_client_failure(
     )));
     assert!(recorder.borrow().is_empty());
 
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(DataCommand::Subscribe(subscribe(
         UUID4::new(),
         UnixNanos::from(2),
     )));
+
+    if stopped {
+        assert!(recorder.borrow().is_empty());
+        data_engine.start();
+        let temporary = subscribe(UUID4::new(), UnixNanos::from(2));
+        data_engine.execute(DataCommand::Subscribe(temporary.clone()));
+        data_engine
+            .execute_unsubscribe(&temporary.into_unsubscribe(
+                UUID4::new(),
+                UnixNanos::from(2),
+                None,
+            ))
+            .unwrap();
+    }
 
     let recorded = recorder.borrow();
     assert_eq!(recorded.len(), 1);
@@ -2199,6 +2223,7 @@ fn test_parent_book_owner_keeps_original_targets(
 
 #[rstest]
 fn test_book_unsubscribe_without_correlation_releases_first_owner(
+    #[values(false, true)] stopped: bool,
     managed_book_engine: Rc<RefCell<DataEngine>>,
     audusd_sim: CurrencyPair,
     client_id: ClientId,
@@ -2207,6 +2232,11 @@ fn test_book_unsubscribe_without_correlation_releases_first_owner(
     let unmanaged = book_source_command(audusd_sim.id, client_id, false, false);
     let managed = book_source_command(audusd_sim.id, client_id, false, true);
     engine.execute_subscribe(unmanaged.clone()).unwrap();
+
+    if stopped {
+        engine.stop();
+    }
+
     engine.execute_subscribe(managed.clone()).unwrap();
 
     engine

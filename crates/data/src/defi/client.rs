@@ -46,15 +46,7 @@ impl DataClientAdapter {
         cmd: DefiSubscribeCommand,
         retain_on_failure: bool,
     ) {
-        #[rustfmt::skip]
-        let key = match &cmd {
-            DefiSubscribeCommand::Blocks(command) => DefiSubscriptionKey::Blocks(command.chain),
-            DefiSubscribeCommand::Pool(command) => DefiSubscriptionKey::Pool(command.instrument_id),
-            DefiSubscribeCommand::PoolSwaps(command) => DefiSubscriptionKey::PoolSwaps(command.instrument_id),
-            DefiSubscribeCommand::PoolLiquidityUpdates(command) => DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id),
-            DefiSubscribeCommand::PoolFeeCollects(command) => DefiSubscriptionKey::PoolFeeCollects(command.instrument_id),
-            DefiSubscribeCommand::PoolFlashEvents(command) => DefiSubscriptionKey::PoolFlashEvents(command.instrument_id),
-        };
+        let key = defi_subscription_key(&cmd);
         #[rustfmt::skip]
         let active = match &key {
             DefiSubscriptionKey::Blocks(chain) => self.subscriptions_blocks.contains(chain),
@@ -106,6 +98,15 @@ impl DataClientAdapter {
         }
         self.subscriptions_active_defi
             .retain(key, retained.command_id(), retained);
+    }
+
+    pub(crate) fn retain_existing_defi_intent(&mut self, cmd: DefiSubscribeCommand) {
+        let key = defi_subscription_key(&cmd);
+
+        if self.subscriptions_active_defi.contains(&key) {
+            self.subscriptions_active_defi
+                .retain(key, cmd.command_id(), cmd);
+        }
     }
 
     #[inline]
@@ -379,5 +380,17 @@ impl DataClientAdapter {
     /// Returns an error if the client fails to process the pool snapshot request.
     pub fn request_pool_snapshot(&self, req: RequestPoolSnapshot) -> anyhow::Result<()> {
         self.client.request_pool_snapshot(req)
+    }
+}
+
+#[rustfmt::skip]
+fn defi_subscription_key(cmd: &DefiSubscribeCommand) -> DefiSubscriptionKey {
+    match cmd {
+        DefiSubscribeCommand::Blocks(command) => DefiSubscriptionKey::Blocks(command.chain),
+        DefiSubscribeCommand::Pool(command) => DefiSubscriptionKey::Pool(command.instrument_id),
+        DefiSubscribeCommand::PoolSwaps(command) => DefiSubscriptionKey::PoolSwaps(command.instrument_id),
+        DefiSubscribeCommand::PoolLiquidityUpdates(command) => DefiSubscriptionKey::PoolLiquidityUpdates(command.instrument_id),
+        DefiSubscribeCommand::PoolFeeCollects(command) => DefiSubscriptionKey::PoolFeeCollects(command.instrument_id),
+        DefiSubscribeCommand::PoolFlashEvents(command) => DefiSubscriptionKey::PoolFlashEvents(command.instrument_id),
     }
 }

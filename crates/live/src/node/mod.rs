@@ -8936,6 +8936,43 @@ mod tests {
         node.dispose();
     }
 
+    #[tokio::test]
+    async fn test_final_drain_skips_subscribe_commands() {
+        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
+        node.finalize_stop().await.unwrap();
+
+        let sender = nautilus_common::runner::get_data_cmd_sender();
+        DispatchMessage::from(()).dispatch(|()| sender.execute(stub_data_command()));
+        get_data_event_sender().send(stub_data_event()).unwrap();
+        assert_eq!(actor::clear_callbacks(), Err(CallbackDispatchError::Active));
+
+        node.drain_runner_pending();
+
+        assert_eq!(node.kernel.data_engine().command_count(), 0);
+        assert_eq!(node.kernel.data_engine().data_count(), 1);
+        actor::clear_callbacks().unwrap();
+
+        let DataCommand::Subscribe(command) = stub_data_command() else {
+            unreachable!();
+        };
+        sender.execute(DataCommand::Unsubscribe(command.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        )));
+        node.drain_runner_pending();
+        assert_eq!(node.kernel.data_engine().command_count(), 1);
+
+        let mut engine = node.kernel.data_engine.borrow_mut();
+        engine.start();
+        engine.execute(stub_data_command());
+        assert_eq!(engine.command_count(), 2);
+        engine.stop();
+        engine.reset();
+        engine.execute(stub_data_command());
+        assert_eq!(engine.command_count(), 1);
+    }
+
     #[rstest]
     #[tokio::test]
     async fn test_start_event_store_replay_skips_live_connections() {

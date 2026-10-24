@@ -178,6 +178,7 @@ pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     config: DataEngineConfig,
+    pub(crate) is_stopped: bool,
     msgbus_priority: u32,
     subscriptions_external: SubscriptionRegistry<(ClientId, SubscriptionKey), SubscribeCommand>,
     clients: IndexMap<ClientId, DataClientAdapter>,
@@ -254,6 +255,7 @@ impl DataEngine {
             clock,
             cache,
             config,
+            is_stopped: false,
             msgbus_priority: 10, // High-priority for built-in component
             subscriptions_external: SubscriptionRegistry::default(),
             clients: IndexMap::new(),
@@ -456,11 +458,28 @@ impl DataEngine {
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
     pub fn start(&mut self) {
+        let was_stopped = self.is_stopped;
+
+        if was_stopped {
+            self.drain_deferred_commands();
+        }
+
+        self.is_stopped = false;
+        let mut resumed_clients = Vec::new();
+
         for client in self.get_clients_mut() {
             if client.start().is_err() {
                 log::error!("Failed to start data client {}", client.client_id());
+            } else if was_stopped && client.is_connected() {
+                resumed_clients.push(client.client_id());
             }
         }
+
+        for client_id in resumed_clients {
+            self.resume_retained_subscriptions(client_id);
+        }
+
+        self.resume_option_chain_requests();
 
         for ((_, request_id), aggregator) in &self.bar_aggregators {
             // Request-scoped or historical aggregators run on private clocks;
@@ -483,6 +502,9 @@ impl DataEngine {
 
     /// Stops all registered data clients and bar aggregator timers.
     pub fn stop(&mut self) {
+        self.is_stopped = true;
+        self.suspend_option_chain_requests();
+
         for client in self.get_clients_mut() {
             if client.stop().is_err() {
                 log::error!("Failed to stop data client {}", client.client_id());
@@ -500,6 +522,8 @@ impl DataEngine {
 
     /// Resets all registered data clients and clears engine state.
     pub fn reset(&mut self) {
+        self.is_stopped = false;
+
         for client in self.get_clients_mut() {
             match client.reset() {
                 Ok(()) => client.clear_subscription_state(),
@@ -657,8 +681,12 @@ impl DataEngine {
         for (client_id, result) in results {
             if result.is_err() {
                 log::error!("Failed to connect data client {client_id}: connection failed");
+            } else {
+                self.resume_retained_subscriptions(client_id);
             }
         }
+
+        self.resume_option_chain_requests();
     }
 
     /// Disconnects all registered data clients concurrently.
@@ -790,11 +818,15 @@ impl DataEngine {
     ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: DataCommand) {
+        // Stopped client subscriptions retain ownership without being counted as executed
         match &cmd {
+            DataCommand::Subscribe(_) if self.is_stopped => {}
             DataCommand::Subscribe(_) | DataCommand::Unsubscribe(_) => self.command_count += 1,
             DataCommand::Request(_) => self.request_count += 1,
             #[cfg(feature = "defi")]
             DataCommand::DefiRequest(_) => self.request_count += 1,
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(_) if self.is_stopped => {}
             #[cfg(feature = "defi")]
             DataCommand::DefiSubscribe(_) | DataCommand::DefiUnsubscribe(_) => {
                 self.command_count += 1;
@@ -883,34 +915,102 @@ impl DataEngine {
 
         self.retain_intent(&cmd)?;
 
+        if self.is_stopped {
+            return Ok(());
+        }
+
         let retained = cmd.clone();
         let (groups, result) = self.prepare_subscribe_groups(cmd);
         self.dispatch_subscribe_groups(&retained, groups);
         result
     }
 
+    fn resume_retained_subscriptions(&mut self, client_id: ClientId) {
+        if self.is_stopped {
+            return;
+        }
+
+        let Some(client) = self.clients.get(&client_id) else {
+            return;
+        };
+        let commands = client.inactive_retained_subscriptions();
+
+        // Retained entries already own a client feed; preserve that route during replay
+        for command in commands {
+            #[cfg(feature = "streaming")]
+            let prepared = self.subscribe_command_with_prefilled_start_ns(command.clone());
+            #[cfg(not(feature = "streaming"))]
+            let prepared: anyhow::Result<_> = Ok(command.clone());
+
+            match prepared {
+                Ok(prepared) => {
+                    if let Some(client) = self.clients.get_mut(&client_id) {
+                        client.execute_subscribe_with_retained(prepared, command, true);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to prepare retained subscription for {client_id}: {e}");
+                }
+            }
+        }
+    }
+
     fn retain_intent(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
+        let is_stopped = self.is_stopped;
         let retain_intent = match cmd {
+            SubscribeCommand::Quotes(command) if is_stopped => !self.subscribe_quotes(command)?,
             SubscribeCommand::Quotes(command) => {
                 self.quote_routing(&command.instrument_ids, command.params.as_ref())?
                     == QuoteRouting::Client
             }
+            SubscribeCommand::Trades(command) if is_stopped => !self.subscribe_trades(command),
             SubscribeCommand::Trades(command) => !command.instrument_ids[0].is_synthetic(),
-            _ => false,
+            SubscribeCommand::BookDeltas(_)
+            | SubscribeCommand::BookDepth(_)
+            | SubscribeCommand::BookSnapshots(_)
+                if is_stopped =>
+            {
+                self.prepare_subscribe_groups(cmd.clone()).1?;
+                false
+            }
+            SubscribeCommand::BookDeltas(_)
+            | SubscribeCommand::BookDepth(_)
+            | SubscribeCommand::BookSnapshots(_)
+            | SubscribeCommand::OptionChain(_) => false,
+            SubscribeCommand::Instrument(_)
+            | SubscribeCommand::InstrumentStatus(_)
+            | SubscribeCommand::InstrumentClose(_)
+            | SubscribeCommand::OptionGreeks(_)
+                if cmd
+                    .instrument_ids()
+                    .is_some_and(|ids| ids.iter().any(InstrumentId::is_synthetic)) =>
+            {
+                false
+            }
+            _ => is_stopped,
         };
 
         if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
             if let SubscribeCommand::Bars(command) = cmd {
+                let continuous_future = has_continuous_future_params(command.params.as_ref());
                 let external: Vec<_> = command
                     .bar_types
                     .iter()
                     .copied()
-                    .filter(BarType::is_externally_aggregated)
+                    .filter(|bar_type| {
+                        bar_type.is_externally_aggregated()
+                            && !bar_type.instrument_id().is_synthetic()
+                    })
                     .collect();
 
                 if !external.is_empty() {
                     let intent = SubscribeCommand::Bars(command.with_bar_types(external));
-                    client.retain_intent(&intent);
+
+                    for member in split_subscribe(intent) {
+                        if !continuous_future || client.has_retained_subscription(&member) {
+                            client.retain_intent(&member);
+                        }
+                    }
                 }
             } else if retain_intent {
                 client.retain_intent(cmd);
@@ -1305,6 +1405,24 @@ impl DataEngine {
     }
 
     fn subscribe_external(&mut self, client_id: ClientId, cmd: &SubscribeCommand) {
+        if self.is_stopped {
+            if let SubscribeCommand::OptionChain(command) = cmd {
+                self.retain_external_option_chain(client_id, command, cmd);
+                return;
+            }
+
+            for member in split_subscribe(cmd.clone()) {
+                let key = (client_id, SubscriptionKey::from_subscribe(&member));
+
+                if self.subscriptions_external.contains(&key) {
+                    self.subscriptions_external
+                        .retain(key, member.command_id(), member);
+                }
+            }
+
+            return;
+        }
+
         let dispatch = match cmd {
             SubscribeCommand::OptionChain(command) => {
                 self.retain_external_option_chain(client_id, command, cmd);
@@ -1417,6 +1535,16 @@ impl DataEngine {
                 for id in &cmd.instrument_ids {
                     let member = cmd.with_instrument_ids(*id);
                     self.subscribe_spread_quotes(&member);
+                    let command = SubscribeCommand::Quotes(member);
+
+                    // Balance native cleanup when no aggregate was acquired
+                    if !self.spread_quote_states.contains_key(id)
+                        && let Some(client) =
+                            self.get_command_client(command.client_id(), command.venue())
+                        && client.has_retained_subscription(&command)
+                    {
+                        client.retain_intent(&command);
+                    }
                 }
 
                 Ok(true)

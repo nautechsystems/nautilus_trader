@@ -269,6 +269,23 @@ impl DataClientAdapter {
         }
     }
 
+    #[must_use]
+    pub(crate) fn has_retained_subscription(&self, command: &SubscribeCommand) -> bool {
+        self.subscriptions_active
+            .contains(&SubscriptionKey::from_subscribe(command))
+    }
+
+    /// Returns retained subscriptions that have no active physical feed.
+    pub(crate) fn inactive_retained_subscriptions(&self) -> Vec<SubscribeCommand> {
+        self.subscriptions_active
+            .iter()
+            .filter(|(_, active)| {
+                active.owners > 0 && !self.has_active_subscription(&active.command)
+            })
+            .map(|(_, active)| active.command.clone())
+            .collect()
+    }
+
     fn subscribe_retained(
         &mut self,
         cmd: SubscribeCommand,
