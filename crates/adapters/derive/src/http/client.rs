@@ -47,7 +47,8 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::{
-            HEADER_DERIVE_SIGNATURE, HEADER_DERIVE_TIMESTAMP, HEADER_DERIVE_WALLET, HTTP_TIMEOUT,
+            HEADER_DERIVE_SIGNATURE, HEADER_DERIVE_TIMESTAMP, HEADER_DERIVE_WALLET,
+            HTTP_MAX_RETRIES, HTTP_RETRY_DELAY_INITIAL_MS, HTTP_RETRY_DELAY_MAX_MS, HTTP_TIMEOUT,
         },
         enums::DeriveInstrumentType,
         rate_limit::{self, DeriveRateLimiter},
@@ -132,7 +133,8 @@ pub struct DeriveHttpClient {
 impl DeriveHttpClient {
     /// Creates a public-only client.
     ///
-    /// `retry_config` defaults to [`http_retry_config(3, 100, 5_000)`] when `None`.
+    /// When `retry_config` is `None`, uses [`HTTP_MAX_RETRIES`],
+    /// [`HTTP_RETRY_DELAY_INITIAL_MS`], and [`HTTP_RETRY_DELAY_MAX_MS`].
     ///
     /// # Errors
     ///
@@ -147,7 +149,15 @@ impl DeriveHttpClient {
         let client = build_client(timeout_secs, proxy_url)?;
         let base_url = trim_trailing_slash(base_url.into());
         let rate_limiter = Arc::new(DeriveRateLimiter::shared(&base_url, None, None, None));
-        let retry_config = retry_config.unwrap_or_else(|| http_retry_config(3, 100, 5_000));
+
+        let retry_config = retry_config.unwrap_or_else(|| {
+            http_retry_config(
+                HTTP_MAX_RETRIES,
+                HTTP_RETRY_DELAY_INITIAL_MS,
+                HTTP_RETRY_DELAY_MAX_MS,
+            )
+        });
+
         Ok(Self {
             client,
             base_url,

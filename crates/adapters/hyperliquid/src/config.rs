@@ -249,6 +249,10 @@ pub struct HyperliquidExecutionClientConfig {
     /// can emit closing fills for markets that are still trading.
     #[builder(default = 0)]
     pub outcome_settlement_poll_secs: u64,
+    /// Account-wide scheduled-cancel timeout in seconds, at least 15 when set.
+    /// Refreshes every third of the timeout while the execution WebSocket is active.
+    /// `None` leaves the venue schedule unchanged. Shutdown stops refreshing without clearing it.
+    pub scheduled_cancel_timeout_secs: Option<u64>,
 }
 
 #[cfg(feature = "python")]
@@ -269,6 +273,7 @@ nautilus_core::impl_pyo3_config_getters!(HyperliquidExecutionClientConfig {
     include_builder_attribution: bool,
     ws_post_timeout_secs: u64,
     transport_backend: TransportBackend,
+    scheduled_cancel_timeout_secs: Option<u64>,
 });
 
 impl Default for HyperliquidExecutionClientConfig {
@@ -278,6 +283,18 @@ impl Default for HyperliquidExecutionClientConfig {
 }
 
 impl HyperliquidExecutionClientConfig {
+    pub(crate) fn validate(&self) -> anyhow::Result<()> {
+        if let Some(timeout_secs) = self.scheduled_cancel_timeout_secs
+            && (timeout_secs < 15 || timeout_secs.checked_mul(1_000).is_none())
+        {
+            anyhow::bail!(
+                "scheduled_cancel_timeout_secs must be at least 15 and fit in milliseconds"
+            );
+        }
+
+        Ok(())
+    }
+
     /// Returns `true` when private key is populated and non-empty.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
@@ -309,6 +326,40 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::disabled(None, true)]
+    #[case::zero(Some(0), false)]
+    #[case::too_short(Some(14), false)]
+    #[case::minimum(Some(15), true)]
+    #[case::normal(Some(60), true)]
+    #[case::overflow(Some(u64::MAX), false)]
+    fn test_exec_config_scheduled_cancel(#[case] timeout_secs: Option<u64>, #[case] valid: bool) {
+        let config = HyperliquidExecutionClientConfig {
+            scheduled_cancel_timeout_secs: timeout_secs,
+            ..Default::default()
+        };
+
+        let decoded: HyperliquidExecutionClientConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        let result = config.validate();
+
+        assert_eq!(decoded.scheduled_cancel_timeout_secs, timeout_secs);
+        assert_eq!(result.is_ok(), valid);
+
+        if !valid {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "scheduled_cancel_timeout_secs must be at least 15 and fit in milliseconds"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_exec_config_scheduled_cancel_default() {
+        let config = HyperliquidExecutionClientConfig::default();
+        assert_eq!(config.scheduled_cancel_timeout_secs, None);
+    }
 
     #[rstest]
     fn test_exec_config_default_account_address_is_none() {

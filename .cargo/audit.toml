@@ -38,4 +38,9 @@ ignore = [
   "RUSTSEC-2026-0195",
   # faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller
   "RUSTSEC-2026-0306",
+
+  # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
+  # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
+  # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
+  "RUSTSEC-2026-0387",
 ]

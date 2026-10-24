@@ -867,9 +867,8 @@ resting `GTC` or post-only limit with `reduce_only` is denied locally before sub
 Direct venue submissions fail with `11024 Reduce only not supported with this time in force`.
 
 :::warning
-A Nautilus bracket whose take-profit leg is a reduce-only `GTC` limit cannot rest on Derive:
-the entry and stop-loss legs submit, but the adapter denies the take-profit locally. Use a reduce-only
-`IOC`/`FOK` close or a non-reduce-only take-profit when targeting Derive.
+If a bracket submitted as an order list contains a reduce-only `GTC` take-profit limit,
+the adapter denies the entire list locally before submitting any leg.
 :::
 
 #### Order rejection semantics
@@ -1201,7 +1200,7 @@ Class/struct: `DeriveDataClientConfig`.
 | `currencies`                       | `[]`      | Currencies to bulk-load on connect. Empty means lazy-load on demand.                        |
 | `include_expired`                  | `false`   | Merge live and expired option listings from `public/get_all_instruments`.                   |
 | `auto_load_missing_instruments`    | `true`    | Lazy-load an unknown instrument before sending a subscribe request.                         |
-| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
 
 :::important
 **`auto_load_missing_instruments` covers subscribe commands only.** Before requesting quotes,
@@ -1236,13 +1235,13 @@ Class/struct: `DeriveExecutionClientConfig`.
 | `environment`            | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                        |
 | `http_timeout_secs`      | `10`      | REST request timeout in seconds.                                                            |
 | `ws_timeout_secs`        | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
-| `transport_backend`      | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
+| `transport_backend`      | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
 | `max_retries`            | `3`       | Retry attempts for idempotent REST reads. Order writes are sent once and never replayed.    |
 | `retry_delay_initial_ms` | `100`     | Initial retry delay in milliseconds.                                                        |
 | `retry_delay_max_ms`     | `5,000`   | Maximum backoff delay in milliseconds.                                                      |
 
-The default transport falls back to `Tungstenite` when the build disables the
-`transport-sockudo` feature.
+The adapter always enables `nautilus-network/transport-sockudo`. Set `transport_backend`
+to `Tungstenite` to select the alternative backend.
 
 For HTTP reads, `Retry-After` sets a minimum delay that can exceed `retry_delay_max_ms`.
 If that delay does not fit within the remaining 180-second retry budget, the client returns the

@@ -17,6 +17,10 @@ Derive offers European-style options, perpetual swaps, and spot markets. The v3 
 the owner's EOA or multisig through a session-key signer. Orders match off-chain, and operations
 are batched for settlement on Ethereum while users retain custody.
 
+Order quantities must use base units. The adapter denies quote-denominated quantities before
+submission, including conditional orders and every leg of an affected order list. Public payload
+converters also reject quote-denominated quantities.
+
 ## NautilusTrader
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native

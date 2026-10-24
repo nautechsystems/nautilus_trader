@@ -156,6 +156,7 @@ impl DataSubscriptions {
         }
 
         self.book_sync.remove(instrument_id);
+        self.book_integrity.lock().remove(&instrument_id);
         if is_watchlisted_instrument(&self.watchlist, instrument_id)
             || (!self.active_instrument_status_subs.contains(&instrument_id)
                 && !self.active_instrument_close_subs.contains(&instrument_id))
@@ -599,6 +600,19 @@ mod tests {
             &subscriptions.ws_open_tokens,
         );
 
+        subscriptions
+            .book_integrity
+            .lock()
+            .entry(instrument_id)
+            .or_default();
+        let retained_id = InstrumentId::from("0xACTIVE-0xTOKEN_ACTIVE.POLYMARKET");
+        subscriptions.active_delta_subs.insert(retained_id);
+        subscriptions
+            .book_integrity
+            .lock()
+            .entry(retained_id)
+            .or_default();
+
         let now_ns = get_atomic_clock_realtime().get_time_ns();
         subscriptions.retire_expired(now_ns).await;
 
@@ -639,6 +653,15 @@ mod tests {
         assert!(!subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(!subscriptions.active_trade_subs.contains(&instrument_id));
         assert!(!subscriptions.book_sync.book_gated(instrument_id));
+        assert_eq!(
+            subscriptions
+                .book_integrity
+                .lock()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![retained_id],
+        );
         assert!(subscriptions.pending_auto_loads.lock().is_empty());
         assert!(!subscriptions.ws_open_tokens.contains(&token_id));
     }

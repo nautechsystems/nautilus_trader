@@ -481,7 +481,7 @@ def test_venue_config_optional_params() -> None:
     latency_model = StaticLatencyModel(base_latency_nanos=1_000)
     margin_model = StandardMarginModel()
     module = FXRolloverInterestModule(
-        records=[InterestRateRecord(location="USD", time="17:00", value=0.01)],
+        records=[InterestRateRecord(location="USD", time="17:00", value=Decimal("0.01"))],
     )
     config = BacktestVenueConfig(
         name="BINANCE",

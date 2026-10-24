@@ -24,7 +24,11 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    common::{enums::DeriveEnvironment, urls},
+    common::{
+        consts::{HTTP_MAX_RETRIES, HTTP_RETRY_DELAY_INITIAL_MS, HTTP_RETRY_DELAY_MAX_MS},
+        enums::DeriveEnvironment,
+        urls,
+    },
     providers::normalize_currency,
 };
 
@@ -77,7 +81,7 @@ pub struct DeriveDataClientConfig {
     /// WebSocket request.
     #[builder(default = true)]
     pub auto_load_missing_instruments: bool,
-    /// WebSocket transport backend (defaults to `Sockudo` when that feature is enabled).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
@@ -183,13 +187,13 @@ pub struct DeriveExecutionClientConfig {
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for HTTP requests.
-    #[builder(default = 3)]
+    #[builder(default = HTTP_MAX_RETRIES)]
     pub max_retries: u32,
     /// Initial retry delay in milliseconds.
-    #[builder(default = 100)]
+    #[builder(default = HTTP_RETRY_DELAY_INITIAL_MS)]
     pub retry_delay_initial_ms: u64,
     /// Maximum retry delay in milliseconds.
-    #[builder(default = 5000)]
+    #[builder(default = HTTP_RETRY_DELAY_MAX_MS)]
     pub retry_delay_max_ms: u64,
     /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
     /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
@@ -197,7 +201,7 @@ pub struct DeriveExecutionClientConfig {
     /// Per-contract USDC fee cap signed into every order. Required for
     /// execution and must be greater than zero.
     pub max_fee_per_contract: Option<Decimal>,
-    /// WebSocket transport backend (defaults to `Sockudo` when that feature is enabled).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
     /// Override for the EIP-712 domain separator. Falls back to the shipped

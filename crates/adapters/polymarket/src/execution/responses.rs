@@ -2999,7 +2999,7 @@ mod tests {
         assert_eq!(scoped_reports.len(), 1);
         assert_eq!(scoped_reports[0].venue_order_id, scoped_venue_order_id);
         assert_eq!(scoped_reports[0].instrument_id, instrument_id);
-        assert_eq!(scoped_reports[0].last_qty.as_decimal(), Decimal::from(25));
+        assert_eq!(scoped_reports[0].last_qty.as_decimal(), Decimal::from(20));
         assert_eq!(
             scoped_discards,
             crate::execution::reconciliation::FillBuildDiscards::default()

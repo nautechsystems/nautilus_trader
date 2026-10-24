@@ -896,11 +896,13 @@ neither spot borrowing nor collateral-mode changes; the spot-margin row describe
 | --------------------------- | ------- | ------------------------------------------------------------- |
 | Liquidation trades          | ✓       | Account trade rows can parse as fills, with no special event. |
 | Deleverage trades           | ✓       | Account trade rows can parse as fills, with no special event. |
-| Liquidation price reporting | -       | *Not currently implemented*; position reports omit the field. |
+| Liquidation price reporting | ✓       | Position reports include the venue-reported value.            |
 | ADL event stream            | -       | *Not currently implemented*; no notification subscription.    |
 
-The adapter parses `liquidation_price` in raw position payloads but omits it from Nautilus reports.
-It does not subscribe to the authenticated
+`PositionStatusReport.liquidation_price` preserves the venue's decimal value, including zero.
+Synthetic flat reports leave it unset.
+
+The adapter does not subscribe to the authenticated
 [`notification` stream](https://apidocs.lighter.xyz/docs/websocket-reference#notification) for liquidation
 and deleverage alerts. These trades use the normal fill-report path.
 

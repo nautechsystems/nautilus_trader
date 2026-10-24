@@ -684,7 +684,11 @@ def test_cash_account_multi_currency_from_account_events_round_trip() -> None:
     assert account.balance_free(btc) == Money.from_str("1.25000000 BTC")
 
 
-def test_cash_account_calculate_balance_locked_buy() -> None:
+@pytest.mark.parametrize(
+    ("qty", "price", "expected"),
+    [("10000", "0.80000", "8000 USD"), ("0.01", "0.1234", "0.001234 USD")],
+)
+def test_cash_account_calculate_balance_locked_buy(qty: str, price: str, expected: str) -> None:
     """
     Test cash account calculate balance locked buy.
     """
@@ -713,11 +717,11 @@ def test_cash_account_calculate_balance_locked_buy() -> None:
     locked = account.calculate_balance_locked(
         instrument=instrument,
         side=OrderSide.BUY,
-        quantity=Quantity.from_int(10_000),
-        price=Price.from_str("0.80000"),
+        quantity=Quantity.from_str(qty),
+        price=Price.from_str(price),
     )
 
-    assert isinstance(locked, Money)
+    assert locked == Money.from_str_exact(expected)
 
 
 def test_cash_account_calculate_balance_locked_sell() -> None:
@@ -794,7 +798,20 @@ def test_cash_account_calculate_commission() -> None:
     assert isinstance(commission, Money)
 
 
-def test_cash_account_calculate_pnls() -> None:
+@pytest.mark.parametrize(
+    ("side", "qty", "price", "expected"),
+    [
+        (OrderSide.BUY, "10000", "0.80000", "-8000 USD"),
+        (OrderSide.BUY, "0.01", "0.1234", "-0.001234 USD"),
+        (OrderSide.SELL, "0.01", "0.1235", "0.001235 USD"),
+    ],
+)
+def test_cash_account_calculate_pnls(
+    side: OrderSide,
+    qty: str,
+    price: str,
+    expected: str,
+) -> None:
     """
     Test cash account calculate pnls.
     """
@@ -828,10 +845,10 @@ def test_cash_account_calculate_pnls() -> None:
         venue_order_id=VenueOrderId("V-001"),
         account_id=AccountId("SIM-001"),
         trade_id=TradeId("T-001"),
-        order_side=OrderSide.BUY,
+        order_side=side,
         order_type=OrderType.MARKET,
-        last_qty=Quantity.from_int(10_000),
-        last_px=Price.from_str("0.80000"),
+        last_qty=Quantity.from_str(qty),
+        last_px=Price.from_str(price),
         currency=Currency.from_str("USD"),
         liquidity_side=LiquiditySide.TAKER,
         event_id=UUID4(),
@@ -842,8 +859,7 @@ def test_cash_account_calculate_pnls() -> None:
 
     pnls = account.calculate_pnls(instrument=instrument, fill=fill)
 
-    assert isinstance(pnls, list)
-    assert all(isinstance(m, Money) for m in pnls)
+    assert pnls == [Money.from_str_exact(expected)]
 
 
 def test_cash_account_last_event_and_events() -> None:

@@ -31,6 +31,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
+use super::validate_required_instrument_columns;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name,
@@ -236,9 +237,10 @@ impl EncodeToRecordBatch for CurrencyPair {
 ///
 /// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_currency_pair_batch(
-    #[allow(unused)] metadata: &HashMap<String, String>,
+    metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<CurrencyPair>, EncodingError> {
+    validate_required_instrument_columns::<CurrencyPair>(metadata, record_batch)?;
     let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let record_batch = &record_batch;
     let cols = record_batch.columns();

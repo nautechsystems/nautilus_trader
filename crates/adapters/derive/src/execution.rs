@@ -332,7 +332,6 @@ impl DeriveExecutionClient {
         Ok(instrument_id)
     }
 
-    /// Spawns a fire-and-forget task tracked in `pending_tasks` for teardown.
     fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -550,7 +549,7 @@ impl DeriveExecutionClient {
         }
     }
 
-    fn validate_order(&self, order: &OrderAny) -> Result<(), OrderDeniedReason> {
+    fn validate_order(&self, order: &OrderAny) -> anyhow::Result<()> {
         if is_derive_trigger_order_type(order.order_type()) {
             validate_trigger_order_support(order)?;
         } else {
@@ -565,12 +564,12 @@ impl DeriveExecutionClient {
                 Some(InstrumentAny::CurrencyPair(_))
             )
         {
-            return Err(OrderDeniedReason::UnsupportedReduceOnly);
+            anyhow::bail!(OrderDeniedReason::UnsupportedReduceOnly);
         }
 
         if order.order_type() == OrderType::Market && cache.quote(&order.instrument_id()).is_none()
         {
-            return Err(OrderDeniedReason::MarketPriceUnavailable {
+            anyhow::bail!(OrderDeniedReason::MarketPriceUnavailable {
                 order_type: order.order_type(),
                 instrument_id: order.instrument_id(),
             });
@@ -597,13 +596,8 @@ impl DeriveExecutionClient {
         }
     }
 
-    /// Blocks until the account appears in the cache, or `timeout_secs` elapses.
-    ///
-    /// The execution engine populates the cache from the [`refresh_account_state`]
-    /// event asynchronously; strategies that begin issuing orders before the
-    /// account is registered race the portfolio. Connecting blocks here so the
-    /// runner can rely on `core.cache().account(account_id)` immediately after
-    /// `connect()` returns.
+    // Account events populate the cache asynchronously, so connect waits for registration
+    // before strategies can issue orders against the portfolio.
     async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
         let account_id = self.core.account_id;
 
@@ -631,10 +625,7 @@ impl DeriveExecutionClient {
         }
     }
 
-    /// Reverses the partial state `connect()` set up before the failing step:
-    /// cancels the shared cancellation token, aborts the WS dispatch task,
-    /// and closes the WS client. Used when initial account state cannot be
-    /// loaded so that the next `connect()` call starts from a clean slate.
+    // Shared by disconnect and failed connect steps so the next connect starts clean
     async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
         self.cancellation_token.cancel();
         self.abort_session_tasks();
@@ -1636,8 +1627,11 @@ impl ExecutionClient for DeriveExecutionClient {
 
         if denials.iter().any(Option::is_some) {
             for (order, denial) in orders.iter().zip(denials) {
-                let reason = denial.unwrap_or(OrderDeniedReason::OrderListDenied {
-                    order_list_id: cmd.order_list.id,
+                let reason = denial.unwrap_or_else(|| {
+                    OrderDeniedReason::OrderListDenied {
+                        order_list_id: cmd.order_list.id,
+                    }
+                    .into()
                 });
 
                 self.emitter.emit_order_denied(order, &reason.to_string());
@@ -5451,10 +5445,8 @@ fn tracked_order_identity(
     })
 }
 
-/// Synthesizes and emits `OrderAccepted` when one has not yet been emitted
-/// for the order. Used to guarantee the `Submitted -> Accepted -> ...`
-/// lifecycle when a fill or terminal event arrives before (or instead of)
-/// the venue's `Open` notice.
+// Preserve Submitted -> Accepted -> ... when a fill or terminal event precedes
+// or replaces the venue's Open notice.
 #[expect(clippy::too_many_arguments)]
 fn ensure_accepted_emitted(
     emitter: &ExecutionEventEmitter,
@@ -5817,16 +5809,8 @@ fn emit_tracked_fill(
     true
 }
 
-/// Derives the worst-acceptable limit price for a market order from the
-/// top-of-book quote and a slippage bound in basis points, rounded to the
-/// instrument's `tick_size`.
-///
-/// Buys lift the ask by `slippage_bps` then round up to the next tick; sells
-/// drop the bid by the same and round down. The result is the signed
-/// `limit_price` slot in the EIP-712 trade module data; the venue uses it
-/// as a worst-case bound while the order sweeps. A non-positive sell bound
-/// is rejected (`None`) so the caller can deny the order rather than sign
-/// an invalid zero limit.
+// The EIP-712 limit_price bounds the market sweep; reject non-positive bounds
+// so the caller rejects the order instead of signing an invalid limit.
 fn market_order_limit_price(
     quote: &QuoteTick,
     side: OrderSide,
@@ -5990,10 +5974,7 @@ async fn refresh_market_order_quote(
     )
 }
 
-/// Rounds `value` to the nearest multiple of `tick_size`. Buys round up so
-/// the signed bound remains acceptable to the venue; sells round down so the
-/// caller does not accidentally tighten the floor. A non-positive `tick_size`
-/// is treated as a no-op.
+// Round buys up and sells down so tick alignment does not tighten the signed bound
 fn round_to_tick(value: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal {
     if tick_size <= Decimal::ZERO {
         return value;

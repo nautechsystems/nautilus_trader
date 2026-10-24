@@ -34,6 +34,7 @@ use super::{
         apply_live_instrument, publish_cached_condition_closed, query_positive_closed_markets,
     },
     runtime::is_condition_closed,
+    spawn_task,
     subscriptions::resolve_token_id_from,
 };
 use crate::{
@@ -202,6 +203,18 @@ impl PolymarketDataClient {
         let data_sender = self.data_sender.clone();
         let cancellation = self.cancellation_token.clone();
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+
+        let spawner = match self.tasks.spawner() {
+            Ok(spawner) => spawner,
+            Err(e) => {
+                log::debug!("Skipping Polymarket auto-load after shutdown began: {e}");
+                return;
+            }
+        };
+
+        let monitor_spawner = spawner.clone();
+
         let future = async move {
             let mut scheduled_guard = scheduled_guard;
 
@@ -557,6 +570,11 @@ impl PolymarketDataClient {
                                 && let Ok(token_id) = resolve_token_id_from(&instruments, *id)
                             {
                                 resolve_ctx.sync_ws_subscription(*id, token_id).await;
+                                subscriptions.monitor_book_snapshot(
+                                    *id,
+                                    snapshot_timeout,
+                                    &monitor_spawner,
+                                );
                             } else {
                                 next_batch.insert(*id);
                             }
@@ -635,9 +653,7 @@ impl PolymarketDataClient {
             }
         };
 
-        if let Err(e) = self.tasks.spawn(future) {
-            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
-        }
+        spawn_task(&spawner, future);
     }
 }
 

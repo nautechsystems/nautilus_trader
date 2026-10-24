@@ -212,9 +212,9 @@
       "published": "2026-10-06T23:00:58.853193Z",
       "verified_at": "2026-10-10T04:09:35Z"
     },
-    "arc-swap@1.9.2": {
-      "published": "2026-06-28T17:45:51.059560Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "arc-swap@1.9.3": {
+      "published": "2026-10-18T08:03:57.417736Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "arcstr@1.2.0": {
       "published": "2024-05-07T02:37:10.279194Z",
@@ -384,9 +384,9 @@
       "published": "2025-07-06T07:06:07.101546Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "async-compression@0.4.50": {
-      "published": "2026-09-30T11:12:53.678932Z",
-      "verified_at": "2026-10-07T01:54:01Z"
+    "async-compression@0.4.51": {
+      "published": "2026-10-17T04:48:38.843467Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "async-lock@3.4.2": {
       "published": "2025-12-21T16:24:46.954239Z",
@@ -680,13 +680,13 @@
       "published": "2026-01-13T02:28:25.932933Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "compression-codecs@0.4.45": {
-      "published": "2026-09-30T11:12:48.938997Z",
-      "verified_at": "2026-10-07T01:54:01Z"
+    "compression-codecs@0.4.46": {
+      "published": "2026-10-17T04:48:34.657660Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
-    "compression-core@0.4.33": {
-      "published": "2026-09-02T16:05:19.162370Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "compression-core@0.4.34": {
+      "published": "2026-10-17T04:48:30.955274Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "concurrent-queue@2.5.0": {
       "published": "2024-04-26T14:26:18.816602Z",
@@ -764,9 +764,9 @@
       "published": "2026-04-24T18:44:55.973498Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "crc32fast@1.5.2": {
-      "published": "2026-09-12T18:41:46.923561Z",
-      "verified_at": "2026-09-19T22:29:50Z"
+    "crc32fast@1.5.3": {
+      "published": "2026-10-20T13:35:21.061575Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "crc@3.4.0": {
       "published": "2025-11-26T17:46:02.621035Z",
@@ -1228,13 +1228,13 @@
       "published": "2025-06-04T02:42:06.808859Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "find-msvc-tools@0.1.14": {
-      "published": "2026-09-25T10:09:48.951244Z",
-      "verified_at": "2026-09-29T01:12:23Z"
+    "find-msvc-tools@0.1.15": {
+      "published": "2026-10-19T07:39:37.580908Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
-    "fixed-cache@0.1.10": {
-      "published": "2026-05-30T05:18:18.754514Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "fixed-cache@0.1.11": {
+      "published": "2026-10-19T21:37:58.367663Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "fixed-hash@0.8.0": {
       "published": "2022-09-20T13:04:35.479805Z",
@@ -1724,9 +1724,9 @@
       "published": "2026-05-16T13:12:49.413943Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "libc@0.2.190": {
-      "published": "2026-10-02T19:33:19.966421Z",
-      "verified_at": "2026-10-07T01:54:01Z"
+    "libc@0.2.191": {
+      "published": "2026-10-16T22:56:46.041660Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "libfuzzer-sys@0.4.13": {
       "published": "2026-06-04T18:55:34.718132Z",
@@ -1888,9 +1888,9 @@
       "published": "2026-03-15T21:29:38.220565Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "num_threads@0.1.7": {
-      "published": "2024-02-15T02:51:38.770784Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "num_threads@0.1.8": {
+      "published": "2026-10-17T09:36:01.034409Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "nybbles@0.4.8": {
       "published": "2026-02-03T15:15:35.480580Z",
@@ -2336,13 +2336,13 @@
       "published": "2025-12-23T23:54:26.994567Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "rstest@0.27.0": {
-      "published": "2026-09-06T18:15:52.967458Z",
-      "verified_at": "2026-09-13T23:01:44Z"
+    "rstest@0.28.0": {
+      "published": "2026-10-18T19:37:56.126353Z",
+      "verified_at": "2026-10-23T22:33:42Z"
     },
-    "rstest_macros@0.27.0": {
-      "published": "2026-09-06T18:15:40.465723Z",
-      "verified_at": "2026-09-13T23:01:44Z"
+    "rstest_macros@0.28.0": {
+      "published": "2026-10-18T19:37:33.371608Z",
+      "verified_at": "2026-10-23T22:33:42Z"
     },
     "ruint-macro@1.2.1": {
       "published": "2024-06-03T16:39:36.769412Z",
@@ -3052,9 +3052,9 @@
       "published": "2026-10-12T04:20:27.796258Z",
       "verified_at": "2026-10-15T21:32:23Z"
     },
-    "unicode-normalization@0.1.25": {
-      "published": "2025-10-30T16:06:38.929447Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "unicode-normalization@0.1.26": {
+      "published": "2026-10-16T23:28:29.955206Z",
+      "verified_at": "2026-10-23T22:31:19Z"
     },
     "unicode-properties@0.1.4": {
       "published": "2025-10-30T16:34:55.538672Z",

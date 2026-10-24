@@ -6,7 +6,7 @@
 
 [prek]
 kind = "tool"
-version = "0.5.5"
+version = "0.5.7"
 ci = true
 releases = "pypi:prek"
 
@@ -89,7 +89,7 @@ releases = "crates:cargo-deny"
 
 [cargo-edit]
 kind = "tool"
-version = "0.13.13"
+version = "0.13.14"
 releases = "crates:cargo-edit"
 
 [cargo-llvm-cov]
@@ -99,17 +99,17 @@ releases = "crates:cargo-llvm-cov"
 
 [cargo-nextest]
 kind = "tool"
-version = "0.9.148"
+version = "0.9.149"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]
 kind = "tool"
-version = "0.10.2"
+version = "0.10.3"
 releases = "crates:cargo-vet"
 
 [uv]
 kind = "tool"
-version = "0.13.1"
+version = "0.13.4"
 releases = "pypi:uv"
 
 [pip-audit]

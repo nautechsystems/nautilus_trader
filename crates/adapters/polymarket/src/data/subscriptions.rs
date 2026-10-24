@@ -17,8 +17,12 @@ use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, DashSet};
-use nautilus_common::cache::InstrumentLookupError;
+use nautilus_common::{
+    cache::InstrumentLookupError,
+    live::dst::time::{Duration, Instant},
+};
 use nautilus_core::AtomicMap;
+use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     data::QuoteTick,
     enums::BookType,
@@ -31,7 +35,7 @@ use ustr::Ustr;
 
 use super::instruments::TokenMeta;
 use crate::{
-    book::sync::BookSyncTracker,
+    book::{integrity::BookIntegrity, recovery::spawn_recovery_monitor, sync::BookSyncTracker},
     resolve::{
         ResolveWatchEntry, ResolveWatchlist, StrictResolvedMarket, remove_data_resolve_watch_entry,
         upsert_data_resolve_watch_entry_from_instrument,
@@ -56,6 +60,7 @@ pub(crate) struct DataSubscriptions {
     pub(super) active_instrument_status_subs: Arc<DashSet<InstrumentId>>,
     pub(super) active_instrument_close_subs: Arc<DashSet<InstrumentId>>,
     pub(super) book_sync: BookSyncTracker,
+    pub(super) book_integrity: Arc<Mutex<AHashMap<InstrumentId, BookIntegrity>>>,
     pub(super) ws_open_tokens: Arc<DashSet<Ustr>>,
     pub(super) ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     pub(super) pending_auto_loads: Arc<Mutex<AHashSet<InstrumentId>>>,
@@ -87,6 +92,7 @@ impl DataSubscriptions {
             active_instrument_status_subs: Arc::new(DashSet::new()),
             active_instrument_close_subs: Arc::new(DashSet::new()),
             book_sync: BookSyncTracker::default(),
+            book_integrity: Arc::default(),
             ws_open_tokens: Arc::new(DashSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
             pending_auto_loads: Arc::new(Mutex::new(AHashSet::new())),
@@ -162,6 +168,7 @@ impl DataSubscriptions {
 
         if kind == SubscriptionKind::Deltas {
             self.book_sync.remove(instrument_id);
+            self.book_integrity.lock().remove(&instrument_id);
         }
 
         self.drop_pending_if_unwanted(instrument_id);
@@ -257,6 +264,7 @@ impl DataSubscriptions {
         // Dropping synchronization state cancels its snapshot wait and recovery episode
         for instrument_id in resolved_books {
             self.book_sync.remove(instrument_id);
+            self.book_integrity.lock().remove(&instrument_id);
         }
 
         for subscriptions in [&self.active_quote_subs, &self.active_trade_subs] {
@@ -322,6 +330,34 @@ impl DataSubscriptions {
                 log::error!("Failed to unsubscribe from market data: {e:?}");
             }
         }
+    }
+
+    pub(super) fn monitor_book_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        timeout: Duration,
+        tasks: &TaskSpawner,
+    ) {
+        if timeout.is_zero()
+            || !self.book_sync.seed_missing_snapshot(
+                &self.active_delta_subs,
+                instrument_id,
+                timeout,
+                Instant::now(),
+            )
+        {
+            return;
+        }
+
+        spawn_recovery_monitor(
+            self.book_sync.clone(),
+            self.ws_client.clone(),
+            self.active_delta_subs.clone(),
+            self.instruments.clone(),
+            vec![instrument_id],
+            timeout,
+            tasks,
+        );
     }
 
     fn intent(&self, kind: SubscriptionKind) -> &Arc<DashSet<InstrumentId>> {
@@ -682,9 +718,11 @@ mod tests {
             );
             targets.push((instrument_id, token_id));
         }
+
         *watchlist.write() = entries;
         subscriptions.active_instrument_status_subs =
             Arc::new(targets.iter().map(|(id, _)| *id).collect());
+
         subscriptions.ws_open_tokens = Arc::new(
             targets
                 .iter()

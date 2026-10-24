@@ -128,6 +128,7 @@ impl LiveExecutionClient {
         let result = { self.client.borrow().generate_order_status_report(cmd).await };
         self.flush_pending_instruments();
         let finish = Box::new(move || result);
+        let guard = Rc::new(guard);
         Ok(CollectedReport::new(finish, guard))
     }
 
@@ -156,6 +157,7 @@ impl LiveExecutionClient {
 
         self.flush_pending_instruments();
         let finish = Box::new(move || result);
+        let guard = Rc::new(guard);
         Ok(CollectedReport::new(finish, guard))
     }
 
@@ -177,6 +179,7 @@ impl LiveExecutionClient {
         let result = { self.client.borrow().generate_fill_reports(cmd).await };
         self.flush_pending_instruments();
         let finish = Box::new(move || result);
+        let guard = Rc::new(guard);
         Ok(CollectedReport::new(finish, guard))
     }
 
@@ -209,6 +212,7 @@ impl LiveExecutionClient {
 
         self.flush_pending_instruments();
         let finish = Box::new(move || result);
+        let guard = Rc::new(guard);
         Ok(CollectedReport::new(finish, guard))
     }
 
@@ -221,6 +225,7 @@ impl LiveExecutionClient {
         self.report_task.borrow_mut().spawn(task.collection)?;
         self.join_report_task().await?;
         self.flush_pending_instruments();
+        let guard = Rc::new(guard);
         Ok(CollectedReport::new(task.finish, guard))
     }
 
@@ -290,6 +295,73 @@ impl LiveExecutionClient {
     }
 }
 
+/// Sequential fill collections retaining admission until the collector and all receipts are dropped.
+pub(crate) struct ReportCollector {
+    client: LiveExecutionClient,
+    guard: Rc<ReportTaskGuard>,
+}
+
+impl ReportCollector {
+    pub(crate) async fn for_client<'a>(
+        collectors: &'a mut IndexMap<ClientId, Self>,
+        clients: &[LiveExecutionClient],
+        client_id: ClientId,
+    ) -> anyhow::Result<&'a mut Self> {
+        if !collectors.contains_key(&client_id) {
+            let client = clients
+                .iter()
+                .find(|client| client.client_id() == client_id)
+                .ok_or_else(|| anyhow::anyhow!("execution client {client_id} is unavailable"))?;
+            let guard = client.reserve_report_task().await?;
+            let guard = Rc::new(guard);
+            collectors.insert(
+                client_id,
+                Self {
+                    client: client.clone(),
+                    guard,
+                },
+            );
+        }
+
+        Ok(collectors
+            .get_mut(&client_id)
+            .expect("reserved report collector"))
+    }
+
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "live report polling runs on the single-threaded node runtime"
+    )]
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "the mutable borrow serializes collections sharing one worker slot"
+    )]
+    pub(crate) async fn fill_reports(
+        &mut self,
+        cmd: GenerateFillReports,
+    ) -> anyhow::Result<CollectedReport<Vec<FillReport>>> {
+        let task = self.client.client.borrow().generate_fill_reports_task(&cmd);
+
+        let finish = if let Some(task) = task {
+            self.client
+                .report_task
+                .borrow_mut()
+                .spawn(task.collection)?;
+            self.client.join_report_task().await?;
+            task.finish
+        } else {
+            log::debug!("{} collects fill reports inline", self.client.client_id);
+            let result = { self.client.client.borrow().generate_fill_reports(cmd).await };
+            let finish: Box<dyn FnOnce() -> anyhow::Result<Vec<FillReport>>> =
+                Box::new(move || result);
+            finish
+        };
+
+        self.client.flush_pending_instruments();
+        Ok(CollectedReport::new(finish, Rc::clone(&self.guard)))
+    }
+}
+
 /// Collected reports with synchronous core finalization and retained per-client admission.
 ///
 /// Dropping the receipt discards the continuation. Inline adapters have already collected their
@@ -297,18 +369,18 @@ impl LiveExecutionClient {
 #[must_use]
 pub(crate) struct CollectedReport<T> {
     finish: Box<dyn FnOnce() -> anyhow::Result<T>>,
-    _guard: ReportTaskGuard,
+    _guard: Rc<ReportTaskGuard>,
 }
 
 impl<T> CollectedReport<T> {
-    fn new(finish: Box<dyn FnOnce() -> anyhow::Result<T>>, guard: ReportTaskGuard) -> Self {
+    fn new(finish: Box<dyn FnOnce() -> anyhow::Result<T>>, guard: Rc<ReportTaskGuard>) -> Self {
         Self {
             finish,
             _guard: guard,
         }
     }
 
-    /// Runs the stored continuation before releasing client admission.
+    /// Runs the stored continuation before releasing this receipt's share of client admission.
     ///
     /// Owned tasks finalize with current core state; inline receipts return their collected result.
     pub(crate) fn finish(self) -> anyhow::Result<T> {
@@ -746,6 +818,57 @@ mod tests {
         ) -> anyhow::Result<()> {
             Ok(())
         }
+    }
+
+    #[rstest]
+    #[case::inline(false)]
+    #[case::worker(true)]
+    #[tokio::test]
+    async fn fill_session_keeps_admission_until_last_receipt(#[case] worker: bool) {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient {
+            worker,
+            ..Default::default()
+        }));
+
+        let command = GenerateFillReportsBuilder::default()
+            .ts_init(37.into())
+            .build()
+            .unwrap();
+        let mut collectors = IndexMap::new();
+        let collector = ReportCollector::for_client(
+            &mut collectors,
+            std::slice::from_ref(&client),
+            client.client_id(),
+        )
+        .await
+        .unwrap();
+        let first = collector.fill_reports(command.clone()).await.unwrap();
+        let collector = ReportCollector::for_client(
+            &mut collectors,
+            std::slice::from_ref(&client),
+            client.client_id(),
+        )
+        .await
+        .unwrap();
+        let second = collector.fill_reports(command.clone()).await.unwrap();
+        assert_eq!(collectors.len(), 1);
+        drop(collectors);
+        assert_eq!(first.finish().unwrap(), Vec::<FillReport>::new());
+        let rejected = client.collect_fill_reports(command.clone()).await;
+        assert_eq!(
+            rejected.err().unwrap().to_string(),
+            "REPORT report collection is already running"
+        );
+        drop(second);
+        assert_eq!(
+            client
+                .collect_fill_reports(command)
+                .await
+                .unwrap()
+                .finish()
+                .unwrap(),
+            Vec::<FillReport>::new()
+        );
     }
 
     #[rstest]

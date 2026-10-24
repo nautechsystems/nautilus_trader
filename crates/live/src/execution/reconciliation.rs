@@ -20,7 +20,7 @@
 //! Targeted requests collect order status and missing fills for the manager and live node.
 //! The manager owns cache-dependent decisions; the live node owns recurring task lifecycles.
 
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
@@ -709,11 +709,8 @@ pub(super) fn position_avg_px<'a>(
 
     for position in positions {
         let qty = position.signed_decimal_qty().abs();
-        if position.avg_px_open > 0.0
-            && qty > Decimal::ZERO
-            && let Ok(avg_px) = Decimal::from_str(&position.avg_px_open.to_string())
-        {
-            total_value += avg_px * qty;
+        if position.avg_px_open > Decimal::ZERO && qty > Decimal::ZERO {
+            total_value += position.avg_px_open * qty;
             total_qty += qty;
         }
     }
@@ -1460,11 +1457,14 @@ pub(super) mod tests {
 
     #[rstest]
     #[case::empty(vec![], None)]
-    #[case::flat(vec![(0, 100.0)], None)]
-    #[case::weighted(vec![(1, 100.0), (3, 120.0)], Some(dec!(115)))]
-    #[case::short(vec![(-1, 100.0), (-3, 120.0)], Some(dec!(115)))]
-    #[case::ignored(vec![(1, 0.0), (2, -10.0), (3, 120.0)], Some(dec!(120)))]
-    fn test_position_avg_px(#[case] entries: Vec<(i32, f64)>, #[case] expected: Option<Decimal>) {
+    #[case::flat(vec![(0, dec!(100))], None)]
+    #[case::weighted(vec![(1, dec!(100)), (3, dec!(120))], Some(dec!(115)))]
+    #[case::short(vec![(-1, dec!(100)), (-3, dec!(120))], Some(dec!(115)))]
+    #[case::ignored(vec![(1, dec!(0)), (2, dec!(-10)), (3, dec!(120))], Some(dec!(120)))]
+    fn test_position_avg_px(
+        #[case] entries: Vec<(i32, Decimal)>,
+        #[case] expected: Option<Decimal>,
+    ) {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
@@ -1489,8 +1489,8 @@ pub(super) mod tests {
             .into_iter()
             .map(|(qty, px)| {
                 let mut position = position.clone();
-                position.signed_qty = f64::from(qty);
-                position.quantity = Quantity::new(f64::from(qty.abs()), 3);
+                position.signed_qty = Decimal::from(qty);
+                position.quantity = Quantity::from_decimal_dp(Decimal::from(qty.abs()), 3).unwrap();
                 position.avg_px_open = px;
                 position
             })

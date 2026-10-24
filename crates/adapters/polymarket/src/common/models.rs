@@ -288,7 +288,7 @@ mod tests {
 
         assert_eq!(trade.maker_orders.len(), 2);
         let m0 = &trade.maker_orders[0];
-        assert_eq!(m0.matched_amount, dec!(25.0000));
+        assert_eq!(m0.matched_amount, dec!(20.0000));
         assert_eq!(m0.outcome, PolymarketOutcome::yes());
         assert_eq!(m0.side, Some(PolymarketOrderSide::Sell));
 

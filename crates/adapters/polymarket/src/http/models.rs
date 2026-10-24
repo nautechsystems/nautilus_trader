@@ -903,7 +903,7 @@ mod tests {
         let trade: PolymarketTradeReport = load("http_trade_report.json");
 
         let first = &trade.maker_orders[0];
-        assert_eq!(first.matched_amount, dec!(25.0000));
+        assert_eq!(first.matched_amount, dec!(20.0000));
         assert_eq!(first.price, dec!(0.5000));
         assert_eq!(first.outcome, PolymarketOutcome::yes());
 

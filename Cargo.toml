@@ -125,7 +125,7 @@ alloy-primitives = { version = "1.7.3", default-features = false, features = [
   "serde",
 ] }
 anyhow = "1.0.104"
-arc-swap = "1.9.2"
+arc-swap = "1.9.3"
 arraydeque = "0.5.1"
 arrow = { version = "59.3.1", default-features = false, features = [
   "ipc",
@@ -190,7 +190,7 @@ jiff = { version = "0.2.38", default-features = false, features = [
   "tz-fat",
   "tzdb-bundle-always",
 ] }
-libc = "0.2.190"
+libc = "0.2.191"
 libfuzzer-sys = "0.4.13"
 log = { version = "0.4.34", features = [
   "std",
@@ -379,7 +379,7 @@ rcgen = { version = "0.14.10", default-features = false, features = [
   "crypto",
   "pem",
 ] }
-rstest = { version = "0.27.0", default-features = false }
+rstest = { version = "0.28.0", default-features = false }
 tempfile = "3.27.0"
 turmoil = "0.7.2"
 

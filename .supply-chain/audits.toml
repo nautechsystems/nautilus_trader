@@ -1032,6 +1032,12 @@ criteria = "safe-to-deploy"
 delta = "1.9.1 -> 1.9.2"
 notes = "Documentation-only release clarifying that RefCnt methods must not panic or unwind. No runtime logic, dependency, build-script, filesystem, network, process, or unsafe-code changes."
 
+[[audits.arc-swap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.9.2 -> 1.9.3"
+notes = "Reviewed checksum-verified published sources. Exposes the existing RwLock strategy through an explicit rwlock-strategy feature; DefaultStrategy and the strategy implementation are unchanged. No new dependencies, build script, or ambient capabilities."
+
 [[audits.arrow]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1391,6 +1397,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.44 -> 0.4.50"
 notes = "Reviewed published decoder changes: truncated streams now error when finalization makes no progress. Codec selection adds an optional, cfg-gated mbrotli backend; no new ambient I/O or build behavior."
+
+[[audits.async-compression]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.50 -> 0.4.51"
+notes = "Reviewed checksum-verified published sources. Adds wrappers for the optional mzstd codec behind zstd-mzstd and async_compression_unstable; existing codecs are unchanged. The new backend is not enabled in the resolved graph. No new filesystem, process, or network behavior."
 
 [[audits.async-trait]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1804,11 +1816,23 @@ criteria = "safe-to-deploy"
 delta = "0.4.39 -> 0.4.45"
 notes = "Reviewed published gzip header bounds, deflate64 truncation handling, zstd no-progress state, and optional mbrotli buffer initialization. No new ambient I/O; the added mbrotli backend is outside this resolved feature graph."
 
+[[audits.compression-codecs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.45 -> 0.4.46"
+notes = "Reviewed checksum-verified published sources. Adds an optional mzstd backend gated by zstd-mzstd and async_compression_unstable. New uninitialized-buffer writes advance only by the codec-reported initialized length. Existing codecs are unchanged, and the new dependency is absent from the resolved graph."
+
 [[audits.compression-core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.32 -> 0.4.33"
 notes = "Corrects WriteBuffer initialization tracking and replaces debug-only unsafe bounds checks with release assertions. Reviewed the unsafe delta; no new dependencies, build script, or ambient capabilities."
+
+[[audits.compression-core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.33 -> 0.4.34"
+notes = "Reviewed checksum-verified published sources. Package keywords, lint configuration, version, and changelog changes only. Runtime source and dependencies are unchanged."
 
 [[audits.const-hex]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1839,6 +1863,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.5.1 -> 1.5.2"
 notes = "Baseline CRC table/docs tweak. No API or unsafe change of note."
+
+[[audits.crc32fast]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.5.2 -> 1.5.3"
+notes = "Reviewed checksum-verified published sources. Moves CRC state from backend wrappers into Hasher, adds total_len, and uses the scalar short-input path. Existing CPU feature checks still guard the unchanged architecture intrinsics. No new unsafe operations, dependencies, or build behavior."
 
 [[audits.crossbeam-deque]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2884,6 +2914,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.13 -> 0.1.14"
 notes = "Moves existing Windows COM and registry bindings between modules. Still a build-time MSVC discovery tool. No new process, network, or credential behavior."
 
+[[audits.fixed-cache]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.10 -> 0.1.11"
+notes = "Reviewed checksum-verified published sources. Adds explicitly unsafe opt-in lock-free reads with byte-copy validity requirements and atomic version checks; the default remains locked and no resolved caller enables the opt-in. Reviewed default lock, removal, and drop changes. No new dependencies or ambient capabilities."
+
 [[audits.flate2]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3281,6 +3317,12 @@ criteria = "safe-to-deploy"
 delta = "0.2.189 -> 0.2.190"
 notes = "Reviewed published build configuration, FFI/platform declaration changes, struct and union default macros, siginfo accessors, and netlink pointer operations. Union zeroing remains explicitly opt-in and unsafe accessors retain caller contracts. No new runtime ambient capability."
 
+[[audits.libc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.190 -> 0.2.191"
+notes = "Reviewed checksum-verified published source and build-script changes. Adds platform FFI constants and declarations, fixes FreeBSD register layouts, restores Apple Mach declarations, and selects Emscripten layouts by compiler version. Native Linux declarations and dependencies are unchanged; no new build-time process or network access."
+
 [[audits.litemap]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3394,6 +3436,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.7.5 -> 0.7.6"
 notes = "Adds byte literal (Lit::Byte) support for enum discriminants"
+
+[[audits.num_threads]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.1.7 -> 0.1.8"
+notes = "Reviewed checksum-verified published sources. Adds a read-only /proc/self/status fallback on Linux, corrects Apple thread-list deallocation through vm_deallocate, and adjusts Rosetta counts through a read-only sysctl. FFI allocations and thread ports retain matching cleanup. No new dependencies or build script."
 
 [[audits.papergrid]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3877,11 +3925,23 @@ criteria = "safe-to-deploy"
 delta = "0.26.1 -> 0.27.0"
 notes = "Raises MSRV to 1.85, disables futures-util default features, and pins the matching macros; runtime source changes are documentation only."
 
+[[audits.rstest]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.27.0 -> 0.28.0"
+notes = "Reviewed checksum-verified published sources and cargo-vet package diff. Runtime library changes document optional and default case arguments; the matching macro dependency advances to 0.28.0. MSRV and MIT/Apache-2.0 licensing are unchanged. No new runtime code or ambient capabilities."
+
 [[audits.rstest_macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.26.1 -> 0.27.0"
 notes = "Adds a build.rs that reads CARGO_ENCODED_RUSTFLAGS and the rustc channel to emit the use_proc_macro_diagnostic cfg; macro changes add doc-comment matrix test names, fix mut-argument tracing, and use fully qualified core imports."
+
+[[audits.rstest_macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.27.0 -> 0.28.0"
+notes = "Reviewed checksum-verified published sources. Adds parsing, validation, and generated expressions for optional/default case arguments, preserving ordinary case arguments. Build script, dependencies, filesystem expansion, and process behavior are unchanged; no new unsafe operations."
 
 [[audits.ruint]]
 who = "Nautech Systems <info@nautechsystems.io>"

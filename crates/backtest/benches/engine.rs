@@ -189,6 +189,11 @@ fn bench_run(c: &mut Criterion) {
             },
         );
 
+        record_position_workload(
+            &format!("alternating_market_orders_{data_count}"),
+            build_alternating_market_orders(data.clone(), quote_count),
+        );
+
         group.bench_with_input(
             BenchmarkId::new("alternating_market_orders", data_count),
             &data,
@@ -258,6 +263,11 @@ fn bench_position_history(c: &mut Criterion) {
         let data = generate_market_data(instrument_id, order_count);
         let data_count = data.len();
         group.throughput(Throughput::Elements(order_count as u64));
+        record_position_workload(
+            &format!("accumulating_market_orders_{order_count}"),
+            build_accumulating_market_orders(data.clone(), order_count),
+        );
+
         group.bench_with_input(
             BenchmarkId::new("accumulating_market_orders", order_count),
             &data,
@@ -409,6 +419,17 @@ where
     }
 
     elapsed
+}
+
+fn record_position_workload(case: &str, mut engine: BacktestEngine) {
+    engine
+        .run(None, None, None, false)
+        .expect("position workload should run");
+    let result = engine
+        .get_canonical_result()
+        .expect("position workload result should project");
+    canonical::write_result(case, &result).expect("position workload result should export");
+    engine.dispose();
 }
 
 fn run_position_history_iterations<F>(

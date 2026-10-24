@@ -29,7 +29,7 @@ use nautilus_model::{
     orders::Order,
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use super::config::CompositeMarketMakerConfig;
 use crate::{
@@ -421,18 +421,14 @@ impl CompositeMarketMaker {
         let strategy = Some(&strategy_id);
         let cache = self.cache();
 
-        let mut position_qty = 0.0_f64;
         let mut position_dec = Decimal::ZERO;
-
         for p in cache.positions_open(None, instrument_id, strategy, None, None) {
-            position_qty += p.signed_qty;
-            position_dec += p.quantity.as_decimal()
-                * if p.signed_qty < 0.0 {
-                    Decimal::NEGATIVE_ONE
-                } else {
-                    Decimal::ONE
-                };
+            position_dec += p.signed_qty;
         }
+
+        let position_qty = position_dec
+            .to_f64()
+            .expect("Decimal quantity fits strategy analytics");
 
         let mut pending_buy_dec = Decimal::ZERO;
         let mut pending_sell_dec = Decimal::ZERO;

@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{DurationNanos, UnixNanos};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -53,7 +54,7 @@ pub struct PositionSnapshot {
     /// The position side.
     pub side: PositionSide,
     /// The position signed quantity (positive for LONG, negative for SHOT).
-    pub signed_qty: f64,
+    pub signed_qty: Decimal,
     /// The position open quantity.
     pub quantity: Quantity,
     /// The peak directional quantity reached by the position.
@@ -65,9 +66,9 @@ pub struct PositionSnapshot {
     /// The position settlement currency.
     pub settlement_currency: Currency,
     /// The average open price.
-    pub avg_px_open: f64,
+    pub avg_px_open: Decimal,
     /// The average closing price.
-    pub avg_px_close: Option<f64>,
+    pub avg_px_close: Option<Decimal>,
     /// The realized return for the position.
     pub realized_return: Option<f64>,
     /// The realized PnL for the position (including commissions).
@@ -138,6 +139,7 @@ impl PositionSnapshot {
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -163,14 +165,14 @@ mod tests {
             closing_order_id: Some(ClientOrderId::from("O-19700101-000000-001-001-2")),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 100.0,
+            signed_qty: dec!(100.0),
             quantity: Quantity::from("100"),
             peak_qty: Quantity::from("100"),
             quote_currency: Currency::USD(),
             base_currency: Some(Currency::EUR()),
             settlement_currency: Currency::USD(),
-            avg_px_open: 1.0500,
-            avg_px_close: Some(1.0600),
+            avg_px_open: dec!(1.0500),
+            avg_px_close: Some(dec!(1.0600)),
             realized_return: Some(0.0095),
             realized_pnl: Some(Money::new(100.0, Currency::USD())),
             unrealized_pnl: Some(Money::new(50.0, Currency::USD())),

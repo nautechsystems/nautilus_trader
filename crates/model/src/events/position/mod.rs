@@ -59,6 +59,7 @@ impl PositionEvent {
 mod tests {
     use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -78,12 +79,12 @@ mod tests {
             opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 100.0,
+            signed_qty: dec!(100.0),
             quantity: Quantity::from("100"),
             last_qty: Quantity::from("100"),
             last_px: Price::from("1.0500"),
             currency: Currency::USD(),
-            avg_px_open: 1.0500,
+            avg_px_open: dec!(1.0500),
             realized_pnl: Some(Money::new(-2.0, Currency::USD())),
             event_id: UUID4::default(),
             ts_event: UnixNanos::from(1_000_000_000),
@@ -101,13 +102,13 @@ mod tests {
             opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 150.0,
+            signed_qty: dec!(150.0),
             quantity: Quantity::from("150"),
             peak_quantity: Quantity::from("150"),
             last_qty: Quantity::from("50"),
             last_px: Price::from("1.0550"),
             currency: Currency::USD(),
-            avg_px_open: 1.0525,
+            avg_px_open: dec!(1.0525),
             avg_px_close: None,
             realized_return: 0.0,
             realized_pnl: None,
@@ -130,14 +131,14 @@ mod tests {
             closing_order_id: Some(ClientOrderId::from("O-19700101-000000-001-001-2")),
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: dec!(0.0),
             quantity: Quantity::from("0"),
             peak_quantity: Quantity::from("150"),
             last_qty: Quantity::from("150"),
             last_px: Price::from("1.0600"),
             currency: Currency::USD(),
-            avg_px_open: 1.0525,
-            avg_px_close: Some(1.0600),
+            avg_px_open: dec!(1.0525),
+            avg_px_close: Some(dec!(1.0600)),
             realized_return: 0.0071,
             realized_pnl: Some(Money::new(112.50, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),

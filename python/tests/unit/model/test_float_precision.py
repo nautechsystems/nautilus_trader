@@ -203,25 +203,14 @@ def _position_apply(precision: int) -> object:
     return position.avg_px_open
 
 
-def _position_values() -> dict:
-    values = _long_position().to_dict()
-
-    # `to_dict` and `from_dict` use different layouts
-    values["id"] = values.pop("position_id")
-    values["commissions"] = {}
-    values["is_currency_pair"] = True
-    values["instrument_class"] = "SPOT"
-    return values
-
-
 def _position_from_dict_quantity(precision: int) -> object:
-    values = _position_values()
+    values = _long_position().to_dict()
     values["quantity"] = _fixed("2", precision)
     return Position.from_dict(values).quantity
 
 
 def _position_from_dict_fill(precision: int) -> object:
-    values = _position_values()
+    values = _long_position().to_dict()
     values["events"][0]["last_px"] = _fixed("1.5", precision)
     return Position.from_dict(values).quantity
 
@@ -307,8 +296,10 @@ FLOAT_VARIANTS = [
         (name, lambda p, call=call: call(p, p), expected)
         for name, call, expected, _ in BOOK_VARIANTS
     ),
-    ("position-new", _position_open, 1.5),
-    ("position-apply", _position_apply, 2.0),
+]
+DECIMAL_VARIANTS = [
+    ("position-new", _position_open, Decimal("1.5")),
+    ("position-apply", _position_apply, Decimal("2.0")),
     (
         "position-unrealized-pnl",
         lambda p: _long_position().unrealized_pnl(_price("2.5", p)),
@@ -321,7 +312,7 @@ FLOAT_VARIANTS = [
     ),
     (
         "position-calculate-pnl",
-        lambda p: _long_position().calculate_pnl(1.5, 2.5, _quantity("2", p)),
+        lambda p: _long_position().calculate_pnl(Decimal("1.5"), Decimal("2.5"), _quantity("2", p)),
         Money.from_str("2.00 USD"),
     ),
     (
@@ -336,6 +327,25 @@ FLOAT_SUCCESS_CASES = [
     pytest.param(call, expected, id=name) for name, call, expected in FLOAT_VARIANTS
 ]
 FLOAT_CALL_CASES = [pytest.param(call, id=name) for name, call, _ in FLOAT_VARIANTS]
+
+
+@pytest.mark.parametrize("precision", BALANCE_PRECISION_CASES)
+@pytest.mark.parametrize(
+    ("call", "expected"),
+    [pytest.param(call, expected, id=name) for name, call, expected in DECIMAL_VARIANTS],
+)
+def test_position_and_account_preserve_decimal_inputs(
+    call: Callable[[int], object],
+    expected: object,
+    precision: int,
+) -> None:
+    """
+    Preserve exact accounting inputs above the float conversion limit.
+    """
+    result = call(precision)
+
+    assert type(result) is type(expected)
+    assert result == expected
 
 
 @pytest.mark.parametrize(("call", "expected"), FLOAT_SUCCESS_CASES)

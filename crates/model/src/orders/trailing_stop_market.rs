@@ -481,6 +481,12 @@ impl Order for TrailingStopMarketOrder {
         self.events.iter().collect()
     }
 
+    fn last_event(&self) -> &OrderEventAny {
+        self.events
+            .last()
+            .expect("Order invariant violated: no events")
+    }
+
     fn venue_order_ids(&self) -> Vec<&VenueOrderId> {
         self.venue_order_ids.iter().collect()
     }

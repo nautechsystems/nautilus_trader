@@ -15,6 +15,7 @@
 
 use nautilus_core::{UUID4, python::IntoPyObjectNautilusExt};
 use pyo3::{basic::CompareOp, prelude::*};
+use rust_decimal::Decimal;
 
 use crate::{
     enums::{OrderSide, PositionSide},
@@ -101,7 +102,7 @@ impl PositionClosed {
 
     #[getter]
     #[pyo3(name = "signed_qty")]
-    fn py_signed_qty(&self) -> f64 {
+    fn py_signed_qty(&self) -> Decimal {
         self.signed_qty
     }
 
@@ -143,13 +144,13 @@ impl PositionClosed {
 
     #[getter]
     #[pyo3(name = "avg_px_open")]
-    fn py_avg_px_open(&self) -> f64 {
+    fn py_avg_px_open(&self) -> Decimal {
         self.avg_px_open
     }
 
     #[getter]
     #[pyo3(name = "avg_px_close")]
-    fn py_avg_px_close(&self) -> Option<f64> {
+    fn py_avg_px_close(&self) -> Option<Decimal> {
         self.avg_px_close
     }
 

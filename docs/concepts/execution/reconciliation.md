@@ -796,6 +796,19 @@ local policy resolutions from venue-reported outcomes.
 
 ### Order consistency checks
 
+An open-order check queries all execution clients before running their deferred report processing.
+Each client stays busy until that work finishes or its reports are discarded; other report requests to
+that client fail as already running.
+
+The timeout starts when the check starts and uses `timeout_reconciliation`
+(`timeout_reconciliation_secs` in Python). The node accepts the batch only before the deadline.
+A batch ready exactly at the deadline is discarded.
+
+Once the batch is accepted, deferred adapter processing and report application run synchronously,
+without another deadline check or cancellation point. Slow processing does not discard accepted reports.
+Targeted follow-up queries use a separate bounded task. Discarding a batch skips deferred adapter work;
+it cannot undo state changes an adapter makes during collection.
+
 The table below applies when cache state differs from venue state. A missing open-order report does not by
 itself prove a pending modify or cancel outcome. Thus, these checks leave those states unresolved until
 another check can determine the venue state.
@@ -841,6 +854,21 @@ venue. This catches false negatives from bulk query limitations or timing delays
 completed orders from their query results.
 
 ### Position checks
+
+#### Report acceptance
+
+Position snapshots and their authoritative fill queries use separate `timeout_reconciliation` deadlines.
+Each stage collects all results before accepting them, and accepts only while `now < deadline`. Each
+client stays busy until all its retained report processing finishes or its results are discarded.
+
+Accepted stages run deferred processing and pass reports to reconciliation synchronously, even if processing
+crosses the deadline. Expiry or cancellation skips deferred processing; it cannot undo state changes
+an adapter makes during collection.
+
+During shutdown, the node discards unused position snapshots without running deferred processing, applies accepted
+fill stages, and retains ownership of collection workers until they drain.
+
+#### Retries and query failures
 
 Position checks use separate retry counters per instrument and account. A successful position
 match clears the counter, while repeated unresolved discrepancies stop active reconciliation for

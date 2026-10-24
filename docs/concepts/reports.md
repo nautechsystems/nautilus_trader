@@ -146,8 +146,8 @@ Returns `pd.DataFrame`. Columns include:
 | `side`             | Position side (LONG, SHORT, or FLAT).                 |
 | `quantity`         | Current position size (string).                       |
 | `peak_qty`         | Maximum size reached (string).                        |
-| `avg_px_open`      | Average entry price (float).                          |
-| `avg_px_close`     | Average exit price (float, if closed).                |
+| `avg_px_open`      | Average entry price (decimal string).                 |
+| `avg_px_close`     | Average exit price (decimal string, if closed).       |
 | `commissions`      | Commissions paid, one entry per currency (list).      |
 | `realized_pnl`     | Realized profit/loss in the cost currency (string).   |
 | `realized_return`  | Realized return as a ratio (float), so `0.05` is 5%.  |

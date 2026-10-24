@@ -51,8 +51,8 @@ beside it.
 | Value                   | Current Arrow representation                      | Record families                                                                       |
 | ----------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Prices and sizes        | `Decimal128(38, 16)`                              | Quotes, trades, bars, deltas, depth levels, mark and index prices, closes             |
-| Decimal text            | UTF-8 strings                                     | Funding `rate`, instruments, order, position, snapshot, and report records            |
-| Floating-point measures | `Float64`                                         | Option Greeks, position `signed_qty` and average-price/return fields                  |
+| Decimal text            | UTF-8 strings                                     | Funding `rate`, instruments, order, position financial fields, snapshots, and reports |
+| Floating-point measures | `Float64`                                         | Option Greeks and position `realized_return`                                          |
 | Instant timestamps      | `Timestamp(Nanosecond, Some("UTC"))`              | Every `ts_event`/`ts_init` column and other instant fields                            |
 | Durations and counters  | Unsigned integers                                 | Position `duration`, funding `interval`, sequences, counts, order IDs, flags          |
 | Market-data enums       | `Dictionary<Int8, Utf8>` enum names               | Trade aggressor side, delta action/side, close type, status action, Greeks convention |

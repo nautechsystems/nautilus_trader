@@ -32,6 +32,7 @@ use super::{
     EncodingError, KEY_IDENTIFIER, KEY_INSTRUMENT_ID, decode_required_timestamp,
     enum_dictionary_array, enum_dictionary_data_type, extract_column, extract_column_string,
     identifier_array_from_display, json::metadata_for_type, metadata_with_type_name,
+    validate_required_column,
 };
 
 const TYPE_NAME: &str = "OptionGreeks";
@@ -171,6 +172,17 @@ impl DecodeFromRecordBatch for OptionGreeks {
         let vega_values = extract_column::<Float64Array>(cols, "vega", 3, DataType::Float64)?;
         let theta_values = extract_column::<Float64Array>(cols, "theta", 4, DataType::Float64)?;
         let rho_values = extract_column::<Float64Array>(cols, "rho", 5, DataType::Float64)?;
+        for (column, field) in [
+            (0, "convention"),
+            (1, "delta"),
+            (2, "gamma"),
+            (3, "vega"),
+            (4, "theta"),
+            (5, "rho"),
+        ] {
+            validate_required_column(cols[column].as_ref(), field)?;
+        }
+
         let mark_iv_values = extract_column::<Float64Array>(cols, "mark_iv", 6, DataType::Float64)?;
         let bid_iv_values = extract_column::<Float64Array>(cols, "bid_iv", 7, DataType::Float64)?;
         let ask_iv_values = extract_column::<Float64Array>(cols, "ask_iv", 8, DataType::Float64)?;
@@ -309,5 +321,57 @@ mod tests {
             ])
         );
         assert_eq!(decoded, original);
+    }
+
+    #[rstest]
+    fn test_decode_batch_rejects_null_required_greek_with_field_and_row() {
+        let original = OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-20260529-100000-C.OKX"),
+            convention: GreeksConvention::BlackScholes,
+            greeks: OptionGreekValues {
+                delta: 0.55,
+                gamma: 0.012,
+                vega: 3.4,
+                theta: -1.2,
+                rho: 0.01,
+            },
+            mark_iv: None,
+            bid_iv: None,
+            ask_iv: None,
+            underlying_price: None,
+            open_interest: None,
+            ts_event: 1.into(),
+            ts_init: 2.into(),
+        };
+
+        let metadata = original.metadata();
+        let record_batch = OptionGreeks::encode_batch(&metadata, &[original]).unwrap();
+        let schema = record_batch.schema();
+
+        let fields = schema
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                if index == 1 {
+                    Arc::new(field.as_ref().clone().with_nullable(true))
+                } else {
+                    Arc::clone(field)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let schema = Arc::new(Schema::new_with_metadata(fields, schema.metadata().clone()));
+        let mut columns = record_batch.columns().to_vec();
+        columns[1] = Arc::new(Float64Array::from(vec![None]));
+        let record_batch = RecordBatch::try_new(schema, columns).unwrap();
+
+        let result = OptionGreeks::decode_batch(&metadata, record_batch);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::ParseError("delta", ref message))
+                if message == "row 0: required value is null"
+        ));
     }
 }

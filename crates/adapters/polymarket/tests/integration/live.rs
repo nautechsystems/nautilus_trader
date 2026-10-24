@@ -367,6 +367,87 @@ async fn tracked_partial_then_full_fill_is_exact_and_deduplicated() {
 }
 
 #[rstest]
+#[case::confirmed(false)]
+#[case::failed(true)]
+#[tokio::test]
+async fn multilevel_taker_fill_preserves_economics_through_settlement(#[case] failed: bool) {
+    let mut h = harness::Harness::build_with_cache(seed_taker_fee_schedule).await;
+    let order = harness::limit_order(h.instrument_id(), "O-MULTILEVEL");
+    submit_until_accepted(&mut h, &order).await;
+    let mut trade = user_trade("ws_user_trade_full.json", "MATCHED");
+    trade["price"] = json!("0.4");
+    let mut first = trade["maker_orders"][0].clone();
+    first["matched_amount"] = json!("65.5");
+    first["price"] = json!("0.4");
+    first["side"] = json!("SELL");
+    let mut second = first.clone();
+    second["order_id"] = json!("counterparty-order-2");
+    second["matched_amount"] = json!("34.5");
+    second["price"] = json!("0.41");
+    trade["maker_orders"] = json!([first, second]);
+    let mut terminal = trade.clone();
+    terminal["status"] = json!(if failed { "FAILED" } else { "CONFIRMED" });
+    serve_rest_trades(&h, &[terminal.clone()]).await;
+    h.mock_state.send_user(trade.clone()).await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| order_reached(
+            cache,
+            &order,
+            OrderStatus::Filled
+        ))
+        .await
+    );
+
+    let cached = cached_order(&h, &order);
+    let fills: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, TradeId::from("trade-0xfull"));
+    assert_eq!(fills[0].last_qty, Quantity::from("100"));
+    assert_eq!(fills[0].last_px, Price::from("0.40345"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.48131 pUSD")));
+
+    h.mock_state.send_user(trade).await;
+    h.mock_state.send_user(terminal).await;
+
+    if failed {
+        assert!(
+            h.pump_until(DEADLINE, |cache| {
+                cache
+                    .order(&order.client_order_id())
+                    .is_some_and(|cached| cached.filled_qty().is_zero())
+            })
+            .await
+        );
+    }
+
+    assert!(reports_resume(&mut h).await);
+    h.pump_for(Duration::from_millis(100)).await;
+    let cached = cached_order(&h, &order);
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(
+            event,
+            OrderEventAny::FillVoided(_)
+        )),
+        usize::from(failed)
+    );
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if failed { "0" } else { "100" })
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn external_order_is_parsed_by_mass_status_reconciliation() {
     let h = harness::Harness::build().await;

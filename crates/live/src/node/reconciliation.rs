@@ -21,6 +21,12 @@
 //! [`ExecutionManager`](crate::execution::manager::ExecutionManager) owns cache-dependent
 //! validation and individual reconciliation operations. This module owns recurring task lifecycles
 //! and leaves activity and retry state with the manager.
+//!
+//! Bulk order, position, and authoritative fill stages retain client admission until their receipts
+//! are finalized or discarded. Each stage collects all queries, then accepts only if `now < deadline`.
+//! Accepted continuations and reconciliation run synchronously, even if finalization crosses
+//! the deadline. Shutdown discards unused position snapshots without running their continuations.
+//! Discarding a batch skips retained continuations, not earlier inline effects.
 
 use std::{future::Future, pin::Pin, time::Duration};
 
@@ -29,23 +35,18 @@ use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     clients::ExecutionClient,
     live::dst,
-    messages::{
-        ExecutionEvent, ExecutionReport,
-        execution::{
-            GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        },
-    },
+    messages::{ExecutionEvent, ExecutionReport, execution::GenerateFillReports},
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId},
-    reports::{FillReport, PositionStatusReport},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 
 use super::{LiveNode, NodeState};
 use crate::{
     execution::{
-        client::LiveExecutionClient,
+        client::{CollectedReport, LiveExecutionClient, ReportCollector},
         manager::{
             InstrumentAccountKey, OpenOrderReportCheck, PositionFillReportPreparation,
             PositionFillReportQuery, PositionReportCheck, SourcedOrderStatusReport,
@@ -140,23 +141,17 @@ impl LiveNode {
         let check = self
             .exec_manager
             .prepare_open_order_report_check(UUID4::new(), &client_refs);
-        let command = check.command.clone();
         let clients = self.exec_clients.clone();
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(OpenOrderReportTask {
             future: Box::pin(async move {
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_open_order_reports(clients, command))
+                match dst::time::timeout(remaining, request_open_order_reports(clients, check))
                     .await
                 {
                     Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(OpenOrderReportResult {
-                            check,
-                            reports: result.reports,
-                            queried_clients: result.queried_clients,
-                            failed_clients: result.failed_clients,
-                        })
+                        ReportTaskOutcome::Completed(result)
                     }
                     Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
@@ -217,25 +212,16 @@ impl LiveNode {
         let check = self
             .exec_manager
             .prepare_position_report_check(UUID4::new(), &client_refs);
-        let command = check.command.clone();
         let clients = self.exec_clients.clone();
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(PositionReportTask {
             future: Box::pin(async move {
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_position_reports(clients, command))
-                    .await
+                match dst::time::timeout(remaining, request_position_reports(clients, check)).await
                 {
                     Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(
-                            PositionReportResult {
-                                check,
-                                reports: result.reports,
-                                queried_clients: result.queried_clients,
-                                failed_clients: result.failed_clients,
-                            },
-                        ))
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result))
                     }
                     Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
@@ -258,13 +244,10 @@ impl LiveNode {
                     .await
                 {
                     Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(
-                            PositionFillReportResult {
-                                position_result,
-                                reports: result.reports,
-                                successful_keys: result.successful_keys,
-                            },
-                        ))
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills {
+                            position_result,
+                            collection: result,
+                        })
                     }
                     Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
@@ -535,24 +518,17 @@ impl LiveNode {
 
 async fn request_open_order_reports(
     clients: Vec<LiveExecutionClient>,
-    command: GenerateOrderStatusReports,
-) -> OpenOrderReportQueryResult {
-    let mut all_reports = Vec::new();
+    check: OpenOrderReportCheck,
+) -> OpenOrderReportCollection {
+    let mut receipts = Vec::new();
     let mut queried_clients = IndexSet::new();
     let mut failed_clients = IndexSet::new();
 
     for client in clients {
         let client_id = client.client_id();
         queried_clients.insert(client_id);
-
-        match client.generate_order_status_reports(&command).await {
-            Ok(reports) => {
-                all_reports.extend(
-                    reports
-                        .into_iter()
-                        .map(|report| SourcedOrderStatusReport { client_id, report }),
-                );
-            }
+        match client.collect_order_status_reports(&check.command).await {
+            Ok(receipt) => receipts.push((client_id, receipt)),
             Err(e) => {
                 failed_clients.insert(client_id);
                 log::warn!(
@@ -563,8 +539,9 @@ async fn request_open_order_reports(
         }
     }
 
-    OpenOrderReportQueryResult {
-        reports: all_reports,
+    OpenOrderReportCollection {
+        check,
+        receipts,
         queried_clients,
         failed_clients,
     }
@@ -572,139 +549,39 @@ async fn request_open_order_reports(
 
 async fn request_position_reports(
     clients: Vec<LiveExecutionClient>,
-    command: GeneratePositionStatusReports,
-) -> PositionReportQueryResult {
-    let mut all_reports = Vec::new();
-    let mut queried_clients = IndexSet::new();
-    let mut failed_clients = IndexSet::new();
+    check: PositionReportCheck,
+) -> PositionReportCollection {
+    let mut receipts = Vec::new();
 
     for client in clients {
         let client_id = client.client_id();
-        queried_clients.insert(client_id);
-
-        match client.generate_position_status_reports(&command).await {
-            Ok(reports) => {
-                all_reports.extend(reports);
-            }
-            Err(e) => {
-                failed_clients.insert(client_id);
-                log::warn!(
-                    "Failed to generate position status reports from {}: {e}",
-                    client.client_id()
-                );
-            }
-        }
+        let receipt = client.collect_position_status_reports(&check.command).await;
+        receipts.push((client_id, receipt));
     }
 
-    PositionReportQueryResult {
-        reports: all_reports,
-        queried_clients,
-        failed_clients,
-    }
+    PositionReportCollection { check, receipts }
 }
 
-/// Collects scoped fill reports, rejecting failed or contradictory groups.
+/// Collects fill receipts without running their report-dependent continuations.
 pub(super) async fn request_position_fill_reports(
     clients: Vec<LiveExecutionClient>,
     queries: Vec<PositionFillReportQuery>,
-) -> PositionFillReportQueryResult {
-    let mut reports_by_key: IndexMap<InstrumentAccountKey, Vec<FillReport>> = IndexMap::new();
-    let mut queried_keys = IndexSet::new();
-    let mut failed_keys = IndexSet::new();
+) -> PositionFillReportCollection {
+    let mut collectors = IndexMap::new();
+    let mut receipts = Vec::new();
 
     for query in queries {
-        queried_keys.insert(query.key);
-
-        let Some(client) = clients
-            .iter()
-            .find(|client| client.client_id() == query.client_id)
-        else {
-            failed_keys.insert(query.key);
-            log::warn!(
-                "Failed to generate fill reports for {}/{}: execution client {} is unavailable",
-                query.key.0,
-                query.key.1,
-                query.client_id,
-            );
-            continue;
-        };
-
-        let command = query.command;
-        match client.generate_fill_reports(command.clone()).await {
-            Ok(reports)
-                if reports
-                    .iter()
-                    .all(|report| fill_report_matches_query_scope(report, query.key, &command)) =>
-            {
-                reports_by_key.entry(query.key).or_default().extend(
-                    reports
-                        .into_iter()
-                        .filter(|report| fill_report_in_query_window(report, &command)),
-                );
-            }
-            Ok(_) => {
-                failed_keys.insert(query.key);
-                log::warn!(
-                    "Discarding fill reports for {}/{}: response contained an invalid report",
-                    query.key.0,
-                    query.key.1,
-                );
-            }
-            Err(e) => {
-                failed_keys.insert(query.key);
-                log::warn!(
-                    "Failed to generate fill reports from {} for {}/{}: {e}",
-                    query.client_id,
-                    query.key.0,
-                    query.key.1,
-                );
-            }
+        let receipt = async {
+            let collector =
+                ReportCollector::for_client(&mut collectors, &clients, query.client_id).await?;
+            collector.fill_reports(query.command.clone()).await
         }
+        .await;
+
+        receipts.push((query, receipt));
     }
 
-    let mut successful_keys = IndexSet::new();
-
-    for key in queried_keys {
-        if failed_keys.contains(&key) {
-            reports_by_key.shift_remove(&key);
-            continue;
-        }
-
-        let mut deduplicated = IndexMap::new();
-        let mut contradictory = false;
-
-        for report in reports_by_key.shift_remove(&key).unwrap_or_default() {
-            let fill_key = (report.account_id, report.instrument_id, report.trade_id);
-            if let Some(existing) = deduplicated.get(&fill_key) {
-                if !fill_reports_equivalent(existing, &report) {
-                    contradictory = true;
-                    break;
-                }
-            } else {
-                deduplicated.insert(fill_key, report);
-            }
-        }
-
-        let mut reports = deduplicated.into_values().collect::<Vec<_>>();
-        reports.sort_by_key(|report| (report.ts_event, report.trade_id));
-
-        if contradictory {
-            log::warn!(
-                "Discarding fill reports for {}/{}: response contained contradictory fills",
-                key.0,
-                key.1,
-            );
-            continue;
-        }
-
-        successful_keys.insert(key);
-        reports_by_key.insert(key, reports);
-    }
-
-    PositionFillReportQueryResult {
-        reports: reports_by_key,
-        successful_keys,
-    }
+    PositionFillReportCollection { receipts }
 }
 
 fn fill_report_matches_query_scope(
@@ -779,7 +656,7 @@ pub(super) enum ReportTaskOutcome<T> {
 }
 
 type OpenOrderReportFuture =
-    Pin<Box<dyn Future<Output = ReportTaskOutcome<OpenOrderReportResult>>>>;
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<OpenOrderReportCollection>>>>;
 
 /// Pending bulk order reports and their preparation snapshot.
 pub(super) struct OpenOrderReportTask {
@@ -803,10 +680,40 @@ pub(super) struct TargetedOrderReportTask {
     pub(super) planned_client_order_ids: Vec<ClientOrderId>,
 }
 
-struct OpenOrderReportQueryResult {
-    reports: Vec<SourcedOrderStatusReport>,
+/// Bulk order receipts finalized only after the whole collection is accepted.
+pub(super) struct OpenOrderReportCollection {
+    check: OpenOrderReportCheck,
+    receipts: Vec<(ClientId, CollectedReport<Vec<OrderStatusReport>>)>,
     queried_clients: IndexSet<ClientId>,
     failed_clients: IndexSet<ClientId>,
+}
+
+impl OpenOrderReportCollection {
+    pub(super) fn finish(self) -> OpenOrderReportResult {
+        let mut reports = Vec::new();
+        let mut failed_clients = self.failed_clients;
+
+        for (client_id, collected) in self.receipts {
+            match collected.finish() {
+                Ok(finalized) => reports.extend(
+                    finalized
+                        .into_iter()
+                        .map(|report| SourcedOrderStatusReport { client_id, report }),
+                ),
+                Err(e) => {
+                    failed_clients.insert(client_id);
+                    log::warn!("Failed to generate order status reports from {client_id}: {e}");
+                }
+            }
+        }
+
+        OpenOrderReportResult {
+            check: self.check,
+            reports,
+            queried_clients: self.queried_clients,
+            failed_clients,
+        }
+    }
 }
 
 type PositionReportFuture =
@@ -840,8 +747,11 @@ impl PositionReportResult {
 
 /// Completed position reports or subsequent authoritative fill reports.
 pub(super) enum PositionReportTaskResult {
-    Positions(PositionReportResult),
-    Fills(PositionFillReportResult),
+    Positions(PositionReportCollection),
+    Fills {
+        position_result: PositionReportResult,
+        collection: PositionFillReportCollection,
+    },
 }
 
 /// Authoritative fills and the position snapshot that prompted their queries.
@@ -851,10 +761,140 @@ pub(super) struct PositionFillReportResult {
     pub(super) successful_keys: IndexSet<InstrumentAccountKey>,
 }
 
-struct PositionReportQueryResult {
-    reports: Vec<PositionStatusReport>,
-    queried_clients: IndexSet<ClientId>,
-    failed_clients: IndexSet<ClientId>,
+/// Position receipts retained until the complete snapshot is accepted.
+pub(super) struct PositionReportCollection {
+    check: PositionReportCheck,
+    receipts: Vec<(
+        ClientId,
+        anyhow::Result<CollectedReport<Vec<PositionStatusReport>>>,
+    )>,
+}
+
+impl PositionReportCollection {
+    pub(super) fn finish(self) -> PositionReportResult {
+        let mut reports = Vec::new();
+        let mut queried_clients = IndexSet::new();
+        let mut failed_clients = IndexSet::new();
+
+        for (client_id, receipt) in self.receipts {
+            queried_clients.insert(client_id);
+
+            match receipt.and_then(CollectedReport::finish) {
+                Ok(finalized) => reports.extend(finalized),
+                Err(e) => {
+                    failed_clients.insert(client_id);
+                    log::warn!("Failed to generate position status reports from {client_id}: {e}");
+                }
+            }
+        }
+
+        PositionReportResult {
+            check: self.check,
+            reports,
+            queried_clients,
+            failed_clients,
+        }
+    }
+}
+
+/// Fill-query receipts finalized only after the whole stage is accepted.
+pub(super) struct PositionFillReportCollection {
+    receipts: Vec<(
+        PositionFillReportQuery,
+        anyhow::Result<CollectedReport<Vec<FillReport>>>,
+    )>,
+}
+
+impl PositionFillReportCollection {
+    pub(super) fn finish(self) -> PositionFillReportQueryResult {
+        let mut reports_by_key: IndexMap<InstrumentAccountKey, Vec<FillReport>> = IndexMap::new();
+        let mut queried_keys = IndexSet::new();
+        let mut failed_keys = IndexSet::new();
+
+        for (query, receipt) in self.receipts {
+            queried_keys.insert(query.key);
+
+            let command = query.command;
+
+            match receipt.and_then(CollectedReport::finish) {
+                Ok(reports)
+                    if reports.iter().all(|report| {
+                        fill_report_matches_query_scope(report, query.key, &command)
+                    }) =>
+                {
+                    reports_by_key.entry(query.key).or_default().extend(
+                        reports
+                            .into_iter()
+                            .filter(|report| fill_report_in_query_window(report, &command)),
+                    );
+                }
+                Ok(_) => {
+                    failed_keys.insert(query.key);
+                    log::warn!(
+                        "Discarding fill reports for {}/{}: response contained an invalid report",
+                        query.key.0,
+                        query.key.1,
+                    );
+                }
+                Err(e) => {
+                    failed_keys.insert(query.key);
+                    log::warn!(
+                        "Failed to generate fill reports from {} for {}/{}: {e}",
+                        query.client_id,
+                        query.key.0,
+                        query.key.1,
+                    );
+                }
+            }
+        }
+
+        let mut successful_keys = IndexSet::new();
+
+        for key in queried_keys {
+            if failed_keys.contains(&key) {
+                reports_by_key.shift_remove(&key);
+                continue;
+            }
+
+            let collected = reports_by_key.shift_remove(&key).unwrap_or_default();
+
+            let Some(reports) = deduplicate_fill_reports(collected) else {
+                log::warn!(
+                    "Discarding fill reports for {}/{}: response contained contradictory fills",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            };
+
+            successful_keys.insert(key);
+            reports_by_key.insert(key, reports);
+        }
+
+        PositionFillReportQueryResult {
+            reports: reports_by_key,
+            successful_keys,
+        }
+    }
+}
+
+fn deduplicate_fill_reports(reports: Vec<FillReport>) -> Option<Vec<FillReport>> {
+    let mut deduplicated = IndexMap::new();
+
+    for report in reports {
+        let fill_key = (report.account_id, report.instrument_id, report.trade_id);
+        if let Some(existing) = deduplicated.get(&fill_key) {
+            if !fill_reports_equivalent(existing, &report) {
+                return None;
+            }
+        } else {
+            deduplicated.insert(fill_key, report);
+        }
+    }
+
+    let mut reports = deduplicated.into_values().collect::<Vec<_>>();
+    reports.sort_by_key(|report| (report.ts_event, report.trade_id));
+    Some(reports)
 }
 
 /// Fill reports grouped by keys with complete, consistent query results.
@@ -865,11 +905,25 @@ pub(super) struct PositionFillReportQueryResult {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::UnixNanos;
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    use futures_util::FutureExt;
+    use nautilus_common::{
+        clients::ExecutionReportTask, messages::execution::GeneratePositionStatusReports,
+    };
+    use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide},
-        identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
-        types::{Money, Price, Quantity},
+        accounts::AccountAny,
+        enums::{LiquiditySide, OmsType, OrderSide, PositionSide},
+        identifiers::{AccountId, InstrumentId, TradeId, Venue, VenueOrderId},
+        types::{AccountBalance, MarginBalance, Money, Price, Quantity},
     };
     use proptest::prelude::*;
     use rstest::{fixture, rstest};
@@ -956,5 +1010,481 @@ mod tests {
             UnixNanos::from(2_000),
             None,
         )
+    }
+
+    #[rstest]
+    #[case::before(-1)]
+    #[case::exact(0)]
+    #[case::after(1)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_position_report_acceptance_strict_deadline(
+        #[case] offset_ns: i64,
+        #[values(false, true)] positions: bool,
+        #[values(false, true)] worker: bool,
+    ) {
+        let mut node = LiveNode::build("PositionDeadline".to_string(), None).unwrap();
+        node.config.timeout_reconciliation = Duration::from_secs(1);
+        let state = PositionCollectionState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+
+        let client = PositionCollectionClient {
+            client_id: ClientId::from("POSITION-DEADLINE"),
+            state: state.clone(),
+            worker,
+            gate_at: 2,
+            release: release.clone(),
+        };
+
+        node.exec_clients
+            .push(LiveExecutionClient::new(Box::new(client)));
+
+        if positions {
+            node.exec_clients.push(LiveExecutionClient::new(Box::new(
+                PositionCollectionClient {
+                    state: state.clone(),
+                    worker,
+                    gate_at: 2,
+                    release: release.clone(),
+                    client_id: ClientId::from("POSITION-DEADLINE-2"),
+                },
+            )));
+        }
+
+        let deadline = dst::time::Instant::now() + node.config.timeout_reconciliation;
+        let mut task = if positions {
+            node.start_position_report_check().unwrap()
+        } else {
+            node.start_position_fill_report_check(
+                empty_position_result(&node),
+                vec![position_fill_query(), position_fill_query()],
+            )
+        };
+
+        let expected_calls = 2;
+        while state.started.load(Ordering::SeqCst) < expected_calls {
+            assert!(task.future.as_mut().now_or_never().is_none());
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(state.snapshots.get(), 0);
+        assert!(state.trades.borrow().is_empty());
+
+        let boundary = if offset_ns < 0 {
+            deadline.checked_sub(Duration::from_nanos(1)).unwrap()
+        } else {
+            deadline + Duration::from_nanos(offset_ns.unsigned_abs())
+        };
+
+        advance_position_clock(boundary.saturating_duration_since(dst::time::Instant::now())).await;
+        assert_eq!(dst::time::Instant::now(), boundary);
+        release.notify_one();
+        let outcome = task.future.await;
+        if offset_ns < 0 {
+            let ReportTaskOutcome::Completed(collection) = outcome else {
+                panic!("ready before deadline")
+            };
+
+            assert_eq!(state.snapshots.get(), 0);
+            assert!(state.trades.borrow().is_empty());
+
+            match collection {
+                PositionReportTaskResult::Positions(collection) => {
+                    let result = collection.finish();
+                    assert_eq!(
+                        result.reports,
+                        vec![position_snapshot(), position_snapshot()]
+                    );
+                    assert_eq!(
+                        result.queried_clients,
+                        IndexSet::from([
+                            ClientId::from("POSITION-DEADLINE"),
+                            ClientId::from("POSITION-DEADLINE-2")
+                        ])
+                    );
+                    assert!(result.failed_clients.is_empty());
+                    assert_eq!(state.snapshots.get(), usize::from(worker));
+                }
+                PositionReportTaskResult::Fills { collection, .. } => {
+                    let result = collection.finish();
+                    let query = position_fill_query();
+                    assert_eq!(
+                        result.reports,
+                        IndexMap::from([(query.key, vec![position_trade()])])
+                    );
+                    assert_eq!(result.successful_keys, IndexSet::from([query.key]));
+                    assert_eq!(
+                        *state.commands.borrow(),
+                        vec![query.command.clone(), query.command]
+                    );
+                    assert_eq!(
+                        *state.trades.borrow(),
+                        if worker {
+                            vec![TradeId::from("T-DEADLINE")]
+                        } else {
+                            vec![]
+                        }
+                    );
+                }
+            }
+        } else {
+            assert!(matches!(outcome, ReportTaskOutcome::TimedOut));
+            assert_eq!(state.snapshots.get(), 0);
+            assert!(state.trades.borrow().is_empty());
+        }
+
+        let mut errors = Vec::new();
+        LiveNode::finish_report_tasks(&node.exec_clients, &mut errors).await;
+        assert!(errors.is_empty());
+    }
+
+    #[rstest]
+    #[case::expired(false)]
+    #[case::cancelled(true)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_position_report_acceptance_rejected_fill_retries_and_filters_replay(
+        #[case] cancel: bool,
+    ) {
+        let mut node = LiveNode::build("PositionRetry".to_string(), None).unwrap();
+        node.config.timeout_reconciliation = Duration::from_secs(1);
+        let state = PositionCollectionState::default();
+        let release = Arc::new(tokio::sync::Notify::new());
+        node.exec_clients.push(LiveExecutionClient::new(Box::new(
+            PositionCollectionClient {
+                client_id: ClientId::from("POSITION-DEADLINE"),
+                state: state.clone(),
+                worker: true,
+                gate_at: 2,
+                release,
+            },
+        )));
+
+        let queries = vec![position_fill_query(), position_fill_query()];
+        let mut task = node.start_position_fill_report_check(
+            empty_position_result(&node),
+            vec![position_fill_query(), position_fill_query()],
+        );
+
+        while state.started.load(Ordering::SeqCst) < 2 {
+            assert!(task.future.as_mut().now_or_never().is_none());
+            tokio::task::yield_now().await;
+        }
+
+        if cancel {
+            drop(task);
+        } else {
+            advance_position_clock(Duration::from_secs(1)).await;
+            assert!(matches!(task.future.await, ReportTaskOutcome::TimedOut));
+        }
+
+        let mut errors = Vec::new();
+        LiveNode::finish_report_tasks(&node.exec_clients, &mut errors).await;
+        assert!(errors.is_empty());
+        assert!(state.trades.borrow().is_empty());
+        let retry = request_position_fill_reports(node.exec_clients.clone(), queries)
+            .await
+            .finish();
+        assert_eq!(
+            retry.reports,
+            IndexMap::from([(position_fill_query().key, vec![position_trade()])])
+        );
+        assert_eq!(*state.trades.borrow(), vec![TradeId::from("T-DEADLINE")]);
+        let replay =
+            request_position_fill_reports(node.exec_clients.clone(), vec![position_fill_query()])
+                .await
+                .finish();
+        assert_eq!(
+            replay.reports,
+            IndexMap::from([(position_fill_query().key, vec![])])
+        );
+        assert_eq!(
+            replay.successful_keys,
+            IndexSet::from([position_fill_query().key])
+        );
+        assert_eq!(state.started.load(Ordering::SeqCst), 5);
+        assert_eq!(
+            *state.commands.borrow(),
+            vec![position_fill_query().command; 5]
+        );
+    }
+
+    #[rstest]
+    #[case::first(0)]
+    #[case::last(1)]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_position_report_acceptance_keeps_healthy_snapshot_after_finish_error(
+        #[case] failed: usize,
+    ) {
+        let mut node = LiveNode::build("PositionFinishError".to_string(), None).unwrap();
+        let states = [
+            PositionCollectionState::default(),
+            PositionCollectionState::default(),
+        ];
+        let ids = [
+            ClientId::from("POSITION-DEADLINE"),
+            ClientId::from("POSITION-DEADLINE-2"),
+        ];
+        states[failed].finish_error.set(true);
+        for (state, client_id) in states.iter().zip(ids) {
+            node.exec_clients.push(LiveExecutionClient::new(Box::new(
+                PositionCollectionClient {
+                    client_id,
+                    state: state.clone(),
+                    worker: true,
+                    gate_at: 0,
+                    release: Arc::new(tokio::sync::Notify::new()),
+                },
+            )));
+        }
+
+        let ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(collection)) =
+            node.start_position_report_check().unwrap().future.await
+        else {
+            panic!("collection completes")
+        };
+
+        let result = collection.finish();
+        assert_eq!(result.reports, vec![position_snapshot()]);
+        assert_eq!(result.queried_clients, IndexSet::from(ids));
+        assert_eq!(result.failed_clients, IndexSet::from([ids[failed]]));
+        assert_eq!(
+            states
+                .iter()
+                .map(|state| state.snapshots.get())
+                .collect::<Vec<_>>(),
+            vec![1, 1]
+        );
+    }
+
+    #[cfg_attr(
+        all(feature = "simulation", madsim),
+        expect(
+            clippy::unused_async,
+            reason = "the Tokio clock requires an awaitable advance operation"
+        )
+    )]
+    async fn advance_position_clock(duration: Duration) {
+        #[cfg(all(feature = "simulation", madsim))]
+        madsim::time::advance(duration);
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        tokio::time::advance(duration).await;
+    }
+
+    fn empty_position_result(node: &LiveNode) -> PositionReportResult {
+        PositionReportResult {
+            check: node
+                .exec_manager
+                .prepare_position_report_check(UUID4::new(), &[]),
+            reports: vec![],
+            queried_clients: IndexSet::new(),
+            failed_clients: IndexSet::new(),
+        }
+    }
+
+    fn position_fill_query() -> PositionFillReportQuery {
+        let report = position_trade();
+
+        PositionFillReportQuery {
+            key: (report.instrument_id, report.account_id),
+            client_id: ClientId::from("POSITION-DEADLINE"),
+            command: GenerateFillReports::new(
+                UUID4::from("00000000-0000-4000-8000-000000000001"),
+                UnixNanos::from(100),
+                Some(report.instrument_id),
+                None,
+                Some(UnixNanos::from(1)),
+                Some(UnixNanos::from(100)),
+                None,
+                None,
+            ),
+        }
+    }
+
+    fn position_trade() -> FillReport {
+        FillReport::new(
+            AccountId::from("POSITION-DEADLINE-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            VenueOrderId::from("V-DEADLINE"),
+            TradeId::from("T-DEADLINE"),
+            OrderSide::Buy,
+            Quantity::from("2.0"),
+            Price::from("103.0"),
+            Money::from("0.3 USDT"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(40),
+            UnixNanos::from(50),
+            Some(UUID4::from("00000000-0000-4000-8000-000000000002")),
+        )
+    }
+
+    fn position_snapshot() -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("POSITION-DEADLINE-001"),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            PositionSide::Long,
+            Quantity::from("2.0"),
+            UnixNanos::from(50),
+            UnixNanos::from(60),
+            Some(UUID4::from("00000000-0000-4000-8000-000000000003")),
+            None,
+            None,
+        )
+    }
+
+    #[derive(Clone, Default)]
+    struct PositionCollectionState {
+        finish_error: Rc<Cell<bool>>,
+        started: Arc<AtomicUsize>,
+        snapshots: Rc<Cell<usize>>,
+        trades: Rc<RefCell<Vec<TradeId>>>,
+        commands: Rc<RefCell<Vec<GenerateFillReports>>>,
+    }
+
+    struct PositionCollectionClient {
+        client_id: ClientId,
+        state: PositionCollectionState,
+        worker: bool,
+        gate_at: usize,
+        release: Arc<tokio::sync::Notify>,
+    }
+
+    impl PositionCollectionClient {
+        fn collection<T: Send + 'static>(
+            &self,
+            value: T,
+        ) -> impl Future<Output = anyhow::Result<T>> + Send + 'static {
+            let started = self.state.started.clone();
+            let gate_at = self.gate_at;
+            let release = self.release.clone();
+            async move {
+                let count = started.fetch_add(1, Ordering::SeqCst) + 1;
+                if count == gate_at {
+                    release.notified().await;
+                }
+
+                Ok(value)
+            }
+        }
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl ExecutionClient for PositionCollectionClient {
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn client_id(&self) -> ClientId {
+            self.client_id
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("POSITION-DEADLINE-001")
+        }
+
+        fn venue(&self) -> Venue {
+            position_trade().instrument_id.venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Hedging
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn generate_account_state(
+            &self,
+            _: Vec<AccountBalance>,
+            _: Vec<MarginBalance>,
+            _: bool,
+            _: UnixNanos,
+            _: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn generate_position_status_reports_task(
+            &self,
+            _: &GeneratePositionStatusReports,
+        ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
+            (self.worker && self.state.started.load(Ordering::SeqCst) + 1 != self.gate_at).then(
+                || {
+                    let snapshots = self.state.snapshots.clone();
+                    let finish_error = self.state.finish_error.clone();
+
+                    ExecutionReportTask::new(
+                        self.collection(vec![position_snapshot()]),
+                        move |reports| {
+                            snapshots.set(snapshots.get() + 1);
+                            anyhow::ensure!(!finish_error.get(), "position finalization failed");
+                            Ok(reports)
+                        },
+                    )
+                },
+            )
+        }
+
+        async fn generate_position_status_reports(
+            &self,
+            _: &GeneratePositionStatusReports,
+        ) -> anyhow::Result<Vec<PositionStatusReport>> {
+            self.collection(vec![position_snapshot()]).await
+        }
+
+        fn generate_fill_reports_task(
+            &self,
+            cmd: &GenerateFillReports,
+        ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+            (self.worker && self.state.started.load(Ordering::SeqCst) + 1 != self.gate_at).then(
+                || {
+                    self.state.commands.borrow_mut().push(cmd.clone());
+                    let trades = self.state.trades.clone();
+
+                    ExecutionReportTask::new(
+                        self.collection(vec![position_trade()]),
+                        move |mut reports| {
+                            reports.retain(|report| {
+                                let mut trades = trades.borrow_mut();
+                                if trades.contains(&report.trade_id) {
+                                    false
+                                } else {
+                                    trades.push(report.trade_id);
+                                    true
+                                }
+                            });
+
+                            Ok(reports)
+                        },
+                    )
+                },
+            )
+        }
+
+        async fn generate_fill_reports(
+            &self,
+            cmd: GenerateFillReports,
+        ) -> anyhow::Result<Vec<FillReport>> {
+            self.state.commands.borrow_mut().push(cmd);
+            self.collection(vec![position_trade()]).await
+        }
     }
 }

@@ -22,6 +22,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
     types::{Currency, Quantity},
 };
+use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, postgres::PgRow};
 
 use crate::sql::models::{decode_error, decode_money};
@@ -59,7 +60,7 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
             .try_get::<&str, _>("side")
             .map(PositionSide::from_str)?
             .expect("Invalid `PositionSide`");
-        let signed_qty = row.try_get::<f64, _>("signed_qty")?;
+        let signed_qty = row.try_get::<Decimal, _>("signed_qty")?;
         let quantity = row.try_get::<&str, _>("quantity").map(Quantity::from)?;
         let peak_qty = row.try_get::<&str, _>("peak_qty").map(Quantity::from)?;
         let quote_currency = row
@@ -72,8 +73,8 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
         let settlement_currency = row
             .try_get::<&str, _>("settlement_currency")
             .map(Currency::from)?;
-        let avg_px_open = row.try_get::<f64, _>("avg_px_open")?;
-        let avg_px_close = row.try_get::<Option<f64>, _>("avg_px_close")?;
+        let avg_px_open = row.try_get::<Decimal, _>("avg_px_open")?;
+        let avg_px_close = row.try_get::<Option<Decimal>, _>("avg_px_close")?;
         let realized_return = row.try_get::<Option<f64>, _>("realized_return")?;
         let realized_pnl = row
             .try_get::<Option<&str>, _>("realized_pnl")?

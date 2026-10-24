@@ -770,31 +770,33 @@ impl OrderManager {
                 return None;
             };
 
-            let position_cap = child_filled_qty.saturating_add(position.quantity);
+            let precision = child_filled_qty.precision.max(position.quantity.precision);
+
+            let (Some(child_filled_qty), Some(position_qty)) = (
+                child_filled_qty.checked_rescale(precision),
+                position.quantity.checked_rescale(precision),
+            ) else {
+                log::error!("Cannot size OTO orders: position quantity scale alignment overflow");
+                return None;
+            };
+
+            let position_cap = child_filled_qty.saturating_add(position_qty);
             filled_qty.min(position_cap)
         };
 
-        let target_raw = capped.raw() - capped.raw() % increment.raw();
-
-        let target_raw = if child_instrument
-            .min_quantity()
-            .is_some_and(|min_quantity| target_raw < min_quantity.raw())
-        {
-            0
-        } else {
-            target_raw
+        let Some(target) = capped.checked_floor_to_increment(increment) else {
+            log::error!("Cannot size OTO orders: quantity scale alignment overflow");
+            return None;
         };
 
-        match Quantity::from_raw_checked(target_raw, child_instrument.size_precision()) {
-            Ok(quantity) => Some(quantity),
-            Err(e) => {
-                log::error!(
-                    "Cannot size OTO orders for {} from raw quantity {target_raw}: {e}",
-                    child_order.instrument_id()
-                );
-                None
-            }
+        if child_instrument
+            .min_quantity()
+            .is_some_and(|min_quantity| target < min_quantity)
+        {
+            return Some(Quantity::zero(child_instrument.size_precision()));
         }
+
+        Some(target)
     }
 
     fn sync_oto_quantity(

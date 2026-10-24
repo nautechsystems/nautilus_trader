@@ -281,13 +281,16 @@ Lighter, Polymarket, Hyperliquid, Bybit, Betfair, and AX Exchange provide harnes
 
 ### In-band verification
 
-When a venue publishes a book checksum or hash, validate it and treat a mismatch as a gap. This
-catches corruption in the covered data that sequence checks miss, without an external oracle.
+When a venue publishes a book checksum or hash, validate the completed state it covers and treat a
+mismatch as a gap. This catches corruption that sequence checks miss, without an external oracle.
 
 - **Kraken**: Validates the CRC32 checksum on each Spot L2 `book` and L3 message when
   `validate_l2_checksum` and `validate_l3_checksum` are enabled, both the default.
-- **Polymarket**: Validates the hash on each book snapshot carrying a hash and its full preimage.
-  See [book snapshot validation](../integrations/polymarket.md#book-snapshot-validation).
+- **Polymarket**: Rejects snapshot hash mismatches when all hash inputs are available. Snapshots with
+  missing inputs and incremental updates remain unverified and do not trigger hash recovery.
+  Missing depth can remain undetected until a fresh snapshot. See
+  [book snapshot validation](../integrations/polymarket.md#book-snapshot-validation)
+  and [price change bursts](../integrations/polymarket.md#price-change-bursts).
 - **OKX**: `books` frames carry a zero `checksum`, so verification relies on the oracle instead.
 
 ---

@@ -236,7 +236,12 @@ impl OKXWsFeedHandler {
         rate_limit_keys: Option<&[Ustr]>,
     ) -> Result<(), OKXWsError> {
         let client = self.inner.as_ref().ok_or(OKXWsError::NoActiveClient)?;
+        // Capture ownership before checking reconnect so recovery cannot select a replacement
         let connection_epoch = client.connection_epoch();
+        if client.connection_mode().is_reconnect() {
+            return Err(OKXWsError::TransportSend(SendError::ConnectionChanged));
+        }
+
         client
             .send_text_on_connection(payload, rate_limit_keys, connection_epoch)
             .await
@@ -957,6 +962,7 @@ mod tests {
     use nautilus_core::{collections::AtomicMap, time::get_atomic_clock_realtime};
     use nautilus_model::identifiers::InstrumentId;
     use nautilus_network::{
+        mode::ConnectionMode,
         ratelimiter::{RateLimiter, quota::Quota},
         websocket::{AuthTracker, SubscriptionState, WebSocketConfig, channel_message_handler},
     };
@@ -1898,5 +1904,89 @@ mod tests {
             }
             other => panic!("Expected LiquidationWarnings, was {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn bound_send_rejects_reconnecting_epoch_before_waiting() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let mut frames = Vec::new();
+            while let Some(Ok(Message::Text(text))) = socket.next().await {
+                frames.push(text.to_string());
+            }
+
+            frames
+        });
+
+        let (message_handler, raw_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(WebSocketConfig::builder().url(url).build().unwrap())
+            .message_handler(message_handler)
+            .connect()
+            .await
+            .unwrap();
+        let mode = client.connection_mode_atomic();
+        let epoch = client.connection_epoch();
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        handler.inner = Some(client);
+        handler
+            .send_on_connection("active-control".to_string(), None)
+            .await
+            .unwrap();
+
+        tokio::time::pause();
+        mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+
+        let (ready, result) = {
+            let mut send =
+                Box::pin(handler.send_on_connection("cancel-in-reconnect".to_string(), None));
+
+            match futures_util::poll!(send.as_mut()) {
+                std::task::Poll::Ready(result) => (true, result),
+                std::task::Poll::Pending => {
+                    mode.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+                    tokio::time::advance(Duration::from_millis(100)).await;
+                    (false, send.await)
+                }
+            }
+        };
+
+        mode.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        tokio::time::resume();
+        let final_epoch = handler.inner.as_ref().unwrap().connection_epoch();
+        handler.inner.as_ref().unwrap().disconnect().await;
+        let frames = tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .expect("peer did not close")
+            .unwrap();
+
+        assert_eq!(frames, vec!["active-control"]);
+        assert_eq!(final_epoch, epoch);
+        assert!(
+            ready,
+            "reconnecting send must fail without waiting for recovery"
+        );
+        assert!(
+            matches!(
+                result,
+                Err(OKXWsError::TransportSend(SendError::ConnectionChanged))
+            ),
+            "expected rejection for a reconnecting epoch, received {result:?}"
+        );
     }
 }

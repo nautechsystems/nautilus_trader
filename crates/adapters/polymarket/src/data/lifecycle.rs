@@ -566,6 +566,7 @@ impl PolymarketDataClient {
         }
 
         self.subscriptions.book_sync.clear();
+        self.subscriptions.book_integrity.lock().clear();
 
         if let Err(e) = self.polybolt_feed.disconnect().await {
             self.shutdown_errors.push(e.to_string());

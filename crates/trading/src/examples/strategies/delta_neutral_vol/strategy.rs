@@ -29,7 +29,7 @@ use nautilus_model::{
     orders::Order,
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde_json::json;
 use ustr::Ustr;
 
@@ -685,19 +685,31 @@ impl DataActor for DeltaNeutralVol {
             let call_pos: f64 = cache
                 .positions_open(None, Some(&call_id), None, None, None)
                 .iter()
-                .map(|p| p.signed_qty)
+                .map(|p| {
+                    p.signed_qty
+                        .to_f64()
+                        .expect("Decimal quantity fits strategy analytics")
+                })
                 .sum();
 
             let put_pos: f64 = cache
                 .positions_open(None, Some(&put_id), None, None, None)
                 .iter()
-                .map(|p| p.signed_qty)
+                .map(|p| {
+                    p.signed_qty
+                        .to_f64()
+                        .expect("Decimal quantity fits strategy analytics")
+                })
                 .sum();
 
             let hedge_pos: f64 = cache
                 .positions_open(None, Some(&hedge_id), None, None, None)
                 .iter()
-                .map(|p| p.signed_qty)
+                .map(|p| {
+                    p.signed_qty
+                        .to_f64()
+                        .expect("Decimal quantity fits strategy analytics")
+                })
                 .sum();
 
             (call_pos, put_pos, hedge_pos)

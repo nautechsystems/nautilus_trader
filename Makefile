@@ -210,6 +210,8 @@ SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	package(nautilus-execution) + \
 	(package(nautilus-live) & test(test_startup_reconciliation_times_out_waiting_for_mass_status)) + \
 	(package(nautilus-live) & test(~task::tests)) + \
+	(package(nautilus-live) & test(test_bulk_report_acceptance)) + \
+	(package(nautilus-live) & test(test_position_report_acceptance)) + \
 	(package(nautilus-core) & test(~virtual_time))
 SIM_HIGH_PRECISION_PACKAGES := -p nautilus-common -p nautilus-execution
 
@@ -911,6 +913,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-validate-wheel-upload.bash
 	$Q bash scripts/ci/test-verify-published-registries-crates.bash
 	$Q bash scripts/test-check-cargo-cooldown.bash
+	$Q bash scripts/test-cargo-ci-benches.bash
 	$Q bash scripts/test-clippy-strict-audit.bash
 	$Q bash scripts/test-update-cargo-dependencies.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py
@@ -1301,7 +1304,7 @@ CODSPEED_BENCH_ARGS := $(addprefix --package ,$(CODSPEED_BENCH_CRATES)) \
 cargo-ci-benches: check-cargo-cooldown  #-- Run Rust benches for the crates included in the CI performance workflow
 	@for crate in $(CI_BENCH_CRATES); do \
 	  echo "Running benches for $$crate"; \
-	  cargo bench --locked -p $$crate --profile bench --benches --no-fail-fast; \
+	  cargo bench --locked -p $$crate --profile bench --benches --no-fail-fast || exit $$?; \
 	done
 
 .PHONY: cargo-codspeed-build
