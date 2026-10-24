@@ -5871,6 +5871,10 @@ fn test_write_data_enum_mixed_custom_data_identifiers() {
 }
 
 fn custom_with_source(source: &str, ts_init: u64) -> Data {
+    custom_with_source_value(source, ts_init, ts_init as f64)
+}
+
+fn custom_with_source_value(source: &str, ts_init: u64, value: f64) -> Data {
     let instrument_id = InstrumentId::from("RUST.A");
     let metadata = Params::new([("source".to_string(), json!(source))].into());
     let data_type = DataType::new(
@@ -5880,12 +5884,40 @@ fn custom_with_source(source: &str, ts_init: u64) -> Data {
     );
     let item = RustTestCustomData {
         instrument_id,
-        value: ts_init as f64,
+        value,
         flag: true,
         ts_event: UnixNanos::from(ts_init),
         ts_init: UnixNanos::from(ts_init),
     };
     Data::Custom(CustomData::new(Arc::new(item), data_type))
+}
+
+// Returns the `ts_init` and value bits of every `RUST.A` row, so NaN values compare equal.
+fn rust_test_custom_data_values(catalog: &mut ParquetDataCatalog) -> Vec<(u64, u64)> {
+    catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&["RUST.A".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap()
+        .iter()
+        .map(|data| {
+            let Data::Custom(custom) = data else {
+                panic!("expected custom data, was {data:?}");
+            };
+            let item = custom
+                .data
+                .as_any()
+                .downcast_ref::<RustTestCustomData>()
+                .unwrap();
+            (item.ts_init.as_u64(), item.value.to_bits())
+        })
+        .collect()
 }
 
 fn catalog_relative_paths(temp_dir: &TempDir) -> Vec<String> {
@@ -6239,6 +6271,78 @@ fn test_delete_data_range_rejects_custom_metadata_splits_sharing_a_file() {
         )
     );
     assert_eq!(snapshot_catalog_files(&temp_dir), files_before);
+}
+
+/// Parquet float statistics skip NaN, so a column holding NaN and one other value has equal min
+/// and max, and must still read back row by row rather than as that value.
+#[rstest]
+fn test_query_custom_data_keeps_nan_values() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    catalog
+        .write_data_enum(
+            &[
+                custom_with_source_value("a", 1, f64::NAN),
+                custom_with_source_value("a", 4, 44.0),
+            ],
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let loaded = rust_test_custom_data_values(&mut catalog);
+
+    assert_eq!(
+        loaded,
+        vec![(1, f64::NAN.to_bits()), (4, 44.0_f64.to_bits())]
+    );
+}
+
+/// A rerun of an interrupted delete finds a split target that already holds the preserved rows,
+/// including NaN values, which equal themselves in the stored encoding, so the delete completes.
+#[rstest]
+fn test_delete_data_range_keeps_custom_split_target_holding_nan_rows() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    catalog
+        .write_data_enum(
+            &[
+                custom_with_source_value("a", 1, f64::NAN),
+                custom_with_source_value("a", 4, 4.0),
+            ],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(10)),
+            Some(true),
+        )
+        .unwrap();
+    catalog
+        .write_data_enum(
+            &[custom_with_source_value("a", 1, f64::NAN)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(2)),
+            Some(true),
+        )
+        .unwrap();
+
+    delete_rust_test_custom_data_at_3(&mut catalog).unwrap();
+    let loaded = rust_test_custom_data_values(&mut catalog);
+
+    assert_eq!(
+        catalog_relative_paths(&temp_dir),
+        vec![
+            "data/custom/RustTestCustomData/RUST.A/\
+             1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet"
+                .to_string(),
+            "data/custom/RustTestCustomData/RUST.A/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+        ]
+    );
+    assert_eq!(
+        loaded,
+        vec![(1, f64::NAN.to_bits()), (4, 4.0_f64.to_bits())]
+    );
 }
 
 /// An existing custom split target that lacks preserved rows fails the delete without changes.

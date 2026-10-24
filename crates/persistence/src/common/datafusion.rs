@@ -276,6 +276,10 @@ pub(crate) fn session_config() -> SessionConfig {
             "false",
         )
         .set_str("datafusion.optimizer.prefer_existing_sort", "true")
+        // File statistics let DataFusion replace a column whose min equals its max with that
+        // value, but Parquet float statistics skip NaN, so NaN rows would read back as the other
+        // rows' value (apache/datafusion#26490). Row group pruning reads the file metadata itself.
+        .set_str("datafusion.execution.collect_statistics", "false")
 }
 
 pub(crate) fn cast_record_batch_to_schema(

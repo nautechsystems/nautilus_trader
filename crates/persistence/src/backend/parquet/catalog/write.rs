@@ -825,7 +825,7 @@ pub(crate) struct CustomDataWrite {
     directory: String,
     start_ts: UnixNanos,
     end_ts: UnixNanos,
-    batches: Vec<RecordBatch>,
+    pub(crate) batches: Vec<RecordBatch>,
 }
 
 #[cfg(test)]
