@@ -717,7 +717,8 @@ fn split_target(operation: &DeleteOperation) -> SplitTarget {
 
 // Returns whether every row of `rows` occurs in `existing`, comparing the columns both share by
 // name, so a column only one side carries, such as a stored identifier column, is ignored.
-// JSON-backed columns compare by value, since an equal map can serialize its keys in any order.
+// JSON columns compare by value, since an equal map can serialize its keys in any order: custom
+// JSON-backed fields and the plain UTF-8 `data_type` column that holds custom data metadata.
 fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::Result<bool> {
     let Some(first) = rows.first() else {
         return Ok(true);
@@ -745,9 +746,10 @@ fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::
     let json_names: AHashSet<&str> = names
         .iter()
         .filter(|name| {
-            [first.schema(), existing_schema.clone()]
-                .iter()
-                .any(|schema| schema.field_with_name(name).is_ok_and(is_json_string_field))
+            *name == "data_type"
+                || [first.schema(), existing_schema.clone()]
+                    .iter()
+                    .any(|schema| schema.field_with_name(name).is_ok_and(is_json_string_field))
         })
         .map(String::as_str)
         .collect();
