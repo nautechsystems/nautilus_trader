@@ -15,12 +15,13 @@
 
 //! Order book synchronization and recovery for Polymarket.
 //!
-//! - [`integrity`] tracks book timestamps and verifies incremental hash groups.
+//! - [`integrity`] tracks book timestamps and the accepted snapshot's verification status.
 //! - [`sync`] owns snapshot tracking and recovery state transitions.
 //! - [`recovery`] owns recovery tasks and replacement subscriptions, using the shared retry runner.
 //!
 //! Polymarket books carry no sequence numbers, so the tracker gates incremental
-//! `price_change` deltas on an accepted `book` snapshot. Available hashes validate the full book.
+//! `price_change` deltas on an accepted `book` snapshot. Snapshot hashes with complete inputs validate
+//! the full book.
 //! The data client routes book events through the tracker and starts recovery when needed.
 //! Recovery tasks use the tracker to claim ownership; incoming snapshots complete recovery
 //! through the same tracker. Outcome types come from [`nautilus_live::book`].

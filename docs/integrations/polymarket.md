@@ -2063,7 +2063,7 @@ Fresh book subscriptions and reconnects arm a one-shot `book_snapshot_timeout_se
 snapshot is lost, this deadline starts recovery even without venue updates. While armed, early updates and rejected
 snapshots leave the book gated until a valid snapshot arrives or recovery starts.
 
-A zero timeout disables initial, reconnect, and hash-group deadlines, plus per-attempt snapshot deadlines
+A zero timeout disables initial and reconnect deadlines, plus per-attempt snapshot deadlines
 within the 180-second retry budget. The budget still ends a pending attempt; later attempts time out after one minute.
 
 The venue sends a `book` snapshot on first subscribe and ignores duplicate subscribes. A book-delta
@@ -2074,14 +2074,14 @@ Recovery cycles the asset's subscription until a valid snapshot arrives.
 A single `price_change` payload can contain interleaved updates for several assets. The adapter
 groups book updates by instrument, then splits consecutive updates by hash. Quote processing remains
 in venue payload order.
-[Hash validation](#price-change-bursts) can combine several frames into one completed book delta batch.
+Each hash group emits its own [normalized book delta batch](#price-change-bursts).
 
 Both book output modes reject input older than a retained timestamp mark. Incremental input advances
 it even while gated; snapshots advance it only after validation and acceptance.
 
 - Book-delta unsubscribe, shard reconnect, and tick-size changes reset the mark.
 - Recovery subscription cycles retain it.
-- Disconnect clears it and unpublished cached changes. A retained published book can still reject older snapshots.
+- Disconnect clears it. A retained published book can still reject older snapshots.
 
 Equal millisecond timestamps do not establish source order.
 
@@ -2162,13 +2162,15 @@ The next accepted snapshot emits a full `CLEAR` reseed, including with effective
 
 After exhausting its retry budget, recovery retries at intervals that double from one to fifteen minutes.
 
-Hashed snapshots can omit preimage fields such as `tick_size` and `last_trade_price`. After accepting a
-verified snapshot, the adapter reuses its metadata only if the new hash matches. Missing or unverifiable
-hashes then require recovery. Before a verified preimage is available, snapshots with missing fields or
-no hash pass without verification.
+[Polymarket book messages](https://docs.polymarket.com/market-data/realtime-data) can omit hash inputs
+such as `tick_size` and `last_trade_price`. Instrument metadata supplies missing `min_order_size` and
+`neg_risk`. If the hash or any required input remains unavailable, the adapter accepts the snapshot
+without verification, including after a verified baseline. It does not fill missing mutable inputs
+from earlier snapshots: a mismatch against stale metadata does not prove corrupt depth.
 
-Trades leave stored hash metadata unchanged. A changed `last_trade_price` can require a fresh snapshot
-despite correct levels. Recovery pauses book output; independent `price_change` quotes remain available.
+An accepted snapshot can resume gated book output even when its hash is unverifiable. Complete-input
+hash mismatches still require recovery, which pauses book output; independent `price_change` quotes
+remain available.
 
 #### Price change bursts
 
@@ -2186,18 +2188,13 @@ that leave the book uncrossed, including a book locked at one price, pass throug
 A missing `best_bid` or `best_ask` leaves its side unpruned, and an invalid one skips pruning. The
 adapter logs a warning whenever normalization leaves the local book crossed.
 
-After a verified snapshot, both output modes check incremental hashes against the full book.
-Frames sharing a timestamp and hash can describe one final state. Their normalized deltas, including
-generated deletes, stay buffered until the hash matches, then emit one batch with `F_LAST` on its final record.
+Incremental messages omit mutable hash inputs, so both output modes process them without hash
+verification or buffering. Each consecutive hash group emits its normalized deltas with `F_LAST` on
+its final record. Hash changes and empty incremental hashes do not trigger recovery.
 
-An unresolved group requests recovery without emission when:
-
-- Its timestamp or hash changes.
-- `book_snapshot_timeout_secs` expires, unless zero.
-- It exceeds 4,096 deltas.
-
-Valid late or oversized bursts also require a fresh snapshot. Discarding a group drops local comparison
-state, so the next accepted snapshot emits a full `CLEAR` reseed in both modes.
+Polymarket supplies no sequence linking these updates. Missing depth can therefore remain undetected
+until a fresh snapshot replaces it; timestamp filtering and crossed-book normalization do not prove
+complete incremental integrity.
 
 #### Live recovery validation
 
@@ -2250,15 +2247,14 @@ CARGO_BUILD_JOBS=16 bash scripts/strip-adapter-env.bash \
   and checks that each book recovers. Books without venue updates isolate deadline-driven recovery;
   include quiet books with `--tokens`. Requires a positive `--timeout`.
 
-`--timeout` sets snapshot and hash-group deadlines in seconds; `0` disables them. `--rounds` defaults to 12.
+`--timeout` sets snapshot deadlines in seconds; `0` disables them. `--rounds` defaults to 12.
 Use `--tokens` with comma-separated outcome IDs from six distinct open, order-accepting markets instead
 of the most traded markets. Include populated quiet books and empty books to cover recovery without ongoing traffic.
 
 Two venue behaviors limit what the harness can force:
 
-- Polymarket never rejects a subscription. Before verified hash metadata is available, an unverifiable
-  `book` event can complete recovery before a corrupted replacement arrives. The harness therefore
-  withholds replacement snapshots instead.
+- Polymarket never rejects a subscription. An unverifiable `book` event can complete recovery
+  before a corrupted replacement arrives. The harness therefore withholds replacement snapshots instead.
 - Reconnect replay also resubscribes a recovering book, so the ceiling reconnect check shows prompt
   recovery without isolating the ceiling wake.
 
@@ -2271,13 +2267,13 @@ and output format.
 `compute_effective_deltas` defaults to `false`. Enable it to trade extra processing for smaller
 snapshot batches (see [Data client options](#data-client-options)):
 
-- With published comparison state and no buffered updates, snapshots emit only net changes: `ADD` for new levels,
+- With published comparison state, snapshots emit only net changes: `ADD` for new levels,
   `UPDATE` for resized levels, and `DELETE` with the last known size for removed levels. No-op snapshots emit
   nothing; the final record carries `F_LAST`.
 - Without a usable comparison baseline, the adapter emits the full snapshot with `CLEAR` and `F_SNAPSHOT`.
   This includes initial subscription, a shard reconnect, a book-delta unsubscribe, and a
-  [tick size change](#tick-size-change-handling). Failed hash validation or discarding unverified changes
-  also removes the baseline. Replacing buffered changes requires the same full reseed.
+  [tick size change](#tick-size-change-handling). A complete-input snapshot hash mismatch or an
+  incremental parsing error while the latest accepted snapshot is verified also removes the baseline.
 - Incremental `price_change` batches follow [price change bursts](#price-change-bursts) handling
   and update the local comparison state.
 - When book deltas are subscribed, the maintained comparison book can supply matching sizes to
@@ -2880,7 +2876,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `resolve_poll_grace_secs`             | `10`      | Delay in seconds after expiry before polling begins.                                          |
 | `resolve_poll_max_wait_secs`          | `1,800`   | Pause automatic polling after this many seconds from expiration.                              |
 | `transport_backend`                   | `Sockudo` | WebSocket transport implementation.                                                           |
-| `book_snapshot_timeout_secs`          | `10`      | Snapshot and unverified hash-group wait in seconds; `0` disables these deadlines.             |
+| `book_snapshot_timeout_secs`          | `10`      | Snapshot wait in seconds; `0` disables these deadlines.                                       |
 | `book_stale_check_interval_secs`      | `5`       | Book feed staleness check interval in seconds.                                                |
 | `book_stale_threshold_secs`           | `0`       | Maximum book feed silence in seconds before reporting stale; `0` disables the monitor.        |
 

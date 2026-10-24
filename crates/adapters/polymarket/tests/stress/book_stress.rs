@@ -161,15 +161,10 @@ async fn churn(args: &StressArgs, ids: &[InstrumentId]) -> String {
             }
             // A reconnect while a recovering book's events are held
             2 => {
-                let attempts = start_held_recovery(&mut session, id).await;
-                session
-                    .until(Duration::from_secs(60), "replacement attempted", |s| {
-                        s.venue().attempts(&id) > attempts
-                    })
-                    .await;
+                start_held_recovery(&mut session, id).await;
 
-                session.fault(&id).hold = false;
                 reconnect_all(&mut session);
+                session.fault(&id).hold = false;
                 session.healthy(ids).await;
             }
             // Replayed dumps lost after a reconnect; without deadlines the next update recovers
@@ -183,21 +178,7 @@ async fn churn(args: &StressArgs, ids: &[InstrumentId]) -> String {
             }
             // A restart while recovery waits for a dump
             4 => {
-                let dropped = {
-                    let mut fault = session.fault(&id);
-                    fault.drop_snapshots = 2;
-                    fault.dropped
-                };
-
-                resubscribe(&mut session, id).await;
-                session
-                    .until(
-                        Duration::from_secs(60),
-                        "shutdown with recovery dumps missing",
-                        |s| s.fault(&id).dropped == dropped + 2,
-                    )
-                    .await;
-
+                start_held_recovery(&mut session, id).await;
                 wait_oracle(&mut session).await;
                 total += session.batches();
                 session = session.restart().await;
@@ -432,6 +413,12 @@ async fn start_held_recovery(session: &mut PolymarketSession, id: InstrumentId) 
         .await;
 
     session.fault(&id).hold = true;
+    session
+        .until(Duration::from_secs(60), "replacement attempted", |s| {
+            s.venue().attempts(&id) > attempts
+        })
+        .await;
+
     attempts
 }
 
@@ -1141,10 +1128,15 @@ impl WireConnection for PolymarketConnection {
         let mut book = None;
 
         for event in events(&frame) {
-            if let Some((key, dump)) = self.apply(event) {
+            if let Some((key, _)) = self.apply(event) {
                 let kind = book.as_ref().map_or(FrameKind::Update, |(_, kind)| *kind);
 
-                let kind = if dump { FrameKind::Snapshot } else { kind };
+                let kind = if event["event_type"] == "book" {
+                    FrameKind::Snapshot
+                } else {
+                    kind
+                };
+
                 book = Some((key, kind));
             }
         }
@@ -1633,7 +1625,10 @@ fn check_wire_oracle() {
         connection.upstream(&text(change("6", "0.61", "SELL", "5"))),
         book(FrameKind::Update)
     );
-    assert_eq!(connection.upstream(&text(traded)), book(FrameKind::Update));
+    assert_eq!(
+        connection.upstream(&text(traded)),
+        book(FrameKind::Snapshot)
+    );
     assert_eq!(
         connection.upstream(&text(json!({
             "event_type": "price_change",

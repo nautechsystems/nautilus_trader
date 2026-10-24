@@ -160,7 +160,7 @@ Released on TBD (UTC).
 - Fixed Polymarket batch submits delaying later chunks behind FOK recovery and deferred cancels
 - Fixed Polymarket book recovery continuing after market resolution (#5359), thanks @imbolc
 - Fixed Polymarket quiet books staying unsynced when the initial subscription snapshot is lost
-- Fixed Polymarket stale snapshots restoring deleted book levels and unverifiable updates continuing to publish
+- Fixed Polymarket stale snapshots restoring deleted book levels
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
 - Fixed Polymarket closure timestamps causing catalog promotion overlaps (#5358), thanks @imbolc
 - Fixed Polymarket reconciliation reverting resting partially filled orders to `Accepted`

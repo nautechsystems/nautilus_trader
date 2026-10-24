@@ -601,22 +601,18 @@ mod tests {
             &subscriptions.ws_open_tokens,
         );
 
-        let cancellation = subscriptions
+        subscriptions
             .book_integrity
             .lock()
             .entry(instrument_id)
-            .or_default()
-            .cancellation
-            .clone();
+            .or_default();
         let retained_id = InstrumentId::from("0xACTIVE-0xTOKEN_ACTIVE.POLYMARKET");
         subscriptions.active_delta_subs.insert(retained_id);
-        let retained_cancellation = subscriptions
+        subscriptions
             .book_integrity
             .lock()
             .entry(retained_id)
-            .or_default()
-            .cancellation
-            .clone();
+            .or_default();
 
         let now_ns = get_atomic_clock_realtime().get_time_ns();
         subscriptions.retire_expired(now_ns).await;
@@ -658,8 +654,6 @@ mod tests {
         assert!(!subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(!subscriptions.active_trade_subs.contains(&instrument_id));
         assert!(!subscriptions.book_sync.book_gated(instrument_id));
-        assert!(cancellation.is_cancelled());
-        assert!(!retained_cancellation.is_cancelled());
         assert_eq!(
             subscriptions
                 .book_integrity
