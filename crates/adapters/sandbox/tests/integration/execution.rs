@@ -15,6 +15,8 @@
 
 //! Tests for sandbox execution client.
 
+#[cfg(feature = "python")]
+use std::ffi::CString;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -47,7 +49,10 @@ use nautilus_common::{
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 #[cfg(feature = "python")]
-use nautilus_execution::python::fee::PythonFeeModel;
+use nautilus_execution::python::{
+    fee::PythonFeeModel,
+    latency::{PyLatencyModel, pyobject_to_latency_model_any},
+};
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     engine::ExecutionEngine,
@@ -87,7 +92,11 @@ use nautilus_sandbox::{
     SandboxExecutionClient, SandboxExecutionClientConfig, SandboxExecutionClientFactory,
 };
 #[cfg(feature = "python")]
-use pyo3::{IntoPyObjectExt, Python, ffi::c_str, types::PyAnyMethods};
+use pyo3::{
+    IntoPyObjectExt, Py, PyAny, Python,
+    ffi::c_str,
+    types::{PyAnyMethods, PyDict, PyDictMethods},
+};
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -10215,4 +10224,245 @@ fn test_deferred_oto_child_cancel_survives_parent_fill(
         OrderStatus::Canceled
     );
     context.client.stop().unwrap();
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+fn test_python_latency_insert_samples_once_from_receipt_time(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    let (model, obj) = python_latency_model("111 + len(self.calls)", "223", "337");
+    let (mut context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        instrument.id().venue,
+        &instrument,
+        Some(model),
+    );
+    context
+        .test_clock
+        .borrow_mut()
+        .set_time(UnixNanos::new(500));
+    let order = resting_limit(&instrument, "O-PY-LATENCY", "90.00", UnixNanos::new(100));
+    submit_to_client(&context, trader_id, &order);
+    let submitted = drain_order_events(&mut rx);
+    let before = advance_and_fire(&context.test_clock, UnixNanos::new(611));
+    let early = drain_order_events(&mut rx);
+    let at_due = advance_and_fire(&context.test_clock, UnixNanos::new(612));
+    let accepted = drain_order_events(&mut rx);
+
+    let calls = Python::attach(|py| {
+        obj.bind(py)
+            .getattr("calls")
+            .unwrap()
+            .extract::<Vec<(String, u64, u64)>>()
+            .unwrap()
+    });
+
+    assert_eq!(
+        submitted.iter().map(order_event_kind).collect::<Vec<_>>(),
+        vec!["submitted"]
+    );
+    assert_eq!(before, 0);
+    assert!(early.is_empty());
+    assert_eq!(at_due, 1);
+    assert_eq!(
+        accepted.iter().map(order_event_kind).collect::<Vec<_>>(),
+        vec!["accepted"]
+    );
+    assert_eq!(calls, vec![("SubmitOrder".to_string(), 100, 500)]);
+    context.client.stop().unwrap();
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+#[case::modify(DeferredCommand::Modify, "ModifyOrder", 223)]
+#[case::batch_modify(DeferredCommand::BatchModify, "BatchModifyOrders", 223)]
+#[case::cancel(DeferredCommand::Cancel, "CancelOrder", 337)]
+#[case::batch_cancel(DeferredCommand::BatchCancel, "BatchCancelOrders", 337)]
+#[case::cancel_all(DeferredCommand::CancelAll, "CancelAllOrders", 337)]
+fn test_python_latency_routes_single_and_batch_commands(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+    #[case] command_type: &str,
+    #[case] latency: u64,
+) {
+    let (model, obj) = python_latency_model("111", "223", "337");
+    let mut harness = setup_engine_harness(trader_id, &instrument, Some(model));
+    let orders = submit_list_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        &[("PY-1", "90.00"), ("PY-2", "89.00")],
+    );
+    let _ = harness.settle();
+    assert_eq!(
+        advance_and_fire(&harness.test_clock, UnixNanos::new(111)),
+        1
+    );
+    let _ = harness.settle();
+    let targets = &orders[..kind.target_count()];
+    send_command_through_engine(&harness, trader_id, kind, targets, UnixNanos::new(111));
+    let _ = harness.settle();
+    let before = advance_and_fire(&harness.test_clock, UnixNanos::new(110 + latency));
+    let early = harness.settle();
+    let at_due = advance_and_fire(&harness.test_clock, UnixNanos::new(111 + latency));
+    let applied = harness.settle();
+
+    let calls = Python::attach(|py| {
+        obj.bind(py)
+            .getattr("calls")
+            .unwrap()
+            .extract::<Vec<(String, u64, u64)>>()
+            .unwrap()
+    });
+
+    assert_eq!(before, 0);
+    assert!(early.is_empty());
+    assert_eq!(at_due, 1);
+    assert_eq!(applied.len(), targets.len());
+
+    for order in targets {
+        assert!(kind.applied_to(&applied, order.client_order_id()));
+        assert_eq!(cached_status(&harness.cache, order), kind.applied_status());
+    }
+
+    assert_eq!(
+        calls,
+        vec![
+            ("SubmitOrderList".to_string(), 0, 0),
+            (command_type.to_string(), 111, 111)
+        ]
+    );
+    harness.engine.borrow_mut().stop();
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+#[case("-1", "Python LatencyModel.get_insert_latency failed:")]
+#[case("2 ** 64 - 1", "Latency arrival timestamp exceeds u64 nanoseconds")]
+#[case(
+    "(_ for _ in ()).throw(ValueError('sample failed'))",
+    "ValueError: sample failed"
+)]
+fn test_python_latency_failure_rejects_without_queuing(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] delay: &str,
+    #[case] message: &str,
+) {
+    let (model, obj) = python_latency_model(delay, "223", "337");
+    let mut harness = setup_engine_harness(trader_id, &instrument, Some(model));
+    harness
+        .test_clock
+        .borrow_mut()
+        .set_time(UnixNanos::new(500));
+    let order = submit_through_engine(&harness, trader_id, &instrument, "PY-FAIL", "90.00");
+    let events = harness.settle();
+
+    let calls = Python::attach(|py| {
+        obj.bind(py)
+            .getattr("calls")
+            .unwrap()
+            .extract::<Vec<(String, u64, u64)>>()
+            .unwrap()
+    });
+
+    let timers = advance_and_fire(&harness.test_clock, UnixNanos::new(1000));
+    let after = harness.settle();
+
+    assert_eq!(
+        events.iter().map(order_event_kind).collect::<Vec<_>>(),
+        vec!["submitted", "rejected"]
+    );
+
+    let OrderEventAny::Rejected(rejected) = &events[1] else {
+        unreachable!()
+    };
+
+    assert!(rejected.reason.as_str().contains(message));
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Rejected);
+    assert_eq!(calls, vec![("SubmitOrder".to_string(), 500, 500)]);
+    assert_eq!(timers, 0);
+    assert!(after.is_empty());
+    harness.engine.borrow_mut().stop();
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+fn test_python_latency_zero_delay_applies_inline_once(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    let (model, obj) = python_latency_model("0", "223", "337");
+    let (mut context, mut rx) = setup_channel_context(
+        trader_id,
+        account_id,
+        instrument.id().venue,
+        &instrument,
+        Some(model),
+    );
+    context
+        .test_clock
+        .borrow_mut()
+        .set_time(UnixNanos::new(500));
+    let order = resting_limit(&instrument, "O-PY-ZERO", "90.00", UnixNanos::new(100));
+    submit_to_client(&context, trader_id, &order);
+    let events = drain_order_events(&mut rx);
+    let timers = advance_and_fire(&context.test_clock, UnixNanos::new(1000));
+    let after = drain_order_events(&mut rx);
+
+    let calls = Python::attach(|py| {
+        obj.bind(py)
+            .getattr("calls")
+            .unwrap()
+            .extract::<Vec<(String, u64, u64)>>()
+            .unwrap()
+    });
+
+    assert_eq!(
+        events.iter().map(order_event_kind).collect::<Vec<_>>(),
+        vec!["submitted", "accepted"]
+    );
+    assert_eq!(timers, 0);
+    assert!(after.is_empty());
+    assert_eq!(calls, vec![("SubmitOrder".to_string(), 100, 500)]);
+    context.client.stop().unwrap();
+}
+
+#[cfg(feature = "python")]
+fn python_latency_model(insert: &str, update: &str, delete: &str) -> (LatencyModelAny, Py<PyAny>) {
+    Python::initialize();
+    Python::attach(|py| {
+        let locals = PyDict::new(py);
+        locals
+            .set_item("LatencyModel", py.get_type::<PyLatencyModel>())
+            .unwrap();
+        let source = format!(
+            "
+class RecordedLatency(LatencyModel):
+    def __init__(self):
+        self.calls = []
+    def get_insert_latency(self, command, ts_now):
+        self.calls.append((type(command).__name__, command.ts_init, ts_now))
+        return {insert}
+    def get_update_latency(self, command, ts_now):
+        self.calls.append((type(command).__name__, command.ts_init, ts_now))
+        return {update}
+    def get_delete_latency(self, command, ts_now):
+        self.calls.append((type(command).__name__, command.ts_init, ts_now))
+        return {delete}
+model = RecordedLatency()
+"
+        );
+        let source = CString::new(source).unwrap();
+        py.run(&source, Some(&locals), None).unwrap();
+        let obj = locals.get_item("model").unwrap().unwrap();
+        let model = pyobject_to_latency_model_any(&obj).unwrap();
+        (model, obj.unbind())
+    })
 }

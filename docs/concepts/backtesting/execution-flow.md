@@ -96,8 +96,9 @@ Simulation modules run once, after the command loop completes.
 
 #### Latency-delayed commands
 
-A `LatencyModel` places each command in the venue's inflight queue with an arrival timestamp. Once a
-command is due, the settlement point determines whether the engine releases it:
+A [`LatencyModel`](../behavioral_models.md#custom-python-latency-models) places each command in the venue's
+inflight queue with an arrival timestamp. Once a command is due, the settlement point determines whether
+the engine releases it:
 
 | Settlement point               | Due commands released                                                      |
 | ------------------------------ | -------------------------------------------------------------------------- |
@@ -112,8 +113,9 @@ with a future arrival timestamp stay in the inflight queue.
 
 ### Sandbox inbound latency
 
-`SandboxExecutionClientConfig.latency_model` accepts a `StaticLatencyModel` object directly,
-following the `fee_model` configuration pattern. It delays submits, modifies, and cancels by the
+`SandboxExecutionClientConfig.latency_model` accepts a `StaticLatencyModel` or a
+[Python `LatencyModel` subclass](../behavioral_models.md#custom-python-latency-models), following the
+`fee_model` configuration pattern. It delays submits, modifies, and cancels by the
 model's insert, update, and delete legs, respectively, before they reach the matching engine.
 
 Venue-generated events (accepts, fills, cancels, expirations) are not delayed, so the model covers
@@ -196,7 +198,7 @@ then stops the engines.
   fills must run before `on_stop` returns.
 - Simulation modules do not re-run at shutdown. `SimulationModule::process` runs once per timestamp. A second
   call would double-apply side effects like FX rollover interest.
-- A `LatencyModel` adds its configured delay to trailing commands (those emitted on the final
+- A `LatencyModel` adds its delay to trailing commands (those emitted on the final
   data tick or in `on_stop`). The shutdown path advances the engine clock to the latest inflight
   arrival timestamp so those commands still settle before the engines stop.
 

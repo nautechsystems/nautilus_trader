@@ -707,7 +707,12 @@ impl BacktestEngine {
         if let Some(error) = &self.funding_error {
             anyhow::bail!("{error}");
         }
-        self.check_module_errors()?;
+
+        if let Err(e) = self.check_exchange_errors() {
+            self.abort_run();
+            return Err(e);
+        }
+
         self.check_balance_error()?;
 
         if let Err(e) = self.run_impl(start, end, run_config_id, streaming) {
@@ -719,7 +724,7 @@ impl BacktestEngine {
                 || self
                     .venues
                     .values()
-                    .any(|exchange| exchange.borrow().has_module_error())
+                    .any(|exchange| exchange.borrow().has_callback_error())
             {
                 self.abort_run();
             }
@@ -1021,7 +1026,11 @@ impl BacktestEngine {
         let result = self.end_impl();
         if let Err(e) = &result
             && (e.is::<CallbackDispatchError>()
-                || self.kernel.portfolio.borrow().balance_error().is_some())
+                || self.kernel.portfolio.borrow().balance_error().is_some()
+                || self
+                    .venues
+                    .values()
+                    .any(|exchange| exchange.borrow().has_callback_error()))
         {
             self.abort_run();
         }
@@ -1057,7 +1066,7 @@ impl BacktestEngine {
                     || self
                         .venues
                         .values()
-                        .any(|exchange| exchange.borrow().has_module_error())
+                        .any(|exchange| exchange.borrow().has_callback_error())
                 {
                     self.abort_run();
                 }
@@ -1650,9 +1659,9 @@ impl BacktestEngine {
         Ok(())
     }
 
-    fn check_module_errors(&self) -> anyhow::Result<()> {
+    fn check_exchange_errors(&self) -> anyhow::Result<()> {
         for exchange in self.venues.values() {
-            exchange.borrow().check_module_error()?;
+            exchange.borrow().check_callback_error()?;
         }
         Ok(())
     }
@@ -2179,6 +2188,7 @@ impl BacktestEngine {
         loop {
             drain_trading_cmd_queue();
             drain_data_cmd_queue();
+            self.check_exchange_errors()?;
             self.drain_exec_client_events();
             self.check_balance_error()?;
 
@@ -2477,7 +2487,9 @@ mod tests {
         enums::Environment,
         messages::{
             data::{DataCommand, UnsubscribeCommand},
-            execution::{BatchModifyOrders, ModifyOrder, SubmitOrder, TradingCommand},
+            execution::{
+                BatchModifyOrders, CancelAllOrders, ModifyOrder, SubmitOrder, TradingCommand,
+            },
         },
         msgbus::{
             self, MessagingSwitchboard, TypedHandler,
@@ -2486,7 +2498,10 @@ mod tests {
     };
     use nautilus_execution::{
         engine::{SnapshotAnchorer, stubs::StubExecutionClient},
-        models::fee::{FeeModelAny, MakerTakerFeeModel},
+        models::{
+            fee::{FeeModelAny, MakerTakerFeeModel},
+            latency::{LatencyModelHandle, StaticLatencyModel},
+        },
     };
     use nautilus_model::{
         data::{Data, InstrumentStatus, QuoteTick},
@@ -2496,7 +2511,9 @@ mod tests {
             TriggerType,
         },
         events::OrderEventAny,
-        identifiers::{AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, Venue},
+        identifiers::{
+            AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, TraderId, Venue,
+        },
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
@@ -4365,6 +4382,82 @@ mod tests {
             ComponentState::Running
         );
         assert_eq!(engine.running_strategy_ids(), vec![strategy_id]);
+    }
+
+    #[rstest]
+    #[case::end(false)]
+    #[case::streaming_resume(true)]
+    fn test_latched_latency_failure_aborts_on_end_or_streaming_resume(#[case] resume: bool) {
+        let mut engine = create_engine();
+        let ts_now = UnixNanos::new(1);
+        engine
+            .run(Some(ts_now), Some(UnixNanos::new(2)), None, true)
+            .unwrap();
+        assert_eq!(engine.kernel.clock.borrow().timestamp_ns(), ts_now);
+        assert!(engine.kernel.trader.borrow().is_running());
+        let client_id = engine.exec_clients[0].client_id();
+        let connected_before = engine
+            .kernel
+            .exec_engine
+            .borrow()
+            .get_client(&client_id)
+            .unwrap()
+            .is_connected();
+        assert!(connected_before);
+
+        let venue = Venue::from("BINANCE");
+        engine.venues[&venue]
+            .borrow_mut()
+            .set_latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                DurationNanos::ZERO,
+                DurationNanos::ZERO,
+                DurationNanos::ZERO,
+                DurationNanos::MAX,
+            )));
+        engine
+            .kernel
+            .exec_engine
+            .borrow()
+            .execute(TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                TraderId::from("TRADER-001"),
+                None,
+                StrategyId::from("LATENCY-001"),
+                InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+                None,
+                UUID4::new(),
+                ts_now,
+                None,
+                None,
+            )));
+
+        let error = if resume {
+            engine.run(None, None, None, true).unwrap_err()
+        } else {
+            engine.end().unwrap_err()
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("Latency arrival timestamp exceeds u64 nanoseconds")
+        );
+        assert!(!engine.kernel.trader.borrow().is_running());
+        let connected_after = engine
+            .kernel
+            .exec_engine
+            .borrow()
+            .get_client(&client_id)
+            .unwrap()
+            .is_connected();
+        assert!(!connected_after);
+        assert_eq!(engine.backtest_end(), Some(ts_now));
+        engine.reset().unwrap();
+        assert!(
+            engine.venues[&venue]
+                .borrow()
+                .check_callback_error()
+                .is_ok()
+        );
     }
 
     #[rstest]

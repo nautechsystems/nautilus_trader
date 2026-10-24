@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added accumulation of fractional `Money` commissions beyond currency precision
 - Added optional venue-reported liquidation prices to `PositionStatusReport`
 - Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
+- Added Python-subclassable latency models with command and clock time context
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
@@ -54,6 +55,7 @@ Released on TBD (UTC).
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
 - Changed direct `OrderMatchingEngine` use: share `MatchingOrders` and drain commands for cross-instrument OTO orders
 - Changed `OrderMatchingEngine` expiration to wait for queued fills; retry `process_instrument_expiration` afterward
+- Changed `LatencyModel` operation methods; accept `(command, ts_now)` and return `Result` in custom models
 - Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
 - Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
