@@ -2113,7 +2113,9 @@ flowchart LR
 ```
 
 All three venue message paths converge on the same quote tick stream. Deduplication compares prices
-and sizes with the last emitted quote regardless of which message type produced it.
+and sizes with the cached quote regardless of which message type produced it. An unchanged
+`book` or `price_change` quote updates the cached timestamp without publication, so older quotes
+are rejected, including for quote-only subscriptions.
 
 ##### `best_bid_ask` handling
 
@@ -2128,7 +2130,10 @@ follows:
 - Without effective deltas, or while book updates are gated pending a valid snapshot, a side
   keeps the previous quote size when its top price matches. A moved or unknown side has zero size.
 
-The adapter ignores events older than the last emitted quote or, with effective deltas, the local
+An unchanged `best_bid_ask` quote does not advance the cached timestamp. Its sizes come from older
+messages, so a size update with a slightly earlier venue timestamp is still accepted.
+
+The adapter ignores events older than the cached quote or, with effective deltas, the local
 book. It also rejects locked, crossed, out-of-range, and off-grid events.
 
 With a book delta subscription, both modes also discard snapshots older than the book's retained

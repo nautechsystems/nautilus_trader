@@ -165,6 +165,7 @@ Released on TBD (UTC).
 - Fixed Polymarket closure timestamps causing catalog promotion overlaps (#5358), thanks @imbolc
 - Fixed Polymarket reconciliation reverting resting partially filled orders to `Accepted`
 - Fixed Polymarket `price_change` quotes carrying sizes from different price levels
+- Fixed Polymarket stale quotes after suppressing unchanged quotes (#5424), thanks @imbolc
 - Fixed Polymarket stale book levels after resubscribing with effective deltas enabled
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks
