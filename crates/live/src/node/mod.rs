@@ -5559,9 +5559,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_fill_report_result_applies_authoritative_fill_without_synthetic_order() {
-        let (mut node, venue_report, fill_report) =
+    fn test_position_fill_report_result_applies_authoritative_fill_without_synthetic_order(
+        #[values(false, true)] venue_position_id: bool,
+    ) {
+        let (mut node, venue_report, mut fill_report) =
             position_fill_test_fixture("AuthoritativePositionFillNode", Quantity::from("1.0"));
+        fill_report.venue_position_id =
+            venue_position_id.then(|| PositionId::from("VENUE-NETTING"));
         let key = (venue_report.instrument_id, venue_report.account_id);
         let revision = node.exec_manager.position_activity_revision(&key);
         let position_result = position_report_result(&node, venue_report);
@@ -5595,6 +5599,79 @@ mod tests {
             node.exec_manager.position_activity_revision(&key),
             revision + 1
         );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_skips_netting_snapshot_overlap_for_strategy_position(
+        #[values(false, true)] venue_position_id: bool,
+    ) {
+        let (mut node, venue_report, mut fill_report) =
+            position_fill_test_fixture("SplitNettingSnapshotNode", Quantity::from("1.0"));
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_oms_type(StrategyId::external(), OmsType::Netting);
+        fill_report.venue_position_id =
+            venue_position_id.then(|| PositionId::from("VENUE-NETTING"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let client_order_id = fill_report.client_order_id.unwrap();
+
+        // No authoritative fills were available: reconcile the missing unit under EXTERNAL.
+        assert_eq!(
+            position_quantity_after_check(&mut node, &venue_report, &[]),
+            Quantity::from("2.0"),
+        );
+        let strategy_position_id = {
+            let cache = node.kernel.cache.borrow();
+            let position_id = *cache.position_id(&client_order_id).unwrap();
+            let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+            assert_eq!(positions.len(), 2);
+            let external = positions
+                .iter()
+                .find(|position| position.strategy_id == StrategyId::external())
+                .unwrap();
+            assert_ne!(external.id, position_id);
+            assert_eq!(cache.oms_type(&external.id), Some(OmsType::Netting));
+            assert_eq!(external.quantity, Quantity::from("1.0"));
+            let opening_order = cache.order(&external.opening_order_id).unwrap();
+            assert!(
+                opening_order
+                    .tags()
+                    .unwrap()
+                    .contains(&RECONCILIATION_ORDER_TAG.into())
+            );
+            position_id
+        };
+        let revision = node.exec_manager.position_activity_revision(&key);
+
+        // The later replay targets the strategy, but is already represented in the net snapshot.
+        for _ in 0..2 {
+            assert_eq!(
+                position_quantity_after_check(&mut node, &venue_report, &[fill_report.clone()]),
+                Quantity::from("2.0"),
+            );
+        }
+        let cache = node.kernel.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(order.filled_qty(), Quantity::from("1.0"));
+        assert!(!order.trade_ids().contains(&&fill_report.trade_id));
+        assert_eq!(
+            cache.position_id(&client_order_id),
+            Some(&strategy_position_id)
+        );
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(positions.len(), 2);
+        assert!(
+            positions
+                .iter()
+                .all(|position| position.quantity == Quantity::from("1.0")
+                    && !position.trade_ids.contains(&fill_report.trade_id))
+        );
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            2
+        );
+        assert_eq!(node.exec_manager.position_activity_revision(&key), revision);
     }
 
     #[rstest]
@@ -5669,7 +5746,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_fill_report_result_falls_back_when_reconciled_position_includes_fill() {
+    fn test_position_fill_report_result_falls_back_when_reconciled_position_includes_fill(
+        #[values(false, true)] venue_position_id: bool,
+    ) {
         let (mut node, _, _) =
             position_fill_test_fixture("ReconciledPositionFillNode", Quantity::from("1.0"));
         let account_id = AccountId::from("TEST-001");
@@ -5735,7 +5814,7 @@ mod tests {
             commission,
             LiquiditySide::Taker,
             None,
-            None,
+            venue_position_id.then(|| PositionId::from("VENUE-NETTING")),
             UnixNanos::from(1_000),
             UnixNanos::from(1_000),
             None,
@@ -5784,15 +5863,19 @@ mod tests {
 
     #[rstest]
     fn test_position_fill_report_validates_hedge_identity_before_inferred_fallback() {
-        let (mut node, _, mut fill_report) =
-            position_fill_test_fixture("InferredHedgeIdentityNode", Quantity::from("1.0"));
+        let (mut node, _, mut fill_report) = position_fill_test_fixture_with_oms(
+            "InferredHedgeIdentityNode",
+            Quantity::from("1.0"),
+            0,
+            OmsType::Hedging,
+        );
         apply_inferred_position_fill(&mut node, &fill_report);
         let conflicting_position_id = PositionId::from("P-POSITION-CONFLICT");
         fill_report.venue_position_id = Some(conflicting_position_id);
 
         let error = node
             .exec_manager
-            .prepare_position_fill_report(&mut fill_report, &[])
+            .prepare_position_fill_report(&mut fill_report, &[], &node.kernel.exec_engine.borrow())
             .unwrap_err();
 
         assert!(
@@ -6022,8 +6105,12 @@ mod tests {
     #[case::side(2)]
     #[case::position(3)]
     fn test_position_fill_conflict_blocks_remaining_fills_and_fallback(#[case] conflict: u8) {
-        let (mut node, venue_report, valid_report) =
-            position_fill_test_fixture("ConflictingPositionFillNode", Quantity::from("1.0"));
+        let (mut node, venue_report, valid_report) = position_fill_test_fixture_with_oms(
+            "ConflictingPositionFillNode",
+            Quantity::from("1.0"),
+            0,
+            OmsType::Hedging,
+        );
         let key = (venue_report.instrument_id, venue_report.account_id);
         let client_order_id = valid_report.client_order_id.unwrap();
         let revision = node.exec_manager.position_activity_revision(&key);
@@ -8422,6 +8509,20 @@ mod tests {
         authoritative_qty: Quantity,
         position_check_threshold_ms: u32,
     ) -> (LiveNode, PositionStatusReport, FillReport) {
+        position_fill_test_fixture_with_oms(
+            name,
+            authoritative_qty,
+            position_check_threshold_ms,
+            OmsType::Netting,
+        )
+    }
+
+    fn position_fill_test_fixture_with_oms(
+        name: &str,
+        authoritative_qty: Quantity,
+        position_check_threshold_ms: u32,
+        oms_type: OmsType,
+    ) -> (LiveNode, PositionStatusReport, FillReport) {
         let config = LiveNodeConfig {
             exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
@@ -8475,6 +8576,10 @@ mod tests {
             .borrow()
             .order_owned(&client_order_id)
             .unwrap();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_oms_type(order.strategy_id(), oms_type);
         let mut initial_fill = TestOrderEventStubs::filled(
             &order,
             &instrument,

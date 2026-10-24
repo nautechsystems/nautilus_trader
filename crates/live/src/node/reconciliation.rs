@@ -371,10 +371,11 @@ impl LiveNode {
                     break;
                 }
 
-                match self
-                    .exec_manager
-                    .prepare_position_fill_report(&mut report, key_venue_reports)
-                {
+                match self.exec_manager.prepare_position_fill_report(
+                    &mut report,
+                    key_venue_reports,
+                    &self.kernel.exec_engine.borrow(),
+                ) {
                     Ok(PositionFillReportPreparation::Ready) => {}
                     Ok(PositionFillReportPreparation::InferredOverlap) => {
                         log::debug!(

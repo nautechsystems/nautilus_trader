@@ -55,7 +55,8 @@ use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
-        create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
+        RECONCILIATION_ORDER_TAG, create_position_reconciliation_venue_order_id,
+        process_mass_status_for_reconciliation,
         process_mass_status_for_reconciliation_without_synthetic_reports,
     },
 };
@@ -63,7 +64,7 @@ use nautilus_live::{
     execution::submission::{
         SubmissionRecoveryExhausted, SubmissionRecoveryPolicy, SubmissionRecoverySource,
     },
-    manager::{ExecutionManager, ExecutionManagerConfig},
+    manager::{ExecutionManager, ExecutionManagerConfig, PositionFillReportPreparation},
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -72,7 +73,7 @@ use nautilus_model::{
         OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
-        OrderEventAny, OrderFilled,
+        OrderEventAny, OrderFilled, PositionEvent,
         account::state::AccountState,
         order::spec::{
             OrderAcceptedSpec, OrderCancelRejectedSpec, OrderFillVoidedSpec,
@@ -92,7 +93,7 @@ use nautilus_model::{
         Order, OrderAny, OrderTestBuilder,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
     },
-    position::Position,
+    position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     stubs::TestDefault,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -543,7 +544,7 @@ fn test_position_fill_report_accounts_for_virtual_flip(
 
     assert!(ctx.manager.position_contains_fill_report(&report));
     ctx.manager
-        .prepare_position_fill_report(&mut report, &[])
+        .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
         .unwrap();
     assert_eq!(report.venue_position_id, Some(position_id));
 
@@ -558,13 +559,13 @@ fn test_position_fill_report_accounts_for_virtual_flip(
     assert!(!ctx.manager.position_contains_fill_report(&report));
     assert!(
         ctx.manager
-            .prepare_position_fill_report(&mut report, &[])
+            .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
             .is_err()
     );
     report = accepted_report;
     report.venue_position_id = None;
     ctx.manager
-        .prepare_position_fill_report(&mut report, &[])
+        .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
         .unwrap();
     assert_eq!(
         report.venue_position_id,
@@ -574,6 +575,543 @@ fn test_position_fill_report_accounts_for_virtual_flip(
             .copied()
     );
     assert!(ctx.manager.position_contains_fill_report(&report));
+
+    // Changing configuration does not rewrite the split or its corrections
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(fill.strategy_id, OmsType::Netting);
+    assert!(ctx.manager.position_contains_fill_report(&report));
+    ctx.manager
+        .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
+        .unwrap();
+    assert!(ctx.manager.position_contains_fill_report(&report));
+    assert_eq!(
+        ctx.exec_engine
+            .borrow()
+            .resolve_fill_report_position(&report)
+            .unwrap(),
+        (
+            OmsType::Netting,
+            ctx.cache
+                .borrow()
+                .position_id(&fill.client_order_id)
+                .copied()
+        ),
+    );
+}
+
+#[rstest]
+fn test_position_fill_snapshot_coverage_follows_virtual_flip(
+    #[values(false, true)] rebuild_index: bool,
+    #[values(None, Some(0), Some(1))] position_side: Option<usize>,
+) {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    let source_id = PositionId::from("P-FLIP-SOURCE");
+    let position = create_test_position(&instrument, source_id, OrderSide::Buy, "2.000", "3000.00");
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&position);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-SNAPSHOT-FLIP"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5.000"))
+        .tags(vec![RECONCILIATION_ORDER_TAG.into()])
+        .build();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(order.strategy_id(), OmsType::Hedging);
+    ctx.add_order(order.clone());
+    let mut engine = ctx.exec_engine.borrow_mut();
+    engine.process(&TestOrderEventStubs::submitted(&order, test_account_id()));
+    engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        test_account_id(),
+        VenueOrderId::from("V-SNAPSHOT-FLIP"),
+    ));
+    let mut fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-SNAPSHOT-FLIP")),
+        Some(source_id),
+        Some(Price::from("3100.00")),
+        Some(Quantity::from("3.000")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USDT")),
+        None,
+        Some(test_account_id()),
+    );
+    let OrderEventAny::Filled(ref mut filled) = fill else {
+        unreachable!()
+    };
+    filled.ts_event = UnixNanos::from(9_000_000);
+    filled.venue_order_id = VenueOrderId::from("V-SNAPSHOT-FLIP");
+    engine.process(&fill);
+    drop(engine);
+
+    if rebuild_index {
+        let mut cache = ctx.cache.borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+    let destination_id = ctx
+        .cache
+        .borrow()
+        .hedging_flip_position_ids(order.client_order_id())
+        .unwrap()
+        .unwrap()[1];
+    assert_ne!(source_id, destination_id);
+    assert!(ctx.cache.borrow().position(&source_id).unwrap().is_closed());
+    let mut report = FillReport::new(
+        test_account_id(),
+        instrument.id(),
+        VenueOrderId::from("V-SNAPSHOT-FLIP"),
+        TradeId::from("T-LATE-FLIP"),
+        OrderSide::Sell,
+        Quantity::from("1.000"),
+        Price::from("3100.00"),
+        Money::from("0 USDT"),
+        LiquiditySide::Taker,
+        Some(order.client_order_id()),
+        position_side.map(|side| [source_id, destination_id][side]),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(10_000_000),
+        None,
+    );
+    assert!(matches!(
+        ctx.manager
+            .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
+            .unwrap(),
+        PositionFillReportPreparation::SnapshotOverlap
+    ));
+    ctx.exec_engine.borrow_mut().reconcile_fill_report(&report);
+    assert_eq!(
+        ctx.cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .filled_qty(),
+        Quantity::from("4.000")
+    );
+    {
+        let cache = ctx.cache.borrow();
+        let destination = cache.position(&destination_id).unwrap();
+        assert_eq!(destination.quantity, Quantity::from("1.000"));
+        assert!(!destination.trade_ids.contains(&report.trade_id));
+    }
+
+    let mut invalid_history_report = report.clone();
+    invalid_history_report.trade_id = TradeId::from("T-INVALID-FLIP-HISTORY");
+
+    // A different venue position is not covered by the flip destination's snapshot
+    report.client_order_id = None;
+    report.venue_order_id = VenueOrderId::from("V-INDEPENDENT");
+    report.venue_position_id = Some(PositionId::from("P-INDEPENDENT"));
+    assert!(matches!(
+        ctx.manager
+            .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
+            .unwrap(),
+        PositionFillReportPreparation::Ready
+    ));
+
+    // An OMS change does not make inconsistent split history safe to apply
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(order.strategy_id(), OmsType::Netting);
+    let order_before = ctx.get_order(&order.client_order_id()).unwrap();
+    {
+        let mut cache = ctx.cache.borrow_mut();
+        let PositionReplayEvent::Filled(mut opening) =
+            cache.position(&destination_id).unwrap().replay_events[0].clone()
+        else {
+            unreachable!()
+        };
+        opening.causation_id = None;
+        cache.position_mut(&destination_id).unwrap().replay_events[0] =
+            PositionReplayEvent::Filled(opening);
+    }
+    assert!(
+        ctx.manager
+            .prepare_position_fill_report(
+                &mut invalid_history_report,
+                &[],
+                &ctx.exec_engine.borrow()
+            )
+            .is_err()
+    );
+    assert!(
+        !ctx.manager
+            .position_contains_fill_report(&invalid_history_report)
+    );
+    ctx.exec_engine
+        .borrow_mut()
+        .reconcile_fill_report(&invalid_history_report);
+    assert_eq!(
+        serde_json::to_value(ctx.get_order(&order.client_order_id()).unwrap()).unwrap(),
+        serde_json::to_value(order_before).unwrap(),
+    );
+}
+
+#[rstest]
+#[case::startup(true, false, false)]
+#[case::startup_restored_with_venue_id(true, true, true)]
+#[case::continuous_with_venue_id(false, true, false)]
+#[case::continuous_restored(false, false, true)]
+#[tokio::test]
+async fn test_netting_snapshot_preparation_matches_order_only_engine_replay(
+    #[case] startup: bool,
+    #[case] with_venue_position_id: bool,
+    #[case] rebuild_index: bool,
+) {
+    let mut ctx = TestContext::with_config(ExecutionManagerConfig {
+        position_check_threshold_ns: DurationNanos::ZERO,
+        ..Default::default()
+    });
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id("NETTING-STRATEGY".into())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .build();
+    ctx.add_order(order.clone());
+    let venue_order_id = VenueOrderId::from("NETTING-STRATEGY-V");
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.register_oms_type(order.strategy_id(), OmsType::Netting);
+        engine.register_oms_type(StrategyId::external(), OmsType::Netting);
+        engine.process(&TestOrderEventStubs::submitted(&order, test_account_id()));
+        engine.process(&TestOrderEventStubs::accepted(
+            &order,
+            test_account_id(),
+            venue_order_id,
+        ));
+        let initial = create_fill_report(
+            order.client_order_id(),
+            venue_order_id,
+            instrument.id(),
+            "NETTING-INITIAL-T".into(),
+            "1.000",
+        );
+        engine.reconcile_fill_report(&initial);
+    }
+    ctx.advance_time(10_000_000);
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument.id(),
+        PositionSide::Long,
+        Quantity::from("2.000"),
+        UnixNanos::from(9_000_000),
+        UnixNanos::from(10_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let events = if startup {
+        let mut mass_status = create_mass_status(vec![], vec![]);
+        mass_status.add_position_reports(vec![venue_report]);
+        let result = ctx
+            .manager
+            .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+        assert!(result.unresolved_positions.is_empty());
+        result.events
+    } else {
+        let client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+        let events = ctx.manager.check_positions_consistency(&[&client]).await;
+        for event in &events {
+            ctx.exec_engine.borrow_mut().process(event);
+        }
+        events
+    };
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(fill)
+                if fill.strategy_id == StrategyId::external()
+                    && fill.last_qty == Quantity::from("1.000")))
+            .count(),
+        1,
+    );
+
+    if rebuild_index {
+        let mut cache = ctx.cache.borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+    let strategy_position_id = {
+        let cache = ctx.cache.borrow();
+        let position_id = *cache.position_id(&order.client_order_id()).unwrap();
+        let positions = cache.positions_open(
+            None,
+            Some(&instrument.id()),
+            None,
+            Some(&test_account_id()),
+            None,
+        );
+        assert_eq!(positions.len(), 2);
+        for position in &positions {
+            assert_eq!(position.quantity, Quantity::from("1.000"));
+            assert_eq!(cache.oms_type(&position.id), Some(OmsType::Netting));
+            if position.strategy_id == StrategyId::external() {
+                assert_ne!(position.id, position_id);
+                let opening_order = cache.order(&position.opening_order_id).unwrap();
+                assert!(
+                    opening_order
+                        .tags()
+                        .unwrap()
+                        .contains(&RECONCILIATION_ORDER_TAG.into())
+                );
+            }
+        }
+        position_id
+    };
+    let mut report = create_fill_report(
+        order.client_order_id(),
+        venue_order_id,
+        instrument.id(),
+        "NETTING-REPLAY-T".into(),
+        "1.000",
+    );
+    report.ts_event = UnixNanos::from(2_000_000);
+    report.venue_position_id = with_venue_position_id.then(|| "VENUE-NETTING-ID".into());
+    let (order_handler, order_saver) = get_typed_message_saving_handler::<OrderEventAny>(None);
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_order_events("events.order.*".into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events("events.position.*".into(), position_handler.clone(), None);
+    let preparation = ctx
+        .manager
+        .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
+        .unwrap();
+    ctx.exec_engine.borrow_mut().reconcile_fill_report(&report);
+    ctx.exec_engine.borrow_mut().reconcile_fill_report(&report);
+    msgbus::unsubscribe_order_events("events.order.*".into(), &order_handler);
+    msgbus::unsubscribe_position_events("events.position.*".into(), &position_handler);
+    let cache = ctx.cache.borrow();
+    let order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("2.000"));
+    assert!(order.trade_ids().contains(&&report.trade_id));
+    assert_eq!(
+        cache.position_id(&order.client_order_id()),
+        Some(&strategy_position_id)
+    );
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument.id()),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+    assert_eq!(positions.len(), 2);
+    assert_eq!(
+        positions
+            .iter()
+            .map(|position| position.signed_decimal_qty())
+            .sum::<Decimal>(),
+        dec!(2.000),
+    );
+    assert!(
+        positions
+            .iter()
+            .all(|position| position.quantity == Quantity::from("1.000")
+                && !position.trade_ids.contains(&report.trade_id))
+    );
+    assert_eq!(order_saver.get_messages().len(), 1);
+    assert!(position_saver.get_messages().is_empty());
+    assert!(matches!(
+        preparation,
+        PositionFillReportPreparation::SnapshotOverlap
+    ));
+}
+
+#[rstest]
+#[case::unknown_route(false, false, true, true, false)]
+#[case::venue_id_is_not_native(true, false, true, true, false)]
+#[case::cached_native_route(false, true, true, true, false)]
+#[case::cached_route_with_venue_id(true, true, true, true, false)]
+#[case::client_default(true, true, true, false, false)]
+#[case::restored_client_default(true, true, true, false, true)]
+#[case::ordinary_position(false, false, false, false, false)]
+#[case::ordinary_position_with_route(true, true, false, true, false)]
+fn test_netting_snapshot_preparation_matches_engine(
+    #[case] with_venue_position_id: bool,
+    #[case] mapped: bool,
+    #[case] snapshot_covered: bool,
+    #[case] strategy_override: bool,
+    #[case] rebuild_index: bool,
+) {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    let strategy = StrategyId::test_default();
+
+    if strategy_override {
+        ctx.exec_engine
+            .borrow_mut()
+            .register_oms_type(strategy, OmsType::Netting);
+    } else {
+        ctx.exec_engine
+            .borrow_mut()
+            .deregister_client(test_client_id())
+            .unwrap();
+        let mut client = MockExecutionClient::new(Vec::new());
+        client.oms_type = OmsType::Netting;
+        ctx.exec_engine
+            .borrow_mut()
+            .register_client(Box::new(client))
+            .unwrap();
+    }
+    let snapshot = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy)
+        .instrument_id(instrument.id())
+        .client_order_id("NETTING-SNAPSHOT".into())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .tags(if snapshot_covered {
+            vec![RECONCILIATION_ORDER_TAG.into()]
+        } else {
+            vec![]
+        })
+        .build();
+    ctx.add_order(snapshot.clone());
+    let snapshot_venue = VenueOrderId::from("NETTING-SNAPSHOT-V");
+    let mut engine = ctx.exec_engine.borrow_mut();
+    engine.process(&TestOrderEventStubs::submitted(
+        &snapshot,
+        test_account_id(),
+    ));
+    engine.process(&TestOrderEventStubs::accepted(
+        &snapshot,
+        test_account_id(),
+        snapshot_venue,
+    ));
+    let mut fill = TestOrderEventStubs::filled(
+        &snapshot,
+        &instrument,
+        Some("NETTING-SNAPSHOT-T".into()),
+        None,
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("2.000")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0 USDT")),
+        None,
+        Some(test_account_id()),
+    );
+
+    if let OrderEventAny::Filled(ref mut filled) = fill {
+        filled.ts_event = UnixNanos::from(9_000_000);
+        filled.venue_order_id = snapshot_venue;
+        filled.reconciliation = true;
+    }
+    engine.process(&fill);
+    drop(engine);
+    let late = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy)
+        .instrument_id(instrument.id())
+        .client_order_id("NETTING-LATE".into())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .build();
+    ctx.add_order(late.clone());
+    let venue = VenueOrderId::from("NETTING-LATE-V");
+    let mut engine = ctx.exec_engine.borrow_mut();
+    engine.process(&TestOrderEventStubs::submitted(&late, test_account_id()));
+    engine.process(&TestOrderEventStubs::accepted(
+        &late,
+        test_account_id(),
+        venue,
+    ));
+    drop(engine);
+    let mut report = create_fill_report(
+        late.client_order_id(),
+        venue,
+        instrument.id(),
+        "NETTING-LATE-T".into(),
+        "1.000",
+    );
+    report.venue_position_id = with_venue_position_id.then(|| PositionId::from("VENUE-NETTING-ID"));
+
+    if mapped {
+        let position_id =
+            ctx.cache
+                .borrow()
+                .positions_open(None, Some(&instrument.id()), None, None, None)[0]
+                .id;
+        ctx.cache
+            .borrow_mut()
+            .add_position_id(
+                &position_id,
+                &instrument.id().venue,
+                &late.client_order_id(),
+                &strategy,
+            )
+            .unwrap();
+        ctx.cache
+            .borrow_mut()
+            .order_mut(&late.client_order_id())
+            .unwrap()
+            .set_position_id(Some(position_id));
+    }
+
+    if rebuild_index {
+        let mut cache = ctx.cache.borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+    {
+        let cache = ctx.cache.borrow();
+        let native_id = cache.positions_open(None, Some(&instrument.id()), None, None, None)[0].id;
+        assert_eq!(cache.oms_type(&native_id), Some(OmsType::Netting));
+        assert_eq!(
+            cache.position_id(&late.client_order_id()).copied(),
+            mapped.then_some(native_id)
+        );
+    }
+    let (order_handler, order_saver) = get_typed_message_saving_handler::<OrderEventAny>(None);
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_order_events("events.order.*".into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events("events.position.*".into(), position_handler.clone(), None);
+    let preparation = ctx
+        .manager
+        .prepare_position_fill_report(&mut report, &[], &ctx.exec_engine.borrow())
+        .unwrap();
+    ctx.exec_engine.borrow_mut().reconcile_fill_report(&report);
+    ctx.exec_engine.borrow_mut().reconcile_fill_report(&report);
+    msgbus::unsubscribe_order_events("events.order.*".into(), &order_handler);
+    msgbus::unsubscribe_position_events("events.position.*".into(), &position_handler);
+    assert_eq!(order_saver.get_messages().len(), 1);
+    assert_eq!(
+        position_saver.get_messages().len(),
+        usize::from(!snapshot_covered)
+    );
+    assert_eq!(
+        ctx.manager.position_contains_fill_report(&report),
+        !snapshot_covered
+    );
+    let cache = ctx.cache.borrow();
+    assert_eq!(
+        cache.order(&late.client_order_id()).unwrap().filled_qty(),
+        Quantity::from("1.000")
+    );
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(
+        positions[0].quantity,
+        Quantity::from(if snapshot_covered { "2.000" } else { "3.000" })
+    );
+    assert_eq!(
+        positions[0].trade_ids.contains(&report.trade_id),
+        !snapshot_covered
+    );
+    assert_eq!(
+        matches!(preparation, PositionFillReportPreparation::SnapshotOverlap),
+        snapshot_covered,
+        "manager and engine must agree: {preparation:?}",
+    );
 }
 
 #[rstest]

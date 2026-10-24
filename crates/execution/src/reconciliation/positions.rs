@@ -25,10 +25,10 @@ use nautilus_common::cache::Cache;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{
-        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce,
+        AvgPxReconciliation, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, TimeInForce,
     },
-    identifiers::{AccountId, InstrumentId, VenueOrderId},
+    identifiers::{AccountId, InstrumentId, PositionId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -483,11 +483,17 @@ pub fn check_position_reconciliation(
 
 /// Returns whether `report` predates an open position for its instrument and account that a
 /// synthetic reconciliation order opened and that does not hold the fill's trade.
+/// NETTING snapshots cover account/instrument exposure regardless of the fill's local destination.
+/// Other snapshots must match the Native position route when the caller supplies one.
 ///
 /// The venue position report behind such a position already includes the fill, so applying it
 /// to the position would count the execution twice.
 #[must_use]
-pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillReport) -> bool {
+pub fn fill_precedes_snapshot_reconciled_position(
+    cache: &Cache,
+    report: &FillReport,
+    target_position_id: Option<PositionId>,
+) -> bool {
     cache
         .positions_open(
             None,
@@ -498,7 +504,9 @@ pub fn fill_precedes_snapshot_reconciled_position(cache: &Cache, report: &FillRe
         )
         .into_iter()
         .any(|position| {
-            report.ts_event < position.ts_opened
+            (cache.oms_type(&position.id) == Some(OmsType::Netting)
+                || target_position_id.is_none_or(|id| id == position.id))
+                && report.ts_event < position.ts_opened
                 && !position.trade_ids.contains(&report.trade_id)
                 && cache
                     .order(&position.opening_order_id)

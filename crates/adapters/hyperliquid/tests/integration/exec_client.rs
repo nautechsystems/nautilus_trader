@@ -10497,6 +10497,7 @@ async fn test_generate_fill_reports_resolves_cached_client_order_id(
     };
 
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
     let manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default()).unwrap();
 
     let expected_id = cached.then_some(native_id);
@@ -10507,7 +10508,7 @@ async fn test_generate_fill_reports_resolves_cached_client_order_id(
         assert_eq!(report.client_order_id, expected_id);
         assert_eq!(report.venue_order_id, VenueOrderId::from("900029"));
         manager
-            .prepare_position_fill_report(&mut report, &[])
+            .prepare_position_fill_report(&mut report, &[], &engine)
             .unwrap();
         assert_eq!(report.client_order_id, expected_id);
     }

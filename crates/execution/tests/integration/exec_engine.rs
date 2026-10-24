@@ -43,7 +43,7 @@ use nautilus_common::{
         self, MessageBus, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
         stubs::{
             TypedIntoMessageSavingHandler, get_any_saving_handler,
-            get_typed_into_message_saving_handler,
+            get_typed_into_message_saving_handler, get_typed_message_saving_handler,
         },
         switchboard,
     },
@@ -17815,6 +17815,192 @@ fn test_hedging_flip_route_survives_other_orders(
     );
 }
 
+#[rstest]
+#[case::report(false)]
+#[case::native(true)]
+fn test_netting_override_keeps_proven_hedging_flip_route(
+    mut execution_engine: ExecutionEngine,
+    #[case] native_event: bool,
+) {
+    let (source_id, destination_id) = run_hedging_flip(&mut execution_engine);
+    let order_id = ClientOrderId::from("O-DURABLE-FLIP");
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    execution_engine.register_oms_type(strategy_id, OmsType::Netting);
+
+    // A mutable mapping must not override the original fill and its proven split
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_position_id(&source_id, &instrument.id.venue, &order_id, &strategy_id)
+        .unwrap();
+    let report = FillReport::new(
+        AccountId::test_default(),
+        instrument.id(),
+        VenueOrderId::from("V-DURABLE-FLIP"),
+        TradeId::from("T-OMS-OVERRIDE"),
+        OrderSide::Sell,
+        Quantity::from(25_000),
+        Price::from("1.00010"),
+        Money::from("0.25 USD"),
+        LiquiditySide::Taker,
+        Some(order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    assert_eq!(
+        execution_engine
+            .resolve_fill_report_position(&report)
+            .unwrap(),
+        (OmsType::Netting, Some(destination_id)),
+    );
+    let (order_handler, order_saver) = get_typed_message_saving_handler::<OrderEventAny>(None);
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_order_events("events.order.*".into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events("events.position.*".into(), position_handler.clone(), None);
+
+    if native_event {
+        execution_engine.process(&OrderEventAny::Filled(build_order_filled(
+            TraderId::test_default(),
+            strategy_id,
+            instrument.id(),
+            order_id,
+            report.venue_order_id,
+            report.account_id,
+            report.trade_id,
+            report.order_side,
+            OrderType::Market,
+            report.last_qty,
+            report.last_px,
+            Currency::USD(),
+            report.liquidity_side,
+            None,
+            Some(report.commission),
+        )));
+    } else {
+        execution_engine.reconcile_fill_report(&report);
+    }
+    execution_engine.reconcile_fill_report(&report);
+    msgbus::unsubscribe_order_events("events.order.*".into(), &order_handler);
+    msgbus::unsubscribe_position_events("events.position.*".into(), &position_handler);
+    assert_eq!(order_saver.get_messages().len(), 1);
+    assert_eq!(position_saver.get_messages().len(), 1);
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache.order(&order_id).unwrap().filled_qty(),
+        Quantity::from(175_000)
+    );
+    assert!(cache.position(&source_id).unwrap().is_closed());
+    let destination = cache.position(&destination_id).unwrap();
+    assert_eq!(destination.quantity, Quantity::from(75_000));
+    assert!(destination.trade_ids.contains(&report.trade_id));
+    assert_eq!(cache.oms_type(&destination_id), Some(OmsType::Hedging));
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 2);
+}
+
+#[rstest]
+#[case::native(true, 25_000)]
+#[case::report(false, 25_000)]
+#[case::quantity_raise(false, 75_000)]
+fn test_netting_override_rejects_unproven_flip_before_mutation(
+    mut execution_engine: ExecutionEngine,
+    #[case] native_event: bool,
+    #[case] quantity: u64,
+) {
+    let (source_id, destination_id) = run_hedging_flip(&mut execution_engine);
+    let order_id = ClientOrderId::from("O-DURABLE-FLIP");
+    let instrument = audusd_sim();
+    execution_engine.register_oms_type(StrategyId::test_default(), OmsType::Netting);
+    execution_engine.register_default_client(Box::new(
+        StubExecutionClient::new(
+            ClientId::from("STUB"),
+            AccountId::test_default(),
+            instrument.id.venue,
+            OmsType::Netting,
+            None,
+        )
+        .with_allows_reconciliation_overfill(),
+    ));
+    let (order_before, positions_before) = {
+        let mut cache = execution_engine.cache().borrow_mut();
+        let PositionReplayEvent::Filled(mut opening) =
+            cache.position(&destination_id).unwrap().replay_events[0].clone()
+        else {
+            unreachable!()
+        };
+        opening.causation_id = None;
+        cache.position_mut(&destination_id).unwrap().replay_events[0] =
+            PositionReplayEvent::Filled(opening);
+        assert!(cache.hedging_flip_position_ids(order_id).is_err());
+        (
+            serde_json::to_value(&*cache.order(&order_id).unwrap()).unwrap(),
+            [source_id, destination_id]
+                .map(|id| serde_json::to_value(&*cache.position(&id).unwrap()).unwrap()),
+        )
+    };
+    let report = FillReport::new(
+        AccountId::test_default(),
+        instrument.id(),
+        VenueOrderId::from("V-DURABLE-FLIP"),
+        TradeId::from("T-UNPROVEN-OMS-OVERRIDE"),
+        OrderSide::Sell,
+        Quantity::from(quantity),
+        Price::from("1.00010"),
+        Money::from("0.25 USD"),
+        LiquiditySide::Taker,
+        Some(order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    let (order_handler, order_saver) = get_typed_message_saving_handler::<OrderEventAny>(None);
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_order_events("events.order.*".into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events("events.position.*".into(), position_handler.clone(), None);
+
+    if native_event {
+        execution_engine.process(&OrderEventAny::Filled(build_order_filled(
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            instrument.id(),
+            order_id,
+            report.venue_order_id,
+            report.account_id,
+            report.trade_id,
+            report.order_side,
+            OrderType::Market,
+            report.last_qty,
+            report.last_px,
+            Currency::USD(),
+            report.liquidity_side,
+            None,
+            Some(report.commission),
+        )));
+    } else {
+        execution_engine.reconcile_fill_report(&report);
+    }
+    msgbus::unsubscribe_order_events("events.order.*".into(), &order_handler);
+    msgbus::unsubscribe_position_events("events.position.*".into(), &position_handler);
+    assert!(order_saver.get_messages().is_empty());
+    assert!(position_saver.get_messages().is_empty());
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        serde_json::to_value(&*cache.order(&order_id).unwrap()).unwrap(),
+        order_before
+    );
+    assert_eq!(
+        [source_id, destination_id]
+            .map(|id| serde_json::to_value(&*cache.position(&id).unwrap()).unwrap()),
+        positions_before,
+    );
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 2);
+}
+
 fn run_hedging_flip(execution_engine: &mut ExecutionEngine) -> (PositionId, PositionId) {
     let instrument = audusd_sim();
     let source_id = PositionId::from("P-DURABLE-SOURCE");
@@ -19043,6 +19229,349 @@ fn open_external_audusd_position(
     execution_engine.process(&OrderEventAny::Filled(fill));
 
     client_order_id
+}
+
+#[rstest]
+#[case::native_cached_same(true, false, false, Some("O-LATE-B"), false, OmsType::Hedging)]
+#[case::native_venue_independent(true, false, true, Some("O-LATE-B"), true, OmsType::Hedging)]
+#[case::native_cached_other_strategy(true, true, false, Some("O-LATE-B"), true, OmsType::Hedging)]
+#[case::native_venue_same_other_strategy(
+    true,
+    true,
+    true,
+    Some("O-LATE-B"),
+    false,
+    OmsType::Hedging
+)]
+#[case::report_cached_same(false, false, false, Some("O-LATE-B"), false, OmsType::Hedging)]
+#[case::report_venue_same(false, false, true, Some("O-LATE-B"), false, OmsType::Hedging)]
+#[case::report_cached_independent(false, false, false, Some("O-LATE-B"), true, OmsType::Hedging)]
+#[case::report_venue_independent(false, false, true, Some("O-LATE-B"), true, OmsType::Hedging)]
+#[case::report_cached_other_strategy(false, true, false, Some("O-LATE-B"), true, OmsType::Hedging)]
+#[case::report_cached_same_other_strategy(
+    false,
+    true,
+    false,
+    Some("O-LATE-B"),
+    false,
+    OmsType::Hedging
+)]
+#[case::report_venue_order_lookup_same(false, false, false, None, false, OmsType::Hedging)]
+#[case::report_venue_order_lookup_independent(false, true, true, None, true, OmsType::Hedging)]
+#[case::report_unknown_client_same(false, false, true, Some("O-UNKNOWN"), false, OmsType::Hedging)]
+#[case::report_unknown_client_independent(
+    false,
+    true,
+    false,
+    Some("O-UNKNOWN"),
+    true,
+    OmsType::Hedging
+)]
+#[case::netting_fill_does_not_widen_hedging_snapshot(
+    false,
+    true,
+    false,
+    Some("O-LATE-B"),
+    true,
+    OmsType::Netting
+)]
+fn test_snapshot_coverage_respects_hedged_fill_route(
+    mut execution_engine: ExecutionEngine,
+    #[case] native_event: bool,
+    #[case] other_strategy: bool,
+    #[case] explicit_position: bool,
+    #[case] report_client_order_id: Option<&str>,
+    #[case] independent_position: bool,
+    #[case] fill_oms: OmsType,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let instrument = audusd_sim();
+    let account_id = AccountId::test_default();
+    let first_strategy = StrategyId::external();
+    let second_strategy = if other_strategy {
+        StrategyId::from("S-HEDGE-B")
+    } else {
+        first_strategy
+    };
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+            .unwrap();
+        cache
+            .add_account(cash_account_for(account_id).into())
+            .unwrap();
+    }
+    execution_engine.register_oms_type(first_strategy, OmsType::Hedging);
+    execution_engine.register_oms_type(second_strategy, fill_oms);
+
+    let first_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::test_default())
+        .strategy_id(first_strategy)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-SNAPSHOT-A"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .tags(vec![Ustr::from(RECONCILIATION_ORDER_TAG)])
+        .build();
+    let first_venue = VenueOrderId::from("V-SNAPSHOT-A");
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            first_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(&first_order, account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &first_order,
+        account_id,
+        first_venue,
+    ));
+    let mut first_fill = build_order_filled(
+        first_order.trader_id(),
+        first_strategy,
+        instrument.id(),
+        first_order.client_order_id(),
+        first_venue,
+        account_id,
+        TradeId::from("T-SNAPSHOT-A"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Taker,
+        Some(PositionId::from("P-SNAPSHOT-A")),
+        None,
+    );
+    first_fill.ts_event = UnixNanos::from(9_000_000);
+    first_fill.reconciliation = true;
+    execution_engine.process(&OrderEventAny::Filled(first_fill));
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .oms_type(&PositionId::from("P-SNAPSHOT-A")),
+        Some(OmsType::Hedging)
+    );
+
+    let second_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::test_default())
+        .strategy_id(second_strategy)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-LATE-B"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let second_position_id = if fill_oms == OmsType::Netting {
+        PositionId::new(format!("{}-{second_strategy}", instrument.id()))
+    } else {
+        PositionId::from(if independent_position {
+            "P-LATE-B"
+        } else {
+            "P-SNAPSHOT-A"
+        })
+    };
+    let second_venue = VenueOrderId::from("V-LATE-B");
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            second_order.clone(),
+            (!explicit_position).then_some(second_position_id),
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(&second_order, account_id));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &second_order,
+        account_id,
+        second_venue,
+    ));
+    let mut report = create_fill_report(
+        instrument.id(),
+        Some(second_order.client_order_id()),
+        second_venue,
+        TradeId::from("T-LATE-B"),
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+    report.ts_event = UnixNanos::from(1_000_000);
+    report.venue_position_id = explicit_position.then_some(second_position_id);
+    report.client_order_id = report_client_order_id.map(ClientOrderId::from);
+    let order_topic = switchboard::get_event_order_topic(second_strategy);
+    let position_topic = switchboard::get_event_position_topic(if independent_position {
+        second_strategy
+    } else {
+        first_strategy
+    });
+    let (order_handler, order_saver) = get_typed_message_saving_handler::<OrderEventAny>(None);
+    let (position_handler, position_saver) =
+        get_typed_message_saving_handler::<PositionEvent>(None);
+    msgbus::subscribe_order_events(order_topic.into(), order_handler.clone(), None);
+    msgbus::subscribe_position_events(position_topic.into(), position_handler.clone(), None);
+
+    if native_event {
+        let mut fill = build_order_filled(
+            second_order.trader_id(),
+            second_strategy,
+            instrument.id(),
+            second_order.client_order_id(),
+            second_venue,
+            account_id,
+            report.trade_id,
+            report.order_side,
+            second_order.order_type(),
+            report.last_qty,
+            report.last_px,
+            instrument.quote_currency(),
+            report.liquidity_side,
+            report.venue_position_id,
+            Some(report.commission),
+        );
+        fill.ts_event = report.ts_event;
+        assert!(!fill.reconciliation);
+        execution_engine.process(&OrderEventAny::Filled(fill));
+    } else {
+        execution_engine.reconcile_fill_report(&report);
+    }
+    // Replaying the same execution must not publish or apply it twice.
+    execution_engine.reconcile_fill_report(&report);
+    msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+    msgbus::unsubscribe_position_events(position_topic.into(), &position_handler);
+
+    let order_events = order_saver.get_messages();
+    assert_eq!(order_events.len(), 1);
+    let OrderEventAny::Filled(fill) = &order_events[0] else {
+        panic!("expected OrderFilled");
+    };
+    assert_eq!(fill.client_order_id, second_order.client_order_id());
+    assert_eq!(fill.position_id, Some(second_position_id));
+    assert_eq!(fill.trade_id, report.trade_id);
+    let position_events = position_saver.get_messages();
+    let apply_position = native_event || independent_position;
+    assert_eq!(position_events.len(), usize::from(apply_position));
+    if independent_position {
+        let PositionEvent::PositionOpened(opened) = &position_events[0] else {
+            panic!("expected PositionOpened");
+        };
+        assert_eq!(opened.position_id, second_position_id);
+        assert_eq!(opened.strategy_id, second_strategy);
+        assert_eq!(opened.quantity, report.last_qty);
+    } else if native_event {
+        assert!(matches!(
+            position_events[0],
+            PositionEvent::PositionChanged(_)
+        ));
+    }
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&second_order.client_order_id()).unwrap();
+    assert_eq!(order.filled_qty(), report.last_qty);
+    let first = cache.position(&PositionId::from("P-SNAPSHOT-A")).unwrap();
+    let expected_first_qty = if native_event && !independent_position {
+        Quantity::from(200_000)
+    } else {
+        Quantity::from(100_000)
+    };
+    assert_eq!(first.quantity, expected_first_qty);
+    assert_eq!(
+        first.trade_ids.contains(&report.trade_id),
+        native_event && !independent_position
+    );
+    let target = cache.position(&second_position_id).unwrap();
+    assert_eq!(target.trade_ids.contains(&report.trade_id), apply_position);
+    if independent_position {
+        assert_eq!(target.quantity, report.last_qty);
+    }
+}
+
+#[rstest]
+#[case::netting_cached(OmsType::Netting, false)]
+#[case::netting_venue_id(OmsType::Netting, true)]
+#[case::hedging_cached(OmsType::Hedging, false)]
+#[case::hedging_venue_id(OmsType::Hedging, true)]
+fn test_netting_snapshot_covers_distinct_fill_route(
+    mut execution_engine: ExecutionEngine,
+    #[case] fill_oms: OmsType,
+    #[case] venue_position_id: bool,
+) {
+    let instrument = audusd_sim();
+    open_external_audusd_position(
+        &mut execution_engine,
+        Some(vec![RECONCILIATION_ORDER_TAG.into()]),
+    );
+    let strategy_id = StrategyId::from("S-REPLAY");
+    execution_engine.register_oms_type(strategy_id, fill_oms);
+    let position_id = if fill_oms == OmsType::Netting {
+        PositionId::new(format!("{}-{strategy_id}", instrument.id()))
+    } else {
+        PositionId::from("P-REPLAY")
+    };
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-NETTING-REPLAY"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            order.clone(),
+            (!venue_position_id).then_some(position_id),
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    let venue_order_id = VenueOrderId::from("V-NETTING-REPLAY");
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        venue_order_id,
+    ));
+    let mut report = create_fill_report(
+        instrument.id(),
+        Some(order.client_order_id()),
+        venue_order_id,
+        TradeId::from("T-NETTING-REPLAY"),
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+    report.ts_event = UnixNanos::from(1_000_000);
+    report.venue_position_id = venue_position_id.then_some(position_id);
+
+    if fill_oms == OmsType::Hedging {
+        assert_eq!(
+            execution_engine
+                .resolve_fill_report_position(&report)
+                .unwrap(),
+            (OmsType::Hedging, Some(position_id)),
+        );
+    }
+    execution_engine.reconcile_fill_report(&report);
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache.order(&order.client_order_id()).unwrap().filled_qty(),
+        report.last_qty
+    );
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(cache.oms_type(&positions[0].id), Some(OmsType::Netting));
+    assert_ne!(positions[0].id, position_id);
+    assert_eq!(positions[0].quantity, Quantity::from(100_000));
+    assert!(!positions[0].trade_ids.contains(&report.trade_id));
 }
 
 #[rstest]

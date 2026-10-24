@@ -2925,6 +2925,9 @@ impl ExecutionManager {
 
     /// Validates fill attribution and supplies a cached position ID when unambiguous.
     ///
+    /// Uses the execution engine's OMS selection and Native position route. NETTING snapshot
+    /// coverage remains account-wide even when the fill targets a different local position.
+    ///
     /// # Errors
     ///
     /// Returns an error if cached order or position state conflicts with the fill,
@@ -2933,6 +2936,7 @@ impl ExecutionManager {
         &self,
         report: &mut FillReport,
         venue_reports: &[PositionStatusReport],
+        exec_engine: &ExecutionEngine,
     ) -> anyhow::Result<PositionFillReportPreparation> {
         let cache = self.cache();
         let venue_client_order_id = cache.client_order_id(&report.venue_order_id).copied();
@@ -2964,10 +2968,12 @@ impl ExecutionManager {
             );
         }
 
-        let hedge_context = report.venue_position_id.is_some()
-            || venue_reports
-                .iter()
-                .any(|venue_report| venue_report.venue_position_id.is_some());
+        let (oms_type, target_position_id) = exec_engine.resolve_fill_report_position(report)?;
+        let hedge_context = oms_type == OmsType::Hedging
+            && (report.venue_position_id.is_some()
+                || venue_reports
+                    .iter()
+                    .any(|venue_report| venue_report.venue_position_id.is_some()));
         let flip = client_order_id
             .map(|id| cache.hedging_flip_position_ids(id))
             .transpose()?
@@ -2997,7 +3003,7 @@ impl ExecutionManager {
             return Ok(PositionFillReportPreparation::InferredOverlap);
         }
 
-        if fill_precedes_snapshot_reconciled_position(&cache, report) {
+        if fill_precedes_snapshot_reconciled_position(&cache, report, target_position_id) {
             return Ok(PositionFillReportPreparation::SnapshotOverlap);
         }
 
@@ -3106,7 +3112,10 @@ impl ExecutionManager {
 
         for position in positions {
             if flip.map_or_else(
-                || report.venue_position_id.is_some_and(|id| position.id != id),
+                || {
+                    report.venue_position_id.is_some_and(|id| position.id != id)
+                        && cache.oms_type(&position.id) != Some(OmsType::Netting)
+                },
                 |ids| !ids.contains(&position.id),
             ) {
                 continue;

@@ -588,11 +588,38 @@ validation still checks the remaining difference against the account's quantity 
 
 #### Replayed fills
 
-Reconciliation can open a position from a venue position report. While that position stays open, a fill report
-for the same instrument and account with an earlier `ts_event` updates its order but no position. The report
-already includes those executions. Thus, a venue that resends them after a restart (such as Interactive
-Brokers TWS) does not double the position. Earlier fills still apply when no such position is open for the
-instrument and account.
+Reconciliation can open a position from a venue position report. In the execution engine's standalone
+`reconcile_fill_report` entry point, a fill covered by that snapshot and with an earlier `ts_event` updates
+its order but no position. The snapshot already includes those executions. Thus, a venue that resends them
+after a restart (such as Interactive Brokers TWS) does not double the position. The synthetic opening order
+must remain in the cache, and the position must stay open and not already contain the fill's trade.
+
+Snapshot coverage is distinct from the fill's local destination:
+
+| Cached snapshot position | Coverage for the same account and instrument                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| NETTING                  | Account-level exposure, including fills routed to a different strategy position. A venue position ID does not narrow this scope.     |
+| HEDGING                  | Only the fill's Native destination, when known, including a virtual flip's destination. Independent hedge positions do not cover it. |
+| No known destination     | Retains the account/instrument fallback when position identity cannot be resolved.                                                   |
+
+The execution engine resolves the destination using the order's cached route and effective OMS type. The
+candidate snapshot position's cached OMS type determines whether its coverage is account-wide; the incoming
+fill's OMS type alone does not establish that scope.
+
+Proven virtual HEDGING flip history retains its destination even if the strategy's OMS configuration later
+changes. Configuration changes do not migrate existing positions. Historical fill confirmation still
+accounts for the source and destination fragments and their valid fill voids. Inconsistent flip history
+blocks application before the engine updates the order or raises its quantity to accommodate an overfill.
+
+For example, a strategy holds 1 unit and the venue reports 2. Reconciliation opens a separate `EXTERNAL`
+NETTING position for the missing unit. A replayed fill routed to the strategy is already covered: the local
+total stays at 2, with 1 unit under each owner. Applying it again would incorrectly raise the total to 3.
+This protection does not transfer the synthetic correction to the strategy position.
+
+Continuous position checks skip dispatching a covered authoritative fill before considering synthetic
+fallback. This path does not advance the order's filled quantity or publish an `OrderFilled` for the skipped
+report. If the current venue quantity still matches, it generates no further correction. Earlier fills
+still apply when no qualifying snapshot position covers them.
 
 The protection has these known gaps:
 

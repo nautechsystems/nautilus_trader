@@ -1524,6 +1524,7 @@ impl ExecutionEngine {
     ///
     /// A fill updates its order but no position when an open position for its instrument and
     /// account:
+    /// - Is NETTING, or matches the fill's position route when known.
     /// - Was opened by a synthetic reconciliation order.
     /// - Has a `ts_opened` later than the fill's `ts_event`.
     /// - Does not hold the fill's trade.
@@ -1593,6 +1594,13 @@ impl ExecutionEngine {
             }
         };
 
+        let (_, target_position_id) = match self.resolve_fill_report_position(report) {
+            Ok(route) => route,
+            Err(e) => {
+                log::error!("Cannot route fill report {}: {e}", report.trade_id);
+                return;
+            }
+        };
         let ts_now = self.clock.borrow().timestamp_ns();
         let order = self
             .raised_order_for_reconciliation_overfill(&order, report, ts_now)
@@ -1605,10 +1613,62 @@ impl ExecutionEngine {
             ts_now,
             self.config.allow_overfills,
         ) {
-            let apply_position =
-                !fill_precedes_snapshot_reconciled_position(&self.cache.borrow(), report);
+            let apply_position = !fill_precedes_snapshot_reconciled_position(
+                &self.cache.borrow(),
+                report,
+                target_position_id,
+            );
             self.handle_event_with_position_application(&event, apply_position);
         }
+    }
+
+    /// Resolves a fill report's configured OMS type and known Native route without mutating state.
+    ///
+    /// Strategy overrides and execution-client ownership use the same selection as fill application.
+    /// Proven HEDGING flip history takes precedence over mutable mappings, including after OMS
+    /// configuration changes. Other cached mappings take precedence over venue position IDs.
+    /// A venue position ID is a Native route only for HEDGING. An unknown NETTING route is `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if cached hedging flip history cannot identify a consistent route.
+    pub fn resolve_fill_report_position(
+        &self,
+        report: &FillReport,
+    ) -> anyhow::Result<(OmsType, Option<PositionId>)> {
+        let cache = self.cache.borrow();
+        let order = report
+            .client_order_id
+            .and_then(|id| cache.order(&id))
+            .or_else(|| {
+                cache
+                    .client_order_id(&report.venue_order_id)
+                    .and_then(|id| cache.order(id))
+            });
+        let client_order_id = order.as_ref().map(|order| order.client_order_id());
+        let strategy_id = order.as_ref().map_or_else(
+            || self.resolve_external_strategy(&report.instrument_id),
+            |order| order.strategy_id(),
+        );
+        let oms_type = self.resolve_order_oms_type(
+            client_order_id,
+            strategy_id,
+            report.account_id,
+            report.instrument_id,
+        );
+        let flip = client_order_id
+            .map(|id| cache.hedging_flip_position_ids(id))
+            .transpose()?
+            .flatten();
+        let position_id = flip
+            .map(|ids| ids[1])
+            .or_else(|| client_order_id.and_then(|id| cache.position_id(&id).copied()))
+            .or_else(|| {
+                (oms_type == OmsType::Hedging)
+                    .then_some(report.venue_position_id)
+                    .flatten()
+            });
+        Ok((oms_type, position_id))
     }
 
     fn raised_order_for_reconciliation_overfill(
@@ -3525,18 +3585,28 @@ impl ExecutionEngine {
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {
-        let client_id = self
-            .cache
-            .borrow()
-            .client_id(&fill.client_order_id)
-            .copied();
+        self.resolve_order_oms_type(
+            Some(fill.client_order_id),
+            fill.strategy_id,
+            fill.account_id,
+            fill.instrument_id,
+        )
+    }
 
+    fn resolve_order_oms_type(
+        &self,
+        client_order_id: Option<ClientOrderId>,
+        strategy_id: StrategyId,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+    ) -> OmsType {
+        let client_id = client_order_id.and_then(|id| self.cache.borrow().client_id(&id).copied());
         let client = client_id.and_then(|id| self.get_client(&id)).or_else(|| {
-            self.source_client_id_for_account(fill.account_id, &fill.instrument_id)
+            self.source_client_id_for_account(account_id, &instrument_id)
                 .and_then(|id| self.get_client(&id))
         });
 
-        self.resolve_oms_type_for_client(fill.strategy_id, client)
+        self.resolve_oms_type_for_client(strategy_id, client)
     }
 
     fn resolve_oms_type_for_client(
@@ -3588,11 +3658,8 @@ impl ExecutionEngine {
     ) -> Option<PositionId> {
         let cache = self.cache.borrow();
 
-        let flip = match (oms_type == OmsType::Hedging)
-            .then(|| cache.hedging_flip_position_ids(fill.client_order_id))
-            .transpose()
-        {
-            Ok(flip) => flip.flatten(),
+        let flip = match cache.hedging_flip_position_ids(fill.client_order_id) {
+            Ok(flip) => flip,
             Err(e) => {
                 log::error!("Cannot route hedging fill {}: {e}", fill.trade_id);
                 return None;
