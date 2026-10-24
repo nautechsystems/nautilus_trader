@@ -831,6 +831,8 @@ impl OrderCore {
     ///
     /// Returns an error if the event is invalid for the current order status, or if
     /// `event.client_order_id()` or `event.strategy_id()` does not match the order.
+    /// A fill that overflows the filled quantity or cumulative commission is rejected
+    /// without changing the order.
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         if self.client_order_id != event.client_order_id() {
             return Err(CorrectnessError::PredicateViolation {
@@ -920,6 +922,19 @@ impl OrderCore {
                 message: format!(
                     "filled quantity overflowed Quantity raw bounds: {} + {}",
                     self.filled_qty, fill.last_qty
+                ),
+            }
+            .into());
+        }
+
+        if let OrderEventAny::Filled(fill) = &event
+            && let Some(commission) = fill.commission
+            && let Some(total) = self.commissions.get(&commission.currency)
+            && total.checked_add(commission).is_none()
+        {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "cumulative commission overflowed Money bounds: {total} + {commission}"
                 ),
             }
             .into());
@@ -1687,6 +1702,7 @@ mod tests {
         stubs::TestDefault,
         types::{
             Price, Quantity,
+            money::{MONEY_RAW_MAX, MONEY_RAW_MIN, MoneyRaw},
             quantity::{QUANTITY_RAW_MAX, QuantityRaw},
         },
     };
@@ -4271,6 +4287,153 @@ mod tests {
         assert_eq!(order.filled_qty(), almost_max);
         assert_eq!(order.status(), OrderStatus::PartiallyFilled);
         assert_eq!(order.event_count(), 3);
+    }
+
+    #[rstest]
+    #[case::domain_overflow(1)]
+    #[case::integer_overflow(Money::from("1 USD").raw())]
+    fn test_fill_commission_overflow_rejected_without_mutation(
+        #[case] increment: MoneyRaw,
+        #[values(false, true)] negative: bool,
+    ) {
+        let usd = Currency::USD();
+
+        let bound = if negative {
+            MONEY_RAW_MIN
+        } else {
+            MONEY_RAW_MAX
+        };
+
+        let commission = Money::from_raw_checked(bound, usd).unwrap();
+        let additional =
+            Money::from_raw_checked(if negative { -increment } else { increment }, usd).unwrap();
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(2))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        let first = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-1"))
+            .last_qty(Quantity::from(1))
+            .commission(commission)
+            .ts_event(11.into())
+            .build();
+        let second = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-2"))
+            .last_qty(Quantity::from(1))
+            .commission(additional)
+            .position_id(PositionId::from("POSITION-2"))
+            .ts_event(29.into())
+            .build();
+        order.apply(OrderEventAny::Filled(first)).unwrap();
+        let before = serde_json::to_value(&order).unwrap();
+        let totals_before = order
+            .fill_totals
+            .as_ref()
+            .map(|totals| (totals.notional, totals.quantity));
+
+        let result = order.apply(OrderEventAny::Filled(second));
+
+        let Err(OrderError::Invariant(CorrectnessError::PredicateViolation { message })) = result
+        else {
+            panic!("Expected typed invariant error, was: {result:?}");
+        };
+
+        assert_eq!(
+            message,
+            format!("cumulative commission overflowed Money bounds: {commission} + {additional}")
+        );
+        assert_eq!(serde_json::to_value(&order).unwrap(), before);
+        assert_eq!(
+            order
+                .fill_totals
+                .as_ref()
+                .map(|totals| (totals.notional, totals.quantity)),
+            totals_before
+        );
+    }
+
+    #[rstest]
+    fn test_fill_commission_bounds_survive_corrections_and_replay() {
+        let usd = Currency::USD();
+        let aud = Currency::AUD();
+        let unit = Money::from("1 USD");
+        let max = Money::from_raw_checked(MONEY_RAW_MAX, usd).unwrap();
+        let other_max = Money::from_raw_checked(MONEY_RAW_MAX, aud).unwrap();
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(6))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        let first = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-1"))
+            .last_qty(Quantity::from(2))
+            .commission(max - unit)
+            .build();
+        order.apply(OrderEventAny::Filled(first.clone())).unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(TradeId::from("TRADE-2"))
+                    .last_qty(Quantity::from(1))
+                    .commission(unit)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(TradeId::from("TRADE-3"))
+                    .last_qty(Quantity::from(1))
+                    .commission(other_max)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(matching_fill_void(
+                &first,
+                Quantity::from(1),
+                Some(unit),
+            )))
+            .unwrap();
+        assert_eq!(order.commission(&usd), Some(max - unit));
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(TradeId::from("TRADE-4"))
+                    .last_qty(Quantity::from(1))
+                    .commission(unit)
+                    .build(),
+            ))
+            .unwrap();
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+        let before = serde_json::to_value(&order).unwrap();
+        let overflow = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-5"))
+            .last_qty(Quantity::from(1))
+            .commission(unit)
+            .build();
+
+        let result = order.apply(OrderEventAny::Filled(overflow));
+
+        assert!(matches!(result, Err(OrderError::Invariant(_))));
+        assert_eq!(serde_json::to_value(&order).unwrap(), before);
+        assert_eq!(order.commission(&usd), Some(max));
+        assert_eq!(order.commission(&aud), Some(other_max));
+        assert_eq!(order.filled_qty(), Quantity::from(4));
+        assert_eq!(order.leaves_qty(), Quantity::from(2));
+        assert_eq!(replayed.commissions(), order.commissions());
+        assert_eq!(replayed.filled_qty(), order.filled_qty());
+        assert_eq!(replayed.leaves_qty(), order.leaves_qty());
     }
 
     #[rstest]

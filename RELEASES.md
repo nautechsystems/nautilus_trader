@@ -89,6 +89,7 @@ Released on TBD (UTC).
 
 ### Security
 
+- Fixed order fills accepting cumulative commissions beyond `Money` bounds or panicking after partial state changes
 - Fixed matching-engine restarts reusing position IDs for independent hedging orders
 - Fixed `DataType::from_str` panics on repeated identifier suffixes
 - Fixed custom-data deserialization panics on metadata containing the reserved `identifier` key
