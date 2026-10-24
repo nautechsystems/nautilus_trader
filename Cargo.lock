@@ -6805,6 +6805,7 @@ dependencies = [
  "nautilus-trading",
  "pyo3",
  "pyo3-stub-gen",
+ "rstest",
 ]
 
 [[package]]

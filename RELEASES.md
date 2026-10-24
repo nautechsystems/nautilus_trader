@@ -4,11 +4,15 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `LiveNode::add_python_exec_algorithm_from_config` for embedded Python execution algorithms
+- Added `LiveNode::add_python_strategy_from_config` for embedded Python strategies
+- Added `nautilus_pyo3::register_embedded_module` for embedded Python
 - Added native external MessageBus data requests and replies for JSON and MessagePack
 - Added `Money::from_decimal_exact` and `Money::from_str_exact` for fractional amounts beyond currency precision
 - Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
 - Added accumulation of fractional `Money` commissions beyond currency precision
 - Added optional venue-reported liquidation prices to `PositionStatusReport`
+- Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
@@ -20,7 +24,6 @@ Released on TBD (UTC).
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
 - Added Lighter self-trade behavior and account-scope order params with explicit defaults
 - Added OKX trading-account bills and archive queries (#5352), thanks @silarin
-- Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
 
 ### Breaking Changes
 
@@ -32,6 +35,7 @@ Released on TBD (UTC).
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
 - Changed backtest registration to reject conflicting definitions for an instrument ID (#5407), thanks @mahimn01
+- Changed `nautilus-pyo3` without default features to omit standard adapter bindings; enable `adapters` to include them
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
 - Changed `Money` display and decimal conversion to retain finer digits; round to currency precision explicitly
 - Changed `Money` deserialization to reject excess precision instead of rounding; round inputs before loading
@@ -87,6 +91,7 @@ Released on TBD (UTC).
 
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
 - Fixed position reconciliation timeouts discarding finalized snapshots and authoritative fills
+- Fixed Python `LiveNode.add_strategy_from_config` accepting strategies when the node is not idle
 - Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking

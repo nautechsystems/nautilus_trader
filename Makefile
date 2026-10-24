@@ -277,13 +277,13 @@ ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
     nautilus-blockchain nautilus-bybit nautilus-cli \
     nautilus-coinapi nautilus-coinbase nautilus-databento nautilus-deribit nautilus-derive \
     nautilus-dydx nautilus-hyperliquid nautilus-interactive-brokers \
-    nautilus-kraken nautilus-lighter nautilus-okx nautilus-polymarket \
+    nautilus-kraken nautilus-lighter nautilus-okx nautilus-polymarket nautilus-pyo3 \
     nautilus-sandbox nautilus-tardis
 
 # Workspace members without Rust test functions:
-# nautilus-trader is the container library, nautilus-pyo3 owns generated bindings,
-# and nautilus-tutorials has a binary target with test = false.
-NO_TEST_CRATES := nautilus-trader nautilus-pyo3 nautilus-tutorials
+# nautilus-trader is the container library, and nautilus-tutorials has a binary
+# target with test = false.
+NO_TEST_CRATES := nautilus-trader nautilus-tutorials
 
 # > Colors
 # Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)
