@@ -20,10 +20,13 @@
     reason = "delete operations forward catalog/storage errors and operate on validated batches"
 )]
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashSet;
 use arrow::{
+    array::{ArrayRef, StringArray},
+    compute::cast,
+    datatypes::DataType,
     record_batch::RecordBatch,
     row::{RowConverter, SortField},
 };
@@ -33,7 +36,9 @@ use nautilus_model::data::{
     MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick,
     TradeTick, close::InstrumentClose,
 };
-use nautilus_serialization::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch};
+use nautilus_serialization::arrow::{
+    DecodeTypedFromRecordBatch, EncodeToRecordBatch, is_json_string_field,
+};
 
 use crate::{
     backend::parquet::{
@@ -712,6 +717,7 @@ fn split_target(operation: &DeleteOperation) -> SplitTarget {
 
 // Returns whether every row of `rows` occurs in `existing`, comparing the columns both share by
 // name, so a column only one side carries, such as a stored identifier column, is ignored.
+// JSON-backed columns compare by value, since an equal map can serialize its keys in any order.
 fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::Result<bool> {
     let Some(first) = rows.first() else {
         return Ok(true);
@@ -736,14 +742,28 @@ fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
     let converter = RowConverter::new(fields)?;
+    let json_names: AHashSet<&str> = names
+        .iter()
+        .filter(|name| {
+            [first.schema(), existing_schema.clone()]
+                .iter()
+                .any(|schema| schema.field_with_name(name).is_ok_and(is_json_string_field))
+        })
+        .map(String::as_str)
+        .collect();
     let columns = |batch: &RecordBatch| {
         names
             .iter()
             .map(|name| {
-                batch
+                let column = batch
                     .column_by_name(name)
-                    .cloned()
-                    .ok_or_else(|| anyhow::anyhow!("Missing column {name} in Parquet batch"))
+                    .ok_or_else(|| anyhow::anyhow!("Missing column {name} in Parquet batch"))?;
+
+                if json_names.contains(name.as_str()) {
+                    canonical_json_column(column)
+                } else {
+                    Ok(column.clone())
+                }
             })
             .collect::<anyhow::Result<Vec<_>>>()
     };
@@ -765,4 +785,44 @@ fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::
     }
 
     Ok(true)
+}
+
+// Rewrites each JSON value with object keys sorted, so equal values compare equal as strings.
+fn canonical_json_column(column: &ArrayRef) -> anyhow::Result<ArrayRef> {
+    let column = cast(column, &DataType::Utf8)?;
+    let values = column
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .ok_or_else(|| anyhow::anyhow!("JSON column is not a string array"))?;
+    let canonical = values
+        .iter()
+        .map(|value| {
+            value
+                .map(|value| {
+                    let value: serde_json::Value = serde_json::from_str(value)?;
+                    Ok::<_, serde_json::Error>(canonical_json_value(value).to_string())
+                })
+                .transpose()
+        })
+        .collect::<Result<StringArray, _>>()?;
+    Ok(Arc::new(canonical))
+}
+
+fn canonical_json_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<_> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            serde_json::Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, canonical_json_value(value)))
+                    .collect(),
+            )
+        }
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(canonical_json_value).collect())
+        }
+        value => value,
+    }
 }
