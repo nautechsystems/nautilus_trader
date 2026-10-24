@@ -335,16 +335,16 @@ final post-loop drain.
 ## Dispatch priority and overload behavior
 
 The live runner's seven internal message channels are separate and unbounded. When several message
-channels are ready together, the runner polls in this order:
+channels are ready together, the runner polls eligible branches in this order:
 
 1. Time and system work.
 1. Execution events.
 1. Execution commands.
 1. External message-bus ingress.
-1. Data events.
-1. Data commands.
+1. Data events and commands.
 
-Events precede commands within the execution and data channel pairs.
+When data work is pending, timer polling yields until another message channel is serviced.
+Execution events precede execution commands. Data events and commands alternate when both are pending.
 
 This polling order keeps a market-data backlog from taking priority over ready execution traffic. It does not
 define **one global FIFO order** across channels, adapters, or venues.
