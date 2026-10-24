@@ -154,6 +154,7 @@ Released on TBD (UTC).
 - Fixed Lighter probes for completed cancels consuming REST quota and delaying modification confirmation
 - Fixed Lighter cancellation recovery stopping before terminal order status is available
 - Fixed Lighter single-order cancel transaction failures leaving orders pending cancel
+- Fixed Lighter batch operations failing instead of retrying as nonce refresh completes
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX external limit orders missing amendment confirmations
 - Fixed OKX spot `StopMarket` and `MarketIfTouched` buy sizing (#5371), thanks for reporting @michalismeng

@@ -1522,7 +1522,7 @@ impl LighterExecutionClient {
         let connection_epoch = self.ws_client.connection_epoch();
         anyhow::ensure!(
             self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
-            "Lighter nonce refresh is pending for connection epoch {connection_epoch}",
+            TxPreparationError::NonceRefreshPending(connection_epoch),
         );
         let nonce_guard = Arc::clone(&self.nonce_submission_gate)
             .try_read_owned()
@@ -1530,7 +1530,7 @@ impl LighterExecutionClient {
         anyhow::ensure!(
             self.ws_client.connection_epoch() == connection_epoch
                 && self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
-            "Lighter connection or nonce state changed during transaction preparation",
+            TxPreparationError::StateChanged,
         );
 
         let send_reservation = match self.tx_send_sequencer.reserve(
@@ -2987,14 +2987,7 @@ impl FanoutDispatchContext {
                         batch.push(prepared);
                         retry_delay = NONCE_REFRESH_RETRY_INITIAL_DELAY;
                     }
-                    Err(e)
-                        if matches!(
-                            e.downcast_ref::<NonceError>(),
-                            Some(NonceError::SkipWindowExhausted { .. })
-                        ) || e.is::<tokio::sync::TryLockError>()
-                            || self.nonce_ready_connection_epoch.load(Ordering::Acquire)
-                                != self.ws_client.connection_epoch() =>
-                    {
+                    Err(e) if should_retry_batch_signing(&e) => {
                         self.send_batch(std::mem::take(&mut batch)).await;
                         tokio::time::sleep(retry_delay).await;
                         retry_delay = (retry_delay * 2).min(NONCE_REFRESH_RETRY_MAX_DELAY);
@@ -3115,7 +3108,7 @@ impl FanoutDispatchContext {
         let connection_epoch = self.ws_client.connection_epoch();
         anyhow::ensure!(
             self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
-            "Lighter nonce refresh is pending for connection epoch {connection_epoch}",
+            TxPreparationError::NonceRefreshPending(connection_epoch),
         );
         let nonce_guard = Arc::clone(&self.nonce_submission_gate)
             .try_read_owned()
@@ -3123,7 +3116,7 @@ impl FanoutDispatchContext {
         anyhow::ensure!(
             self.ws_client.connection_epoch() == connection_epoch
                 && self.nonce_ready_connection_epoch.load(Ordering::Acquire) == connection_epoch,
-            "Lighter connection or nonce state changed during transaction preparation",
+            TxPreparationError::StateChanged,
         );
 
         let send_reservation = match self.tx_send_sequencer.reserve(
@@ -3738,6 +3731,23 @@ impl FanoutDispatchContext {
             );
         }
     }
+}
+
+fn should_retry_batch_signing(error: &anyhow::Error) -> bool {
+    error.is::<TxPreparationError>()
+        || error.is::<tokio::sync::TryLockError>()
+        || matches!(
+            error.downcast_ref::<NonceError>(),
+            Some(NonceError::SkipWindowExhausted { .. })
+        )
+}
+
+#[derive(Debug, thiserror::Error)]
+enum TxPreparationError {
+    #[error("Lighter nonce refresh is pending for connection epoch {0}")]
+    NonceRefreshPending(u64),
+    #[error("Lighter connection or nonce state changed during transaction preparation")]
+    StateChanged,
 }
 
 struct PreparedModifyOrder {
@@ -11172,6 +11182,63 @@ mod tests {
 
         assert!(client.dispatch.cloid_map.get(&client_order_index).is_none());
         assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[rstest]
+    #[case::nonce_refresh(false)]
+    #[case::submission_gate(true)]
+    #[tokio::test]
+    async fn batch_signing_retries_after_nonce_readiness_recovers(#[case] lock_submission: bool) {
+        let (client, _cache, _rx) = create_execution_client();
+        let credential = test_credential();
+        let context = client.fanout_dispatch_context(&credential).unwrap();
+        let connection_epoch = context.ws_client.connection_epoch();
+        let guard = if lock_submission {
+            Some(context.nonce_submission_gate.write().await)
+        } else {
+            context
+                .nonce_ready_connection_epoch
+                .store(NONCE_CONNECTION_EPOCH_UNAVAILABLE, Ordering::Release);
+            None
+        };
+
+        let error = context.build_tx_context().unwrap_err();
+        drop(guard);
+        context
+            .nonce_ready_connection_epoch
+            .store(connection_epoch, Ordering::Release);
+        let reserved = context.build_tx_context().unwrap();
+
+        assert_eq!(reserved.context.nonce, TEST_NEXT_NONCE);
+        assert!(should_retry_batch_signing(&error));
+        assert_eq!(
+            error.to_string(),
+            if lock_submission {
+                "Lighter nonce refresh is in progress".to_string()
+            } else {
+                format!("Lighter nonce refresh is pending for connection epoch {connection_epoch}")
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::state_changed(TxPreparationError::StateChanged.into(), true)]
+    #[case::skip_window(NonceError::SkipWindowExhausted {
+        account_index: TEST_ACCOUNT_INDEX_I64,
+        api_key_index: TEST_API_KEY_INDEX,
+        outstanding: 17,
+        skip_window: 16,
+    }.into(), true)]
+    #[case::uninitialized(NonceError::NotInitialized {
+        account_index: TEST_ACCOUNT_INDEX_I64,
+        api_key_index: TEST_API_KEY_INDEX,
+    }.into(), false)]
+    #[case::signing(anyhow::anyhow!("invalid signing key"), false)]
+    fn batch_signing_retry_classifies_preparation_errors(
+        #[case] error: anyhow::Error,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(should_retry_batch_signing(&error), expected);
     }
 
     #[rstest]
