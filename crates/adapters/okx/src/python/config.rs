@@ -154,6 +154,7 @@ impl OKXExecutionClientConfig {
         transport_backend = None,
         spot_trade_quote_ccy = None,
         oms_type = None,
+        max_reconciliation_history_pages = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -178,6 +179,7 @@ impl OKXExecutionClientConfig {
         transport_backend: Option<TransportBackend>,
         spot_trade_quote_ccy: Option<String>,
         oms_type: Option<OmsType>,
+        max_reconciliation_history_pages: Option<u32>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
 
@@ -208,6 +210,7 @@ impl OKXExecutionClientConfig {
             auth_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             spot_trade_quote_ccy,
+            max_reconciliation_history_pages,
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
@@ -335,6 +338,43 @@ mod tests {
     }
 
     #[rstest]
+    #[case(None)]
+    #[case(Some(0))]
+    #[case(Some(2))]
+    #[case(Some(51))]
+    #[case(Some(u32::MAX))]
+    fn test_exec_config_python_history_pages(#[case] pages: Option<u32>) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item(
+                    "account_id",
+                    Py::new(py, AccountId::from("OKX-001")).unwrap(),
+                )
+                .unwrap();
+
+            if let Some(pages) = pages {
+                kwargs
+                    .set_item("max_reconciliation_history_pages", pages)
+                    .unwrap();
+            }
+
+            let config = py
+                .get_type::<OKXExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let actual: Option<u32> = config
+                .getattr("max_reconciliation_history_pages")
+                .unwrap()
+                .extract()
+                .unwrap();
+
+            assert_eq!(actual, pages);
+        });
+    }
+
+    #[rstest]
     fn test_exec_config_py_new_load_spreads() {
         let config = OKXExecutionClientConfig::py_new(
             AccountId::from("OKX-001"),
@@ -358,6 +398,7 @@ mod tests {
             None,
             Some("USD".to_string()),
             Some(OmsType::Hedging),
+            Some(7),
         )
         .unwrap();
 
@@ -365,5 +406,6 @@ mod tests {
         assert_eq!(config.auth_timeout_secs, None);
         assert_eq!(config.spot_trade_quote_ccy.as_deref(), Some("USD"));
         assert_eq!(config.oms_type, Some(OmsType::Hedging));
+        assert_eq!(config.max_reconciliation_history_pages, Some(7));
     }
 }

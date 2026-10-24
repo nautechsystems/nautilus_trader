@@ -29,6 +29,7 @@ Released on TBD (UTC).
 - Added liquidation prices to Lighter position status reports
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
 - Added Lighter self-trade behavior and account-scope order params with explicit defaults
+- Added OKX startup reconciliation history page limits (#5279), thanks for reporting @almostintuitive
 - Added OKX trading-account bills and archive queries (#5352), thanks @silarin
 
 ### Breaking Changes
@@ -82,6 +83,7 @@ Released on TBD (UTC).
 - Changed Python `OKXHttpClient.place_algo_order` spot stop-market and market-if-touched buy defaults from quote to base
 - Changed Python OKX quote-budget algo calls to require `quote_quantity=True`, including spot trailing buys
 - Changed OKX `place_algo_order_with_domain_types` to require `quote_quantity`; pass `false` for base sizing
+- Changed OKX execution config literals; add `max_reconciliation_history_pages: None`
 - Changed `PolymarketInstrumentDef.gamma_event` from `Option<String>` to `Option<Arc<Value>>` (#5389), thanks @imbolc
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
