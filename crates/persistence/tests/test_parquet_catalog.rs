@@ -6362,37 +6362,70 @@ fn hash_map_custom_data(ts_init: u64) -> Data {
     ))
 }
 
-// Rewrites the `prices` JSON of every row of a Parquet file with its keys in descending order
-// and spaces after separators, a form `serde_json` never writes, keeping the schema.
-fn rewrite_prices_json_out_of_order(path: &std::path::Path) {
+fn custom_with_two_metadata_keys(ts_init: u64) -> Data {
+    let instrument_id = InstrumentId::from("RUST.A");
+    let metadata = Params::new([("a".to_string(), json!(1)), ("b".to_string(), json!(2))].into());
+    let item = RustTestCustomData {
+        instrument_id,
+        value: ts_init as f64,
+        flag: true,
+        ts_event: UnixNanos::from(ts_init),
+        ts_init: UnixNanos::from(ts_init),
+    };
+    Data::Custom(CustomData::new(
+        Arc::new(item),
+        DataType::new(
+            "RustTestCustomData",
+            Some(metadata),
+            Some(instrument_id.to_string()),
+        ),
+    ))
+}
+
+// Formats JSON with object keys in descending order at every level and spaces after
+// separators, a form `serde_json` never writes.
+fn json_out_of_order(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut entries: Vec<_> = map.iter().collect();
+            entries.sort_by(|a, b| b.0.cmp(a.0));
+            let entries = entries
+                .into_iter()
+                .map(|(key, value)| format!("{}: {}", json!(key), json_out_of_order(value)))
+                .collect::<Vec<_>>();
+            format!("{{{}}}", entries.join(", "))
+        }
+        serde_json::Value::Array(values) => {
+            let values = values.iter().map(json_out_of_order).collect::<Vec<_>>();
+            format!("[{}]", values.join(", "))
+        }
+        value => value.to_string(),
+    }
+}
+
+// Rewrites the JSON in `column` of every row of a Parquet file out of order, keeping the schema.
+fn rewrite_json_column_out_of_order(path: &std::path::Path, column: &str) {
     let builder = ParquetRecordBatchReaderBuilder::try_new(fs::File::open(path).unwrap()).unwrap();
     let schema = builder.schema().clone();
+    let index = schema.index_of(column).unwrap();
     let batches = builder
         .build()
         .unwrap()
         .map(|batch| {
             let batch = batch.unwrap();
-            let index = schema.index_of("prices").unwrap();
-            let prices = batch
+            let values = batch
                 .column(index)
                 .as_any()
                 .downcast_ref::<arrow::array::StringArray>()
                 .unwrap()
                 .iter()
                 .map(|value| {
-                    let map: serde_json::Map<String, serde_json::Value> =
-                        serde_json::from_str(value.unwrap()).unwrap();
-                    let mut entries: Vec<_> = map.into_iter().collect();
-                    entries.sort_by(|a, b| b.0.cmp(&a.0));
-                    let entries = entries
-                        .iter()
-                        .map(|(key, value)| format!("{}: {value}", json!(key)))
-                        .collect::<Vec<_>>();
-                    Some(format!("{{{}}}", entries.join(", ")))
+                    let value: serde_json::Value = serde_json::from_str(value.unwrap()).unwrap();
+                    Some(json_out_of_order(&value))
                 })
                 .collect::<arrow::array::StringArray>();
             let mut columns = batch.columns().to_vec();
-            columns[index] = Arc::new(prices);
+            columns[index] = Arc::new(values);
             arrow::record_batch::RecordBatch::try_new(schema.clone(), columns).unwrap()
         })
         .collect::<Vec<_>>();
@@ -6406,15 +6439,36 @@ fn rewrite_prices_json_out_of_order(path: &std::path::Path) {
     writer.close().unwrap();
 }
 
-/// A rerun of an interrupted delete finds a split target whose JSON-backed values equal the
-/// preserved ones but are stored with another key order, so the delete completes.
+/// A rerun of an interrupted delete finds a split target whose JSON values equal the preserved
+/// ones but are stored with another key order, so the delete completes. Custom JSON-backed fields
+/// and the `data_type` column, which holds the metadata, are both compared by value.
 #[rstest]
-fn test_delete_data_range_keeps_custom_split_target_holding_equal_json_rows() {
+#[case::json_field(
+    hash_map_custom_data,
+    "RustTestHashMapCustomData",
+    None,
+    "prices",
+    "data/custom/RustTestHashMapCustomData"
+)]
+#[case::data_type_metadata(
+    custom_with_two_metadata_keys,
+    "RustTestCustomData",
+    Some("RUST.A"),
+    "data_type",
+    "data/custom/RustTestCustomData/RUST.A"
+)]
+fn test_delete_data_range_keeps_custom_split_target_holding_equal_json_rows(
+    #[case] data: fn(u64) -> Data,
+    #[case] type_name: &str,
+    #[case] identifier: Option<&str>,
+    #[case] column: &str,
+    #[case] directory: &str,
+) {
     ensure_test_custom_data_registered();
     let (temp_dir, mut catalog) = create_temp_catalog();
     catalog
         .write_data_enum(
-            &[hash_map_custom_data(1), hash_map_custom_data(4)],
+            &[data(1), data(4)],
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(10)),
             Some(true),
@@ -6422,51 +6476,41 @@ fn test_delete_data_range_keeps_custom_split_target_holding_equal_json_rows() {
         .unwrap();
     catalog
         .write_data_enum(
-            &[hash_map_custom_data(1)],
+            &[data(1)],
             Some(UnixNanos::from(0)),
             Some(UnixNanos::from(2)),
             Some(true),
         )
         .unwrap();
-    let target = "data/custom/RustTestHashMapCustomData/\
-                  1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet";
-    rewrite_prices_json_out_of_order(&temp_dir.path().join(target));
+    let target = format!(
+        "{directory}/1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet"
+    );
+    rewrite_json_column_out_of_order(&temp_dir.path().join(&target), column);
 
     catalog
         .delete_data_range(
             &NautilusDataType::Custom {
-                type_name: "RustTestHashMapCustomData".to_string(),
+                type_name: type_name.to_string(),
             },
-            None,
+            identifier,
             Some(UnixNanos::from(3)),
             Some(UnixNanos::from(3)),
         )
         .unwrap();
     let loaded = catalog
-        .query_custom_data_dynamic(
-            "RustTestHashMapCustomData",
-            None,
-            None,
-            None,
-            None,
-            None,
-            true,
-        )
+        .query_custom_data_dynamic(type_name, None, None, None, None, None, true)
         .unwrap();
 
     assert_eq!(
         catalog_relative_paths(&temp_dir),
         vec![
-            target.to_string(),
-            "data/custom/RustTestHashMapCustomData/\
-             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
-                .to_string(),
+            target,
+            format!(
+                "{directory}/1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+            ),
         ]
     );
-    assert_eq!(
-        loaded,
-        vec![hash_map_custom_data(1), hash_map_custom_data(4)]
-    );
+    assert_eq!(loaded, vec![data(1), data(4)]);
 }
 
 /// An existing custom split target that lacks preserved rows fails the delete without changes.
