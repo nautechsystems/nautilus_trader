@@ -6345,6 +6345,130 @@ fn test_delete_data_range_keeps_custom_split_target_holding_nan_rows() {
     );
 }
 
+fn hash_map_custom_data(ts_init: u64) -> Data {
+    let item = RustTestHashMapCustomData {
+        name: format!("row-{ts_init}"),
+        prices: HashMap::from([
+            ("AUD/USD.SIM".to_string(), Price::from("1.23456")),
+            ("BTCUSDT.BINANCE".to_string(), Price::from("65432.10")),
+            ("ETHUSDT.BINANCE".to_string(), Price::from("3456.78")),
+        ]),
+        ts_event: UnixNanos::from(ts_init),
+        ts_init: UnixNanos::from(ts_init),
+    };
+    Data::Custom(CustomData::new(
+        Arc::new(item),
+        DataType::new("RustTestHashMapCustomData", None, None),
+    ))
+}
+
+// Rewrites the `prices` JSON of every row of a Parquet file with its keys in descending order
+// and spaces after separators, a form `serde_json` never writes, keeping the schema.
+fn rewrite_prices_json_out_of_order(path: &std::path::Path) {
+    let builder = ParquetRecordBatchReaderBuilder::try_new(fs::File::open(path).unwrap()).unwrap();
+    let schema = builder.schema().clone();
+    let batches = builder
+        .build()
+        .unwrap()
+        .map(|batch| {
+            let batch = batch.unwrap();
+            let index = schema.index_of("prices").unwrap();
+            let prices = batch
+                .column(index)
+                .as_any()
+                .downcast_ref::<arrow::array::StringArray>()
+                .unwrap()
+                .iter()
+                .map(|value| {
+                    let map: serde_json::Map<String, serde_json::Value> =
+                        serde_json::from_str(value.unwrap()).unwrap();
+                    let mut entries: Vec<_> = map.into_iter().collect();
+                    entries.sort_by(|a, b| b.0.cmp(&a.0));
+                    let entries = entries
+                        .iter()
+                        .map(|(key, value)| format!("{}: {value}", json!(key)))
+                        .collect::<Vec<_>>();
+                    Some(format!("{{{}}}", entries.join(", ")))
+                })
+                .collect::<arrow::array::StringArray>();
+            let mut columns = batch.columns().to_vec();
+            columns[index] = Arc::new(prices);
+            arrow::record_batch::RecordBatch::try_new(schema.clone(), columns).unwrap()
+        })
+        .collect::<Vec<_>>();
+    let mut writer =
+        parquet::arrow::ArrowWriter::try_new(fs::File::create(path).unwrap(), schema, None)
+            .unwrap();
+
+    for batch in &batches {
+        writer.write(batch).unwrap();
+    }
+    writer.close().unwrap();
+}
+
+/// A rerun of an interrupted delete finds a split target whose JSON-backed values equal the
+/// preserved ones but are stored with another key order, so the delete completes.
+#[rstest]
+fn test_delete_data_range_keeps_custom_split_target_holding_equal_json_rows() {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    catalog
+        .write_data_enum(
+            &[hash_map_custom_data(1), hash_map_custom_data(4)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(10)),
+            Some(true),
+        )
+        .unwrap();
+    catalog
+        .write_data_enum(
+            &[hash_map_custom_data(1)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(2)),
+            Some(true),
+        )
+        .unwrap();
+    let target = "data/custom/RustTestHashMapCustomData/\
+                  1970-01-01T00-00-00-000000000Z_1970-01-01T00-00-00-000000002Z.parquet";
+    rewrite_prices_json_out_of_order(&temp_dir.path().join(target));
+
+    catalog
+        .delete_data_range(
+            &NautilusDataType::Custom {
+                type_name: "RustTestHashMapCustomData".to_string(),
+            },
+            None,
+            Some(UnixNanos::from(3)),
+            Some(UnixNanos::from(3)),
+        )
+        .unwrap();
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestHashMapCustomData",
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(
+        catalog_relative_paths(&temp_dir),
+        vec![
+            target.to_string(),
+            "data/custom/RustTestHashMapCustomData/\
+             1970-01-01T00-00-00-000000004Z_1970-01-01T00-00-00-000000010Z.parquet"
+                .to_string(),
+        ]
+    );
+    assert_eq!(
+        loaded,
+        vec![hash_map_custom_data(1), hash_map_custom_data(4)]
+    );
+}
+
 /// An existing custom split target that lacks preserved rows fails the delete without changes.
 #[rstest]
 fn test_delete_data_range_rejects_custom_split_target_missing_rows() {
