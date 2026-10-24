@@ -24,7 +24,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use indexmap::IndexMap;
+use indexmap::{Equivalent, IndexMap, IndexSet};
 use smallvec::SmallVec;
 use ustr::Ustr;
 
@@ -110,6 +110,12 @@ impl<T: 'static> Hash for TypedSubscription<T> {
     }
 }
 
+impl<T: 'static> Equivalent<TypedSubscription<T>> for (MStr<Pattern>, Ustr) {
+    fn equivalent(&self, other: &TypedSubscription<T>) -> bool {
+        self.0 == other.pattern && self.1 == other.handler_id
+    }
+}
+
 /// Routes messages of type `T` to subscribed handlers based on topic patterns.
 ///
 /// Supports wildcard patterns (`*` and `?`) and priority-based ordering.
@@ -117,7 +123,7 @@ impl<T: 'static> Hash for TypedSubscription<T> {
 #[derive(Debug)]
 pub struct TopicRouter<T: 'static> {
     /// All active subscriptions.
-    pub(crate) subscriptions: Vec<TypedSubscription<T>>,
+    pub(crate) subscriptions: IndexSet<TypedSubscription<T>>,
     /// Cache mapping topics to matching subscription indices (inline for ≤64 handlers).
     topic_cache: IndexMap<MStr<Topic>, SmallVec<[usize; 64]>>,
 }
@@ -133,7 +139,7 @@ impl<T: 'static> TopicRouter<T> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            subscriptions: Vec::new(),
+            subscriptions: IndexSet::new(),
             topic_cache: IndexMap::new(),
         }
     }
@@ -153,8 +159,8 @@ impl<T: 'static> TopicRouter<T> {
     /// Returns all active subscription patterns.
     #[must_use]
     pub fn patterns(&self) -> Vec<&str> {
-        self.subscriptions
-            .iter()
+        self.ordered_subscriptions()
+            .into_iter()
             .map(|s| s.pattern.as_str())
             .collect()
     }
@@ -162,8 +168,8 @@ impl<T: 'static> TopicRouter<T> {
     /// Returns all subscription handler IDs.
     #[must_use]
     pub fn handler_ids(&self) -> Vec<&str> {
-        self.subscriptions
-            .iter()
+        self.ordered_subscriptions()
+            .into_iter()
             .map(|s| s.handler_id.as_str())
             .collect()
     }
@@ -179,19 +185,14 @@ impl<T: 'static> TopicRouter<T> {
 
         // Re-subscribing the same handler is expected (e.g. book deltas + snapshots
         // share one BookUpdater), so dedup at debug rather than warn.
-        if self.subscriptions.iter().any(|s| s == &sub) {
+        if self.subscriptions.contains(&sub) {
             log::debug!("{sub:?} already exists; skipping duplicate subscription");
             return;
         }
 
         log::debug!("Subscribing {sub:?}");
 
-        self.subscriptions.push(sub);
-
-        // Re-sort by priority descending, pattern ascending, then handler ID ascending.
-        // Clear the index cache since sorting can rearrange all indices.
-        self.subscriptions
-            .sort_by(TypedSubscription::delivery_order);
+        self.subscriptions.insert(sub);
         self.topic_cache.clear();
     }
 
@@ -204,14 +205,8 @@ impl<T: 'static> TopicRouter<T> {
 
         let handler_id = handler.id();
 
-        if let Some(idx) = self
-            .subscriptions
-            .iter()
-            .position(|s| s.pattern == pattern && s.handler_id == handler_id)
-        {
-            self.subscriptions.remove(idx);
-
-            // Must clear entire cache since remove() shifts indices
+        if self.subscriptions.swap_remove(&(pattern, handler_id)) {
+            // Must clear entire cache since swap_remove() can move an index
             self.topic_cache.clear();
 
             log::debug!("Handler for pattern '{pattern}' was removed");
@@ -222,14 +217,8 @@ impl<T: 'static> TopicRouter<T> {
 
     /// Removes a specific handler from a pattern by handler ID.
     pub fn remove_handler(&mut self, pattern: MStr<Pattern>, handler_id: Ustr) {
-        if let Some(idx) = self
-            .subscriptions
-            .iter()
-            .position(|s| s.pattern == pattern && s.handler_id == handler_id)
-        {
-            self.subscriptions.remove(idx);
-
-            // Must clear entire cache since remove() shifts indices
+        if self.subscriptions.swap_remove(&(pattern, handler_id)) {
+            // Must clear entire cache since swap_remove() can move an index
             self.topic_cache.clear();
             log::debug!("Handler {handler_id} for pattern '{pattern}' was removed");
         }
@@ -239,9 +228,7 @@ impl<T: 'static> TopicRouter<T> {
     #[must_use]
     pub fn is_subscribed(&self, pattern: MStr<Pattern>, handler: &TypedHandler<T>) -> bool {
         let handler_id = handler.id();
-        self.subscriptions
-            .iter()
-            .any(|s| s.pattern == pattern && s.handler_id == handler_id)
+        self.subscriptions.contains(&(pattern, handler_id))
     }
 
     /// Returns whether there are subscribers for the topic.
@@ -284,6 +271,7 @@ impl<T: 'static> TopicRouter<T> {
         let indices = topic_cache
             .entry(topic)
             .or_insert_with(|| Self::find_matches(subscriptions, topic));
+        let subscriptions = subscriptions.as_slice();
 
         for &idx in indices.iter() {
             subscriptions[idx].handler.handle(message);
@@ -339,6 +327,7 @@ impl<T: 'static> TopicRouter<T> {
         let indices = topic_cache
             .entry(topic)
             .or_insert_with(|| Self::find_matches(subscriptions, topic));
+        let subscriptions = subscriptions.as_slice();
 
         for &idx in indices.iter() {
             buf.push(subscriptions[idx].handler.clone());
@@ -347,14 +336,24 @@ impl<T: 'static> TopicRouter<T> {
 
     /// Finds subscription indices matching a topic (without caching).
     fn find_matches(
-        subscriptions: &[TypedSubscription<T>],
+        subscriptions: &IndexSet<TypedSubscription<T>>,
         topic: MStr<Topic>,
     ) -> SmallVec<[usize; 64]> {
-        subscriptions
+        let mut indices: SmallVec<[usize; 64]> = subscriptions
             .iter()
             .enumerate()
             .filter_map(|(idx, sub)| is_matching_backtracking(topic, sub.pattern).then_some(idx))
-            .collect()
+            .collect();
+
+        // Sort only matching subscriptions; registration and removal leave storage unordered
+        indices.sort_by(|&a, &b| subscriptions[a].delivery_order(&subscriptions[b]));
+        indices
+    }
+
+    fn ordered_subscriptions(&self) -> Vec<&TypedSubscription<T>> {
+        let mut subscriptions: Vec<_> = self.subscriptions.iter().collect();
+        subscriptions.sort_by(|a, b| a.delivery_order(b));
+        subscriptions
     }
 
     /// Clears all subscriptions and cache.
@@ -463,6 +462,11 @@ mod tests {
         router.subscribe("delivery.topic".into(), exact_b, 10);
         router.subscribe("delivery.topic".into(), exact_a, 10);
         router.subscribe("delivery.*".into(), wildcard_b, 10);
+        router.subscribe(
+            "delivery.topic".into(),
+            TypedHandler::from_with_id("handler-b", |_: &i32| panic!("duplicate handler replaced")),
+            100,
+        );
 
         let topic: MStr<Topic> = "delivery.topic".into();
         router.publish(topic, &42);
@@ -471,6 +475,11 @@ mod tests {
             *order.borrow(),
             vec!["wildcard-b", "exact-a", "exact-b", "low-z"]
         );
+
+        router.remove_handler("delivery.*".into(), "handler-z".into());
+        order.borrow_mut().clear();
+        router.publish(topic, &42);
+        assert_eq!(*order.borrow(), vec!["wildcard-b", "exact-a", "exact-b"]);
     }
 
     #[rstest]
@@ -677,15 +686,10 @@ mod tests {
         let handler2 = TypedHandler::from_with_id("handler-b", |_: &i32| {});
 
         router.subscribe("pattern.one".into(), handler1, 0);
-        router.subscribe("pattern.two".into(), handler2, 0);
+        router.subscribe("pattern.two".into(), handler2, 1);
 
-        let patterns = router.patterns();
-        assert!(patterns.contains(&"pattern.one"));
-        assert!(patterns.contains(&"pattern.two"));
-
-        let ids = router.handler_ids();
-        assert!(ids.contains(&"handler-a"));
-        assert!(ids.contains(&"handler-b"));
+        assert_eq!(router.patterns(), vec!["pattern.two", "pattern.one"]);
+        assert_eq!(router.handler_ids(), vec!["handler-b", "handler-a"]);
     }
 
     #[rstest]
