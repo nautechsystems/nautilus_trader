@@ -84,8 +84,9 @@ use crate::{
         bar::BinanceBar,
         consts::{
             BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
-            BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-            BINANCE_NO_SUCH_ORDER_CODE, BINANCE_RETRY_AFTER_HEADER, BinanceRateLimitQuota,
+            BINANCE_FAPI_RATE_LIMITS, BINANCE_INVALID_LISTEN_KEY_CODE,
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_NO_SUCH_ORDER_CODE,
+            BINANCE_RETRY_AFTER_HEADER, BinanceRateLimitQuota,
         },
         credential::SigningCredential,
         encoder::{encode_broker_id, legacy_client_order_id},
@@ -1047,6 +1048,8 @@ impl BinanceRawFuturesHttpClient {
 
     /// Closes an existing listen key.
     ///
+    /// Succeeds if the venue reports that the key no longer exists.
+    ///
     /// # Errors
     ///
     /// Returns an error if the request fails.
@@ -1054,10 +1057,18 @@ impl BinanceRawFuturesHttpClient {
         let params = ListenKeyParams {
             listen_key: listen_key.into(),
         };
-        let _: serde_json::Value = self
-            .request_delete("listenKey", Some(&params), true, false)
-            .await?;
-        Ok(())
+
+        match self
+            .request_delete::<_, serde_json::Value>("listenKey", Some(&params), true, false)
+            .await
+        {
+            Ok(_)
+            | Err(BinanceFuturesHttpError::BinanceError {
+                code: BINANCE_INVALID_LISTEN_KEY_CODE,
+                ..
+            }) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     /// Fetches account information including balances and positions.
