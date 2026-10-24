@@ -23,6 +23,10 @@
 use std::collections::BTreeMap;
 
 use ahash::AHashSet;
+use arrow::{
+    record_batch::RecordBatch,
+    row::{RowConverter, SortField},
+};
 use nautilus_core::{UnixNanos, string::conversions::to_snake_case};
 use nautilus_model::data::{
     Bar, CustomData, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus,
@@ -34,6 +38,7 @@ use nautilus_serialization::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBa
 use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
+        io::read_parquet_from_object_store,
         paths::{make_object_store_path, parse_filename_timestamps, timestamps_to_filename},
     },
     catalog::types::{
@@ -304,8 +309,7 @@ impl ParquetDataCatalog {
             + EncodeToRecordBatch
             + HasTsInit
             + TryFrom<Data>
-            + Clone
-            + PartialEq,
+            + Clone,
     {
         // Get intervals for cleaner implementation
         let data_type = T::catalog_data_type();
@@ -321,77 +325,38 @@ impl ParquetDataCatalog {
             return Ok(()); // No operations to execute
         }
 
-        // Execute all operations
-        let mut files_to_remove = AHashSet::<String>::new();
         let file_paths: AHashSet<&str> = files.iter().map(|(path, ..)| path.as_str()).collect();
-        let mut preserved_by_target = BTreeMap::<(String, u64, u64), Vec<T>>::new();
-
-        for operation in operations_to_execute {
-            // Reset the session before each operation to ensure fresh data is loaded
-            // This clears any cached table registrations that might interfere with file operations
-            self.clear_session_tables();
-
-            match operation.kind {
-                DeleteOperationKind::SplitBefore | DeleteOperationKind::SplitAfter => {
-                    // Query the data preserved by the split
-                    // Use optimize_file_loading=false for precise file control during split operations
-                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
-                    let preserved_data = self.query::<T>(
-                        instrument_ids,
-                        Some(UnixNanos::from(operation.query_start)),
-                        Some(UnixNanos::from(operation.query_end)),
-                        None,
-                        Some(operation.files.clone()),
-                        false, // optimize_file_loading=false for precise file control
-                    )?;
-
-                    if !preserved_data.is_empty() {
-                        preserved_by_target
-                            .entry(split_target(&operation))
-                            .or_default()
-                            .extend(preserved_data);
-                    }
-                }
-                DeleteOperationKind::Remove => {}
-            }
-
-            // Mark files for removal (applies to all operation types)
-            for file in operation.files {
-                files_to_remove.insert(file);
-            }
-        }
-
-        // Splits of overlapping files can target the same file, so each target is written once
-        // with the rows of all its splits; writing them in turn would skip all but the first.
-        // Every target is checked before any file is written or removed.
+        let (targets, files_to_remove) = group_operations_by_target(operations_to_execute);
         let type_name = to_snake_case(std::any::type_name::<T>());
         let mut writes = Vec::new();
 
-        for ((target, start_ns, end_ns), mut preserved_data) in preserved_by_target {
-            preserved_data.sort_by_key(HasTsInit::ts_init);
+        // Splits of overlapping files can target the same file, so each target is written once
+        // with the rows of all its splits; writing them in turn would skip all but the first.
+        // Every target is checked before any file is written or removed. Each pass holds the
+        // rows of one target only, so the write pass queries them again.
+        for (target, sources) in &targets {
+            let rows = self.query_split_rows::<T>(identifier, target, sources)?;
 
-            if file_paths.contains(target.as_str()) {
-                let mut existing =
-                    self.query::<T>(None, None, None, None, Some(vec![target.clone()]), false)?;
-                existing.sort_by_key(HasTsInit::ts_init);
-                ensure_split_target_holds_rows(
-                    &target,
-                    &preserved_data,
-                    &existing,
-                    HasTsInit::ts_init,
-                )?;
+            if rows.is_empty() {
                 continue;
             }
 
-            Self::check_chunk_identity(&preserved_data, &type_name)?;
-            writes.push((start_ns, end_ns, preserved_data));
+            if file_paths.contains(target.0.as_str()) {
+                let batches = self.data_to_record_batches(&rows)?;
+                self.ensure_split_target_holds_rows(&target.0, &batches)?;
+                continue;
+            }
+
+            Self::check_chunk_identity(&rows, &type_name)?;
+            writes.push((target, sources));
         }
 
-        for (start_ns, end_ns, preserved_data) in writes {
+        for (target, sources) in writes {
+            let rows = self.query_split_rows::<T>(identifier, target, sources)?;
             self.write_to_parquet(
-                &preserved_data,
-                Some(UnixNanos::from(start_ns)),
-                Some(UnixNanos::from(end_ns)),
+                &rows,
+                Some(UnixNanos::from(target.1)),
+                Some(UnixNanos::from(target.2)),
                 Some(true),
             )?;
         }
@@ -441,95 +406,134 @@ impl ParquetDataCatalog {
             return Ok(()); // No operations to execute
         }
 
-        // Execute all operations
-        let mut files_to_remove = AHashSet::<String>::new();
         let file_paths: AHashSet<&str> = files.iter().map(|(path, ..)| path.as_str()).collect();
-        let mut preserved_by_target = BTreeMap::<(String, u64, u64), Vec<CustomData>>::new();
-
-        for operation in operations_to_execute {
-            // Reset the session before each operation
-            self.clear_session_tables();
-
-            match operation.kind {
-                DeleteOperationKind::SplitBefore | DeleteOperationKind::SplitAfter => {
-                    // Query the custom data preserved by the split
-                    let instrument_ids = identifier.map(|id| vec![id.to_string()]);
-                    let preserved_data = self.query_custom_data_dynamic(
-                        type_name,
-                        instrument_ids.as_deref(),
-                        Some(UnixNanos::from(operation.query_start)),
-                        Some(UnixNanos::from(operation.query_end)),
-                        None,
-                        Some(operation.files.clone()),
-                        false,
-                    )?;
-
-                    preserved_by_target
-                        .entry(split_target(&operation))
-                        .or_default()
-                        .extend(preserved_data.into_iter().filter_map(|data| match data {
-                            Data::Custom(c) => Some(c),
-                            _ => None,
-                        }));
-                }
-                DeleteOperationKind::Remove => {}
-            }
-
-            // Mark files for removal (applies to all operation types)
-            for file in operation.files {
-                files_to_remove.insert(file);
-            }
-        }
+        let (targets, files_to_remove) = group_operations_by_target(operations_to_execute);
+        let mut writes = Vec::new();
 
         // Splits of overlapping files can target the same file, so each target is written once
         // with the rows of all its splits. Every target and group is checked before any file is
         // written or removed, so groups with different metadata that would share a file fail the
-        // delete without changes.
-        let mut writes = Vec::new();
+        // delete without changes. Each pass holds the rows of one target only, so the write pass
+        // queries them again.
+        for (target, sources) in &targets {
+            let rows = self.query_custom_split_rows(type_name, identifier, target, sources)?;
 
-        for ((target, start_ns, end_ns), mut custom_items) in preserved_by_target {
-            custom_items.sort_by_key(|custom| custom.data.ts_init());
-
-            if file_paths.contains(target.as_str()) {
-                let mut existing: Vec<CustomData> = self
-                    .query_custom_data_dynamic(
-                        type_name,
-                        None,
-                        None,
-                        None,
-                        None,
-                        Some(vec![target.clone()]),
-                        false,
-                    )?
-                    .into_iter()
-                    .filter_map(|data| match data {
-                        Data::Custom(c) => Some(c),
-                        _ => None,
-                    })
-                    .collect();
-                existing.sort_by_key(|custom| custom.data.ts_init());
-                ensure_split_target_holds_rows(&target, &custom_items, &existing, |custom| {
-                    custom.data.ts_init()
-                })?;
+            if rows.is_empty() {
                 continue;
             }
 
-            writes.extend(self.prepare_custom_data_groups(
-                &custom_items,
-                Some(UnixNanos::from(start_ns)),
-                Some(UnixNanos::from(end_ns)),
+            let target_writes = self.prepare_custom_data_groups(
+                &rows,
+                Some(UnixNanos::from(target.1)),
+                Some(UnixNanos::from(target.2)),
                 Some(true),
-            )?);
+            )?;
+
+            if file_paths.contains(target.0.as_str()) {
+                let batches: Vec<RecordBatch> = target_writes
+                    .into_iter()
+                    .flat_map(|write| write.batches)
+                    .collect();
+                self.ensure_split_target_holds_rows(&target.0, &batches)?;
+                continue;
+            }
+
+            writes.push((target, sources));
         }
 
-        for write in &writes {
-            self.write_custom_data_prepared(write, Some(true))?;
+        for (target, sources) in writes {
+            let rows = self.query_custom_split_rows(type_name, identifier, target, sources)?;
+            self.write_custom_data_groups(
+                &rows,
+                Some(UnixNanos::from(target.1)),
+                Some(UnixNanos::from(target.2)),
+                Some(true),
+            )?;
         }
 
         for file in files_to_remove {
             self.delete_file(&file)?;
         }
 
+        Ok(())
+    }
+
+    // Queries the rows a split target preserves from its source files, sorted by `ts_init`.
+    fn query_split_rows<T>(
+        &mut self,
+        identifier: Option<&str>,
+        target: &SplitTarget,
+        sources: &[String],
+    ) -> anyhow::Result<Vec<T>>
+    where
+        T: DecodeTypedFromRecordBatch + HasCatalogDataType + HasTsInit,
+    {
+        // Reset the session so each query loads the source files afresh
+        self.clear_session_tables();
+        // Use optimize_file_loading=false for precise file control during split operations
+        let instrument_ids = identifier.map(|id| vec![id.to_string()]);
+        let mut rows = self.query::<T>(
+            instrument_ids,
+            Some(UnixNanos::from(target.1)),
+            Some(UnixNanos::from(target.2)),
+            None,
+            Some(sources.to_vec()),
+            false,
+        )?;
+        rows.sort_by_key(HasTsInit::ts_init);
+        Ok(rows)
+    }
+
+    // Queries the custom rows a split target preserves from its source files, sorted by
+    // `ts_init`.
+    fn query_custom_split_rows(
+        &mut self,
+        type_name: &str,
+        identifier: Option<&str>,
+        target: &SplitTarget,
+        sources: &[String],
+    ) -> anyhow::Result<Vec<CustomData>> {
+        self.clear_session_tables();
+        let instrument_ids = identifier.map(|id| vec![id.to_string()]);
+        let mut rows: Vec<CustomData> = self
+            .query_custom_data_dynamic(
+                type_name,
+                instrument_ids.as_deref(),
+                Some(UnixNanos::from(target.1)),
+                Some(UnixNanos::from(target.2)),
+                None,
+                Some(sources.to_vec()),
+                false,
+            )?
+            .into_iter()
+            .filter_map(|data| match data {
+                Data::Custom(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+        rows.sort_by_key(|custom| custom.data.ts_init());
+        Ok(rows)
+    }
+
+    // An existing split target is skipped by the write, and the split's sources are then removed,
+    // so it must already hold every preserved row, as after a rerun of an interrupted delete.
+    // Rows are compared in their Arrow row encoding, where equal values match, NaN included,
+    // unlike `PartialEq` on decoded rows.
+    fn ensure_split_target_holds_rows(
+        &self,
+        target: &str,
+        rows: &[RecordBatch],
+    ) -> anyhow::Result<()> {
+        let object_path = self.to_object_path_parsed(target)?;
+        let (existing, _) = self.execute_async(|| async {
+            read_parquet_from_object_store(self.object_store.clone(), &object_path).await
+        })?;
+
+        anyhow::ensure!(
+            batches_hold_rows(&existing, rows)?,
+            "Cannot preserve the rows outside the deleted range: their target file {target} \
+             already exists without them"
+        );
         Ok(())
     }
 
@@ -668,8 +672,31 @@ fn operations_for_files(
     operations
 }
 
-// Returns the file a split operation writes: its source directory, keyed with the file range.
-fn split_target(operation: &DeleteOperation) -> (String, u64, u64) {
+// A file a split operation writes: its source directory and file name, with the file range.
+type SplitTarget = (String, u64, u64);
+
+// Groups split operations by the file they write, with the source files of each, and collects
+// every file the delete removes. All splits of one target share its range as their query range.
+fn group_operations_by_target(
+    operations: Vec<DeleteOperation>,
+) -> (BTreeMap<SplitTarget, Vec<String>>, AHashSet<String>) {
+    let mut targets = BTreeMap::<SplitTarget, Vec<String>>::new();
+    let mut files_to_remove = AHashSet::new();
+
+    for operation in operations {
+        if operation.kind != DeleteOperationKind::Remove {
+            targets
+                .entry(split_target(&operation))
+                .or_default()
+                .extend(operation.files.iter().cloned());
+        }
+        files_to_remove.extend(operation.files);
+    }
+
+    (targets, files_to_remove)
+}
+
+fn split_target(operation: &DeleteOperation) -> SplitTarget {
     let source = &operation.files[0];
     let filename = timestamps_to_filename(
         UnixNanos::from(operation.file_start_ns),
@@ -683,31 +710,59 @@ fn split_target(operation: &DeleteOperation) -> (String, u64, u64) {
     (target, operation.file_start_ns, operation.file_end_ns)
 }
 
-// An existing split target is skipped by the write, and the split's sources are then removed, so
-// it must already hold every preserved row, as after a rerun of an interrupted delete. Both slices
-// are sorted by `ts_init`.
-fn ensure_split_target_holds_rows<T: PartialEq>(
-    target: &str,
-    rows: &[T],
-    existing: &[T],
-    ts_init: impl Fn(&T) -> UnixNanos,
-) -> anyhow::Result<()> {
-    let mut start = 0;
-    let holds_rows = rows.iter().all(|row| {
-        let ts = ts_init(row);
-        while start < existing.len() && ts_init(&existing[start]) < ts {
-            start += 1;
-        }
-        existing[start..]
-            .iter()
-            .take_while(|item| ts_init(item) == ts)
-            .any(|item| item == row)
-    });
+// Returns whether every row of `rows` occurs in `existing`, comparing the columns both share by
+// name, so a column only one side carries, such as a stored identifier column, is ignored.
+fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::Result<bool> {
+    let Some(first) = rows.first() else {
+        return Ok(true);
+    };
+    let Some(existing_first) = existing.first() else {
+        return Ok(rows.iter().all(|batch| batch.num_rows() == 0));
+    };
 
-    anyhow::ensure!(
-        holds_rows,
-        "Cannot preserve the rows outside the deleted range: their target file {target} already \
-         exists without them"
-    );
-    Ok(())
+    let existing_schema = existing_first.schema();
+    let names: Vec<String> = first
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| field.name().clone())
+        .filter(|name| existing_schema.field_with_name(name).is_ok())
+        .collect();
+    let fields = names
+        .iter()
+        .map(|name| {
+            let data_type = first.schema().field_with_name(name)?.data_type().clone();
+            Ok(SortField::new(data_type))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let converter = RowConverter::new(fields)?;
+    let columns = |batch: &RecordBatch| {
+        names
+            .iter()
+            .map(|name| {
+                batch
+                    .column_by_name(name)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("Missing column {name} in Parquet batch"))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
+    };
+
+    let mut existing_rows = AHashSet::new();
+
+    for batch in existing {
+        for row in &converter.convert_columns(&columns(batch)?)? {
+            existing_rows.insert(row.as_ref().to_vec());
+        }
+    }
+
+    for batch in rows {
+        for row in &converter.convert_columns(&columns(batch)?)? {
+            if !existing_rows.contains(row.as_ref()) {
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
 }
