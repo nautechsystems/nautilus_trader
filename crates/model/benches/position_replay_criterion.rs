@@ -28,10 +28,11 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
-    instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::btcusd_bybit},
+    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 const HISTORY_COUNTS: [usize; 3] = [8, 64, 512];
@@ -166,7 +167,7 @@ fn bench_accounting(c: &mut Criterion) {
         b.iter(|| black_box(linear.try_unrealized_pnl(black_box(last)).unwrap()));
     });
 
-    let instrument = InstrumentAny::CryptoPerpetual(btcusd_bybit());
+    let instrument = instrument_inverse();
     let mut opening = fill(0, OrderSide::Buy, Quantity::from(100_000));
     opening.instrument_id = instrument.id();
     opening.last_px = Price::from("10000.0");
@@ -271,6 +272,31 @@ fn instrument() -> InstrumentAny {
             .build()
             .unwrap(),
     )
+}
+
+fn instrument_inverse() -> InstrumentAny {
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("BTCUSD.BYBIT"))
+        .raw_symbol(Symbol::from("BTCUSD"))
+        .base_currency(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::BTC())
+        .is_inverse(true)
+        .price_precision(1)
+        .size_precision(0)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("1"))
+        .max_notional(Money::from("10000000 USD"))
+        .min_notional(Money::from("1 USD"))
+        .max_price(Price::from("10000000"))
+        .min_price(Price::from("0.01"))
+        .margin_init(dec!(0.01))
+        .margin_maint(dec!(0.0035))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    InstrumentAny::CryptoPerpetual(instrument)
 }
 
 fn fill(index: usize, side: OrderSide, quantity: Quantity) -> OrderFilled {

@@ -182,6 +182,7 @@ Released on TBD (UTC).
 - Added deferred finalization for live execution report collection
 - Improved Dockerfile linting to run Hadolint without Docker
 - Improved performance CI to fail when any benchmark crate fails
+- Restored default-feature compilation of `position_replay_criterion` benchmarks
 - Standardized Architect AX owned execution report tasks
 - Optimized JSON and MessagePack decoding and custom data response encoding
 - Optimized virtual hedging fill-history checks during execution and reconciliation
