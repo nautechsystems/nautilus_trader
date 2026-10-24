@@ -479,9 +479,9 @@ impl DeriveGetPositionsParams {
 ///
 /// # Errors
 ///
-/// Returns an error if the order is not a Limit or Market order, when the instrument's
-/// `base_asset_address` cannot be parsed, when decimal scaling fails, when a Market order is
-/// submitted without an `explicit_price`, or when EIP-712 signing fails.
+/// Returns an error if the order quantity is quote-denominated, the order type or flags are
+/// unsupported, the instrument's `base_asset_address` cannot be parsed, decimal scaling fails,
+/// a Market order has no `explicit_price`, or EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn order_to_derive_payload(
     order: &OrderAny,
@@ -529,9 +529,9 @@ pub fn order_to_derive_payload(
 ///
 /// # Errors
 ///
-/// Returns an error if the order is not one of StopMarket, StopLimit, MarketIfTouched, or
-/// LimitIfTouched, when the trigger source is not MarkPrice, when required prices are absent, or
-/// when EIP-712 signing fails.
+/// Returns an error if the order quantity is quote-denominated, the order type, flags, or trigger
+/// source are unsupported, required prices are absent, the instrument's `base_asset_address` cannot
+/// be parsed, decimal scaling fails, or EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn trigger_order_to_derive_payload(
     order: &OrderAny,
@@ -602,9 +602,9 @@ pub fn trigger_order_to_derive_payload(
 ///
 /// # Errors
 ///
-/// Returns an error if the order is not a Limit or Market order, when the instrument's
-/// `base_asset_address` cannot be parsed, when decimal scaling fails, when a Market order has no
-/// `explicit_price`, or when EIP-712 signing fails.
+/// Returns an error if the order quantity is quote-denominated, even with `explicit_quantity`,
+/// the order type or flags are unsupported, the instrument's `base_asset_address` cannot be parsed,
+/// decimal scaling fails, a Market order has no `explicit_price`, or EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn order_replace_to_derive_payload(
     order: &OrderAny,
@@ -653,7 +653,7 @@ pub fn order_replace_to_derive_payload(
     })
 }
 
-pub(crate) fn validate_order_support(order: &OrderAny) -> Result<(), OrderDeniedReason> {
+pub(crate) fn validate_order_support(order: &OrderAny) -> anyhow::Result<()> {
     let order_type = order_type_to_derive(order.order_type()).map_err(|_| {
         OrderDeniedReason::UnsupportedOrderType {
             order_type: order.order_type(),
@@ -663,7 +663,7 @@ pub(crate) fn validate_order_support(order: &OrderAny) -> Result<(), OrderDenied
     validate_order_flags(order, order_type)
 }
 
-pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> Result<(), OrderDeniedReason> {
+pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> anyhow::Result<()> {
     let order_type = trigger_order_type_to_derive(order.order_type()).map_err(|_| {
         OrderDeniedReason::UnsupportedOrderType {
             order_type: order.order_type(),
@@ -683,14 +683,18 @@ pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> Result<(), Ord
     Ok(())
 }
 
-fn validate_order_flags(
-    order: &OrderAny,
-    order_type: DeriveOrderType,
-) -> Result<(), OrderDeniedReason> {
+// TODO: Add UNSUPPORTED_QUOTE_QUANTITY to OrderDeniedReason
+const UNSUPPORTED_QUOTE_QUANTITY: &str = "UNSUPPORTED_QUOTE_QUANTITY";
+
+fn validate_order_flags(order: &OrderAny, order_type: DeriveOrderType) -> anyhow::Result<()> {
+    if order.is_quote_quantity() {
+        anyhow::bail!(UNSUPPORTED_QUOTE_QUANTITY);
+    }
+
     let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())
         .map_err(|_| OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()))?;
     if order_type == DeriveOrderType::Market && order.is_post_only() {
-        return Err(OrderDeniedReason::ValidationFailed {
+        anyhow::bail!(OrderDeniedReason::ValidationFailed {
             detail: "post-only is not supported for Derive market orders".to_string(),
         });
     }
@@ -702,7 +706,7 @@ fn validate_order_flags(
             DeriveTimeInForce::Ioc | DeriveTimeInForce::Fok
         )
     {
-        return Err(OrderDeniedReason::ValidationFailed {
+        anyhow::bail!(OrderDeniedReason::ValidationFailed {
             detail: "reduce-only Derive limit orders require IOC or FOK time-in-force".to_string(),
         });
     }
@@ -1541,6 +1545,109 @@ mod tests {
             None,
             None,
         ))
+    }
+
+    #[rstest]
+    #[case(OrderType::Limit)]
+    #[case(OrderType::Market)]
+    #[case(OrderType::StopMarket)]
+    #[case(OrderType::StopLimit)]
+    #[case(OrderType::MarketIfTouched)]
+    #[case(OrderType::LimitIfTouched)]
+    fn test_payload_quote_qty_rejection_and_exact_base_amount(
+        #[case] order_type: OrderType,
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+        #[values(false, true)] quote_qty: bool,
+    ) {
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("ETH-PERP.DERIVE"))
+            .side(side)
+            .quantity(Quantity::from("1.237"))
+            .price(Price::from("3500.00"))
+            .trigger_price(Price::from("3500.00"))
+            .trigger_type(TriggerType::MarkPrice)
+            .time_in_force(TimeInForce::Ioc)
+            .build();
+        order.set_is_quote_quantity(quote_qty);
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+
+        let result = if matches!(order_type, OrderType::Limit | OrderType::Market) {
+            order_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                17_000_000_000_001,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                dec!(1),
+                Some(dec!(3500)),
+            )
+        } else {
+            trigger_order_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                17_000_000_000_001,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                dec!(1),
+                Some(dec!(3500)),
+                "conn-1",
+                "trigger-1",
+            )
+            .map(|payload| payload.order)
+        };
+
+        if quote_qty {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "UNSUPPORTED_QUOTE_QUANTITY"
+            );
+        } else {
+            assert_eq!(result.unwrap().amount, dec!(1.237));
+        }
+
+        if matches!(order_type, OrderType::Limit | OrderType::Market) {
+            for explicit_qty in [None, Some(dec!(0.419))] {
+                let result = order_replace_to_derive_payload(
+                    &order,
+                    &instrument,
+                    30769,
+                    sample_wallet(),
+                    &signer,
+                    17_000_000_000_002,
+                    fresh_expiry_secs(),
+                    sample_module(),
+                    sample_domain(),
+                    sample_typehash(),
+                    dec!(1),
+                    explicit_qty,
+                    Some(dec!(3500)),
+                    "old-order",
+                );
+
+                if quote_qty {
+                    assert_eq!(
+                        result.unwrap_err().to_string(),
+                        "UNSUPPORTED_QUOTE_QUANTITY"
+                    );
+                } else {
+                    assert_eq!(
+                        result.unwrap().order.amount,
+                        explicit_qty.unwrap_or(dec!(1.237))
+                    );
+                }
+            }
+        }
     }
 
     #[rstest]

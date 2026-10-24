@@ -121,6 +121,7 @@ Released on TBD (UTC).
 - Fixed Bybit fill prices using the commission currency instead of the quote currency (#5385), thanks @Milchstrassse
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
+- Fixed Derive submitting quote-denominated order quantities as base units
 - Fixed Derive startup stalls when loading large instrument listings
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed dYdX oracle price precision for catalog promotion (#5391), thanks for reporting @fintech07
