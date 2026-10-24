@@ -1238,23 +1238,18 @@ mod tests {
 
         let started = tokio::time::Instant::now();
         let expected = Duration::from_secs(2);
-        let result = {
-            let disconnect = pool.disconnect();
-            tokio::pin!(disconnect);
-            loop {
-                if let std::task::Poll::Ready(result) = futures_util::poll!(disconnect.as_mut()) {
-                    break result;
-                }
-                assert!(started.elapsed() < expected + Duration::from_secs(1));
-                tokio::time::advance(Duration::from_millis(100)).await;
+        let mut disconnect = std::pin::pin!(pool.disconnect());
+        let result = loop {
+            if let std::task::Poll::Ready(result) = futures_util::poll!(disconnect.as_mut()) {
+                break result;
             }
+            assert!(started.elapsed() < expected + Duration::from_secs(1));
+            tokio::time::advance(Duration::from_millis(100)).await;
         };
         assert!(started.elapsed() >= expected);
         let error = result.unwrap_err().to_string();
-        assert_eq!(
-            error.matches("forwarder did not stop after abort").count(),
-            count
-        );
+        let failures = error.matches("forwarder did not stop after abort");
+        assert_eq!(failures.count(), count);
         assert_eq!(pool.connection_count(), count);
         assert_eq!(pool.subscription_count(), count);
 
@@ -1275,8 +1270,7 @@ mod tests {
         *pool.inner.state.lock() = state;
 
         {
-            let disconnect = pool.disconnect();
-            tokio::pin!(disconnect);
+            let mut disconnect = std::pin::pin!(pool.disconnect());
             assert!(futures_util::poll!(disconnect.as_mut()).is_pending());
         }
         assert_eq!(pool.connection_count(), 1);
