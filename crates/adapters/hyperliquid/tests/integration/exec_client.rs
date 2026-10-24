@@ -114,8 +114,10 @@ struct TestServerState {
     exchange_request_count: Arc<tokio::sync::Mutex<usize>>,
     info_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     ws_connections: Arc<AtomicUsize>,
+    reject_ws_connections: Arc<std::sync::atomic::AtomicBool>,
     ws_subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     last_exchange_action: Arc<tokio::sync::Mutex<Option<Value>>>,
+    scheduled_cancel_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     reject_next_order: Arc<std::sync::atomic::AtomicBool>,
     /// Returns a `status="ok"` envelope whose inner `statuses[0]` carries a
     /// per-order `error` object on the next exchange call. This exercises
@@ -187,8 +189,10 @@ impl Default for TestServerState {
             exchange_request_count: Arc::new(tokio::sync::Mutex::new(0)),
             info_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             ws_connections: Arc::new(AtomicUsize::new(0)),
+            reject_ws_connections: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             ws_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             last_exchange_action: Arc::new(tokio::sync::Mutex::new(None)),
+            scheduled_cancel_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             reject_next_order: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             inner_order_error_next: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cancel_response_override: Arc::new(tokio::sync::Mutex::new(None)),
@@ -586,6 +590,13 @@ async fn handle_exchange(
 
     if let Some(action) = request_body.get("action") {
         *state.last_exchange_action.lock().await = Some(action.clone());
+        if action["type"] == "scheduleCancel" {
+            state
+                .scheduled_cancel_requests
+                .lock()
+                .await
+                .push(request_body.clone());
+        }
     }
 
     // Validate signed request format
@@ -733,6 +744,10 @@ async fn handle_health() -> impl IntoResponse {
 }
 
 async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    if state.reject_ws_connections.load(Ordering::Relaxed) {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     state.ws_connections.fetch_add(1, Ordering::Relaxed);
     ws.on_upgrade(move |socket| handle_ws_socket(socket, state))
 }
@@ -2467,7 +2482,7 @@ async fn test_execution_info_retry_configuration(
 #[tokio::test(flavor = "multi_thread")]
 async fn test_exec_client_connect_disconnect() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_tx);
     let registry = SocketReconnectRegistry::default();
@@ -2505,6 +2520,213 @@ async fn test_exec_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
     assert!(registry.handle(*HYPERLIQUID_CLIENT_ID, endpoint).is_none());
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+    assert_eq!(
+        *state.scheduled_cancel_requests.lock().await,
+        Vec::<Value>::new()
+    );
+}
+
+#[rstest]
+#[case::rejected(false)]
+#[case::transport_error(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_startup_failure_and_retry(#[case] transport_error: bool) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    state
+        .reject_next_order
+        .store(!transport_error, Ordering::Relaxed);
+    state
+        .fail_next_exchange
+        .store(transport_error, Ordering::Relaxed);
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    let error = client.connect().await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "failed to arm Hyperliquid scheduled cancellation"
+    );
+    assert!(!client.is_connected());
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+
+    let requests = state.scheduled_cancel_requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request["action"]["time"].is_u64())
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_startup_request_timeout() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    state.pause_next_exchange.store(true, Ordering::Relaxed);
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, _cache) = create_test_execution_client_from_config(config);
+
+    let error = client.connect().await.unwrap_err();
+    state.pause_release.notify_one();
+
+    assert_eq!(
+        error.to_string(),
+        "failed to arm Hyperliquid scheduled cancellation"
+    );
+    assert_eq!(error.root_cause().to_string(), "deadline has elapsed");
+    assert!(!client.is_connected());
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_pauses_during_websocket_outage() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, cache) =
+        registry.scope(|| create_test_execution_client_from_config(config));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let connected = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(connected) = connected;
+    assert_eq!(connected.state, SocketState::Connected);
+    state.reject_ws_connections.store(true, Ordering::Relaxed);
+    let handle = registry
+        .handle(
+            *HYPERLIQUID_CLIENT_ID,
+            Ustr::from("hyperliquid-user-streams"),
+        )
+        .unwrap();
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let disconnected = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(disconnected) = disconnected;
+    assert_eq!(disconnected.state, SocketState::Disconnected);
+
+    tokio::time::sleep(Duration::from_millis(5_200)).await;
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+    state.reject_ws_connections.store(false, Ordering::Relaxed);
+    wait_until_async(
+        || async { state.scheduled_cancel_requests.lock().await.len() >= 2 },
+        Duration::from_secs(20),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 2);
+    assert_eq!(state.scheduled_cancel_requests.lock().await.len(), 2);
+    assert_eq!(*state.exchange_request_count.lock().await, 2);
+}
+
+#[rstest]
+#[case::disconnect(false)]
+#[case::stop(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_refresh_retry_and_shutdown(#[case] stop: bool) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let vault = "0x1111111111111111111111111111111111111111";
+    config.vault_address = Some(vault.to_string());
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+
+    let before = get_atomic_clock_realtime().get_time_ms();
+    client.connect().await.unwrap();
+    let after = get_atomic_clock_realtime().get_time_ms();
+    client.connect().await.unwrap();
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+    state.fail_next_exchange.store(true, Ordering::Relaxed);
+    wait_until_async(
+        || async { state.scheduled_cancel_requests.lock().await.len() == 3 },
+        Duration::from_secs(13),
+    )
+    .await;
+
+    if stop {
+        client.stop().unwrap();
+    } else {
+        client.disconnect().await.unwrap();
+    }
+
+    tokio::time::sleep(Duration::from_millis(5_200)).await;
+
+    let requests = state.scheduled_cancel_requests.lock().await.clone();
+    assert!(!client.is_connected());
+    assert_eq!(requests.len(), 3);
+    assert_eq!(*state.exchange_request_count.lock().await, 3);
+    let first_deadline = requests[0]["action"]["time"].as_u64().unwrap();
+    assert!((before + 15_000..=after + 15_000).contains(&first_deadline));
+
+    for request in &requests {
+        let deadline = request["action"]["time"].as_u64().unwrap();
+        assert_eq!(
+            request["action"],
+            json!({"type": "scheduleCancel", "time": deadline})
+        );
+        assert_eq!(request["vaultAddress"], vault);
+    }
+
+    for pair in requests.windows(2) {
+        assert!(
+            pair[1]["action"]["time"].as_u64().unwrap()
+                > pair[0]["action"]["time"].as_u64().unwrap()
+        );
+        assert!(pair[1]["nonce"].as_u64().unwrap() > pair[0]["nonce"].as_u64().unwrap());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_reconnect_rearms_once() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.connect().await.unwrap();
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+    client.connect().await.unwrap();
+    assert_eq!(*state.exchange_request_count.lock().await, 2);
+
+    wait_until_async(
+        || async { state.scheduled_cancel_requests.lock().await.len() >= 3 },
+        Duration::from_secs(8),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 2);
+    assert_eq!(state.scheduled_cancel_requests.lock().await.len(), 3);
+    assert_eq!(*state.exchange_request_count.lock().await, 3);
 }
 
 #[rstest]
