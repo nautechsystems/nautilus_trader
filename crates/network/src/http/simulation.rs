@@ -209,7 +209,7 @@ mod tests {
             .await
             .unwrap();
         let request = peer.await.unwrap();
-        assert_eq!(request, b"GET /state?product=SPOT HTTP/1.1\r\naccept: */*\r\nhost: 127.0.0.1:18080\r\nx-input: declared\r\n\r\n");
+        assert_eq!(request, b"GET /state?product=SPOT HTTP/1.1\r\naccept: */*\r\naccept-encoding: gzip\r\nhost: 127.0.0.1:18080\r\nx-input: declared\r\n\r\n");
         assert_eq!(response.status.as_u16(), 201);
         assert_eq!(
             response.headers,
@@ -254,7 +254,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(peer.await.unwrap(), b"POST /order HTTP/1.1\r\naccept: */*\r\nhost: 127.0.0.1:18080\r\nx-input: override\r\ncontent-length: 7\r\n\r\npayload");
+        assert_eq!(peer.await.unwrap(), b"POST /order HTTP/1.1\r\naccept: */*\r\naccept-encoding: gzip\r\nhost: 127.0.0.1:18080\r\nx-input: override\r\ncontent-length: 7\r\n\r\npayload");
         assert_eq!(response.status.as_u16(), 204);
         assert_eq!(response.headers, HashMap::new());
         assert_eq!(response.body.as_ref(), b"");
