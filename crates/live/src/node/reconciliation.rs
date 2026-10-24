@@ -21,6 +21,11 @@
 //! [`ExecutionManager`](crate::execution::manager::ExecutionManager) owns cache-dependent
 //! validation and individual reconciliation operations. This module owns recurring task lifecycles
 //! and leaves activity and retry state with the manager.
+//!
+//! Bulk order checks retain client admission until each receipt is finalized or discarded.
+//! The node collects from every client, then accepts the batch only if `now < deadline`.
+//! Accepted continuations and reconciliation run synchronously, even if finalization crosses
+//! the deadline. Discarding a batch skips retained continuations, not earlier inline effects.
 
 use std::{future::Future, pin::Pin, time::Duration};
 
@@ -31,21 +36,19 @@ use nautilus_common::{
     live::dst,
     messages::{
         ExecutionEvent, ExecutionReport,
-        execution::{
-            GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        },
+        execution::{GenerateFillReports, GeneratePositionStatusReports},
     },
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
     identifiers::{ClientId, ClientOrderId},
-    reports::{FillReport, PositionStatusReport},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
 };
 
 use super::{LiveNode, NodeState};
 use crate::{
     execution::{
-        client::LiveExecutionClient,
+        client::{CollectedReport, LiveExecutionClient},
         manager::{
             InstrumentAccountKey, OpenOrderReportCheck, PositionFillReportPreparation,
             PositionFillReportQuery, PositionReportCheck, SourcedOrderStatusReport,
@@ -140,23 +143,17 @@ impl LiveNode {
         let check = self
             .exec_manager
             .prepare_open_order_report_check(UUID4::new(), &client_refs);
-        let command = check.command.clone();
         let clients = self.exec_clients.clone();
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(OpenOrderReportTask {
             future: Box::pin(async move {
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_open_order_reports(clients, command))
+                match dst::time::timeout(remaining, request_open_order_reports(clients, check))
                     .await
                 {
                     Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(OpenOrderReportResult {
-                            check,
-                            reports: result.reports,
-                            queried_clients: result.queried_clients,
-                            failed_clients: result.failed_clients,
-                        })
+                        ReportTaskOutcome::Completed(result)
                     }
                     Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
@@ -535,24 +532,17 @@ impl LiveNode {
 
 async fn request_open_order_reports(
     clients: Vec<LiveExecutionClient>,
-    command: GenerateOrderStatusReports,
-) -> OpenOrderReportQueryResult {
-    let mut all_reports = Vec::new();
+    check: OpenOrderReportCheck,
+) -> OpenOrderReportCollection {
+    let mut receipts = Vec::new();
     let mut queried_clients = IndexSet::new();
     let mut failed_clients = IndexSet::new();
 
     for client in clients {
         let client_id = client.client_id();
         queried_clients.insert(client_id);
-
-        match client.generate_order_status_reports(&command).await {
-            Ok(reports) => {
-                all_reports.extend(
-                    reports
-                        .into_iter()
-                        .map(|report| SourcedOrderStatusReport { client_id, report }),
-                );
-            }
+        match client.collect_order_status_reports(&check.command).await {
+            Ok(receipt) => receipts.push((client_id, receipt)),
             Err(e) => {
                 failed_clients.insert(client_id);
                 log::warn!(
@@ -563,8 +553,9 @@ async fn request_open_order_reports(
         }
     }
 
-    OpenOrderReportQueryResult {
-        reports: all_reports,
+    OpenOrderReportCollection {
+        check,
+        receipts,
         queried_clients,
         failed_clients,
     }
@@ -779,7 +770,7 @@ pub(super) enum ReportTaskOutcome<T> {
 }
 
 type OpenOrderReportFuture =
-    Pin<Box<dyn Future<Output = ReportTaskOutcome<OpenOrderReportResult>>>>;
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<OpenOrderReportCollection>>>>;
 
 /// Pending bulk order reports and their preparation snapshot.
 pub(super) struct OpenOrderReportTask {
@@ -803,10 +794,40 @@ pub(super) struct TargetedOrderReportTask {
     pub(super) planned_client_order_ids: Vec<ClientOrderId>,
 }
 
-struct OpenOrderReportQueryResult {
-    reports: Vec<SourcedOrderStatusReport>,
+/// Bulk order receipts finalized only after the whole collection is accepted.
+pub(super) struct OpenOrderReportCollection {
+    check: OpenOrderReportCheck,
+    receipts: Vec<(ClientId, CollectedReport<Vec<OrderStatusReport>>)>,
     queried_clients: IndexSet<ClientId>,
     failed_clients: IndexSet<ClientId>,
+}
+
+impl OpenOrderReportCollection {
+    pub(super) fn finish(self) -> OpenOrderReportResult {
+        let mut reports = Vec::new();
+        let mut failed_clients = self.failed_clients;
+
+        for (client_id, collected) in self.receipts {
+            match collected.finish() {
+                Ok(finalized) => reports.extend(
+                    finalized
+                        .into_iter()
+                        .map(|report| SourcedOrderStatusReport { client_id, report }),
+                ),
+                Err(e) => {
+                    failed_clients.insert(client_id);
+                    log::warn!("Failed to generate order status reports from {client_id}: {e}");
+                }
+            }
+        }
+
+        OpenOrderReportResult {
+            check: self.check,
+            reports,
+            queried_clients: self.queried_clients,
+            failed_clients,
+        }
+    }
 }
 
 type PositionReportFuture =

@@ -796,6 +796,19 @@ local policy resolutions from venue-reported outcomes.
 
 ### Order consistency checks
 
+An open-order check queries all execution clients before running their deferred report processing.
+Each client stays busy until that work finishes or its reports are discarded; other report requests to
+that client fail as already running.
+
+The timeout starts when the check starts and uses `timeout_reconciliation`
+(`timeout_reconciliation_secs` in Python). The node accepts the batch only before the deadline.
+A batch ready exactly at the deadline is discarded.
+
+Once the batch is accepted, deferred adapter processing and report application run synchronously,
+without another deadline check or cancellation point. Slow processing does not discard accepted reports.
+Targeted follow-up queries use a separate bounded task. Discarding a batch skips deferred adapter work;
+it cannot undo state changes an adapter makes during collection.
+
 The table below applies when cache state differs from venue state. A missing open-order report does not by
 itself prove a pending modify or cancel outcome. Thus, these checks leave those states unresolved until
 another check can determine the venue state.

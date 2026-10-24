@@ -159,7 +159,7 @@ pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetric
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
 use reconciliation::{
-    OpenOrderReportResult, OpenOrderReportTask, PositionReportTask, PositionReportTaskResult,
+    OpenOrderReportCollection, OpenOrderReportTask, PositionReportTask, PositionReportTaskResult,
     ReconciliationCheckIntervals, ReconciliationCheckState, ReportTaskOutcome,
     TargetedOrderReportTask,
 };
@@ -1651,7 +1651,7 @@ impl LiveNode {
                 result = async {
                     match open_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<ReportTaskOutcome<OpenOrderReportResult>>().await,
+                        None => std::future::pending::<ReportTaskOutcome<OpenOrderReportCollection>>().await,
                     }
                 }, if open_order_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
@@ -1660,6 +1660,7 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
+                            let result = result.finish();
                             let client_refs = self
                                 .exec_clients
                                 .iter()
@@ -3501,6 +3502,7 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
 
 #[cfg(test)]
 mod tests {
+    mod report_acceptance;
     mod shutdown;
 
     use std::{
@@ -7931,6 +7933,8 @@ mod tests {
             let ReportTaskOutcome::Completed(result) = open_task.unwrap().future.await else {
                 panic!("order collection should complete despite one client failure");
             };
+
+            let result = result.finish();
 
             assert!(result.reports.is_empty());
             assert!(position_task.is_none());
