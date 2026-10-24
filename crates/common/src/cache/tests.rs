@@ -7806,6 +7806,8 @@ fn test_purge_position() {
 
     let mut position = Position::new(&audusd_sim, filled.into());
     let position_id = position.id;
+    let opening_order_id = order.client_order_id();
+    cache.add_order(order, None, None, false).unwrap();
 
     // Add position to cache
     cache.add_position(&position, OmsType::Netting).unwrap();
@@ -7836,11 +7838,26 @@ fn test_purge_position() {
         None,
     );
 
+    let closing_order_id = order_close.client_order_id();
+    cache
+        .add_order(order_close, Some(position_id), None, false)
+        .unwrap();
     position.apply(&filled_close.into());
     cache.update_position(&position).unwrap();
 
     // Verify position is now closed
     assert!(position.is_closed());
+
+    assert_eq!(
+        cache.index.order_position.get(&opening_order_id),
+        Some(&position_id)
+    );
+    assert_eq!(
+        cache.index.order_position.get(&closing_order_id),
+        Some(&position_id)
+    );
+
+    let retired = cache.positions.get(&position_id).unwrap().downgrade();
 
     // Purge the position
     cache.purge_position(position_id);
@@ -7848,6 +7865,12 @@ fn test_purge_position() {
     // Verify the position is gone
     assert!(!cache.position_exists(&position_id));
     assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
+    assert!(cache.order_exists(&opening_order_id));
+    assert!(cache.order_exists(&closing_order_id));
+    assert!(!cache.index.order_position.contains_key(&opening_order_id));
+    assert!(!cache.index.order_position.contains_key(&closing_order_id));
+    assert!(cache.check_integrity());
+    assert!(retired.upgrade().is_none());
 }
 
 #[rstest]

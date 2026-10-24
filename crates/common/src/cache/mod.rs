@@ -1804,11 +1804,9 @@ impl Cache {
     ///
     /// For safety, a position is prevented from being purged if it's open.
     pub fn purge_position(&mut self, position_id: PositionId) {
-        // Snapshot the position so we can release the borrow before mutating indexes.
-        let position = self
-            .positions
-            .get(&position_id)
-            .map(|cell| cell.borrow().clone());
+        // Keep the cell alive during index cleanup without cloning position history
+        let position_cell = self.positions.get(&position_id).cloned();
+        let position = position_cell.as_ref().map(|cell| cell.borrow());
 
         // Prevent purging open positions
         if let Some(ref pos) = position
