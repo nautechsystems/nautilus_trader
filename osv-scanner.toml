@@ -62,3 +62,10 @@ reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2"
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0306"
 reason = "faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller"
+
+# crypto-bigint timing leaks affect secret arithmetic in transaction signing.
+# Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
+# Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0387"
+reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix"

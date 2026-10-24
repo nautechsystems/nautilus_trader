@@ -52,6 +52,11 @@ ignore = [
   # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2" },
 
+  # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
+  # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
+  # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix" },
+
   # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
   # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
   # osv-scanner.toml.
