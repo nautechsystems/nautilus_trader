@@ -35,7 +35,7 @@ use std::sync::{
 };
 
 use ahash::AHashMap;
-use futures_util::{StreamExt, stream};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use nautilus_live::{
     SocketControlFactory,
     book::snapshot::SnapshotGate,
@@ -55,7 +55,6 @@ use crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS;
 
 // Primary shard carries new-market discovery and never auto-closes.
 const PRIMARY_SHARD_ID: usize = 0;
-const SHUTDOWN_CONCURRENCY: usize = 32;
 
 /// A pool of market-channel WebSocket connections that shards asset subscriptions.
 #[derive(Debug)]
@@ -325,7 +324,10 @@ impl PolymarketMarketConnectionPool {
         let mut drain = PoolDrain::take(&self.inner.state);
         {
             let errors = Mutex::new(&mut drain.state.shutdown_errors);
-            let mut disconnects = stream::iter(drain.state.shards.iter_mut())
+            let mut disconnects = drain
+                .state
+                .shards
+                .iter_mut()
                 .map(|(&shard_id, shard)| {
                     let errors = &errors;
                     async move {
@@ -364,7 +366,7 @@ impl PolymarketMarketConnectionPool {
                         (shard_id, failed)
                     }
                 })
-                .buffer_unordered(SHUTDOWN_CONCURRENCY);
+                .collect::<FuturesUnordered<_>>();
 
             while let Some((shard_id, failed)) = disconnects.next().await {
                 if !failed {
@@ -1219,9 +1221,9 @@ mod tests {
 
     #[rstest]
     #[case::single(1)]
-    #[case::multiple_batches(SHUTDOWN_CONCURRENCY + 1)]
+    #[case::many(64)]
     #[tokio::test(start_paused = true)]
-    async fn pool_disconnect_bounds_concurrency_and_preserves_failures(#[case] count: usize) {
+    async fn pool_disconnects_concurrently_and_preserves_failures(#[case] count: usize) {
         let pool = PolymarketMarketConnectionPool::new(None, false, TransportBackend::default(), 1);
         let mut state = state_with_shards(&vec![1; count]);
         let mut releases = Vec::new();
@@ -1235,7 +1237,7 @@ mod tests {
         *pool.inner.state.lock() = state;
 
         let started = tokio::time::Instant::now();
-        let expected = Duration::from_secs(2 * count.div_ceil(SHUTDOWN_CONCURRENCY) as u64);
+        let expected = Duration::from_secs(2);
         let result = {
             let disconnect = pool.disconnect();
             tokio::pin!(disconnect);
