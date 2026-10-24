@@ -40,6 +40,7 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 use ustr::Ustr;
 
+use super::validate_required_instrument_columns;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name,
@@ -298,9 +299,10 @@ impl EncodeToRecordBatch for BettingInstrument {
 ///
 /// Returns an error if the RecordBatch cannot be decoded.
 pub fn decode_betting_instrument_batch(
-    #[allow(unused)] metadata: &HashMap<String, String>,
+    metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<BettingInstrument>, EncodingError> {
+    validate_required_instrument_columns::<BettingInstrument>(metadata, record_batch)?;
     let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let record_batch = &record_batch;
     let cols = record_batch.columns();
