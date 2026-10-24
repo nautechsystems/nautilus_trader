@@ -53,7 +53,7 @@ no model setting:
 
 | Family  | `BacktestVenueConfig`                            | `BacktestEngine.add_venue()`                     | `SandboxExecutionClientConfig`           |
 | ------- | ------------------------------------------------ | ------------------------------------------------ | ---------------------------------------- |
-| Fill    | Built-in models only.                            | Built-in models or custom Python models.         | Built-in models only.                    |
+| Fill    | Built-in models or custom Python models.         | Built-in models or custom Python models.         | Built-in models or custom Python models. |
 | Fee     | Built-in models or custom Python models.         | Built-in models or custom Python models.         | Built-in models or custom Python models. |
 | Latency | Built-in models or custom Python models.         | Built-in models or custom Python models.         | Built-in models or custom Python models. |
 | Margin  | `StandardMarginModel` or `LeveragedMarginModel`. | `StandardMarginModel` or `LeveragedMarginModel`. | -                                        |
@@ -68,9 +68,8 @@ or construct a new engine with a fresh model.
 ### Custom Python fill models
 
 Pass a `FillModel` subclass or a compatible Python object as `fill_model` to
-`BacktestEngine.add_venue()` or `BacktestEngine.change_fill_model(venue, fill_model)`.
-`BacktestVenueConfig` and `SandboxExecutionClientConfig` accept built-in fill models only and raise
-`TypeError` for custom objects. See [custom fill models](backtesting/fill-models.md#custom-fill-models)
+`BacktestVenueConfig`, `BacktestEngine.add_venue()`, `BacktestEngine.change_fill_model(venue, fill_model)`,
+or `SandboxExecutionClientConfig`. See [custom fill models](backtesting/fill-models.md#custom-fill-models)
 for the required methods, optional spread-fill behavior, and liquidity hook.
 
 ### Custom Python fee models

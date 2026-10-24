@@ -38,6 +38,9 @@ use rand::{RngExt, SeedableRng, rngs::StdRng};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+#[cfg(feature = "python")]
+use crate::python::fill::PythonFillModel;
+
 // Sentinel size used as "unlimited" liquidity in the synthetic fill book.
 const UNLIMITED_LIQUIDITY_UNITS: u64 = 10_000_000_000;
 
@@ -1475,6 +1478,8 @@ pub enum FillModelAny {
     CompetitionAware(CompetitionAwareFillModel),
     VolumeSensitive(VolumeSensitiveFillModel),
     MarketHours(MarketHoursFillModel),
+    #[cfg(feature = "python")]
+    Python(PythonFillModel),
 }
 
 impl FillModel for FillModelAny {
@@ -1491,6 +1496,8 @@ impl FillModel for FillModelAny {
             Self::CompetitionAware(m) => m.is_limit_filled(),
             Self::VolumeSensitive(m) => m.is_limit_filled(),
             Self::MarketHours(m) => m.is_limit_filled(),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.is_limit_filled(),
         }
     }
 
@@ -1507,6 +1514,8 @@ impl FillModel for FillModelAny {
             Self::CompetitionAware(m) => m.fill_limit_inside_spread(),
             Self::VolumeSensitive(m) => m.fill_limit_inside_spread(),
             Self::MarketHours(m) => m.fill_limit_inside_spread(),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.fill_limit_inside_spread(),
         }
     }
 
@@ -1523,6 +1532,8 @@ impl FillModel for FillModelAny {
             Self::CompetitionAware(m) => m.is_slipped(),
             Self::VolumeSensitive(m) => m.is_slipped(),
             Self::MarketHours(m) => m.is_slipped(),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.is_slipped(),
         }
     }
 
@@ -1546,6 +1557,8 @@ impl FillModel for FillModelAny {
             Self::CompetitionAware(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
             Self::VolumeSensitive(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
             Self::MarketHours(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask),
         }
     }
 }
@@ -1570,6 +1583,8 @@ impl Display for FillModelAny {
             Self::CompetitionAware(_) => write!(f, "CompetitionAwareFillModel"),
             Self::VolumeSensitive(_) => write!(f, "VolumeSensitiveFillModel"),
             Self::MarketHours(_) => write!(f, "MarketHoursFillModel"),
+            #[cfg(feature = "python")]
+            Self::Python(_) => write!(f, "PythonFillModel"),
         }
     }
 }

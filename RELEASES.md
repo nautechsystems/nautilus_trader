@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added optional venue-reported liquidation prices to `PositionStatusReport`
 - Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
 - Added Python-subclassable latency models with command and clock time context
+- Added custom Python fill models in backtest venue and sandbox configuration
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
