@@ -52,7 +52,10 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, InstrumentClose, InstrumentStatus, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{
+        Bar, InstrumentClose, InstrumentStatus, OrderBookDeltas, OrderBookDepth, QuoteTick,
+        TradeTick,
+    },
     enums::OmsType,
     events::{
         OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected, PositionEvent,
@@ -90,6 +93,8 @@ pub struct SandboxExecutionClient {
 struct RegisteredHandlers {
     deltas_pattern: MStr<Pattern>,
     deltas_handler: TypedHandler<OrderBookDeltas>,
+    depth_pattern: MStr<Pattern>,
+    depth_handler: TypedHandler<OrderBookDepth>,
     quote_pattern: MStr<Pattern>,
     quote_handler: TypedHandler<QuoteTick>,
     trade_pattern: MStr<Pattern>,
@@ -249,6 +254,17 @@ impl SandboxExecutionClient {
             })
         };
 
+        let depth_handler = {
+            let inner = inner_weak.clone();
+            TypedHandler::from(move |depth: &OrderBookDepth| {
+                if depth.instrument_id.venue == venue
+                    && let Some(inner_rc) = inner.upgrade()
+                {
+                    SandboxInner::on_order_book_depth(&inner_rc, depth);
+                }
+            })
+        };
+
         let quote_handler = {
             let inner = inner_weak.clone();
             TypedHandler::from(move |quote: &QuoteTick| {
@@ -314,6 +330,7 @@ impl SandboxExecutionClient {
         };
 
         let deltas_pattern: MStr<Pattern> = format!("data.book.deltas.{venue}.*").into();
+        let depth_pattern: MStr<Pattern> = format!("data.book.depth.{venue}.*").into();
         let quote_pattern: MStr<Pattern> = format!("data.quotes.{venue}.*").into();
         let trade_pattern: MStr<Pattern> = format!("data.trades.{venue}.*").into();
         let bar_pattern: MStr<Pattern> = "data.bars.*".into();
@@ -322,6 +339,7 @@ impl SandboxExecutionClient {
         let position_pattern: MStr<Pattern> = "events.position.*".into();
 
         msgbus::subscribe_book_deltas(deltas_pattern, deltas_handler.clone(), Some(10));
+        msgbus::subscribe_book_depth(depth_pattern, depth_handler.clone(), Some(10));
         msgbus::subscribe_quotes(quote_pattern, quote_handler.clone(), Some(10));
         msgbus::subscribe_trades(trade_pattern, trade_handler.clone(), Some(10));
         msgbus::subscribe_bars(bar_pattern, bar_handler.clone(), Some(10));
@@ -332,6 +350,8 @@ impl SandboxExecutionClient {
         *self.handlers.borrow_mut() = Some(RegisteredHandlers {
             deltas_pattern,
             deltas_handler,
+            depth_pattern,
+            depth_handler,
             quote_pattern,
             quote_handler,
             trade_pattern,
@@ -355,6 +375,7 @@ impl SandboxExecutionClient {
     fn deregister_message_handlers(&self) {
         if let Some(handlers) = self.handlers.borrow_mut().take() {
             msgbus::unsubscribe_book_deltas(handlers.deltas_pattern, &handlers.deltas_handler);
+            msgbus::unsubscribe_book_depth(handlers.depth_pattern, &handlers.depth_handler);
             msgbus::unsubscribe_quotes(handlers.quote_pattern, &handlers.quote_handler);
             msgbus::unsubscribe_trades(handlers.trade_pattern, &handlers.trade_handler);
             msgbus::unsubscribe_bars(handlers.bar_pattern, &handlers.bar_handler);
@@ -546,6 +567,27 @@ impl SandboxExecutionClient {
         inner.ensure_matching_engine(&instrument);
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
             engine.process_order_book_deltas(deltas)?;
+        }
+
+        inner.drain_oto_commands();
+        Ok(())
+    }
+
+    /// Processes an order book depth snapshot through the matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument is not found in the cache or depth processing fails.
+    pub fn process_order_book_depth(&self, depth: &OrderBookDepth) -> anyhow::Result<()> {
+        SandboxInner::drain_inbound(&self.inner);
+
+        let instrument_id = depth.instrument_id;
+        let instrument = self.cache.borrow().try_instrument(&instrument_id)?.clone();
+
+        let mut inner = self.inner.borrow_mut();
+        inner.ensure_matching_engine(&instrument);
+        if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
+            engine.process_order_book_depth(depth)?;
         }
 
         inner.drain_oto_commands();
@@ -1122,6 +1164,23 @@ impl SandboxInner {
                 && let Err(e) = engine.process_order_book_deltas(deltas)
             {
                 log::error!("Error processing order book deltas: {e}");
+            }
+        }
+
+        self.drain_oto_commands();
+    }
+
+    fn process_order_book_depth(&mut self, depth: &OrderBookDepth) {
+        let instrument_id = depth.instrument_id;
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id)
+                && let Err(e) = engine.process_order_book_depth(depth)
+            {
+                log::error!("Error processing order book depth: {e}");
             }
         }
 
@@ -1760,6 +1819,11 @@ impl SandboxInner {
     fn on_order_book_deltas(inner: &Rc<RefCell<Self>>, deltas: &OrderBookDeltas) {
         Self::drain_inbound(inner);
         inner.borrow_mut().process_order_book_deltas(deltas);
+    }
+
+    fn on_order_book_depth(inner: &Rc<RefCell<Self>>, depth: &OrderBookDepth) {
+        Self::drain_inbound(inner);
+        inner.borrow_mut().process_order_book_depth(depth);
     }
 
     fn on_instrument_status(inner: &Rc<RefCell<Self>>, status: &InstrumentStatus) {
