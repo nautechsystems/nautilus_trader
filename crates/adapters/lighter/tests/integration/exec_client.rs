@@ -7459,12 +7459,13 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor(
 }
 
 #[rstest]
-#[case::long(1, PositionSide::Long)]
-#[case::short(-1, PositionSide::Short)]
+#[case::long(1, PositionSide::Long, "1900.123456789123456789")]
+#[case::short(-1, PositionSide::Short, "3000.987654321987654321")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_account_all_positions_empty_update_retains_cached_position(
     #[case] sign: i8,
     #[case] expected_side: PositionSide,
+    #[case] liquidation_price: &str,
     #[values(false, true)] worker: bool,
 ) {
     let (addr, state) = start_server().await;
@@ -7475,6 +7476,9 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
     let mut snapshot = load_json("ws_account_all_positions_update.json");
     snapshot["type"] = json!("subscribed/account_all_positions");
     snapshot["positions"]["0"]["sign"] = json!(sign);
+    snapshot["positions"]["0"]["liquidation_price"] = json!(liquidation_price);
+    let expected_liquidation_price =
+        rust_decimal::Decimal::from_str_exact(liquidation_price).unwrap();
     state.push_frame(&snapshot);
 
     next_event_matching(&mut rx, Duration::from_secs(2), |e| {
@@ -7484,6 +7488,7 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
                 if report.instrument_id == eth_perp_id()
                     && report.position_side == expected_side
                     && report.quantity == Quantity::from("1.5000")
+                    && report.liquidation_price == Some(expected_liquidation_price)
         )
     })
     .await
@@ -7543,6 +7548,10 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
         Some(rust_decimal::Decimal::new(235010, 2)),
     );
     assert_eq!(positions[0].venue_position_id, None);
+    assert_eq!(
+        positions[0].liquidation_price,
+        Some(expected_liquidation_price),
+    );
 
     client.disconnect().await.expect("disconnect");
 }
@@ -7629,6 +7638,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
     assert!(flat_report.ts_last > UnixNanos::default());
     assert_eq!(flat_report.venue_position_id, None);
     assert_eq!(flat_report.avg_px_open, None);
+    assert_eq!(flat_report.liquidation_price, None);
 
     let duplicate_flat = next_event_matching(&mut rx, Duration::from_millis(250), |e| {
         matches!(

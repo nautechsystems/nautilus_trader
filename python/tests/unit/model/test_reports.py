@@ -18,6 +18,7 @@ Test reports behavior.
 
 from decimal import Decimal
 
+import pytest
 from tests.providers import TestInstrumentProvider
 from tests.unit.model.factories import make_fill_report
 from tests.unit.model.factories import make_market_order_snapshot_values
@@ -228,6 +229,7 @@ def test_position_status_report_properties_and_roundtrip(audusd_id: InstrumentId
     assert report.avg_px_open == Decimal("1.00010")
     assert report.avg_px_open_reconciliation == AvgPxReconciliation.MATCH
     assert report.avg_px_open_precision is None
+    assert report.liquidation_price is None
     assert restored == report
 
 
@@ -256,6 +258,52 @@ def test_position_status_report_avg_px_open_metadata_roundtrip(audusd_id: Instru
     assert restored == report
     assert restored.avg_px_open_reconciliation == AvgPxReconciliation.OPENING_ONLY
     assert restored.avg_px_open_precision == 4
+
+
+@pytest.mark.parametrize("liquidation_price", [Decimal("0.87654321987654321"), Decimal(0), None])
+def test_position_status_report_liquidation_price_roundtrip(
+    audusd_id: InstrumentId,
+    liquidation_price: Decimal | None,
+) -> None:
+    """
+    Preserve the optional liquidation price through a dictionary roundtrip.
+    """
+    report = PositionStatusReport(
+        account_id=AccountId("SIM-001"),
+        instrument_id=audusd_id,
+        position_side=PositionSide.LONG,
+        quantity=Quantity.from_int(100_000),
+        ts_last=10,
+        ts_init=20,
+        avg_px_open=Decimal("1.00010"),
+        liquidation_price=liquidation_price,
+    )
+
+    data = report.to_dict()
+    restored = PositionStatusReport.from_dict(data)
+
+    assert report.liquidation_price == liquidation_price
+    assert data["liquidation_price"] == (
+        str(liquidation_price) if liquidation_price is not None else None
+    )
+    assert restored == report
+    assert restored.liquidation_price == liquidation_price
+
+
+def test_position_status_report_from_dict_without_liquidation_price(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Read older reports that omit the liquidation price.
+    """
+    report = make_position_status_report(audusd_id)
+    data = report.to_dict()
+    del data["liquidation_price"]
+
+    restored = PositionStatusReport.from_dict(data)
+
+    assert restored == report
+    assert restored.liquidation_price is None
 
 
 def test_position_snapshot_from_dict_returns_snapshot_instance() -> None:

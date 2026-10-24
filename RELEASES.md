@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `Money::from_decimal_exact` and `Money::from_str_exact` for fractional amounts beyond currency precision
 - Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
 - Added accumulation of fractional `Money` commissions beyond currency precision
+- Added optional venue-reported liquidation prices to `PositionStatusReport`
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
@@ -15,6 +16,7 @@ Released on TBD (UTC).
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
 - Added Interactive Brokers `max_reconnect_attempts` configuration (#5392), thanks @tradatious
+- Added liquidation prices to Lighter position status reports
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
 - Added Lighter self-trade behavior and account-scope order params with explicit defaults
 - Added OKX trading-account bills and archive queries (#5352), thanks @silarin
@@ -35,6 +37,7 @@ Released on TBD (UTC).
 - Changed `Money` deserialization to reject excess precision instead of rounding; round inputs before loading
 - Changed SBE depth encoding for padded or variable levels and nonzero order IDs; update readers for the new layout
 - Changed `BusMessage` to add `source`; use `BusMessage::new` to construct messages without provenance
+- Changed `PositionStatusReport` literals: add `liquidation_price: None` or use `new`
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
 - Changed direct `OrderMatchingEngine` use: share `MatchingOrders` and drain commands for cross-instrument OTO orders
