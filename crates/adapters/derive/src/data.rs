@@ -218,8 +218,6 @@ impl DeriveDataClient {
         })
     }
 
-    /// Spawns a fire-and-forget task, tracks its handle in `pending_tasks`
-    /// for teardown abort, and logs failures with the task description.
     fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -247,10 +245,8 @@ impl DeriveDataClient {
         self.ws_client.begin_shutdown();
     }
 
-    /// Clears every local subscription map. Called from `disconnect` and
-    /// `reset` because the venue drops all subscriptions on socket close,
-    /// and aborted in-flight subscribe tasks can leak entries staged before
-    /// spawn (they never reach their on-error rollback branch).
+    // The venue drops subscriptions on socket close, and aborted tasks can leave
+    // staged entries whose rollback never runs.
     fn clear_subscription_state(&self) {
         let _guard = self.subscription_lock.lock();
         self.channel_subscriptions.clear();

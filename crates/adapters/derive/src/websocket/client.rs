@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! `tokio-tungstenite`-backed WebSocket client for the Derive JSON-RPC stream.
+//! WebSocket client for the Derive JSON-RPC stream.
 //!
 //! [`DeriveWebSocketClient`] orchestrates the connection lifecycle and exposes
 //! a typed surface for `public/login` + the initial `ticker` channel. The
