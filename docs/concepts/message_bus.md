@@ -366,6 +366,9 @@ Ingress yields the same `BusMessage { topic, payload_type, encoding, payload, so
 `republish_external_message` decodes supported inbound messages and republishes them internally
 without forwarding the message back out. Normal internal republishing requires the inbound payload
 type to be registered for streaming and skips unregistered types without decoding.
+Inbound `AccountState` messages go through Portfolio's account endpoint rather than directly to the
+inbound topic. Portfolio must be registered; it updates the cache before publishing accepted states
+on `events.account.{account_id}`. Rejected account updates are not published.
 
 A Rust ingress implementation can attach optional `BusMessageSource` provenance: the publisher ID,
 process instance ID, stream, and sequence. Rust `msgbus::current_external_source()` exposes it while
