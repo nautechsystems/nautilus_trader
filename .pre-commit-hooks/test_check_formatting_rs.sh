@@ -378,7 +378,10 @@ write_rs "$scope_case/crates/common/src/lib.rs" \
   '    if enabled { run(); }' \
   '}'
 git -C "$scope_case" commit -qm Baseline
-expect_success "$scope_case"
+
+# A clean tree checks all tracked Rust files, which exposes the old violation
+expect_failure "$scope_case" 'checking all tracked Rust files'
+rg -q 'crates/common/src/lib.rs:3' "$scope_case/output.txt"
 
 # An unrelated edit in the same file must not expose the old violation
 printf '\n// Changed comment\n' >> "$scope_case/crates/common/src/lib.rs"
@@ -395,12 +398,24 @@ expect_failure "$scope_case" 'crates/common/src/lib.rs:8'
 
 base=$(git -C "$scope_case" rev-parse HEAD)
 git -C "$scope_case" commit -qm Changed
-expect_success "$scope_case"
+expect_failure "$scope_case" 'crates/common/src/lib.rs:8'
 if (cd "$scope_case" && CHANGED_BASE_SHA="$base" bash "$HOOK") > "$scope_case/output.txt" 2>&1; then
   echo "Expected the base-ref diff to report the committed violation"
   exit 1
 fi
 rg -q 'crates/common/src/lib.rs:8' "$scope_case/output.txt"
+if rg -q 'crates/common/src/lib.rs:3' "$scope_case/output.txt"; then
+  echo "Expected the base-ref diff to leave the unchanged violation unreported"
+  exit 1
+fi
+
+# An uncommitted change outside Rust files does not narrow the check to HEAD
+write_rs "$scope_case/docs/notes.md" 'notes'
+expect_failure "$scope_case" 'checking all tracked Rust files'
+
+# An uncommitted Rust file anywhere keeps the HEAD comparison
+write_rs "$scope_case/tests/other.rs" 'fn other() {}'
+expect_success "$scope_case"
 
 module_scope_case="$CASE_ROOT/changed-module-boundary"
 create_case "$module_scope_case"
