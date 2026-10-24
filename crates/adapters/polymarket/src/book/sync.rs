@@ -37,8 +37,8 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
+use dashmap::DashSet;
 use nautilus_common::live::dst::time::{Duration, Instant};
-use nautilus_core::AtomicSet;
 use nautilus_live::book::sync::BookSync;
 use nautilus_model::identifiers::InstrumentId;
 use parking_lot::Mutex;
@@ -64,13 +64,13 @@ impl BookSyncTracker {
 
     pub(crate) fn record_snapshot_if_subscribed(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
         now: Instant,
     ) -> bool {
         // Checked under the state lock: clearing paths drop the subscription
         // first, so a racing unsubscribe cannot land between this check and
-        // the insert below. `AtomicSet::contains` is lock-free.
+        // the insert below. No subscription guard is held while acquiring this lock.
         let mut books = self.books.lock();
 
         if !active_delta_subs.contains(&instrument_id) {
@@ -85,7 +85,7 @@ impl BookSyncTracker {
 
     pub(crate) fn validate_incremental_if_subscribed(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
         now: Instant,
     ) -> BookSequenceOutcome {
@@ -120,7 +120,7 @@ impl BookSyncTracker {
 
     pub(crate) fn request_recovery_if_subscribed(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
         now: Instant,
     ) -> BookSequenceOutcome {
@@ -138,7 +138,7 @@ impl BookSyncTracker {
     /// accepted or an owner holds the book.
     pub(crate) fn request_snapshot_if_subscribed(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
         now: Instant,
     ) -> BookSequenceOutcome {
@@ -162,7 +162,7 @@ impl BookSyncTracker {
     /// recovery, so its replacement attempt retries without waiting for the snapshot deadline.
     pub(crate) fn reject_snapshot_if_subscribed(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
         error: PolymarketWsError,
         now: Instant,
@@ -187,7 +187,7 @@ impl BookSyncTracker {
 
     pub(crate) fn reset_for_instruments(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_ids: &[InstrumentId],
         now: Instant,
     ) {
@@ -209,7 +209,7 @@ impl BookSyncTracker {
 
     pub(crate) fn seed_pending_snapshots(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_ids: &[InstrumentId],
         timeout: Duration,
         now: Instant,
@@ -232,7 +232,7 @@ impl BookSyncTracker {
 
     pub(crate) fn seed_missing_snapshot(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
         timeout: Duration,
         now: Instant,
@@ -260,7 +260,7 @@ impl BookSyncTracker {
 
     pub(crate) fn claim_recovery_if_subscribed(
         &self,
-        active_delta_subs: &AtomicSet<InstrumentId>,
+        active_delta_subs: &DashSet<InstrumentId>,
         instrument_id: InstrumentId,
     ) -> Option<Arc<BookRecovery>> {
         // Checked under the state lock, as in `record_snapshot_if_subscribed`.
@@ -370,8 +370,8 @@ fn request_recovery(
 #[cfg(test)]
 mod tests {
     use ahash::AHashSet;
+    use dashmap::DashSet;
     use nautilus_common::live::dst::time::{Duration, Instant};
-    use nautilus_core::AtomicSet;
     use nautilus_live::book::recovery::BookRecoveryOutcome;
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
@@ -383,9 +383,9 @@ mod tests {
         InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET")
     }
 
-    fn subscribed_tracker() -> (BookSyncTracker, AtomicSet<InstrumentId>) {
+    fn subscribed_tracker() -> (BookSyncTracker, DashSet<InstrumentId>) {
         let tracker = BookSyncTracker::default();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(instrument_id());
         (tracker, subs)
     }
@@ -452,7 +452,7 @@ mod tests {
         assert!(tracker.record_snapshot_if_subscribed(&subs, instrument_id, now));
         let synced = tracker.request_snapshot_if_subscribed(&subs, instrument_id, now);
         let unsubscribed = tracker.request_snapshot_if_subscribed(
-            &AtomicSet::new(),
+            &DashSet::new(),
             InstrumentId::from("0xCOND-0xOTHER.POLYMARKET"),
             now,
         );
@@ -479,7 +479,7 @@ mod tests {
             .unwrap();
         let owned = tracker.reject_snapshot_if_subscribed(&subs, instrument_id, error(), now);
         let unsubscribed =
-            tracker.reject_snapshot_if_subscribed(&AtomicSet::new(), instrument_id, error(), now);
+            tracker.reject_snapshot_if_subscribed(&DashSet::new(), instrument_id, error(), now);
 
         assert_eq!(unowned, BookSequenceOutcome::Recover);
         assert_eq!(owned, BookSequenceOutcome::Suppress);
@@ -620,7 +620,7 @@ mod tests {
     fn request_recovery_leaves_reconnect_deadline_to_its_monitor() {
         let tracker = BookSyncTracker::default();
         let instrument_id = instrument_id();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(instrument_id);
         let now = Instant::now();
         let timeout = Duration::from_secs(3);
@@ -669,7 +669,7 @@ mod tests {
     #[rstest]
     fn record_and_validate_ignore_unsubscribed_instrument() {
         let tracker = BookSyncTracker::default();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         let instrument_id = instrument_id();
         let now = Instant::now();
 
@@ -730,7 +730,7 @@ mod tests {
     ) {
         let tracker = BookSyncTracker::default();
         let instrument_id = instrument_id();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         let now = Instant::now();
         let timeout = Duration::from_secs(3);
 
@@ -770,7 +770,7 @@ mod tests {
     fn seed_missing_snapshot_preserves_armed_deadline() {
         let tracker = BookSyncTracker::default();
         let instrument_id = instrument_id();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(instrument_id);
         let now = Instant::now();
 
@@ -804,7 +804,7 @@ mod tests {
         let tracker = BookSyncTracker::default();
         let first = InstrumentId::from("0xCOND-A-0xTOKEN-A.POLYMARKET");
         let second = InstrumentId::from("0xCOND-B-0xTOKEN-B.POLYMARKET");
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(first);
         subs.insert(second);
         let now = Instant::now();
@@ -1020,7 +1020,7 @@ mod tests {
         let second = InstrumentId::from("0xCOND-B-0xTOKEN-B.POLYMARKET");
         let now = Instant::now();
 
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(first);
         subs.insert(second);
         assert!(tracker.record_snapshot_if_subscribed(&subs, first, now));
@@ -1038,7 +1038,7 @@ mod tests {
         for trace in 0_u32..6_u32.pow(5) {
             let tracker = BookSyncTracker::default();
             let id = instrument_id();
-            let subs = AtomicSet::new();
+            let subs = DashSet::new();
             subs.insert(id);
             let mut owner = tracker.claim_recovery(id).unwrap();
             let mut obsolete = Vec::new();
@@ -1123,7 +1123,7 @@ mod tests {
         let tracker = BookSyncTracker::default();
         let stale_id = InstrumentId::from("0xCOND-A-0xTOKEN-A.POLYMARKET");
         let steady_id = InstrumentId::from("0xCOND-B-0xTOKEN-B.POLYMARKET");
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(stale_id);
         subs.insert(steady_id);
         let now = Instant::now();
@@ -1182,7 +1182,7 @@ mod tests {
     fn expired_snapshot_deadline_is_inclusive_and_rearm_overwrites() {
         let tracker = BookSyncTracker::default();
         let instrument_id = instrument_id();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(instrument_id);
         let now = Instant::now();
         let timeout = Duration::from_secs(3);
@@ -1229,7 +1229,7 @@ mod tests {
     fn claim_recovery_if_subscribed_requires_subscription() {
         let tracker = BookSyncTracker::default();
         let instrument_id = instrument_id();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
 
         assert!(
             tracker
@@ -1252,7 +1252,7 @@ mod tests {
         let tracker = BookSyncTracker::default();
         let recovering_id = InstrumentId::from("0xCOND-A-0xTOKEN-A.POLYMARKET");
         let steady_id = InstrumentId::from("0xCOND-B-0xTOKEN-B.POLYMARKET");
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(recovering_id);
         subs.insert(steady_id);
         let now = Instant::now();
@@ -1294,7 +1294,7 @@ mod tests {
     fn request_recovery_if_subscribed_requires_subscription() {
         let tracker = BookSyncTracker::default();
         let instrument_id = instrument_id();
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         let now = Instant::now();
 
         assert_eq!(
@@ -1317,7 +1317,7 @@ mod tests {
         let tracker = BookSyncTracker::default();
         let subscribed_id = InstrumentId::from("0xCOND-A-0xTOKEN-A.POLYMARKET");
         let retired_id = InstrumentId::from("0xCOND-B-0xTOKEN-B.POLYMARKET");
-        let subs = AtomicSet::new();
+        let subs = DashSet::new();
         subs.insert(subscribed_id);
         let now = Instant::now();
         let timeout = Duration::from_secs(3);

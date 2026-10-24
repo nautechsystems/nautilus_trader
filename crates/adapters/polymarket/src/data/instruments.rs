@@ -1237,7 +1237,7 @@ mod tests {
 
         let subscriptions = crate::data::DataSubscriptions::new(
             instruments.clone(),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -1368,7 +1368,7 @@ mod tests {
 
         let subscriptions = crate::data::DataSubscriptions::new(
             instruments.clone(),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,

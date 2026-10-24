@@ -91,7 +91,7 @@ use crate::{
     polybolt::PolymarketPolyBoltFeed,
     resolve::{
         PendingResolution, PendingResolutionGuard, ResolveApplyResult, ResolveContext,
-        ResolveWatchEntry, StrictResolvedMarket, apply_condition_resolution_with_assets,
+        ResolveWatchlist, StrictResolvedMarket, apply_condition_resolution_with_assets,
     },
     websocket::{
         error::PolymarketWsError,
@@ -128,7 +128,7 @@ pub(super) struct WsMessageContext {
     pub(super) instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
     pub(super) gamma_client: PolymarketGammaHttpClient,
     pub(super) filters: Vec<Arc<dyn InstrumentFilter>>,
-    pub(super) resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
+    pub(super) resolve_poll_watchlist: Arc<ResolveWatchlist>,
     pub(super) resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pub(super) pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     pub(super) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
@@ -250,9 +250,8 @@ fn handle_book_reconnect(ctx: &WsMessageContext, shard_id: Option<usize>) {
         None => ctx
             .subscriptions
             .active_delta_subs
-            .load()
             .iter()
-            .copied()
+            .map(|id| *id)
             .collect(),
     };
 
@@ -1034,25 +1033,32 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let pending_guard = {
                 let _guard = ctx.resolve_watch_apply_mutex.lock();
                 let resolution_instrument_ids = {
-                    let status = ctx.subscriptions.active_instrument_status_subs.load();
-                    let close = ctx.subscriptions.active_instrument_close_subs.load();
-                    status
-                        .union(&close)
+                    ctx.subscriptions
+                        .active_instrument_status_subs
+                        .iter()
+                        .chain(ctx.subscriptions.active_instrument_close_subs.iter())
+                        .map(|id| *id)
                         .filter(|instrument_id| {
                             crate::providers::extract_condition_id(instrument_id)
                                 .is_ok_and(|candidate| candidate == condition_id)
                         })
-                        .copied()
-                        .collect::<Vec<_>>()
+                        .collect::<AHashSet<_>>()
                 };
 
-                if !ctx.resolve_poll_watchlist.contains_key(&condition_id)
+                if !ctx
+                    .resolve_poll_watchlist
+                    .read()
+                    .contains_key(&condition_id)
                     && resolution_instrument_ids.is_empty()
                 {
                     return;
                 }
 
-                let watch_entry = ctx.resolve_poll_watchlist.get_cloned(&condition_id);
+                let watch_entry = ctx
+                    .resolve_poll_watchlist
+                    .read()
+                    .get(&condition_id)
+                    .cloned();
 
                 if watch_entry.as_ref().is_some_and(|entry| {
                     entry
@@ -1781,7 +1787,7 @@ mod tests {
         let ws = crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
 
         let instruments = Arc::new(AtomicMap::new());
-        let watchlist = Arc::new(AtomicMap::new());
+        let watchlist = Arc::new(ResolveWatchlist::default());
         let owner_lock = Arc::new(Mutex::new(()));
         let deferred_resolutions = Arc::new(AtomicMap::new());
 
@@ -3971,6 +3977,7 @@ mod tests {
         );
         assert!(
             !ctx.resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-BTC".to_string())
         );
     }
@@ -4114,6 +4121,7 @@ mod tests {
         );
         assert!(
             ctx.resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-BTC".to_string())
         );
         assert!(data_rx.try_recv().is_err());
@@ -4155,6 +4163,7 @@ mod tests {
         assert!(ctx.pending_resolutions.is_empty());
         assert!(
             ctx.resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-BTC".to_string())
         );
         assert!(
@@ -4201,6 +4210,7 @@ mod tests {
 
         assert!(
             ctx.resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-BTC".to_string())
         );
         assert!(
@@ -4248,6 +4258,7 @@ mod tests {
 
         assert!(
             ctx.resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-BTC".to_string())
         );
         assert!(
@@ -4291,7 +4302,7 @@ mod tests {
         }));
         assert!(ctx.subscriptions.active_instrument_status_subs.is_empty());
         assert!(ctx.subscriptions.active_instrument_close_subs.is_empty());
-        assert!(ctx.resolve_poll_watchlist.is_empty());
+        assert!(ctx.resolve_poll_watchlist.read().is_empty());
         assert!(ctx.pending_resolutions.is_empty());
     }
 
@@ -4363,7 +4374,8 @@ mod tests {
             );
             assert_eq!(
                 ctx.resolve_poll_watchlist
-                    .get_cloned(&"0xCOND-BTC".to_string())
+                    .read()
+                    .get(&"0xCOND-BTC".to_string())
                     .unwrap()
                     .tracked
                     .len(),
@@ -4553,6 +4565,7 @@ mod tests {
         assert!(
             !client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-BTC".to_string())
         );
     }
@@ -4649,7 +4662,7 @@ mod tests {
         );
         ctx.wait_for_tasks().await;
 
-        let watchlist = ctx.resolve_poll_watchlist.load();
+        let watchlist = ctx.resolve_poll_watchlist.read();
         let entry = watchlist
             .get("0xCOND-BTC")
             .expect("expected watch entry restored after emit failure");
@@ -4733,6 +4746,7 @@ mod tests {
             || async {
                 !client
                     .resolve_poll_watchlist
+                    .read()
                     .contains_key(&"0xCOND-REQ".to_string())
             },
             StdDuration::from_secs(5),
@@ -4788,6 +4802,7 @@ mod tests {
         assert!(
             !client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-REQ".to_string())
         );
     }
@@ -4866,6 +4881,7 @@ mod tests {
             || async {
                 !client
                     .resolve_poll_watchlist
+                    .read()
                     .contains_key(&"0xCOND-REQ".to_string())
             },
             StdDuration::from_secs(5),
@@ -4960,6 +4976,7 @@ mod tests {
             || async {
                 !client
                     .resolve_poll_watchlist
+                    .read()
                     .contains_key(&"0xCOND-REQ".to_string())
             },
             StdDuration::from_secs(5),
@@ -5187,12 +5204,8 @@ mod tests {
 
         wait_until_async(
             || async {
-                !client
-                    .resolve_poll_watchlist
-                    .contains_key(&"0xCOND-A".to_string())
-                    && !client
-                        .resolve_poll_watchlist
-                        .contains_key(&"0xCOND-B".to_string())
+                let watchlist = client.resolve_poll_watchlist.read();
+                !watchlist.contains_key("0xCOND-A") && !watchlist.contains_key("0xCOND-B")
             },
             StdDuration::from_secs(5),
         )
@@ -5336,6 +5349,7 @@ mod tests {
         assert!(
             client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-REQ".to_string())
         );
     }
@@ -5425,6 +5439,7 @@ mod tests {
             || async {
                 !client
                     .resolve_poll_watchlist
+                    .read()
                     .contains_key(&"0xCOND-POLL".to_string())
             },
             StdDuration::from_secs(5),
@@ -5447,6 +5462,7 @@ mod tests {
         assert!(
             !client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-POLL".to_string())
         );
     }
@@ -6256,6 +6272,7 @@ mod tests {
         assert!(
             !client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
     }
@@ -6554,6 +6571,7 @@ mod tests {
         assert!(
             !client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
     }
@@ -6610,6 +6628,7 @@ mod tests {
         assert!(
             client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
         assert!(
@@ -6689,6 +6708,7 @@ mod tests {
         assert!(
             client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
         wait_until_async(
@@ -6750,6 +6770,7 @@ mod tests {
         assert!(
             !client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
     }
@@ -6961,6 +6982,7 @@ mod tests {
         assert!(
             !client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
     }
@@ -7017,7 +7039,7 @@ mod tests {
 
         assert!(client.instruments.is_empty());
         assert!(client.subscriptions.token_meta.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(
             client
                 .subscriptions
@@ -7051,7 +7073,7 @@ mod tests {
 
         assert_eq!(result, ResolveApplyResult::Ignored);
         assert!(old_ctx.pending_resolutions.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.closed_condition_ids.lock().is_empty());
         assert!(data_rx.try_recv().is_err());
     }
@@ -7605,7 +7627,7 @@ mod tests {
                 .lock()
                 .contains(TEST_CONDITION_ID)
         );
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(
             client
                 .subscriptions
@@ -7649,6 +7671,7 @@ mod tests {
         assert!(
             client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
         assert!(client.subscriptions.ws_open_tokens.is_empty());
@@ -7729,7 +7752,8 @@ mod tests {
         assert_eq!(
             client
                 .resolve_poll_watchlist
-                .get_cloned(&TEST_CONDITION_ID.to_string())
+                .read()
+                .get(&TEST_CONDITION_ID.to_string())
                 .unwrap()
                 .expiration_ns,
             expiration
@@ -7754,7 +7778,8 @@ mod tests {
                 || async {
                     client
                         .resolve_poll_watchlist
-                        .get_cloned(&TEST_CONDITION_ID.to_string())
+                        .read()
+                        .get(&TEST_CONDITION_ID.to_string())
                         .is_some_and(|entry| entry.paused)
                 },
                 StdDuration::from_secs(3),
@@ -7763,7 +7788,8 @@ mod tests {
             assert_eq!(
                 client
                     .resolve_poll_watchlist
-                    .get_cloned(&TEST_CONDITION_ID.to_string())
+                    .read()
+                    .get(&TEST_CONDITION_ID.to_string())
                     .unwrap()
                     .expiration_ns,
                 expiration
@@ -7812,7 +7838,7 @@ mod tests {
             count_instrument_close_events(&events),
             usize::from(close_intent)
         );
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(
             client
                 .subscriptions
@@ -7853,7 +7879,8 @@ mod tests {
             || async {
                 client
                     .resolve_poll_watchlist
-                    .get_cloned(&TEST_CONDITION_ID.to_string())
+                    .read()
+                    .get(&TEST_CONDITION_ID.to_string())
                     .is_some_and(|entry| entry.tracked.len() == 2)
             },
             StdDuration::from_secs(3),
@@ -7876,7 +7903,8 @@ mod tests {
             market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
         }
         *state.gamma_response.lock().await = Some(serde_json::json!([market]));
-        client.resolve_poll_watchlist.rcu(|entries| {
+        {
+            let mut entries = client.resolve_poll_watchlist.write();
             let entry = entries.get_mut(TEST_CONDITION_ID).unwrap();
             entry.expiration_ns =
                 UnixNanos::from(client.clock.get_time_ns().as_u64() - 1_000_000_000);
@@ -7886,7 +7914,7 @@ mod tests {
                     .values()
                     .all(|tracked| tracked.open_position_ids.is_empty())
             );
-        });
+        }
 
         let events = collect_events_until(&mut data_rx, StdDuration::from_secs(5), |events| {
             count_instrument_close_events(events) == 2
@@ -7915,7 +7943,7 @@ mod tests {
                 );
             }
         }
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(
             client
                 .subscriptions
@@ -8161,7 +8189,7 @@ mod tests {
             1 + usize::from(accepted)
         );
         assert!(client.deferred_resolutions.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
     }
 
     #[rstest]
@@ -8305,7 +8333,7 @@ mod tests {
                 .is_empty()
         );
         assert!(client.subscriptions.active_instrument_close_subs.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
     }
 
@@ -8383,7 +8411,7 @@ mod tests {
             usize::from(accepted)
         );
         assert!(client.deferred_resolutions.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
     }
 
@@ -8483,7 +8511,7 @@ mod tests {
                 .is_empty()
         );
         assert!(client.subscriptions.active_instrument_close_subs.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
     }
 
@@ -8560,7 +8588,7 @@ mod tests {
                 .lock()
                 .contains(TEST_CONDITION_ID)
         );
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
     }
 
@@ -8609,14 +8637,16 @@ mod tests {
             StdDuration::from_secs(3),
         )
         .await;
-        client.resolve_poll_watchlist.rcu(|entries| {
+        {
+            let mut entries = client.resolve_poll_watchlist.write();
             entries.get_mut(TEST_CONDITION_ID).unwrap().expiration_ns = UnixNanos::default();
-        });
+        }
         wait_until_async(
             || async {
                 client
                     .resolve_poll_watchlist
-                    .get_cloned(&TEST_CONDITION_ID.to_string())
+                    .read()
+                    .get(&TEST_CONDITION_ID.to_string())
                     .unwrap()
                     .paused
             },
@@ -8687,7 +8717,7 @@ mod tests {
                 .count(),
             1
         );
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
         assert!(
             !client
@@ -8770,7 +8800,9 @@ mod tests {
 
         let watch = client
             .resolve_poll_watchlist
-            .get_cloned(&TEST_CONDITION_ID.to_string());
+            .read()
+            .get(&TEST_CONDITION_ID.to_string())
+            .cloned();
         assert_eq!(watch.is_some(), position_owned);
         assert!(client.subscriptions.ws_open_tokens.is_empty());
 
@@ -8829,7 +8861,9 @@ mod tests {
 
         let watch = client
             .resolve_poll_watchlist
-            .get_cloned(&TEST_CONDITION_ID.to_string())
+            .read()
+            .get(&TEST_CONDITION_ID.to_string())
+            .cloned()
             .unwrap();
         assert!(
             watch
@@ -8879,7 +8913,7 @@ mod tests {
         }
         assert_eq!(statuses, usize::from(!remove_status));
         assert_eq!(closes, usize::from(remove_status));
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
     }
 
     #[tokio::test]
@@ -8906,9 +8940,10 @@ mod tests {
             StdDuration::from_secs(3),
         )
         .await;
-        client.resolve_poll_watchlist.rcu(|entries| {
+        {
+            let mut entries = client.resolve_poll_watchlist.write();
             entries.get_mut(TEST_CONDITION_ID).unwrap().expiration_ns = UnixNanos::default();
-        });
+        }
 
         client
             .request_data(RequestCustomData::new(
@@ -8942,7 +8977,9 @@ mod tests {
 
         let watch = client
             .resolve_poll_watchlist
-            .get_cloned(&TEST_CONDITION_ID.to_string())
+            .read()
+            .get(&TEST_CONDITION_ID.to_string())
+            .cloned()
             .unwrap();
         assert!(watch.paused);
         assert_eq!(watch.expiration_ns, UnixNanos::default());
@@ -9023,7 +9060,7 @@ mod tests {
         );
         assert!(client.instruments.is_empty());
         assert!(client.subscriptions.token_meta.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
         assert!(client.pending_resolutions.is_empty());
         assert!(
@@ -9112,7 +9149,7 @@ mod tests {
             rust_decimal::Decimal::ONE
         );
         assert_eq!(closes[0].close_type, InstrumentCloseType::ContractExpired);
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(
             client
                 .subscriptions
@@ -9157,7 +9194,7 @@ mod tests {
                 .contains(TEST_CONDITION_ID)
         );
         assert!(client.instruments.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
         assert!(data_rx.try_recv().is_err());
 
@@ -9315,7 +9352,7 @@ mod tests {
                 .lock()
                 .contains(TEST_CONDITION_ID)
         );
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.pending_resolutions.is_empty());
         assert!(
             client
@@ -9378,7 +9415,7 @@ mod tests {
         assert!(data_rx.try_recv().is_err());
         assert!(client.instruments.is_empty());
         assert!(client.subscriptions.token_meta.is_empty());
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
         assert!(client.subscriptions.ws_open_tokens.is_empty());
         assert!(client.pending_resolutions.is_empty());
         assert!(
@@ -9523,7 +9560,7 @@ mod tests {
                 .active_instrument_status_subs
                 .contains(&instrument_id)
         );
-        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
     }
 
     #[rstest]
@@ -10575,6 +10612,7 @@ mod tests {
         assert!(
             client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
         assert!(
@@ -10608,7 +10646,9 @@ mod tests {
         );
         let watch = client
             .resolve_poll_watchlist
-            .get_cloned(&TEST_CONDITION_ID.to_string())
+            .read()
+            .get(&TEST_CONDITION_ID.to_string())
+            .cloned()
             .expect("retained settlement watch");
         assert_eq!(watch.tracked.len(), 2);
 
@@ -10687,7 +10727,7 @@ mod tests {
                 .contains_key(&Ustr::from(TEST_TOKEN_ID_NO))
         );
         assert_eq!(
-            client.subscriptions.ws_open_tokens.load().len(),
+            client.subscriptions.ws_open_tokens.len(),
             if resolution_intents { 2 } else { 0 }
         );
     }
