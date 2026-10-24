@@ -1357,9 +1357,11 @@ init-services:  #-- Initialize development services eg. for integration tests (s
 .PHONY: start-services
 start-services:  #-- Start development services (without reinitializing database)
 	$(info $(M) Starting development services...)
-	bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/postgres
-	bash scripts/ci/docker-pull-retry.sh dpage/pgadmin4
-	bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/redis
+	@set -e; \
+	images=$$(docker compose -f .docker/docker-compose.yml config --images); \
+	for image in $$images; do \
+		bash scripts/ci/docker-pull-retry.sh "$$image"; \
+	done
 	docker compose -f .docker/docker-compose.yml up -d
 
 .PHONY: stop-services

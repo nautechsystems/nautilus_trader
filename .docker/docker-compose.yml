@@ -1,7 +1,8 @@
 services:
   postgres:
     container_name: nautilus-database
-    image: public.ecr.aws/docker/library/postgres
+    # yamllint disable-line rule:line-length
+    image: public.ecr.aws/docker/library/postgres:18.6-alpine3.23@sha256:dec395d8c09c45609d6deb5c2388a07882d64fa59b1d98c1895792e085f57888
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-nautilus}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
@@ -19,8 +20,9 @@ services:
 
   pgadmin:
     container_name: nautilus-pgadmin
-    image: dpage/pgadmin4
+    image: dpage/pgadmin4:9.18@sha256:c332c5f6dfba995d9ebc4af261d93506d6876085d712eaaa3defc8dd1a3f26de
     environment:
+      PGADMIN_LISTEN_PORT: 8080
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@mail.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
     volumes:
@@ -28,14 +30,15 @@ services:
     security_opt:
       - no-new-privileges:true
     ports:
-      - "127.0.0.1:${PGADMIN_PORT:-5051}:80"
+      - "127.0.0.1:${PGADMIN_PORT:-5051}:8080"
     networks:
       - nautilus-network
     restart: unless-stopped
 
   redis:
     container_name: nautilus-redis
-    image: public.ecr.aws/docker/library/redis
+    # yamllint disable-line rule:line-length
+    image: public.ecr.aws/docker/library/redis:8.10.2-alpine3.23@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
     security_opt:
       - no-new-privileges:true
     ports:

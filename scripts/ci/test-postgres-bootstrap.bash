@@ -12,8 +12,8 @@ if ! command -v docker > /dev/null 2>&1; then
   exit 1
 fi
 
-postgres_image="public.ecr.aws/docker/library/postgres:16.4-alpine@sha256:"
-postgres_image+="5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c"
+postgres_image="public.ecr.aws/docker/library/postgres:18.6-alpine3.23@sha256:"
+postgres_image+="dec395d8c09c45609d6deb5c2388a07882d64fa59b1d98c1895792e085f57888"
 container="nautilus-postgres-preflight-$$"
 
 cleanup() {

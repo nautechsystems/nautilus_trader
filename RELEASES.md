@@ -215,7 +215,10 @@ Released on TBD (UTC).
 - Upgraded `cargo-nextest` tool to v0.9.149
 - Upgraded `cargo-vet` tool to v0.10.3
 - Upgraded `OSV Scanner` tool to v2.7.0
+- Upgraded `pgAdmin` container image to v9.18
+- Upgraded `PostgreSQL` container image to v18.6
 - Upgraded `prek` tool to v0.5.7
+- Upgraded `Redis` container image to v8.10.2
 - Upgraded `Socket CLI` tool to v1.9.0
 - Upgraded `uv` tool and pre-commit hook to v0.13.4
 - Upgraded `pyupgrade` pre-commit hook to v3.22.0
