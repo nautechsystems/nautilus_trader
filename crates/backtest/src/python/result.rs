@@ -119,7 +119,7 @@ impl BacktestResult {
 
     #[getter]
     #[pyo3(name = "stats_pnls")]
-    fn py_stats_pnls(&self) -> HashMap<String, HashMap<String, f64>> {
+    fn py_stats_pnls(&self) -> BTreeMap<String, BTreeMap<String, f64>> {
         self.stats_pnls
             .iter()
             .map(|(k, v)| {
@@ -133,7 +133,7 @@ impl BacktestResult {
 
     #[getter]
     #[pyo3(name = "stats_returns")]
-    fn py_stats_returns(&self) -> HashMap<String, f64> {
+    fn py_stats_returns(&self) -> BTreeMap<String, f64> {
         self.stats_returns
             .iter()
             .map(|(k, v)| (k.clone(), *v))
@@ -142,7 +142,7 @@ impl BacktestResult {
 
     #[getter]
     #[pyo3(name = "stats_general")]
-    fn py_stats_general(&self) -> HashMap<String, f64> {
+    fn py_stats_general(&self) -> BTreeMap<String, f64> {
         self.stats_general
             .iter()
             .map(|(k, v)| (k.clone(), *v))

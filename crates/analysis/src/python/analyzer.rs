@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
@@ -51,13 +51,13 @@ impl PortfolioAnalyzer {
 
     /// Gets all return-based performance statistics.
     #[pyo3(name = "get_performance_stats_returns")]
-    fn py_get_performance_stats_returns(&self) -> HashMap<String, f64> {
+    fn py_get_performance_stats_returns(&self) -> BTreeMap<String, f64> {
         self.get_performance_stats_returns().into_iter().collect()
     }
 
     /// Gets all position-return-based performance statistics.
     #[pyo3(name = "get_performance_stats_position_returns")]
-    fn py_get_performance_stats_position_returns(&self) -> HashMap<String, f64> {
+    fn py_get_performance_stats_position_returns(&self) -> BTreeMap<String, f64> {
         self.get_performance_stats_position_returns()
             .into_iter()
             .collect()
@@ -65,7 +65,7 @@ impl PortfolioAnalyzer {
 
     /// Gets all portfolio-return-based performance statistics.
     #[pyo3(name = "get_performance_stats_portfolio_returns")]
-    fn py_get_performance_stats_portfolio_returns(&self) -> HashMap<String, f64> {
+    fn py_get_performance_stats_portfolio_returns(&self) -> BTreeMap<String, f64> {
         self.get_performance_stats_portfolio_returns()
             .into_iter()
             .collect()
@@ -81,7 +81,7 @@ impl PortfolioAnalyzer {
     fn py_get_performance_stats_returns_vs_benchmark(
         &self,
         benchmark: BTreeMap<u64, f64>,
-    ) -> HashMap<String, f64> {
+    ) -> BTreeMap<String, f64> {
         let benchmark: Returns = benchmark
             .into_iter()
             .map(|(k, v)| (UnixNanos::from(k), v))
@@ -105,7 +105,7 @@ impl PortfolioAnalyzer {
         &self,
         currency: Option<&Currency>,
         unrealized_pnl: Option<&Money>,
-    ) -> PyResult<HashMap<String, f64>> {
+    ) -> PyResult<BTreeMap<String, f64>> {
         self.get_performance_stats_pnls(currency, unrealized_pnl)
             .map(|m| m.into_iter().collect())
             .map_err(to_pyvalue_err)
@@ -113,7 +113,7 @@ impl PortfolioAnalyzer {
 
     /// Gets general portfolio statistics.
     #[pyo3(name = "get_performance_stats_general")]
-    fn py_get_performance_stats_general(&self) -> HashMap<String, f64> {
+    fn py_get_performance_stats_general(&self) -> BTreeMap<String, f64> {
         self.get_performance_stats_general().into_iter().collect()
     }
 
