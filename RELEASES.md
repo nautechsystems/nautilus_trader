@@ -86,6 +86,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
+- Fixed position reconciliation timeouts discarding finalized snapshots and authoritative fills
 - Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking

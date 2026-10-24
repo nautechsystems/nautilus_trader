@@ -211,6 +211,7 @@ SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	(package(nautilus-live) & test(test_startup_reconciliation_times_out_waiting_for_mass_status)) + \
 	(package(nautilus-live) & test(~task::tests)) + \
 	(package(nautilus-live) & test(test_bulk_report_acceptance)) + \
+	(package(nautilus-live) & test(test_position_report_acceptance)) + \
 	(package(nautilus-core) & test(~virtual_time))
 SIM_HIGH_PRECISION_PACKAGES := -p nautilus-common -p nautilus-execution
 

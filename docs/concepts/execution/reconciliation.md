@@ -855,6 +855,21 @@ completed orders from their query results.
 
 ### Position checks
 
+#### Report acceptance
+
+Position snapshots and their authoritative fill queries use separate `timeout_reconciliation` deadlines.
+Each stage collects all results before accepting them, and accepts only while `now < deadline`. Each
+client stays busy until all its retained report processing finishes or its results are discarded.
+
+Accepted stages run deferred processing and pass reports to reconciliation synchronously, even if processing
+crosses the deadline. Expiry or cancellation skips deferred processing; it cannot undo state changes
+an adapter makes during collection.
+
+During shutdown, the node discards unused position snapshots without running deferred processing, applies accepted
+fill stages, and retains ownership of collection workers until they drain.
+
+#### Retries and query failures
+
 Position checks use separate retry counters per instrument and account. A successful position
 match clears the counter, while repeated unresolved discrepancies stop active reconciliation for
 that pair until the discrepancy clears.

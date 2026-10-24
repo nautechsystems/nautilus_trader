@@ -326,3 +326,191 @@ fn bulk_order_reports(client: usize, count: usize) -> Vec<OrderStatusReport> {
         })
         .collect()
 }
+
+#[rstest]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_report_acceptance_delivers_fill_after_deadline() {
+    let state = BlockingReportClientState::default();
+    state.report_worker.store(true, Ordering::Relaxed);
+    state
+        .fill_report_finish_ns
+        .store(200_000_000, Ordering::Relaxed);
+    let client_order_id = ClientOrderId::from("O-ACCEPTED-FILL");
+    let venue_order_id = VenueOrderId::from("V-ACCEPTED-FILL");
+    let trade_id = TradeId::from("T-ACCEPTED-FILL");
+    let fill = reconciliation_fill_report(
+        client_order_id,
+        venue_order_id,
+        trade_id,
+        Price::from("100.0"),
+        Money::from("0.25 USDT"),
+        UnixNanos::from(1_000_000),
+    );
+    let factory = BlockingReportExecutionClientFactory::configurable(
+        ClientId::from("BLOCKING-REPORT"),
+        AccountId::from("BLOCKING-REPORT-001"),
+        state.clone(),
+    )
+    .with_position_reports(vec![reconciliation_position_report(Quantity::from("1.0"))])
+    .with_fill_report_responses([vec![fill]], None)
+    .with_fill_reports_at_window_end();
+    let mut config = shutdown_report_test_config(None, Some(0.1));
+    config.timeout_reconciliation = RECONCILIATION_TIMEOUT;
+    config.delay_post_stop = Duration::ZERO;
+    let replay_client = BlockingReportExecutionClient::new(&factory);
+    let mut node = reconciliation_node("AcceptedPositionFill", config, factory);
+    add_accepted_test_order(
+        &node,
+        client_order_id,
+        venue_order_id,
+        ClientId::from("BLOCKING-REPORT"),
+    );
+    let cache = node.kernel().cache();
+    let handle = node.handle();
+
+    let driver = async {
+        loop {
+            if !state.fill_reports_finalized.lock().is_empty() {
+                break;
+            }
+
+            dst::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        dst::time::sleep(Duration::from_millis(1)).await;
+        handle.stop();
+    };
+
+    let (result, ()) = dst::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(node.run(), driver)
+    })
+    .await
+    .expect("accepted fill reaches engine despite slow continuation");
+
+    result.unwrap();
+    assert_eq!(*state.fill_reports_finalized.lock(), vec![trade_id]);
+
+    let command = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::from(2_000_000),
+        Some(crypto_perpetual_ethusdt().id()),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let replay = replay_client.fill_report_task(&command);
+    replay.collection.await;
+    assert_eq!((replay.finish)().unwrap(), Vec::<FillReport>::new());
+    assert_eq!(state.fill_report_count.load(Ordering::Relaxed), 2);
+    assert_eq!(state.report_collections_active.load(Ordering::Relaxed), 0);
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.filled_qty(), Quantity::from("1.0"));
+    assert!(matches!(order.last_event(), OrderEventAny::Filled(event)
+        if event.trade_id == trade_id && event.last_qty == Quantity::from("1.0")));
+}
+
+#[cfg(not(madsim))]
+#[rstest]
+#[ignore = "Wall-clock comparison; run optimized with process isolation"]
+#[tokio::test]
+async fn position_report_maintenance_latency() {
+    const KEYS: usize = 16;
+    const BATCHES: usize = 20;
+    let state = BlockingReportClientState::default();
+    state.report_worker.store(true, Ordering::Relaxed);
+    state.report_cpu_ns.store(100_000, Ordering::Relaxed);
+    state.report_cpu_repeated.store(true, Ordering::Relaxed);
+
+    let instruments = (0..KEYS)
+        .map(|index| {
+            let mut instrument = crypto_perpetual_ethusdt();
+            instrument.id = InstrumentId::from(format!("BENCH-{index}.BINANCE"));
+            InstrumentAny::CryptoPerpetual(instrument)
+        })
+        .collect::<Vec<_>>();
+
+    let positions = instruments
+        .iter()
+        .map(|instrument| {
+            let mut report = reconciliation_position_report(Quantity::from("1.0"));
+            report.instrument_id = instrument.id();
+            report
+        })
+        .collect();
+
+    let factory = BlockingReportExecutionClientFactory::configurable(
+        ClientId::from("BLOCKING-REPORT"),
+        AccountId::from("BLOCKING-REPORT-001"),
+        state.clone(),
+    )
+    .with_position_reports(positions)
+    .with_fill_report_responses([vec![]], None);
+    let mut config = shutdown_report_test_config(None, Some(0.01));
+    config.exec_engine.generate_missing_orders = false;
+    config.timeout_reconciliation = Duration::from_secs(5);
+    config.delay_post_stop = Duration::ZERO;
+    let mut node = reconciliation_node("PositionMaintenanceLatency", config, factory);
+    for instrument in instruments {
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(instrument)
+            .unwrap();
+    }
+
+    let handle = node.handle();
+    let snapshot = handle.metrics_snapshot();
+
+    let driver = async {
+        while state.fill_report_finalizations.load(Ordering::Relaxed) < KEYS * BATCHES {
+            dst::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        handle.stop();
+    };
+
+    let core_poll_ns = Cell::new(0_u64);
+    let run = node.run();
+    tokio::pin!(run);
+
+    let measured = std::future::poll_fn(|cx| {
+        let started = std::time::Instant::now();
+        let result = std::future::Future::poll(run.as_mut(), cx);
+        core_poll_ns.set(core_poll_ns.get() + u64::try_from(started.elapsed().as_nanos()).unwrap());
+        result
+    });
+
+    let (result, ()) = dst::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(measured, driver)
+    })
+    .await
+    .expect("multi-key batches complete");
+
+    result.unwrap();
+    assert_eq!(state.position_report_count.load(Ordering::Relaxed), BATCHES);
+    assert_eq!(
+        state.fill_report_count.load(Ordering::Relaxed),
+        KEYS * BATCHES
+    );
+    assert_eq!(
+        state.fill_report_finalizations.load(Ordering::Relaxed),
+        KEYS * BATCHES
+    );
+    assert_eq!(state.report_collections_active.load(Ordering::Relaxed), 0);
+    assert_eq!(state.report_collections_max.load(Ordering::Relaxed), 1);
+    assert_ne!(
+        *state.report_thread.lock(),
+        Some(std::thread::current().id())
+    );
+    let metrics = RunnerMetricsDelta::from_snapshots(snapshot, handle.metrics_snapshot());
+    println!(
+        "POSITION_BENCH keys={KEYS} batches={BATCHES} fills_per_query=0 core_poll_ns={} maintenance_ns={} continuation_ns={}",
+        core_poll_ns.get(),
+        metrics.maintenance_busy_ns,
+        state.fill_report_finish_busy_ns.load(Ordering::Relaxed)
+    );
+}

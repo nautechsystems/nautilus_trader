@@ -159,9 +159,9 @@ pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetric
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
 use reconciliation::{
-    OpenOrderReportCollection, OpenOrderReportTask, PositionReportTask, PositionReportTaskResult,
-    ReconciliationCheckIntervals, ReconciliationCheckState, ReportTaskOutcome,
-    TargetedOrderReportTask,
+    OpenOrderReportCollection, OpenOrderReportTask, PositionFillReportResult, PositionReportTask,
+    PositionReportTaskResult, ReconciliationCheckIntervals, ReconciliationCheckState,
+    ReportTaskOutcome, TargetedOrderReportTask,
 };
 use state::{EngineConnectionStatus, RunningTransition};
 pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
@@ -1754,11 +1754,17 @@ impl LiveNode {
                             if is_shutting_down {
                                 self.cleanup_cancelled_report_tasks(&[]);
                             } else {
+                                let result = result.finish();
                                 position_report_task = self.handle_position_report_result(result);
                             }
                         }
-                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(result)) => {
-                            self.handle_position_fill_report_result(result);
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills { position_result, collection }) => {
+                            let result = collection.finish();
+                            self.handle_position_fill_report_result(PositionFillReportResult {
+                                position_result,
+                                reports: result.reports,
+                                successful_keys: result.successful_keys,
+                            });
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
@@ -5066,7 +5072,8 @@ mod tests {
                 command: command.clone(),
             }],
         )
-        .await;
+        .await
+        .finish();
 
         assert_eq!(*commands.borrow(), vec![command]);
         assert!(result.successful_keys.is_empty());
@@ -5129,7 +5136,8 @@ mod tests {
                 command,
             }],
         )
-        .await;
+        .await
+        .finish();
 
         assert_eq!(result.successful_keys, IndexSet::from([key]));
         assert_eq!(
@@ -5199,7 +5207,8 @@ mod tests {
                 command,
             }],
         )
-        .await;
+        .await
+        .finish();
 
         assert!(result.successful_keys.is_empty());
         assert!(result.reports.is_empty());
@@ -5262,7 +5271,8 @@ mod tests {
                 command,
             }],
         )
-        .await;
+        .await
+        .finish();
 
         assert_eq!(result.successful_keys, IndexSet::from([key]));
         assert_eq!(result.reports, IndexMap::from([(key, Vec::new())]));
@@ -5330,7 +5340,9 @@ mod tests {
 
         queries.push(healthy_query);
 
-        let result = request_position_fill_reports(clients, queries).await;
+        let result = request_position_fill_reports(clients, queries)
+            .await
+            .finish();
 
         assert_eq!(result.successful_keys, IndexSet::from([healthy_key]));
         assert_eq!(
@@ -5388,7 +5400,9 @@ mod tests {
             commands: Rc::new(RefCell::new(Vec::new())),
         }));
 
-        let result = request_position_fill_reports(vec![client], vec![query]).await;
+        let result = request_position_fill_reports(vec![client], vec![query])
+            .await
+            .finish();
 
         if accepted {
             assert_eq!(result.successful_keys, IndexSet::from([key]));
@@ -7926,6 +7940,7 @@ mod tests {
                 panic!("position collection should complete despite one client failure");
             };
 
+            let result = result.finish();
             assert!(result.reports.is_empty());
             assert!(open_task.is_none());
             (result.queried_clients, result.failed_clients)
