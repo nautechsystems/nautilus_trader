@@ -489,9 +489,40 @@ On a $1,000 account: the standard model blocks the trade. The leveraged model al
 
 ### Python model selection
 
-Pass `StandardMarginModel()` or `LeveragedMarginModel()` directly to the backtest venue. The
-Python binding does not accept custom margin model subclasses or a `MarginModelConfig`
-wrapper. See [Backtesting](backtesting/accounts-and-margin.md#margin-models).
+Pass a built-in model, a subclass of `nautilus_trader.model.MarginModel`, or a compatible Python object
+as `margin_model` to `BacktestVenueConfig`, `BacktestEngine.add_venue()`, or `SandboxExecutionClientConfig`.
+Models apply only to margin accounts. No `MarginModelConfig` wrapper is needed.
+See [Backtesting](backtesting/accounts-and-margin.md#margin-models).
+
+#### Callback contract
+
+Custom objects must expose callable `calculate_initial_margin` and `calculate_maintenance_margin` methods
+or configuration raises `TypeError`. Inherited base methods raise `NotImplementedError`.
+
+Both take `(instrument, quantity, price, leverage, use_quote_for_inverse)` and return `Money`:
+
+- `instrument`: concrete Python type, such as `CurrencyPair`.
+- `quantity`, `price`, and `leverage`: `Quantity`, `Price`, and `decimal.Decimal`.
+- `use_quote_for_inverse`: `True` requests quote-currency margin for inverse instruments.
+  Risk and portfolio calls pass `None`; direct account calls also accept `True` and `False`.
+
+#### Failure handling
+
+- Direct `MarginAccount` calls raise `ValueError` with callback context for exceptions or non-`Money` results.
+- Pre-trade risk checks reject the order command if initial-margin calculation fails.
+- Portfolio failures silently skip the instrument's margin update and retain its previous margin.
+  One failing open order skips that instrument's entire initial-margin update.
+
+#### State and runtime limits
+
+Configuration and account clones share the Python instance and state. Canonical backtest results use
+`margin_model: "python"` for all custom Python classes.
+
+Keep callbacks independent of the cache and portfolio: portfolio updates can hold borrows and temporarily
+remove the account from the cache.
+
+Callbacks acquire the GIL and clone instruments into Python objects. Conversion, dispatch, and `Money`
+extraction add overhead; no benchmarks quantify it.
 
 ## Adapter convention
 

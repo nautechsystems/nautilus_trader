@@ -66,7 +66,10 @@ use nautilus_execution::{
 };
 use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
-    accounts::{AccountAny, MarginAccount},
+    accounts::{
+        AccountAny, MarginAccount,
+        margin_model::{LeveragedMarginModel, MarginModel, MarginModelAny, StandardMarginModel},
+    },
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
         AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
@@ -142,8 +145,9 @@ fn create_config(
         default_leverage: Decimal::ONE,
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
-        fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
         fill_model: None,
+        fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
+        margin_model: None,
         latency_model: None,
         frozen_account: false,
         bar_execution: false,
@@ -2808,6 +2812,174 @@ async fn test_client_connect_syncs_cached_margin_account_config(
 }
 
 #[rstest]
+#[case(None, ("leveraged", "400 USDT", "140 USDT"))]
+#[case(
+    Some(MarginModelAny::Leveraged(LeveragedMarginModel)),
+    ("leveraged", "400 USDT", "140 USDT")
+)]
+#[case(
+    Some(MarginModelAny::Standard(StandardMarginModel)),
+    ("standard", "2000 USDT", "700 USDT")
+)]
+#[tokio::test]
+async fn test_client_connect_wires_builtin_margin_models(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+    #[case] model: Option<MarginModelAny>,
+    #[case] expected: (&str, &str, &str),
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.margin_model = model;
+        config.default_leverage = Decimal::from(5);
+    });
+
+    setup_account_state_handler(context.cache.clone());
+    let mut client = context.client;
+    client.connect().await.unwrap();
+    let account = context.cache.borrow().account(&account_id).unwrap().clone();
+
+    let AccountAny::Margin(account) = account else {
+        panic!("expected margin account")
+    };
+
+    let quantity = Quantity::from("2.000");
+    let price = Price::from("1000.00");
+    let (name, initial, maintenance) = expected;
+
+    assert_eq!(account.margin_model().name(), name);
+    assert_eq!(
+        account
+            .calculate_initial_margin(&instrument, quantity, price, None)
+            .unwrap(),
+        Money::from(initial)
+    );
+    assert_eq!(
+        account
+            .calculate_maintenance_margin(&instrument, quantity, price, None)
+            .unwrap(),
+        Money::from(maintenance)
+    );
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+#[tokio::test]
+async fn test_client_connect_wires_python_margin_model(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    Python::initialize();
+
+    let (model, obj) = Python::attach(|py| {
+        let locals = PyDict::new(py);
+        locals
+            .set_item("initial", Money::from("123.45 USDT"))
+            .unwrap();
+        locals
+            .set_item("maintenance", Money::from("67.89 USDT"))
+            .unwrap();
+        py.run(
+            c_str!(
+                "class Margin:
+    def __init__(self):
+        self.calls = []
+    def calculate_initial_margin(self, *args):
+        self.calls.append(('initial', args))
+        return initial
+    def calculate_maintenance_margin(self, *args):
+        self.calls.append(('maintenance', args))
+        return maintenance
+model = Margin()
+"
+            ),
+            Some(&locals),
+            None,
+        )
+        .unwrap();
+        let obj = locals.get_item("model").unwrap().unwrap();
+        let model =
+            nautilus_model::python::account::margin_model::pyobject_to_margin_model_any(&obj)
+                .unwrap();
+        (model, obj.unbind())
+    });
+
+    let context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.margin_model = Some(model.clone());
+        config.default_leverage = Decimal::from(3);
+        config
+            .leverages
+            .insert(instrument.id(), Decimal::new(725, 2));
+    });
+
+    setup_account_state_handler(context.cache.clone());
+    let mut client = context.client;
+    client.connect().await.unwrap();
+    let account = context.cache.borrow().account(&account_id).unwrap().clone();
+
+    let AccountAny::Margin(account) = account else {
+        panic!("expected margin account")
+    };
+
+    let quantity = Quantity::from("2.345");
+    let price = Price::from("1234.56");
+    let initial = account
+        .calculate_initial_margin(&instrument, quantity, price, Some(true))
+        .unwrap();
+    let maintenance = account
+        .calculate_maintenance_margin(&instrument, quantity, price, Some(false))
+        .unwrap();
+
+    assert_eq!(initial, Money::from("123.45 USDT"));
+    assert_eq!(maintenance, Money::from("67.89 USDT"));
+    Python::attach(|py| {
+        let retained =
+            nautilus_model::python::account::margin_model::margin_model_any_to_pyobject(py, &model)
+                .unwrap();
+        assert!(retained.bind(py).is(obj.bind(py)));
+        let calls = obj.bind(py).getattr("calls").unwrap();
+        assert_eq!(calls.len().unwrap(), 2);
+
+        for (index, (method, use_quote)) in [("initial", true), ("maintenance", false)]
+            .iter()
+            .enumerate()
+        {
+            let call = calls.get_item(index).unwrap();
+            assert_eq!(
+                call.get_item(0).unwrap().extract::<String>().unwrap(),
+                *method
+            );
+            let args = call.get_item(1).unwrap();
+            let passed = args
+                .get_item(0)
+                .unwrap()
+                .extract::<CryptoPerpetual>()
+                .unwrap();
+            assert_eq!(passed.id(), instrument.id());
+            assert_eq!(
+                args.get_item(1).unwrap().extract::<Quantity>().unwrap(),
+                quantity
+            );
+            assert_eq!(args.get_item(2).unwrap().extract::<Price>().unwrap(), price);
+            assert_eq!(
+                args.get_item(3).unwrap().extract::<Decimal>().unwrap(),
+                Decimal::new(725, 2)
+            );
+            assert_eq!(
+                args.get_item(4).unwrap().extract::<bool>().unwrap(),
+                *use_quote
+            );
+        }
+    });
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_client_connect_respects_frozen_account_config(
     trader_id: TraderId,
@@ -4087,8 +4259,9 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
             default_leverage: Decimal::ONE,
             leverages: ahash::AHashMap::new(),
             book_type: BookType::L1_MBP,
-            fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
             fill_model: None,
+            fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
+            margin_model: None,
             latency_model: None,
             frozen_account: false,
             bar_execution: false,
@@ -5359,8 +5532,9 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         default_leverage: Decimal::ONE,
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
-        fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
         fill_model: None,
+        fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
+        margin_model: None,
         latency_model,
         frozen_account: false,
         bar_execution: false,

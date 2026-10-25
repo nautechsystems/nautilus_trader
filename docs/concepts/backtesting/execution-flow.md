@@ -133,11 +133,11 @@ from nautilus_trader.model import Venue
 config = SandboxExecutionClientConfig(
     venue=Venue("BINANCE"),
     starting_balances=[Money.from_str("10_000 USDT")],
-    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     fee_model=MakerTakerFeeModel(
         maker_rate=Decimal("0.001"),
         taker_rate=Decimal("0.001"),
     ),
+    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
 )
 ```
 

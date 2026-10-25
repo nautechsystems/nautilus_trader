@@ -160,8 +160,8 @@ def latency_engine() -> Iterator[tuple[BacktestEngine, LatencyProbe, ReplayLaten
         account_type=AccountType.MARGIN,
         starting_balances=[Money.from_str("1_000_000 USD")],
         base_currency=Currency.from_str("USD"),
-        latency_model=model,
         fee_model=MakerTakerFeeModel(maker_rate=Decimal(0), taker_rate=Decimal(0)),
+        latency_model=model,
     )
     engine.add_instrument(instrument)
     probe = LatencyProbe(instrument.id)

@@ -133,6 +133,8 @@ impl MarginModel for MarginModelHandle {
 pub enum MarginModelAny {
     Standard(StandardMarginModel),
     Leveraged(LeveragedMarginModel),
+    #[cfg(feature = "python")]
+    Python(crate::python::account::margin_model::PythonMarginModel),
 }
 
 impl MarginModel for MarginModelAny {
@@ -140,6 +142,8 @@ impl MarginModel for MarginModelAny {
         match self {
             Self::Standard(model) => model.name(),
             Self::Leveraged(model) => model.name(),
+            #[cfg(feature = "python")]
+            Self::Python(model) => model.name(),
         }
     }
 
@@ -166,6 +170,14 @@ impl MarginModel for MarginModelAny {
                 leverage,
                 use_quote_for_inverse,
             ),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.calculate_initial_margin(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                use_quote_for_inverse,
+            ),
         }
     }
 
@@ -186,6 +198,14 @@ impl MarginModel for MarginModelAny {
                 use_quote_for_inverse,
             ),
             Self::Leveraged(m) => m.calculate_maintenance_margin(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                use_quote_for_inverse,
+            ),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.calculate_maintenance_margin(
                 instrument,
                 quantity,
                 price,

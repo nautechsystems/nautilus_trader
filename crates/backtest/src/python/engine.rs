@@ -38,7 +38,6 @@ use nautilus_execution::python::{
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
-    accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
     data::{
         Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
@@ -46,7 +45,10 @@ use nautilus_model::{
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{AccountId, ActorId, ClientId, ExecAlgorithmId, InstrumentId, TraderId, Venue},
-    python::instruments::pyobject_to_instrument_any,
+    python::{
+        account::margin_model::pyobject_to_margin_model_any,
+        instruments::pyobject_to_instrument_any,
+    },
     types::{Currency, Money},
 };
 use nautilus_portfolio::python::PyPortfolio;
@@ -139,9 +141,9 @@ impl PyBacktestEngine {
             base_currency = None,
             default_leverage = None,
             leverages = None,
-            margin_model = None,
             fill_model = None,
             fee_model = None,
+            margin_model = None,
             latency_model = None,
             modules = None,
             book_type = BookType::L1_MBP,
@@ -182,9 +184,9 @@ impl PyBacktestEngine {
         base_currency: Option<Currency>,
         default_leverage: Option<Decimal>,
         leverages: Option<HashMap<InstrumentId, Decimal>>,
-        margin_model: Option<Py<PyAny>>,
         fill_model: Option<Py<PyAny>>,
         fee_model: Option<Py<PyAny>>,
+        margin_model: Option<Py<PyAny>>,
         latency_model: Option<Py<PyAny>>,
         modules: Option<Vec<Py<PyAny>>>,
         book_type: BookType,
@@ -213,14 +215,11 @@ impl PyBacktestEngine {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
             .map(|m| m.into_iter().collect())
             .unwrap_or_default();
-        let margin_model = margin_model
-            .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(py, obj.bind(py))))
-            .transpose()?
-            .map(Into::into);
         let fill_model = fill_model
             .map(|obj| Python::attach(|py| pyobject_to_fill_model_handle(obj.bind(py))))
             .transpose()?
             .unwrap_or_default();
+
         let fee_model = fee_model
             .map(|obj| Python::attach(|py| pyobject_to_fee_model_handle(obj.bind(py))))
             .transpose()?
@@ -230,10 +229,16 @@ impl PyBacktestEngine {
                 )
             })?;
 
+        let margin_model = margin_model
+            .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(obj.bind(py))))
+            .transpose()?
+            .map(Into::into);
+
         let latency_model = latency_model
             .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?
             .map(Into::into);
+
         let modules = modules
             .map(|objs| {
                 objs.into_iter()
@@ -254,11 +259,11 @@ impl PyBacktestEngine {
             .maybe_base_currency(base_currency)
             .maybe_default_leverage(default_leverage)
             .leverages(leverages)
-            .maybe_margin_model(margin_model)
-            .modules(modules)
             .fill_model(fill_model)
             .fee_model(fee_model)
+            .maybe_margin_model(margin_model)
             .maybe_latency_model(latency_model)
+            .modules(modules)
             .routing(routing)
             .reject_stop_orders(reject_stop_orders)
             .support_gtd_orders(support_gtd_orders)
@@ -1574,24 +1579,6 @@ mod tests {
     }
 }
 
-pub(crate) fn pyobject_to_margin_model_any(
-    _py: Python,
-    obj: &Bound<'_, PyAny>,
-) -> PyResult<MarginModelAny> {
-    if let Ok(m) = obj.extract::<StandardMarginModel>() {
-        return Ok(MarginModelAny::Standard(m));
-    }
-
-    if let Ok(m) = obj.extract::<LeveragedMarginModel>() {
-        return Ok(MarginModelAny::Leveraged(m));
-    }
-
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to MarginModel"
-    )))
-}
-
 fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     if let Ok(delta) = obj.extract::<OrderBookDelta>() {
         return Ok(Data::BookDelta(delta));
@@ -1658,10 +1645,15 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 mod model_tests {
     use nautilus_execution::python::{fee::PyFeeModel, fill::PyFillModel};
     use nautilus_model::{
-        data::{Data, stubs::stub_custom_data},
+        accounts::AccountAny,
+        data::{
+            Data,
+            stubs::{quote_audusd, stub_custom_data},
+        },
         enums::{AccountType, BookType, OmsType, OtoTriggerMode},
         identifiers::Venue,
-        types::{Currency, Money},
+        instruments::{InstrumentAny, stubs::audusd_sim},
+        types::{Currency, Money, Price, Quantity},
     };
     use pyo3::{
         IntoPyObjectExt, Python,
@@ -1723,7 +1715,7 @@ mod model_tests {
     }
 
     #[rstest]
-    fn test_add_venue_accepts_python_defined_fee_and_fill_models() {
+    fn test_add_venue_accepts_python_defined_fee_fill_and_margin_models() {
         Python::initialize();
 
         let mut engine =
@@ -1765,6 +1757,14 @@ mod model_tests {
                 .setattr("commission", Money::from("0 USD").into_py_any(py).unwrap())
                 .unwrap();
 
+            locals
+                .set_item("initial", Money::from("123.45 USD"))
+                .unwrap();
+            locals
+                .set_item("maintenance", Money::from("67.89 USD"))
+                .unwrap();
+            let margin_model = py.eval(c_str!("type('Margin', (), {'calculate_initial_margin': lambda self, *args: initial, 'calculate_maintenance_margin': lambda self, *args: maintenance})()"), Some(&locals), None).unwrap();
+
             engine
                 .py_add_venue(
                     Venue::from("SIM"),
@@ -1774,9 +1774,9 @@ mod model_tests {
                     None::<Currency>,
                     None,
                     None,
-                    None,
                     Some(fill_model.unbind()),
                     Some(fee_model.unbind()),
+                    Some(margin_model.unbind()),
                     None,
                     None,
                     BookType::L1_MBP,
@@ -1804,6 +1804,40 @@ mod model_tests {
                 )
                 .unwrap();
 
+            let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+            engine.0.add_instrument(&instrument).unwrap();
+            engine
+                .0
+                .add_data(vec![Data::Quote(quote_audusd())], None, true, true)
+                .unwrap();
+            engine.py_run(None, None, None, false).unwrap();
+            let account = engine
+                .0
+                .kernel()
+                .cache
+                .borrow()
+                .account_for_venue(&Venue::from("SIM"))
+                .unwrap()
+                .clone();
+
+            let AccountAny::Margin(account) = account else {
+                panic!("expected margin account")
+            };
+
+            let quantity = Quantity::from(10000);
+            let price = Price::from("0.81234");
+            assert_eq!(
+                account
+                    .calculate_initial_margin(&instrument, quantity, price, None)
+                    .unwrap(),
+                Money::from("123.45 USD")
+            );
+            assert_eq!(
+                account
+                    .calculate_maintenance_margin(&instrument, quantity, price, None)
+                    .unwrap(),
+                Money::from("67.89 USD")
+            );
             assert_eq!(engine.0.list_venues(), vec![Venue::from("SIM")]);
         });
     }

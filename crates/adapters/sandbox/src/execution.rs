@@ -439,6 +439,10 @@ impl SandboxExecutionClient {
         account.set_calculate_account_state(!self.config.frozen_account);
 
         if let AccountAny::Margin(margin_account) = &mut account {
+            if let Some(model) = &self.config.margin_model {
+                margin_account.set_margin_model(model.clone().into());
+            }
+
             margin_account.set_default_leverage(self.config.default_leverage);
             for (instrument_id, leverage) in &self.config.leverages {
                 margin_account.set_leverage(*instrument_id, *leverage);

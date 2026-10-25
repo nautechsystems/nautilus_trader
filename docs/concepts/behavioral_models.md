@@ -18,8 +18,8 @@ support it. Here, pluggable means that users replace behavior through these inte
 | ------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Fill    | Simulated limit-fill eligibility, slippage, and optional synthetic liquidity.        | `DefaultFillModel`, `BestPriceFillModel`, `TwoTierFillModel`. |
 | Fee     | Commission calculated from an order, fill, instrument, and optional pricing context. | `MakerTakerFeeModel`, `FixedFeeModel`, `PerContractFeeModel`. |
-| Latency | Simulated delays for order submission, modification, and cancellation.               | `StaticLatencyModel`.                                         |
 | Margin  | Initial order margin and maintenance position margin.                                | `StandardMarginModel`, `LeveragedMarginModel`.                |
+| Latency | Simulated delays for order submission, modification, and cancellation.               | `StaticLatencyModel`.                                         |
 
 Fill models range from using the recorded book to supplying synthetic liquidity with tiered,
 partial-fill, size-aware, competition-aware, volume-sensitive, or market-hours behavior. See
@@ -29,9 +29,9 @@ on fill simulation.
 Fee models also include `ProbabilityPriceFeeModel`, `CappedOptionFeeModel`, and `TieredNotionalOptionFeeModel`
 for probability-priced instruments and option fee schedules.
 
-`StaticLatencyModel` adds a base delay to separately configured insert, update, and cancel delays. The [margin
-models](backtesting/accounts-and-margin.md#margin-models) select whether instrument margin requirements are
-reduced by account leverage.
+The [margin models](backtesting/accounts-and-margin.md#margin-models) select whether instrument margin
+requirements are reduced by account leverage. `StaticLatencyModel` adds a base delay to separately configured
+insert, update, and cancel delays.
 
 Fill and latency models control simulated execution. They do not determine whether or when a live venue fills
 an order. Model behavior applies at the engine or account boundary that consumes it. Changing a model does not
@@ -40,26 +40,24 @@ replace order-state validation, execution routing, or the rest of the runtime.
 ## Simulation modules
 
 [Simulation modules](backtesting/simulation-modules.md) provide a related extension point for
-behavior across the simulated exchange lifecycle. Instead of answering a fill, fee, latency, or
-margin calculation, a module processes exchange state and returns account adjustments. Built-in
+behavior across the simulated exchange lifecycle. Instead of answering a fill, fee, margin, or
+latency calculation, a module processes exchange state and returns account adjustments. Built-in
 FX rollover and CFD swap modules use this interface. Custom modules can extend simulation behavior
 through the same lifecycle and acknowledgement contract.
 
 ## Supplying implementations
 
 Rust callers can implement the model family's trait and pass the implementation through its runtime
-handle. Python support depends on both the family and the configuration API. A `-` means the API has
-no model setting:
+handle. Python callers can supply built-in or custom models through these APIs. Model parameters follow
+the order `fill_model`, `fee_model`, `margin_model`, and `latency_model`. When available, `modules` follows
+the model group. Use keyword arguments to keep calls independent of parameter order.
 
-| Family  | `BacktestVenueConfig`                            | `BacktestEngine.add_venue()`                     | `SandboxExecutionClientConfig`           |
-| ------- | ------------------------------------------------ | ------------------------------------------------ | ---------------------------------------- |
-| Fill    | Built-in models or custom Python models.         | Built-in models or custom Python models.         | Built-in models or custom Python models. |
-| Fee     | Built-in models or custom Python models.         | Built-in models or custom Python models.         | Built-in models or custom Python models. |
-| Latency | Built-in models or custom Python models.         | Built-in models or custom Python models.         | Built-in models or custom Python models. |
-| Margin  | `StandardMarginModel` or `LeveragedMarginModel`. | `StandardMarginModel` or `LeveragedMarginModel`. | -                                        |
-
-Python callers cannot supply custom margin models.
-See [Python model selection](accounting.md#python-model-selection).
+| Family  | `BacktestVenueConfig`                    | `BacktestEngine.add_venue()`             | `SandboxExecutionClientConfig`           |
+| ------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| Fill    | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
+| Fee     | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
+| Margin  | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
+| Latency | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
 
 Configuration copies share the supplied custom Python model instance. Its random generator, replay state,
 and other state persist across runs and `engine.reset()`. For an independent run, reset that state yourself
@@ -82,6 +80,11 @@ When the calculation needs the underlying price, implement `get_commission_with_
 It receives the same arguments and an additional `underlying_px`. The engine supplies an underlying price
 only for `CryptoOption` and `OptionContract` instruments when one is available; otherwise, it passes `None`.
 Without an override, the engine calls `get_commission`.
+
+### Custom Python margin models
+
+Pass a subclass of `nautilus_trader.model.MarginModel` or a compatible Python object as `margin_model`
+to these APIs. See [Python model selection](accounting.md#python-model-selection) for the callback contract.
 
 ### Custom Python latency models
 

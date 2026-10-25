@@ -52,13 +52,6 @@ if __name__ == "__main__":
         random_seed=42,
     )
 
-    latency_model = StaticLatencyModel(
-        base_latency_nanos=5_000_000,
-        insert_latency_nanos=2_000_000,
-        update_latency_nanos=3_000_000,
-        cancel_latency_nanos=1_000_000,
-    )
-
     maker_taker_fee_model = MakerTakerFeeModel(
         maker_rate=Decimal("0.0001"),
         taker_rate=Decimal("0.0002"),
@@ -75,6 +68,13 @@ if __name__ == "__main__":
         charge_commission_once=False,
     )
 
+    latency_model = StaticLatencyModel(
+        base_latency_nanos=5_000_000,
+        insert_latency_nanos=2_000_000,
+        update_latency_nanos=3_000_000,
+        cancel_latency_nanos=1_000_000,
+    )
+
     # Create venue configs with different models
     venue_config1 = BacktestVenueConfig(
         name="NASDAQ",
@@ -83,8 +83,8 @@ if __name__ == "__main__":
         starting_balances=["1000000 USD"],
         book_type=BookType.L1_MBP,
         fill_model=fill_model,
-        latency_model=latency_model,
         fee_model=maker_taker_fee_model,
+        latency_model=latency_model,
     )
 
     venue_config2 = BacktestVenueConfig(
@@ -94,8 +94,8 @@ if __name__ == "__main__":
         starting_balances=["1000000 USD"],
         book_type=BookType.L1_MBP,
         fill_model=fill_model,
-        latency_model=latency_model,
         fee_model=fixed_fee_model,
+        latency_model=latency_model,
     )
 
     venue_config3 = BacktestVenueConfig(
@@ -105,8 +105,8 @@ if __name__ == "__main__":
         starting_balances=["1000000 USD"],
         book_type=BookType.L1_MBP,
         fill_model=fill_model,
-        latency_model=latency_model,
         fee_model=per_contract_fee_model,
+        latency_model=latency_model,
     )
 
     # Create venue config with custom fixed fee model
@@ -117,8 +117,8 @@ if __name__ == "__main__":
         starting_balances=["1000000 USD"],
         book_type=BookType.L1_MBP,
         fill_model=fill_model,
-        latency_model=latency_model,
         fee_model=recurring_fixed_fee_model,
+        latency_model=latency_model,
     )
 
     # Create data config (this is just a placeholder - you would need actual data)

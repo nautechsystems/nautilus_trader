@@ -106,11 +106,11 @@ def test_node_installs_configured_margin_model() -> None:
         starting_balances=["1_000_000 USD"],
         base_currency=Currency.from_str("USD"),
         default_leverage=Decimal(10),
-        margin_model=StandardMarginModel(),
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        margin_model=StandardMarginModel(),
     )
     config = BacktestRunConfig(
         venues=[venue],
@@ -184,11 +184,11 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USDT"],
-        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,

@@ -40,7 +40,7 @@ pub mod tokenized_asset;
 #[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
-use std::{fmt::Display, str::FromStr};
+use std::{any::Any, fmt::Display, str::FromStr};
 
 use enum_dispatch::enum_dispatch;
 use nautilus_core::{
@@ -247,7 +247,7 @@ fn is_usd_equivalent_currency(currency: Currency) -> bool {
 }
 
 #[enum_dispatch]
-pub trait Instrument: 'static + Send {
+pub trait Instrument: Any + Send {
     fn tick_scheme(&self) -> Option<Ustr> {
         None
     }

@@ -144,11 +144,11 @@ def test_add_venue_runs_python_simulation_module_with_read_only_context() -> Non
         account_type=AccountType.MARGIN,
         starting_balances=[Money.from_str("1_000 USD")],
         base_currency=USD,
-        modules=[module],
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        modules=[module],
     )
 
     engine.run()
@@ -180,11 +180,11 @@ def test_python_simulation_module_exception_propagates_from_run() -> None:
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         starting_balances=[Money.from_str("1_000 USD")],
-        modules=[FailingSimulationModule()],
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        modules=[FailingSimulationModule()],
     )
 
     with pytest.raises(
@@ -245,11 +245,11 @@ def test_add_venue_installs_margin_model(
         starting_balances=[Money(1_000_000.0, USD)],
         base_currency=USD,
         default_leverage=Decimal(10),
-        margin_model=margin_model,
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        margin_model=margin_model,
     )
     engine.run()
     account = engine.cache.account_for_venue(venue)
@@ -278,11 +278,11 @@ def test_add_venue_applies_static_latency_model() -> None:
         account_type=AccountType.MARGIN,
         starting_balances=[Money(1_000_000.0, USD)],
         base_currency=USD,
-        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     )
     engine.add_instrument(instrument)
     engine.add_strategy(
@@ -404,11 +404,11 @@ def test_native_grid_market_maker_requotes_from_python_surface() -> None:
         starting_balances=[Money(1_000_000.0, USDT)],
         base_currency=USDT,
         fill_model=BestPriceFillModel(prob_fill_on_limit=1.0, prob_slippage=0.0),
-        latency_model=StaticLatencyModel(base_latency_nanos=1_000),
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        latency_model=StaticLatencyModel(base_latency_nanos=1_000),
     )
     engine.add_instrument(instrument)
     engine.add_builtin_strategy(

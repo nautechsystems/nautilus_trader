@@ -334,15 +334,15 @@ class BacktestVenueConfig:
     @property
     def leverages(self) -> dict[model.InstrumentId, decimal.Decimal] | None: ...
     @property
-    def margin_model(self) -> typing.Any | None: ...
-    @property
-    def modules(self) -> list[typing.Any]: ...
-    @property
     def fill_model(self) -> typing.Any | None: ...
+    @property
+    def fee_model(self) -> typing.Any | None: ...
+    @property
+    def margin_model(self) -> typing.Any | None: ...
     @property
     def latency_model(self) -> typing.Any | None: ...
     @property
-    def fee_model(self) -> typing.Any | None: ...
+    def modules(self) -> list[typing.Any]: ...
     @property
     def price_protection_points(self) -> int: ...
     @property
@@ -377,11 +377,11 @@ class BacktestVenueConfig:
         base_currency: model.Currency | None = None,
         default_leverage: decimal.Decimal | None = None,
         leverages: typing.Mapping[model.InstrumentId, decimal.Decimal] | None = None,
-        margin_model: typing.Any | None = None,
-        modules: typing.Sequence[typing.Any] | None = None,
         fill_model: typing.Any | None = None,
-        latency_model: typing.Any | None = None,
         fee_model: typing.Any | None = None,
+        margin_model: typing.Any | None = None,
+        latency_model: typing.Any | None = None,
+        modules: typing.Sequence[typing.Any] | None = None,
         price_protection_points: int | None = None,
         liquidation_enabled: bool | None = None,
         liquidation_trigger_ratio: float | None = None,
@@ -463,9 +463,9 @@ class BacktestEngine:
         base_currency: model.Currency | None = None,
         default_leverage: decimal.Decimal | None = None,
         leverages: typing.Mapping[model.InstrumentId, decimal.Decimal] | None = None,
-        margin_model: typing.Any | None = None,
         fill_model: typing.Any | None = None,
         fee_model: typing.Any | None = None,
+        margin_model: typing.Any | None = None,
         latency_model: typing.Any | None = None,
         modules: typing.Sequence[typing.Any] | None = None,
         book_type: model.BookType = model.BookType.L1_MBP,

@@ -2923,6 +2923,25 @@ class MarginBalance:
     def from_dict(values: dict) -> MarginBalance: ...
     def to_dict(self) -> typing.Any: ...
 
+class MarginModel:
+    def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> typing.Self: ...
+    def calculate_initial_margin(
+        self,
+        instrument: typing.Any,
+        quantity: Quantity,
+        price: Price,
+        leverage: decimal.Decimal,
+        use_quote_for_inverse: bool | None = None,
+    ) -> Money: ...
+    def calculate_maintenance_margin(
+        self,
+        instrument: typing.Any,
+        quantity: Quantity,
+        price: Price,
+        leverage: decimal.Decimal,
+        use_quote_for_inverse: bool | None = None,
+    ) -> Money: ...
+
 @typing.final
 class MarkPriceUpdate:
     def __init__(

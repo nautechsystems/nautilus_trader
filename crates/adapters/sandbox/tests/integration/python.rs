@@ -182,11 +182,8 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
     });
 }
 
-/// `latency_model` must sit at the end of the positional signature: inserting it between
-/// `fill_model` and `queue_position` shifts six existing positional parameters, silently
-/// rebinding every caller that passed them positionally.
 #[rstest]
-fn test_sandbox_config_positional_signature_is_backward_compatible() {
+fn test_sandbox_config_positional_signature_binds_queue_position() {
     setup_exec_event_sender();
     Python::initialize();
 
@@ -203,6 +200,10 @@ fn test_sandbox_config_positional_signature_is_backward_compatible() {
             py.None(),                                    // account_type
             py.None(),                                    // default_leverage
             py.None(),                                    // book_type
+            py.None(),                                    // fill_model
+            py.None(),                                    // fee_model
+            py.None(),                                    // margin_model
+            py.None(),                                    // latency_model
             false.into_py_any(py).unwrap(),               // frozen_account
             true.into_py_any(py).unwrap(),                // bar_execution
             true.into_py_any(py).unwrap(),                // trade_execution
@@ -212,8 +213,6 @@ fn test_sandbox_config_positional_signature_is_backward_compatible() {
             true.into_py_any(py).unwrap(),                // use_position_ids
             false.into_py_any(py).unwrap(),               // use_random_ids
             true.into_py_any(py).unwrap(),                // use_reduce_only
-            py.None(),                                    // fee_model
-            py.None(),                                    // fill_model
             true.into_py_any(py).unwrap(),                // queue_position
         ];
 
@@ -228,11 +227,14 @@ fn test_sandbox_config_positional_signature_is_backward_compatible() {
                 .unwrap()
                 .extract::<bool>()
                 .unwrap(),
-            "the twentieth positional argument must still bind to queue_position",
+            "the twenty-second positional argument must bind to queue_position",
         );
-        assert!(
-            config.getattr("latency_model").unwrap().is_none(),
-            "latency_model must default to None when not passed",
-        );
+
+        for model in ["fill_model", "fee_model", "margin_model", "latency_model"] {
+            assert!(
+                config.getattr(model).unwrap().is_none(),
+                "{model} must remain None",
+            );
+        }
     });
 }

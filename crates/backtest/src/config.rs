@@ -283,11 +283,6 @@ pub struct SimulatedVenueConfig {
     /// The leverage overrides for individual instruments.
     #[builder(default)]
     pub leverages: AHashMap<InstrumentId, Decimal>,
-    /// The model used to calculate margin requirements.
-    pub margin_model: Option<MarginModelHandle>,
-    /// The simulation modules run by the exchange.
-    #[builder(default)]
-    pub modules: Vec<SimulationModuleHandle>,
     /// The model used to simulate order fills.
     #[builder(default)]
     pub fill_model: FillModelHandle,
@@ -297,8 +292,13 @@ pub struct SimulatedVenueConfig {
     /// Missing configuration must not silently turn a fee-paying replay into
     /// a zero-fee replay.
     pub fee_model: FeeModelHandle,
+    /// The model used to calculate margin requirements.
+    pub margin_model: Option<MarginModelHandle>,
     /// The optional model used to simulate command latency.
     pub latency_model: Option<LatencyModelHandle>,
+    /// The simulation modules run by the exchange.
+    #[builder(default)]
+    pub modules: Vec<SimulationModuleHandle>,
     /// If the execution client supports routing orders to other venues.
     #[builder(default = false)]
     pub routing: bool,
@@ -519,20 +519,20 @@ pub struct BacktestVenueConfig {
     default_leverage: Option<Decimal>,
     /// The instrument specific leverage configuration (for margin accounts).
     leverages: Option<AHashMap<InstrumentId, Decimal>>,
-    /// The margin model for the venue.
-    margin_model: Option<MarginModelAny>,
-    /// The simulation modules for the venue.
-    #[builder(default)]
-    modules: Vec<SimulationModuleAny>,
     /// The fill model for the venue.
     fill_model: Option<FillModelAny>,
-    /// The latency model for the venue.
-    latency_model: Option<LatencyModelAny>,
     /// The fee model for the venue.
     ///
     /// Required when building engines from this config, including an explicit
     /// zero-fee model; node build fails without one.
     fee_model: Option<FeeModelAny>,
+    /// The margin model for the venue.
+    margin_model: Option<MarginModelAny>,
+    /// The latency model for the venue.
+    latency_model: Option<LatencyModelAny>,
+    /// The simulation modules for the venue.
+    #[builder(default)]
+    modules: Vec<SimulationModuleAny>,
     /// Defines an exchange-calculated price boundary to prevent a market order from being
     /// filled at an extremely aggressive price.
     #[builder(default)]
@@ -746,18 +746,18 @@ impl BacktestVenueConfig {
     }
 
     #[must_use]
-    pub fn margin_model(&self) -> Option<&MarginModelAny> {
-        self.margin_model.as_ref()
-    }
-
-    #[must_use]
-    pub fn modules(&self) -> &[SimulationModuleAny] {
-        &self.modules
-    }
-
-    #[must_use]
     pub fn fill_model(&self) -> Option<&FillModelAny> {
         self.fill_model.as_ref()
+    }
+
+    #[must_use]
+    pub fn fee_model(&self) -> Option<&FeeModelAny> {
+        self.fee_model.as_ref()
+    }
+
+    #[must_use]
+    pub fn margin_model(&self) -> Option<&MarginModelAny> {
+        self.margin_model.as_ref()
     }
 
     #[must_use]
@@ -766,8 +766,8 @@ impl BacktestVenueConfig {
     }
 
     #[must_use]
-    pub fn fee_model(&self) -> Option<&FeeModelAny> {
-        self.fee_model.as_ref()
+    pub fn modules(&self) -> &[SimulationModuleAny] {
+        &self.modules
     }
 
     #[must_use]

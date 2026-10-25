@@ -750,11 +750,12 @@ becomes `delay_post_stop`.
 
 ### Backtest models and settlement
 
-Replace v1 import-path wrappers for Python/Cython fill, fee, latency, margin, and simulation modules, including
+Replace v1 import-path wrappers for Python/Cython fill, fee, margin, latency, and simulation modules, including
 `Importable*ModelConfig`, `MarginModelConfig`, their factories, and `SimulationModuleConfig`. Construct
 models/modules directly and pass them to the backtest venue: `ProbabilisticFillModel`, `FixedFeeModel`,
-`StaticLatencyModel`, `StandardMarginModel`, `LeveragedMarginModel`, or `FXRolloverInterestModule`. Native
-Rust models compose at compile time; v1 provided no runtime native model plugins.
+`StandardMarginModel`, `LeveragedMarginModel`, `StaticLatencyModel`, or `FXRolloverInterestModule`. Native
+Rust models compose at compile time; v1 provided no runtime native model plugins. Custom Python model
+subclasses are also accepted; see [behavioral models](docs/concepts/behavioral_models.md#supplying-implementations).
 
 - Backtest venues no longer accept `settlement_prices`. Add `InstrumentClose` data with
   `close_type=InstrumentCloseType.CONTRACT_EXPIRED`; its exact `close_price` settles futures, binary

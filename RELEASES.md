@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
 - Added Python-subclassable latency models with command and clock time context
 - Added custom Python fill models in backtest venue and sandbox configuration
+- Added custom Python margin models in backtest venue and sandbox configuration
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
@@ -58,6 +59,11 @@ Released on TBD (UTC).
 - Changed direct `OrderMatchingEngine` use: share `MatchingOrders` and drain commands for cross-instrument OTO orders
 - Changed `OrderMatchingEngine` expiration to wait for queued fills; retry `process_instrument_expiration` afterward
 - Changed `LatencyModel` operation methods; accept `(command, ts_now)` and return `Result` in custom models
+- Changed Python `BacktestVenueConfig` model and module argument order; pass them by keyword
+- Changed Python `BacktestEngine.add_venue()` model argument order; pass models by keyword
+- Changed Python `SandboxExecutionClientConfig` argument order; pass models and matching options by keyword
+- Changed `MarginModelAny` with the `python` feature enabled; add the `Python` variant to exhaustive matches
+- Changed `SandboxExecutionClientConfig` literals; add `margin_model: None` or use the builder
 - Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
 - Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
