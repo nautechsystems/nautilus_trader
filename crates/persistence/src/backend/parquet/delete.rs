@@ -15,29 +15,25 @@
 
 //! Range-based deletion and split operations for the parquet catalog.
 
-#![expect(
-    clippy::missing_errors_doc,
-    reason = "delete operations forward catalog/storage errors and operate on validated batches"
-)]
-
 use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashSet;
 use arrow::{
     array::{ArrayRef, StringArray},
     compute::cast,
-    datatypes::DataType,
+    datatypes::DataType as ArrowDataType,
     record_batch::RecordBatch,
     row::{RowConverter, SortField},
 };
 use nautilus_core::{UnixNanos, string::conversions::to_snake_case};
 use nautilus_model::data::{
-    Bar, CustomData, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus,
-    MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta, OrderBookDepth, QuoteTick,
-    TradeTick, close::InstrumentClose,
+    Bar, CustomData, Data, DataType, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
+    InstrumentStatus, MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta,
+    OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
 };
 use nautilus_serialization::arrow::{
-    DecodeTypedFromRecordBatch, EncodeToRecordBatch, is_json_string_field,
+    DecodeTypedFromRecordBatch, EncodeToRecordBatch, KEY_BAR_TYPE, KEY_INSTRUMENT_ID,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, KEY_TYPE_NAME, is_json_string_field,
 };
 
 use crate::{
@@ -187,6 +183,7 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - `start` exceeds `end` and the directory holds data to delete.
     /// - The directory path cannot be constructed.
     /// - File operations fail.
     /// - Data querying or writing fails.
@@ -302,6 +299,12 @@ impl ParquetDataCatalog {
     /// # Returns
     ///
     /// Returns `Ok(())` on success, or an error if deletion fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `start` exceeds `end` and the directory holds data to delete.
+    /// - Data querying, encoding, or file operations fail.
     pub fn delete_data_range_generic<T>(
         &mut self,
         identifier: Option<&str>,
@@ -324,7 +327,7 @@ impl ParquetDataCatalog {
             return Ok(());
         }
 
-        let operations_to_execute = operations_for_files(&files, start, end);
+        let operations_to_execute = operations_for_files(&files, start, end)?;
 
         if operations_to_execute.is_empty() {
             return Ok(()); // No operations to execute
@@ -346,13 +349,13 @@ impl ParquetDataCatalog {
                 continue;
             }
 
+            Self::check_chunk_identity(&rows, &type_name)?;
             if file_paths.contains(target.0.as_str()) {
                 let batches = self.data_to_record_batches(&rows)?;
                 self.ensure_split_target_holds_rows(&target.0, &batches)?;
                 continue;
             }
 
-            Self::check_chunk_identity(&rows, &type_name)?;
             writes.push((target, sources));
         }
 
@@ -405,7 +408,7 @@ impl ParquetDataCatalog {
             return Ok(());
         }
 
-        let operations_to_execute = operations_for_files(&files, start, end);
+        let operations_to_execute = operations_for_files(&files, start, end)?;
 
         if operations_to_execute.is_empty() {
             return Ok(()); // No operations to execute
@@ -529,17 +532,40 @@ impl ParquetDataCatalog {
         target: &str,
         rows: &[RecordBatch],
     ) -> anyhow::Result<()> {
-        let object_path = self.to_object_path_parsed(target)?;
-        let (existing, _) = self.execute_async(|| async {
-            read_parquet_from_object_store(self.object_store.clone(), &object_path).await
-        })?;
-
         anyhow::ensure!(
-            batches_hold_rows(&existing, rows)?,
+            self.target_holds_rows(target, rows)?,
             "Cannot preserve the rows outside the deleted range: their target file {target} \
              already exists without them"
         );
         Ok(())
+    }
+
+    pub(crate) fn target_holds_rows(
+        &self,
+        target: &str,
+        rows: &[RecordBatch],
+    ) -> anyhow::Result<bool> {
+        let object_path = self.to_object_path_parsed(target)?;
+
+        let (existing, schema) = self.execute_async(|| async {
+            read_parquet_from_object_store(self.object_store.clone(), &object_path).await
+        })?;
+
+        for batch in rows {
+            for key in [
+                KEY_INSTRUMENT_ID,
+                KEY_BAR_TYPE,
+                KEY_PRICE_PRECISION,
+                KEY_SIZE_PRECISION,
+                KEY_TYPE_NAME,
+            ] {
+                if schema.metadata().get(key) != batch.schema().metadata().get(key) {
+                    return Ok(false);
+                }
+            }
+        }
+
+        batches_hold_rows(&existing, rows)
     }
 
     fn files_for_delete(
@@ -587,6 +613,10 @@ impl ParquetDataCatalog {
     ///
     /// Plans from the supplied intervals. It does not look up stored filenames, so a
     /// replay-identity suffix is not included. Catalog deletion resolves stored paths itself.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `start` exceeds `end` or the directory path cannot be constructed.
     pub fn prepare_delete_operations(
         &self,
         type_name: &str,
@@ -609,7 +639,7 @@ impl ParquetDataCatalog {
             })
             .collect::<Vec<_>>();
 
-        Ok(operations_for_files(&files, start, end))
+        operations_for_files(&files, start, end)
     }
 }
 
@@ -617,7 +647,11 @@ fn operations_for_files(
     files: &[(String, u64, u64)],
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
-) -> Vec<DeleteOperation> {
+) -> anyhow::Result<Vec<DeleteOperation>> {
+    if let (Some(start), Some(end)) = (start, end) {
+        anyhow::ensure!(start <= end, "deletion start must not exceed end");
+    }
+
     let delete_start_ns = start.map(|s| s.as_u64());
     let delete_end_ns = end.map(|e| e.as_u64());
     let mut operations = Vec::new();
@@ -674,7 +708,7 @@ fn operations_for_files(
         }
     }
 
-    operations
+    Ok(operations)
 }
 
 // A file a split operation writes: its source directory and file name, with the file range.
@@ -762,7 +796,7 @@ fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::
                     .ok_or_else(|| anyhow::anyhow!("Missing column {name} in Parquet batch"))?;
 
                 if json_names.contains(name.as_str()) {
-                    canonical_json_column(column)
+                    canonical_json_column(column, name == "data_type")
                 } else {
                     Ok(column.clone())
                 }
@@ -790,8 +824,8 @@ fn batches_hold_rows(existing: &[RecordBatch], rows: &[RecordBatch]) -> anyhow::
 }
 
 // Rewrites each JSON value with object keys sorted, so equal values compare equal as strings.
-fn canonical_json_column(column: &ArrayRef) -> anyhow::Result<ArrayRef> {
-    let column = cast(column, &DataType::Utf8)?;
+fn canonical_json_column(column: &ArrayRef, is_data_type: bool) -> anyhow::Result<ArrayRef> {
+    let column = cast(column, &ArrowDataType::Utf8)?;
     let values = column
         .as_any()
         .downcast_ref::<StringArray>()
@@ -801,8 +835,15 @@ fn canonical_json_column(column: &ArrayRef) -> anyhow::Result<ArrayRef> {
         .map(|value| {
             value
                 .map(|value| {
-                    let value: serde_json::Value = serde_json::from_str(value)?;
-                    Ok::<_, serde_json::Error>(canonical_json_value(value).to_string())
+                    let value: serde_json::Value = if is_data_type {
+                        let data_type = DataType::from_persistence_json(value)?;
+                        let json = data_type.to_persistence_json()?;
+                        serde_json::from_str(&json)?
+                    } else {
+                        serde_json::from_str(value)?
+                    };
+
+                    Ok::<_, anyhow::Error>(canonical_json_value(value).to_string())
                 })
                 .transpose()
         })

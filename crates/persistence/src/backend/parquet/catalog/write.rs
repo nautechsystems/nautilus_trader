@@ -828,6 +828,13 @@ pub(crate) struct CustomDataWrite {
     pub(crate) batches: Vec<RecordBatch>,
 }
 
+impl CustomDataWrite {
+    pub(crate) fn path(&self) -> PathBuf {
+        let filename = catalog_filename(self.start_ts, self.end_ts, None);
+        PathBuf::from(&self.directory).join(filename)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{

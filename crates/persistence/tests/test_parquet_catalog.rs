@@ -5006,6 +5006,131 @@ fn test_extract_sql_safe_filename() {
 }
 
 #[rstest]
+fn test_query_custom_data_dynamic_keeps_colliding_sql_identifiers() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let data = custom_bytes_for_colliding_identifiers();
+    catalog
+        .write_custom_data_batch(&data[..2], None, None, None)
+        .unwrap();
+    catalog
+        .write_custom_data_batch(&data[2..], None, None, None)
+        .unwrap();
+
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestBytesCustomData",
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+
+    assert_eq!(loaded.len(), data.len());
+
+    for identifier in ["A-B", "A_B"] {
+        let actual: Vec<_> = loaded
+            .iter()
+            .filter(|row| matches!(row, Data::Custom(custom) if custom.data_type.identifier() == Some(identifier)))
+            .cloned()
+            .collect();
+        let expected: Vec<_> = data
+            .iter()
+            .filter(|row| row.data_type.identifier() == Some(identifier))
+            .cloned()
+            .map(Data::Custom)
+            .collect();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[rstest]
+fn test_consolidate_data_by_period_keeps_colliding_custom_identifiers() {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let data = custom_bytes_for_colliding_identifiers();
+    catalog
+        .write_custom_data_batch(&data[..2], None, None, None)
+        .unwrap();
+    catalog
+        .write_custom_data_batch(&data[2..], None, None, None)
+        .unwrap();
+
+    catalog
+        .consolidate_data_by_period(
+            &NautilusDataType::Custom {
+                type_name: "RustTestBytesCustomData".to_string(),
+            }
+            .into(),
+            None,
+            Some(10),
+            None,
+            None,
+            Some(true),
+        )
+        .unwrap();
+
+    let loaded: Vec<_> = ["A-B", "A_B"]
+        .into_iter()
+        .map(|identifier| {
+            catalog
+                .query_custom_data_dynamic(
+                    "RustTestBytesCustomData",
+                    Some(&[identifier.to_string()]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    false,
+                )
+                .unwrap()
+        })
+        .collect();
+
+    assert_eq!(
+        loaded,
+        vec![
+            data[..2]
+                .iter()
+                .cloned()
+                .map(Data::Custom)
+                .collect::<Vec<_>>(),
+            data[2..]
+                .iter()
+                .cloned()
+                .map(Data::Custom)
+                .collect::<Vec<_>>()
+        ]
+    );
+}
+
+fn custom_bytes_for_colliding_identifiers() -> [CustomData; 4] {
+    [
+        ("A-B", 1, 11),
+        ("A-B", 4, 14),
+        ("A_B", 1, 21),
+        ("A_B", 4, 24),
+    ]
+    .map(|(identifier, timestamp, value)| {
+        CustomData::new(
+            Arc::new(RustTestBytesCustomData {
+                value: vec![value],
+                ts_event: UnixNanos::from(timestamp),
+                ts_init: UnixNanos::from(timestamp),
+            }),
+            DataType::new(
+                "RustTestBytesCustomData",
+                None,
+                Some(identifier.to_string()),
+            ),
+        )
+    })
+}
+
+#[rstest]
 fn test_rust_custom_data_binary_roundtrip() {
     ensure_test_custom_data_registered();
     let (_temp_dir, mut catalog) = create_temp_catalog();
@@ -5321,6 +5446,499 @@ fn test_delete_data_range_preserves_custom_data_outside_range() {
         rust_test_custom_data_ts_inits(&mut catalog, instrument_id),
         vec![1, 2, 3, 7, 8, 9, 10],
     );
+}
+
+#[rstest]
+#[case::instrument("ETHUSDT.BINANCE", "1987.0", "1988.0", "100000")]
+#[case::price_precision("ETH/USDT.BINANCE", "1987.00", "1988.00", "100000")]
+#[case::size_precision("ETH/USDT.BINANCE", "1987.0", "1988.0", "100000.0")]
+fn test_delete_data_range_rejects_split_target_with_different_metadata(
+    #[case] instrument: &str,
+    #[case] bid: &str,
+    #[case] ask: &str,
+    #[case] size: &str,
+) {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    write_quotes_over(
+        &catalog,
+        &[create_quote_tick(1), create_quote_tick(4)],
+        0,
+        10,
+    );
+    let mut other = create_quote_tick(1);
+    other.instrument_id = InstrumentId::from(instrument);
+    other.bid_price = Price::from(bid);
+    other.ask_price = Price::from(ask);
+    other.bid_size = Quantity::from(size);
+    other.ask_size = Quantity::from(size);
+    write_quotes_over(&catalog, &[other], 0, 2);
+    let before = snapshot_catalog_files(&temp_dir);
+    let filename = timestamps_to_filename(UnixNanos::from(0), UnixNanos::from(2));
+    let target = catalog
+        .query_files(&NautilusDataType::QuoteTick.into(), None, None, None)
+        .unwrap()
+        .into_iter()
+        .find(|path| path.ends_with(&filename))
+        .unwrap();
+
+    let error = catalog
+        .delete_data_range(
+            &NautilusDataType::QuoteTick,
+            Some("ETH/USDT.BINANCE"),
+            Some(UnixNanos::from(3)),
+            Some(UnixNanos::from(3)),
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot preserve the rows outside the deleted range: their target file {target} already exists without them"
+        )
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+#[case::instrument("ETHUSDT.BINANCE", 1, "100000")]
+#[case::price_precision("ETH/USDT.BINANCE", 2, "100000")]
+#[case::size_precision("ETH/USDT.BINANCE", 1, "100000.0")]
+fn test_delete_data_range_rejects_mixed_sources_with_existing_target(
+    #[case] instrument: &str,
+    #[case] price_precision: u8,
+    #[case] size: &str,
+) {
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    write_quotes_over(
+        &catalog,
+        &[create_quote_tick(1), create_quote_tick(4)],
+        0,
+        10,
+    );
+    let mut other = create_quote_tick_for(InstrumentId::from(instrument), price_precision, 2);
+    other.bid_size = Quantity::from(size);
+    other.ask_size = Quantity::from(size);
+    let mut later = other;
+    later.ts_init = UnixNanos::from(5);
+    write_quotes_over(&catalog, &[other, later], 0, 20);
+    write_quotes_over(
+        &catalog,
+        &[create_quote_tick(1), create_quote_tick(2)],
+        0,
+        2,
+    );
+    let before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .delete_data_range(
+            &NautilusDataType::QuoteTick,
+            Some("ETH/USDT.BINANCE"),
+            Some(UnixNanos::from(3)),
+            Some(UnixNanos::from(3)),
+        )
+        .unwrap_err();
+    let message = error.to_string();
+
+    assert_eq!(
+        message.split(" has metadata ").next(),
+        Some(
+            "Cannot write nautilus_model_data_quote_quote_tick data with mixed identities: element 1"
+        ),
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_delete_data_range_rejects_reversed_bounds(#[case] custom: bool) {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let (data_type, identifier, data) = consolidation_case(custom);
+    catalog
+        .write_data_enum(&[data(3), data(5), data(9)], None, None, None)
+        .unwrap();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .delete_data_range(
+            &data_type,
+            Some(identifier),
+            Some(UnixNanos::from(7)),
+            Some(UnixNanos::from(3)),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "deletion start must not exceed end");
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+#[case::prefix(true)]
+#[case::suffix(false)]
+fn test_consolidate_data_by_period_keeps_unselected_sources(
+    #[case] prefix: bool,
+    #[values(false, true)] custom: bool,
+) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let (data_type, identifier, data) = consolidation_case(custom);
+
+    let (files, start, end, expected) = if prefix {
+        (
+            vec![(3, 12, vec![3, 7, 12]), (0, 4, vec![1, 4])],
+            5,
+            10,
+            vec![1, 3, 4, 7, 12],
+        )
+    } else {
+        (
+            vec![(0, 100, vec![1, 55, 99]), (80, 200, vec![90, 200])],
+            50,
+            60,
+            vec![1, 55, 90, 99, 200],
+        )
+    };
+
+    for (start, end, timestamps) in files {
+        let rows: Vec<_> = timestamps.into_iter().map(data).collect();
+        catalog
+            .write_data_enum(
+                &rows,
+                Some(UnixNanos::from(start)),
+                Some(UnixNanos::from(end)),
+                Some(true),
+            )
+            .unwrap();
+    }
+
+    catalog
+        .consolidate_data_by_period(
+            &data_type.clone().into(),
+            Some(identifier),
+            Some(10),
+            Some(UnixNanos::from(start)),
+            Some(UnixNanos::from(end)),
+            Some(false),
+        )
+        .unwrap();
+    let loaded = CatalogReader::query_batch(&mut catalog, &CatalogQuery::new(data_type))
+        .unwrap()
+        .to_data_vec_for_compat();
+
+    assert_eq!(loaded, expected.into_iter().map(data).collect::<Vec<_>>());
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_consolidate_data_by_period_empty_prefix_keeps_requested_start(#[case] custom: bool) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let (data_type, identifier, data) = consolidation_case(custom);
+    catalog
+        .write_data_enum(
+            &[data(8), data(18)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(30)),
+            None,
+        )
+        .unwrap();
+
+    catalog
+        .consolidate_data_by_period(
+            &data_type.clone().into(),
+            Some(identifier),
+            Some(10),
+            Some(UnixNanos::from(7)),
+            Some(UnixNanos::from(20)),
+            Some(true),
+        )
+        .unwrap();
+    let intervals = catalog
+        .get_intervals(&data_type.clone().into(), Some(identifier))
+        .unwrap();
+    let loaded = CatalogReader::query_batch(&mut catalog, &CatalogQuery::new(data_type))
+        .unwrap()
+        .to_data_vec_for_compat();
+
+    assert_eq!(loaded, [data(8), data(18)]);
+    assert_eq!(intervals, [(7, 9), (10, 19)]);
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_consolidate_data_by_period_rejects_reversed_bounds(#[case] custom: bool) {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let (data_type, identifier, data) = consolidation_case(custom);
+    catalog
+        .write_data_enum(&[data(3), data(9)], None, None, None)
+        .unwrap();
+    let before = snapshot_catalog_files(&temp_dir);
+
+    let error = catalog
+        .consolidate_data_by_period(
+            &data_type.into(),
+            Some(identifier),
+            Some(10),
+            Some(UnixNanos::from(8)),
+            Some(UnixNanos::from(4)),
+            Some(false),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "consolidation start must not exceed end");
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_consolidate_data_by_period_preserves_rows_after_earlier_split(#[case] custom: bool) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let (data_type, identifier, data) = consolidation_case(custom);
+    for (start, end, timestamps) in [
+        (0, 7, [3, 7]),
+        (1, 2, [1, 2]),
+        (1, 9, [5, 9]),
+        (10, 13, [10, 12]),
+    ] {
+        let rows = timestamps.map(data);
+        catalog
+            .write_data_enum(
+                &rows,
+                Some(UnixNanos::from(start)),
+                Some(UnixNanos::from(end)),
+                Some(true),
+            )
+            .unwrap();
+    }
+
+    catalog
+        .consolidate_data_by_period(
+            &CatalogDataType::Data(data_type.clone()),
+            Some(identifier),
+            Some(10),
+            Some(UnixNanos::from(5)),
+            None,
+            Some(false),
+        )
+        .unwrap();
+
+    let query = CatalogQuery::new(data_type);
+    let loaded = CatalogReader::query_batch(&mut catalog, &query)
+        .unwrap()
+        .to_data_vec_for_compat();
+
+    let expected = [1, 2, 3, 5, 7, 9, 10, 12].map(data);
+
+    assert_eq!(loaded, expected);
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_consolidate_data_by_period_keeps_existing_period_between_rewrites(#[case] custom: bool) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let (data_type, identifier, data) = consolidation_case(custom);
+
+    for (start, end) in [(0, 4), (5, 9), (10, 14), (15, 19), (20, 24), (25, 29)] {
+        let rows = [data(start), data(end)];
+        catalog
+            .write_data_enum(
+                &rows,
+                Some(UnixNanos::from(start)),
+                Some(UnixNanos::from(end)),
+                Some(false),
+            )
+            .unwrap();
+    }
+
+    catalog
+        .consolidate_data_by_period(
+            &data_type.clone().into(),
+            Some(identifier),
+            Some(10),
+            Some(UnixNanos::from(10)),
+            Some(UnixNanos::from(19)),
+            None,
+        )
+        .unwrap();
+    catalog
+        .consolidate_data_by_period(
+            &data_type.clone().into(),
+            Some(identifier),
+            Some(10),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let intervals = catalog
+        .get_intervals(&data_type.clone().into(), Some(identifier))
+        .unwrap();
+    let query = CatalogQuery::new(data_type);
+    let loaded = CatalogReader::query_batch(&mut catalog, &query)
+        .unwrap()
+        .to_data_vec_for_compat();
+    let expected = [0, 4, 5, 9, 10, 14, 15, 19, 20, 24, 25, 29].map(data);
+
+    assert_eq!(loaded, expected);
+    assert_eq!(intervals, vec![(0, 9), (10, 19), (20, 29)]);
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_consolidate_data_by_period_without_identifier_keeps_existing_target(
+    #[case] custom: bool,
+    #[values(false, true)] remote: bool,
+) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog_on_store(remote);
+    let (data_type, identifier, data) = consolidation_case(custom);
+    let rows = [data(1), data(4)];
+    catalog
+        .write_data_enum(&rows, None, None, Some(false))
+        .unwrap();
+
+    catalog
+        .consolidate_data_by_period(&data_type.clone().into(), None, Some(10), None, None, None)
+        .unwrap();
+    catalog
+        .consolidate_data_by_period(&data_type.clone().into(), None, Some(10), None, None, None)
+        .unwrap();
+    let intervals = catalog
+        .get_intervals(&data_type.clone().into(), Some(identifier))
+        .unwrap();
+    let query = CatalogQuery::new(data_type);
+    let loaded = CatalogReader::query_batch(&mut catalog, &query)
+        .unwrap()
+        .to_data_vec_for_compat();
+
+    assert_eq!(loaded, rows);
+    assert_eq!(intervals, vec![(0, 4)]);
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_consolidate_data_by_period_rejects_existing_target_missing_rows(#[case] custom: bool) {
+    ensure_test_custom_data_registered();
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let (data_type, identifier, data) = consolidation_case(custom);
+    for (start, end, timestamps) in [(3, 6, vec![3, 6]), (4, 4, vec![4]), (11, 15, vec![12, 14])] {
+        let rows = timestamps.into_iter().map(data).collect::<Vec<_>>();
+        catalog
+            .write_data_enum(
+                &rows,
+                Some(UnixNanos::from(start)),
+                Some(UnixNanos::from(end)),
+                Some(true),
+            )
+            .unwrap();
+    }
+
+    let before = snapshot_catalog_files(&temp_dir);
+    let filename = timestamps_to_filename(UnixNanos::from(3), UnixNanos::from(6));
+    let target = catalog
+        .query_files(&data_type.clone().into(), None, None, None)
+        .unwrap()
+        .into_iter()
+        .find(|path| path.ends_with(&filename))
+        .unwrap();
+
+    let error = catalog
+        .consolidate_data_by_period(
+            &data_type.into(),
+            Some(identifier),
+            Some(10),
+            None,
+            None,
+            Some(false),
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Cannot consolidate into existing target {target}: it does not hold every source row"
+        )
+    );
+    assert_eq!(snapshot_catalog_files(&temp_dir), before);
+}
+
+#[rstest]
+#[case::quotes(false)]
+#[case::custom(true)]
+fn test_consolidate_data_by_period_preserves_nested_source_boundaries(#[case] custom: bool) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+    let (data_type, identifier, data) = consolidation_case(custom);
+    for (start, end, timestamps) in [(0, 30, [1, 29]), (5, 10, [6, 9])] {
+        let rows = timestamps.map(data);
+        catalog
+            .write_data_enum(
+                &rows,
+                Some(UnixNanos::from(start)),
+                Some(UnixNanos::from(end)),
+                Some(true),
+            )
+            .unwrap();
+    }
+
+    catalog
+        .consolidate_data_by_period(
+            &data_type.clone().into(),
+            Some(identifier),
+            Some(10),
+            Some(UnixNanos::from(7)),
+            Some(UnixNanos::from(8)),
+            Some(false),
+        )
+        .unwrap();
+    let intervals = catalog
+        .get_intervals(&data_type.clone().into(), Some(identifier))
+        .unwrap();
+    let query = CatalogQuery::new(data_type);
+    let loaded = CatalogReader::query_batch(&mut catalog, &query)
+        .unwrap()
+        .to_data_vec_for_compat();
+    let expected = [1, 6, 9, 29].map(data);
+
+    assert_eq!(loaded, expected);
+    assert_eq!(intervals, vec![(1, 6), (9, 29)]);
+}
+
+#[rstest]
+fn test_group_contiguous_intervals_keeps_nested_intervals_together() {
+    let (_temp_dir, catalog) = create_temp_catalog();
+    let intervals = vec![(0, 100), (5, 10), (20, 30)];
+
+    let groups = catalog.group_contiguous_intervals(&intervals, 5);
+
+    assert_eq!(groups, vec![intervals]);
+}
+
+fn consolidation_case(custom: bool) -> (NautilusDataType, &'static str, fn(u64) -> Data) {
+    if custom {
+        (
+            NautilusDataType::Custom {
+                type_name: "RustTestCustomData".to_string(),
+            },
+            "RUST.A",
+            |ts| custom_with_source("a", ts),
+        )
+    } else {
+        (NautilusDataType::QuoteTick, "ETH/USDT.BINANCE", |ts| {
+            Data::Quote(create_quote_tick(ts))
+        })
+    }
 }
 
 #[rstest]
@@ -6510,6 +7128,61 @@ fn test_delete_data_range_keeps_custom_split_target_holding_equal_json_rows(
             ),
         ]
     );
+    assert_eq!(loaded, vec![data(1), data(4)]);
+}
+
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(Params::default()))]
+fn test_delete_data_range_keeps_custom_split_target_holding_empty_metadata(
+    #[case] metadata: Option<Params>,
+) {
+    ensure_test_custom_data_registered();
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let data = |ts_init| {
+        let Data::Custom(mut custom) = custom_with_source("a", ts_init) else {
+            unreachable!()
+        };
+
+        custom.data_type = DataType::new(
+            "RustTestCustomData",
+            metadata.clone(),
+            Some("RUST.A".to_string()),
+        );
+        Data::Custom(custom)
+    };
+
+    catalog
+        .write_data_enum(
+            &[data(1), data(4)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(10)),
+            Some(true),
+        )
+        .unwrap();
+    catalog
+        .write_data_enum(
+            &[data(1)],
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(2)),
+            Some(true),
+        )
+        .unwrap();
+
+    delete_rust_test_custom_data_at_3(&mut catalog).unwrap();
+    let loaded = catalog
+        .query_custom_data_dynamic(
+            "RustTestCustomData",
+            Some(&["RUST.A".to_string()]),
+            None,
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+
     assert_eq!(loaded, vec![data(1), data(4)]);
 }
 
