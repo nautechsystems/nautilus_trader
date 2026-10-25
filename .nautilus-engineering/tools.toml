@@ -107,6 +107,11 @@ kind = "tool"
 version = "0.10.3"
 releases = "crates:cargo-vet"
 
+[rust-code-analysis-cli]
+kind = "tool"
+version = "0.0.25"
+releases = "crates:rust-code-analysis-cli"
+
 [uv]
 kind = "tool"
 version = "0.13.4"

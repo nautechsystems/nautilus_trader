@@ -38,6 +38,8 @@ jobs:
           sudo apt-get install -y ripgrep -o Acquire::Retries=5
 
       - name: Check GitHub Action pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: make check-github-action-pins
 
       - name: Check Docker toolchain pins

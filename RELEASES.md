@@ -105,6 +105,8 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
+- Fixed live timer backlogs starving data events and commands (#5431), thanks @imbolc
+- Fixed book recovery timeouts reporting the snapshot limit instead of the attempt limit (#5425), thanks @imbolc
 - Fixed position reconciliation timeouts discarding finalized snapshots and authoritative fills
 - Fixed Python `LiveNode.add_strategy_from_config` accepting strategies when the node is not idle
 - Fixed targeted order reconciliation discarding accepted statuses and fills after timeout or cancellation
@@ -168,6 +170,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers spread instrument requests at runtime (#5397), thanks @faysou
 - Fixed Kraken Futures batch edits sending `orderId` instead of `order_id` (#5312), thanks @zhaow-de
 - Fixed Kraken Futures client order IDs shortened to 18 characters (#5312), thanks @zhaow-de
+- Fixed Kraken Spot L3 queue priority after same-price order modifications (#5421), thanks @ahmetsbilgin
 - Fixed Lighter funding rates 100x too high and missing the live interval (#5338), thanks @dxwil
 - Fixed Lighter order lookups using the wrong client order ID after a collision and restart
 - Fixed Lighter deferred order reports being treated as proof of absence
@@ -212,11 +215,16 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added deferred finalization for live execution report collection
+- Added `rust-code-analysis-cli` v0.0.25 to `make install-tools`
 - Improved Dockerfile linting to run Hadolint without Docker
 - Improved performance CI to fail when any benchmark crate fails
 - Restored default-feature compilation of `position_replay_criterion` benchmarks
 - Standardized Architect AX owned execution report tasks
+- Updated Nautilus Engineering common tooling
 - Optimized JSON and MessagePack decoding and custom data response encoding
+- Optimized order last-event reads to avoid collecting history (#5412), thanks @graceyangfan
+- Optimized position purging to avoid cloning fill and replay history (#5414), thanks @graceyangfan
+- Optimized typed message router subscription registration and removal (#5426), thanks @imbolc
 - Optimized virtual hedging fill-history checks during execution and reconciliation
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc
 - Removed unused Interactive Brokers data farm degradation timestamps (#5376), thanks @tradatious
@@ -239,6 +247,7 @@ Released on TBD (UTC).
 - Upgraded `codspeed-criterion-compat` crate to v5.0.3
 - Upgraded `inventory` crate to v0.3.25
 - Upgraded `libc` crate to v0.2.191
+- Upgraded `parking_lot` crate to v0.13.0
 - Upgraded `proptest` crate to v1.12.0
 - Upgraded `pyo3` crate to v0.30.1
 - Upgraded `pyo3-async-runtimes` crate to v0.30.0
@@ -249,7 +258,7 @@ Released on TBD (UTC).
 - Upgraded `smallvec` crate to v1.16.3
 - Upgraded `sockudo-ws` crate to v3.1.0 (#5345), thanks @sunlei
 - Upgraded `syn` crate to v3.0.9
-- Upgraded `tokio` crate to v1.53.3
+- Upgraded `tokio` crate to v1.54.1
 - Upgraded `toml` crate to v1.1.8
 - Upgraded `uuid` crate to v1.28.0
 - Upgraded `webpki-root-certs` and `webpki-roots` crates to v1.0.10

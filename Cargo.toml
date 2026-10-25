@@ -203,7 +203,7 @@ mimalloc = "0.1.52"
 object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }
-parking_lot = "0.12.5"
+parking_lot = "0.13.0"
 parquet = { version = "59.3.1", default-features = false, features = [
   "arrow",
   "arrow_canonical_extension_types",
@@ -290,7 +290,7 @@ sysinfo = { version = "0.39.6", default-features = false, features = [
 ] }
 tabled = { version = "0.22.0", default-features = false, features = ["std"] }
 thiserror = "2.0.21"
-tokio = { version = "1.53.3", default-features = false, features = [
+tokio = { version = "1.54.1", default-features = false, features = [
   "parking_lot",
   "rt-multi-thread",
   "sync",

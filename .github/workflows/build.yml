@@ -171,6 +171,8 @@ jobs:
       - name: Check GitHub Action pins
         # One network round trip per pinned reference, so only when they changed
         if: needs.plan.outputs.github-changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: make check-github-action-pins
 
       - name: Check Docker toolchain pins
@@ -893,18 +895,19 @@ jobs:
           cargo audit --deny unsound --file crates/adapters/lighter/fuzz/pornin/Cargo.lock || status=$?
           exit "$status"
 
+      - name: Install osv-scanner
+        run: bash scripts/install-osv-scanner.sh
+
       - name: Run osv-scanner
         id: osv-scan
         continue-on-error: true
-        # https://github.com/google/osv-scanner-action
-        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
-        with:
-          scan-args: |-
-            --config=osv-scanner.toml
-            --format=json
-            --output=/github/workspace/osv-results.json
-            --lockfile=Cargo.lock
-            --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock
+        run: |
+          "$HOME/.cargo/bin/osv-scanner" scan source \
+            --config=osv-scanner.toml \
+            --format=json \
+            --output=osv-results.json \
+            --lockfile=Cargo.lock \
+            --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock \
             --lockfile=python/uv.lock
 
       - name: Check OSV severity

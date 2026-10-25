@@ -3329,6 +3329,13 @@ criteria = "safe-to-deploy"
 delta = "0.8.2 -> 0.8.3"
 notes = "Reviewed the published 0.8.2 -> 0.8.3 crate. LiteMap API adjustments only. No new unsafe, build script, filesystem, network, process, or credential behavior."
 
+[[audits.lock_api]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.14 -> 0.5.0"
+importable = false
+notes = "Reviewed the published delta for the enabled native feature graph, including acquisition-state ownership, guard mapping and drops, Send/Sync bounds, upgrade/downgrade transitions, condition-variable waits, and abort-on-panic restoration. Optional feature combinations are outside this review. No new build script, network, process, filesystem, or credential behavior."
+
 [[audits.log]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3448,6 +3455,20 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.17.0 -> 0.18.0"
 notes = "Fixes vertical border rendering when a cell is covered by both row and column spans, and derives extra traits for EntityIterator. No new dependencies, build script, filesystem, network, or unsafe code changes."
+
+[[audits.parking_lot]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.12.5 -> 0.13.0"
+importable = false
+notes = "Reviewed the published delta for the enabled native feature graph. Changes pass acquisition state through raw locks, defer normal wakes until after release, retain explicit fair unlocks, move condition-variable wrapping into lock_api, and split recursive reader-biased locks. Reviewed mutex/RwLock acquire-release transitions and condition-variable requeue/reacquisition. Optional deadlock detection and other unused feature combinations are outside this review. No new build script or ambient I/O capability."
+
+[[audits.parking_lot_core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.9.12 -> 0.10.0"
+importable = false
+notes = "Reviewed the published delta for Linux without optional deadlock detection: parking queue links and thread-state ownership, timeout removal, requeue and unpark ordering, panic abort guards, and the Linux futex time32/time64 fallback. Automatic fairness timers are removed. Other platform backends and optional features are outside this review. No build script, external endpoint, process launch, filesystem access, or credential handling is added."
 
 [[audits.parquet]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3882,6 +3903,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.7.0 -> 1.7.1"
 notes = "Adds FT.CREATE field options and small cluster connection adjustments. Commands still go to the caller-supplied Redis endpoint. No new unsafe, build script, or credential disclosure."
+
+[[audits.redox_syscall]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "0.9.5"
+importable = false
+notes = "Reviewed package metadata and parking_lot_core's target_os=redox dependency gate. This package is not compiled or executed in the Linux feature graph and has no build script. This local certification covers only that inactive dependency; it does not certify Redox syscall, memory-mapped I/O, or scheme implementations for use on Redox."
 
 [[audits.ref-cast]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4425,6 +4453,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.53.2 -> 1.53.3"
 notes = "Reviewed the published changelog and runtime, I/O, and sync delta. Adds AsyncFd::register and deprecates the old constructors. Fixes DuplexStream and semaphore wakes outside the lock, join and try_join unreachable_code for Infallible, paused-time auto-advance on current_thread, and keeps a failed io_uring submission alive. No new network destination, credential, or filesystem capability."
+
+[[audits.tokio]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.53.3 -> 1.54.1"
+importable = false
+notes = "Reviewed the published changelog and native runtime delta, including scheduler injection locking, blocking-worker shutdown, I/O readiness ticks and shutdown state, file-operation failure recovery, cooperative copying, Notify ordering, semaphore permits, and timer deadline handling. Version 1.54.1 restores runtime handles in timers. This review covers the enabled Linux feature graph, not Emscripten, alternate platform backends, or tokio_unstable features. No new automatic network destination or credential handling."
 
 [[audits.tokio-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
