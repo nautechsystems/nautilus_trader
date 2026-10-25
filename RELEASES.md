@@ -118,6 +118,7 @@ Released on TBD (UTC).
 - Fixed book recovery timeouts reporting the snapshot limit instead of the attempt limit (#5425), thanks @imbolc
 - Fixed position reconciliation timeouts discarding finalized snapshots and authoritative fills
 - Fixed Python `LiveNode.add_strategy_from_config` accepting strategies when the node is not idle
+- Fixed Python Parquet catalog typed reads and writes holding the GIL during native I/O
 - Fixed targeted order reconciliation discarding accepted statuses and fills after timeout or cancellation
 - Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat

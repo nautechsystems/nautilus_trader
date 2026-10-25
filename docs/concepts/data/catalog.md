@@ -150,6 +150,10 @@ The built-in market-data writers are:
 Each writer accepts optional `start` and `end` overrides as UNIX nanoseconds. The data in one call
 must have one identity, such as one instrument ID or bar type, and must be ordered by `ts_init`.
 
+Typed, instrument, and custom-data writes on one instance serialize their native file changes.
+Do not overlap queries, record writes, or [catalog operations](#catalog-operations) with other calls
+on that instance. A concurrent call can raise `RuntimeError` if either call needs exclusive access.
+
 ## File naming and data organization
 
 The catalog names files from their timestamp range with the pattern

@@ -396,7 +396,7 @@ impl ParquetDataCatalog {
         Ok(writes)
     }
 
-    fn prepare_custom_data_write(
+    pub(crate) fn prepare_custom_data_write(
         &self,
         data: &[&CustomData],
         start: Option<UnixNanos>,
