@@ -237,6 +237,7 @@ Released on TBD (UTC).
 - Optimized virtual hedging fill-history checks during execution and reconciliation
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc
 - Removed unused Interactive Brokers data farm degradation timestamps (#5376), thanks @tradatious
+- Upgraded Rust (MSRV) to 1.99.1
 - Upgraded `cargo-codspeed` tool to v5.0.3
 - Upgraded `cargo-edit` tool to v0.13.14
 - Upgraded `cargo-nextest` tool to v0.9.149

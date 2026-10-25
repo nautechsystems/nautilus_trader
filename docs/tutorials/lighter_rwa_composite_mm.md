@@ -70,7 +70,7 @@ lifecycle, inventory, and quote state remain inside the same event-driven runtim
 
 ## Prerequisites
 
-- A Rust toolchain (MSRV 1.99.0 or newer).
+- A Rust toolchain (MSRV 1.99.1 or newer).
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
 - Python 3.13+ to regenerate the rendered panels.
