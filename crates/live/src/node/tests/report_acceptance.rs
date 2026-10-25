@@ -305,7 +305,7 @@ impl ExecutionClient for DeadlineReportClient {
 #[derive(Debug)]
 struct CarriedReportClient {
     connected: Rc<Cell<bool>>,
-    fills_started: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    fills_started: std::sync::Arc<tokio::sync::Notify>,
     finalized: Rc<RefCell<Vec<ClientOrderId>>>,
 }
 
@@ -404,7 +404,7 @@ impl ExecutionClient for CarriedReportClient {
         let started = self.fills_started.clone();
         Some(ExecutionReportTask::new(
             async move {
-                started.store(true, std::sync::atomic::Ordering::SeqCst);
+                started.notify_one();
                 std::future::pending::<anyhow::Result<Vec<FillReport>>>().await
             },
             Ok,
@@ -413,16 +413,13 @@ impl ExecutionClient for CarriedReportClient {
 }
 
 #[rstest]
-#[cfg_attr(
-    not(all(feature = "simulation", madsim)),
-    tokio::test(start_paused = true)
-)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_targeted_report_acceptance_cancellation_dispatches_only_before_fatal_error(
     #[values(false, true)] fatal: bool,
 ) {
     actor::clear_callbacks().unwrap();
-    let fills_started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let fills_started = std::sync::Arc::new(tokio::sync::Notify::new());
     let finalized = Rc::new(RefCell::new(Vec::new()));
 
     let config = LiveNodeConfig {
@@ -478,9 +475,7 @@ async fn test_targeted_report_acceptance_cancellation_dispatches_only_before_fat
     let handle = node.handle();
 
     let driver = async {
-        while !fills_started.load(std::sync::atomic::Ordering::SeqCst) {
-            dst::time::sleep(Duration::from_millis(1)).await;
-        }
+        fills_started.notified().await;
 
         if fatal {
             crate::dispatch::tests::latch_callback_failure();
@@ -540,7 +535,12 @@ async fn test_targeted_report_acceptance_cancellation_dispatches_only_before_fat
     #[cfg(all(feature = "simulation", madsim))]
     madsim::time::advance(Duration::from_nanos(1));
     #[cfg(not(all(feature = "simulation", madsim)))]
-    tokio::time::advance(Duration::from_nanos(1)).await;
+    {
+        // Keep worker coordination on real time; pause only for the inflight clock boundary
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_nanos(1)).await;
+    }
+
     let check = node.exec_manager.check_inflight_orders();
     assert!(
         check.queries.iter().any(

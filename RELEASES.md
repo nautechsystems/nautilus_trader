@@ -218,6 +218,7 @@ Released on TBD (UTC).
 - Added `rust-code-analysis-cli` v0.0.25 to `make install-tools`
 - Improved Dockerfile linting to run Hadolint without Docker
 - Improved performance CI to fail when any benchmark crate fails
+- Refined live reconciliation report collection and task ownership
 - Restored default-feature compilation of `position_replay_criterion` benchmarks
 - Standardized Architect AX owned execution report tasks
 - Updated Nautilus Engineering common tooling
