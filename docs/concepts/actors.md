@@ -485,6 +485,35 @@ def on_data_response(self, response):
     self.request_trades(instrument_id=self.config.instrument_ids)
 ```
 
+#### Completion groups in Rust
+
+Use `request_group(request_ids, request_id)` to receive one completion event after several requests finish.
+Pass a non-empty list of distinct request IDs issued by the same actor. Completed requests and other
+groups are valid children. Empty, duplicate, or unknown child IDs return an error without creating a
+group. The supplied group ID must not match an existing request or group ID in the actor.
+
+Each child keeps its own typed payload delivery. The group emits a terminal `on_data_response` envelope
+with its own correlation ID and no payload. It waits for every child, including after a failure.
+Its `failure_reason` identifies the first failed child in the supplied order, or is absent on success.
+
+Groups notify after the active response hook returns. Groups made ready by the same child notify in
+registration order. A group whose children have already completed can notify before `request_group`
+returns. Store and supply a group UUID before the call if the hook needs to recognize that event:
+
+```rust
+use nautilus_core::UUID4;
+
+let group_id = UUID4::new();
+self.history_group = Some(group_id);
+self.request_group(vec![quotes_id, trades_id], Some(group_id))?;
+```
+
+The runner queues follow-up requests submitted from completion hooks. Hook errors are
+logged and do not prevent group completion. Request IDs and failure metadata remain available for
+grouping until actor request cleanup; payload batches are not retained for grouping. Successful reset
+or disposal, fault, and `release_subscriptions` clear this state and discard unfinished groups without
+completion events. This API has no Python binding.
+
 ### Subscription lists
 
 Actor and Strategy subscriptions accept one identifier or a non-empty collection. The matching

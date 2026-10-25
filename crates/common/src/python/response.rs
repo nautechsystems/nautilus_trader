@@ -30,7 +30,7 @@ use pyo3::{
 use ustr::Ustr;
 
 use crate::{
-    actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
+    actor::{DataActor, DataActorNative, ResponseScope, registry::try_get_actor_unchecked},
     messages::data::{DataResponse, DataResponseEnvelope},
     msgbus::TypedHandler,
     python::logging::format_exception,
@@ -135,7 +135,11 @@ where
     T: DataActor + DataActorNative + Debug + 'static,
 {
     TypedHandler::from(move |envelope: &DataResponseEnvelope| {
-        let instance = prepare_response::<T>(actor_id, instance, envelope);
+        let Some((mut scope, instance)) = prepare_response::<T>(actor_id, instance, envelope)
+        else {
+            return;
+        };
+
         Python::attach(|py| {
             let wrapper = PyDataResponse {
                 envelope: envelope.clone(),
@@ -151,16 +155,55 @@ where
                 );
             }
 
-            if let Some(actor) = try_get_actor_unchecked::<T>(&actor_id) {
-                actor.core().complete_request(envelope);
+            let current = try_get_actor_unchecked::<T>(&actor_id)
+                .is_some_and(|actor| actor.core().complete_request(envelope, &scope));
+
+            if current {
+                dispatch_completion(py, instance.as_ref(), wrapper);
             }
 
-            dispatch_completion(py, instance, wrapper);
+            scope.leave();
+            drain_groups::<T>(py, actor_id, instance.as_ref(), &scope);
         });
     })
 }
 
-fn dispatch_completion(py: Python<'_>, instance: Option<Py<PyAny>>, wrapper: PyDataResponse) {
+fn drain_groups<T>(
+    py: Python<'_>,
+    actor_id: Ustr,
+    instance: Option<&Py<PyAny>>,
+    origin: &ResponseScope,
+) where
+    T: DataActor + DataActorNative + Debug + 'static,
+{
+    loop {
+        let prepared = try_get_actor_unchecked::<T>(&actor_id).and_then(|actor| {
+            if !actor.core().is_response_current(origin) {
+                return None;
+            }
+
+            let envelope = actor.core().next_group_response()?;
+            let scope = actor.core().begin_response(envelope.correlation_id())?;
+            actor
+                .core()
+                .complete_request(&envelope, &scope)
+                .then_some((envelope, scope))
+        });
+
+        let Some((envelope, _scope)) = prepared else {
+            return;
+        };
+
+        let wrapper = PyDataResponse {
+            envelope,
+            data: PyOnceLock::new(),
+        };
+
+        dispatch_completion(py, instance, wrapper);
+    }
+}
+
+fn dispatch_completion(py: Python<'_>, instance: Option<&Py<PyAny>>, wrapper: PyDataResponse) {
     let Some(instance) = instance else {
         return;
     };
@@ -177,7 +220,7 @@ fn prepare_response<T>(
     actor_id: Ustr,
     instance: fn(&T) -> PyResult<Option<Py<PyAny>>>,
     envelope: &DataResponseEnvelope,
-) -> Option<Py<PyAny>>
+) -> Option<(ResponseScope, Option<Py<PyAny>>)>
 where
     T: DataActor + DataActorNative + Debug + 'static,
 {
@@ -186,6 +229,7 @@ where
         return None;
     };
 
+    let scope = actor.core().begin_response(envelope.correlation_id())?;
     let result = match envelope.response() {
         Some(DataResponse::Quotes(r)) => actor.core().handle_indicators_for_quotes(&r.data),
         Some(DataResponse::Trades(r)) => actor.core().handle_indicators_for_trades(&r.data),
@@ -198,13 +242,13 @@ where
     }
 
     match instance(&actor) {
-        Ok(instance) => instance,
+        Ok(instance) => Some((scope, instance)),
         Err(e) => {
             log::error!(
                 "Python response instance lookup failed: {}",
                 format_exception(&e)
             );
-            None
+            Some((scope, None))
         }
     }
 }

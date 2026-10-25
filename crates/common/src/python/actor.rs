@@ -3411,7 +3411,10 @@ mod tests {
         live::runner::replace_system_command_sender,
         messages::{
             SystemCommand,
-            data::{BarsResponse, CustomDataResponse, DataCommand, QuotesResponse, TradesResponse},
+            data::{
+                BarsResponse, CustomDataResponse, DataCommand, QuotesResponse, RequestCommand,
+                TradesResponse,
+            },
             system::{
                 QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged,
             },
@@ -5511,6 +5514,161 @@ class ResponseActor:
                     .core
                     .is_pending_request(&next.request_id)
             );
+        });
+    }
+
+    #[rstest]
+    #[case::complete("none")]
+    #[case::payload_reset("payload")]
+    #[case::child_reset("child")]
+    #[case::group_reset("group")]
+    #[case::child_error("error")]
+    fn test_python_request_group_delivery_releases_actor_access(
+        #[case] reset_at: &str,
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+class ResponseActor:
+    def __init__(self, native, reset_at):
+        self.native = native
+        self.reset_at = reset_at
+        self.events = []
+        self.next_request = None
+    def on_reset(self):
+        pass
+    def on_historical_quotes(self, quotes):
+        self.events.append("quotes")
+        self.instrument_id = quotes[0].instrument_id
+
+        if self.reset_at == "payload":
+            self.native.reset()
+    def on_data_response(self, response):
+        assert response.completed
+        assert response.failure_reason is None
+        self.events.append(response.correlation_id)
+        if response.correlation_id == self.root:
+
+            if self.reset_at == "child":
+                self.native.reset()
+            elif self.reset_at == "error":
+                raise RuntimeError("response hook failed")
+        else:
+            assert response.data is None
+
+            if self.reset_at == "group":
+                self.native.reset()
+            else:
+                self.next_request = self.native.request_trades(self.instrument_id)
+"#
+                ),
+                c_str!("group_actor.py"),
+                c_str!("group_actor"),
+            )
+            .unwrap();
+            let tracker = module
+                .getattr("ResponseActor")
+                .unwrap()
+                .call1((actor.clone_ref(py), reset_at))
+                .unwrap();
+            actor.borrow_mut(py).set_python_instance(&tracker).unwrap();
+            actor.borrow(py).register_in_global_registries().unwrap();
+            let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+            let quote = sample_quote();
+            let root = actor
+                .bind(py)
+                .call_method1("request_quotes", (quote.instrument_id,))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            tracker.setattr("root", &root).unwrap();
+            let root: UUID4 = root.parse().unwrap();
+            let first = actor
+                .borrow(py)
+                .inner()
+                .core
+                .register_request_group(vec![root], None)
+                .unwrap();
+            let second = actor
+                .borrow(py)
+                .inner()
+                .core
+                .register_request_group(vec![root], None)
+                .unwrap();
+
+            let payload = QuotesResponse::new(
+                root,
+                ClientId::new("SOURCE"),
+                quote.instrument_id,
+                vec![quote],
+                None,
+                None,
+                UnixNanos::from(47),
+                None,
+            );
+            msgbus::send_response(&root, &crate::messages::data::DataResponse::Quotes(payload));
+            let mut expected = vec!["quotes".to_owned()];
+            if reset_at != "payload" {
+                expected.push(root.to_string());
+            }
+
+            if !matches!(reset_at, "payload" | "child") {
+                expected.push(first.to_string());
+            }
+
+            if matches!(reset_at, "none" | "error") {
+                expected.push(second.to_string());
+            }
+
+            assert_eq!(
+                tracker
+                    .getattr("events")
+                    .unwrap()
+                    .extract::<Vec<String>>()
+                    .unwrap(),
+                expected
+            );
+            assert!(!actor.borrow(py).inner().core.is_pending_request(&root));
+            assert!(!actor.borrow(py).inner().core.is_pending_request(&first));
+            assert!(!actor.borrow(py).inner().core.is_pending_request(&second));
+            let commands = saver.get_messages();
+
+            if matches!(reset_at, "none" | "error") {
+                let [
+                    DataCommand::Request(RequestCommand::Quotes(_)),
+                    DataCommand::Request(RequestCommand::Trades(first)),
+                    DataCommand::Request(RequestCommand::Trades(second)),
+                ] = commands.as_slice()
+                else {
+                    panic!("expected quotes and two chained trades requests")
+                };
+
+                assert_eq!(first.instrument_ids, vec![quote.instrument_id]);
+                assert_eq!(second.instrument_ids, vec![quote.instrument_id]);
+                assert_eq!(
+                    tracker
+                        .getattr("next_request")
+                        .unwrap()
+                        .extract::<String>()
+                        .unwrap(),
+                    second.request_id.to_string()
+                );
+            } else {
+                assert_eq!(commands.len(), 1);
+                assert!(tracker.getattr("next_request").unwrap().is_none());
+            }
         });
     }
 

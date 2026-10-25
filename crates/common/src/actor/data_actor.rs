@@ -60,6 +60,7 @@ use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
 #[cfg(feature = "python")]
 use crate::python::msgbus::PyMessageBusScope;
 use crate::{
+    actor::requests::{RequestLifecycle, ResponseScope},
     cache::{Cache, CacheApi},
     clock::{Clock, ClockApi},
     component::{Component, ComponentAccessError},
@@ -1322,6 +1323,10 @@ pub trait DataActor {
     where
         Self: DataActorNative,
     {
+        let Some(scope) = self.core().begin_response(envelope.correlation_id()) else {
+            return;
+        };
+
         if let Some(response) = envelope.response() {
             match response {
                 DataResponse::Data(r) => self.handle_data_response(r),
@@ -1338,10 +1343,32 @@ pub trait DataActor {
             }
         }
 
-        self.core().complete_request(envelope);
-
-        if let Err(e) = self.on_data_response(envelope) {
+        if self.core().complete_request(envelope, &scope)
+            && let Err(e) = self.on_data_response(envelope)
+        {
             log_error(&e);
+        }
+
+        drop(scope);
+        self.drain_request_groups();
+    }
+
+    /// Delivers ready completion groups after the active response hook returns.
+    #[doc(hidden)]
+    fn drain_request_groups(&mut self)
+    where
+        Self: DataActorNative,
+    {
+        while let Some(envelope) = self.core().next_group_response() {
+            let Some(scope) = self.core().begin_response(envelope.correlation_id()) else {
+                continue;
+            };
+
+            if self.core().complete_request(&envelope, &scope)
+                && let Err(e) = self.on_data_response(&envelope)
+            {
+                log_error(&e);
+            }
         }
     }
 
@@ -3176,6 +3203,43 @@ pub trait DataActor {
         )
     }
 
+    /// Registers a completion group for this actor's historical requests and returns its ID.
+    ///
+    /// Each child keeps its own payload delivery. The group emits one payload-free terminal
+    /// envelope through [`Self::on_data_response`] after every child completes. Failure reports
+    /// the first failed child in the supplied order, without cancelling the other children.
+    /// Completed IDs remain available for grouping until request cleanup on successful reset or
+    /// disposal, fault, or [`Component::release_subscriptions`].
+    /// Groups can contain other groups and can share children.
+    ///
+    /// A group of completed requests can notify before this method returns. Groups created in
+    /// a response hook notify after that hook returns, in readiness order. Groups made ready by
+    /// the same child notify in registration order. Hook errors are logged and do not block groups.
+    /// Supply a previously stored `request_id` to correlate completion that occurs before return.
+    /// Passing `None` generates a new group ID.
+    /// Invalid input returns an error without registering a group.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The child list is empty or contains duplicate or unknown IDs.
+    /// - The group ID is already used by one of this actor's requests or groups.
+    fn request_group(
+        &mut self,
+        request_ids: Vec<UUID4>,
+        request_id: Option<UUID4>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: DataActorNative,
+    {
+        self.core().check_registered();
+        let id = self
+            .core()
+            .register_request_group(request_ids, request_id)?;
+        self.drain_request_groups();
+        Ok(id)
+    }
+
     /// Requests reconnect of one socket endpoint owned by `client_id`.
     ///
     /// This is a fire-and-observe command. A successful return means the live runner queued the
@@ -3327,7 +3391,7 @@ pub struct DataActorCore {
     option_chain_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<OptionChainSlice>>>,
     indicators: Indicators,
     warning_events: AHashSet<String>, // TODO: TBD
-    pending_requests: RefCell<AHashSet<UUID4>>,
+    requests: RefCell<RequestLifecycle>,
     signal_classes: AHashMap<String, String>,
     #[cfg(feature = "defi")]
     block_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<Block>>>,
@@ -4229,7 +4293,7 @@ impl DataActorCore {
             option_chain_handlers: AHashMap::new(),
             indicators: Indicators::default(),
             warning_events: AHashSet::new(),
-            pending_requests: RefCell::new(AHashSet::new()),
+            requests: RefCell::new(RequestLifecycle::default()),
             signal_classes: AHashMap::new(),
             #[cfg(feature = "defi")]
             block_handlers: AHashMap::new(),
@@ -6655,26 +6719,49 @@ impl DataActorCore {
         get_message_bus()
             .borrow_mut()
             .register_response_handler(request_id, handler)?;
-        self.pending_requests.borrow_mut().insert(*request_id);
+        self.requests.borrow_mut().register(*request_id);
         Ok(())
     }
 
     /// Returns whether this actor is awaiting completion of a request.
     #[must_use]
     pub fn is_pending_request(&self, request_id: &UUID4) -> bool {
-        self.pending_requests.borrow().contains(request_id)
+        self.requests.borrow().is_pending(request_id)
     }
 
-    pub(crate) fn complete_request(&self, response: &DataResponseEnvelope) {
-        if response.completed() {
-            self.pending_requests
-                .borrow_mut()
-                .remove(response.correlation_id());
-        }
+    pub(crate) fn register_request_group(
+        &self,
+        request_ids: Vec<UUID4>,
+        request_id: Option<UUID4>,
+    ) -> anyhow::Result<UUID4> {
+        self.requests
+            .borrow_mut()
+            .register_group(request_ids, request_id)
+    }
+
+    pub(crate) fn begin_response(&self, request_id: &UUID4) -> Option<ResponseScope> {
+        self.requests.borrow().begin(request_id)
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn is_response_current(&self, scope: &ResponseScope) -> bool {
+        self.requests.borrow().is_current(scope)
+    }
+
+    pub(crate) fn complete_request(
+        &self,
+        response: &DataResponseEnvelope,
+        scope: &ResponseScope,
+    ) -> bool {
+        self.requests.borrow_mut().complete(response, scope)
+    }
+
+    pub(crate) fn next_group_response(&self) -> Option<DataResponseEnvelope> {
+        self.requests.borrow_mut().next_group_response()
     }
 
     fn clear_pending_requests(&self) {
-        let ids = self.pending_requests.take();
+        let ids = self.requests.borrow_mut().clear();
         let bus = get_message_bus();
         let mut bus = bus.borrow_mut();
         for id in ids {

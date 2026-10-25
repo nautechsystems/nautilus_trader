@@ -79,14 +79,14 @@ use crate::{
     messages::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-            DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestCommand,
-            SubscribeCommand, TradesResponse, UnsubscribeCommand,
+            DataCommand, DataResponse, DataResponseEnvelope, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse,
+            RequestCommand, SubscribeCommand, TradesResponse, UnsubscribeCommand,
         },
         system::{QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged},
     },
     msgbus::{
-        self, MessageBus, ShareableMessageHandler, TypedHandler, get_message_bus,
+        self, MessageBus, ShareableMessageHandler, TypedHandler, TypedIntoHandler, get_message_bus,
         stubs::get_typed_into_message_saving_handler,
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_depth_topic,
@@ -97,7 +97,10 @@ use crate::{
         },
     },
     nautilus_actor,
-    runner::{SyncDataCommandSender, SystemChannel, set_data_cmd_sender},
+    runner::{
+        SyncDataCommandSender, SystemChannel, data_cmd_queue_is_empty, drain_data_cmd_queue,
+        get_data_cmd_sender, set_data_cmd_sender,
+    },
     signal::Signal,
     testing::init_logger_for_testing,
     timer::TimeEvent,
@@ -295,6 +298,10 @@ struct TestDataActor {
     responses: Vec<(UUID4, bool, Option<String>, usize, bool)>,
     request_after_completion: Option<InstrumentId>,
     chained_request: Option<UUID4>,
+    response_action: Option<(UUID4, ResponseAction)>,
+    grouped_request: Option<UUID4>,
+    in_response: bool,
+    reset_after_quotes: bool,
     #[cfg(feature = "defi")]
     pub received_blocks: Vec<Block>,
     #[cfg(feature = "defi")]
@@ -314,6 +321,13 @@ struct FacadeOnlyActor {
     started: bool,
 }
 
+#[derive(Debug)]
+enum ResponseAction {
+    Group,
+    Reset,
+    Fail,
+}
+
 impl DataActor for FacadeOnlyActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.started = true;
@@ -324,10 +338,13 @@ impl DataActor for FacadeOnlyActor {
 nautilus_actor!(TestDataActor);
 
 impl DataActor for TestDataActor {
+    #[expect(clippy::panic_in_result_fn)] // Hook errors are logged, so overlap must panic
     fn on_data_response(
         &mut self,
         response: &crate::messages::data::DataResponseEnvelope,
     ) -> anyhow::Result<()> {
+        assert!(!self.in_response, "response hooks must not overlap");
+        self.in_response = true;
         self.responses.push((
             *response.correlation_id(),
             response.completed(),
@@ -341,6 +358,27 @@ impl DataActor for TestDataActor {
         {
             self.chained_request = Some(self.request_trades(id, None, None, None, None, None)?);
         }
+
+        if self
+            .response_action
+            .as_ref()
+            .is_some_and(|(id, _)| id == response.correlation_id())
+        {
+            let (_, action) = self.response_action.take().unwrap();
+            match action {
+                ResponseAction::Group => {
+                    self.grouped_request =
+                        Some(self.request_group(vec![*response.correlation_id()], None)?);
+                }
+                ResponseAction::Reset => self.reset()?,
+                ResponseAction::Fail => {
+                    self.in_response = false;
+                    anyhow::bail!("response hook failed");
+                }
+            }
+        }
+
+        self.in_response = false;
 
         Ok(())
     }
@@ -414,6 +452,11 @@ impl DataActor for TestDataActor {
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         // Push to common received vec
         self.received_quotes.extend(quotes);
+
+        if self.reset_after_quotes {
+            self.reset()?;
+        }
+
         Ok(())
     }
 
@@ -567,6 +610,10 @@ impl TestDataActor {
             responses: Vec::new(),
             request_after_completion: None,
             chained_request: None,
+            response_action: None,
+            grouped_request: None,
+            in_response: false,
+            reset_after_quotes: false,
             #[cfg(feature = "defi")]
             received_blocks: Vec::new(),
             #[cfg(feature = "defi")]
@@ -8331,6 +8378,7 @@ fn test_request_envelopes_preserve_handler_and_allow_completion_chaining(
     let root = actor
         .request_quotes(id, None, None, None, None, None)
         .unwrap();
+    let group = actor.request_group(vec![root], None).unwrap();
     drop(actor);
     let quote = QuoteTick::default();
     let child = UUID4::new();
@@ -8381,17 +8429,263 @@ fn test_request_envelopes_preserve_handler_and_allow_completion_chaining(
                 Some("second source failed".to_owned()),
                 1,
                 false
+            ),
+            (
+                group,
+                true,
+                Some(format!("Request {root}: second source failed")),
+                1,
+                false
             )
         ]
     );
     assert!(actor.core.is_pending_request(&next.request_id));
     assert!(!actor.core.is_pending_request(&root));
+    assert!(!actor.core.is_pending_request(&group));
     assert!(
         get_message_bus()
             .borrow()
             .get_response_handler(&root)
             .is_none()
     );
+}
+
+#[rstest]
+#[case::child_hook(false)]
+#[case::group_hook(true)]
+fn test_request_group_preserves_payload_and_terminal_order(
+    #[case] group_hook: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let child = actor
+        .request_quotes(instrument_id, None, None, None, None, None)
+        .unwrap();
+    let first = actor.request_group(vec![child], None).unwrap();
+    let second = actor.request_group(vec![child], None).unwrap();
+    actor.response_action = Some((
+        if group_hook { first } else { child },
+        ResponseAction::Group,
+    ));
+    drop(actor);
+    let quote = QuoteTick::default();
+
+    let payload = QuotesResponse::new(
+        child,
+        ClientId::new("SOURCE"),
+        instrument_id,
+        vec![quote],
+        None,
+        None,
+        UnixNanos::from(47),
+        None,
+    );
+    let intermediate =
+        DataResponseEnvelope::new(DataResponse::Quotes(payload), false, Some(UUID4::new()));
+    msgbus::send_response_envelope(&intermediate);
+    let terminal = DataResponseEnvelope::terminal(child, None);
+    msgbus::send_response_envelope(&terminal);
+    msgbus::send_response_envelope(&terminal);
+    msgbus::send_response_envelope(&intermediate);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let nested = actor.grouped_request.unwrap();
+    let late = UUID4::new();
+    assert_eq!(actor.request_group(vec![child], Some(late)).unwrap(), late);
+    assert_eq!(
+        actor
+            .request_group(vec![child], Some(late))
+            .unwrap_err()
+            .to_string(),
+        format!("Request ID already registered: {late}"),
+    );
+    assert_eq!(actor.received_quotes, vec![quote]);
+    assert_eq!(
+        actor.responses,
+        vec![
+            (child, false, None, 1, true),
+            (child, true, None, 1, false),
+            (first, true, None, 1, false),
+            (second, true, None, 1, false),
+            (nested, true, None, 1, false),
+            (late, true, None, 1, false),
+        ]
+    );
+}
+
+#[rstest]
+fn test_request_group_cleanup_preserves_unrelated_bus_handler(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let child = actor
+        .request_quotes(
+            InstrumentId::from("AUD/USD.SIM"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let foreign = UUID4::new();
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let target = Rc::clone(&received);
+    let handler = TypedHandler::from(move |response: &DataResponseEnvelope| {
+        target.borrow_mut().push(*response.correlation_id());
+    });
+
+    msgbus::register_response_handler(&foreign, handler);
+    assert_eq!(
+        actor.request_group(vec![child], Some(foreign)).unwrap(),
+        foreign
+    );
+    actor.reset().unwrap();
+    drop(actor);
+    let terminal = DataResponseEnvelope::terminal(foreign, None);
+    msgbus::send_response_envelope(&terminal);
+    assert_eq!(*received.borrow(), vec![foreign]);
+    assert!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&child)
+            .is_none()
+    );
+}
+
+#[rstest]
+#[case::payload(0)]
+#[case::child(1)]
+#[case::group(2)]
+#[case::hook_error(3)]
+fn test_request_group_cleanup_during_delivery(
+    #[case] phase: u8,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let child = actor
+        .request_quotes(instrument_id, None, None, None, None, None)
+        .unwrap();
+    let first = actor.request_group(vec![child], None).unwrap();
+    let second = actor.request_group(vec![child], None).unwrap();
+    match phase {
+        0 => actor.reset_after_quotes = true,
+        1 => actor.response_action = Some((child, ResponseAction::Reset)),
+        2 => actor.response_action = Some((first, ResponseAction::Reset)),
+        3 => actor.response_action = Some((child, ResponseAction::Fail)),
+        _ => unreachable!(),
+    }
+
+    drop(actor);
+    let quote = QuoteTick::default();
+
+    let payload = QuotesResponse::new(
+        child,
+        ClientId::new("SOURCE"),
+        instrument_id,
+        vec![quote],
+        None,
+        None,
+        UnixNanos::from(47),
+        None,
+    );
+    let response = DataResponseEnvelope::new(DataResponse::Quotes(payload), true, None);
+    msgbus::send_response_envelope(&response);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+
+    let expected: &[UUID4] = match phase {
+        0 => &[],
+        1 => &[child],
+        2 => &[child, first],
+        3 => &[child, first, second],
+        _ => unreachable!(),
+    };
+
+    assert_eq!(
+        actor.responses,
+        expected
+            .iter()
+            .map(|id| (*id, true, None, 1, false))
+            .collect::<Vec<_>>()
+    );
+    assert!(!actor.core.is_pending_request(&child));
+    assert!(!actor.core.is_pending_request(&first));
+    assert!(!actor.core.is_pending_request(&second));
+
+    if phase != 3 {
+        assert_eq!(
+            actor
+                .request_group(vec![child], None)
+                .unwrap_err()
+                .to_string(),
+            format!("Unknown request ID: {child}")
+        );
+    }
+}
+
+#[rstest]
+fn test_request_group_chains_through_sync_command_queue(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        TypedIntoHandler::from(|command: DataCommand| get_data_cmd_sender().execute(command)),
+    );
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_execute(),
+        TypedIntoHandler::from(|command: DataCommand| {
+            let DataCommand::Request(request) = command else {
+                panic!("expected historical request")
+            };
+
+            let terminal = DataResponseEnvelope::terminal(*request.request_id(), None);
+            msgbus::send_response_envelope(&terminal);
+        }),
+    );
+
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    actor.request_after_completion = Some(instrument_id);
+    let child = actor
+        .request_quotes(instrument_id, None, None, None, None, None)
+        .unwrap();
+    let group = actor.request_group(vec![child], None).unwrap();
+    assert!(actor.responses.is_empty());
+    drop(actor);
+    drain_data_cmd_queue();
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let chained = actor.chained_request.unwrap();
+    assert_eq!(
+        actor.responses,
+        vec![(child, true, None, 0, false), (group, true, None, 0, false)]
+    );
+    assert!(actor.core.is_pending_request(&chained));
+    drop(actor);
+    drain_data_cmd_queue();
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.responses,
+        vec![
+            (child, true, None, 0, false),
+            (group, true, None, 0, false),
+            (chained, true, None, 0, false)
+        ]
+    );
+    assert!(!actor.core.is_pending_request(&chained));
+    assert!(data_cmd_queue_is_empty());
 }
 
 #[rstest]
