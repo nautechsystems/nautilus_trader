@@ -325,7 +325,7 @@ fn start_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
 
 /// Requests a fresh book snapshot for `instrument_id`, starting a recovery
 /// task when this call wins the request.
-fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
+fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId, reason: &str) {
     let outcome = ctx.subscriptions.book_sync.request_recovery_if_subscribed(
         &ctx.subscriptions.active_delta_subs,
         instrument_id,
@@ -333,6 +333,7 @@ fn request_book_recovery(ctx: &WsMessageContext, instrument_id: InstrumentId) {
     );
 
     if outcome == BookSequenceOutcome::Recover {
+        log::debug!("Resyncing book for {instrument_id} {reason}");
         start_book_recovery(ctx, instrument_id);
     }
 }
@@ -474,7 +475,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         }
                     },
                     Err(e) => {
-                        log::error!("Failed to parse book snapshot: {e}");
+                        log::error!("Failed to parse book snapshot for {instrument_id}: {e}");
                         None
                     }
                 };
@@ -511,7 +512,11 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         // The snapshot could not seed the book; without an
                         // accepted snapshot the book stays gated inside the
                         // current episode.
-                        request_book_recovery(ctx, instrument_id);
+                        request_book_recovery(
+                            ctx,
+                            instrument_id,
+                            "after snapshot application failure",
+                        );
                     }
                 }
             }
@@ -800,7 +805,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 .remove(&instrument_id);
             ctx.subscriptions.order_books.remove(&instrument_id);
 
-            request_book_recovery(ctx, instrument_id);
+            request_book_recovery(ctx, instrument_id, "after tick size change");
         }
 
         MarketWsMessage::NewMarket(nm) => {
@@ -14063,6 +14068,11 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn repeated_unusable_snapshot_requests_one_recovery_episode() {
+        if super::super::test_logging::run_in_isolated_process() {
+            return;
+        }
+
+        let _capture = super::super::test_logging::capture_logs().await;
         let asset_id = "0xTOKEN_EMPTY_LOOP";
         let market = "0xMARKET";
 
@@ -14139,6 +14149,27 @@ mod tests {
             data_rx.try_recv().is_err(),
             "unusable snapshots must not emit Data events"
         );
+
+        let logs = super::super::test_logging::messages();
+        let errors: Vec<_> = logs
+            .iter()
+            .filter(|(level, _)| *level == log::Level::Error)
+            .map(|(_, message)| message.as_str())
+            .collect();
+        let expected_error = format!(
+            "Failed to parse book snapshot for {instrument_id}: Invalid price 'abc': invalid decimal significand"
+        );
+        assert_eq!(
+            errors,
+            vec![expected_error.as_str(), expected_error.as_str()]
+        );
+        assert!(logs.iter().any(|(level, message)| {
+            *level == log::Level::Debug
+                && message
+                    == &format!(
+                        "Resyncing book for {instrument_id} after snapshot application failure"
+                    )
+        }));
     }
 
     fn make_price_change_batch(
@@ -16049,6 +16080,11 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn tick_size_change_requests_recovery_and_resubscribes() {
+        if super::super::test_logging::run_in_isolated_process() {
+            return;
+        }
+
+        let _capture = super::super::test_logging::capture_logs().await;
         let (mut ctx, _data_rx) = make_ws_ctx();
         let asset_id = "0xTOKEN_TICK_RECOVER";
         let market = "0xMARKET";
@@ -16093,5 +16129,15 @@ mod tests {
             crate::websocket::handler::HandlerCommand::CycleMarketSubscription { asset_ids: ids, .. }
             if ids == vec![asset_id.to_string()]
         ));
+
+        let logs = super::super::test_logging::messages();
+        assert!(logs.iter().any(|(level, message)| {
+            *level == log::Level::Debug
+                && message == &format!("Resyncing book for {instrument_id} after tick size change")
+        }));
+        assert!(
+            !logs.iter().any(|(level, _)| *level == log::Level::Warn),
+            "Unexpected WARN logs: {logs:?}",
+        );
     }
 }
