@@ -1644,8 +1644,9 @@ mod tests {
             execution::{CancelAllOrders, GenerateExecutionMassStatus, TradingCommand},
         },
         msgbus::{
-            BusMessage, BusTap, MessageBusConfig, MessageBusExternalEgress, SuppressExternalGuard,
-            clear_bus_tap, set_bus_tap, set_message_bus, stubs::get_call_check_handler,
+            BusMessage, BusTap, MessageBusConfig, MessageBusExternalEgress, MessagingSwitchboard,
+            SuppressExternalGuard, clear_bus_tap, set_bus_tap, set_message_bus,
+            stubs::get_call_check_handler,
         },
     };
 
@@ -1926,6 +1927,51 @@ mod tests {
             publications.borrow().is_empty(),
             "republished message must not be forwarded back out externally"
         );
+        reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_account_state_routes_to_portfolio(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let publications = install_capturing_external_egress(encoding);
+        let state = nautilus_model::events::account::stubs::cash_account_state();
+        publish_account_state("events.account.SIM-001".into(), &state);
+        let captured = publications.borrow_mut().pop().unwrap();
+        assert_eq!(captured.payload_type, BusPayloadType::AccountState);
+        assert_eq!(captured.encoding, encoding);
+        let message = BusMessage::with_str_topic(
+            captured.topic,
+            captured.payload_type,
+            captured.payload,
+            captured.encoding,
+        );
+        let applied = Rc::new(RefCell::new(Vec::new()));
+        let handler = TypedHandler::from({
+            let applied = Rc::clone(&applied);
+            move |event: &AccountState| applied.borrow_mut().push(event.clone())
+        });
+        register_account_state_endpoint(MessagingSwitchboard::portfolio_update_account(), handler);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let subscriber = TypedHandler::from({
+            let received = Rc::clone(&received);
+            move |event: &AccountState| received.borrow_mut().push(event.clone())
+        });
+        subscribe_account_state("events.account.*".into(), subscriber, None);
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::AccountState);
+
+        republish_external_message(&message).unwrap();
+
+        assert_eq!(*applied.borrow(), vec![state]);
+        assert!(
+            received.borrow().is_empty(),
+            "Portfolio owns account publication"
+        );
+        assert!(publications.borrow().is_empty());
         reset_message_bus();
     }
 
@@ -2294,15 +2340,6 @@ mod tests {
             OptionGreeks::default(),
             publish_option_greeks,
             subscribe_option_greeks,
-            assert_eq_ref,
-        );
-        assert_typed_external_round_trips(
-            encoding,
-            BusPayloadType::AccountState,
-            "events.account.SIM-001",
-            nautilus_model::events::account::stubs::cash_account_state(),
-            publish_account_state,
-            subscribe_account_state,
             assert_eq_ref,
         );
         assert_typed_external_round_trips(

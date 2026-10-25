@@ -29,13 +29,13 @@ pub(crate) mod codec;
 
 use self::codec::PayloadCodecError;
 use super::{
-    BusMessage, BusMessageSource, BusPayloadType, HAS_EXTERNAL_EGRESS, SUPPRESS_EXTERNAL_DEPTH,
-    SuppressExternalGuard,
+    BusMessage, BusMessageSource, BusPayloadType, HAS_EXTERNAL_EGRESS, MessagingSwitchboard,
+    SUPPRESS_EXTERNAL_DEPTH, SuppressExternalGuard,
     api::{
-        publish_account_state, publish_any, publish_bar, publish_deltas, publish_depth,
-        publish_funding_rate, publish_index_price, publish_instrument, publish_mark_price,
-        publish_option_greeks, publish_order_event, publish_portfolio_snapshot,
-        publish_position_event, publish_quote, publish_trade,
+        publish_any, publish_bar, publish_deltas, publish_depth, publish_funding_rate,
+        publish_index_price, publish_instrument, publish_mark_price, publish_option_greeks,
+        publish_order_event, publish_portfolio_snapshot, publish_position_event, publish_quote,
+        publish_trade, send_account_state,
     },
     get_message_bus,
     mstr::{MStr, Topic},
@@ -268,6 +268,9 @@ fn republish_pending_response<T: serde::de::DeserializeOwned + 'static>(
 /// forwarded straight back out through external egress, which would create an echo loop on a node
 /// that has both external ingress and egress.
 ///
+/// Account states are sent to Portfolio's account endpoint for application before Portfolio
+/// publishes them on `events.account.{account_id}`. Portfolio must be registered to process them.
+///
 /// # Errors
 ///
 /// Returns an error if the topic is invalid or a supported payload cannot be decoded. Unsupported
@@ -373,7 +376,9 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
                 message.payload_type,
                 message.encoding,
                 &message.payload,
-                publish_account_state,
+                |_, state| {
+                    send_account_state(MessagingSwitchboard::portfolio_update_account(), state);
+                },
             )?;
         }
         BusPayloadType::OrderEvent => {
