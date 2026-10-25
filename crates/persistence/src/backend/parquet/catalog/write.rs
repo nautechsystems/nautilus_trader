@@ -1301,7 +1301,7 @@ mod tests {
 
         let mut catalog = ParquetDataCatalog {
             base_path: String::new(),
-            original_uri: "memory://".to_string(),
+            original_uri: "s3://test-bucket".to_string(),
             object_store: object_store.clone(),
             session: DataBackendSession::new(5_000),
             batch_size: 5_000,
