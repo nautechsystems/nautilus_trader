@@ -104,6 +104,7 @@ Released on TBD (UTC).
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
 - Fixed position reconciliation timeouts discarding finalized snapshots and authoritative fills
 - Fixed Python `LiveNode.add_strategy_from_config` accepting strategies when the node is not idle
+- Fixed targeted order reconciliation discarding accepted statuses and fills after timeout or cancellation
 - Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking

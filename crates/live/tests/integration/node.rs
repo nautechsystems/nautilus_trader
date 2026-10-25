@@ -1102,6 +1102,8 @@ pub(crate) mod serial_tests {
         fill_report_finish_busy_ns: Arc<AtomicU64>,
         fill_reports_finalized: Arc<Mutex<Vec<TradeId>>>,
         targeted_order_report_ids: Arc<Mutex<Vec<ClientOrderId>>>,
+        targeted_order_reports_finalized: Arc<Mutex<Vec<ClientOrderId>>>,
+        fill_report_error: Arc<AtomicBool>,
         position_report_requested: Arc<AtomicBool>,
         position_report_count: Arc<AtomicUsize>,
         position_reports_finalized: Arc<AtomicUsize>,
@@ -1446,32 +1448,23 @@ pub(crate) mod serial_tests {
             (task.finish)()
         }
 
+        fn generate_order_status_report_task(
+            &self,
+            cmd: &GenerateOrderStatusReport,
+        ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+            self.state
+                .report_worker
+                .load(Ordering::Relaxed)
+                .then(|| self.targeted_order_report_task(cmd))
+        }
+
         async fn generate_order_status_report(
             &self,
             cmd: &GenerateOrderStatusReport,
         ) -> anyhow::Result<Option<OrderStatusReport>> {
-            let client_order_id = cmd
-                .client_order_id
-                .expect("targeted report command must carry a client order ID");
-
-            let request_count = {
-                let mut ids = self.state.targeted_order_report_ids.lock();
-                ids.push(client_order_id);
-                ids.len()
-            };
-
-            if self.block_every_second_targeted_report && request_count.is_multiple_of(2) {
-                return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>().await;
-            }
-
-            if let Some(release) = &self.targeted_report_release {
-                release.notified().await;
-            }
-
-            self.state
-                .report_response_returned
-                .store(true, Ordering::Relaxed);
-            Ok(self.targeted_order_report.clone())
+            let task = self.targeted_order_report_task(cmd);
+            task.collection.await;
+            (task.finish)()
         }
 
         fn generate_fill_reports_task(
@@ -1612,6 +1605,58 @@ pub(crate) mod serial_tests {
             )
         }
 
+        fn targeted_order_report_task(
+            &self,
+            cmd: &GenerateOrderStatusReport,
+        ) -> ExecutionReportTask<Option<OrderStatusReport>> {
+            let client_order_id = cmd
+                .client_order_id
+                .expect("targeted command carries order ID");
+            let state = self.state.clone();
+            let finish_state = self.state.clone();
+            let release = self.targeted_report_release.clone();
+            let report = self.targeted_order_report.clone();
+            let block_every_second = self.block_every_second_targeted_report;
+
+            ExecutionReportTask::new(
+                async move {
+                    let _guard = ReportCollectionGuard::new(state.clone());
+                    *state.report_thread.lock() = Some(std::thread::current().id());
+
+                    let request_count = {
+                        let mut ids = state.targeted_order_report_ids.lock();
+                        ids.push(client_order_id);
+                        ids.len()
+                    };
+
+                    if state.report_cpu_ns.load(Ordering::Relaxed) != 0 {
+                        Self::run_report_cpu(&state, request_count);
+                    }
+
+                    if block_every_second && request_count.is_multiple_of(2) {
+                        return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>()
+                            .await;
+                    }
+
+                    if let Some(release) = release {
+                        release.notified().await;
+                    }
+
+                    state
+                        .report_response_returned
+                        .store(true, Ordering::Relaxed);
+                    Ok(report)
+                },
+                move |report| {
+                    finish_state
+                        .targeted_order_reports_finalized
+                        .lock()
+                        .push(client_order_id);
+                    Ok(report)
+                },
+            )
+        }
+
         fn fill_report_task(
             &self,
             cmd: &GenerateFillReports,
@@ -1632,6 +1677,10 @@ pub(crate) mod serial_tests {
                         && let Some(release) = release
                     {
                         release.notified().await;
+                    }
+
+                    if state.fill_report_error.load(Ordering::Relaxed) {
+                        anyhow::bail!("fill query rejected");
                     }
 
                     let mut responses = responses.lock();

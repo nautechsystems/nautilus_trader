@@ -27,8 +27,12 @@
 //! Accepted continuations and reconciliation run synchronously, even if finalization crosses
 //! the deadline. Shutdown discards unused position snapshots without running their continuations.
 //! Discarding a batch skips retained continuations, not earlier inline effects.
+//!
+//! Targeted queries accept each status and companion fill before its continuation, sharing the
+//! original task deadline. The node retains accepted results across later expiry or cancellation.
+//! Normal shutdown reconciles them; fatal callback failure discards them without further dispatch.
 
-use std::{future::Future, pin::Pin, time::Duration};
+use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
 
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use indexmap::{IndexMap, IndexSet};
@@ -50,7 +54,7 @@ use crate::{
         manager::{
             InstrumentAccountKey, OpenOrderReportCheck, PositionFillReportPreparation,
             PositionFillReportQuery, PositionReportCheck, SourcedOrderStatusReport,
-            TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
+            TargetedOrderQuery, TargetedOrderReportResult, collect_targeted_order_reports,
         },
     },
     runner::AsyncRunner,
@@ -174,28 +178,63 @@ impl LiveNode {
             .collect();
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
+        let carried_results = Rc::new(RefCell::new(Vec::new()));
+        let results = carried_results.clone();
+
         TargetedOrderReportTask {
             future: Box::pin(async move {
-                let client_refs = clients
-                    .iter()
-                    .map(|client| client as &dyn ExecutionClient)
-                    .collect::<Vec<_>>();
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
 
                 match dst::time::timeout(
                     remaining,
-                    request_targeted_order_reports(queries, &client_refs, query_delay),
+                    collect_targeted_order_reports(
+                        queries,
+                        clients,
+                        query_delay,
+                        deadline,
+                        results,
+                    ),
                 )
                 .await
                 {
-                    Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(result)
-                    }
-                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(true) => ReportTaskOutcome::Completed(()),
+                    Ok(false) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
             planned_client_order_ids,
+            carried_results,
         }
+    }
+
+    /// Applies accepted results and clears every planned targeted marker.
+    pub(super) fn complete_targeted_order_report_check(
+        &mut self,
+        task: TargetedOrderReportTask,
+        outcome: &ReportTaskOutcome<()>,
+    ) {
+        let planned_client_order_ids = task.planned_client_order_ids.clone();
+        let results = task.into_results(matches!(outcome, ReportTaskOutcome::Completed(())));
+        self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+        self.handle_targeted_order_report_result(results);
+
+        if matches!(outcome, ReportTaskOutcome::TimedOut) {
+            log::warn!(
+                "Targeted order report collection expired after {:?}",
+                self.config.timeout_reconciliation
+            );
+        }
+    }
+
+    fn handle_targeted_order_report_result(&mut self, results: Vec<TargetedOrderReportResult>) {
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
+        let events = self
+            .exec_manager
+            .reconcile_targeted_order_reports(results, &client_refs);
+        self.process_reconciliation_events(&events);
     }
 
     fn start_position_report_check(&self) -> Option<PositionReportTask> {
@@ -472,12 +511,13 @@ impl LiveNode {
             .remove_targeted_order_queries(planned_client_order_ids);
     }
 
-    /// Drops report futures before releasing their deferred client work.
+    /// Drops pending collections and reconciles accepted targeted results when dispatch is safe.
     pub(super) fn cancel_report_tasks(
         &mut self,
         open_order_report_task: &mut Option<OpenOrderReportTask>,
         targeted_order_report_task: &mut Option<TargetedOrderReportTask>,
         position_report_task: &mut Option<PositionReportTask>,
+        reconcile_reports: bool,
     ) {
         let planned_client_order_ids = targeted_order_report_task
             .as_ref()
@@ -485,7 +525,10 @@ impl LiveNode {
             .unwrap_or_default();
 
         drop(open_order_report_task.take());
-        drop(targeted_order_report_task.take());
+        let carried_results = targeted_order_report_task
+            .take()
+            .map(|task| task.into_results(false))
+            .unwrap_or_default();
         drop(position_report_task.take());
 
         for client in &self.exec_clients {
@@ -493,6 +536,10 @@ impl LiveNode {
         }
 
         self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+
+        if reconcile_reports {
+            self.handle_targeted_order_report_result(carried_results);
+        }
     }
 
     pub(super) async fn finish_report_tasks(
@@ -671,13 +718,25 @@ pub(super) struct OpenOrderReportResult {
     pub(super) failed_clients: IndexSet<ClientId>,
 }
 
-type TargetedOrderReportFuture =
-    Pin<Box<dyn Future<Output = ReportTaskOutcome<Vec<TargetedOrderReportResult>>>>>;
+type TargetedOrderReportFuture = Pin<Box<dyn Future<Output = ReportTaskOutcome<()>>>>;
 
-/// Pending targeted reports and order IDs to clear on cancellation.
+/// Pending targeted collection, accepted results, and order IDs to clear when the task ends.
 pub(super) struct TargetedOrderReportTask {
     pub(super) future: TargetedOrderReportFuture,
     pub(super) planned_client_order_ids: Vec<ClientOrderId>,
+    carried_results: Rc<RefCell<Vec<TargetedOrderReportResult>>>,
+}
+
+impl TargetedOrderReportTask {
+    fn into_results(self, collection_complete: bool) -> Vec<TargetedOrderReportResult> {
+        drop(self.future);
+        let mut results = std::mem::take(&mut *self.carried_results.borrow_mut());
+        if !collection_complete {
+            results.retain(TargetedOrderReportResult::has_report);
+        }
+
+        results
+    }
 }
 
 /// Bulk order receipts finalized only after the whole collection is accepted.

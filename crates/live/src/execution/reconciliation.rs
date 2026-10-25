@@ -21,6 +21,8 @@
 //! The manager owns cache-dependent decisions; the live node owns recurring task lifecycles.
 
 use std::time::Duration;
+#[cfg(feature = "node")]
+use std::{cell::RefCell, rc::Rc};
 
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
@@ -54,6 +56,9 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
+
+#[cfg(feature = "node")]
+use super::client::{CollectedReport, LiveExecutionClient, ReportCollector};
 
 /// Composite key identifying a position context by instrument and account.
 ///
@@ -137,6 +142,14 @@ pub(crate) struct TargetedOrderReportResult {
     pub(super) report: Option<OrderStatusReport>,
     pub(super) fills: Vec<FillReport>,
     pub(super) coverage_complete: bool,
+}
+
+#[cfg(feature = "node")]
+impl TargetedOrderReportResult {
+    /// Returns whether an order status report is present.
+    pub(crate) const fn has_report(&self) -> bool {
+        self.report.is_some()
+    }
 }
 
 /// Order status report paired with its source execution client.
@@ -326,64 +339,29 @@ pub(crate) async fn request_targeted_order_reports(
                 client.generate_order_status_report(&query.command).await
             };
 
-            match response {
-                Ok(Some(candidate)) if targeted_report_matches(&query, &candidate) => {
-                    if terminal_report_has_missing_fills(&candidate, query.filled_qty) {
-                        let mut command = GenerateFillReports::new(
-                            UUID4::new(),
-                            query.command.ts_init,
-                            Some(candidate.instrument_id),
-                            Some(candidate.venue_order_id),
-                            None,
-                            None,
-                            None,
-                            Some(query.command.command_id),
-                        );
-                        command.log_receipt_level = LogLevel::Debug;
+            if let Some(candidate) =
+                targeted_report_response(&query, client_id, response, &mut coverage_complete)
+            {
+                if terminal_report_has_missing_fills(&candidate, query.filled_qty) {
+                    let command = targeted_fill_command(&query, &candidate);
 
-                        match client.generate_fill_reports(command).await {
-                            Ok(reports) => {
-                                fills = reports
-                                    .into_iter()
-                                    .filter(|fill| {
-                                        fill.account_id == candidate.account_id
-                                            && fill.instrument_id == candidate.instrument_id
-                                            && fill.venue_order_id == candidate.venue_order_id
-                                            && candidate
-                                                .order_side
-                                                .is_none_or(|side| fill.order_side == side)
-                                    })
-                                    .collect();
-                            }
-                            Err(e) => log::warn!(
-                                "Failed fill report query from {client_id} for {}: {e}",
-                                query.client_order_id,
-                            ),
+                    match client.generate_fill_reports(command).await {
+                        Ok(reports) => {
+                            fills = reports
+                                .into_iter()
+                                .filter(|fill| targeted_fill_matches(&candidate, fill))
+                                .collect();
                         }
+                        Err(e) => log::warn!(
+                            "Failed fill report query from {client_id} for {}: {e}",
+                            query.client_order_id,
+                        ),
                     }
+                }
 
-                    report = Some(candidate);
-                    report_client_id = Some(client_id);
-                    break;
-                }
-                Ok(Some(candidate)) => {
-                    coverage_complete = false;
-                    log::warn!(
-                        "Ignoring mismatched targeted order status report from {client_id} for {}: client_order_id={:?}, venue_order_id={}, instrument_id={}",
-                        query.client_order_id,
-                        candidate.client_order_id,
-                        candidate.venue_order_id,
-                        candidate.instrument_id,
-                    );
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    coverage_complete = false;
-                    log::warn!(
-                        "Failed targeted order status query from {client_id} for {}: {e}",
-                        query.client_order_id,
-                    );
-                }
+                report = Some(candidate);
+                report_client_id = Some(client_id);
+                break;
             }
         }
 
@@ -397,6 +375,212 @@ pub(crate) async fn request_targeted_order_reports(
     }
 
     results
+}
+
+/// Returns whether all targeted queries complete within their shared collection budget.
+///
+/// Accepted statuses and fills remain in `results` across later expiry or cancellation.
+#[cfg(feature = "node")]
+pub(crate) async fn collect_targeted_order_reports(
+    queries: Vec<TargetedOrderQuery>,
+    clients: Vec<LiveExecutionClient>,
+    query_delay: Duration,
+    deadline: dst::time::Instant,
+    results: Rc<RefCell<Vec<TargetedOrderReportResult>>>,
+) -> bool {
+    let mut collectors = IndexMap::new();
+    let mut request_count = 0usize;
+
+    for mut query in queries {
+        collectors.clear();
+
+        let Some(result) = collect_targeted_order_status(
+            &mut query,
+            &clients,
+            query_delay,
+            deadline,
+            &mut request_count,
+        )
+        .await
+        else {
+            return false;
+        };
+
+        let fill_query = result
+            .report
+            .as_ref()
+            .filter(|report| terminal_report_has_missing_fills(report, query.filled_qty))
+            .map(|report| (targeted_fill_command(&query, report), report.clone()));
+        let client_id = result.client_id;
+        let result_index = results.borrow().len();
+        results.borrow_mut().push(result);
+
+        if let Some((command, report)) = fill_query {
+            let client_id = client_id.expect("matched status has a reporting client");
+
+            if dst::time::Instant::now() >= deadline {
+                return false;
+            }
+
+            let receipt = async {
+                let collector =
+                    ReportCollector::for_client(&mut collectors, &clients, client_id).await?;
+                collector.fill_reports(command).await
+            }
+            .await;
+
+            let Some(response) = accept_collected_report(receipt, deadline) else {
+                return false;
+            };
+
+            match response {
+                Ok(fills) => {
+                    results.borrow_mut()[result_index].fills = fills
+                        .into_iter()
+                        .filter(|fill| targeted_fill_matches(&report, fill))
+                        .collect();
+                }
+                Err(e) => log::warn!(
+                    "Failed fill report query from {client_id} for {}: {e}",
+                    query.client_order_id
+                ),
+            }
+        }
+    }
+
+    true
+}
+
+#[cfg(feature = "node")]
+async fn collect_targeted_order_status(
+    query: &mut TargetedOrderQuery,
+    clients: &[LiveExecutionClient],
+    query_delay: Duration,
+    deadline: dst::time::Instant,
+    request_count: &mut usize,
+) -> Option<TargetedOrderReportResult> {
+    let mut coverage_complete = true;
+
+    for client_id in &query.responsible_clients {
+        let client_id = *client_id;
+        let Some(client) = clients
+            .iter()
+            .find(|client| client.client_id() == client_id)
+        else {
+            coverage_complete = false;
+            log::warn!(
+                "Cannot run targeted order status query for {}: execution client {client_id} is unavailable",
+                query.client_order_id
+            );
+            continue;
+        };
+
+        if *request_count > 0 && !query_delay.is_zero() {
+            dst::time::sleep(query_delay).await;
+        }
+
+        if dst::time::Instant::now() >= deadline {
+            return None;
+        }
+
+        *request_count += 1;
+
+        let response = if let Some(report) = query.report.take() {
+            Ok(Some(report))
+        } else {
+            let receipt = client.collect_order_status_report(&query.command).await;
+
+            accept_collected_report(receipt, deadline)?
+        };
+
+        if let Some(report) =
+            targeted_report_response(query, client_id, response, &mut coverage_complete)
+        {
+            return Some(TargetedOrderReportResult {
+                client_order_id: query.client_order_id(),
+                client_id: Some(client_id),
+                report: Some(report),
+                fills: Vec::new(),
+                coverage_complete,
+            });
+        }
+    }
+
+    Some(TargetedOrderReportResult {
+        client_order_id: query.client_order_id(),
+        client_id: None,
+        report: None,
+        fills: Vec::new(),
+        coverage_complete,
+    })
+}
+
+#[cfg(feature = "node")]
+fn accept_collected_report<T>(
+    receipt: anyhow::Result<CollectedReport<T>>,
+    deadline: dst::time::Instant,
+) -> Option<anyhow::Result<T>> {
+    if dst::time::Instant::now() >= deadline {
+        return None;
+    }
+
+    Some(receipt.and_then(CollectedReport::finish))
+}
+
+fn targeted_report_response(
+    query: &TargetedOrderQuery,
+    client_id: ClientId,
+    response: anyhow::Result<Option<OrderStatusReport>>,
+    coverage_complete: &mut bool,
+) -> Option<OrderStatusReport> {
+    match response {
+        Ok(Some(report)) if targeted_report_matches(query, &report) => Some(report),
+        Ok(Some(candidate)) => {
+            *coverage_complete = false;
+            log::warn!(
+                "Ignoring mismatched targeted order status report from {client_id} for {}: client_order_id={:?}, venue_order_id={}, instrument_id={}",
+                query.client_order_id,
+                candidate.client_order_id,
+                candidate.venue_order_id,
+                candidate.instrument_id,
+            );
+            None
+        }
+        Ok(None) => None,
+        Err(e) => {
+            *coverage_complete = false;
+            log::warn!(
+                "Failed targeted order status query from {client_id} for {}: {e}",
+                query.client_order_id
+            );
+            None
+        }
+    }
+}
+
+fn targeted_fill_command(
+    query: &TargetedOrderQuery,
+    report: &OrderStatusReport,
+) -> GenerateFillReports {
+    let mut command = GenerateFillReports::new(
+        UUID4::new(),
+        query.command.ts_init,
+        Some(report.instrument_id),
+        Some(report.venue_order_id),
+        None,
+        None,
+        None,
+        Some(query.command.command_id),
+    );
+    command.log_receipt_level = LogLevel::Debug;
+    command
+}
+
+fn targeted_fill_matches(report: &OrderStatusReport, fill: &FillReport) -> bool {
+    fill.account_id == report.account_id
+        && fill.instrument_id == report.instrument_id
+        && fill.venue_order_id == report.venue_order_id
+        && report.order_side.is_none_or(|side| fill.order_side == side)
 }
 
 /// Checks whether cached order status, filled quantity, and report fields match.
@@ -854,6 +1038,469 @@ pub(super) mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[cfg(feature = "node")]
+    mod targeted_collection {
+        use std::{
+            cell::Cell,
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            },
+        };
+
+        use futures_util::FutureExt;
+        use nautilus_common::clients::ExecutionReportTask;
+
+        use super::*;
+
+        type CollectionEvent = (&'static str, ClientId, dst::time::Instant);
+
+        #[derive(Debug, Clone, Default)]
+        struct CollectionState {
+            events: Rc<RefCell<Vec<CollectionEvent>>>,
+            commands: Rc<RefCell<Vec<GenerateFillReports>>>,
+            started: Arc<AtomicUsize>,
+            status_finished: Rc<Cell<usize>>,
+            fill_finished: Rc<Cell<usize>>,
+        }
+
+        #[derive(Debug)]
+        struct CollectionClient {
+            id: ClientId,
+            report: Option<OrderStatusReport>,
+            fills: Vec<FillReport>,
+            state: CollectionState,
+            worker: bool,
+            release_at: usize,
+            release: Arc<tokio::sync::Notify>,
+        }
+
+        impl CollectionClient {
+            fn status_task(&self) -> ExecutionReportTask<Option<OrderStatusReport>> {
+                self.state
+                    .events
+                    .borrow_mut()
+                    .push(("status", self.id, dst::time::Instant::now()));
+                let state = self.state.clone();
+                let started = self.state.started.clone();
+                let report = self.report.clone();
+                let release_at = self.release_at;
+                let release = self.release.clone();
+
+                ExecutionReportTask::new(
+                    async move {
+                        if started.fetch_add(1, Ordering::SeqCst) + 1 == release_at {
+                            release.notified().await;
+                        }
+
+                        Ok(report)
+                    },
+                    move |report| {
+                        state.status_finished.set(state.status_finished.get() + 1);
+                        Ok(report)
+                    },
+                )
+            }
+
+            fn fill_task(&self, cmd: &GenerateFillReports) -> ExecutionReportTask<Vec<FillReport>> {
+                self.state
+                    .events
+                    .borrow_mut()
+                    .push(("fills", self.id, dst::time::Instant::now()));
+                self.state.commands.borrow_mut().push(cmd.clone());
+                let state = self.state.clone();
+                let started = self.state.started.clone();
+                let reports = self.fills.clone();
+                let release_at = self.release_at;
+                let release = self.release.clone();
+
+                ExecutionReportTask::new(
+                    async move {
+                        if started.fetch_add(1, Ordering::SeqCst) + 1 == release_at {
+                            release.notified().await;
+                        }
+
+                        Ok(reports)
+                    },
+                    move |reports| {
+                        state.fill_finished.set(state.fill_finished.get() + 1);
+                        Ok(reports)
+                    },
+                )
+            }
+        }
+
+        #[async_trait::async_trait(?Send)]
+        impl ExecutionClient for CollectionClient {
+            fn is_connected(&self) -> bool {
+                true
+            }
+
+            fn client_id(&self) -> ClientId {
+                self.id
+            }
+
+            fn account_id(&self) -> AccountId {
+                AccountId::from("TEST-001")
+            }
+
+            fn venue(&self) -> Venue {
+                Venue::from("BINANCE")
+            }
+
+            fn oms_type(&self) -> OmsType {
+                OmsType::Netting
+            }
+
+            fn get_account(&self) -> Option<AccountAny> {
+                None
+            }
+
+            fn start(&mut self) -> anyhow::Result<()> {
+                Ok(())
+            }
+
+            fn stop(&mut self) -> anyhow::Result<()> {
+                Ok(())
+            }
+
+            fn generate_account_state(
+                &self,
+                _: Vec<AccountBalance>,
+                _: Vec<MarginBalance>,
+                _: bool,
+                _: UnixNanos,
+                _: Option<nautilus_core::Params>,
+            ) -> anyhow::Result<()> {
+                Ok(())
+            }
+
+            fn generate_order_status_report_task(
+                &self,
+                _: &GenerateOrderStatusReport,
+            ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+                self.worker.then(|| self.status_task())
+            }
+
+            async fn generate_order_status_report(
+                &self,
+                _: &GenerateOrderStatusReport,
+            ) -> anyhow::Result<Option<OrderStatusReport>> {
+                let task = self.status_task();
+                task.collection.await;
+                (task.finish)()
+            }
+
+            fn generate_fill_reports_task(
+                &self,
+                cmd: &GenerateFillReports,
+            ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+                self.worker.then(|| self.fill_task(cmd))
+            }
+
+            async fn generate_fill_reports(
+                &self,
+                cmd: GenerateFillReports,
+            ) -> anyhow::Result<Vec<FillReport>> {
+                let task = self.fill_task(&cmd);
+                task.collection.await;
+                (task.finish)()
+            }
+        }
+
+        fn query() -> TargetedOrderQuery {
+            TargetedOrderQuery {
+                client_order_id: ClientOrderId::from("O-TARGETED"),
+                responsible_clients: IndexSet::from([ClientId::from("A")]),
+                command: GenerateOrderStatusReport::new(
+                    UUID4::new(),
+                    UnixNanos::from(123),
+                    Some(InstrumentId::from("ETHUSDT-PERP.BINANCE")),
+                    Some(ClientOrderId::from("O-TARGETED")),
+                    Some(VenueOrderId::from("V-TARGETED")),
+                    None,
+                    None,
+                ),
+                report: None,
+                filled_qty: Quantity::from("0.0"),
+            }
+        }
+
+        fn report() -> OrderStatusReport {
+            let mut report = OrderStatusReport::new(
+                AccountId::from("TEST-001"),
+                InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+                Some(ClientOrderId::from("O-TARGETED")),
+                VenueOrderId::from("V-TARGETED"),
+                Some(OrderSide::Buy),
+                OrderType::Limit,
+                TimeInForce::Gtc,
+                OrderStatus::Canceled,
+                Quantity::from("3.0"),
+                Quantity::from("1.0"),
+                UnixNanos::from(11),
+                UnixNanos::from(22),
+                UnixNanos::from(33),
+                None,
+            );
+            report.report_id = UUID4::from("00000000-0000-4000-8000-000000000011");
+            report
+        }
+
+        fn fill() -> FillReport {
+            let mut report = FillReport::new(
+                AccountId::from("TEST-001"),
+                InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+                VenueOrderId::from("V-TARGETED"),
+                TradeId::from("T-TARGETED"),
+                OrderSide::Buy,
+                Quantity::from("1.0"),
+                Price::from("101.0"),
+                Money::from("0.25 USDT"),
+                LiquiditySide::Taker,
+                Some(ClientOrderId::from("O-TARGETED")),
+                None,
+                UnixNanos::from(21),
+                UnixNanos::from(31),
+                None,
+            );
+            report.report_id = UUID4::from("00000000-0000-4000-8000-000000000022");
+            report
+        }
+
+        fn client(state: &CollectionState, worker: bool, release_at: usize) -> CollectionClient {
+            CollectionClient {
+                id: ClientId::from("A"),
+                report: Some(report()),
+                fills: vec![fill()],
+                state: state.clone(),
+                worker,
+                release_at,
+                release: Arc::new(tokio::sync::Notify::new()),
+            }
+        }
+
+        #[cfg_attr(
+            all(feature = "simulation", madsim),
+            allow(
+                clippy::unused_async,
+                reason = "the Tokio clock requires an awaitable advance operation"
+            )
+        )]
+        async fn advance(duration: Duration) {
+            #[cfg(all(feature = "simulation", madsim))]
+            madsim::time::advance(duration);
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            tokio::time::advance(duration).await;
+        }
+
+        #[rstest]
+        #[cfg_attr(
+            not(all(feature = "simulation", madsim)),
+            tokio::test(start_paused = true)
+        )]
+        #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+        async fn test_targeted_collection_preserves_schedule_and_first_match(
+            #[values(false, true)] worker: bool,
+        ) {
+            let state = CollectionState::default();
+            let mut a = client(&state, worker, 0);
+            a.report = None;
+            let mut b = client(&state, worker, 0);
+            b.id = ClientId::from("B");
+            let mut c = client(&state, worker, 0);
+            c.id = ClientId::from("C");
+            let clients = vec![a, b, c]
+                .into_iter()
+                .map(|c| LiveExecutionClient::new(Box::new(c)))
+                .collect::<Vec<_>>();
+            let mut query = query();
+            query.responsible_clients = IndexSet::from([
+                ClientId::from("MISSING"),
+                ClientId::from("A"),
+                ClientId::from("B"),
+                ClientId::from("C"),
+            ]);
+            let command_id = query.command.command_id;
+            let results = Rc::new(RefCell::new(Vec::new()));
+            let start = dst::time::Instant::now();
+            assert!(
+                collect_targeted_order_reports(
+                    vec![query.clone(), query],
+                    clients,
+                    Duration::from_millis(10),
+                    start + Duration::from_secs(1),
+                    results.clone()
+                )
+                .await
+            );
+
+            let events = state
+                .events
+                .borrow()
+                .iter()
+                .map(|(kind, id, ts)| {
+                    let elapsed = ts.duration_since(start);
+                    // Simulated worker wakeups add nanoseconds to millisecond pacing
+                    #[cfg(all(feature = "simulation", madsim))]
+                    let elapsed = Duration::from_millis(elapsed.as_millis().try_into().unwrap());
+                    (*kind, *id, elapsed)
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                events,
+                vec![
+                    ("status", ClientId::from("A"), Duration::ZERO),
+                    ("status", ClientId::from("B"), Duration::from_millis(10)),
+                    ("fills", ClientId::from("B"), Duration::from_millis(10)),
+                    ("status", ClientId::from("A"), Duration::from_millis(20)),
+                    ("status", ClientId::from("B"), Duration::from_millis(30)),
+                    ("fills", ClientId::from("B"), Duration::from_millis(30))
+                ]
+            );
+            let results = results.borrow();
+            assert_eq!(results.len(), 2);
+
+            for result in results.iter() {
+                assert_eq!(result.client_order_id, ClientOrderId::from("O-TARGETED"));
+                assert_eq!(result.client_id, Some(ClientId::from("B")));
+                assert_eq!(result.report, Some(report()));
+                assert!(!result.coverage_complete);
+            }
+
+            assert_eq!(results[0].fills, vec![fill()]);
+            assert_eq!(results[1].fills, vec![fill()]);
+
+            for cmd in state.commands.borrow().iter() {
+                assert_eq!(cmd.correlation_id, Some(command_id));
+                assert_eq!(cmd.ts_init, UnixNanos::from(123));
+                assert_eq!(cmd.instrument_id, Some(fill().instrument_id));
+                assert_eq!(cmd.venue_order_id, Some(fill().venue_order_id));
+                assert_eq!(cmd.start, None);
+                assert_eq!(cmd.end, None);
+                assert_eq!(cmd.params, None);
+                assert_eq!(cmd.causation_id, None);
+                assert_eq!(cmd.log_receipt_level, LogLevel::Debug);
+            }
+        }
+
+        #[rstest]
+        #[case::before(-1)]
+        #[case::exact(0)]
+        #[case::after(1)]
+        #[cfg_attr(
+            not(all(feature = "simulation", madsim)),
+            tokio::test(start_paused = true)
+        )]
+        #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+        async fn test_targeted_collection_strict_stage_deadline(#[case] offset: i64) {
+            let state = CollectionState::default();
+            let c = LiveExecutionClient::new(Box::new(client(&state, true, 0)));
+            let deadline = dst::time::Instant::now() + Duration::from_secs(1);
+
+            let receipt = c
+                .collect_order_status_report(&query().command)
+                .await
+                .unwrap();
+
+            let boundary = if offset < 0 {
+                deadline.checked_sub(Duration::from_nanos(1)).unwrap()
+            } else {
+                deadline + Duration::from_nanos(offset.unsigned_abs())
+            };
+
+            advance(boundary.saturating_duration_since(dst::time::Instant::now())).await;
+            assert_eq!(dst::time::Instant::now(), boundary);
+            assert_eq!(
+                accept_collected_report(Ok(receipt), deadline).map(|result| result.unwrap()),
+                (offset < 0).then(|| Some(report()))
+            );
+            assert_eq!(state.status_finished.get(), usize::from(offset < 0));
+            assert_eq!(state.fill_finished.get(), 0);
+        }
+
+        #[rstest]
+        #[case::account("account")]
+        #[case::instrument("instrument")]
+        #[case::venue_order("venue_order")]
+        #[case::side("side")]
+        #[cfg_attr(
+            not(all(feature = "simulation", madsim)),
+            tokio::test(start_paused = true)
+        )]
+        #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+        async fn test_targeted_collection_filters_fill_scope(#[case] field: &str) {
+            let state = CollectionState::default();
+            let mut c = client(&state, true, 0);
+            let mut other = fill();
+            match field {
+                "account" => other.account_id = AccountId::from("OTHER-002"),
+                "instrument" => other.instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                "venue_order" => other.venue_order_id = VenueOrderId::from("V-OTHER"),
+                "side" => other.order_side = OrderSide::Sell,
+                _ => unreachable!(),
+            }
+
+            c.fills.push(other);
+            let results = Rc::new(RefCell::new(Vec::new()));
+            assert!(
+                collect_targeted_order_reports(
+                    vec![query()],
+                    vec![LiveExecutionClient::new(Box::new(c))],
+                    Duration::ZERO,
+                    dst::time::Instant::now() + Duration::from_secs(1),
+                    results.clone()
+                )
+                .await
+            );
+            assert_eq!(results.borrow()[0].fills, vec![fill()]);
+        }
+
+        #[rstest]
+        #[case::status(1)]
+        #[case::fills(2)]
+        #[cfg_attr(
+            not(all(feature = "simulation", madsim)),
+            tokio::test(start_paused = true)
+        )]
+        #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+        async fn test_targeted_collection_preserves_original_budget(#[case] release_at: usize) {
+            let state = CollectionState::default();
+            let c = client(&state, true, release_at);
+            let release = c.release.clone();
+            let clients = vec![LiveExecutionClient::new(Box::new(c))];
+            let results = Rc::new(RefCell::new(Vec::new()));
+            let deadline = dst::time::Instant::now() + Duration::from_millis(100);
+            let mut request = Box::pin(collect_targeted_order_reports(
+                vec![query()],
+                clients,
+                Duration::ZERO,
+                deadline,
+                results.clone(),
+            ));
+            advance(Duration::from_millis(60)).await;
+
+            while state.started.load(Ordering::SeqCst) < release_at {
+                assert!(request.as_mut().now_or_never().is_none());
+                tokio::task::yield_now().await;
+            }
+
+            advance(Duration::from_millis(40)).await;
+            release.notify_one();
+            assert!(!request.await);
+            assert_eq!(state.status_finished.get(), usize::from(release_at == 2));
+            assert_eq!(state.fill_finished.get(), 0);
+            let results = results.borrow();
+            assert_eq!(results.len(), usize::from(release_at == 2));
+
+            if release_at == 2 {
+                assert_eq!(results[0].report, Some(report()));
+                assert!(results[0].fills.is_empty());
+            }
+        }
+    }
 
     #[rstest]
     #[tokio::test]

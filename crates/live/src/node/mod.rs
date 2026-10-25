@@ -133,9 +133,7 @@ use crate::{
     dispatch::drain_callbacks,
     execution::{
         client::LiveExecutionClient,
-        manager::{
-            ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
-        },
+        manager::{ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery},
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
@@ -1711,36 +1709,13 @@ impl LiveNode {
                 result = async {
                     match targeted_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<ReportTaskOutcome<Vec<TargetedOrderReportResult>>>().await,
+                        None => std::future::pending::<ReportTaskOutcome<()>>().await,
                     }
                 }, if targeted_order_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
 
-                    let planned_client_order_ids = targeted_order_report_task
-                        .as_ref()
-                        .map(|task| task.planned_client_order_ids.clone())
-                        .unwrap_or_default();
-                    drop(targeted_order_report_task.take());
-
-                    match result {
-                        ReportTaskOutcome::Completed(result) => {
-                            let client_refs = self
-                                .exec_clients
-                                .iter()
-                                .map(|client| client as &dyn ExecutionClient)
-                                .collect::<Vec<_>>();
-                            let events = self
-                                .exec_manager
-                                .reconcile_targeted_order_reports(result, &client_refs);
-                            self.process_reconciliation_events(&events);
-                        }
-                        ReportTaskOutcome::TimedOut => {
-                            self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
-                            log::warn!(
-                                "Targeted order report collection expired after {:?}",
-                                self.config.timeout_reconciliation,
-                            );
-                        }
+                    if let Some(task) = targeted_order_report_task.take() {
+                        self.complete_targeted_order_report_check(task, &result);
                     }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
                 }
@@ -2010,7 +1985,9 @@ impl LiveNode {
             &mut open_order_report_task,
             &mut targeted_order_report_task,
             &mut position_report_task,
+            dispatch_result.is_ok(),
         );
+
         drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
