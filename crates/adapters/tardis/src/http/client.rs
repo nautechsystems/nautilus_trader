@@ -52,7 +52,7 @@ const CONTENT_ENCODING: &str = "content-encoding";
 const GZIP: &str = "gzip";
 
 // Deribit's all-symbol instrument list decompresses to about 284 MB
-const MAX_DECOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_DECOMPRESSED_BYTES: usize = 1024 * 1024 * 1024;
 
 /// A Tardis HTTP API client.
 /// See <https://docs.tardis.dev/api/http>.
@@ -129,6 +129,7 @@ impl TardisHttpClient {
             .maybe_timeout_secs(timeout_secs.or(Some(60)))
             .maybe_proxy_url(proxy_url)
             .header_keys(vec![CONTENT_ENCODING.to_string()])
+            .max_decompressed_bytes(MAX_DECOMPRESSED_BYTES)
             .build()?;
 
         Ok(Self {
@@ -327,7 +328,7 @@ fn decode_body(response: &HttpResponse) -> Result<Cow<'_, [u8]>> {
     match response.headers.get(CONTENT_ENCODING) {
         None => Ok(Cow::Borrowed(response.body.as_ref())),
         Some(encoding) if encoding.eq_ignore_ascii_case(GZIP) => {
-            decompress_gzip(&response.body, MAX_DECOMPRESSED_BYTES).map(Cow::Owned)
+            decompress_gzip(&response.body, MAX_DECOMPRESSED_BYTES as u64).map(Cow::Owned)
         }
         Some(encoding) => Err(Error::Request(format!(
             "unsupported response content encoding '{encoding}'"

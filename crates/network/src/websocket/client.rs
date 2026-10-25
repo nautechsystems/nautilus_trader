@@ -4519,10 +4519,11 @@ mod tests {
                 .any(|message| message == "Received ping frame (27 bytes)"),
             "ping receive metadata missing or inaccurate: {messages:?}"
         );
+        // Two caller headers plus the `accept-encoding: gzip` added for buffered requests
         assert!(
             messages.iter().any(|message| {
                 message
-                    == "Sending HTTP request: method=POST extra_headers=2 query_bytes=29 \
+                    == "Sending HTTP request: method=POST extra_headers=3 query_bytes=29 \
                         body_bytes=32"
             }),
             "HTTP request metadata missing or inaccurate: {messages:?}"

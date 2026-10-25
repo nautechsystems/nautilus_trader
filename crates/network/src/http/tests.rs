@@ -1450,9 +1450,21 @@ async fn decoded_body_does_not_advertise_content_encoding() {
     assert_eq!(response.headers.get("content-encoding"), None);
 }
 
+#[rstest]
+#[case::at_decompressed_cap(4096, true)]
+#[case::above_decompressed_cap(4095, false)]
 #[tokio::test]
-async fn decompression_is_bounded_by_max_response_bytes() {
-    let body = gzip(&vec![b'x'; 4096]);
+async fn decompression_is_bounded_by_max_decompressed_bytes_not_wire_limit(
+    #[case] max_decompressed_bytes: usize,
+    #[case] accepted: bool,
+) {
+    // A compressed body within the wire limit can legitimately decode beyond it (Tardis serves
+    // all-symbol instrument lists of hundreds of MB this way), so only the decompressed cap applies
+    let max_response_bytes = 1024;
+    let payload = vec![b'x'; 4096];
+    let body = gzip(&payload);
+    assert!(body.len() < max_response_bytes);
+    assert!(payload.len() > max_response_bytes);
     let served = body.clone();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1469,17 +1481,34 @@ async fn decompression_is_bounded_by_max_response_bytes() {
     let mut client = HttpClient::builder()
         .use_system_proxy(false)
         .timeout_secs(3)
+        .max_decompressed_bytes(max_decompressed_bytes)
         .build()
         .unwrap();
-    client.client.max_response_bytes = 1024;
+    client.client.max_response_bytes = max_response_bytes;
 
-    let error = send(&client, Method::GET, format!("http://{addr}/bomb"), None)
-        .await
-        .unwrap_err();
+    let result = send(&client, Method::GET, format!("http://{addr}/large"), None).await;
     peer.await.unwrap();
 
-    assert!(
-        matches!(error, HttpClientError::Error(ref message) if message.contains("decompressed HTTP response body exceeds maximum of 1024 bytes")),
-        "{error:?}"
+    if accepted {
+        assert_eq!(result.unwrap().body.as_ref(), payload.as_slice());
+    } else {
+        let error = result.unwrap_err();
+        assert!(
+            matches!(error, HttpClientError::Error(ref message) if message.contains(&format!("decompressed HTTP response body exceeds maximum of {max_decompressed_bytes} bytes"))),
+            "{error:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn decompression_defaults_to_response_body_limit() {
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        client.client.max_decompressed_bytes,
+        client.client.max_response_bytes
     );
 }

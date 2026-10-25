@@ -145,6 +145,12 @@ impl HttpClient {
         /// dependency logs can still include the hostname.
         #[builder(default)]
         redact_url: bool,
+        /// Maximum size in bytes of a buffered response body after `Content-Encoding` decoding.
+        /// Defaults to the response body limit (100 MiB). Raise it for endpoints whose compressed
+        /// payloads legitimately decode beyond that limit; the wire body stays bounded by the
+        /// response body limit either way.
+        #[builder(default = DEFAULT_MAX_RESPONSE_BYTES)]
+        max_decompressed_bytes: usize,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {
@@ -174,6 +180,7 @@ impl HttpClient {
             redirect_policy,
             use_system_proxy,
             redact_url,
+            max_decompressed_bytes,
         )
     }
 
@@ -190,6 +197,7 @@ impl HttpClient {
         redirect_policy: HttpRedirectPolicy,
         use_system_proxy: bool,
         redact_url: bool,
+        max_decompressed_bytes: usize,
     ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
@@ -251,6 +259,7 @@ impl HttpClient {
             simulation,
             response_headers: Arc::from(response_headers),
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
+            max_decompressed_bytes,
         };
 
         Ok(Self {
@@ -483,6 +492,7 @@ impl HttpClient {
 ///
 /// The underlying Hyper client reuses pooled connections and is cheap to clone. Responses
 /// retain only configured header fields, and bodies larger than `max_response_bytes` are rejected.
+/// Decoded (decompressed) bodies are bounded separately by `max_decompressed_bytes`.
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     #[cfg(all(feature = "simulation", madsim))]
@@ -496,6 +506,7 @@ pub struct InnerHttpClient {
     redirect_policy: HttpRedirectPolicy,
     pub(crate) response_headers: Arc<[(String, HeaderName)]>,
     pub(crate) max_response_bytes: usize,
+    pub(crate) max_decompressed_bytes: usize,
 }
 
 impl InnerHttpClient {
@@ -792,13 +803,18 @@ impl InnerHttpClient {
         }
 
         log::trace!(
-            "Received HTTP response: status={} headers={} wire_bytes={}",
+            "Received HTTP response: status={} headers={} body_bytes={}",
             parts.status,
             parts.headers.len(),
             buf.len()
         );
-        let (body, decoded) =
-            decode_content_encoding(parts.headers.get(http::header::CONTENT_ENCODING), buf, max)?;
+
+        let (body, decoded) = decode_content_encoding(
+            parts.headers.get(http::header::CONTENT_ENCODING),
+            buf,
+            self.max_decompressed_bytes,
+        )?;
+
         if decoded {
             // The body handed to callers is already decoded: a headers map still advertising
             // `content-encoding: gzip` would make callers (e.g. adapters that negotiated gzip
@@ -822,7 +838,9 @@ enum RequestBody {
 ///
 /// Only the encodings this client advertises are handled; anything else (or a body that fails to
 /// inflate) is reported as an error instead of being handed to callers as corrupted data.
-/// `max` bounds the decompressed size, so a small gzip body cannot inflate without limit.
+/// `max` bounds the decompressed size, so a small gzip body cannot inflate without limit. It is
+/// independent of the wire limit because some endpoints legitimately decode to far more than the
+/// compressed body they send.
 /// Returns the body and whether it was decoded.
 fn decode_content_encoding(
     encoding: Option<&HeaderValue>,
