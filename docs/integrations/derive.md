@@ -867,8 +867,14 @@ resting `GTC` or post-only limit with `reduce_only` is denied locally before sub
 Direct venue submissions fail with `11024 Reduce only not supported with this time in force`.
 
 :::warning
-If a bracket submitted as an order list contains a reduce-only `GTC` take-profit limit,
-the adapter denies the entire list locally before submitting any leg.
+If any leg fails local list prevalidation, the adapter denies every leg before submitting any leg.
+Lists containing an order with a contingency type (`OTO`, `OCO`, or `OUO`), a parent order ID, or
+nonempty linked order IDs are denied in full, even when each leg's order terms are valid.
+
+Removing `reduce_only` from a `GTC` take-profit does not avoid this denial. Use
+[local order emulation](../concepts/orders/emulated.md), or submit orders individually and manage
+their activation, sibling cancellation, and quantity updates in the strategy. Independent unlinked
+lists remain supported.
 :::
 
 #### Order rejection semantics

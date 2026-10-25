@@ -91,8 +91,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TriggerType,
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderEventType,
@@ -2549,10 +2549,17 @@ async fn test_exec_client_marks_disconnected_after_reconnect_auth_exhaustion() {
 }
 
 #[rstest]
-#[case("SM")]
-#[case("PM2")]
+#[case::independent(None, false)]
+#[case::oto(Some(ContingencyType::Oto), false)]
+#[case::oco(Some(ContingencyType::Oco), false)]
+#[case::ouo(Some(ContingencyType::Ouo), false)]
+#[case::parent_only(None, true)]
 #[tokio::test]
-async fn test_submit_order_limit_posts_signed_payload(#[case] margin_type: &str) {
+async fn test_submit_order_limit_posts_signed_payload(
+    #[values("SM", "PM2")] margin_type: &str,
+    #[case] contingency_type: Option<ContingencyType>,
+    #[case] parent_only: bool,
+) {
     let rest_state = RestState::default();
     let mut subaccount = sample_subaccount_json();
     subaccount["margin_type"] = json!(margin_type);
@@ -2563,13 +2570,28 @@ async fn test_submit_order_limit_posts_signed_payload(#[case] margin_type: &str)
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-LIMIT-1");
-    let order = build_limit_order(
-        instrument_id,
-        client_order_id,
-        OrderSide::Buy,
-        Price::from("3500.00"),
-        Quantity::from("1.000"),
-    );
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3500.00"))
+        .time_in_force(TimeInForce::Gtc);
+
+    if let Some(contingency_type) = contingency_type {
+        builder
+            .contingency_type(contingency_type)
+            .linked_order_ids(vec![ClientOrderId::from("MANAGED-SIBLING")]);
+    }
+
+    if parent_only {
+        builder.parent_order_id(ClientOrderId::from("MANAGED-PARENT"));
+    }
+
+    let order = builder.build();
     tc.cache
         .borrow_mut()
         .add_order(order.clone(), None, None, false)
@@ -4195,28 +4217,161 @@ async fn test_submit_order_list_denies_every_leg_before_submission(
 }
 
 #[rstest]
+#[case::oto(Some(ContingencyType::Oto), false)]
+#[case::oco(Some(ContingencyType::Oco), false)]
+#[case::ouo(Some(ContingencyType::Ouo), false)]
+#[case::parent_only(None, true)]
+#[case::linked_only(None, false)]
 #[tokio::test]
-async fn test_submit_order_list_delegates_per_order() {
+async fn test_submit_order_list_denies_native_linkage_before_submission(
+    #[case] contingency_type: Option<ContingencyType>,
+    #[case] parent_only: bool,
+    #[values(false, true)] independent_first: bool,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let list_id = OrderListId::from("CONTINGENT-LIST");
+    let first_id = ClientOrderId::from("LIST-FIRST");
+    let second_id = ClientOrderId::from("LIST-SECOND");
+    let mut orders = Vec::new();
+
+    for (id, linked_id, side, price, qty) in [
+        (first_id, second_id, OrderSide::Buy, "3500.00", "1.000"),
+        (second_id, first_id, OrderSide::Sell, "3600.00", "2.000"),
+    ] {
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        builder
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-1"))
+            .instrument_id(instrument_id)
+            .client_order_id(id)
+            .side(side)
+            .quantity(Quantity::from(qty))
+            .price(Price::from(price))
+            .time_in_force(TimeInForce::Gtc)
+            .order_list_id(list_id);
+
+        if id == second_id && (contingency_type == Some(ContingencyType::Oto) || parent_only) {
+            builder.parent_order_id(first_id);
+        } else if let Some(contingency_type) = contingency_type {
+            builder
+                .contingency_type(contingency_type)
+                .linked_order_ids(vec![linked_id]);
+        } else if id == second_id {
+            builder.linked_order_ids(vec![first_id]);
+        }
+
+        orders.push(builder.build());
+    }
+
+    let independent = build_limit_order(
+        instrument_id,
+        ClientOrderId::from("LIST-INDEPENDENT"),
+        OrderSide::Buy,
+        Price::from("3400.00"),
+        Quantity::from("3.000"),
+    );
+    orders.insert(if independent_first { 0 } else { 2 }, independent);
+
+    for order in &orders {
+        add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
+    }
+
+    let order_list = OrderList::new(
+        list_id,
+        instrument_id,
+        StrategyId::from("S-1"),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        order_list,
+        orders.iter().map(OrderInitialized::from).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    tc.client.submit_order_list(cmd).unwrap();
+    let mut events = Vec::new();
+
+    while let Ok(event) = tc.rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event {
+            events.push(event);
+        }
+    }
+
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(events.len(), orders.len());
+
+    for (event, order) in events.iter().zip(&orders) {
+        let OrderEventAny::Denied(event) = event else {
+            panic!("Expected OrderDenied, found {event:?}");
+        };
+
+        assert_eq!(event.trader_id, order.trader_id());
+        assert_eq!(event.strategy_id, order.strategy_id());
+        assert_eq!(event.instrument_id, order.instrument_id());
+        assert_eq!(event.client_order_id, order.client_order_id());
+        assert_eq!(
+            event.reason,
+            Ustr::from(
+                "UNSUPPORTED_ORDER_LIST: Derive does not support native contingent order lists"
+            )
+        );
+    }
+
+    assert_eq!(rest_state.order_writes.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.replace_orders.lock().await.len(), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_delegates_per_order(#[values(false, true)] empty_links: bool) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut tc = build_client(rest_state, ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
-    let order_a = build_limit_order(
-        instrument_id,
-        ClientOrderId::from("STRAT-LIST-A"),
-        OrderSide::Buy,
-        Price::from("3500.00"),
-        Quantity::from("1.000"),
-    );
-    let order_b = build_limit_order(
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("STRAT-LIST-A"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3500.00"))
+        .time_in_force(TimeInForce::Gtc);
+
+    if empty_links {
+        builder.linked_order_ids(vec![]);
+    }
+
+    let mut order_a = builder.build();
+    let mut order_b = build_limit_order(
         instrument_id,
         ClientOrderId::from("STRAT-LIST-B"),
         OrderSide::Sell,
         Price::from("3501.00"),
         Quantity::from("1.000"),
     );
+    let list_id = OrderListId::from("OL-1");
+    order_a.set_order_list_id(list_id);
+    order_b.set_order_list_id(list_id);
     tc.cache
         .borrow_mut()
         .add_order(order_a.clone(), None, None, false)
@@ -4227,7 +4382,7 @@ async fn test_submit_order_list_delegates_per_order() {
         .expect("insert B");
 
     let order_list = OrderList::new(
-        OrderListId::from("OL-1"),
+        list_id,
         instrument_id,
         StrategyId::from("S-1"),
         vec![order_a.client_order_id(), order_b.client_order_id()],
@@ -4264,12 +4419,12 @@ async fn test_submit_order_list_delegates_per_order() {
     .await;
 
     let posts = ws_state.submitted_orders.lock().await;
-    let labels: Vec<&str> = posts
+    let mut labels: Vec<&str> = posts
         .iter()
         .map(|b| b["label"].as_str().unwrap_or(""))
         .collect();
-    assert!(labels.contains(&"STRAT-LIST-A"));
-    assert!(labels.contains(&"STRAT-LIST-B"));
+    labels.sort_unstable();
+    assert_eq!(labels, vec!["STRAT-LIST-A", "STRAT-LIST-B"]);
 
     tc.client.disconnect().await.expect("disconnect");
 }

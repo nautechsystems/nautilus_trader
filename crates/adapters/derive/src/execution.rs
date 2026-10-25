@@ -1620,6 +1620,24 @@ impl ExecutionClient for DeriveExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+
+        if orders.iter().any(|order| {
+            order.is_contingency()
+                || order.is_child_order()
+                || order.linked_order_ids().is_some_and(|ids| !ids.is_empty())
+        }) {
+            let reason = OrderDeniedReason::UnsupportedOrderList {
+                detail: "Derive does not support native contingent order lists".to_string(),
+            }
+            .to_string();
+
+            for order in &orders {
+                self.emitter.emit_order_denied(order, &reason);
+            }
+
+            return Ok(());
+        }
+
         let denials: Vec<_> = orders
             .iter()
             .map(|order| self.validate_order(order).err())
