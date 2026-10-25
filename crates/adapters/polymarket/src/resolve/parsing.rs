@@ -18,7 +18,10 @@ use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 
 use crate::{
-    common::{consts::POLYMARKET_VENUE, parse::decimal_from_json},
+    common::{
+        consts::POLYMARKET_VENUE,
+        parse::{decimal_from_json, validate_market_version},
+    },
     http::models::{ClobMarketResponse, GammaMarket},
     providers::extract_condition_id,
 };
@@ -99,6 +102,14 @@ fn strict_winner_index(prices: &[Decimal]) -> Option<usize> {
 }
 
 pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<StrictResolvedMarket> {
+    if let Err(e) = validate_market_version(market.version.as_deref()) {
+        log::warn!(
+            "Skipping Polymarket resolution for condition {}: {e}",
+            market.condition_id
+        );
+        return None;
+    }
+
     if market.closed != Some(true) {
         return None;
     }
@@ -132,6 +143,14 @@ pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<Stric
 pub(crate) fn build_resolved_market_from_clob_market(
     market: &ClobMarketResponse,
 ) -> Option<StrictResolvedMarket> {
+    if let Err(e) = validate_market_version(market.version.as_deref()) {
+        log::warn!(
+            "Skipping Polymarket resolution for condition {}: {e}",
+            market.condition_id
+        );
+        return None;
+    }
+
     if !market.closed {
         return None;
     }
@@ -259,6 +278,7 @@ mod tests {
             "id": "1557558",
             "conditionId": condition_id,
             "questionID": "0xquestion",
+            "version": "v1",
             "clobTokenIds": clob_token_ids,
             "outcomes": "[\"Yes\",\"No\"]",
             "question": "Will test pass?",

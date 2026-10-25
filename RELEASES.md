@@ -88,6 +88,7 @@ Released on TBD (UTC).
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
 - Changed Polymarket data WebSocket timeouts from 15 to 30 seconds by default; `ws_timeout_secs` must be positive
+- Changed `PolymarketInstrumentDef` to require `market_version: "v1"`; reload cached instruments
 
 ### Security
 
@@ -204,6 +205,7 @@ Released on TBD (UTC).
 - Fixed Polymarket taker rates derived from CLOB `base_fee` when Gamma rates are missing or zero
 - Fixed Polymarket trade history and settlement recovery failing on missing or null transaction hashes
 - Fixed Polymarket taker fill prices and fees across price levels and complementary tokens (#5404), thanks @SoYuCry
+- Fixed Polymarket accepting unsupported market protocols during discovery, trading, and position operations
 - Fixed sandbox restarts reviving closed OTO children while the cache still shows them open
 - Fixed sandbox position checks creating spurious closing trades (#5357), thanks @awss1i
 

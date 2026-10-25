@@ -128,6 +128,7 @@ impl DerefMut for Harness {
 pub(crate) fn instrument() -> InstrumentAny {
     let instrument_id = InstrumentId::from(INSTRUMENT_ID);
     let info = serde_json::from_value(json!({
+        "market_version": "v1",
         "condition_id": TEST_CONDITION_ID,
         "token_id": TEST_TOKEN_ID,
     }))

@@ -36,7 +36,10 @@ use self::calldata::{
     PositionCall, encode_merge_positions, encode_redeem_positions, encode_split_position,
 };
 use crate::{
-    common::credential::{EvmPrivateKey, RelayerApiKey},
+    common::{
+        credential::{EvmPrivateKey, RelayerApiKey},
+        parse::validate_market_version,
+    },
     http::{
         clob::PolymarketClobPublicClient,
         error::{Error, Result},
@@ -286,6 +289,8 @@ impl PolymarketPositionClient {
 
     async fn market_neg_risk(&self, condition_id: &str) -> Result<bool> {
         let market = self.clob.get_market(condition_id).await?;
+        validate_market_version(market.version.as_deref())
+            .map_err(|e| Error::bad_request(e.to_string()))?;
         market.neg_risk.ok_or_else(|| {
             Error::bad_request(format!(
                 "market metadata for {condition_id} is missing neg_risk"
@@ -437,9 +442,65 @@ fn outcome_from_transaction(tx: RelayerTransaction) -> Result<PolymarketPosition
 
 #[cfg(test)]
 mod tests {
+    use nautilus_network::retry::RetryConfig;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires read-only access to live Polymarket Gamma and CLOB APIs"]
+    async fn test_live_market_protocol_refusal() {
+        let key = EvmPrivateKey::new(
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        )
+        .unwrap();
+        let relayer_key = RelayerApiKey::new(
+            "unused".into(),
+            "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        )
+        .unwrap();
+        let client = PolymarketPositionClient::new(
+            &key,
+            "0x1111111111111111111111111111111111111111",
+            relayer_key,
+            Some("http://127.0.0.1:1".into()),
+            None,
+            Some(20),
+            None,
+        )
+        .unwrap();
+        let gamma =
+            crate::http::gamma::PolymarketGammaHttpClient::new(None, 20, RetryConfig::default())
+                .unwrap();
+
+        for (slug, supported) in [
+            ("xi-jinping-out-before-2027", true),
+            ("polyv2bkbsl-cay-bur-2026-10-23", false),
+        ] {
+            let markets = vec![gamma.inner().get_gamma_market_by_slug(slug).await.unwrap()];
+            let market = &markets[0];
+            assert_eq!(
+                market.version.as_deref(),
+                Some(if supported { "v1" } else { "v2" })
+            );
+            let (instruments, transient) =
+                crate::http::gamma::parse_markets_with_transient(&markets, 1.into());
+            assert_eq!(instruments.len(), if supported { 2 } else { 0 });
+            assert_eq!(transient, Vec::<String>::new());
+            let result = client.market_neg_risk(&market.condition_id).await;
+
+            if supported {
+                assert_eq!(result.unwrap(), market.neg_risk.unwrap());
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("Unsupported Polymarket market protocol v2")
+                );
+            }
+        }
+    }
 
     #[rstest]
     fn test_outcome_from_confirmed_transaction() {

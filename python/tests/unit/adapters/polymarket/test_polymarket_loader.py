@@ -44,6 +44,7 @@ def _gamma_market(slug: str = "test-market") -> dict[str, object]:
         "id": "100001",
         "conditionId": CONDITION_ID,
         "questionID": "0xquestion",
+        "version": "v2" if slug == "v2-gamma" else "v1",
         "clobTokenIds": "[]",
         "outcomes": "[]",
         "question": "Will the loader test pass?",
@@ -78,6 +79,7 @@ def _clob_market(slug: str) -> dict[str, object]:
         tokens.pop()
 
     return {
+        "version": "v2" if slug == "v2-clob" else "v1",
         "condition_id": CONDITION_ID,
         "closed": True,
         "tokens": tokens,
@@ -185,13 +187,19 @@ class _PolymarketRequestHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _event(slug: str = "test-event") -> dict[str, object]:
+        markets = [_gamma_market()]
+        if slug == "mixed-protocol-event":
+            unsupported = _gamma_market("v2-gamma")
+            unsupported["id"] = "100002"
+            unsupported["conditionId"] = "0xunsupported"
+            markets.append(unsupported)
         return {
             "id": "200001",
             "slug": slug,
             "title": "Test event",
             "active": False,
             "closed": True,
-            "markets": [_gamma_market()],
+            "markets": markets,
         }
 
     def _send_json(self, value: object) -> None:
@@ -248,6 +256,7 @@ async def test_loader_factory_and_historical_window(polymarket_api: SimpleNamesp
     assert loader.condition_id == CONDITION_ID
     assert loader.instrument.description == "Will the loader test pass?"
     assert loader.instrument.info["description"] == "Test market"
+    assert loader.instrument.info["market_version"] == "v1"
     assert [trade.ts_event for trade in trades] == [
         1_710_000_002_000_000_000,
         1_710_000_003_000_000_000,
@@ -309,6 +318,11 @@ async def test_loader_discovery_and_event_factory(polymarket_api: SimpleNamespac
         ("empty-tokens", "No tokens found"),
         ("empty-id", "has an empty token ID"),
         ("malformed-market", "Expected 2 token IDs"),
+        (
+            "v2-gamma",
+            "Unsupported Polymarket market protocol v2; only v1 CTF markets are supported",
+        ),
+        ("v2-clob", "Unsupported Polymarket market protocol v2; only v1 CTF markets are supported"),
     ],
 )
 async def test_loader_rejects_invalid_market_data(
@@ -357,3 +371,26 @@ def test_loader_rejects_negative_token_index() -> None:
     """
     with pytest.raises(ValueError, match="Token index -1 cannot be negative"):
         PolymarketDataLoader.from_market_slug("test-market", token_index=-1)
+
+
+@pytest.mark.asyncio
+async def test_loader_rejects_event_with_unsupported_market(
+    polymarket_api: SimpleNamespace,
+) -> None:
+    """
+    Test mixed events reject unsupported markets before CLOB hydration.
+    """
+    address = polymarket_api.address
+    with pytest.raises(
+        ValueError,
+        match="Unsupported Polymarket market protocol v2; only v1 CTF markets are supported",
+    ):
+        await PolymarketDataLoader.from_event_slug(
+            "mixed-protocol-event",
+            base_url_http=address,
+            base_url_gamma=address,
+            base_url_data_api=address,
+        )
+
+    assert ("/markets/0xcondition", {}) in polymarket_api.query_log
+    assert not any(path == "/markets/0xunsupported" for path, _ in polymarket_api.query_log)

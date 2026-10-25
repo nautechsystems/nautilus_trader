@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, value::RawValue};
 
 use crate::{
-    common::urls::gamma_api_url,
+    common::{parse::validate_market_version, urls::gamma_api_url},
     filters::set_market_closed,
     http::{
         error::{Error, Result, decode_response},
@@ -369,6 +369,11 @@ pub(crate) fn parse_markets_with_transient(
     let mut event_metadata = AHashMap::new();
 
     for market in markets {
+        if let Err(e) = validate_market_version(market.version.as_deref()) {
+            log::warn!("Skipping Gamma market {}: {e}", market.condition_id);
+            continue;
+        }
+
         if is_transient_clob_token_ids(&market.clob_token_ids) {
             transient.push(market.condition_id.clone());
             continue;
@@ -655,7 +660,12 @@ impl PolymarketGammaHttpClient {
                             .flat_map(|(_, markets)| markets)
                             .collect();
 
-                        if parse_markets_to_instruments(&markets, ts_init).is_empty() {
+                        if parse_markets_to_instruments(&markets, ts_init).is_empty()
+                            && (markets.is_empty()
+                                || markets.iter().any(|market| {
+                                    validate_market_version(market.version.as_deref()).is_ok()
+                                }))
+                        {
                             return Err(Error::transport(
                                 "Gamma returned no instruments (indexing lag)",
                             ));
@@ -740,16 +750,28 @@ impl PolymarketGammaHttpClient {
         Ok(instruments)
     }
 
-    /// Same as [`Self::request_instruments_by_params`] but also returns
-    /// condition IDs whose markets came back from Gamma with empty
-    /// `clob_token_ids`. Callers driving auto-load retries use the transient
-    /// list to distinguish "still hydrating in the CLOB" from "absent on the
-    /// venue".
+    /// Fetches supported instruments and condition IDs awaiting CLOB token IDs.
+    ///
+    /// Only market protocol `v1` enters the transient list. Unlike
+    /// [`Self::request_instruments_by_params`], this method errors when every returned
+    /// market uses an unsupported protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or every returned market is unsupported.
     pub async fn request_instruments_by_params_with_transient(
         &self,
         base_params: GetGammaMarketsParams,
     ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<String>)> {
         let mut markets = self.fetch_gamma_markets_paginated(base_params).await?;
+        if !markets.is_empty()
+            && markets
+                .iter()
+                .all(|market| validate_market_version(market.version.as_deref()).is_err())
+        {
+            validate_market_version(markets[0].version.as_deref())?;
+        }
+
         enrich_markets(&mut markets);
         let ts_init = self.clock.get_time_ns();
         let (instruments, transient) = parse_markets_with_transient(&markets, ts_init);
@@ -1007,6 +1029,62 @@ mod tests {
         let info = binary.info.as_ref().unwrap();
         let value = info.get("fee_schedule").unwrap();
         serde_json::from_value(value.clone()).unwrap()
+    }
+
+    #[rstest]
+    #[case(Some("v1"), true)]
+    #[case(Some("v2"), false)]
+    #[case(None, false)]
+    #[case(Some("v3"), false)]
+    #[case(Some("V1"), false)]
+    fn test_market_protocol_controls_discovery(
+        #[case] version: Option<&str>,
+        #[case] supported: bool,
+        #[values("gamma_market_protocol_v1.json", "gamma_market_protocol_v2.json")] fixture: &str,
+        #[values(false, true)] empty_ids: bool,
+    ) {
+        let mut market = load_fee_market(fixture);
+        market.version = version.map(str::to_string);
+        if empty_ids {
+            market.clob_token_ids = "[]".into();
+        }
+
+        let condition_id = market.condition_id.clone();
+        let (instruments, transient) = parse_markets_with_transient(&[market.clone()], 1.into());
+        assert_eq!(
+            instruments.len(),
+            if supported && !empty_ids { 2 } else { 0 }
+        );
+        assert_eq!(
+            transient,
+            if supported && empty_ids {
+                vec![condition_id]
+            } else {
+                vec![]
+            }
+        );
+
+        if supported && !empty_ids {
+            for instrument in instruments {
+                let InstrumentAny::BinaryOption(binary) = instrument else {
+                    panic!("expected binary option")
+                };
+
+                assert_eq!(
+                    binary.info.as_ref().unwrap().get_str("market_version"),
+                    Some("v1")
+                );
+            }
+        } else if !supported {
+            let error = crate::http::parse::parse_gamma_market(&market).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
+                    version.unwrap_or("missing"),
+                )
+            );
+        }
     }
 
     #[rstest]

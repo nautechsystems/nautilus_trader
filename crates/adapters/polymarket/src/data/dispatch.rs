@@ -2243,6 +2243,107 @@ mod tests {
     }
 
     #[rstest]
+    #[case(Some("v2"))]
+    #[case(None)]
+    #[case(Some("unknown"))]
+    #[tokio::test]
+    async fn unsupported_market_is_terminal(
+        #[case] version: Option<&str>,
+        #[values(false, true)] auto_load: bool,
+        #[values(false, true)] empty_ids: bool,
+        #[values(false, true)] closed: bool,
+    ) {
+        let mut market = gamma_market_recheck_fixture_value();
+        market["version"] = serde_json::json!(version);
+        market["closed"] = closed.into();
+        if empty_ids {
+            market["clobTokenIds"] = "[]".into();
+        }
+
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.subscriptions.subscribe_new_markets = true;
+        let ctx = make_client_ws_ctx(&client);
+
+        if auto_load {
+            let instrument_id = fixture_yes_instrument_id();
+            client.subscriptions.active_quote_subs.insert(instrument_id);
+            client.queue_pending_load(instrument_id);
+        } else {
+            handle_market_message(
+                make_new_market_with_condition("unsupported", TEST_CONDITION_ID, true),
+                &ctx,
+            );
+        }
+
+        wait_until_async(
+            || async {
+                !state.queries.lock().is_empty()
+                    && !client.auto_load_scheduled.load(Ordering::Acquire)
+                    && ctx.new_market_inflight_keys.is_empty()
+                    && client.tasks.all_finished()
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        assert_eq!(state.queries.lock().len(), 1);
+        assert!(client.instruments.load().is_empty());
+        assert!(client.subscriptions.token_meta.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case(Some("v2"))]
+    #[case(None)]
+    #[case(Some("unknown"))]
+    #[tokio::test]
+    async fn unsupported_market_from_closed_probe_is_terminal(
+        #[case] version: Option<&str>,
+        #[values(false, true)] empty_ids: bool,
+    ) {
+        let mut market = gamma_market_recheck_fixture_value();
+        market["version"] = serde_json::json!(version);
+        market["closed"] = true.into();
+        if empty_ids {
+            market["clobTokenIds"] = "[]".into();
+        }
+
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([]))],
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        let instrument_id = fixture_yes_instrument_id();
+        client.subscriptions.active_quote_subs.insert(instrument_id);
+        client.queue_pending_load(instrument_id);
+
+        wait_until_async(
+            || async {
+                !state.queries.lock().is_empty()
+                    && !client.auto_load_scheduled.load(Ordering::Acquire)
+                    && client.tasks.all_finished()
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        assert_eq!(state.queries.lock().len(), 2);
+        assert!(client.instruments.load().is_empty());
+        assert!(client.subscriptions.token_meta.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn new_market_condition_empty_then_success_recheck_loads_instrument() {
         let state = NewMarketFetchTestServerState::default();
@@ -3406,6 +3507,7 @@ mod tests {
             "id": "1557558",
             "conditionId": condition_id,
             "questionID": "0xquestion",
+            "version": "v1",
             "clobTokenIds": clob_token_ids,
             "outcomes": "[\"Yes\",\"No\"]",
             "question": "Will test pass?",
@@ -3434,6 +3536,7 @@ mod tests {
         closed: bool,
     ) -> Value {
         serde_json::json!({
+            "version": "v1",
             "condition_id": condition_id,
             "closed": closed,
             "tokens": [

@@ -30,7 +30,7 @@ use axum::{
     Router,
     body::Bytes,
     extract::{
-        Query, State,
+        Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, StatusCode, Uri},
@@ -136,6 +136,8 @@ pub(super) struct TestServerState {
     pub(super) balance_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     pub(super) gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) version_response: Arc<tokio::sync::Mutex<Value>>,
+    pub(super) market_responses: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
+    pub(super) market_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub(super) version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) startup_request_paths: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub(super) balance_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
@@ -208,6 +210,8 @@ impl Default for TestServerState {
         let (user_frames, _) = tokio::sync::broadcast::channel(32);
 
         Self {
+            market_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            market_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             last_body: Arc::new(tokio::sync::Mutex::new(None)),
             last_headers: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_path: Arc::new(tokio::sync::Mutex::new(String::new())),
@@ -898,6 +902,26 @@ async fn handle_get_positions(State(state): State<TestServerState>) -> impl Into
     }))
 }
 
+async fn handle_get_market(
+    State(state): State<TestServerState>,
+    Path(condition_id): Path<String>,
+) -> Response {
+    state.market_queries.lock().await.push(condition_id.clone());
+    if let Some((status, market)) = state
+        .market_responses
+        .lock()
+        .await
+        .get(&condition_id)
+        .cloned()
+    {
+        return (status, Json(market)).into_response();
+    }
+
+    let mut market = load_json("clob_market_response.json");
+    market["condition_id"] = json!(condition_id);
+    Json(market).into_response()
+}
+
 fn create_test_router(state: TestServerState) -> Router {
     Router::new()
         .route("/data/orders", get(handle_get_orders))
@@ -916,6 +940,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market_orders))
         .route("/markets", get(handle_gamma_markets))
+        .route("/markets/{condition_id}", get(handle_get_market))
         .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/book", get(handle_get_book))
         .route("/fee-rate", get(handle_get_fee_rate))

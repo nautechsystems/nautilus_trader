@@ -115,6 +115,7 @@ impl Default for TestServerState {
 
 fn market_json(neg_risk: bool) -> Value {
     json!({
+        "version": "v1",
         "condition_id": CONDITION_ID,
         "closed": false,
         "neg_risk": neg_risk,
@@ -235,6 +236,42 @@ fn position_client(addr: &SocketAddr) -> PolymarketPositionClient {
 }
 
 #[rstest]
+#[case(Some("v2"))]
+#[case(None)]
+#[case(Some("unknown"))]
+#[tokio::test]
+async fn test_position_operations_refuse_unsupported_protocol(
+    #[case] version: Option<&str>,
+    #[values("split", "merge", "redeem")] operation: &str,
+) {
+    let state = TestServerState::default();
+    let mut market = market_json(true);
+    if let Some(version) = version {
+        market["version"] = json!(version);
+    } else {
+        market.as_object_mut().unwrap().remove("version");
+    }
+
+    *state.market.lock().await = market;
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let result = match operation {
+        "split" => client.split_position(CONDITION_ID, dec!(1)).await,
+        "merge" => client.merge_positions(CONDITION_ID, dec!(1)).await,
+        "redeem" => client.redeem_positions(CONDITION_ID).await,
+        _ => unreachable!(),
+    };
+
+    let error = result.unwrap_err();
+    assert!(error.to_string().contains(&format!(
+        "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
+        version.unwrap_or("missing"),
+    )));
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+    assert_eq!(*state.last_submit.lock().await, None);
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_split_position_confirms_and_targets_standard_adapter() {
     let state = TestServerState::default();
@@ -322,6 +359,7 @@ async fn test_redeem_positions_confirms() {
 async fn test_missing_neg_risk_is_invalid_metadata() {
     let state = TestServerState::default();
     *state.market.lock().await = json!({
+        "version": "v1",
         "condition_id": CONDITION_ID,
         "closed": false,
         "tokens": []

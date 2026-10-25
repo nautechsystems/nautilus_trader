@@ -28,7 +28,16 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use serde_json::{Number, value::RawValue};
 
-use crate::common::enums::PolymarketOrderSide;
+use crate::common::{consts::SUPPORTED_MARKET_VERSION, enums::PolymarketOrderSide};
+
+pub(crate) fn validate_market_version(version: Option<&str>) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        version == Some(SUPPORTED_MARKET_VERSION),
+        "Unsupported Polymarket market protocol {}; only {SUPPORTED_MARKET_VERSION} CTF markets are supported",
+        version.unwrap_or("missing"),
+    );
+    Ok(())
+}
 
 /// Deserializes a decimal directly from its JSON number token without an `f64` conversion.
 pub fn deserialize_decimal_from_json_number<'de, D>(deserializer: D) -> Result<Decimal, D::Error>

@@ -396,6 +396,8 @@ pub struct GammaMarket {
     pub parent_event: Option<Arc<GammaEvent>>,
     /// Events linked to this gamma market.
     pub events: Option<Vec<GammaEvent>>,
+    /// Market protocol version, independent of the CLOB service version.
+    pub version: Option<String>,
 }
 
 impl_gamma_response_serde!(GammaMarket);
@@ -670,6 +672,7 @@ pub struct ClobMarketResponse {
     pub is_50_50_outcome: Option<bool>,
     pub tokens: Vec<ClobMarketToken>,
     pub tags: Option<Vec<String>>,
+    pub version: Option<String>,
 }
 
 /// A position row from the Polymarket Data API v2 `GET /v2/positions` endpoint.

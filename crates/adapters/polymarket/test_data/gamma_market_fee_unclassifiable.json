@@ -2,6 +2,7 @@
   "id": "fee-unknown-1",
   "conditionId": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "question": "Unclassifiable market",
+  "version": "v1",
   "clobTokenIds": "[\"99999999999999999999999999999999999999999999999999999999999999999999999999999\", \"10101010101010101010101010101010101010101010101010101010101010101010101010101\"]",
   "outcomes": "[\"Yes\", \"No\"]",
   "active": true,

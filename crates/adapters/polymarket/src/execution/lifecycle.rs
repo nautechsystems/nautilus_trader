@@ -954,12 +954,12 @@ impl PolymarketExecutionClient {
             .http_client
             .get_version()
             .await
-            .context("failed to query Polymarket CLOB protocol version")?
+            .context("failed to query Polymarket CLOB service version")?
             .version;
 
         if version != SUPPORTED_CLOB_VERSION {
             anyhow::bail!(
-                "Polymarket CLOB protocol version {version} is unsupported; adapter supports V2 only"
+                "Polymarket CLOB service version {version} is unsupported; expected service version {SUPPORTED_CLOB_VERSION}"
             );
         }
 
