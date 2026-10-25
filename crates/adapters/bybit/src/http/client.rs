@@ -72,6 +72,7 @@ use super::{
         BybitSubMembersResponse, BybitSwitchModeResponse, BybitTickerData, BybitTickerOption,
         BybitTickersOptionResponse, BybitTradeHistoryResponse, BybitTradesResponse,
         BybitUpdateMasterApiResponse, BybitUpdateSubApiResponse, BybitWalletBalanceResponse,
+        BybitWithdrawResponse, BybitWithdrawalRecord, BybitWithdrawalRecordsResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -87,6 +88,7 @@ use super::{
         BybitSubApiKeysParams, BybitSubMembersPageParams, BybitSwitchModeParamsBuilder,
         BybitTickersParams, BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
         BybitUpdateMasterApiParams, BybitUpdateSubApiParams, BybitWalletBalanceParams,
+        BybitWithdrawParams, BybitWithdrawalRecordsParams,
     },
 };
 use crate::common::{
@@ -1551,6 +1553,87 @@ impl BybitRawHttpClient {
         }
 
         result
+    }
+
+    /// Withdraws coins from the account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API key lacks withdrawal permission or is not a master UID key.
+    /// - The address is not in the account's withdrawal address book.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw>
+    pub async fn withdraw(
+        &self,
+        params: &BybitWithdrawParams,
+    ) -> Result<BybitWithdrawResponse, BybitHttpError> {
+        let body = serde_json::to_vec(params)?;
+        self.send_request::<_, ()>(
+            Method::POST,
+            "/v5/asset/withdraw/create",
+            None,
+            Some(body),
+            true,
+        )
+        .await
+    }
+
+    /// Fetches withdrawal records.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw/withdraw-record>
+    pub async fn get_withdrawal_records(
+        &self,
+        params: &BybitWithdrawalRecordsParams,
+    ) -> Result<BybitWithdrawalRecordsResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/asset/withdraw/query-record",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches every page of withdrawal records matching `params` and returns
+    /// the flattened list. Walks the cursor until Bybit signals end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_withdrawal_records(
+        &self,
+        params: &BybitWithdrawalRecordsParams,
+    ) -> Result<Vec<BybitWithdrawalRecord>, BybitHttpError> {
+        let mut params = params.clone();
+        let mut records = Vec::new();
+
+        loop {
+            let mut page = self.get_withdrawal_records(&params).await?;
+            let next = page.result.continuation_cursor().map(str::to_owned);
+            records.append(&mut page.result.rows);
+
+            match next {
+                Some(c) => params.cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(records)
     }
 
     /// Fetches tickers for market data.

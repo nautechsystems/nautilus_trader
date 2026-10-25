@@ -32,6 +32,8 @@ use nautilus_bybit::{
             BybitAccountType, BybitBboSideType, BybitEnvironment, BybitMarginMode,
             BybitOrderSmpType, BybitOrderType, BybitPositionIdx, BybitProductType,
             BybitRepayStatus, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
+            BybitWithdrawAccountType, BybitWithdrawFeeType, BybitWithdrawForceChain,
+            BybitWithdrawStatus, BybitWithdrawType,
         },
         parse::parse_linear_instrument,
         urls::bybit_http_base_url,
@@ -41,7 +43,8 @@ use nautilus_bybit::{
         models::BybitInstrumentLinearResponse,
         query::{
             BybitFeeRateParams, BybitInstrumentsInfoParamsBuilder, BybitNativeTpSlParams,
-            BybitPositionListParamsBuilder, BybitWalletBalanceParams,
+            BybitPositionListParamsBuilder, BybitWalletBalanceParams, BybitWithdrawParamsBuilder,
+            BybitWithdrawalRecordsParamsBuilder,
         },
     },
 };
@@ -5264,6 +5267,260 @@ async fn test_fetch_all_sub_api_keys_walks_cursor() {
     );
     assert!(
         log[1].contains("cursor=keys-2"),
+        "second page must carry cursor: {log:?}"
+    );
+}
+
+// -------------------------------------------------------------------------------------------------
+// Withdrawal endpoints (/v5/asset/withdraw/*) tests
+// -------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Default)]
+struct WithdrawServerState {
+    bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    failures_remaining: Arc<tokio::sync::Mutex<usize>>,
+    record_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
+}
+
+async fn handle_withdraw_create(
+    State(state): State<WithdrawServerState>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    state
+        .bodies
+        .lock()
+        .await
+        .push(serde_json::from_slice(&body).unwrap());
+
+    let mut failures = state.failures_remaining.lock().await;
+    if *failures > 0 {
+        *failures -= 1;
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "success",
+        "result": {"id": "10195"},
+        "retExtInfo": {},
+        "time": 1672196571239i64
+    }))
+    .into_response()
+}
+
+async fn handle_withdraw_query_record(
+    State(state): State<WithdrawServerState>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if let Some(r) = require_bybit_auth(&headers) {
+        return r;
+    }
+    let query = uri.query().unwrap_or_default().to_string();
+    state.record_queries.lock().await.push(query.clone());
+
+    if !query.contains("cursor=") {
+        return Json(load_test_data("http_get_withdraw_query_record.json")).into_response();
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "success",
+        "result": {
+            "rows": [{
+                "coin": "BTC", "chain": "BTC", "amount": "0.5", "txID": "",
+                "status": "Pending", "toAddress": "bc1qexample", "tag": "",
+                "withdrawFee": "0.0001", "createTime": "1742700000000",
+                "updateTime": "1742700000000", "withdrawId": "131500000",
+                "withdrawType": 0
+            }],
+            "nextPageCursor": ""
+        },
+        "retExtInfo": {},
+        "time": 1750777316807i64
+    }))
+    .into_response()
+}
+
+async fn start_withdraw_server(failures: usize) -> (SocketAddr, WithdrawServerState) {
+    let state = WithdrawServerState::default();
+    *state.failures_remaining.lock().await = failures;
+
+    let router = Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/asset/withdraw/create", post(handle_withdraw_create))
+        .route(
+            "/v5/asset/withdraw/query-record",
+            get(handle_withdraw_query_record),
+        )
+        .with_state(state.clone());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    wait_for_server(addr, "/v5/market/time").await;
+    (addr, state)
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_sends_required_fields() {
+    let (addr, state) = start_withdraw_server(0).await;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24.5".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .build()
+        .unwrap();
+    let response = client.withdraw(&params).await.unwrap();
+
+    assert_eq!(response.result.id, "10195");
+
+    let bodies = state.bodies.lock().await.clone();
+    assert_eq!(bodies.len(), 1);
+    let body = bodies[0].as_object().unwrap();
+    assert_eq!(body["coin"], "USDT");
+    assert_eq!(
+        body["address"],
+        "0x99ced129603abc771c0dabe935c326ff6c86645d"
+    );
+    assert_eq!(body["amount"], "24.5");
+    assert_eq!(body["accountType"], "FUND");
+    assert_eq!(body["timestamp"], 1_700_000_000_000_i64);
+
+    for key in [
+        "chain",
+        "tag",
+        "feeType",
+        "forceChain",
+        "requestId",
+        "questionnaire",
+    ] {
+        assert!(!body.contains_key(key), "unexpected {key} in {body:?}");
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_sends_optional_fields() {
+    let (addr, state) = start_withdraw_server(0).await;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("XRP".to_string())
+        .chain("XRP".to_string())
+        .address("rExampleAddress".to_string())
+        .tag("123456".to_string())
+        .amount("10".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::All)
+        .fee_type(BybitWithdrawFeeType::Gross)
+        .force_chain(BybitWithdrawForceChain::OnChain)
+        .request_id("persisted123".to_string())
+        .questionnaire("{}".to_string())
+        .build()
+        .unwrap();
+    client.withdraw(&params).await.unwrap();
+
+    let bodies = state.bodies.lock().await.clone();
+    let body = &bodies[0];
+    assert_eq!(body["chain"], "XRP");
+    assert_eq!(body["tag"], "123456");
+    assert_eq!(body["accountType"], "FUND,UTA,EARN");
+    assert_eq!(body["feeType"], 1);
+    assert_eq!(body["forceChain"], 1);
+    assert_eq!(body["requestId"], "persisted123");
+    assert_eq!(body["questionnaire"], "{}");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_retry_resends_same_request_id() {
+    let (addr, state) = start_withdraw_server(1).await;
+    let client = BybitRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        1,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .chain("ETH".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .request_id("retry123".to_string())
+        .build()
+        .unwrap();
+    let response = client.withdraw(&params).await.unwrap();
+
+    assert_eq!(response.result.id, "10195");
+
+    let bodies = state.bodies.lock().await.clone();
+    assert_eq!(bodies.len(), 2);
+    assert_eq!(bodies[0], bodies[1]);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_withdrawal_records_walks_cursor() {
+    let (addr, state) = start_withdraw_server(0).await;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawalRecordsParamsBuilder::default()
+        .withdraw_type(BybitWithdrawType::All)
+        .limit(2)
+        .build()
+        .unwrap();
+    let records = client.fetch_all_withdrawal_records(&params).await.unwrap();
+
+    assert_eq!(records.len(), 3);
+
+    assert_eq!(records[0].withdraw_id, "131629076");
+    assert_eq!(
+        records[0].tx_id,
+        "0x3d7bddb797f0e86420c982c0723653b8b728fd0ec9953b6b354445848d83a185"
+    );
+    assert_eq!(records[0].amount, dec!(41.43008));
+    assert_eq!(records[0].withdraw_fee, dec!(5));
+    assert_eq!(records[0].status, BybitWithdrawStatus::Success);
+    assert_eq!(records[0].withdraw_type, BybitWithdrawType::OnChain);
+
+    assert_eq!(records[1].tx_id, "");
+    assert_eq!(records[1].status, BybitWithdrawStatus::CancelByUser);
+    assert_eq!(records[1].withdraw_type, BybitWithdrawType::Internal);
+
+    assert_eq!(records[2].withdraw_id, "131500000");
+    assert_eq!(records[2].status, BybitWithdrawStatus::Pending);
+
+    let log = state.record_queries.lock().await.clone();
+    assert_eq!(log.len(), 2, "expected exactly two page requests: {log:?}");
+    for query in &log {
+        assert!(query.contains("withdrawType=2"), "filter lost: {log:?}");
+        assert!(query.contains("limit=2"), "limit lost: {log:?}");
+    }
+    assert!(
+        !log[0].contains("cursor="),
+        "first page must not carry a cursor: {log:?}"
+    );
+    assert!(
+        log[1].contains("cursor=eyJtaW5JRCI6MTMxNjAzNDU4LCJtYXhJRCI6MTMxNjI5MDc2fQ"),
         "second page must carry cursor: {log:?}"
     );
 }
