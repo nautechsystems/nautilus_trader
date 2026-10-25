@@ -85,9 +85,8 @@ gated by independent layers:
 
 - **Vector parity** with the upstream Go reference (`elliottech/poseidon_crypto`)
   for every algebra layer.
-- **Compiled-signer oracle parity** with the signer distributed by the official
-  `lighter-python` SDK, covering end-to-end outputs for the four supported tx
-  kinds.
+- **Compiled-signer oracle parity** with `lighter-go` v1.0.12, covering end-to-end outputs for
+  create, cancel, modify, cancel-all, leverage, integrator approval, and grouped orders.
 - **Differential parity** with Thomas Pornin's MIT-licensed Rust reference
   (`pornin/ecgfp5`), kept in the publish=false fuzz crate so the crates.io
   package graph has no git dependencies. The fuzz targets assert every public
