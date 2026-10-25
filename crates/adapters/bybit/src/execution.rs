@@ -26,7 +26,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -1036,98 +1036,133 @@ impl ExecutionClient for BybitExecutionClient {
         Ok(())
     }
 
+    fn generate_order_status_report_task(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        let http_client = self.http_client.clone();
+        let core = self.core.clone();
+        let account_id = core.account_id;
+        let state = Arc::clone(&self.dispatch_state);
+
+        let instrument = cmd.instrument_id.map(|instrument_id| {
+            (
+                instrument_id,
+                self.get_product_type_for_instrument(instrument_id),
+            )
+        });
+
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move {
+                let Some((instrument_id, product_type)) = instrument else {
+                    log::warn!("generate_order_status_report requires instrument_id: {command}");
+                    return Ok(None);
+                };
+
+                let reports = http_client
+                    .request_order_status_reports(
+                        account_id,
+                        product_type,
+                        Some(instrument_id),
+                        false,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?;
+
+                Ok(reports.into_iter().find(|report| {
+                    command
+                        .client_order_id
+                        .is_none_or(|id| report.client_order_id == Some(id))
+                        && command
+                            .venue_order_id
+                            .is_none_or(|id| report.venue_order_id.as_str() == id.as_str())
+                }))
+            },
+            move |report| {
+                if let Some(report) = &report {
+                    cache_reconciliation_order_identity(&core, &state, report);
+                }
+
+                Ok(report)
+            },
+        ))
+    }
+
+    fn generate_order_status_reports_task(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+        let http_client = self.http_client.clone();
+        let core = self.core.clone();
+        let account_id = core.account_id;
+        let state = Arc::clone(&self.dispatch_state);
+        let product_types = cmd.instrument_id.map_or_else(
+            || self.product_types(),
+            |instrument_id| vec![self.get_product_type_for_instrument(instrument_id)],
+        );
+        let command = cmd.clone();
+        Some(ExecutionReportTask::new(
+            async move {
+                let mut reports = Vec::new();
+
+                for product_type in product_types {
+                    let mut fetched = http_client
+                        .request_order_status_reports(
+                            account_id,
+                            product_type,
+                            command.instrument_id,
+                            command.open_only,
+                            None,
+                            None,
+                            None,
+                        )
+                        .await?;
+                    reports.append(&mut fetched);
+                }
+
+                if let Some(start) = command.start {
+                    reports.retain(|report| report.ts_last >= start);
+                }
+
+                if let Some(end) = command.end {
+                    reports.retain(|report| report.ts_last <= end);
+                }
+
+                Ok(reports)
+            },
+            move |reports| {
+                for report in &reports {
+                    cache_reconciliation_order_identity(&core, &state, report);
+                }
+
+                Ok(reports)
+            },
+        ))
+    }
+
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        let Some(instrument_id) = cmd.instrument_id else {
-            log::warn!("generate_order_status_report requires instrument_id: {cmd}");
-            return Ok(None);
-        };
-
-        let product_type = self.get_product_type_for_instrument(instrument_id);
-
-        let mut reports = self
-            .http_client
-            .request_order_status_reports(
-                self.core.account_id,
-                product_type,
-                Some(instrument_id),
-                false,
-                None,
-                None,
-                None,
-            )
-            .await?;
-
-        if let Some(client_order_id) = cmd.client_order_id {
-            reports.retain(|report| report.client_order_id == Some(client_order_id));
-        }
-
-        if let Some(venue_order_id) = cmd.venue_order_id {
-            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
-        }
-
-        let report = reports.into_iter().next();
-        if let Some(report) = &report {
-            self.cache_reconciliation_order_identity(report);
-        }
-
-        Ok(report)
+        let task = self
+            .generate_order_status_report_task(cmd)
+            .expect("Bybit single-order report task");
+        task.collection.await;
+        (task.finish)()
     }
 
     async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        let mut reports = Vec::new();
-
-        if let Some(instrument_id) = cmd.instrument_id {
-            let product_type = self.get_product_type_for_instrument(instrument_id);
-            let mut fetched = self
-                .http_client
-                .request_order_status_reports(
-                    self.core.account_id,
-                    product_type,
-                    Some(instrument_id),
-                    cmd.open_only,
-                    None,
-                    None,
-                    None,
-                )
-                .await?;
-            reports.append(&mut fetched);
-        } else {
-            for product_type in self.product_types() {
-                let mut fetched = self
-                    .http_client
-                    .request_order_status_reports(
-                        self.core.account_id,
-                        product_type,
-                        None,
-                        cmd.open_only,
-                        None,
-                        None,
-                        None,
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-            }
-        }
-
-        if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
-        }
-
-        for report in &reports {
-            self.cache_reconciliation_order_identity(report);
-        }
-
-        Ok(reports)
+        let task = self
+            .generate_order_status_reports_task(cmd)
+            .expect("Bybit bulk order report task");
+        task.collection.await;
+        (task.finish)()
     }
 
     async fn generate_fill_reports(
@@ -2396,35 +2431,35 @@ fn classify_http_failure(error: &anyhow::Error) -> CommandFailure {
     CommandFailure::NotSent(reason)
 }
 
-impl BybitExecutionClient {
-    fn cache_reconciliation_order_identity(&self, report: &OrderStatusReport) {
-        let Some(client_order_id) = report.client_order_id else {
-            return;
-        };
+fn cache_reconciliation_order_identity(
+    core: &ExecutionClientCore,
+    state: &WsDispatchState,
+    report: &OrderStatusReport,
+) {
+    let Some(client_order_id) = report.client_order_id else {
+        return;
+    };
 
-        if report.order_status.is_closed() {
-            self.dispatch_state
-                .order_identities
-                .remove(&client_order_id);
-            return;
-        }
-
-        let cache = self.core.cache();
-        let Some(order) = cache.order(&client_order_id) else {
-            return;
-        };
-
-        let identity = OrderIdentity {
-            instrument_id: report.instrument_id,
-            strategy_id: order.strategy_id(),
-            order_side: order.order_side(),
-            order_type: order.order_type(),
-            venue_position_id: report.venue_position_id,
-        };
-        self.dispatch_state
-            .order_identities
-            .insert(client_order_id, identity);
+    if report.order_status.is_closed() {
+        state.order_identities.remove(&client_order_id);
+        return;
     }
+
+    let cache = core.cache();
+
+    let Some(order) = cache.order(&client_order_id) else {
+        return;
+    };
+
+    let identity = OrderIdentity {
+        instrument_id: report.instrument_id,
+        strategy_id: order.strategy_id(),
+        order_side: order.order_side(),
+        order_type: order.order_type(),
+        venue_position_id: report.venue_position_id,
+    };
+
+    state.order_identities.insert(client_order_id, identity);
 }
 
 #[cfg(test)]
@@ -2958,7 +2993,7 @@ mod tests {
             OrderStatus::Accepted,
             Some(venue_position_id),
         );
-        client.cache_reconciliation_order_identity(&report);
+        cache_reconciliation_order_identity(&client.core, &client.dispatch_state, &report);
 
         {
             let identity = client
@@ -2979,7 +3014,7 @@ mod tests {
             OrderStatus::Filled,
             Some(venue_position_id),
         );
-        client.cache_reconciliation_order_identity(&terminal_report);
+        cache_reconciliation_order_identity(&client.core, &client.dispatch_state, &terminal_report);
 
         assert!(
             client
@@ -3010,7 +3045,7 @@ mod tests {
 
         let report =
             sample_order_status_report(client_order_id, instrument_id, OrderStatus::Accepted, None);
-        client.cache_reconciliation_order_identity(&report);
+        cache_reconciliation_order_identity(&client.core, &client.dispatch_state, &report);
 
         let identity = client
             .dispatch_state
@@ -3019,6 +3054,489 @@ mod tests {
             .unwrap();
         assert_eq!(identity.instrument_id, instrument_id);
         assert_eq!(identity.venue_position_id, None);
+    }
+
+    #[rstest]
+    #[case::single_discard(true, false)]
+    #[case::bulk_discard(false, false)]
+    #[case::single_finish(true, true)]
+    #[case::bulk_finish(false, true)]
+    #[tokio::test]
+    async fn test_closed_report_collection_preserves_pending_command_identity(
+        #[case] single: bool,
+        #[case] accepted: bool,
+        #[values(PendingOperation::Cancel, PendingOperation::Amend)] operation: PendingOperation,
+    ) {
+        let client_order_id = ClientOrderId::from("client-open-1");
+        let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+        let report =
+            sample_order_status_report(client_order_id, instrument_id, OrderStatus::Accepted, None);
+        let json = crate::common::testing::load_test_json("http_get_orders_realtime.json");
+        let mut orders: serde_json::Value = serde_json::from_str(&json).unwrap();
+        orders["result"]["list"].as_array_mut().unwrap().truncate(1);
+        orders["result"]["list"][0]["orderStatus"] = serde_json::json!("Cancelled");
+        orders["result"]["list"][0]["orderId"] = serde_json::json!(report.venue_order_id.as_str());
+        let (mut client, cache, server) = order_report_client(orders).await;
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.010"))
+            .price(Price::from("3930.41"))
+            .build();
+        let event =
+            TestOrderEventStubs::accepted(&order, client.core.account_id, report.venue_order_id);
+        order.apply(event).unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache_reconciliation_order_identity(&client.core, &client.dispatch_state, &report);
+        client.dispatch_state.pending_requests.insert(
+            "late-command".to_string(),
+            (
+                vec![client_order_id],
+                vec![Some(report.venue_order_id)],
+                operation,
+            ),
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+
+        let task = if single {
+            let command = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(instrument_id),
+                Some(client_order_id),
+                Some(report.venue_order_id),
+                None,
+                None,
+            );
+            let task = client.generate_order_status_report_task(&command).unwrap();
+            ExecutionReportTask {
+                collection: task.collection,
+                finish: Box::new(move || Ok((task.finish)()?.into_iter().collect::<Vec<_>>())),
+            }
+        } else {
+            let command = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                false,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+            client.generate_order_status_reports_task(&command).unwrap()
+        };
+
+        tokio::spawn(task.collection).await.unwrap();
+        assert!(
+            client
+                .dispatch_state
+                .order_identities
+                .contains_key(&client_order_id)
+        );
+
+        if accepted {
+            let reports = (task.finish)().unwrap();
+            assert_eq!(reports.len(), 1);
+            assert_eq!(reports[0].order_status, OrderStatus::Canceled);
+        } else {
+            drop(task.finish);
+        }
+
+        let json = crate::common::testing::load_test_json("ws_order_response.json");
+        let mut response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        response["op"] = serde_json::json!(match operation {
+            PendingOperation::Cancel => "order.cancel",
+            PendingOperation::Amend => "order.amend",
+            PendingOperation::Place => unreachable!(),
+        });
+        response["retCode"] = serde_json::json!(110001);
+        response["retMsg"] = serde_json::json!("Order does not exist.");
+        response["reqId"] = serde_json::json!("late-command");
+        response["data"]["orderLinkId"] = serde_json::json!(client_order_id.as_str());
+        response["data"]["orderId"] = serde_json::json!(report.venue_order_id.as_str());
+        let response = serde_json::from_value(response).unwrap();
+        let message = crate::websocket::messages::BybitWsMessage::OrderResponse(response);
+        dispatch_ws_message(
+            &message,
+            &client.emitter,
+            &client.dispatch_state,
+            client.core.account_id,
+            &client.instruments_cache,
+            client.clock,
+        );
+        assert_eq!(
+            client
+                .dispatch_state
+                .order_identities
+                .contains_key(&client_order_id),
+            !accepted
+        );
+        assert!(client.dispatch_state.pending_requests.is_empty());
+
+        if accepted {
+            assert!(rx.try_recv().is_err());
+        } else {
+            let ExecutionEvent::Order(event) = rx.try_recv().unwrap() else {
+                panic!("expected delayed command rejection");
+            };
+
+            let (reason, reconciliation) = match (operation, &event) {
+                (PendingOperation::Cancel, OrderEventAny::CancelRejected(event)) => {
+                    (event.reason, event.reconciliation)
+                }
+                (PendingOperation::Amend, OrderEventAny::ModifyRejected(event)) => {
+                    (event.reason, event.reconciliation)
+                }
+                _ => panic!("unexpected rejection event: {event:?}"),
+            };
+
+            assert_eq!(event.trader_id(), client.core.trader_id);
+            assert_eq!(event.account_id(), Some(client.core.account_id));
+            assert_eq!(event.client_order_id(), client_order_id);
+            assert_eq!(event.venue_order_id(), Some(report.venue_order_id));
+            assert_eq!(event.instrument_id(), instrument_id);
+            assert_eq!(event.strategy_id(), order.strategy_id());
+            assert_eq!(reason.as_str(), "Order does not exist.");
+            assert!(!reconciliation);
+            assert!(rx.try_recv().is_err());
+        }
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::single(true)]
+    #[case::bulk(false)]
+    #[tokio::test]
+    async fn test_open_report_finalization_uses_current_core(#[case] single: bool) {
+        let orders = serde_json::from_str(&crate::common::testing::load_test_json(
+            "http_get_orders_realtime.json",
+        ))
+        .unwrap();
+        let (client, cache, server) = order_report_client(orders).await;
+        let client_order_id = ClientOrderId::from("client-open-1");
+        let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+
+        let task = if single {
+            let command = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(instrument_id),
+                Some(client_order_id),
+                Some(VenueOrderId::from("open-order-1")),
+                None,
+                None,
+            );
+            let task = client.generate_order_status_report_task(&command).unwrap();
+            ExecutionReportTask {
+                collection: task.collection,
+                finish: Box::new(move || Ok((task.finish)()?.into_iter().collect::<Vec<_>>())),
+            }
+        } else {
+            let command = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                false,
+                Some(instrument_id),
+                None,
+                None,
+                None,
+                None,
+            );
+            client.generate_order_status_reports_task(&command).unwrap()
+        };
+
+        tokio::spawn(task.collection).await.unwrap();
+        assert!(client.dispatch_state.order_identities.is_empty());
+        let strategy_id = StrategyId::from("LATE_OWNER-007");
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(strategy_id)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.027"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        let reports = (task.finish)().unwrap();
+
+        assert_eq!(reports[0].client_order_id, Some(client_order_id));
+        let identity = client
+            .dispatch_state
+            .order_identities
+            .get(&client_order_id)
+            .unwrap();
+        assert_eq!(
+            (
+                identity.instrument_id,
+                identity.strategy_id,
+                identity.order_side,
+                identity.order_type,
+                identity.venue_position_id
+            ),
+            (
+                instrument_id,
+                strategy_id,
+                OrderSide::Sell,
+                OrderType::Market,
+                None
+            ),
+        );
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::single(true)]
+    #[case::bulk(false)]
+    #[tokio::test]
+    async fn test_order_report_collection_error_preserves_identity(#[case] single: bool) {
+        let response = serde_json::json!({
+            "retCode": 10001, "retMsg": "report collection failure", "result": {"list": []},
+            "retExtInfo": {}, "time": 1761355905610u64,
+        });
+        let (client, _, server) = order_report_client(response).await;
+        let client_order_id = ClientOrderId::from("client-open-1");
+        let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+        let strategy_id = StrategyId::from("ERROR_OWNER-009");
+        client.dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id,
+                strategy_id,
+                order_side: OrderSide::Sell,
+                order_type: OrderType::Market,
+                venue_position_id: Some(PositionId::from("ERROR-POSITION")),
+            },
+        );
+
+        let single_command = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(instrument_id),
+            Some(client_order_id),
+            Some(VenueOrderId::from("open-order-1")),
+            None,
+            None,
+        );
+
+        let bulk_command = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            Some(instrument_id),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        for fused in [false, true] {
+            let error = if fused {
+                if single {
+                    client
+                        .generate_order_status_report(&single_command)
+                        .await
+                        .unwrap_err()
+                } else {
+                    client
+                        .generate_order_status_reports(&bulk_command)
+                        .await
+                        .unwrap_err()
+                }
+            } else if single {
+                let task = client
+                    .generate_order_status_report_task(&single_command)
+                    .unwrap();
+
+                tokio::spawn(task.collection).await.unwrap();
+                (task.finish)().unwrap_err()
+            } else {
+                let task = client
+                    .generate_order_status_reports_task(&bulk_command)
+                    .unwrap();
+
+                tokio::spawn(task.collection).await.unwrap();
+                (task.finish)().unwrap_err()
+            };
+
+            let error = error.downcast_ref::<BybitHttpError>().unwrap();
+            assert!(
+                matches!(error, BybitHttpError::BybitError { error_code: 10001, message } if message == "report collection failure")
+            );
+            let identity = client
+                .dispatch_state
+                .order_identities
+                .get(&client_order_id)
+                .unwrap();
+            assert_eq!(
+                (
+                    identity.instrument_id,
+                    identity.strategy_id,
+                    identity.order_side,
+                    identity.order_type,
+                    identity.venue_position_id
+                ),
+                (
+                    instrument_id,
+                    strategy_id,
+                    OrderSide::Sell,
+                    OrderType::Market,
+                    Some(PositionId::from("ERROR-POSITION"))
+                ),
+            );
+        }
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::both_match(Some("ETHUSDT-LINEAR.BYBIT"), Some("client-open-1"), Some("open-order-1"), Some(("client-open-1", "open-order-1")))]
+    #[case::crossed_identifiers(
+        Some("ETHUSDT-LINEAR.BYBIT"),
+        Some("client-open-1"),
+        Some("open-order-2"),
+        None
+    )]
+    #[case::client_only(Some("ETHUSDT-LINEAR.BYBIT"), Some("client-open-2"), None, Some(("client-open-2", "open-order-2")))]
+    #[case::venue_only(Some("ETHUSDT-LINEAR.BYBIT"), None, Some("open-order-2"), Some(("client-open-2", "open-order-2")))]
+    #[case::missing_instrument(None, Some("client-open-1"), Some("open-order-1"), None)]
+    #[tokio::test]
+    async fn test_single_report_task_preserves_lookup_filters(
+        #[case] instrument: Option<&str>,
+        #[case] client_order_id: Option<&str>,
+        #[case] venue_order_id: Option<&str>,
+        #[case] expected: Option<(&str, &str)>,
+    ) {
+        let orders = serde_json::from_str(&crate::common::testing::load_test_json(
+            "http_get_orders_realtime.json",
+        ))
+        .unwrap();
+        let (client, _, server) = order_report_client(orders).await;
+
+        let command = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            instrument.map(InstrumentId::from),
+            client_order_id.map(ClientOrderId::from),
+            venue_order_id.map(VenueOrderId::from),
+            None,
+            None,
+        );
+        let task = client.generate_order_status_report_task(&command).unwrap();
+        tokio::spawn(task.collection).await.unwrap();
+
+        let report = (task.finish)().unwrap();
+
+        assert_eq!(
+            report.map(|report| (report.client_order_id, report.venue_order_id)),
+            expected.map(|(client, venue)| (
+                Some(ClientOrderId::from(client)),
+                VenueOrderId::from(venue)
+            )),
+        );
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::unbounded(None, None, vec!["open-order-1", "open-order-2"])]
+    #[case::after_first(Some(1761355905607), None, vec!["open-order-2"])]
+    #[case::before_second(None, Some(1761355905608), vec!["open-order-1"])]
+    #[case::inclusive_bounds(Some(1761355905606), Some(1761355905606), vec!["open-order-1"])]
+    #[tokio::test]
+    async fn test_bulk_report_task_preserves_window_and_fused_parity(
+        #[case] start_ms: Option<u64>,
+        #[case] end_ms: Option<u64>,
+        #[case] expected: Vec<&str>,
+    ) {
+        let orders = serde_json::from_str(&crate::common::testing::load_test_json(
+            "http_get_orders_realtime.json",
+        ))
+        .unwrap();
+        let (client, _, server) = order_report_client(orders).await;
+
+        let command = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            Some(InstrumentId::from("ETHUSDT-LINEAR.BYBIT")),
+            start_ms.map(|ms| UnixNanos::from(ms * 1_000_000)),
+            end_ms.map(|ms| UnixNanos::from(ms * 1_000_000)),
+            None,
+            None,
+        );
+        let task = client.generate_order_status_reports_task(&command).unwrap();
+        tokio::spawn(task.collection).await.unwrap();
+
+        let collected = (task.finish)().unwrap();
+        let fused = client
+            .generate_order_status_reports(&command)
+            .await
+            .unwrap();
+
+        let expected: Vec<_> = expected.into_iter().map(VenueOrderId::from).collect();
+        assert_eq!(
+            collected
+                .iter()
+                .map(|report| report.venue_order_id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            fused
+                .iter()
+                .map(|report| report.venue_order_id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        server.abort();
+    }
+
+    async fn order_report_client(
+        response: serde_json::Value,
+    ) -> (
+        BybitExecutionClient,
+        Rc<RefCell<Cache>>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let history = response.clone();
+        let router = Router::new()
+            .route(
+                "/v5/order/realtime",
+                get(move || std::future::ready(Json(response.clone()))),
+            )
+            .route(
+                "/v5/order/history",
+                get(move || std::future::ready(Json(history.clone()))),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (mut client, cache) = test_execution_client();
+        client.http_client = BybitHttpClient::with_credentials(
+            "test_key".to_string(),
+            "test_secret".to_string(),
+            Some(format!("http://{addr}")),
+            1,
+            0,
+            10,
+            10,
+            5_000,
+            None,
+        )
+        .unwrap();
+        let mut instrument = crypto_perpetual_ethusdt();
+        instrument.id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+        client.http_client.cache_instrument(instrument.into());
+        (client, cache, server)
     }
 
     #[rstest]

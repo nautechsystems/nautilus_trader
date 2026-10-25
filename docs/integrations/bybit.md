@@ -375,6 +375,13 @@ expires, unconfirmed orders stay open locally until a later order update or reco
 closure. With an `order_side` filter, the adapter uses batch cancel for matching orders instead.
 See [Cancel-all routing](../concepts/execution/index.md#cancel-all-routing) for command routing.
 
+### Reconciliation reports
+
+With `LiveNode`, open-order and targeted order checks collect order reports on a runtime worker. The
+node accepts the reports before finalization updates order identities on the core thread. Expired or
+canceled collections retain the identities needed for pending cancel and amend rejections. Startup
+mass status and direct asynchronous report methods still collect and finalize in one call.
+
 ### Position management
 
 | Feature          | Spot | Linear | Inverse | Option | Notes                                                       |

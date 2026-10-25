@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot SBE stream panics and negative quantities parsed as large sizes
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
 - Fixed Bybit fill prices using the commission currency instead of the quote currency (#5385), thanks @Milchstrassse
+- Fixed Bybit reconciliation timeouts losing pending cancel and amend rejection events
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
 - Fixed Derive submitting quote-denominated order quantities as base units
