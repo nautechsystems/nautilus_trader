@@ -767,7 +767,7 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let selections = select_instruments(&self.config.instruments, |candidate| {
             *candidate == instrument_id
         });
@@ -814,7 +814,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let (symbol_id, instrument) = self.loaded(instrument_id)?;
 
         let query = BookQuery {
@@ -851,7 +852,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let (symbol_id, instrument, range) =
             self.history(instrument_id, request.start, request.end, request.limit)?;
 
@@ -887,7 +889,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let (symbol_id, instrument, range) =
             self.history(instrument_id, request.start, request.end, request.limit)?;
 
@@ -923,7 +926,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
+
         anyhow::ensure!(
             bar_type.aggregation_source() == AggregationSource::External,
             "CoinAPI provides only external bars, was {bar_type}"

@@ -355,16 +355,10 @@ fn request_recovery(
     instrument_id: InstrumentId,
     now: Instant,
 ) -> BookSequenceOutcome {
-    let outcome = books
+    books
         .entry(instrument_id)
         .or_insert_with(|| Book::new(now))
-        .gap();
-
-    if outcome == BookSequenceOutcome::Recover {
-        log::warn!("Book snapshot invalid for {instrument_id}; requesting a fresh snapshot");
-    }
-
-    outcome
+        .gap()
 }
 
 #[cfg(test)]

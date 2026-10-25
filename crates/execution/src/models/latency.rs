@@ -18,7 +18,11 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_core::DurationNanos;
+use nautilus_common::messages::execution::TradingCommand;
+use nautilus_core::{DurationNanos, UnixNanos};
+
+#[cfg(feature = "python")]
+use crate::python::latency::PythonLatencyModel;
 
 /// Trait for latency models used in backtesting.
 ///
@@ -26,13 +30,46 @@ use nautilus_core::DurationNanos;
 /// Implementations can provide static or dynamic (jittered) latency values.
 pub trait LatencyModel: Debug {
     /// Returns the latency for order insertion operations.
-    fn get_insert_latency(&self) -> DurationNanos;
+    ///
+    /// `ts_now` is the current clock time (simulation time in backtests).
+    /// The command retains its creation timestamp.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model cannot produce a valid delay.
+    fn get_insert_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos>;
 
     /// Returns the latency for order update/modify operations.
-    fn get_update_latency(&self) -> DurationNanos;
+    ///
+    /// `ts_now` is the current clock time (simulation time in backtests).
+    /// The command retains its creation timestamp.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model cannot produce a valid delay.
+    fn get_update_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos>;
 
     /// Returns the latency for order delete/cancel operations.
-    fn get_delete_latency(&self) -> DurationNanos;
+    ///
+    /// `ts_now` is the current clock time (simulation time in backtests).
+    /// The command retains its creation timestamp.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model cannot produce a valid delay.
+    fn get_delete_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos>;
 
     /// Returns the base latency component.
     fn get_base_latency(&self) -> DurationNanos;
@@ -68,16 +105,28 @@ impl Debug for LatencyModelHandle {
 }
 
 impl LatencyModel for LatencyModelHandle {
-    fn get_insert_latency(&self) -> DurationNanos {
-        self.0.get_insert_latency()
+    fn get_insert_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
+        self.0.get_insert_latency(command, ts_now)
     }
 
-    fn get_update_latency(&self) -> DurationNanos {
-        self.0.get_update_latency()
+    fn get_update_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
+        self.0.get_update_latency(command, ts_now)
     }
 
-    fn get_delete_latency(&self) -> DurationNanos {
-        self.0.get_delete_latency()
+    fn get_delete_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
+        self.0.get_delete_latency(command, ts_now)
     }
 
     fn get_base_latency(&self) -> DurationNanos {
@@ -88,30 +137,52 @@ impl LatencyModel for LatencyModelHandle {
 #[derive(Debug, Clone)]
 pub enum LatencyModelAny {
     Static(StaticLatencyModel),
+    #[cfg(feature = "python")]
+    Python(PythonLatencyModel),
 }
 
 impl LatencyModel for LatencyModelAny {
-    fn get_insert_latency(&self) -> DurationNanos {
+    fn get_insert_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
         match self {
-            Self::Static(model) => model.get_insert_latency(),
+            Self::Static(model) => model.get_insert_latency(command, ts_now),
+            #[cfg(feature = "python")]
+            Self::Python(model) => model.get_insert_latency(command, ts_now),
         }
     }
 
-    fn get_update_latency(&self) -> DurationNanos {
+    fn get_update_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
         match self {
-            Self::Static(model) => model.get_update_latency(),
+            Self::Static(model) => model.get_update_latency(command, ts_now),
+            #[cfg(feature = "python")]
+            Self::Python(model) => model.get_update_latency(command, ts_now),
         }
     }
 
-    fn get_delete_latency(&self) -> DurationNanos {
+    fn get_delete_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
         match self {
-            Self::Static(model) => model.get_delete_latency(),
+            Self::Static(model) => model.get_delete_latency(command, ts_now),
+            #[cfg(feature = "python")]
+            Self::Python(model) => model.get_delete_latency(command, ts_now),
         }
     }
 
     fn get_base_latency(&self) -> DurationNanos {
         match self {
             Self::Static(model) => model.get_base_latency(),
+            #[cfg(feature = "python")]
+            Self::Python(model) => model.get_base_latency(),
         }
     }
 }
@@ -178,16 +249,28 @@ impl StaticLatencyModel {
 }
 
 impl LatencyModel for StaticLatencyModel {
-    fn get_insert_latency(&self) -> DurationNanos {
-        self.insert_latency_nanos
+    fn get_insert_latency(
+        &self,
+        _command: &TradingCommand,
+        _ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
+        Ok(self.insert_latency_nanos)
     }
 
-    fn get_update_latency(&self) -> DurationNanos {
-        self.update_latency_nanos
+    fn get_update_latency(
+        &self,
+        _command: &TradingCommand,
+        _ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
+        Ok(self.update_latency_nanos)
     }
 
-    fn get_delete_latency(&self) -> DurationNanos {
-        self.delete_latency_nanos
+    fn get_delete_latency(
+        &self,
+        _command: &TradingCommand,
+        _ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
+        Ok(self.delete_latency_nanos)
     }
 
     fn get_base_latency(&self) -> DurationNanos {
@@ -203,24 +286,53 @@ impl Display for StaticLatencyModel {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::messages::execution::CancelAllOrders;
+    use nautilus_core::UUID4;
+    use nautilus_model::identifiers::{InstrumentId, StrategyId, TraderId};
     use rstest::rstest;
 
     use super::*;
+
+    fn latency_command() -> TradingCommand {
+        TradingCommand::CancelAllOrders(CancelAllOrders::new(
+            TraderId::from("TEST-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    }
 
     #[derive(Debug)]
     struct CustomLatencyModel;
 
     impl LatencyModel for CustomLatencyModel {
-        fn get_insert_latency(&self) -> DurationNanos {
-            DurationNanos::new(11)
+        fn get_insert_latency(
+            &self,
+            _command: &TradingCommand,
+            _ts_now: UnixNanos,
+        ) -> anyhow::Result<DurationNanos> {
+            Ok(DurationNanos::new(11))
         }
 
-        fn get_update_latency(&self) -> DurationNanos {
-            DurationNanos::new(22)
+        fn get_update_latency(
+            &self,
+            _command: &TradingCommand,
+            _ts_now: UnixNanos,
+        ) -> anyhow::Result<DurationNanos> {
+            Ok(DurationNanos::new(22))
         }
 
-        fn get_delete_latency(&self) -> DurationNanos {
-            DurationNanos::new(33)
+        fn get_delete_latency(
+            &self,
+            _command: &TradingCommand,
+            _ts_now: UnixNanos,
+        ) -> anyhow::Result<DurationNanos> {
+            Ok(DurationNanos::new(33))
         }
 
         fn get_base_latency(&self) -> DurationNanos {
@@ -230,19 +342,37 @@ mod tests {
 
     #[rstest]
     fn test_latency_model_handle_calls_custom_model() {
+        let command = latency_command();
         let model: Rc<dyn LatencyModel> = Rc::new(CustomLatencyModel);
         let handle = LatencyModelHandle::from_rc(model);
         let cloned_handle = handle.clone();
         drop(handle);
 
-        assert_eq!(cloned_handle.get_insert_latency(), DurationNanos::new(11));
-        assert_eq!(cloned_handle.get_update_latency(), DurationNanos::new(22));
-        assert_eq!(cloned_handle.get_delete_latency(), DurationNanos::new(33));
+        assert_eq!(
+            cloned_handle
+                .get_insert_latency(&command, UnixNanos::default())
+                .unwrap(),
+            DurationNanos::new(11)
+        );
+        assert_eq!(
+            cloned_handle
+                .get_update_latency(&command, UnixNanos::default())
+                .unwrap(),
+            DurationNanos::new(22)
+        );
+        assert_eq!(
+            cloned_handle
+                .get_delete_latency(&command, UnixNanos::default())
+                .unwrap(),
+            DurationNanos::new(33)
+        );
         assert_eq!(cloned_handle.get_base_latency(), DurationNanos::new(44));
     }
 
     #[rstest]
     fn test_latency_model_handle_from_any_preserves_model() {
+        let command = latency_command();
+
         let model = StaticLatencyModel::new(
             DurationNanos::new(1),
             DurationNanos::new(10),
@@ -251,14 +381,31 @@ mod tests {
         );
         let handle: LatencyModelHandle = LatencyModelAny::Static(model).into();
 
-        assert_eq!(handle.get_insert_latency(), DurationNanos::new(11));
-        assert_eq!(handle.get_update_latency(), DurationNanos::new(21));
-        assert_eq!(handle.get_delete_latency(), DurationNanos::new(31));
+        assert_eq!(
+            handle
+                .get_insert_latency(&command, UnixNanos::default())
+                .unwrap(),
+            DurationNanos::new(11)
+        );
+        assert_eq!(
+            handle
+                .get_update_latency(&command, UnixNanos::default())
+                .unwrap(),
+            DurationNanos::new(21)
+        );
+        assert_eq!(
+            handle
+                .get_delete_latency(&command, UnixNanos::default())
+                .unwrap(),
+            DurationNanos::new(31)
+        );
         assert_eq!(handle.get_base_latency(), DurationNanos::new(1));
     }
 
     #[rstest]
     fn test_static_latency_model() {
+        let command = latency_command();
+
         let model = StaticLatencyModel::new(
             DurationNanos::from_millis(1),
             DurationNanos::from_millis(2),
@@ -267,9 +414,27 @@ mod tests {
         );
 
         // Base is added to each operation latency
-        assert_eq!(model.get_insert_latency().as_u64(), 3_000_000);
-        assert_eq!(model.get_update_latency().as_u64(), 4_000_000);
-        assert_eq!(model.get_delete_latency().as_u64(), 5_000_000);
+        assert_eq!(
+            model
+                .get_insert_latency(&command, UnixNanos::default())
+                .unwrap()
+                .as_u64(),
+            3_000_000
+        );
+        assert_eq!(
+            model
+                .get_update_latency(&command, UnixNanos::default())
+                .unwrap()
+                .as_u64(),
+            4_000_000
+        );
+        assert_eq!(
+            model
+                .get_delete_latency(&command, UnixNanos::default())
+                .unwrap()
+                .as_u64(),
+            5_000_000
+        );
         assert_eq!(model.get_base_latency().as_u64(), 1_000_000);
     }
 }

@@ -514,3 +514,383 @@ async fn position_report_maintenance_latency() {
         state.fill_report_finish_busy_ns.load(Ordering::Relaxed)
     );
 }
+
+#[rstest]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_targeted_report_acceptance_delivers_fill_after_deadline() {
+    let state = BlockingReportClientState::default();
+    state.report_worker.store(true, Ordering::Relaxed);
+    state
+        .fill_report_finish_ns
+        .store(200_000_000, Ordering::Relaxed);
+    let client_order_id = ClientOrderId::from("O-TARGETED-ACCEPTED");
+    let venue_order_id = VenueOrderId::from("V-TARGETED-ACCEPTED");
+    let trade_id = TradeId::from("T-TARGETED-ACCEPTED");
+    let fill = reconciliation_fill_report(
+        client_order_id,
+        venue_order_id,
+        trade_id,
+        Price::from("101.0"),
+        Money::from("0.25 USDT"),
+        UnixNanos::from(1_000_000),
+    );
+    let factory = BlockingReportExecutionClientFactory::configurable(
+        ClientId::from("BLOCKING-REPORT"),
+        AccountId::from("BLOCKING-REPORT-001"),
+        state.clone(),
+    )
+    .with_order_reports(Vec::new())
+    .with_targeted_order_report(terminal_order_report(
+        client_order_id,
+        venue_order_id,
+        OrderStatus::Canceled,
+        Quantity::from("1.0"),
+    ))
+    .with_fill_report_responses([vec![fill]], None);
+    let replay_client = BlockingReportExecutionClient::new(&factory);
+    let mut config = reconciliation_node_config(1);
+    config.timeout_reconciliation = RECONCILIATION_TIMEOUT;
+    config.exec_engine.open_check_interval_secs = Some(1.0);
+    config.delay_post_stop = Duration::ZERO;
+    let mut node = targeted_acceptance_node(config, vec![factory]);
+    let cache = node.kernel().cache();
+    let handle = node.handle();
+
+    let driver = async {
+        while state.fill_reports_finalized.lock().is_empty() {
+            dst::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        dst::time::sleep(Duration::from_millis(1)).await;
+        handle.stop();
+    };
+
+    let (result, ()) = dst::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(node.run(), driver)
+    })
+    .await
+    .expect("targeted accepted fills reach engine");
+
+    result.unwrap();
+
+    let command = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::from(2_000_000),
+        Some(crypto_perpetual_ethusdt().id()),
+        Some(venue_order_id),
+        None,
+        None,
+        None,
+        None,
+    );
+    let replay = replay_client.fill_report_task(&command);
+    replay.collection.await;
+    assert_eq!((replay.finish)().unwrap(), Vec::<FillReport>::new());
+    assert_eq!(
+        *state.targeted_order_reports_finalized.lock(),
+        vec![client_order_id]
+    );
+    assert_eq!(*state.fill_reports_finalized.lock(), vec![trade_id]);
+    assert_eq!(state.fill_report_count.load(Ordering::Relaxed), 2);
+    assert_eq!(state.report_collections_active.load(Ordering::Relaxed), 0);
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(order.filled_qty(), Quantity::from("1.0"));
+
+    let fills = order
+        .events()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, trade_id);
+    assert_eq!(fills[0].last_qty, Quantity::from("1.0"));
+    assert_eq!(fills[0].last_px, Price::from("101.0"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.25 USDT")));
+}
+
+#[rstest]
+#[case::fill_timeout(false, false)]
+#[case::shutdown(true, false)]
+#[case::fill_error(false, true)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_targeted_report_acceptance_carries_status_across_fill_failure(
+    #[case] shutdown: bool,
+    #[case] error: bool,
+) {
+    let states = [
+        BlockingReportClientState::default(),
+        BlockingReportClientState::default(),
+    ];
+    let release = Arc::new(tokio::sync::Notify::new());
+    states[1].fill_report_error.store(error, Ordering::Relaxed);
+    let mut config = reconciliation_node_config(2);
+    config.timeout_reconciliation = Duration::from_millis(500);
+    config.exec_engine.inflight_check_threshold_ms = 0;
+    config.exec_engine.open_check_interval_secs = Some(1.0);
+    config.delay_post_stop = Duration::ZERO;
+    let mut factories = Vec::new();
+
+    for (index, state) in states.iter().enumerate() {
+        state.report_worker.store(false, Ordering::Relaxed);
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from(format!("TARGETED-{index}")),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(Vec::new())
+        .with_targeted_order_report(terminal_order_report(
+            ClientOrderId::from(format!("O-CARRIED-{index}")),
+            VenueOrderId::from(format!("V-CARRIED-{index}")),
+            OrderStatus::Canceled,
+            Quantity::from(if index == 0 { "0.0" } else { "1.0" }),
+        ))
+        .with_fill_report_responses([Vec::new()], (index == 1).then(|| release.clone()));
+        factories.push(factory);
+    }
+
+    let mut node = targeted_acceptance_node(config, factories);
+
+    let cache = node.kernel().cache();
+    let order = cache
+        .borrow()
+        .order_owned(&ClientOrderId::from("O-CARRIED-0"))
+        .unwrap();
+    let event_topic = switchboard::get_event_order_topic(order.strategy_id());
+    let observed_updates = Rc::new(RefCell::new(Vec::new()));
+    let callback_updates = observed_updates.clone();
+    let updated = states[1].instrument_received.clone();
+
+    let event_handler = msgbus::TypedHandler::from(move |event: &OrderEventAny| {
+        if matches!(event, OrderEventAny::Canceled(_)) {
+            callback_updates
+                .borrow_mut()
+                .push(updated.load(Ordering::Relaxed));
+        }
+    });
+
+    msgbus::subscribe_order_events(event_topic.into(), event_handler.clone(), None);
+    let handle = node.handle();
+
+    let driver = async {
+        while states[1].fill_report_count.load(Ordering::Relaxed) == 0 {
+            dst::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let topic = switchboard::get_instrument_topic(instrument.id());
+        msgbus::publish_instrument(topic, &instrument);
+        assert!(!states[1].instrument_received.load(Ordering::Relaxed));
+
+        if error {
+            release.notify_one();
+        }
+
+        if shutdown {
+            handle.stop();
+        } else {
+            while cache
+                .borrow()
+                .order(&ClientOrderId::from("O-CARRIED-0"))
+                .unwrap()
+                .status()
+                != OrderStatus::Canceled
+            {
+                dst::time::sleep(Duration::from_millis(1)).await;
+            }
+
+            handle.stop();
+        }
+    };
+
+    let (result, ()) = dst::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(node.run(), driver)
+    })
+    .await
+    .expect("carried statuses survive interrupted fill stage");
+
+    msgbus::unsubscribe_order_events(event_topic.into(), &event_handler);
+    result.unwrap();
+    assert_eq!(*observed_updates.borrow(), vec![true]);
+
+    for (index, state) in states.iter().enumerate() {
+        assert_eq!(
+            *state.targeted_order_reports_finalized.lock(),
+            vec![ClientOrderId::from(format!("O-CARRIED-{index}"))]
+        );
+        assert_eq!(state.report_collections_active.load(Ordering::Relaxed), 0);
+        assert_eq!(state.fill_report_finalizations.load(Ordering::Relaxed), 0);
+    }
+
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&ClientOrderId::from("O-CARRIED-0"))
+            .unwrap()
+            .status(),
+        OrderStatus::Canceled
+    );
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&ClientOrderId::from("O-CARRIED-1"))
+            .unwrap()
+            .status(),
+        OrderStatus::Accepted
+    );
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&ClientOrderId::from("O-CARRIED-1"))
+            .unwrap()
+            .filled_qty(),
+        Quantity::from("0.0")
+    );
+
+    for index in 0..2 {
+        let id = ClientOrderId::from(format!("O-CARRIED-{index}"));
+        node.exec_manager_mut().register_inflight(id);
+    }
+
+    dst::time::sleep(Duration::from_millis(1)).await;
+    let inflight = node.exec_manager_mut().check_inflight_orders();
+    assert!(inflight.queries.iter().any(|cmd| matches!(cmd,TradingCommand::QueryOrder(query) if query.client_order_id==ClientOrderId::from("O-CARRIED-1"))),"unresolved carried status clears its targeted marker");
+}
+
+#[cfg(not(madsim))]
+#[rstest]
+#[ignore = "Wall-clock comparison; run optimized with process isolation"]
+#[tokio::test]
+async fn targeted_report_maintenance_latency() {
+    const CLIENTS: usize = 16;
+    const BATCHES: usize = 20;
+    let states = (0..CLIENTS)
+        .map(|_| BlockingReportClientState::default())
+        .collect::<Vec<_>>();
+    let mut config = reconciliation_node_config(CLIENTS as u32);
+    config.exec_engine.open_check_interval_secs = Some(0.01);
+    let mut factories = Vec::new();
+
+    for (index, state) in states.iter().enumerate() {
+        state.report_worker.store(true, Ordering::Relaxed);
+        state.report_cpu_ns.store(100_000, Ordering::Relaxed);
+        state.report_cpu_repeated.store(true, Ordering::Relaxed);
+        let mut report = terminal_order_report(
+            ClientOrderId::from(format!("O-TARGETED-BENCH-{index}")),
+            VenueOrderId::from(format!("V-TARGETED-BENCH-{index}")),
+            OrderStatus::Accepted,
+            Quantity::from("0.0"),
+        );
+        report.price = Some(Price::from("100.0"));
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from(format!("TARGETED-BENCH-{index}")),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(Vec::new())
+        .with_targeted_order_report(report);
+        factories.push(factory);
+    }
+
+    let mut node = targeted_acceptance_node(config, factories);
+
+    let handle = node.handle();
+    let snapshot = handle.metrics_snapshot();
+
+    let driver = async {
+        while states
+            .iter()
+            .any(|state| state.targeted_order_reports_finalized.lock().len() < BATCHES)
+        {
+            dst::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        handle.stop();
+    };
+
+    let core_poll_ns = Cell::new(0u64);
+    let run = node.run();
+    tokio::pin!(run);
+
+    let measured = std::future::poll_fn(|cx| {
+        let start = std::time::Instant::now();
+        let result = std::future::Future::poll(run.as_mut(), cx);
+        core_poll_ns.set(core_poll_ns.get() + start.elapsed().as_nanos() as u64);
+        result
+    });
+
+    let (result, ()) = dst::time::timeout(Duration::from_secs(10), async {
+        tokio::join!(measured, driver)
+    })
+    .await
+    .expect("representative targeted batches complete");
+
+    result.unwrap();
+    let metrics = RunnerMetricsDelta::from_snapshots(snapshot, handle.metrics_snapshot());
+
+    for state in &states {
+        assert_eq!(state.targeted_order_reports_finalized.lock().len(), BATCHES);
+        assert_eq!(state.report_collections_max.load(Ordering::Relaxed), 1);
+        assert_ne!(
+            *state.report_thread.lock(),
+            Some(std::thread::current().id())
+        );
+    }
+
+    println!(
+        "TARGETED_BENCH clients={CLIENTS} batches={BATCHES} core_poll_ns={} maintenance_ns={}",
+        core_poll_ns.get(),
+        metrics.maintenance_busy_ns
+    );
+}
+
+fn targeted_acceptance_node(
+    config: LiveNodeConfig,
+    factories: Vec<BlockingReportExecutionClientFactory>,
+) -> LiveNode {
+    let mut builder = LiveNodeBuilder::from_config(config)
+        .unwrap()
+        .with_name("TargetedAcceptance");
+    let mut orders = Vec::new();
+    for (index, factory) in factories.into_iter().enumerate() {
+        orders.push((
+            factory.client_id,
+            factory
+                .targeted_order_report
+                .clone()
+                .expect("targeted test report"),
+        ));
+        builder = builder
+            .add_exec_client_with_routing(
+                Some(format!("targeted-{index}")),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+                RoutingConfig {
+                    default: index == 0,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
+    let node = builder.build().unwrap();
+    add_reconciliation_test_state(&node);
+
+    for (client_id, report) in orders {
+        add_accepted_test_order(
+            &node,
+            report.client_order_id.unwrap(),
+            report.venue_order_id,
+            client_id,
+        );
+    }
+
+    node
+}

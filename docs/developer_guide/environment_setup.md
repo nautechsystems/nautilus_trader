@@ -548,6 +548,15 @@ local patch.
 
 ## Services
 
+The Compose file pins PostgreSQL 18, Redis, and pgAdmin images. Before starting PostgreSQL 18
+with an existing volume from an earlier major version, back up the database and migrate it using
+[dump/restore or `pg_upgrade`](https://www.postgresql.org/docs/18/upgrading.html). Changing the
+image does not upgrade the stored data.
+
+For Debian-to-Alpine migration, back up and dump/restore the database even when the PostgreSQL major
+version is unchanged. The images use different libc collation rules, so reusing the old data directory
+can invalidate indexes.
+
 Initialize PostgreSQL, Redis, and pgAdmin from the repository root:
 
 ```bash

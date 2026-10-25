@@ -35,9 +35,12 @@ use ustr::Ustr;
 
 use super::models::{CryptoMarketConfig, FeeSchedule, GammaEvent, GammaMarket, GammaTag};
 use crate::common::{
-    consts::{POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE, PUSD},
+    consts::{
+        MARKET_VERSION_KEY, POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE, PUSD,
+        SUPPORTED_MARKET_VERSION,
+    },
     enums::PolymarketOutcome,
-    parse::parse_decimal_exact,
+    parse::{parse_decimal_exact, validate_market_version},
 };
 
 const DEFAULT_TICK_SIZE: Decimal = dec!(0.001);
@@ -106,6 +109,8 @@ pub struct PolymarketInstrumentDef {
     /// Game ID for sport markets, kept verbatim because Gamma emits both
     /// numeric and composite `<uuid>:<away>:<home>` forms.
     pub game_id: Option<String>,
+    /// Market protocol version, which must be `v1`.
+    pub market_version: String,
 }
 
 /// Parses a Gamma market response into instrument definitions.
@@ -120,6 +125,7 @@ pub(super) fn parse_gamma_market_with_event_cache(
     market: &GammaMarket,
     event_metadata: &mut AHashMap<*const GammaEvent, Arc<Value>>,
 ) -> anyhow::Result<Vec<PolymarketInstrumentDef>> {
+    validate_market_version(market.version.as_deref())?;
     let event_id = market_event_id(market);
 
     let game_id = market.game_id.clone().or_else(|| {
@@ -202,6 +208,7 @@ pub(super) fn parse_gamma_market_with_event_cache(
             crypto_market_config: market.crypto_market_config.clone(),
             fee_schedule: market.fee_schedule.clone(),
             game_id: game_id.clone(),
+            market_version: SUPPORTED_MARKET_VERSION.to_string(),
         });
     }
 
@@ -419,6 +426,7 @@ pub fn create_instrument_from_def(
     def: &PolymarketInstrumentDef,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
+    validate_market_version(Some(&def.market_version))?;
     let symbol = Symbol::new(def.symbol);
     let venue = *POLYMARKET_VENUE;
     let instrument_id = InstrumentId::new(symbol, venue);
@@ -561,6 +569,10 @@ pub(crate) fn tick_relative_price_bounds(tick_size: Decimal) -> anyhow::Result<(
 
 fn build_info(def: &PolymarketInstrumentDef) -> Params {
     let mut map = serde_json::Map::new();
+    map.insert(
+        MARKET_VERSION_KEY.to_string(),
+        def.market_version.clone().into(),
+    );
     map.insert("gamma_market".to_string(), def.gamma_market.clone().into());
     if def.gamma_event.is_some() {
         // Reserve the event position under both serde_json map ordering configurations
@@ -1037,6 +1049,7 @@ mod tests {
         let mut expected = serde_json::Map::new();
 
         for key in [
+            "market_version",
             "gamma_market",
             "gamma_event",
             "event_id",

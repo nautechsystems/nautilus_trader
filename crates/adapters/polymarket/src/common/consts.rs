@@ -38,6 +38,9 @@ pub const POLYMARKET_NAUTILUS_BUILDER_CODE: &str =
 
 pub const PUSD: &str = "pUSD";
 
+pub(crate) const SUPPORTED_MARKET_VERSION: &str = "v1";
+pub(crate) const MARKET_VERSION_KEY: &str = "market_version";
+
 /// Canonical decimal precision for Polymarket prices.
 pub const POLYMARKET_PRICE_PRECISION: u8 = 4;
 

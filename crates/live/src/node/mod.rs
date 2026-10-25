@@ -133,9 +133,7 @@ use crate::{
     dispatch::drain_callbacks,
     execution::{
         client::LiveExecutionClient,
-        manager::{
-            ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
-        },
+        manager::{ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery},
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
@@ -1711,36 +1709,13 @@ impl LiveNode {
                 result = async {
                     match targeted_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<ReportTaskOutcome<Vec<TargetedOrderReportResult>>>().await,
+                        None => std::future::pending::<ReportTaskOutcome<()>>().await,
                     }
                 }, if targeted_order_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
 
-                    let planned_client_order_ids = targeted_order_report_task
-                        .as_ref()
-                        .map(|task| task.planned_client_order_ids.clone())
-                        .unwrap_or_default();
-                    drop(targeted_order_report_task.take());
-
-                    match result {
-                        ReportTaskOutcome::Completed(result) => {
-                            let client_refs = self
-                                .exec_clients
-                                .iter()
-                                .map(|client| client as &dyn ExecutionClient)
-                                .collect::<Vec<_>>();
-                            let events = self
-                                .exec_manager
-                                .reconcile_targeted_order_reports(result, &client_refs);
-                            self.process_reconciliation_events(&events);
-                        }
-                        ReportTaskOutcome::TimedOut => {
-                            self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
-                            log::warn!(
-                                "Targeted order report collection expired after {:?}",
-                                self.config.timeout_reconciliation,
-                            );
-                        }
+                    if let Some(task) = targeted_order_report_task.take() {
+                        self.complete_targeted_order_report_check(task, &result);
                     }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
                 }
@@ -1764,11 +1739,10 @@ impl LiveNode {
                             }
                         }
                         ReportTaskOutcome::Completed(PositionReportTaskResult::Fills { position_result, collection }) => {
-                            let result = collection.finish();
+                            let reports = collection.finish();
                             self.handle_position_fill_report_result(PositionFillReportResult {
                                 position_result,
-                                reports: result.reports,
-                                successful_keys: result.successful_keys,
+                                reports,
                             });
                         }
                         ReportTaskOutcome::TimedOut => {
@@ -2010,7 +1984,9 @@ impl LiveNode {
             &mut open_order_report_task,
             &mut targeted_order_report_task,
             &mut position_report_task,
+            dispatch_result.is_ok(),
         );
+
         drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
@@ -4049,7 +4025,9 @@ mod tests {
     #[tokio::test]
     async fn test_external_startup_dispatches_correlated_response_before_buffered_traffic() {
         use bytes::Bytes;
-        use nautilus_common::messages::data::{CustomDataResponse, DataResponse};
+        use nautilus_common::messages::data::{
+            CustomDataResponse, DataResponse, DataResponseEnvelope,
+        };
         use nautilus_model::data::DataType;
 
         let (egress, publications, _) = CapturingExternalEgress::new();
@@ -4091,7 +4069,11 @@ mod tests {
         let done = Rc::new(RefCell::new(Some(done)));
         msgbus::register_response_handler(
             &id,
-            ShareableMessageHandler::from_typed::<CustomDataResponse, _>(move |reply| {
+            TypedHandler::from(move |envelope: &DataResponseEnvelope| {
+                let Some(DataResponse::Data(reply)) = envelope.response() else {
+                    panic!("expected custom reply");
+                };
+
                 done.borrow_mut()
                     .take()
                     .unwrap()
@@ -5153,8 +5135,7 @@ mod tests {
         .finish();
 
         assert_eq!(*commands.borrow(), vec![command]);
-        assert!(result.successful_keys.is_empty());
-        assert!(result.reports.is_empty());
+        assert!(result.is_empty());
     }
 
     #[rstest]
@@ -5216,11 +5197,8 @@ mod tests {
         .await
         .finish();
 
-        assert_eq!(result.successful_keys, IndexSet::from([key]));
-        assert_eq!(
-            result.reports,
-            IndexMap::from([(key, vec![report_a, report_b])])
-        );
+        assert_eq!(result.keys().copied().collect::<Vec<_>>(), vec![key]);
+        assert_eq!(result, IndexMap::from([(key, vec![report_a, report_b])]));
     }
 
     #[rstest]
@@ -5287,8 +5265,7 @@ mod tests {
         .await
         .finish();
 
-        assert!(result.successful_keys.is_empty());
-        assert!(result.reports.is_empty());
+        assert!(result.is_empty());
     }
 
     #[rstest]
@@ -5351,8 +5328,8 @@ mod tests {
         .await
         .finish();
 
-        assert_eq!(result.successful_keys, IndexSet::from([key]));
-        assert_eq!(result.reports, IndexMap::from([(key, Vec::new())]));
+        assert_eq!(result.keys().copied().collect::<Vec<_>>(), vec![key]);
+        assert_eq!(result, IndexMap::from([(key, Vec::new())]));
     }
 
     #[rstest]
@@ -5370,6 +5347,8 @@ mod tests {
         let mut healthy_report = report.clone();
         healthy_report.account_id = healthy_key.1;
         let healthy_client_id = ClientId::from("HEALTHY-FILLS");
+        let empty_key = (report.instrument_id, AccountId::from("EMPTY-001"));
+        let empty_client_id = ClientId::from("EMPTY-FILLS");
         let mut clients = vec![
             LiveExecutionClient::new(Box::new(FillReportClient {
                 client_id: query.client_id,
@@ -5383,6 +5362,13 @@ mod tests {
                 account_id: healthy_key.1,
                 venue: healthy_key.0.venue,
                 outcome: FillReportClientOutcome::Reports(vec![healthy_report.clone()]),
+                commands: Rc::new(RefCell::new(Vec::new())),
+            })),
+            LiveExecutionClient::new(Box::new(FillReportClient {
+                client_id: empty_client_id,
+                account_id: empty_key.1,
+                venue: empty_key.0.venue,
+                outcome: FillReportClientOutcome::Reports(Vec::new()),
                 commands: Rc::new(RefCell::new(Vec::new())),
             })),
         ];
@@ -5409,22 +5395,32 @@ mod tests {
             command: query.command.clone(),
         };
 
+        let empty_query = PositionFillReportQuery {
+            key: empty_key,
+            client_id: empty_client_id,
+            command: query.command.clone(),
+        };
+
         let mut queries = vec![query, failed_query];
 
         if failure_first {
             queries.reverse();
         }
 
+        queries.insert(0, empty_query);
         queries.push(healthy_query);
 
         let result = request_position_fill_reports(clients, queries)
             .await
             .finish();
 
-        assert_eq!(result.successful_keys, IndexSet::from([healthy_key]));
         assert_eq!(
-            result.reports,
-            IndexMap::from([(healthy_key, vec![healthy_report])])
+            result.keys().copied().collect::<Vec<_>>(),
+            vec![empty_key, healthy_key]
+        );
+        assert_eq!(
+            result,
+            IndexMap::from([(empty_key, Vec::new()), (healthy_key, vec![healthy_report])])
         );
     }
 
@@ -5482,11 +5478,10 @@ mod tests {
             .finish();
 
         if accepted {
-            assert_eq!(result.successful_keys, IndexSet::from([key]));
-            assert_eq!(result.reports, IndexMap::from([(key, vec![report])]));
+            assert_eq!(result.keys().copied().collect::<Vec<_>>(), vec![key]);
+            assert_eq!(result, IndexMap::from([(key, vec![report])]));
         } else {
-            assert!(result.successful_keys.is_empty());
-            assert!(result.reports.is_empty());
+            assert!(result.is_empty());
         }
     }
 
@@ -5591,18 +5586,16 @@ mod tests {
         position_result
             .queried_clients
             .insert(ClientId::from("SECOND"));
-        let mut successful_keys = IndexSet::from([active_key]);
-
+        let mut reports = IndexMap::from([(active_key, Vec::new())]);
         if local_activity {
-            successful_keys.insert(deferred_key);
+            reports.insert(deferred_key, Vec::new());
             node.exec_manager
                 .record_position_activity(deferred_key.0, deferred_key.1);
         }
 
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
-            reports: IndexMap::from([(active_key, Vec::new())]),
-            successful_keys,
+            reports,
         });
 
         assert_eq!(
@@ -5662,7 +5655,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5700,7 +5692,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let mut rest_report = fill_report;
@@ -5739,7 +5730,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone(), later_fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5854,7 +5844,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![held_fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5999,14 +5988,12 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result: first_result,
             reports: IndexMap::from([(key, vec![fill_report])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let fresh_result = position_report_result(&node, venue_report);
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result: fresh_result,
             reports: IndexMap::from([(key, Vec::new())]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -6061,7 +6048,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, reports.clone())]),
-            successful_keys: IndexSet::from([key]),
         });
 
         {
@@ -6092,7 +6078,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, reports)]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -6135,7 +6120,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![conflicting_report, valid_report])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -6165,7 +6149,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::new(),
-            successful_keys: IndexSet::new(),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -6203,7 +6186,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -6272,7 +6254,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -6300,7 +6281,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -8259,7 +8239,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -8309,7 +8288,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result: replay_report,
             reports: IndexMap::from([(key, vec![fill_report])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -8351,7 +8329,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fitting, overfill])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -8402,7 +8379,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![first, second])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -8657,7 +8633,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, reports.to_vec())]),
-            successful_keys: IndexSet::from([key]),
         });
 
         node.kernel

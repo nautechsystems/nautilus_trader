@@ -1302,8 +1302,9 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         // No historical quote endpoint; `public/get_tickers` is a current snapshot.
-        let instrument_id = request.instrument_id;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1376,7 +1377,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1512,7 +1513,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1593,7 +1594,8 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
+
         anyhow::ensure!(
             bar_type.aggregation_source() == AggregationSource::External,
             "Derive only supports EXTERNAL aggregation source (got {bar_type})",
@@ -1904,7 +1906,8 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
 
         let http_client = self.http_client.clone();

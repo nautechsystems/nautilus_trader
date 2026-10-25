@@ -31,6 +31,7 @@ struct Capture {
 impl Log for Capture {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         metadata.target().starts_with("nautilus_polymarket::data::")
+            || metadata.target().starts_with("nautilus_polymarket::book::")
     }
 
     fn log(&self, record: &Record<'_>) {

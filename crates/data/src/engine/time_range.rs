@@ -16,16 +16,16 @@
 use anyhow::Context;
 use indexmap::IndexMap;
 use nautilus_common::messages::data::{
-    BarsResponse, BookDeltasResponse, BookDepthResponse, DataResponse, FundingRatesResponse,
-    QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestCommand,
-    RequestFundingRates, RequestJoin, RequestQuotes, RequestTrades, TradesResponse,
+    BarsResponse, BookDeltasResponse, BookDepthResponse, DataResponse, DataResponseEnvelope,
+    FundingRatesResponse, QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth,
+    RequestCommand, RequestFundingRates, RequestJoin, RequestQuotes, RequestTrades, TradesResponse,
 };
 use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::identifiers::ClientId;
 use serde_json::Value;
 
 use super::{
-    DataEngine, datetime_to_unix_nanos, log_if_empty_response,
+    DataEngine, datetime_to_unix_nanos,
     requests::{remove_request_bar_aggregation_params, request_params, response_params},
 };
 
@@ -41,6 +41,7 @@ pub(super) struct TimeRangePipelineState {
     end_ns: UnixNanos,
     response_client_id: ClientId,
     data_count: u64,
+    child_data_count: u64,
     last_response: Option<DataResponse>,
 }
 
@@ -104,6 +105,7 @@ impl DataEngine {
                 end_ns,
                 response_client_id,
                 data_count: 0,
+                child_data_count: 0,
                 last_response: None,
             },
         );
@@ -175,8 +177,8 @@ impl DataEngine {
         let child_id = *child.request_id();
         self.time_range_pipeline_parent_request_id
             .insert(child_id, parent_id);
-
-        if let Err(e) = self.execute_request(child) {
+        if let Err(e) = self.execute_request_inner(child) {
+            self.inflight_requests.remove(&child_id);
             self.time_range_pipeline_parent_request_id.remove(&child_id);
             return Err(e);
         }
@@ -192,14 +194,66 @@ impl DataEngine {
 
     pub(super) fn handle_time_range_pipeline_child_response(
         &mut self,
-        parent_id: UUID4,
-        resp: &DataResponse,
-    ) {
-        if !self.time_range_pipeline_requests.contains_key(&parent_id) {
-            log::error!("No active time-range pipeline for child response {parent_id}");
-            return;
+        envelope: &DataResponseEnvelope,
+    ) -> bool {
+        let Some(&parent_id) = self
+            .time_range_pipeline_parent_request_id
+            .get(envelope.correlation_id())
+        else {
+            return false;
+        };
+
+        if envelope.completed() && envelope.failure_reason().is_some() {
+            self.abort_time_range_pipeline(parent_id);
+            if let Some(response) = envelope.response() {
+                self.process_time_range_pipeline_aggregation_response(parent_id, response);
+            }
+
+            self.cleanup_request_bar_aggregators(&parent_id);
+            let failure = envelope.clone().with_correlation_id(parent_id);
+            self.process_response_envelope(failure);
+            return true;
         }
 
+        self.handle_time_range_pipeline_payload(parent_id, envelope);
+
+        if !envelope.completed() {
+            return true;
+        }
+
+        self.time_range_pipeline_parent_request_id
+            .remove(envelope.correlation_id());
+
+        let data_received = self
+            .time_range_pipeline_requests
+            .get_mut(&parent_id)
+            .is_some_and(|state| std::mem::take(&mut state.child_data_count) > 0);
+
+        if let Err(e) =
+            self.dispatch_next_time_range_pipeline_request(parent_id, Some(data_received))
+        {
+            log::error!("Error dispatching time-range pipeline child for {parent_id}: {e}");
+            self.abort_time_range_pipeline(parent_id);
+            self.cleanup_request_bar_aggregators(&parent_id);
+            self.process_response_envelope(DataResponseEnvelope::terminal(
+                parent_id,
+                Some(e.to_string()),
+            ));
+        }
+
+        true
+    }
+
+    fn handle_time_range_pipeline_payload(
+        &mut self,
+        parent_id: UUID4,
+        envelope: &DataResponseEnvelope,
+    ) {
+        let Some(resp) = envelope.response() else {
+            return;
+        };
+
+        self.response_count += 1;
         let data_count = response_params(resp)
             .and_then(|params| params.get("data_count"))
             .and_then(serde_json::Value::as_u64)
@@ -208,60 +262,34 @@ impl DataEngine {
 
         if let Some(state) = self.time_range_pipeline_requests.get_mut(&parent_id) {
             state.data_count += data_count;
+            state.child_data_count += data_count;
             state.last_response = Some(resp.clone());
         }
 
-        self.handle_time_range_pipeline_payload(parent_id, resp);
-
-        if let Err(e) =
-            self.dispatch_next_time_range_pipeline_request(parent_id, Some(data_count > 0))
-        {
-            log::error!("Error dispatching time-range pipeline child for {parent_id}: {e}");
-            self.emit_empty_time_range_pipeline_response(parent_id);
-        }
-    }
-
-    fn handle_time_range_pipeline_payload(&self, parent_id: UUID4, resp: &DataResponse) {
-        match resp {
-            DataResponse::Quotes(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
-                    self.handle_quotes(&r.data);
-                }
-            }
-            DataResponse::Trades(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
-                    self.handle_trades(&r.data);
-                }
-            }
-            DataResponse::FundingRates(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
-                    self.handle_funding_rates(&r.data);
-                }
-            }
-            DataResponse::Bars(r) => {
-                if !log_if_empty_response(&r.data, &r.bar_type, resp.correlation_id()) {
-                    self.handle_bars(&r.data);
-                }
-            }
-            DataResponse::BookDeltas(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
-                    self.handle_book_deltas_response(r);
-                }
-            }
-            DataResponse::BookDepth(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
-                    self.handle_book_depth_response(r);
-                }
-            }
-            _ => {
-                log::error!(
-                    "Time-range pipeline child response {parent_id} must contain a supported date-range variant"
-                );
-                return;
-            }
+        if !matches!(
+            resp,
+            DataResponse::Quotes(_)
+                | DataResponse::Trades(_)
+                | DataResponse::FundingRates(_)
+                | DataResponse::Bars(_)
+                | DataResponse::BookDeltas(_)
+                | DataResponse::BookDepth(_)
+        ) {
+            log::error!(
+                "Time-range pipeline child response {parent_id} must contain a supported date-range variant"
+            );
+            return;
         }
 
+        self.handle_response_payload(resp);
         self.process_time_range_pipeline_aggregation_response(parent_id, resp);
+
+        if envelope.failure_reason().is_none() {
+            let intermediate =
+                DataResponseEnvelope::new(resp.clone(), false, Some(*envelope.correlation_id()))
+                    .with_correlation_id(parent_id);
+            nautilus_common::msgbus::send_response_envelope(&intermediate);
+        }
     }
 
     fn process_time_range_pipeline_aggregation_response(
@@ -275,17 +303,17 @@ impl DataEngine {
 
         match resp {
             DataResponse::Quotes(r) => {
-                for quote in &r.data {
+                for quote in r.data.iter() {
                     self.update_request_bar_aggregators_from_quote(&state, parent_id, *quote);
                 }
             }
             DataResponse::Trades(r) => {
-                for trade in &r.data {
+                for trade in r.data.iter() {
                     self.update_request_bar_aggregators_from_trade(&state, parent_id, *trade);
                 }
             }
             DataResponse::Bars(r) => {
-                for bar in &r.data {
+                for bar in r.data.iter() {
                     self.update_request_bar_aggregators_from_bar(&state, parent_id, *bar);
                 }
             }
@@ -299,6 +327,10 @@ impl DataEngine {
         };
         self.time_range_pipeline_parent_request_id
             .retain(|_, p_id| *p_id != parent_id);
+        if matches!(state.parent, RequestCommand::Join(_)) && state.last_response.is_none() {
+            self.process_response_envelope(DataResponseEnvelope::terminal(parent_id, None));
+            return;
+        }
 
         let mut params = request_params(&state.parent)
             .map(|params| IndexMap::clone(params))
@@ -490,7 +522,7 @@ fn time_range_child_request(
 
     match parent {
         RequestCommand::Quotes(cmd) => RequestCommand::Quotes(RequestQuotes {
-            instrument_id: cmd.instrument_id,
+            instrument_ids: cmd.instrument_ids.clone(),
             start,
             end,
             limit: cmd.limit,
@@ -500,7 +532,7 @@ fn time_range_child_request(
             params: time_range_child_params(cmd.params.as_ref()),
         }),
         RequestCommand::Trades(cmd) => RequestCommand::Trades(RequestTrades {
-            instrument_id: cmd.instrument_id,
+            instrument_ids: cmd.instrument_ids.clone(),
             start,
             end,
             limit: cmd.limit,
@@ -510,7 +542,7 @@ fn time_range_child_request(
             params: time_range_child_params(cmd.params.as_ref()),
         }),
         RequestCommand::FundingRates(cmd) => RequestCommand::FundingRates(RequestFundingRates {
-            instrument_id: cmd.instrument_id,
+            instrument_ids: cmd.instrument_ids.clone(),
             start,
             end,
             limit: cmd.limit,
@@ -520,7 +552,7 @@ fn time_range_child_request(
             params: time_range_child_params(cmd.params.as_ref()),
         }),
         RequestCommand::BookDeltas(cmd) => RequestCommand::BookDeltas(RequestBookDeltas {
-            instrument_id: cmd.instrument_id,
+            instrument_ids: cmd.instrument_ids.clone(),
             start,
             end,
             limit: cmd.limit,
@@ -530,7 +562,7 @@ fn time_range_child_request(
             params: time_range_child_params(cmd.params.as_ref()),
         }),
         RequestCommand::BookDepth(cmd) => RequestCommand::BookDepth(RequestBookDepth {
-            instrument_id: cmd.instrument_id,
+            instrument_ids: cmd.instrument_ids.clone(),
             start,
             end,
             limit: cmd.limit,
@@ -541,7 +573,7 @@ fn time_range_child_request(
             params: time_range_child_params(cmd.params.as_ref()),
         }),
         RequestCommand::Bars(cmd) => RequestCommand::Bars(RequestBars {
-            bar_type: cmd.bar_type,
+            bar_types: cmd.bar_types.clone(),
             start,
             end,
             limit: cmd.limit,
@@ -583,7 +615,7 @@ fn empty_time_range_parent_response(
         RequestCommand::Quotes(cmd) => DataResponse::Quotes(QuotesResponse::new(
             parent_id,
             state.response_client_id,
-            cmd.instrument_id,
+            cmd.instrument_ids.clone(),
             Vec::new(),
             start,
             end,
@@ -593,7 +625,7 @@ fn empty_time_range_parent_response(
         RequestCommand::Trades(cmd) => DataResponse::Trades(TradesResponse::new(
             parent_id,
             state.response_client_id,
-            cmd.instrument_id,
+            cmd.instrument_ids.clone(),
             Vec::new(),
             start,
             end,
@@ -603,7 +635,7 @@ fn empty_time_range_parent_response(
         RequestCommand::FundingRates(cmd) => DataResponse::FundingRates(FundingRatesResponse::new(
             parent_id,
             state.response_client_id,
-            cmd.instrument_id,
+            cmd.single_instrument_id().ok()?,
             Vec::new(),
             start,
             end,
@@ -613,7 +645,7 @@ fn empty_time_range_parent_response(
         RequestCommand::Bars(cmd) => DataResponse::Bars(BarsResponse::new(
             parent_id,
             state.response_client_id,
-            cmd.bar_type,
+            cmd.single_bar_type().ok()?,
             Vec::new(),
             start,
             end,
@@ -623,7 +655,7 @@ fn empty_time_range_parent_response(
         RequestCommand::BookDeltas(cmd) => DataResponse::BookDeltas(BookDeltasResponse::new(
             parent_id,
             state.response_client_id,
-            cmd.instrument_id,
+            cmd.single_instrument_id().ok()?,
             Vec::new(),
             start,
             end,
@@ -633,7 +665,7 @@ fn empty_time_range_parent_response(
         RequestCommand::BookDepth(cmd) => DataResponse::BookDepth(BookDepthResponse::new(
             parent_id,
             state.response_client_id,
-            cmd.instrument_id,
+            cmd.single_instrument_id().ok()?,
             Vec::new(),
             start,
             end,
@@ -666,7 +698,7 @@ fn empty_time_range_response_from_template(
         DataResponse::Quotes(r) => Some(DataResponse::Quotes(QuotesResponse::new(
             parent_id,
             r.client_id,
-            r.instrument_id,
+            r.instrument_ids.clone(),
             Vec::new(),
             start,
             end,
@@ -676,7 +708,7 @@ fn empty_time_range_response_from_template(
         DataResponse::Trades(r) => Some(DataResponse::Trades(TradesResponse::new(
             parent_id,
             r.client_id,
-            r.instrument_id,
+            r.instrument_ids.clone(),
             Vec::new(),
             start,
             end,
@@ -837,6 +869,7 @@ mod tests {
             end_ns: UnixNanos::from(1u64),
             response_client_id: ClientId::new("TEST"),
             data_count: 0,
+            child_data_count: 0,
             last_response: None,
         };
 

@@ -27,8 +27,12 @@
 //! Accepted continuations and reconciliation run synchronously, even if finalization crosses
 //! the deadline. Shutdown discards unused position snapshots without running their continuations.
 //! Discarding a batch skips retained continuations, not earlier inline effects.
+//!
+//! Targeted queries accept each status and companion fill before its continuation, sharing the
+//! original task deadline. The node retains accepted results across later expiry or cancellation.
+//! Normal shutdown reconciles them; fatal callback failure discards them without further dispatch.
 
-use std::{future::Future, pin::Pin, time::Duration};
+use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc, time::Duration};
 
 use futures_util::{StreamExt, stream::FuturesUnordered};
 use indexmap::{IndexMap, IndexSet};
@@ -50,7 +54,7 @@ use crate::{
         manager::{
             InstrumentAccountKey, OpenOrderReportCheck, PositionFillReportPreparation,
             PositionFillReportQuery, PositionReportCheck, SourcedOrderStatusReport,
-            TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
+            TargetedOrderQuery, TargetedOrderReportResult, collect_targeted_order_reports,
         },
     },
     runner::AsyncRunner,
@@ -145,17 +149,10 @@ impl LiveNode {
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(OpenOrderReportTask {
-            future: Box::pin(async move {
-                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_open_order_reports(clients, check))
-                    .await
-                {
-                    Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(result)
-                    }
-                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
-                }
-            }),
+            future: Box::pin(collect_report_before_deadline(
+                deadline,
+                request_open_order_reports(clients, check),
+            )),
         })
     }
 
@@ -174,28 +171,63 @@ impl LiveNode {
             .collect();
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
+        let carried_results = Rc::new(RefCell::new(Vec::new()));
+        let results = carried_results.clone();
+
         TargetedOrderReportTask {
             future: Box::pin(async move {
-                let client_refs = clients
-                    .iter()
-                    .map(|client| client as &dyn ExecutionClient)
-                    .collect::<Vec<_>>();
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
 
                 match dst::time::timeout(
                     remaining,
-                    request_targeted_order_reports(queries, &client_refs, query_delay),
+                    collect_targeted_order_reports(
+                        queries,
+                        clients,
+                        query_delay,
+                        deadline,
+                        results,
+                    ),
                 )
                 .await
                 {
-                    Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(result)
-                    }
-                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
+                    Ok(true) => ReportTaskOutcome::Completed(()),
+                    Ok(false) | Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
             planned_client_order_ids,
+            carried_results,
         }
+    }
+
+    /// Applies accepted results and clears every planned targeted marker.
+    pub(super) fn complete_targeted_order_report_check(
+        &mut self,
+        task: TargetedOrderReportTask,
+        outcome: &ReportTaskOutcome<()>,
+    ) {
+        let (planned_client_order_ids, results) =
+            task.into_results(matches!(outcome, ReportTaskOutcome::Completed(())));
+        self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+        self.handle_targeted_order_report_result(results);
+
+        if matches!(outcome, ReportTaskOutcome::TimedOut) {
+            log::warn!(
+                "Targeted order report collection expired after {:?}",
+                self.config.timeout_reconciliation
+            );
+        }
+    }
+
+    fn handle_targeted_order_report_result(&mut self, results: Vec<TargetedOrderReportResult>) {
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
+        let events = self
+            .exec_manager
+            .reconcile_targeted_order_reports(results, &client_refs);
+        self.process_reconciliation_events(&events);
     }
 
     fn start_position_report_check(&self) -> Option<PositionReportTask> {
@@ -216,16 +248,10 @@ impl LiveNode {
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(PositionReportTask {
-            future: Box::pin(async move {
-                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_position_reports(clients, check)).await
-                {
-                    Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result))
-                    }
-                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
-                }
-            }),
+            future: Box::pin(collect_report_before_deadline(deadline, async move {
+                let result = request_position_reports(clients, check).await;
+                PositionReportTaskResult::Positions(result)
+            })),
         })
     }
 
@@ -238,20 +264,14 @@ impl LiveNode {
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         PositionReportTask {
-            future: Box::pin(async move {
-                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_position_fill_reports(clients, queries))
-                    .await
-                {
-                    Ok(result) if dst::time::Instant::now() < deadline => {
-                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills {
-                            position_result,
-                            collection: result,
-                        })
-                    }
-                    Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
+            future: Box::pin(collect_report_before_deadline(deadline, async move {
+                let collection = request_position_fill_reports(clients, queries).await;
+
+                PositionReportTaskResult::Fills {
+                    position_result,
+                    collection,
                 }
-            }),
+            })),
         }
     }
 
@@ -290,8 +310,7 @@ impl LiveNode {
     pub(super) fn handle_position_fill_report_result(&mut self, result: PositionFillReportResult) {
         let PositionFillReportResult {
             mut position_result,
-            mut reports,
-            successful_keys,
+            reports,
         } = result;
         let mut venue_reports = IndexMap::new();
 
@@ -305,7 +324,7 @@ impl LiveNode {
         let mut fallback_keys = IndexSet::new();
         let mut dispatches = 0;
 
-        for key in successful_keys {
+        for (key, reports) in reports {
             if !self
                 .exec_manager
                 .position_report_check_is_current(&position_result.check, &key)
@@ -326,7 +345,7 @@ impl LiveNode {
             let mut applied_fill = false;
             let mut blocked = false;
 
-            for mut report in reports.shift_remove(&key).unwrap_or_default() {
+            for mut report in reports {
                 if self.exec_manager.position_activity_revision(&key) != expected_revision {
                     blocked = true;
                     break;
@@ -472,20 +491,19 @@ impl LiveNode {
             .remove_targeted_order_queries(planned_client_order_ids);
     }
 
-    /// Drops report futures before releasing their deferred client work.
+    /// Drops pending collections and reconciles accepted targeted results when dispatch is safe.
     pub(super) fn cancel_report_tasks(
         &mut self,
         open_order_report_task: &mut Option<OpenOrderReportTask>,
         targeted_order_report_task: &mut Option<TargetedOrderReportTask>,
         position_report_task: &mut Option<PositionReportTask>,
+        reconcile_reports: bool,
     ) {
-        let planned_client_order_ids = targeted_order_report_task
-            .as_ref()
-            .map(|task| task.planned_client_order_ids.clone())
-            .unwrap_or_default();
-
         drop(open_order_report_task.take());
-        drop(targeted_order_report_task.take());
+        let (planned_client_order_ids, carried_results) = targeted_order_report_task
+            .take()
+            .map(|task| task.into_results(false))
+            .unwrap_or_default();
         drop(position_report_task.take());
 
         for client in &self.exec_clients {
@@ -493,6 +511,10 @@ impl LiveNode {
         }
 
         self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+
+        if reconcile_reports {
+            self.handle_targeted_order_report_result(carried_results);
+        }
     }
 
     pub(super) async fn finish_report_tasks(
@@ -513,6 +535,17 @@ impl LiveNode {
                 errors.push(format!("{client_id} report collection: {e}"));
             }
         }
+    }
+}
+
+async fn collect_report_before_deadline<T>(
+    deadline: dst::time::Instant,
+    collection: impl Future<Output = T>,
+) -> ReportTaskOutcome<T> {
+    let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+    match dst::time::timeout(remaining, collection).await {
+        Ok(result) if dst::time::Instant::now() < deadline => ReportTaskOutcome::Completed(result),
+        Ok(_) | Err(_) => ReportTaskOutcome::TimedOut,
     }
 }
 
@@ -671,13 +704,28 @@ pub(super) struct OpenOrderReportResult {
     pub(super) failed_clients: IndexSet<ClientId>,
 }
 
-type TargetedOrderReportFuture =
-    Pin<Box<dyn Future<Output = ReportTaskOutcome<Vec<TargetedOrderReportResult>>>>>;
+type TargetedOrderReportFuture = Pin<Box<dyn Future<Output = ReportTaskOutcome<()>>>>;
 
-/// Pending targeted reports and order IDs to clear on cancellation.
+/// Pending targeted collection, accepted results, and order IDs to clear when the task ends.
 pub(super) struct TargetedOrderReportTask {
     pub(super) future: TargetedOrderReportFuture,
     pub(super) planned_client_order_ids: Vec<ClientOrderId>,
+    carried_results: Rc<RefCell<Vec<TargetedOrderReportResult>>>,
+}
+
+impl TargetedOrderReportTask {
+    fn into_results(
+        self,
+        collection_complete: bool,
+    ) -> (Vec<ClientOrderId>, Vec<TargetedOrderReportResult>) {
+        drop(self.future);
+        let mut results = std::mem::take(&mut *self.carried_results.borrow_mut());
+        if !collection_complete {
+            results.retain(TargetedOrderReportResult::has_report);
+        }
+
+        (self.planned_client_order_ids, results)
+    }
 }
 
 /// Bulk order receipts finalized only after the whole collection is accepted.
@@ -755,10 +803,11 @@ pub(super) enum PositionReportTaskResult {
 }
 
 /// Authoritative fills and the position snapshot that prompted their queries.
+///
+/// Report keys have complete, consistent query results, including successful empty groups.
 pub(super) struct PositionFillReportResult {
     pub(super) position_result: PositionReportResult,
     pub(super) reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
-    pub(super) successful_keys: IndexSet<InstrumentAccountKey>,
 }
 
 /// Position receipts retained until the complete snapshot is accepted.
@@ -806,13 +855,14 @@ pub(super) struct PositionFillReportCollection {
 }
 
 impl PositionFillReportCollection {
-    pub(super) fn finish(self) -> PositionFillReportQueryResult {
-        let mut reports_by_key: IndexMap<InstrumentAccountKey, Vec<FillReport>> = IndexMap::new();
-        let mut queried_keys = IndexSet::new();
-        let mut failed_keys = IndexSet::new();
+    pub(super) fn finish(self) -> IndexMap<InstrumentAccountKey, Vec<FillReport>> {
+        let mut reports_by_key: IndexMap<InstrumentAccountKey, Option<Vec<FillReport>>> =
+            IndexMap::new();
 
         for (query, receipt) in self.receipts {
-            queried_keys.insert(query.key);
+            let collected = reports_by_key
+                .entry(query.key)
+                .or_insert_with(|| Some(Vec::new()));
 
             let command = query.command;
 
@@ -822,14 +872,16 @@ impl PositionFillReportCollection {
                         fill_report_matches_query_scope(report, query.key, &command)
                     }) =>
                 {
-                    reports_by_key.entry(query.key).or_default().extend(
-                        reports
-                            .into_iter()
-                            .filter(|report| fill_report_in_query_window(report, &command)),
-                    );
+                    if let Some(collected) = collected {
+                        collected.extend(
+                            reports
+                                .into_iter()
+                                .filter(|report| fill_report_in_query_window(report, &command)),
+                        );
+                    }
                 }
                 Ok(_) => {
-                    failed_keys.insert(query.key);
+                    *collected = None;
                     log::warn!(
                         "Discarding fill reports for {}/{}: response contained an invalid report",
                         query.key.0,
@@ -837,7 +889,7 @@ impl PositionFillReportCollection {
                     );
                 }
                 Err(e) => {
-                    failed_keys.insert(query.key);
+                    *collected = None;
                     log::warn!(
                         "Failed to generate fill reports from {} for {}/{}: {e}",
                         query.client_id,
@@ -848,15 +900,12 @@ impl PositionFillReportCollection {
             }
         }
 
-        let mut successful_keys = IndexSet::new();
+        let mut finalized = IndexMap::new();
 
-        for key in queried_keys {
-            if failed_keys.contains(&key) {
-                reports_by_key.shift_remove(&key);
+        for (key, collected) in reports_by_key {
+            let Some(collected) = collected else {
                 continue;
-            }
-
-            let collected = reports_by_key.shift_remove(&key).unwrap_or_default();
+            };
 
             let Some(reports) = deduplicate_fill_reports(collected) else {
                 log::warn!(
@@ -867,14 +916,10 @@ impl PositionFillReportCollection {
                 continue;
             };
 
-            successful_keys.insert(key);
-            reports_by_key.insert(key, reports);
+            finalized.insert(key, reports);
         }
 
-        PositionFillReportQueryResult {
-            reports: reports_by_key,
-            successful_keys,
-        }
+        finalized
     }
 }
 
@@ -895,12 +940,6 @@ fn deduplicate_fill_reports(reports: Vec<FillReport>) -> Option<Vec<FillReport>>
     let mut reports = deduplicated.into_values().collect::<Vec<_>>();
     reports.sort_by_key(|report| (report.ts_event, report.trade_id));
     Some(reports)
-}
-
-/// Fill reports grouped by keys with complete, consistent query results.
-pub(super) struct PositionFillReportQueryResult {
-    pub(super) reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
-    pub(super) successful_keys: IndexSet<InstrumentAccountKey>,
 }
 
 #[cfg(test)]
@@ -1112,10 +1151,10 @@ mod tests {
                     let result = collection.finish();
                     let query = position_fill_query();
                     assert_eq!(
-                        result.reports,
+                        result,
                         IndexMap::from([(query.key, vec![position_trade()])])
                     );
-                    assert_eq!(result.successful_keys, IndexSet::from([query.key]));
+                    assert_eq!(result.keys().copied().collect::<Vec<_>>(), vec![query.key]);
                     assert_eq!(
                         *state.commands.borrow(),
                         vec![query.command.clone(), query.command]
@@ -1192,7 +1231,7 @@ mod tests {
             .await
             .finish();
         assert_eq!(
-            retry.reports,
+            retry,
             IndexMap::from([(position_fill_query().key, vec![position_trade()])])
         );
         assert_eq!(*state.trades.borrow(), vec![TradeId::from("T-DEADLINE")]);
@@ -1201,12 +1240,12 @@ mod tests {
                 .await
                 .finish();
         assert_eq!(
-            replay.reports,
+            replay,
             IndexMap::from([(position_fill_query().key, vec![])])
         );
         assert_eq!(
-            replay.successful_keys,
-            IndexSet::from([position_fill_query().key])
+            replay.keys().copied().collect::<Vec<_>>(),
+            vec![position_fill_query().key]
         );
         assert_eq!(state.started.load(Ordering::SeqCst), 5);
         assert_eq!(

@@ -29,13 +29,13 @@ pub(crate) mod codec;
 
 use self::codec::PayloadCodecError;
 use super::{
-    BusMessage, BusMessageSource, BusPayloadType, HAS_EXTERNAL_EGRESS, SUPPRESS_EXTERNAL_DEPTH,
-    SuppressExternalGuard,
+    BusMessage, BusMessageSource, BusPayloadType, HAS_EXTERNAL_EGRESS, MessagingSwitchboard,
+    SUPPRESS_EXTERNAL_DEPTH, SuppressExternalGuard,
     api::{
-        publish_account_state, publish_any, publish_bar, publish_deltas, publish_depth,
-        publish_funding_rate, publish_index_price, publish_instrument, publish_mark_price,
-        publish_option_greeks, publish_order_event, publish_portfolio_snapshot,
-        publish_position_event, publish_quote, publish_trade,
+        publish_any, publish_bar, publish_deltas, publish_depth, publish_funding_rate,
+        publish_index_price, publish_instrument, publish_mark_price, publish_option_greeks,
+        publish_order_event, publish_portfolio_snapshot, publish_position_event, publish_quote,
+        publish_trade, send_account_state,
     },
     get_message_bus,
     mstr::{MStr, Topic},
@@ -43,7 +43,10 @@ use super::{
 use crate::{
     enums::SerializationEncoding,
     messages::{
-        data::{DataResponse, RequestCommand, SubscribeCommand, UnsubscribeCommand},
+        data::{
+            DataResponse, DataResponseEnvelope, RequestCommand, SubscribeCommand,
+            UnsubscribeCommand,
+        },
         execution::{GenerateExecutionMassStatus, TradingCommand},
     },
 };
@@ -85,6 +88,11 @@ pub(super) fn forward_any_to_external_egress(topic: MStr<Topic>, message: &dyn A
             message,
         )
         || forward_downcast::<DataResponse>(topic, BusPayloadType::DataResponse, message)
+        || forward_downcast::<DataResponseEnvelope>(
+            topic,
+            BusPayloadType::DataResponseEnvelope,
+            message,
+        )
         || forward_downcast::<RequestCommand>(topic, BusPayloadType::RequestCommand, message)
         || forward_downcast::<TradingCommand>(topic, BusPayloadType::TradingCommand, message)
         || forward_downcast::<GenerateExecutionMassStatus>(
@@ -199,34 +207,46 @@ impl Drop for ExternalSourceGuard {
 /// Republishes a native data reply only when its correlation handler is pending.
 ///
 /// Returns `false` without dispatching when the message is not a streaming-registered
-/// `DataResponse` or no handler is pending for its correlation ID. `LiveNode` uses this during
-/// data-client connection, before actors and strategies subscribe. The reply dispatches through
-/// application topic handlers, with external provenance and egress suppression active during
-/// dispatch. Startup replies bypass stream processors and can overtake buffered messages from
-/// the same ingress.
+/// `DataResponse` or `DataResponseEnvelope`, or no handler is pending for its correlation ID.
+/// `LiveNode` uses this during data-client connection, before actors and strategies subscribe.
+/// The reply dispatches through application topic handlers, with external provenance and egress
+/// suppression active during dispatch. Startup replies bypass stream processors and can overtake
+/// buffered messages from the same ingress.
 ///
 /// # Errors
 ///
 /// Returns an error if a native data reply cannot be decoded or its topic is invalid.
 pub fn republish_pending_external_response(message: &BusMessage) -> anyhow::Result<bool> {
-    if message.payload_type != BusPayloadType::DataResponse
-        || !is_registered_streaming_type(message)
+    if !matches!(
+        message.payload_type,
+        BusPayloadType::DataResponse | BusPayloadType::DataResponseEnvelope
+    ) || !is_registered_streaming_type(message)
     {
         return Ok(false);
     }
 
-    let Some(response) = codec::deserialize_payload::<DataResponse>(
-        message.payload_type,
-        message.encoding,
-        &message.payload,
-    )?
+    match message.payload_type {
+        BusPayloadType::DataResponseEnvelope => republish_pending_response::<DataResponseEnvelope>(
+            message,
+            DataResponseEnvelope::correlation_id,
+        ),
+        _ => republish_pending_response::<DataResponse>(message, DataResponse::correlation_id),
+    }
+}
+
+fn republish_pending_response<T: serde::de::DeserializeOwned + 'static>(
+    message: &BusMessage,
+    correlation_id: fn(&T) -> &nautilus_core::UUID4,
+) -> anyhow::Result<bool> {
+    let Some(response) =
+        codec::deserialize_payload::<T>(message.payload_type, message.encoding, &message.payload)?
     else {
         return Ok(false);
     };
 
     if get_message_bus()
         .borrow()
-        .get_response_handler(response.correlation_id())
+        .get_response_handler(correlation_id(&response))
         .is_none()
     {
         return Ok(false);
@@ -247,6 +267,9 @@ pub fn republish_pending_external_response(message: &BusMessage) -> anyhow::Resu
 /// configuration. Republishing runs under a [`SuppressExternalGuard`] so the message is not
 /// forwarded straight back out through external egress, which would create an echo loop on a node
 /// that has both external ingress and egress.
+///
+/// Account states are sent to Portfolio's account endpoint for application before Portfolio
+/// publishes them on `events.account.{account_id}`. Portfolio must be registered to process them.
 ///
 /// # Errors
 ///
@@ -353,7 +376,9 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
                 message.payload_type,
                 message.encoding,
                 &message.payload,
-                publish_account_state,
+                |_, state| {
+                    send_account_state(MessagingSwitchboard::portfolio_update_account(), state);
+                },
             )?;
         }
         BusPayloadType::OrderEvent => {
@@ -391,6 +416,9 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
         }
         BusPayloadType::DataResponse => {
             handle_payload_any::<DataResponse>(topic, message)?;
+        }
+        BusPayloadType::DataResponseEnvelope => {
+            handle_payload_any::<DataResponseEnvelope>(topic, message)?;
         }
         BusPayloadType::RequestCommand => {
             handle_payload_any::<RequestCommand>(topic, message)?;
@@ -466,6 +494,7 @@ pub fn process_external_typed_message(
         BusPayloadType::SubscribeCommand => process_typed_payload::<SubscribeCommand>(topic, message, processor),
         BusPayloadType::UnsubscribeCommand => process_typed_payload::<UnsubscribeCommand>(topic, message, processor),
         BusPayloadType::DataResponse => process_typed_payload::<DataResponse>(topic, message, processor),
+        BusPayloadType::DataResponseEnvelope => process_typed_payload::<DataResponseEnvelope>(topic, message, processor),
         BusPayloadType::RequestCommand => process_typed_payload::<RequestCommand>(topic, message, processor),
         BusPayloadType::TradingCommand => process_typed_payload::<TradingCommand>(topic, message, processor),
         BusPayloadType::GenerateExecutionMassStatus => process_typed_payload::<GenerateExecutionMassStatus>(topic, message, processor),
@@ -681,7 +710,9 @@ mod tests {
     use serde::{Serialize, Serializer};
 
     use super::*;
-    use crate::msgbus::{MessageBus, backing::MessageBusExternalEgress, set_message_bus};
+    use crate::msgbus::{
+        MessageBus, TypedHandler, backing::MessageBusExternalEgress, set_message_bus,
+    };
 
     struct RecordingEgress {
         messages: Rc<RefCell<Vec<BusMessage>>>,
@@ -1130,7 +1161,11 @@ mod tests {
         assert!(!republish_pending_external_response(&message).unwrap());
         msgbus::register_response_handler(
             &id,
-            ShareableMessageHandler::from_typed::<CustomDataResponse, _>(move |reply| {
+            TypedHandler::from(move |envelope: &DataResponseEnvelope| {
+                let Some(DataResponse::Data(reply)) = envelope.response() else {
+                    panic!("expected custom reply");
+                };
+
                 shared.borrow_mut().push((
                     reply.correlation_id,
                     reply.data.downcast_ref::<Bytes>().unwrap().clone(),
@@ -1145,6 +1180,56 @@ mod tests {
             *received.borrow(),
             vec![(id, Bytes::from_static(b"native-bytes"), 73.into())]
         );
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_startup_dispatches_payload_free_completion(#[case] encoding: SerializationEncoding) {
+        use crate::msgbus::{self, ShareableMessageHandler};
+
+        let bus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(bus.clone());
+        bus.borrow_mut()
+            .add_streaming_type(BusPayloadType::DataResponseEnvelope);
+        let id = nautilus_core::UUID4::new();
+        let envelope = DataResponseEnvelope::terminal(id, Some("Source unavailable".to_owned()));
+        let payload =
+            codec::serialize_payload(encoding, BusPayloadType::DataResponseEnvelope, &envelope)
+                .unwrap();
+        let message = BusMessage::with_str_topic(
+            "responses.data.FEED",
+            BusPayloadType::DataResponseEnvelope,
+            payload,
+            encoding,
+        );
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let shared = received.clone();
+        msgbus::subscribe_any(
+            message.topic.as_str().into(),
+            ShareableMessageHandler::from_typed::<DataResponseEnvelope, _>(
+                msgbus::send_response_envelope,
+            ),
+            None,
+        );
+        msgbus::register_response_handler(
+            &id,
+            TypedHandler::from(move |response: &DataResponseEnvelope| {
+                shared.borrow_mut().push(response.clone());
+            }),
+        );
+
+        assert!(republish_pending_external_response(&message).unwrap());
+
+        let received = received.borrow();
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].correlation_id(), &id);
+        assert!(received[0].completed());
+        assert!(received[0].response().is_none());
+        assert_eq!(received[0].sub_correlation_id(), None);
+        assert_eq!(received[0].failure_reason(), Some("Source unavailable"));
+        assert!(bus.borrow().get_response_handler(&id).is_none());
+        assert!(!republish_pending_external_response(&message).unwrap());
     }
 
     fn install_egress() -> Rc<RefCell<Vec<BusMessage>>> {

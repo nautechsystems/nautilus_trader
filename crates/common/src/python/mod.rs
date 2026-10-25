@@ -38,6 +38,7 @@ pub mod listener;
 pub mod logging;
 pub mod msgbus;
 pub mod order_factory;
+pub mod response;
 pub mod runtime;
 pub mod signal;
 pub mod system;
@@ -69,6 +70,7 @@ pub fn config_error_to_pyvalue_err(e: ConfigError) -> PyErr {
 #[pymodule]
 pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::custom::CustomData>()?;
+    m.add_class::<crate::python::response::PyDataResponse>()?;
     m.add_class::<crate::signal::Signal>()?;
     m.add_class::<crate::runner::SystemChannel>()?;
     m.add_class::<crate::messages::system::QueueCondition>()?;

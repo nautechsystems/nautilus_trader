@@ -2679,7 +2679,7 @@ async fn test_request_bars_dedups_overlapping_pages() {
 
     let mut seen: HashSet<UnixNanos> = HashSet::new();
 
-    for bar in &bars.data {
+    for bar in bars.data.iter() {
         assert!(
             seen.insert(bar.ts_event),
             "duplicate ts_event {:?}",
@@ -3397,7 +3397,7 @@ async fn test_request_quotes_emits_response_with_single_tick() {
         panic!("expected quotes response");
     };
 
-    assert_eq!(quotes.instrument_id, instrument_id);
+    assert_eq!(quotes.instrument_ids, vec![instrument_id]);
     assert_eq!(quotes.data.len(), 1);
     assert_eq!(quotes.data[0].bid_price, Price::from("3499.50"));
     assert_eq!(quotes.data[0].ask_price, Price::from("3501.00"));

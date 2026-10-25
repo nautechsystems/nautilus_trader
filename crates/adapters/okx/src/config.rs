@@ -293,6 +293,12 @@ pub struct OKXExecutionClientConfig {
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Maximum pages per startup reconciliation history query, capped at 50.
+    ///
+    /// `None` keeps the default cap; `Some(0)` skips history. Pending orders,
+    /// live algo orders, and positions are unaffected. Skipped or truncated
+    /// history marks reports incomplete and reduces recovery coverage.
+    pub max_reconciliation_history_pages: Option<u32>,
 }
 
 #[cfg(feature = "python")]
@@ -314,6 +320,7 @@ nautilus_core::impl_pyo3_config_getters!(OKXExecutionClientConfig {
     auth_timeout_secs: Option<u64>,
     transport_backend: TransportBackend,
     spot_trade_quote_ccy: Option<String>,
+    max_reconciliation_history_pages: Option<u32>,
 });
 
 impl Default for OKXExecutionClientConfig {
@@ -568,7 +575,27 @@ book_snapshot_timeout_secs = 4
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
         assert_eq!(config.load_spreads, expected.load_spreads);
         assert_eq!(config.use_mm_mass_cancel, expected.use_mm_mass_cancel);
+        assert_eq!(config.max_reconciliation_history_pages, None);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(3)]
+    #[case(51)]
+    #[case(u32::MAX)]
+    fn test_exec_config_toml_history_pages(#[case] pages: u32) {
+        let config: OKXExecutionClientConfig =
+            toml::from_str(&format!("max_reconciliation_history_pages = {pages}\n")).unwrap();
+        let serialized = toml::Value::try_from(&config).unwrap();
+        let roundtrip: OKXExecutionClientConfig = serialized.try_into().unwrap();
+
+        assert_eq!(config.max_reconciliation_history_pages, Some(pages));
+        assert_eq!(roundtrip.max_reconciliation_history_pages, Some(pages));
+        assert_eq!(
+            OKXExecutionClientConfig::default().max_reconciliation_history_pages,
+            None
+        );
     }
 
     #[rstest]

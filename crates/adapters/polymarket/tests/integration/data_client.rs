@@ -1212,7 +1212,8 @@ async fn test_request_trades_returns_trades_response() {
         .unwrap_or_else(|| panic!("expected DataResponse::Trades; events were: {events:?}"));
 
     assert_eq!(
-        trades_response.instrument_id, instrument_id,
+        trades_response.instrument_ids,
+        vec![instrument_id],
         "response must carry the requested instrument_id",
     );
     assert_eq!(
@@ -1360,7 +1361,7 @@ async fn test_request_trades_emits_one_empty_response_for_empty_result() {
         1,
         "an empty Data API result must emit exactly one correlated trades response; events were: {events:?}",
     );
-    assert_eq!(trades_responses[0].instrument_id, instrument_id);
+    assert_eq!(trades_responses[0].instrument_ids, vec![instrument_id]);
     assert!(trades_responses[0].data.is_empty());
 }
 

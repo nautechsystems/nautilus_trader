@@ -47,6 +47,8 @@ pub use execution::ExecutionReport;
 #[derive(Debug, Display)]
 pub enum DataEvent {
     Response(DataResponse),
+    RequestFailed(data::DataRequestFailed),
+    ResponseEnvelope(data::DataResponseEnvelope),
     Data(Data),
     // Kept separate from `Data` pending the decision on generic dispatch versus this routing enum
     Instrument(InstrumentAny),

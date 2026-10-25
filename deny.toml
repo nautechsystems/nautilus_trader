@@ -161,6 +161,12 @@ skip = [
   { crate = "rand_chacha:<0.9" },
   { crate = "rand_core:<0.10" },
 
+  # Tokio and DataFusion still require the parking_lot 0.12 dependency family
+  { crate = "lock_api:<0.5" },
+  { crate = "parking_lot:<0.13" },
+  { crate = "parking_lot_core:<0.10" },
+  { crate = "redox_syscall:<0.9" },
+
   # Proc-macro support crates - transitive via derive macros in various crates
   { crate = "darling:<0.24" },
   { crate = "darling_core:<0.24" },

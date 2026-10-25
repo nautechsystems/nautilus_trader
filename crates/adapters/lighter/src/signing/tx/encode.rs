@@ -800,7 +800,11 @@ mod tests {
     #[case(2, true)]
     #[case(3, false)]
     #[case(3, true)]
-    fn grouped_orders_match_sdk_oracle(#[case] grouping: u8, #[case] attributes: bool) {
+    fn grouped_orders_match_sdk_oracle(
+        #[case] grouping: u8,
+        #[case] attributes: bool,
+        #[values(0, 40_000, 4_294_967_296, 281_474_976_710_655)] market_index: i64,
+    ) {
         let suite: OracleFile = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/test_data/signing_grouped_tx_oracle.json",
@@ -813,6 +817,7 @@ mod tests {
             .filter(|vector| {
                 vector.fields["grouping_type"].as_u64() == Some(u64::from(grouping))
                     && vector.fields["skip_nonce"].as_u64() == Some(u64::from(attributes))
+                    && vector.fields["orders"][0]["MarketIndex"].as_i64() == Some(market_index)
             })
             .collect();
 
@@ -844,6 +849,13 @@ mod tests {
 
         assert_eq!(vector.tx_type, 28);
         assert_eq!(tx.orders.len(), if grouping == 3 { 3 } else { 2 });
+        assert_eq!(
+            tx.orders
+                .iter()
+                .map(|order| order.market_index)
+                .collect::<Vec<_>>(),
+            vec![market_index; tx.orders.len()]
+        );
         assert_hash_matches(&tx, vector);
         assert_oracle_sig_verifies(&tx, vector);
         assert_round_trip_sign(&tx, vector);
@@ -976,6 +988,28 @@ mod tests {
                 "create_order tx_info diverged",
             );
         }
+    }
+
+    #[rstest]
+    #[case("create_order")]
+    #[case("cancel_order")]
+    #[case("modify_order")]
+    #[case("update_leverage")]
+    fn oracle_covers_widened_market_index(
+        #[case] kind: &str,
+        #[values(4095, 32767, 40_000, 4_294_967_296, 281_474_976_710_655)] market_index: i64,
+    ) {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        let count = suite
+            .vectors
+            .iter()
+            .filter(|v| v.kind == kind && v.fields["market_index"].as_i64() == Some(market_index))
+            .count();
+
+        assert_eq!(
+            count, 1,
+            "missing or duplicate {kind} market {market_index}"
+        );
     }
 
     #[rstest]

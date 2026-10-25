@@ -68,23 +68,23 @@ use crate::{
     messages::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-            DataCommand, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-            IntoBarTypes, IntoInstrumentIds, QuotesResponse, RequestBars, RequestBookDeltas,
-            RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
-            RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
-            SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
-            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
-            UnsubscribeQuotes, UnsubscribeTrades, ensure_routable_bar_types,
-            ensure_routable_instrument_ids, ensure_subscription_routes, is_parent_subscription,
-            quote_routing,
+            DataCommand, DataResponse, DataResponseEnvelope, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, IntoBarTypes, IntoInstrumentIds,
+            QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
+            RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
+            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+            SubscribeBookDepth, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth, UnsubscribeBookSnapshots, UnsubscribeCommand,
+            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+            ensure_routable_bar_types, ensure_routable_instrument_ids, ensure_subscription_routes,
+            is_parent_subscription, quote_routing,
         },
         system::{QueueStateChanged, ShutdownSystem, SocketStateChanged},
     },
@@ -162,8 +162,6 @@ pub struct ImportableActorConfig {
     /// The actor configuration as a dictionary.
     pub config: HashMap<String, serde_json::Value>,
 }
-
-type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
 
 /// Explicit native-only access for data actor runtime state.
 ///
@@ -1317,6 +1315,62 @@ pub trait DataActor {
         if let Err(e) = self.on_historical_data(data) {
             log_error(&e);
         }
+    }
+
+    /// Handles a historical payload before its generic completion hook.
+    fn handle_response(&mut self, envelope: &DataResponseEnvelope)
+    where
+        Self: DataActorNative,
+    {
+        if let Some(response) = envelope.response() {
+            match response {
+                DataResponse::Data(r) => self.handle_data_response(r),
+                DataResponse::Instrument(r) => self.handle_instrument_response(r),
+                DataResponse::Instruments(r) => self.handle_instruments_response(r),
+                DataResponse::Book(r) => self.handle_book_response(r),
+                DataResponse::BookDeltas(r) => self.handle_book_deltas_response(r),
+                DataResponse::BookDepth(r) => self.handle_book_depth_response(r),
+                DataResponse::Quotes(r) => self.handle_quotes_response(r),
+                DataResponse::Trades(r) => self.handle_trades_response(r),
+                DataResponse::FundingRates(r) => self.handle_funding_rates_response(r),
+                DataResponse::Bars(r) => self.handle_bars_response(r),
+                DataResponse::OptionChainReferencePrice(_) => {}
+            }
+        }
+
+        self.core().complete_request(envelope);
+
+        if let Err(e) = self.on_data_response(envelope) {
+            log_error(&e);
+        }
+    }
+
+    /// Receives each historical envelope after its typed payload hook.
+    ///
+    /// Terminal envelopes have already cleared pending request state. A failure can include
+    /// partial data; a payload-free terminal envelope does not invoke a typed payload hook.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor's response hook fails.
+    fn on_data_response(&mut self, _response: &DataResponseEnvelope) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Builds the response handler for this actor's binding.
+    #[doc(hidden)]
+    fn response_handler(&self) -> TypedHandler<DataResponseEnvelope>
+    where
+        Self: DataActorNative + Debug + Sized + 'static,
+    {
+        let actor_id = self.core().actor_id().inner();
+        TypedHandler::from(move |response: &DataResponseEnvelope| {
+            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                actor.handle_response(response);
+            } else {
+                log::error!("Actor {actor_id} not found for response handling");
+            }
+        })
     }
 
     /// Handles a data response.
@@ -2825,14 +2879,7 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &CustomDataResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_data_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for data response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_data(
             self.core_mut(),
@@ -2846,14 +2893,14 @@ pub trait DataActor {
         )
     }
 
-    /// Request historical [`InstrumentResponse`] data for the given `instrument_id`.
+    /// Request historical [`InstrumentResponse`] data for the given `instrument_ids`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     fn request_instrument(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
@@ -2863,18 +2910,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &InstrumentResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_instrument_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for instrument response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_instrument(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             start,
             end,
             client_id,
@@ -2900,14 +2940,7 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &InstrumentsResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_instruments_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for instruments response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_instruments(
             self.core_mut(),
@@ -2920,14 +2953,14 @@ pub trait DataActor {
         )
     }
 
-    /// Request an [`OrderBook`] snapshot for the given `instrument_id`.
+    /// Request an [`OrderBook`] snapshot for the given `instrument_ids`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     fn request_book_snapshot(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -2936,18 +2969,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &BookResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_book_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for book response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_book_snapshot(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             depth,
             client_id,
             params,
@@ -2955,14 +2981,14 @@ pub trait DataActor {
         )
     }
 
-    /// Request historical [`OrderBookDelta`] data for the given `instrument_id`.
+    /// Request historical [`OrderBookDelta`] data for the given `instrument_ids`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     fn request_book_deltas(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -2973,18 +2999,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &BookDeltasResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_book_deltas_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for book deltas response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_book_deltas(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -2994,7 +3013,7 @@ pub trait DataActor {
         )
     }
 
-    /// Request historical [`OrderBookDepth`] data for the given `instrument_id`.
+    /// Request historical [`OrderBookDepth`] data for the given `instrument_ids`.
     ///
     /// # Errors
     ///
@@ -3002,7 +3021,7 @@ pub trait DataActor {
     #[expect(clippy::too_many_arguments)]
     fn request_book_depth(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -3014,18 +3033,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &BookDepthResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_book_depth_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for book depth response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_book_depth(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -3036,14 +3048,14 @@ pub trait DataActor {
         )
     }
 
-    /// Request historical [`QuoteTick`] data for the given `instrument_id`.
+    /// Request historical [`QuoteTick`] data for the given `instrument_ids`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     fn request_quotes(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -3054,18 +3066,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &QuotesResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_quotes_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for quotes response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_quotes(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -3075,14 +3080,14 @@ pub trait DataActor {
         )
     }
 
-    /// Request historical [`TradeTick`] data for the given `instrument_id`.
+    /// Request historical [`TradeTick`] data for the given `instrument_ids`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     fn request_trades(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -3093,18 +3098,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &TradesResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_trades_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for trades response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_trades(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -3114,14 +3112,14 @@ pub trait DataActor {
         )
     }
 
-    /// Request historical [`Bar`] data for the given `bar_type`.
+    /// Request historical [`Bar`] data for the given `bar_types`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     fn request_bars(
         &mut self,
-        bar_type: BarType,
+        bar_types: impl IntoBarTypes,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -3132,18 +3130,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &BarsResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_bars_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for bars response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_bars(
             self.core_mut(),
-            bar_type,
+            bar_types,
             start,
             end,
             limit,
@@ -3153,14 +3144,14 @@ pub trait DataActor {
         )
     }
 
-    /// Request historical [`FundingRateUpdate`] data for the given `instrument_id`.
+    /// Request historical [`FundingRateUpdate`] data for the given `instrument_ids`.
     ///
     /// # Errors
     ///
     /// Returns an error if input parameters are invalid.
     fn request_funding_rates(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -3171,18 +3162,11 @@ pub trait DataActor {
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.core().actor_id().inner();
-        let handler = ShareableMessageHandler::from_typed(move |resp: &FundingRatesResponse| {
-            if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
-                actor.handle_funding_rates_response(resp);
-            } else {
-                log::error!("Actor {actor_id} not found for funding rates response handling");
-            }
-        });
+        let handler = self.response_handler();
 
         DataActorCore::request_funding_rates(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -3239,6 +3223,7 @@ where
     }
 
     fn release_subscriptions(&mut self) {
+        self.core().clear_pending_requests();
         self.core_mut().unsubscribe_all();
     }
 
@@ -3317,10 +3302,7 @@ where
 
 /// Core functionality for all actors.
 #[derive(Clone)]
-#[allow(
-    dead_code,
-    reason = "TODO: Under development (pending_requests, signal_classes)"
-)]
+#[allow(dead_code, reason = "TODO: Under development (signal_classes)")]
 pub struct DataActorCore {
     /// The actor identifier.
     pub actor_id: ActorId,
@@ -3345,7 +3327,7 @@ pub struct DataActorCore {
     option_chain_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<OptionChainSlice>>>,
     indicators: Indicators,
     warning_events: AHashSet<String>, // TODO: TBD
-    pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
+    pending_requests: RefCell<AHashSet<UUID4>>,
     signal_classes: AHashMap<String, String>,
     #[cfg(feature = "defi")]
     block_handlers: AHashMap<MStr<Topic>, Subscription<TypedHandler<Block>>>,
@@ -4247,7 +4229,7 @@ impl DataActorCore {
             option_chain_handlers: AHashMap::new(),
             indicators: Indicators::default(),
             warning_events: AHashSet::new(),
-            pending_requests: AHashMap::new(),
+            pending_requests: RefCell::new(AHashSet::new()),
             signal_classes: AHashMap::new(),
             #[cfg(feature = "defi")]
             block_handlers: AHashMap::new(),
@@ -6251,7 +6233,7 @@ impl DataActorCore {
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -6270,9 +6252,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6286,21 +6266,24 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     pub fn request_instrument(
         &self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
+
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
         let command = RequestCommand::Instrument(RequestInstrument {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             client_id,
@@ -6309,9 +6292,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6330,7 +6311,7 @@ impl DataActorCore {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -6348,9 +6329,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6364,17 +6343,20 @@ impl DataActorCore {
     /// Returns an error if input parameters are invalid.
     pub fn request_book_snapshot(
         &self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+
         let request_id = UUID4::new();
         let command = RequestCommand::BookSnapshot(RequestBookSnapshot {
-            instrument_id,
+            instrument_ids,
             depth,
             client_id,
             request_id,
@@ -6382,9 +6364,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6399,22 +6379,25 @@ impl DataActorCore {
     #[expect(clippy::too_many_arguments)]
     pub fn request_book_deltas(
         &self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
+
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
         let command = RequestCommand::BookDeltas(RequestBookDeltas {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -6424,9 +6407,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6441,23 +6422,26 @@ impl DataActorCore {
     #[expect(clippy::too_many_arguments)]
     pub fn request_book_depth(
         &self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
+
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
         let command = RequestCommand::BookDepth(RequestBookDepth {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -6468,9 +6452,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6485,22 +6467,29 @@ impl DataActorCore {
     #[expect(clippy::too_many_arguments)]
     pub fn request_quotes(
         &self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
+
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        anyhow::ensure!(
+            instrument_ids.len() == 1 || limit.is_none(),
+            "A record limit is unsupported for multi-instrument quotes requests",
+        );
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
         let command = RequestCommand::Quotes(RequestQuotes {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -6510,9 +6499,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6527,22 +6514,29 @@ impl DataActorCore {
     #[expect(clippy::too_many_arguments)]
     pub fn request_trades(
         &self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
+
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        anyhow::ensure!(
+            instrument_ids.len() == 1 || limit.is_none(),
+            "A record limit is unsupported for multi-instrument trades requests",
+        );
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
         let command = RequestCommand::Trades(RequestTrades {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -6552,9 +6546,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6569,28 +6561,33 @@ impl DataActorCore {
     #[expect(clippy::too_many_arguments)]
     pub fn request_bars(
         &self,
-        bar_type: BarType,
+        bar_types: impl IntoBarTypes,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        anyhow::ensure!(
-            bar_type.is_standard(),
-            "Composite bar types are not supported for `request_bars`, was {bar_type}; \
-             request aggregation via the `bar_types` params instead",
-        );
+        let bar_types = bar_types.into_bar_types()?;
+        ensure_routable_bar_types(&bar_types, client_id.is_some())?;
+
+        for bar_type in &bar_types {
+            anyhow::ensure!(
+                bar_type.is_standard(),
+                "Composite bar types are not supported for `request_bars`, was {bar_type}; \
+                 request aggregation via the `bar_types` params instead",
+            );
+        }
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
         let command = RequestCommand::Bars(RequestBars {
-            bar_type,
+            bar_types,
             start,
             end,
             limit,
@@ -6600,9 +6597,7 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
@@ -6617,22 +6612,25 @@ impl DataActorCore {
     #[expect(clippy::too_many_arguments)]
     pub fn request_funding_rates(
         &self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<Params>,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
+
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
         let command = RequestCommand::FundingRates(RequestFundingRates {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -6642,13 +6640,46 @@ impl DataActorCore {
             params,
         });
 
-        get_message_bus()
-            .borrow_mut()
-            .register_response_handler(command.request_id(), handler)?;
+        self.register_request_handler(command.request_id(), handler)?;
 
         self.send_data_cmd(DataCommand::Request(command));
 
         Ok(request_id)
+    }
+
+    fn register_request_handler(
+        &self,
+        request_id: &UUID4,
+        handler: TypedHandler<DataResponseEnvelope>,
+    ) -> anyhow::Result<()> {
+        get_message_bus()
+            .borrow_mut()
+            .register_response_handler(request_id, handler)?;
+        self.pending_requests.borrow_mut().insert(*request_id);
+        Ok(())
+    }
+
+    /// Returns whether this actor is awaiting completion of a request.
+    #[must_use]
+    pub fn is_pending_request(&self, request_id: &UUID4) -> bool {
+        self.pending_requests.borrow().contains(request_id)
+    }
+
+    pub(crate) fn complete_request(&self, response: &DataResponseEnvelope) {
+        if response.completed() {
+            self.pending_requests
+                .borrow_mut()
+                .remove(response.correlation_id());
+        }
+    }
+
+    fn clear_pending_requests(&self) {
+        let ids = self.pending_requests.take();
+        let bus = get_message_bus();
+        let mut bus = bus.borrow_mut();
+        for id in ids {
+            bus.take_response_handler(&id);
+        }
     }
 
     /// Sends a fire-and-observe reconnect command.

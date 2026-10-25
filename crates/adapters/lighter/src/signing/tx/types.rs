@@ -698,10 +698,6 @@ mod tests {
 
         let elems = tx.hash_elements(300);
 
-        // The official signer still caps MarketIndex at the legacy i16 range,
-        // so ids above it cannot be byte-compared against the SDK oracle. This
-        // pins the widened id to the same branch-free GoldilocksField(int64)
-        // cast the oracle verifies for ids the SDK accepts.
         assert_eq!(elems.len(), 16);
         assert_eq!(elems[6], Fp::from_u64_reduce(40_000));
     }

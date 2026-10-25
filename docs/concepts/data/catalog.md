@@ -204,6 +204,32 @@ trades = catalog.query_trade_ticks(
 )
 ```
 
+With the `streaming` feature enabled, register catalogs through `LiveNodeConfig.catalogs` using
+`DataCatalogConfig` entries. Historical requests read available catalog intervals and request missing
+intervals from the data client.
+
+Quote and trade requests with an explicit `params["schema"]` bypass catalog reads and write-back.
+Source schemas can change sampling or trade IDs, but catalog keys do not distinguish them.
+
+Set `params={"update_catalog": True}` to write successful source responses back to the catalog.
+Use `"catalog_name"` to select a registered catalog explicitly.
+
+Write-back requires a client that reports completion explicitly, such as Databento or a Python adapter.
+Other clients return data without updating the catalog and log why write-back is skipped.
+
+Write-back applies these coverage rules:
+
+- Failed and intermediate responses skip write-back. Requests split across multiple source envelopes
+  also skip write-back, including parent-symbol book-delta requests that return multiple payloads.
+- Requests with a record limit skip write-back. Decoded row counts cannot prove whether the source
+  exhausted that limit.
+- Batches with instruments or bar types outside the request skip write-back because their source
+  coverage intervals are unknown.
+- Successful empty responses can extend known-empty coverage when both bounds are available and the
+  backend supports it.
+
+Catalog write failures are logged and do not discard the returned data.
+
 ## `BacktestDataConfig`: backtest data
 
 `BacktestDataConfig` defines the catalog data that a `BacktestNode` loads for one run.
@@ -339,9 +365,8 @@ When a backtest runs, the `BacktestNode` processes each `BacktestDataConfig`:
 
 - Use `ParquetDataCatalog` to query or write a catalog directly.
 - Use `BacktestDataConfig` when a `BacktestNode` should load catalog data for a run.
-- `LiveNodeConfig` has no counterpart for loading catalog data. Request historical data through a
-  configured data client or query the catalog directly. Its `streaming` field configures Feather
-  writing only.
+- Use `LiveNodeConfig.catalogs` to register catalogs for historical requests. This does not preload
+  data as `BacktestDataConfig` does. The separate `streaming` field configures Feather writing only.
 
 ## Querying and filtering
 

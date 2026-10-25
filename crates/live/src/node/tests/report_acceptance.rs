@@ -301,3 +301,252 @@ impl ExecutionClient for DeadlineReportClient {
         Ok(vec![self.report.clone()])
     }
 }
+
+#[derive(Debug)]
+struct CarriedReportClient {
+    connected: Rc<Cell<bool>>,
+    fills_started: std::sync::Arc<tokio::sync::Notify>,
+    finalized: Rc<RefCell<Vec<ClientOrderId>>>,
+}
+
+#[async_trait::async_trait(?Send)]
+impl ExecutionClient for CarriedReportClient {
+    fn is_connected(&self) -> bool {
+        self.connected.get()
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        self.connected.set(true);
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.connected.set(false);
+        Ok(())
+    }
+
+    fn client_id(&self) -> ClientId {
+        ClientId::from("CARRIED")
+    }
+
+    fn account_id(&self) -> AccountId {
+        AccountId::from("TEST-001")
+    }
+
+    fn venue(&self) -> Venue {
+        Venue::from("BINANCE")
+    }
+
+    fn oms_type(&self) -> OmsType {
+        OmsType::Netting
+    }
+
+    fn get_account(&self) -> Option<AccountAny> {
+        None
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn generate_account_state(
+        &self,
+        _: Vec<AccountBalance>,
+        _: Vec<MarginBalance>,
+        _: bool,
+        _: UnixNanos,
+        _: Option<Params>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn generate_order_status_reports(
+        &self,
+        _: &GenerateOrderStatusReports,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        Ok(Vec::new())
+    }
+
+    fn generate_order_status_report_task(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        let id = cmd.client_order_id.unwrap();
+        let mut report = deadline_order_report(0);
+        report.client_order_id = Some(id);
+        report.venue_order_id = cmd.venue_order_id.unwrap();
+        report.order_status = OrderStatus::Canceled;
+        report.quantity = Quantity::from("10.0");
+        report.filled_qty = Quantity::from(if id == ClientOrderId::from("O-CARRIED-0") {
+            "0.0"
+        } else {
+            "1.0"
+        });
+
+        let finalized = self.finalized.clone();
+        Some(ExecutionReportTask::new(
+            async move { Ok(Some(report)) },
+            move |report| {
+                finalized.borrow_mut().push(id);
+                Ok(report)
+            },
+        ))
+    }
+
+    fn generate_fill_reports_task(
+        &self,
+        _: &GenerateFillReports,
+    ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+        let started = self.fills_started.clone();
+        Some(ExecutionReportTask::new(
+            async move {
+                started.notify_one();
+                std::future::pending::<anyhow::Result<Vec<FillReport>>>().await
+            },
+            Ok,
+        ))
+    }
+}
+
+#[rstest]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_targeted_report_acceptance_cancellation_dispatches_only_before_fatal_error(
+    #[values(false, true)] fatal: bool,
+) {
+    actor::clear_callbacks().unwrap();
+    let fills_started = std::sync::Arc::new(tokio::sync::Notify::new());
+    let finalized = Rc::new(RefCell::new(Vec::new()));
+
+    let config = LiveNodeConfig {
+        exec_engine: crate::config::LiveExecutionEngineConfig {
+            reconciliation: false,
+            inflight_check_interval_ms: 0,
+            inflight_check_threshold_ms: 0,
+            open_check_interval_secs: Some(0.1),
+            open_check_lookback_mins: None,
+            open_check_threshold_ms: 0,
+            open_check_missing_retries: 1,
+            open_check_open_only: false,
+            max_single_order_queries_per_cycle: 2,
+            single_order_query_delay_ms: 0,
+            ..Default::default()
+        },
+        delay_post_stop: Duration::ZERO,
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("CarriedFatalBoundary".to_string(), Some(config)).unwrap();
+
+    let client = LiveExecutionClient::new(Box::new(CarriedReportClient {
+        connected: Rc::new(Cell::new(false)),
+        fills_started: fills_started.clone(),
+        finalized: finalized.clone(),
+    }));
+
+    node.kernel
+        .exec_engine
+        .borrow_mut()
+        .register_client(Box::new(client.clone()))
+        .unwrap();
+    node.exec_clients.push(client);
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    node.kernel
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    for index in 0..2 {
+        insert_accepted_limit_order_in_node(
+            &node,
+            AccountId::from("TEST-001"),
+            ClientId::from("CARRIED"),
+            instrument.id(),
+            ClientOrderId::from(format!("O-CARRIED-{index}")),
+            VenueOrderId::from(format!("V-CARRIED-{index}")),
+        );
+    }
+
+    let handle = node.handle();
+
+    let driver = async {
+        fills_started.notified().await;
+
+        if fatal {
+            crate::dispatch::tests::latch_callback_failure();
+        } else {
+            handle.stop();
+        }
+    };
+
+    let (result, ()) = dst::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(node.run_with_mode(NodeRunMode::Hosted), driver)
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(result.is_err(), fatal);
+
+    if fatal {
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Callback delivery unwound")
+        );
+    }
+
+    assert_eq!(
+        *finalized.borrow(),
+        vec![
+            ClientOrderId::from("O-CARRIED-0"),
+            ClientOrderId::from("O-CARRIED-1")
+        ]
+    );
+    assert_eq!(
+        node.kernel
+            .cache
+            .borrow()
+            .order(&ClientOrderId::from("O-CARRIED-0"))
+            .unwrap()
+            .status(),
+        if fatal {
+            OrderStatus::Accepted
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert_eq!(
+        node.kernel
+            .cache
+            .borrow()
+            .order(&ClientOrderId::from("O-CARRIED-1"))
+            .unwrap()
+            .status(),
+        OrderStatus::Accepted
+    );
+    let id = ClientOrderId::from("O-CARRIED-1");
+    node.exec_manager.register_inflight(id);
+    #[cfg(all(feature = "simulation", madsim))]
+    madsim::time::advance(Duration::from_nanos(1));
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    {
+        // Keep worker coordination on real time; pause only for the inflight clock boundary
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_nanos(1)).await;
+    }
+
+    let check = node.exec_manager.check_inflight_orders();
+    assert!(
+        check.queries.iter().any(
+            |cmd| matches!(cmd,TradingCommand::QueryOrder(query) if query.client_order_id==id)
+        )
+    );
+    node.dispose();
+    assert_eq!(actor::callback_failure(), None);
+}

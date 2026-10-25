@@ -785,7 +785,7 @@ mod tests {
 
             assert_eq!(
                 engine.run(None, None, None, false).unwrap_err().to_string(),
-                format!("Simulation module failure requires exchange reset: {message}")
+                format!("Simulation callback failure requires exchange reset: {message}")
             );
         });
     }

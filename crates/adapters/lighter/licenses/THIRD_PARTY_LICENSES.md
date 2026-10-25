@@ -43,13 +43,15 @@ and oracle fixtures Lighter requires for L2 transaction signing.
   - Source: <https://github.com/elliottech/poseidon_crypto>
   - Full text: `Apache-2.0-poseidon-crypto.txt`
 
-- **`elliottech/lighter-python` SDK contributors**
+- **`elliottech/lighter-go` and `elliottech/lighter-python` contributors**
   - Usage: The script under `scripts/oracle-py/lighter/` loads the compiled signer
-    distributed with the official Python SDK to generate deterministic
-    transaction and auth-token oracle fixtures under `test_data/`. The compiled
-    signer is not vendored in this repository and is not linked into the crate;
+    released by `lighter-go` v1.0.12 at revision `324c93b067f24ede24918f3ac10663605d5f11c3`
+    to generate transaction and grouped-order oracle fixtures under `test_data/`.
+    Auth-token and self-trade fixtures remain from the official Python SDK.
+    The compiled signer is not vendored in this repository and is not linked into the crate;
     only the generated fixture outputs are committed for byte-equivalence tests.
-  - Attribution: contributors to `elliottech/lighter-python`.
-  - License: Apache License 2.0 for the public SDK repository.
-  - Source: <https://github.com/elliottech/lighter-python>
+  - Attribution: contributors to `elliottech/lighter-go` and `elliottech/lighter-python`.
+  - License: Apache License 2.0 for the public Go and Python SDK repositories.
+  - Sources: <https://github.com/elliottech/lighter-go>,
+    <https://github.com/elliottech/lighter-python>.
   - Full text: `Apache-2.0-poseidon-crypto.txt` (shared Apache-2.0 text).

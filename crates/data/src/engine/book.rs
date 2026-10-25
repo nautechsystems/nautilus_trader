@@ -695,7 +695,7 @@ impl DataEngine {
         if !self.cache_is_owned_by_live_subscription(&resp.instrument_id) {
             let mut cache = self.cache.as_ref().borrow_mut();
             if let Some(book) = cache.order_book_mut(&resp.instrument_id) {
-                for delta in &resp.data {
+                for delta in resp.data.iter() {
                     if let Err(e) = book.apply_delta(delta) {
                         log::error!("Failed to apply historical delta to cache: {e}");
                     }
@@ -719,8 +719,7 @@ impl DataEngine {
 
         let topic = switchboard::get_pipeline_book_deltas_topic(resp.instrument_id);
         let mut frame: Vec<OrderBookDelta> = Vec::new();
-
-        for delta in &resp.data {
+        for delta in resp.data.iter() {
             frame.push(*delta);
             if RecordFlag::F_LAST.matches(delta.flags) {
                 let batch = OrderBookDeltas::new(resp.instrument_id, std::mem::take(&mut frame));
@@ -736,8 +735,7 @@ impl DataEngine {
 
     pub(super) fn handle_book_depth_response(&self, resp: &BookDepthResponse) {
         let topic = switchboard::get_pipeline_book_depth_topic(resp.instrument_id);
-
-        for depth in &resp.data {
+        for depth in resp.data.iter() {
             msgbus::publish_depth(topic, depth);
         }
     }

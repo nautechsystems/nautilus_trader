@@ -33,16 +33,16 @@ use nautilus_common::{
         execution::SubmitOrderList,
     },
 };
-use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_execution::engine::settlement::{settle_instrument_close, settlement_close};
 use nautilus_model::{
-    data::{Bar, InstrumentClose, QuoteTick, TradeTick},
+    data::{Bar, BatchView, InstrumentClose, QuoteTick, TradeTick},
     enums::{OmsType, OrderSide, PositionSide},
     events::{
         AccountState, OrderEventAny, OrderFillVoided, OrderFilled, OrderInitialized,
         PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
     },
-    identifiers::PositionId,
+    identifiers::{ClientId, InstrumentId, PositionId},
     orders::{Order, OrderAny},
     position::{Position, PositionReplayEvent},
     types::{
@@ -121,6 +121,7 @@ pub struct EventStoreReplayReport {
 
 #[cfg(test)]
 pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
+    crate::capture::builtins::PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE,
     PAYLOAD_TYPE_SUBMIT_ORDER_LIST,
     PAYLOAD_TYPE_ACCOUNT_STATE,
     PAYLOAD_TYPE_INSTRUMENT_CLOSE,
@@ -1353,6 +1354,33 @@ fn apply_complete_cache_payload_entry(
     entry: &EventStoreEntry,
 ) -> Result<bool, CacheReplayError> {
     match entry.payload_type.as_str() {
+        crate::capture::builtins::PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE => {
+            let response =
+                decode_payload::<crate::capture::builtins::ResponseEnvelopeCapture>(entry)?;
+
+            let (Some(payload_type), Some(payload)) = (response.payload_type, response.payload)
+            else {
+                return Ok(false);
+            };
+
+            if payload_type.as_str()
+                == crate::capture::builtins::PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE
+            {
+                return Err(apply_error(
+                    entry,
+                    "Historical response payload cannot contain another envelope",
+                ));
+            }
+
+            let payload_entry = EventStoreEntry {
+                payload_type,
+                payload,
+                ..entry.clone()
+            };
+
+            return apply_complete_cache_payload_entry(cache, &payload_entry);
+        }
+
         PAYLOAD_TYPE_SUBMIT_ORDER_LIST => {
             let command = decode_payload::<SubmitOrderList>(entry)?;
             apply_result(entry, cache.add_order_list(command.order_list))?;
@@ -1368,15 +1396,15 @@ fn apply_complete_cache_payload_entry(
             }
         }
         PAYLOAD_TYPE_QUOTES_RESPONSE => {
-            let response = decode_payload::<QuotesResponse>(entry)?;
-            if !response.data.is_empty() {
-                apply_result(entry, cache.add_quotes(&response.data))?;
+            let data = decode_response_ticks(entry, |response: QuotesResponse| response.data)?;
+            if !data.is_empty() {
+                apply_result(entry, cache.add_quotes(&data))?;
             }
         }
         PAYLOAD_TYPE_TRADES_RESPONSE => {
-            let response = decode_payload::<TradesResponse>(entry)?;
-            if !response.data.is_empty() {
-                apply_result(entry, cache.add_trades(&response.data))?;
+            let data = decode_response_ticks(entry, |response: TradesResponse| response.data)?;
+            if !data.is_empty() {
+                apply_result(entry, cache.add_trades(&data))?;
             }
         }
         PAYLOAD_TYPE_FUNDING_RATES_RESPONSE => {
@@ -2098,6 +2126,37 @@ where
     })
 }
 
+fn decode_response_ticks<R, T>(
+    entry: &EventStoreEntry,
+    data: impl FnOnce(R) -> BatchView<T>,
+) -> Result<BatchView<T>, CacheReplayError>
+where
+    R: DeserializeOwned,
+    T: DeserializeOwned,
+{
+    decode_payload(entry).map(data).or_else(|original| {
+        decode_payload::<ScalarTickResponse<T>>(entry)
+            .map(|response| response.data.into())
+            .map_err(|_| original)
+    })
+}
+
+#[derive(Deserialize)]
+#[expect(
+    dead_code,
+    reason = "Metadata is decoded to preserve validation of the previous stored response schema"
+)]
+struct ScalarTickResponse<T> {
+    correlation_id: UUID4,
+    client_id: ClientId,
+    instrument_id: InstrumentId,
+    data: Vec<T>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+    ts_init: UnixNanos,
+    params: Option<Params>,
+}
+
 fn apply_result<T, E>(entry: &EventStoreEntry, result: Result<T, E>) -> Result<T, CacheReplayError>
 where
     E: Display,
@@ -2127,7 +2186,7 @@ fn reject_quarantined_replay_source(
 
 #[cfg(test)]
 mod tests {
-    use std::{any::Any, cell::Cell, rc::Rc};
+    use std::{any::Any, cell::Cell, rc::Rc, sync::Arc};
 
     use ahash::AHashSet;
     use bytes::Bytes;
@@ -3443,6 +3502,46 @@ mod tests {
     }
 
     #[rstest]
+    fn historical_envelope_replays_payload_without_actor_completion_state() {
+        use nautilus_common::messages::data::{DataResponse, DataResponseEnvelope};
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Price::from("1.00010"),
+            Quantity::from("11"),
+            Quantity::from("13"),
+            UnixNanos::from(17),
+            UnixNanos::from(19),
+        );
+        let root = UUID4::new();
+
+        let response = QuotesResponse::new(
+            root,
+            ClientId::from("SOURCE"),
+            instrument_id,
+            vec![quote],
+            None,
+            None,
+            UnixNanos::from(23),
+            None,
+        );
+        let envelope =
+            DataResponseEnvelope::new(DataResponse::Quotes(response), false, Some(UUID4::new()));
+        let registry = crate::capture::builtins::default_registry();
+        let (tag, encoded) = registry.encode(&envelope).unwrap().unwrap();
+        let entry = append_payload(1, tag.as_str(), encoded.payload).entry;
+        let mut cache = Cache::default();
+        assert!(apply_cache_replay_entry(&mut cache, &entry).unwrap());
+        let terminal = DataResponseEnvelope::terminal(root, Some("later source failed".to_owned()));
+        let (tag, encoded) = registry.encode(&terminal).unwrap().unwrap();
+        let entry = append_payload(2, tag.as_str(), encoded.payload).entry;
+        assert!(!apply_cache_replay_entry(&mut cache, &entry).unwrap());
+        assert_eq!(cache.quote(&instrument_id), Some(&quote));
+    }
+
+    #[rstest]
     fn default_capture_payload_types_are_classified_for_cache_replay() {
         let mut classified = AHashSet::new();
         let mut overlap = Vec::new();
@@ -3818,6 +3917,205 @@ mod tests {
             Some(vec![funding_rate])
         );
         assert_eq!(cache.bars(&bar_type), Some(vec![bar]));
+    }
+
+    #[rstest]
+    #[case::quotes(true)]
+    #[case::trades(false)]
+    fn narrowed_response_envelope_capture_replays_only_visible_rows(
+        #[case] quotes: bool,
+        #[values(false, true)] empty: bool,
+    ) {
+        use nautilus_common::messages::data::{DataResponse, DataResponseEnvelope};
+
+        use crate::capture::builtins::{
+            PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE, ResponseEnvelopeCapture, default_registry,
+        };
+
+        let id = InstrumentId::from("AUD/USD.SIM");
+        let root = UUID4::new();
+        let child = UUID4::new();
+
+        let quote = QuoteTick {
+            instrument_id: id,
+            ts_init: UnixNanos::from(23),
+            ..Default::default()
+        };
+
+        let trade = TradeTick {
+            instrument_id: id,
+            ts_init: UnixNanos::from(29),
+            ..Default::default()
+        };
+
+        let end = if empty { 1 } else { 2 };
+
+        let response = if quotes {
+            DataResponse::Quotes(QuotesResponse::new(
+                child,
+                ClientId::from("HISTORY"),
+                id,
+                BatchView::new(Arc::new(vec![quote, quote, quote]), 1..end),
+                Some(UnixNanos::from(11)),
+                Some(UnixNanos::from(37)),
+                UnixNanos::from(41),
+                None,
+            ))
+        } else {
+            DataResponse::Trades(TradesResponse::new(
+                child,
+                ClientId::from("HISTORY"),
+                id,
+                BatchView::new(Arc::new(vec![trade, trade, trade]), 1..end),
+                Some(UnixNanos::from(11)),
+                Some(UnixNanos::from(37)),
+                UnixNanos::from(43),
+                None,
+            ))
+        };
+
+        let envelope =
+            DataResponseEnvelope::new(response, true, Some(child)).with_correlation_id(root);
+        let registry = default_registry();
+        let (tag, encoded) = registry.encode(&envelope).unwrap().unwrap();
+        let captured: ResponseEnvelopeCapture = rmp_serde::from_slice(&encoded.payload).unwrap();
+        let reader = reader_with_entries(
+            "narrowed-response-envelope",
+            &[append_payload(1, tag.as_str(), encoded.payload)],
+        );
+        let mut cache = Cache::default();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).unwrap();
+
+        assert_eq!(tag.as_str(), PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE);
+        assert_eq!(captured.correlation_id, root);
+        assert_eq!(captured.sub_correlation_id, Some(child));
+        assert!(captured.completed);
+        assert_eq!(captured.failure_reason, None);
+        assert_eq!(report.applied_entries, 1);
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(cache.quotes(&id), (quotes && !empty).then(|| vec![quote]));
+        assert_eq!(cache.trades(&id), (!quotes && !empty).then(|| vec![trade]));
+    }
+
+    #[rstest]
+    fn scalar_tick_response_replay_restores_previous_payload_schema() {
+        #[derive(Serialize)]
+        struct ScalarResponse<T> {
+            correlation_id: UUID4,
+            client_id: ClientId,
+            instrument_id: InstrumentId,
+            data: Vec<T>,
+            start: Option<UnixNanos>,
+            end: Option<UnixNanos>,
+            ts_init: UnixNanos,
+            params: Option<nautilus_core::Params>,
+        }
+
+        let id = InstrumentId::from("AUD/USD.SIM");
+
+        let quote = QuoteTick::new(
+            id,
+            Price::from("1.00001"),
+            Price::from("1.00023"),
+            Quantity::from(17),
+            Quantity::from(31),
+            UnixNanos::from(43),
+            UnixNanos::from(47),
+        );
+
+        let trade = TradeTick::new(
+            id,
+            Price::from("1.00019"),
+            Quantity::from(23),
+            AggressorSide::Buy,
+            TradeId::from("OLD-TRADE"),
+            UnixNanos::from(53),
+            UnixNanos::from(59),
+        );
+
+        let quotes = ScalarResponse {
+            correlation_id: UUID4::new(),
+            client_id: ClientId::from("DATA"),
+            instrument_id: id,
+            data: vec![quote],
+            start: Some(UnixNanos::from(37)),
+            end: Some(UnixNanos::from(61)),
+            ts_init: UnixNanos::from(67),
+            params: None,
+        };
+
+        let trades = ScalarResponse {
+            correlation_id: UUID4::new(),
+            client_id: ClientId::from("DATA"),
+            instrument_id: id,
+            data: vec![trade],
+            start: Some(UnixNanos::from(41)),
+            end: Some(UnixNanos::from(71)),
+            ts_init: UnixNanos::from(73),
+            params: None,
+        };
+
+        let reader = reader_with_entries(
+            "scalar-tick-responses",
+            &[
+                append_serde_payload(1, PAYLOAD_TYPE_QUOTES_RESPONSE, &quotes),
+                append_serde_payload(2, PAYLOAD_TYPE_TRADES_RESPONSE, &trades),
+            ],
+        );
+        let mut cache = Cache::default();
+
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).unwrap();
+
+        assert_eq!(report.applied_entries, 2);
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(cache.quotes(&id), Some(vec![quote]));
+        assert_eq!(cache.trades(&id), Some(vec![trade]));
+    }
+
+    #[rstest]
+    fn scalar_tick_response_replay_rejects_incomplete_metadata() {
+        #[derive(Serialize)]
+        struct IncompleteResponse {
+            instrument_id: InstrumentId,
+            data: Vec<QuoteTick>,
+        }
+
+        let id = InstrumentId::from("AUD/USD.SIM");
+
+        let response = IncompleteResponse {
+            instrument_id: id,
+            data: vec![QuoteTick {
+                instrument_id: id,
+                ..Default::default()
+            }],
+        };
+
+        let reader = reader_with_entries(
+            "incomplete-scalar-response",
+            &[append_serde_payload(
+                1,
+                PAYLOAD_TYPE_QUOTES_RESPONSE,
+                &response,
+            )],
+        );
+        let mut cache = Cache::default();
+
+        let error = replay_cache_snapshot_tail(&mut cache, &reader).unwrap_err();
+
+        let CacheReplayError::Decode {
+            seq,
+            payload_type,
+            message,
+        } = error
+        else {
+            panic!("Expected invalid response metadata");
+        };
+
+        assert_eq!(seq, 1);
+        assert_eq!(payload_type, PAYLOAD_TYPE_QUOTES_RESPONSE);
+        assert_eq!(message, "missing field `correlation_id`");
+        assert_eq!(cache.quotes(&id), None);
     }
 
     #[rstest]

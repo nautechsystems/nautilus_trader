@@ -11,6 +11,7 @@
   "closed": false,
   "acceptingOrders": true,
   "enableOrderBook": true,
+  "version": "v1",
   "clobTokenIds": "[\"9700525976462326306802795530553376348116310383328382626789994562350229436531\", \"9684129004308889646536044141330168144866101175836994432446145127310478131443\"]",
   "outcomes": "[\"Yes\", \"No\"]",
   "orderPriceMinTickSize": 0.001,

@@ -3266,7 +3266,7 @@ async fn test_data_client_request_trades() {
 
     match event {
         DataEvent::Response(DataResponse::Trades(trades_response)) => {
-            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert_eq!(trades_response.instrument_ids, vec![instrument_id]);
             // Fixture carries three trades; the response is sorted ascending.
             assert_eq!(trades_response.data.len(), 3);
             assert_eq!(trades_response.data[0].trade_id.to_string(), "300001");
@@ -3504,7 +3504,7 @@ async fn test_data_client_request_trades_endpoint_unavailable() {
 
     match event {
         DataEvent::Response(DataResponse::Trades(trades_response)) => {
-            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert_eq!(trades_response.instrument_ids, vec![instrument_id]);
             assert!(
                 trades_response.data.is_empty(),
                 "422 should yield an empty response, was: {:?}",
@@ -3602,7 +3602,7 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
             assert!(rates.contains(&"-0.0000081".to_string()));
             assert!(rates.contains(&"0.0000033".to_string()));
 
-            for update in &response.data {
+            for update in response.data.iter() {
                 assert_eq!(update.interval, Some(60), "Hyperliquid funds hourly");
                 assert!(update.next_funding_ns.is_none());
             }

@@ -38,7 +38,7 @@ use super::{
     subscriptions::resolve_token_id_from,
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::validate_market_version},
     filters::market_closed,
     http::{
         gamma::parse_markets_with_transient, models::GammaMarket, query::GetGammaMarketsParams,
@@ -52,6 +52,7 @@ use crate::{
 
 #[derive(Debug)]
 enum AutoLoadOutcome {
+    Unsupported,
     Open(Vec<InstrumentAny>),
     Closed {
         instruments: Vec<InstrumentAny>,
@@ -309,6 +310,15 @@ impl PolymarketDataClient {
                                 .filter_map(|instrument| {
                                     extract_condition_id(&instrument.id()).ok()
                                 })
+                                .chain(
+                                    markets
+                                        .iter()
+                                        .filter(|market| {
+                                            validate_market_version(market.version.as_deref())
+                                                .is_err()
+                                        })
+                                        .map(|market| market.condition_id.clone()),
+                                )
                                 .collect();
                             let probe_condition_ids: Vec<String> = chunk
                                 .iter()
@@ -402,6 +412,7 @@ impl PolymarketDataClient {
                     }
 
                     match outcome {
+                        AutoLoadOutcome::Unsupported => {}
                         AutoLoadOutcome::Open(loaded) => {
                             if cancellation.is_cancelled() {
                                 continue;
@@ -584,7 +595,7 @@ impl PolymarketDataClient {
                         {
                             next_batch.insert(*id);
                         }
-                        Some(AutoLoadOutcome::Closed { .. }) => {
+                        Some(AutoLoadOutcome::Unsupported | AutoLoadOutcome::Closed { .. }) => {
                             // Terminal for live data; settlement metadata is
                             // retained by `retire_instrument`.
                         }
@@ -663,7 +674,16 @@ fn record_auto_load_outcomes(
     markets: &[GammaMarket],
     instruments: Vec<InstrumentAny>,
 ) {
-    for market in markets.iter().filter(|market| market.closed == Some(true)) {
+    for market in markets
+        .iter()
+        .filter(|market| validate_market_version(market.version.as_deref()).is_err())
+    {
+        outcomes.insert(market.condition_id.clone(), AutoLoadOutcome::Unsupported);
+    }
+
+    for market in markets.iter().filter(|market| {
+        market.closed == Some(true) && validate_market_version(market.version.as_deref()).is_ok()
+    }) {
         let incoming = build_strict_resolved_market(market);
         match outcomes
             .entry(market.condition_id.clone())
@@ -692,6 +712,7 @@ fn record_auto_load_outcomes(
             .entry(condition_id)
             .or_insert(AutoLoadOutcome::Unknown)
         {
+            AutoLoadOutcome::Unsupported => {}
             AutoLoadOutcome::Closed { instruments, .. } => {
                 if market_closed(&instrument) == Some(true) {
                     instruments.push(instrument);

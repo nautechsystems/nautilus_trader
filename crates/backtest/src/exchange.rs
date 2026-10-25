@@ -170,7 +170,7 @@ pub struct SimulatedExchange {
     leverages: AHashMap<InstrumentId, Decimal>,
     margin_model: Option<MarginModelHandle>,
     modules: Vec<SimulationModuleHandle>,
-    module_error: Option<String>,
+    callback_error: Option<String>,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     message_queue: VecDeque<TradingCommand>,
@@ -261,7 +261,7 @@ impl SimulatedExchange {
             leverages: config.leverages,
             margin_model: config.margin_model,
             modules: config.modules,
-            module_error: None,
+            callback_error: None,
             clock,
             cache,
             message_queue: VecDeque::new(),
@@ -337,16 +337,16 @@ impl SimulatedExchange {
         self.liquidation_enabled
     }
 
-    pub(crate) fn check_module_error(&self) -> anyhow::Result<()> {
-        if let Some(error) = &self.module_error {
-            anyhow::bail!("Simulation module failure requires exchange reset: {error}");
+    pub(crate) fn check_callback_error(&self) -> anyhow::Result<()> {
+        if let Some(error) = &self.callback_error {
+            anyhow::bail!("Simulation callback failure requires exchange reset: {error}");
         }
         Ok(())
     }
 
     #[must_use]
-    pub(crate) const fn has_module_error(&self) -> bool {
-        self.module_error.is_some()
+    pub(crate) const fn has_callback_error(&self) -> bool {
+        self.callback_error.is_some()
     }
 
     fn store_module_error(
@@ -356,12 +356,12 @@ impl SimulatedExchange {
         error: &anyhow::Error,
     ) -> anyhow::Error {
         let error = format!("Simulation module {module_index} {method} failed: {error:#}");
-        self.module_error = Some(error.clone());
+        self.callback_error = Some(error.clone());
         anyhow::anyhow!(error)
     }
 
     fn pre_process_modules(&mut self, data: &Data) -> anyhow::Result<()> {
-        self.check_module_error()?;
+        self.check_callback_error()?;
 
         for module_index in 0..self.modules.len() {
             if let Err(e) = self.modules[module_index].pre_process(data) {
@@ -887,6 +887,9 @@ impl SimulatedExchange {
     }
 
     /// Sends a trading command to the exchange for processing.
+    ///
+    /// Ignores commands while a callback failure is latched, until [`Self::reset`] clears it.
+    /// [`Self::process_modules`] returns the latched error.
     pub fn send(&mut self, command: TradingCommand) {
         if matches!(
             &command,
@@ -896,38 +899,56 @@ impl SimulatedExchange {
             return;
         }
 
-        if self.use_message_queue {
-            self.inflight_orders.insert(&command);
+        if self.callback_error.is_some() {
+            return;
         }
 
         if !self.use_message_queue {
             let _guard = DeferEventsGuard::new(Rc::clone(&self.deferring_events));
             self.process_trading_command(command);
         } else if self.latency_model.is_none() {
+            self.inflight_orders.insert(&command);
             self.message_queue.push_back(command);
         } else {
-            let (timestamp, counter) = self.generate_inflight_command(&command);
+            let (timestamp, counter) = match self.generate_inflight_command(&command) {
+                Ok(arrival) => arrival,
+                Err(e) => {
+                    self.callback_error = Some(format!("Latency model failed: {e:#}"));
+                    return;
+                }
+            };
+
+            self.inflight_orders.insert(&command);
             self.inflight_queue
                 .push(InflightCommand::new(timestamp, counter, command));
         }
     }
 
-    fn generate_inflight_command(&mut self, command: &TradingCommand) -> (UnixNanos, u32) {
+    fn generate_inflight_command(
+        &mut self,
+        command: &TradingCommand,
+    ) -> anyhow::Result<(UnixNanos, u32)> {
         if let Some(latency_model) = &self.latency_model {
-            let ts = match command {
+            let ts_now = self.clock.borrow().timestamp_ns();
+
+            let latency = match command {
                 TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
-                    command.ts_init() + latency_model.get_insert_latency()
+                    latency_model.get_insert_latency(command, ts_now)?
                 }
                 TradingCommand::ModifyOrder(_) | TradingCommand::ModifyOrders(_) => {
-                    command.ts_init() + latency_model.get_update_latency()
+                    latency_model.get_update_latency(command, ts_now)?
                 }
                 TradingCommand::CancelOrder(_)
                 | TradingCommand::CancelOrders(_)
                 | TradingCommand::CancelAllOrders(_) => {
-                    command.ts_init() + latency_model.get_delete_latency()
+                    latency_model.get_delete_latency(command, ts_now)?
                 }
-                _ => panic!("Cannot handle command: {command:?}"),
+                _ => anyhow::bail!("Cannot handle command: {command:?}"),
             };
+
+            let ts = command.ts_init().checked_add(latency).ok_or_else(|| {
+                anyhow::anyhow!("Latency arrival timestamp exceeds u64 nanoseconds")
+            })?;
 
             let counter = self
                 .inflight_counter
@@ -935,9 +956,9 @@ impl SimulatedExchange {
                 .and_modify(|e| *e += 1)
                 .or_insert(1);
 
-            (ts, *counter)
+            Ok((ts, *counter))
         } else {
-            panic!("Latency model should be initialized");
+            anyhow::bail!("Latency model should be initialized");
         }
     }
 
@@ -1281,7 +1302,7 @@ impl SimulatedExchange {
         instrument_id: InstrumentId,
         ts_event: UnixNanos,
     ) -> anyhow::Result<()> {
-        self.check_module_error()?;
+        self.check_callback_error()?;
         let key = (ts_event, instrument_id);
         let Some(funding_rate) = self.pending_funding_rates.remove(&key) else {
             return Ok(());
@@ -1647,6 +1668,9 @@ impl SimulatedExchange {
     /// Advances the exchange clock and processes all pending inflight and queued trading commands
     /// up to `ts_now`.
     ///
+    /// Does nothing while a callback failure is latched, until [`Self::reset`] clears it.
+    /// [`Self::process_modules`] returns the latched error.
+    ///
     /// # Panics
     ///
     /// Panics if the exchange clock is not a [`VirtualClock`] or popping an inflight command fails
@@ -1660,6 +1684,10 @@ impl SimulatedExchange {
     }
 
     fn process_commands(&mut self, ts_now: UnixNanos, scope: SettlementScope) {
+        if self.callback_error.is_some() {
+            return;
+        }
+
         self.set_clock_time(ts_now);
 
         let mut deferred = Vec::new();
@@ -1700,10 +1728,10 @@ impl SimulatedExchange {
     ///
     /// # Errors
     ///
-    /// Returns an error if a simulation module fails. The exchange retains the failure and
-    /// rejects further processing until reset.
+    /// Returns an error if a latency model or simulation module fails.
+    /// The exchange retains the failure and rejects further processing until reset.
     pub fn process_modules(&mut self, ts_now: UnixNanos) -> anyhow::Result<()> {
-        self.check_module_error()?;
+        self.check_callback_error()?;
 
         if self.frozen_account || self.exec_client.is_none() {
             return Ok(());
@@ -1764,13 +1792,13 @@ impl SimulatedExchange {
             self.generate_fresh_account_state();
         }
 
-        let mut module_error = None;
+        let mut callback_error = None;
 
         for (module_index, module) in self.modules.iter().enumerate() {
             if let Err(e) = module.reset()
-                && module_error.is_none()
+                && callback_error.is_none()
             {
-                module_error = Some(format!(
+                callback_error = Some(format!(
                     "Simulation module {module_index} reset failed: {e:#}"
                 ));
             }
@@ -1788,8 +1816,8 @@ impl SimulatedExchange {
         self.inflight_counter.clear();
 
         log::info!("Resetting exchange state");
-        self.module_error = module_error;
-        self.check_module_error()
+        self.callback_error = callback_error;
+        self.check_callback_error()
     }
 
     /// Logs diagnostic information from all simulation modules.
@@ -2542,5 +2570,115 @@ mod tests {
         exchange.reset().unwrap();
 
         assert!(exchange.inflight_counter.is_empty());
+    }
+
+    #[cfg(feature = "python")]
+    mod python_latency {
+        use std::ffi::CString;
+
+        use nautilus_common::messages::execution::CancelAllOrders;
+        use nautilus_execution::python::latency::{PyLatencyModel, pyobject_to_latency_model_any};
+        use pyo3::{prelude::*, types::PyDict};
+
+        use super::*;
+
+        #[rstest]
+        fn test_python_latency_schedules_once_with_clock_and_command_time() {
+            let mut exchange = setup_exchange(Dispatch::Latency);
+            exchange.set_clock_time(UnixNanos::new(500));
+            let (model, obj) = recorded_latency("11");
+            exchange.set_latency_model(model);
+            exchange.send(cancel_command());
+
+            let calls = Python::attach(|py| {
+                obj.bind(py)
+                    .getattr("calls")
+                    .unwrap()
+                    .extract::<Vec<(u64, u64)>>()
+                    .unwrap()
+            });
+
+            assert_eq!(calls, vec![(100, 500)]);
+            assert_eq!(
+                exchange.max_inflight_command_ts(),
+                Some(UnixNanos::new(111))
+            );
+            assert_eq!(exchange.inflight_queue.len(), 1);
+            assert_eq!(
+                exchange.inflight_counter.get(&UnixNanos::new(111)),
+                Some(&1)
+            );
+            assert!(exchange.callback_error.is_none());
+        }
+
+        #[rstest]
+        #[case("-1", "Python LatencyModel.get_delete_latency failed:")]
+        #[case("2 ** 64 - 1", "Latency arrival timestamp exceeds u64 nanoseconds")]
+        #[case(
+            "(_ for _ in ()).throw(ValueError('sample failed'))",
+            "ValueError: sample failed"
+        )]
+        fn test_python_latency_failure_latches_without_queuing(
+            #[case] delay: &str,
+            #[case] message: &str,
+        ) {
+            let mut exchange = setup_exchange(Dispatch::Latency);
+            let (model, obj) = recorded_latency(delay);
+            exchange.set_latency_model(model);
+            exchange.send(cancel_command());
+            exchange.send(cancel_command());
+
+            let calls = Python::attach(|py| {
+                obj.bind(py)
+                    .getattr("calls")
+                    .unwrap()
+                    .extract::<Vec<(u64, u64)>>()
+                    .unwrap()
+            });
+
+            assert_eq!(calls, vec![(100, 0)]);
+            assert!(
+                exchange
+                    .check_callback_error()
+                    .unwrap_err()
+                    .to_string()
+                    .contains(message)
+            );
+            assert_eq!(exchange.max_inflight_command_ts(), None);
+            assert!(exchange.inflight_queue.is_empty());
+            assert!(exchange.message_queue.is_empty());
+            assert!(exchange.inflight_counter.is_empty());
+        }
+
+        fn cancel_command() -> TradingCommand {
+            TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                TraderId::test_default(),
+                None,
+                StrategyId::test_default(),
+                InstrumentId::from("AUD/USD.SIM"),
+                None,
+                UUID4::new(),
+                UnixNanos::new(100),
+                None,
+                None,
+            ))
+        }
+
+        fn recorded_latency(delay: &str) -> (LatencyModelHandle, Py<PyAny>) {
+            Python::initialize();
+            Python::attach(|py| {
+                let locals = PyDict::new(py);
+                locals
+                    .set_item("LatencyModel", py.get_type::<PyLatencyModel>())
+                    .unwrap();
+                let source = format!(
+                    "type('RecordedLatency', (LatencyModel,), {{'calls': [], 'get_delete_latency': lambda self, command, ts_now: self.calls.append((command.ts_init, ts_now)) or ({delay})}})()"
+                );
+                let source = CString::new(source).unwrap();
+                let obj = py.eval(&source, Some(&locals), None).unwrap();
+                let model = pyobject_to_latency_model_any(&obj).unwrap().into();
+                (model, obj.unbind())
+            })
+        }
     }
 }

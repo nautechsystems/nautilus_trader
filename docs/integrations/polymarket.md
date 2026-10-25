@@ -12,6 +12,13 @@ execution, signing, and WebSocket operations have the same behavior from Rust an
 The adapter handles order preparation and signing for several wallet configurations. This guide
 covers market data, trade execution, session key administration, and Deposit Wallet position operations.
 
+The adapter supports Conditional Tokens Framework (CTF) markets with market protocol `v1`. This is
+separate from CLOB service version `2` and the `CTFExchangeV2` order format. Markets with protocol `v2`,
+a missing version, or an unknown version are unsupported, even with populated `clobTokenIds`.
+Instrument providers skip these markets; the historical data loader rejects them. Unsupported markets
+are not retried while [waiting for CLOB metadata](#markets-awaiting-clob-metadata). See the
+[Protocol V2 migration guide](https://docs.polymarket.com/migrate/polymarket-v2/api-integrations).
+
 ## Installation
 
 The Python package includes the Polymarket adapter. No adapter-specific extra is required.
@@ -465,9 +472,10 @@ unrelated calls, size a merge to `"max"`, or redeem positions automatically.
 
 ### Inputs and approvals
 
-Each operation looks up the market on the public CLOB by condition ID and errors if `neg_risk` is
-absent. It then selects the canonical pUSD token and the standard or negative-risk collateral
-adapter. Callers pass a 0x-prefixed 32-byte condition ID and do not supply contract addresses.
+Each operation looks up the market on the public CLOB by condition ID and requires market protocol `v1`
+and a present `neg_risk` value before encoding calldata. It then selects the canonical pUSD token and
+the standard or negative-risk collateral adapter. Callers pass a 0x-prefixed 32-byte condition ID and
+do not supply contract addresses.
 
 - **Split and merge amounts**: Positive pUSD decimals exactly representable at six decimal places, with no
   rounding. Amounts use pUSD units, never base units. `"max"` is not accepted.
@@ -1013,7 +1021,7 @@ Reasons are limited to 512 characters, including the literal `... [truncated]` m
 preceding space.
 
 On single and batch submit responses, the exact normalized reason `order_version_mismatch` becomes
-`Polymarket CLOB order version mismatch; adapter supports V2 only`. Other submit response reasons
+`Polymarket CLOB order format mismatch; expected CTFExchangeV2 orders`. Other submit response reasons
 remain unchanged after normalization.
 
 The venue reports a post-only crossing as `invalid post-only order: order crosses book`. Only that exact
@@ -1377,8 +1385,8 @@ Outcome instruments discovered from the same event snapshot share its JSON alloc
 Rust callers can borrow the string with `info.get_str("gamma_event")` and iterate with `info.borrowed_entries()`.
 Indexing, `&Params` iteration, and the read-only `IndexMap` interface materialize and cache owned values.
 Python values and serialized contents stay the same; deserialization does not retain allocation sharing.
-The existing normalized metadata keys remain available, including `token_id`, `condition_id`, `market_id`,
-and `event_id` when known.
+Normalized metadata includes `market_version`, `token_id`, `condition_id`, `market_id`, and `event_id`
+when known. `market_version` records the accepted market protocol, `v1`.
 
 These strings contain the received JSON objects before enrichment. Tick-size updates preserve them. Use the
 instrument's typed price increment for the current tick size. The adapter does not fetch additional related
@@ -1780,6 +1788,10 @@ An eligible cached order must match the fill's account and instrument and carry 
 An earlier ID from an [order modification](#order-modification) counts only if the fill is already
 on that order. When `instrument_config.load_ids` is non-empty, the instrument must also be listed.
 Cached orders do not offset unmapped, unowned maker, or untimestamped trades.
+
+Unsupported-market open orders and holdings are skipped, but confirmed trades still participate in
+these completeness checks. With no `load_ids` scope, an unmapped trade on an unsupported market makes
+the bounded window incomplete.
 
 For an incomplete window, the adapter logs a warning listing each failing condition before the
 engine logs its incomplete-report warning. It emits no additional report for a cached closed order, so
@@ -2493,6 +2505,11 @@ Gamma can report a newly listed market before usable `clob_token_ids` are availa
 lookup. Auto-load retries these Gamma results and fetch failures with bounded exponential backoff plus
 jitter. It does not query CLOB `GET /markets/{cid}` to classify hydration.
 
+Only market protocol `v1` can enter this retry path. A market with protocol `v2`, a missing version,
+or an unknown version is skipped with a warning. Once identified as unsupported, it receives no further
+retry or closed-market probe. An initial closed-market probe can discover an unsupported market that
+the default Gamma lookup omits.
+
 Tune the cadence with `auto_load_max_retries` (default 12), `auto_load_retry_delay_initial_secs` (default
 5.0), and `auto_load_retry_delay_max_secs` (default 15.0). The default retry delays total approximately three
 minutes. HTTP requests and rate-limit waits add to elapsed time. Set `auto_load_max_retries=0` to disable
@@ -2685,6 +2702,11 @@ Before starting its WebSocket or initializing account state, the execution clien
 `GET /version`. Startup continues only when the venue reports numeric version `2`. Any other version stops
 startup with an unsupported-version error. A missing, malformed, or errored response stops startup with a
 version-query failure.
+
+This service version is separate from the market protocol. Before submitting or modifying an order,
+the client requires instrument metadata `info["market_version"]` to be `"v1"`. Otherwise it emits
+`OrderDenied` for a submission or `OrderModifyRejected` for a modification. Reload instruments from
+discovery if cached instruments lack that metadata.
 
 The execution adapter subscribes once to an account-wide `user` channel for order and trade events.
 It does not open market-channel subscriptions for instruments seen during trading.
@@ -2951,8 +2973,13 @@ Pass the same `PolymarketInstrumentProviderConfig` as `instrument_config` on the
 config and the execution client config.
 
 `load_ids` is the only reconciliation scope. When that set is non-empty, unmapped records
-outside it are expected absences. When `load_ids` is unset or empty, every unmapped open
-order and position is in scope and fails the report request.
+outside it are expected absences. When `load_ids` is unset or empty, every open order and position
+is in scope.
+
+For unmapped open orders and positions inside either scope, the adapter checks the market protocol on
+CLOB after applying account ownership, instrument filters, and position dust and resolved-balance
+exclusions. It skips rows for unsupported markets with a warning. An unmapped market protocol `v1` row
+or a failed version lookup still fails the report request.
 
 `event_slugs`, `market_slugs`, `series_ids`, `filters`, and `event_slug_builder` discover instruments. They do
 not classify unmapped records. A node that scopes discovery with those fields and still wants scoped
@@ -3140,7 +3167,7 @@ winner = next(
 
 ### Event loading
 
-An event factory returns one loader for each market in the event:
+An event factory returns one loader for each market in a supported event:
 
 ```python
 loaders = await PolymarketDataLoader.from_event_slug(
@@ -3151,6 +3178,8 @@ loaders = await PolymarketDataLoader.from_event_slug(
 
 A negative token index or an index outside a market's token list raises `ValueError`. Construction
 also fails clearly when Gamma has no matching slug or CLOB has not populated usable token IDs.
+Both Gamma and CLOB must identify the market as protocol `v1`. If any market in an event is
+unsupported, the event factory raises `ValueError` and returns no loaders.
 
 ### Public discovery
 

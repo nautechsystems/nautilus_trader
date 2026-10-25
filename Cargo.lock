@@ -405,7 +405,7 @@ dependencies = [
  "futures-utils-wasm",
  "http",
  "lru",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project",
  "reqwest 0.13.5",
  "serde",
@@ -626,7 +626,7 @@ dependencies = [
  "derive_more 2.1.1",
  "futures",
  "futures-utils-wasm",
- "parking_lot",
+ "parking_lot 0.12.5",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2630,9 +2630,9 @@ dependencies = [
  "cfg-if",
  "crossbeam-utils",
  "hashbrown 0.14.5",
- "lock_api",
+ "lock_api 0.4.14",
  "once_cell",
- "parking_lot_core",
+ "parking_lot_core 0.9.12",
 ]
 
 [[package]]
@@ -2704,7 +2704,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "object_store",
- "parking_lot",
+ "parking_lot 0.12.5",
  "parquet 59.3.1",
  "sqlparser",
  "tempfile",
@@ -2734,7 +2734,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "object_store",
- "parking_lot",
+ "parking_lot 0.12.5",
  "tokio",
 ]
 
@@ -2823,7 +2823,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "object_store",
- "parking_lot",
+ "parking_lot 0.12.5",
  "rand 0.9.5",
  "tokio",
  "url",
@@ -2926,7 +2926,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "object_store",
- "parking_lot",
+ "parking_lot 0.12.5",
  "parquet 59.3.1",
  "tokio",
 ]
@@ -2954,7 +2954,7 @@ dependencies = [
  "futures",
  "log",
  "object_store",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project-lite",
  "rand 0.9.5",
  "tempfile",
@@ -3097,7 +3097,7 @@ dependencies = [
  "datafusion-expr",
  "datafusion-physical-expr",
  "datafusion-physical-plan",
- "parking_lot",
+ "parking_lot 0.12.5",
 ]
 
 [[package]]
@@ -3174,7 +3174,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "indexmap 2.14.2",
  "itertools 0.15.0",
- "parking_lot",
+ "parking_lot 0.12.5",
  "petgraph 0.8.3",
  "tokio",
 ]
@@ -3207,7 +3207,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "indexmap 2.14.2",
  "itertools 0.15.0",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project",
 ]
 
@@ -3259,7 +3259,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "num-traits",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project-lite",
  "serde",
  "serde_json",
@@ -3294,7 +3294,7 @@ dependencies = [
  "datafusion-execution",
  "datafusion-expr",
  "datafusion-physical-plan",
- "parking_lot",
+ "parking_lot 0.12.5",
 ]
 
 [[package]]
@@ -4025,8 +4025,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d930c203dd0b6ff06e0201a4a2fe9149b43c684fd4420555b26d21b1a02956f"
 dependencies = [
  "futures-core",
- "lock_api",
- "parking_lot",
+ "lock_api 0.4.14",
+ "parking_lot 0.12.5",
 ]
 
 [[package]]
@@ -5204,6 +5204,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lock_api"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65d91b22da179613dcf4d6ec8349563f52a363f6849e03b00dd0a185ec4a59af"
+dependencies = [
+ "scopeguard",
+]
+
+[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5430,7 +5439,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -5477,7 +5486,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5519,7 +5528,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -5576,7 +5585,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5620,7 +5629,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-network",
  "nautilus-system",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5670,7 +5679,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -5740,7 +5749,7 @@ dependencies = [
  "nautilus-network",
  "nautilus-system",
  "nautilus-testkit",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5782,7 +5791,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pem",
  "pyo3",
  "pyo3-stub-gen",
@@ -5825,7 +5834,7 @@ dependencies = [
  "nautilus-indicators",
  "nautilus-model",
  "nautilus-serialization",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -5865,7 +5874,7 @@ dependencies = [
  "jiff",
  "log",
  "madsim",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -5921,7 +5930,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-persistence",
  "nautilus-serialization",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -5956,7 +5965,7 @@ dependencies = [
  "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -6002,7 +6011,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6051,7 +6060,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -6097,7 +6106,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6136,7 +6145,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-persistence",
  "nautilus-system",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "redb",
  "rmp-serde",
@@ -6165,7 +6174,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6212,7 +6221,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6312,7 +6321,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6362,7 +6371,7 @@ dependencies = [
  "nautilus-tardis",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -6411,7 +6420,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -6464,7 +6473,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6511,7 +6520,7 @@ dependencies = [
  "log",
  "nautilus-core",
  "nautilus-macros",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6557,7 +6566,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",
- "parking_lot",
+ "parking_lot 0.13.0",
  "percent-encoding",
  "proptest",
  "pyo3",
@@ -6617,7 +6626,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6714,7 +6723,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -6805,6 +6814,7 @@ dependencies = [
  "nautilus-trading",
  "pyo3",
  "pyo3-stub-gen",
+ "rstest",
 ]
 
 [[package]]
@@ -6906,7 +6916,7 @@ dependencies = [
  "nautilus-serialization",
  "nautilus-testkit",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6991,7 +7001,7 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-serialization",
  "nautilus-trading",
- "parking_lot",
+ "parking_lot 0.13.0",
  "parquet 59.3.1",
  "pyo3",
  "pyo3-stub-gen",
@@ -7254,7 +7264,7 @@ dependencies = [
  "hyper",
  "itertools 0.14.0",
  "md-5 0.10.6",
- "parking_lot",
+ "parking_lot 0.12.5",
  "percent-encoding",
  "quick-xml",
  "rand 0.10.3",
@@ -7369,8 +7379,18 @@ version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
 dependencies = [
- "lock_api",
- "parking_lot_core",
+ "lock_api 0.4.14",
+ "parking_lot_core 0.9.12",
+]
+
+[[package]]
+name = "parking_lot"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9cf937ca4e1d0b7578784559063422fc39ae7c5a00f02471f2614d5486fd226"
+dependencies = [
+ "lock_api 0.5.0",
+ "parking_lot_core 0.10.0",
 ]
 
 [[package]]
@@ -7381,7 +7401,19 @@ checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
 dependencies = [
  "cfg-if",
  "libc",
- "redox_syscall",
+ "redox_syscall 0.5.18",
+ "smallvec",
+ "windows-link",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cfff060068cc18aa7815010fcaf80c68c7fb9e85fc7f5c0f9bf142c21d19826"
+dependencies = [
+ "libc",
+ "redox_syscall 0.9.5",
  "smallvec",
  "windows-link",
 ]
@@ -7830,7 +7862,7 @@ version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
 dependencies = [
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "indexmap 2.14.2",
  "inventory",
  "jiff",
@@ -8268,6 +8300,15 @@ name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
+dependencies = [
+ "bitflags 2.13.2",
+]
+
+[[package]]
+name = "redox_syscall"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "580c875845b41ecb1564ad1ae4703044cef774145e3d7a94dc2b3fa7c97868fd"
 dependencies = [
  "bitflags 2.13.2",
 ]
@@ -9342,7 +9383,7 @@ dependencies = [
  "futures-sink",
  "http",
  "httparse",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project-lite",
  "quanta",
  "rustls",
@@ -9361,7 +9402,7 @@ version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 dependencies = [
- "lock_api",
+ "lock_api 0.4.14",
 ]
 
 [[package]]
@@ -9805,7 +9846,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -10009,14 +10050,14 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokio"
-version = "1.53.3"
+version = "1.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
+checksum = "b52fd3255258d26fac7264ab5a76b53c13367136dc011d3d6ad4f8ed070396a3"
 dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -10610,7 +10651,7 @@ dependencies = [
  "ahash",
  "byteorder",
  "lazy_static",
- "parking_lot",
+ "parking_lot 0.12.5",
  "serde",
 ]
 
@@ -10794,7 +10835,7 @@ checksum = "1c598d6b99ea013e35844697fc4670d08339d5cda15588f193c6beedd12f644b"
 dependencies = [
  "futures",
  "js-sys",
- "parking_lot",
+ "parking_lot 0.12.5",
  "pin-utils",
  "slab",
  "wasm-bindgen",

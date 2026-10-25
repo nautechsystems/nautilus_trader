@@ -1102,9 +1102,12 @@ pub(crate) mod serial_tests {
         fill_report_finish_busy_ns: Arc<AtomicU64>,
         fill_reports_finalized: Arc<Mutex<Vec<TradeId>>>,
         targeted_order_report_ids: Arc<Mutex<Vec<ClientOrderId>>>,
+        targeted_order_reports_finalized: Arc<Mutex<Vec<ClientOrderId>>>,
+        fill_report_error: Arc<AtomicBool>,
         position_report_requested: Arc<AtomicBool>,
         position_report_count: Arc<AtomicUsize>,
         position_reports_finalized: Arc<AtomicUsize>,
+        position_reports_disposed: Arc<AtomicBool>,
         instrument_received: Arc<AtomicBool>,
         report_response_returned: Arc<AtomicBool>,
         order_report_finish_ns: Arc<AtomicU64>,
@@ -1446,32 +1449,23 @@ pub(crate) mod serial_tests {
             (task.finish)()
         }
 
+        fn generate_order_status_report_task(
+            &self,
+            cmd: &GenerateOrderStatusReport,
+        ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+            self.state
+                .report_worker
+                .load(Ordering::Relaxed)
+                .then(|| self.targeted_order_report_task(cmd))
+        }
+
         async fn generate_order_status_report(
             &self,
             cmd: &GenerateOrderStatusReport,
         ) -> anyhow::Result<Option<OrderStatusReport>> {
-            let client_order_id = cmd
-                .client_order_id
-                .expect("targeted report command must carry a client order ID");
-
-            let request_count = {
-                let mut ids = self.state.targeted_order_report_ids.lock();
-                ids.push(client_order_id);
-                ids.len()
-            };
-
-            if self.block_every_second_targeted_report && request_count.is_multiple_of(2) {
-                return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>().await;
-            }
-
-            if let Some(release) = &self.targeted_report_release {
-                release.notified().await;
-            }
-
-            self.state
-                .report_response_returned
-                .store(true, Ordering::Relaxed);
-            Ok(self.targeted_order_report.clone())
+            let task = self.targeted_order_report_task(cmd);
+            task.collection.await;
+            (task.finish)()
         }
 
         fn generate_fill_reports_task(
@@ -1612,6 +1606,58 @@ pub(crate) mod serial_tests {
             )
         }
 
+        fn targeted_order_report_task(
+            &self,
+            cmd: &GenerateOrderStatusReport,
+        ) -> ExecutionReportTask<Option<OrderStatusReport>> {
+            let client_order_id = cmd
+                .client_order_id
+                .expect("targeted command carries order ID");
+            let state = self.state.clone();
+            let finish_state = self.state.clone();
+            let release = self.targeted_report_release.clone();
+            let report = self.targeted_order_report.clone();
+            let block_every_second = self.block_every_second_targeted_report;
+
+            ExecutionReportTask::new(
+                async move {
+                    let _guard = ReportCollectionGuard::new(state.clone());
+                    *state.report_thread.lock() = Some(std::thread::current().id());
+
+                    let request_count = {
+                        let mut ids = state.targeted_order_report_ids.lock();
+                        ids.push(client_order_id);
+                        ids.len()
+                    };
+
+                    if state.report_cpu_ns.load(Ordering::Relaxed) != 0 {
+                        Self::run_report_cpu(&state, request_count);
+                    }
+
+                    if block_every_second && request_count.is_multiple_of(2) {
+                        return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>()
+                            .await;
+                    }
+
+                    if let Some(release) = release {
+                        release.notified().await;
+                    }
+
+                    state
+                        .report_response_returned
+                        .store(true, Ordering::Relaxed);
+                    Ok(report)
+                },
+                move |report| {
+                    finish_state
+                        .targeted_order_reports_finalized
+                        .lock()
+                        .push(client_order_id);
+                    Ok(report)
+                },
+            )
+        }
+
         fn fill_report_task(
             &self,
             cmd: &GenerateFillReports,
@@ -1632,6 +1678,10 @@ pub(crate) mod serial_tests {
                         && let Some(release) = release
                     {
                         release.notified().await;
+                    }
+
+                    if state.fill_report_error.load(Ordering::Relaxed) {
+                        anyhow::bail!("fill query rejected");
                     }
 
                     let mut responses = responses.lock();
@@ -1691,6 +1741,7 @@ pub(crate) mod serial_tests {
             let release_once = self.report_release_once;
             let complete = self.position_reports_complete;
             let reports = self.position_reports.clone();
+            let receipt = PositionReportReceiptGuard(self.state.position_reports_disposed.clone());
 
             ExecutionReportTask::new(
                 async move {
@@ -1722,6 +1773,7 @@ pub(crate) mod serial_tests {
                     }
                 },
                 move |reports| {
+                    let _guard = receipt;
                     finish_state
                         .position_reports_finalized
                         .fetch_add(1, Ordering::Relaxed);
@@ -1765,6 +1817,14 @@ pub(crate) mod serial_tests {
             self.0
                 .report_collections_active
                 .fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+
+    struct PositionReportReceiptGuard(Arc<AtomicBool>);
+
+    impl Drop for PositionReportReceiptGuard {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
         }
     }
 
@@ -4731,6 +4791,8 @@ pub(crate) mod serial_tests {
         assert_eq!(handle.state(), NodeState::Stopped);
     }
 
+    const REPORT_CHECK_INTERVAL: Duration = Duration::from_millis(100);
+
     fn shutdown_report_test_config(
         open_check_interval_secs: Option<f64>,
         position_check_interval_secs: Option<f64>,
@@ -4760,8 +4822,14 @@ pub(crate) mod serial_tests {
         }
     }
 
-    async fn yield_to_report_completion() {
-        for _ in 0..10 {
+    async fn yield_until(mut condition: impl FnMut() -> bool) {
+        let started = std::time::Instant::now();
+
+        while !condition() {
+            assert!(
+                started.elapsed() < Duration::from_secs(1),
+                "Timed out waiting for condition"
+            );
             tokio::task::yield_now().await;
         }
     }
@@ -4783,7 +4851,7 @@ pub(crate) mod serial_tests {
         factory.report_release = Some(release.clone());
         let mut node = reconciliation_node(
             "ShutdownOpenReportNode",
-            shutdown_report_test_config(Some(0.1), None),
+            shutdown_report_test_config(Some(REPORT_CHECK_INTERVAL.as_secs_f64()), None),
             factory,
         );
         add_accepted_test_order(
@@ -4816,27 +4884,21 @@ pub(crate) mod serial_tests {
         let handle = node.handle();
         let driver_handle = handle.clone();
         let requested = state.bulk_order_report_requested.clone();
-        let response_returned = state.report_response_returned.clone();
+        let cache = node.kernel().cache();
 
         let driver = async move {
-            wait_until_async(
-                || async { requested.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
-            .await;
+            yield_until(|| driver_handle.is_running()).await;
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| requested.load(Ordering::Relaxed)).await;
             driver_handle.stop();
-            wait_until_async(
-                || async { driver_handle.state() == NodeState::ShuttingDown },
-                Duration::from_secs(1),
-            )
-            .await;
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| driver_handle.state() == NodeState::ShuttingDown).await;
             release.notify_one();
-            wait_until_async(
-                || async { response_returned.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
+            yield_until(|| {
+                cache.borrow().order(&client_order_id).unwrap().status() == OrderStatus::Canceled
+            })
             .await;
-            yield_to_report_completion().await;
+
             tokio::time::advance(Duration::from_secs(5)).await;
         };
 
@@ -4887,7 +4949,7 @@ pub(crate) mod serial_tests {
         .with_targeted_report_release(release.clone());
         let mut node = reconciliation_node(
             "ShutdownTargetedReportNode",
-            shutdown_report_test_config(Some(0.1), None),
+            shutdown_report_test_config(Some(REPORT_CHECK_INTERVAL.as_secs_f64()), None),
             factory,
         );
         add_accepted_test_order(
@@ -4899,30 +4961,21 @@ pub(crate) mod serial_tests {
         let handle = node.handle();
         let driver_handle = handle.clone();
         let targeted_ids = state.targeted_order_report_ids.clone();
-        let response_returned = state.report_response_returned.clone();
+        let cache = node.kernel().cache();
 
         let driver = async move {
-            wait_until_async(
-                || async { !targeted_ids.lock().is_empty() },
-                Duration::from_secs(1),
-            )
-            .await;
+            yield_until(|| driver_handle.is_running()).await;
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| !targeted_ids.lock().is_empty()).await;
             driver_handle.stop();
-            wait_until_async(
-                || async { driver_handle.state() == NodeState::ShuttingDown },
-                Duration::from_secs(1),
-            )
-            .await;
-            // The bulk-order response already set the flag; reset so the next
-            // observation is the targeted response released below.
-            response_returned.store(false, Ordering::Relaxed);
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| driver_handle.state() == NodeState::ShuttingDown).await;
             release.notify_one();
-            wait_until_async(
-                || async { response_returned.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
+            yield_until(|| {
+                cache.borrow().order(&client_order_id).unwrap().status() == OrderStatus::Canceled
+            })
             .await;
-            yield_to_report_completion().await;
+
             tokio::time::advance(Duration::from_secs(5)).await;
         };
 
@@ -4975,33 +5028,32 @@ pub(crate) mod serial_tests {
         factory.report_release = Some(release.clone());
         let mut node = reconciliation_node(
             "ShutdownPositionReportNode",
-            shutdown_report_test_config(None, Some(0.1)),
+            shutdown_report_test_config(None, Some(REPORT_CHECK_INTERVAL.as_secs_f64())),
             factory,
         );
         let handle = node.handle();
         let driver_handle = handle.clone();
         let requested = state.position_report_requested.clone();
-        let response_returned = state.report_response_returned.clone();
+        let disposed = state.position_reports_disposed.clone();
+        let finalized = state.position_reports_finalized.clone();
 
         let driver = async move {
-            wait_until_async(
-                || async { requested.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
-            .await;
+            yield_until(|| driver_handle.is_running()).await;
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| requested.load(Ordering::Relaxed)).await;
             driver_handle.stop();
-            wait_until_async(
-                || async { driver_handle.state() == NodeState::ShuttingDown },
-                Duration::from_secs(1),
-            )
-            .await;
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| driver_handle.state() == NodeState::ShuttingDown).await;
             release.notify_one();
-            wait_until_async(
-                || async { response_returned.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
+            yield_until(|| {
+                if worker {
+                    disposed.load(Ordering::Acquire)
+                } else {
+                    finalized.load(Ordering::Relaxed) == 1
+                }
+            })
             .await;
-            yield_to_report_completion().await;
+
             tokio::time::advance(Duration::from_secs(5)).await;
         };
 
@@ -5044,7 +5096,7 @@ pub(crate) mod serial_tests {
         .with_fill_reports_at_window_end();
         let mut node = reconciliation_node(
             "ShutdownPositionFillReportNode",
-            shutdown_report_test_config(None, Some(0.1)),
+            shutdown_report_test_config(None, Some(REPORT_CHECK_INTERVAL.as_secs_f64())),
             factory,
         );
         add_accepted_test_order(
@@ -5056,30 +5108,22 @@ pub(crate) mod serial_tests {
         let handle = node.handle();
         let driver_handle = handle.clone();
         let fill_count = state.fill_report_count.clone();
-        let response_returned = state.report_response_returned.clone();
+        let cache = node.kernel().cache();
 
         let driver = async move {
-            wait_until_async(
-                || async { fill_count.load(Ordering::Relaxed) == 1 },
-                Duration::from_secs(1),
-            )
-            .await;
+            yield_until(|| driver_handle.is_running()).await;
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| fill_count.load(Ordering::Relaxed) == 1).await;
             driver_handle.stop();
-            wait_until_async(
-                || async { driver_handle.state() == NodeState::ShuttingDown },
-                Duration::from_secs(1),
-            )
-            .await;
-            // The position response already set the flag; reset so the next
-            // observation is the fill response released below.
-            response_returned.store(false, Ordering::Relaxed);
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| driver_handle.state() == NodeState::ShuttingDown).await;
             fill_release.notify_one();
-            wait_until_async(
-                || async { response_returned.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
+            yield_until(|| {
+                cache.borrow().order(&client_order_id).unwrap().status()
+                    == OrderStatus::PartiallyFilled
+            })
             .await;
-            yield_to_report_completion().await;
+
             tokio::time::advance(Duration::from_secs(5)).await;
         };
 
@@ -5129,7 +5173,7 @@ pub(crate) mod serial_tests {
         .with_fill_reports_at_window_end();
         let mut node = reconciliation_node(
             "BeforeShutdownPositionFillReportNode",
-            shutdown_report_test_config(None, Some(0.1)),
+            shutdown_report_test_config(None, Some(REPORT_CHECK_INTERVAL.as_secs_f64())),
             factory,
         );
         add_accepted_test_order(
@@ -5141,24 +5185,19 @@ pub(crate) mod serial_tests {
         let handle = node.handle();
         let driver_handle = handle.clone();
         let fill_count = state.fill_report_count.clone();
-        let response_returned = state.report_response_returned.clone();
+        let cache = node.kernel().cache();
 
         let driver = async move {
-            wait_until_async(
-                || async { fill_count.load(Ordering::Relaxed) == 1 },
-                Duration::from_secs(1),
-            )
-            .await;
-            // The position response already set the flag; reset so the next
-            // observation is the fill response released below.
-            response_returned.store(false, Ordering::Relaxed);
+            yield_until(|| driver_handle.is_running()).await;
+            tokio::time::advance(REPORT_CHECK_INTERVAL).await;
+            yield_until(|| fill_count.load(Ordering::Relaxed) == 1).await;
             fill_release.notify_one();
-            wait_until_async(
-                || async { response_returned.load(Ordering::Relaxed) },
-                Duration::from_secs(1),
-            )
+            yield_until(|| {
+                cache.borrow().order(&client_order_id).unwrap().status()
+                    == OrderStatus::PartiallyFilled
+            })
             .await;
-            yield_to_report_completion().await;
+
             driver_handle.stop();
             tokio::time::advance(Duration::from_secs(5)).await;
         };

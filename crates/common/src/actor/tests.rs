@@ -292,6 +292,9 @@ struct TestDataActor {
     pub received_queue_state_changes: Vec<QueueStateChanged>,
     pub received_socket_state_changes: Vec<SocketStateChanged>,
     pub received_custom_data: Vec<CustomData>,
+    responses: Vec<(UUID4, bool, Option<String>, usize, bool)>,
+    request_after_completion: Option<InstrumentId>,
+    chained_request: Option<UUID4>,
     #[cfg(feature = "defi")]
     pub received_blocks: Vec<Block>,
     #[cfg(feature = "defi")]
@@ -321,6 +324,27 @@ impl DataActor for FacadeOnlyActor {
 nautilus_actor!(TestDataActor);
 
 impl DataActor for TestDataActor {
+    fn on_data_response(
+        &mut self,
+        response: &crate::messages::data::DataResponseEnvelope,
+    ) -> anyhow::Result<()> {
+        self.responses.push((
+            *response.correlation_id(),
+            response.completed(),
+            response.failure_reason().map(str::to_owned),
+            self.received_quotes.len(),
+            self.core.is_pending_request(response.correlation_id()),
+        ));
+
+        if response.completed()
+            && let Some(id) = self.request_after_completion.take()
+        {
+            self.chained_request = Some(self.request_trades(id, None, None, None, None, None)?);
+        }
+
+        Ok(())
+    }
+
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::info!("Starting actor"); // Custom log
         Ok(())
@@ -540,6 +564,9 @@ impl TestDataActor {
             received_queue_state_changes: Vec::new(),
             received_socket_state_changes: Vec::new(),
             received_custom_data: Vec::new(),
+            responses: Vec::new(),
+            request_after_completion: None,
+            chained_request: None,
             #[cfg(feature = "defi")]
             received_blocks: Vec::new(),
             #[cfg(feature = "defi")]
@@ -4104,7 +4131,7 @@ fn test_request_quotes_accepts_equal_start_and_end(
         panic!("expected one quotes request command, was {commands:?}");
     };
 
-    assert_eq!(request.instrument_id, audusd_sim.id);
+    assert_eq!(request.instrument_ids, vec![audusd_sim.id]);
     assert_eq!(request.start, Some(point));
     assert_eq!(request.end, Some(point));
     assert_eq!(request.limit, limit);
@@ -4331,7 +4358,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            instrument.instrument_id,
+            instrument.single_instrument_id().unwrap(),
             instrument.start,
             instrument.end,
             instrument.client_id,
@@ -4371,7 +4398,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            snapshot.instrument_id,
+            snapshot.single_instrument_id().unwrap(),
             snapshot.depth,
             snapshot.client_id,
             snapshot.request_id,
@@ -4389,7 +4416,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            deltas.instrument_id,
+            deltas.single_instrument_id().unwrap(),
             deltas.start,
             deltas.end,
             deltas.limit,
@@ -4411,7 +4438,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            book_depth.instrument_id,
+            book_depth.single_instrument_id().unwrap(),
             book_depth.start,
             book_depth.end,
             book_depth.limit,
@@ -4435,7 +4462,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            trades.instrument_id,
+            trades.single_instrument_id().unwrap(),
             trades.start,
             trades.end,
             trades.limit,
@@ -4457,7 +4484,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            funding.instrument_id,
+            funding.single_instrument_id().unwrap(),
             funding.start,
             funding.end,
             funding.limit,
@@ -4479,7 +4506,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            bars.bar_type,
+            bars.single_bar_type().unwrap(),
             bars.start,
             bars.end,
             bars.limit,
@@ -8284,4 +8311,190 @@ fn test_actor_quote_lists_validate_cached_spread_routes(
     expected_ids.sort_unstable();
     fields["instrument_ids"] = serde_json::json!(expected_ids);
     assert_eq!(serde_json::to_value(released).unwrap(), fields);
+}
+
+#[rstest]
+fn test_request_envelopes_preserve_handler_and_allow_completion_chaining(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let id = InstrumentId::from("AUD/USD.SIM");
+    actor.request_after_completion = Some(id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let root = actor
+        .request_quotes(id, None, None, None, None, None)
+        .unwrap();
+    drop(actor);
+    let quote = QuoteTick::default();
+    let child = UUID4::new();
+
+    let payload = QuotesResponse::new(
+        root,
+        ClientId::new("SOURCE"),
+        id,
+        vec![quote],
+        None,
+        None,
+        UnixNanos::from(47),
+        None,
+    );
+    msgbus::send_response_envelope(&crate::messages::data::DataResponseEnvelope::new(
+        DataResponse::Quotes(payload),
+        false,
+        Some(child),
+    ));
+    let terminal = crate::messages::data::DataResponseEnvelope::terminal(
+        root,
+        Some("second source failed".to_owned()),
+    );
+    msgbus::send_response_envelope(&terminal);
+    msgbus::send_response_envelope(&terminal);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let commands = saver.get_messages();
+
+    let [
+        DataCommand::Request(RequestCommand::Quotes(first)),
+        DataCommand::Request(RequestCommand::Trades(next)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected quotes followed by trades");
+    };
+
+    assert_eq!(first.request_id, root);
+    assert_eq!(next.instrument_ids, vec![id]);
+    assert_eq!(actor.chained_request, Some(next.request_id));
+    assert_eq!(actor.received_quotes, vec![quote]);
+    assert_eq!(
+        actor.responses,
+        vec![
+            (root, false, None, 1, true),
+            (
+                root,
+                true,
+                Some("second source failed".to_owned()),
+                1,
+                false
+            )
+        ]
+    );
+    assert!(actor.core.is_pending_request(&next.request_id));
+    assert!(!actor.core.is_pending_request(&root));
+    assert!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&root)
+            .is_none()
+    );
+}
+
+#[rstest]
+#[case::reset("reset", false)]
+#[case::dispose("dispose", false)]
+#[case::stop("stop", true)]
+#[case::fault("fault", false)]
+fn test_request_handler_lifecycle(
+    #[case] operation: &str,
+    #[case] retained: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    if matches!(operation, "stop" | "fault") {
+        actor.start().unwrap();
+    }
+
+    let request = actor
+        .request_instrument(InstrumentId::from("AUD/USD.SIM"), None, None, None, None)
+        .unwrap();
+
+    match operation {
+        "reset" => actor.reset().unwrap(),
+        "dispose" => actor.dispose().unwrap(),
+        "stop" => actor.stop().unwrap(),
+        "fault" => actor.fault().unwrap(),
+        _ => unreachable!(),
+    }
+
+    assert_eq!(actor.core.is_pending_request(&request), retained);
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&request)
+            .is_some(),
+        retained
+    );
+    assert!(actor.responses.is_empty());
+}
+
+#[rstest]
+#[case::reset("reset", "reset failed", true)]
+#[case::dispose("dispose", "dispose failed", true)]
+#[case::fault("fault", "fault failed", false)]
+fn test_failed_retirement_request_cleanup(
+    #[case] operation: &str,
+    #[case] expected_error: &str,
+    #[case] retained: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut actor = FailingRetirementActor {
+        core: DataActorCore::new(DataActorConfig::default()),
+    };
+
+    actor.register(trader_id, clock, cache).unwrap();
+    let actor_id = actor.actor_id().inner();
+    crate::component::register_component_actor(actor);
+    let mut actor = get_actor_unchecked::<FailingRetirementActor>(&actor_id);
+    if operation == "fault" {
+        actor.start().unwrap();
+    }
+
+    let request = actor
+        .request_instrument(InstrumentId::from("AUD/USD.SIM"), None, None, None, None)
+        .unwrap();
+
+    let error = match operation {
+        "reset" => actor.reset().unwrap_err(),
+        "dispose" => actor.dispose().unwrap_err(),
+        "fault" => actor.fault().unwrap_err(),
+        _ => unreachable!(),
+    };
+
+    assert_eq!(error.to_string(), expected_error);
+    assert_eq!(actor.core.is_pending_request(&request), retained);
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&request)
+            .is_some(),
+        retained
+    );
+    drop(actor);
+
+    crate::component::release_component_subscriptions(&actor_id).unwrap();
+
+    let actor = get_actor_unchecked::<FailingRetirementActor>(&actor_id);
+    assert!(!actor.core.is_pending_request(&request));
+    assert!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&request)
+            .is_none()
+    );
+    drop(actor);
+    crate::component::deregister_component(&actor_id);
+    crate::actor::registry::deregister_actor(&actor_id);
 }

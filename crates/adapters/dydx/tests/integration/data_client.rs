@@ -324,7 +324,7 @@ async fn test_data_client_request_trades_sends_empty_response_on_error() {
     match recv_data_response(&mut rx).await {
         DataResponse::Trades(response) => {
             assert_eq!(response.correlation_id, request_id);
-            assert_eq!(response.instrument_id, instrument_id);
+            assert_eq!(response.instrument_ids, vec![instrument_id]);
             assert!(response.data.is_empty());
         }
         response => panic!("Expected trades response, was {response:?}"),

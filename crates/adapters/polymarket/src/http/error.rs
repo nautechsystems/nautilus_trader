@@ -23,7 +23,7 @@ use thiserror::Error;
 
 const ORDER_VERSION_MISMATCH: &str = "order_version_mismatch";
 const ORDER_VERSION_MISMATCH_REASON: &str =
-    "Polymarket CLOB order version mismatch; adapter supports V2 only";
+    "Polymarket CLOB order format mismatch; expected CTFExchangeV2 orders";
 
 /// Error type for Polymarket HTTP operations.
 #[derive(Debug, Error)]
@@ -561,11 +561,11 @@ mod tests {
         assert!(!error.is_submit_outcome_unknown());
         assert_eq!(
             error.strategy_reason(),
-            "Polymarket CLOB order version mismatch; adapter supports V2 only"
+            "Polymarket CLOB order format mismatch; expected CTFExchangeV2 orders"
         );
         assert_eq!(
             strategy_rejection_reason(" order_version_mismatch "),
-            "Polymarket CLOB order version mismatch; adapter supports V2 only"
+            "Polymarket CLOB order format mismatch; expected CTFExchangeV2 orders"
         );
         assert_eq!(
             strategy_rejection_reason("ORDER_VERSION_MISMATCH"),

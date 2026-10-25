@@ -19,13 +19,13 @@ use super::{
     BAR_AGGREGATOR_PRIORITY, BarAggregatorSubscription, BarBarHandler, BarQuoteHandler,
     BarTradeHandler, BarType, BarsResponse, ClientId, Context, ContinuousFutureRequest,
     ContinuousFutureRequestState, ContinuousFutureSegment, ContinuousFutureSource, DataCommand,
-    DataEngine, DataResponse, Debug, FromStr, InstrumentAny, InstrumentId, Params, Rc, RefCell,
-    RequestBars, RequestCommand, RequestQuotes, RequestTrades, SubscribeBars, SubscribeCommand,
-    SubscribeQuotes, SubscribeTrades, TimeEvent, TimeEventCallback, TypedHandler, UUID4, UnixNanos,
-    UnsubscribeBars, UnsubscribeCommand, UnsubscribeQuotes, UnsubscribeTrades, Venue, WeakCell,
-    bar_aggregator_key, continuous_future_request_from_bars,
-    continuous_future_subscription_from_bars, log_error_on_cache_insert, log_if_empty_response,
-    msgbus, response_params, switchboard,
+    DataEngine, DataResponse, DataResponseEnvelope, Debug, FromStr, InstrumentAny, InstrumentId,
+    Params, Rc, RefCell, RequestBars, RequestCommand, RequestQuotes, RequestTrades, SubscribeBars,
+    SubscribeCommand, SubscribeQuotes, SubscribeTrades, TimeEvent, TimeEventCallback, TypedHandler,
+    UUID4, UnixNanos, UnsubscribeBars, UnsubscribeCommand, UnsubscribeQuotes, UnsubscribeTrades,
+    Venue, WeakCell, bar_aggregator_key, continuous_future_request_from_bars,
+    continuous_future_subscription_from_bars, log_error_on_cache_insert, msgbus, response_params,
+    switchboard,
 };
 
 impl DataEngine {
@@ -179,7 +179,16 @@ impl DataEngine {
             active.cursor_ns = UnixNanos::from(segment.end_ns.saturating_add(1));
         }
 
-        self.execute_request(child)
+        let child_id = *child.request_id();
+        self.continuous_future_parent_request_id
+            .insert(child_id, request_id);
+        if let Err(e) = self.execute_request_inner(child) {
+            self.inflight_requests.remove(&child_id);
+            self.continuous_future_parent_request_id.remove(&child_id);
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     fn apply_continuous_future_adjustment(
@@ -269,7 +278,10 @@ impl DataEngine {
         let response = DataResponse::Bars(BarsResponse::new(
             request_id,
             state.response_client_id,
-            state.parent.bar_type,
+            state
+                .parent
+                .single_bar_type()
+                .expect("continuous future request has one validated bar type"),
             Vec::new(),
             Some(state.start_ns),
             Some(state.end_ns),
@@ -281,14 +293,49 @@ impl DataEngine {
 
     pub(super) fn handle_continuous_future_child_response(
         &mut self,
-        parent_id: UUID4,
-        resp: &DataResponse,
-    ) {
-        if !self.continuous_future_requests.contains_key(&parent_id) {
-            log::error!("No active continuous future request for child response {parent_id}");
+        envelope: &DataResponseEnvelope,
+    ) -> bool {
+        let Some(&parent_id) = self
+            .continuous_future_parent_request_id
+            .get(envelope.correlation_id())
+        else {
+            return false;
+        };
+
+        if let Some(response) = envelope.response() {
+            self.response_count += 1;
+            self.process_continuous_future_payload(parent_id, response);
+        }
+
+        if !envelope.completed() {
+            return true;
+        }
+
+        self.continuous_future_parent_request_id
+            .remove(envelope.correlation_id());
+
+        if let Some(reason) = envelope.failure_reason() {
+            self.fail_continuous_future_request(parent_id, reason.to_owned());
+        } else if let Err(e) = self.dispatch_next_continuous_future_segment(parent_id) {
+            log::error!("Error dispatching continuous future segment for {parent_id}: {e}");
+            self.fail_continuous_future_request(parent_id, e.to_string());
+        }
+
+        true
+    }
+
+    fn fail_continuous_future_request(&mut self, parent_id: UUID4, reason: String) {
+        if self.continuous_future_requests.remove(&parent_id).is_none() {
             return;
         }
 
+        self.continuous_future_parent_request_id
+            .retain(|_, id| *id != parent_id);
+        self.cleanup_request_bar_aggregators(&parent_id);
+        self.process_response_envelope(DataResponseEnvelope::terminal(parent_id, Some(reason)));
+    }
+
+    fn process_continuous_future_payload(&mut self, parent_id: UUID4, resp: &DataResponse) {
         let data_count = response_params(resp)
             .and_then(|params| params.get("data_count"))
             .and_then(serde_json::Value::as_u64)
@@ -299,35 +346,18 @@ impl DataEngine {
             state.data_count += data_count;
         }
 
-        match resp {
-            DataResponse::Quotes(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
-                    self.handle_quotes(&r.data);
-                }
-            }
-            DataResponse::Trades(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, resp.correlation_id()) {
-                    self.handle_trades(&r.data);
-                }
-            }
-            DataResponse::Bars(r) => {
-                if !log_if_empty_response(&r.data, &r.bar_type, resp.correlation_id()) {
-                    self.handle_bars(&r.data);
-                }
-            }
-            _ => {
-                log::error!(
-                    "Continuous future child response {parent_id} must contain quotes, trades, or bars"
-                );
-                return;
-            }
+        if !matches!(
+            resp,
+            DataResponse::Quotes(_) | DataResponse::Trades(_) | DataResponse::Bars(_)
+        ) {
+            log::error!(
+                "Continuous future child response {parent_id} must contain quotes, trades, or bars"
+            );
+            return;
         }
 
+        self.handle_response_payload(resp);
         self.process_continuous_future_aggregation_response(parent_id, resp);
-        if let Err(e) = self.dispatch_next_continuous_future_segment(parent_id) {
-            log::error!("Error dispatching continuous future segment for {parent_id}: {e}");
-            self.emit_empty_continuous_future_response(parent_id);
-        }
     }
 
     fn process_continuous_future_aggregation_response(
@@ -344,7 +374,7 @@ impl DataEngine {
 
         match resp {
             DataResponse::Quotes(r) => {
-                for quote in &r.data {
+                for quote in r.data.iter() {
                     self.update_request_bar_aggregator(
                         primary_bar_type,
                         aggregator_request_id,
@@ -355,7 +385,7 @@ impl DataEngine {
                 }
             }
             DataResponse::Trades(r) => {
-                for trade in &r.data {
+                for trade in r.data.iter() {
                     self.update_request_bar_aggregator(
                         primary_bar_type,
                         aggregator_request_id,
@@ -366,7 +396,7 @@ impl DataEngine {
                 }
             }
             DataResponse::Bars(r) => {
-                for bar in &r.data {
+                for bar in r.data.iter() {
                     self.update_request_bar_aggregator(
                         primary_bar_type,
                         aggregator_request_id,

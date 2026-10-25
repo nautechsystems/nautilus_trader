@@ -844,7 +844,7 @@ async fn test_data_client_request_trades() {
 
     match event {
         DataEvent::Response(DataResponse::Trades(trades_response)) => {
-            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert_eq!(trades_response.instrument_ids, vec![instrument_id]);
             assert!(!trades_response.data.is_empty(), "should have trades");
 
             // Trades should be sorted ascending by ts_event

@@ -26,6 +26,17 @@ use serde::{Deserialize, de::Error};
 
 use crate::cache::Cache;
 
+/// A rejected identifier count for a single-member data path.
+///
+/// The message contains the operation, identifier kind, and count without request parameters.
+#[derive(Debug, thiserror::Error)]
+#[error("{context} requires one {kind} on this adapter path, received {count}")]
+pub struct IdentifierCountError {
+    context: &'static str,
+    kind: &'static str,
+    count: usize,
+}
+
 /// Converts a single instrument ID or collection to a non-empty list.
 ///
 /// Duplicate IDs are removed in first-occurrence order.
@@ -198,13 +209,16 @@ pub fn quote_routing(
 
 pub(super) fn single_instrument_id(
     instrument_ids: &[InstrumentId],
+    context: &'static str,
 ) -> anyhow::Result<InstrumentId> {
     match instrument_ids {
         [instrument_id] => Ok(*instrument_id),
-        _ => anyhow::bail!(
-            "subscription requires one instrument ID on this adapter path, received {}",
-            instrument_ids.len()
-        ),
+        _ => Err(IdentifierCountError {
+            context,
+            kind: "instrument ID",
+            count: instrument_ids.len(),
+        }
+        .into()),
     }
 }
 
@@ -302,13 +316,18 @@ pub fn ensure_routable_bar_types(bar_types: &[BarType], has_client_id: bool) -> 
     Ok(())
 }
 
-pub(super) fn single_bar_type(bar_types: &[BarType]) -> anyhow::Result<BarType> {
+pub(super) fn single_bar_type(
+    bar_types: &[BarType],
+    context: &'static str,
+) -> anyhow::Result<BarType> {
     match bar_types {
         [bar_type] => Ok(*bar_type),
-        _ => anyhow::bail!(
-            "subscription requires one bar type on this adapter path, received {}",
-            bar_types.len()
-        ),
+        _ => Err(IdentifierCountError {
+            context,
+            kind: "bar type",
+            count: bar_types.len(),
+        }
+        .into()),
     }
 }
 

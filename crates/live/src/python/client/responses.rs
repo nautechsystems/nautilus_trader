@@ -21,16 +21,19 @@
 
 use std::sync::Arc;
 
-use nautilus_common::messages::data::{
-    BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-    DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-    OptionChainReferencePriceResponse, QuotesResponse, TradesResponse,
+use nautilus_common::{
+    messages::data::{
+        BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
+        DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+        OptionChainReferencePriceResponse, QuotesResponse, TradesResponse,
+    },
+    python::actor::extract_instrument_ids,
 };
 use nautilus_core::{
     UUID4,
     python::{
         params::{params_to_pydict, pydict_to_params},
-        to_pytype_err,
+        to_pytype_err, to_pyvalue_err,
     },
 };
 use nautilus_model::{
@@ -46,7 +49,11 @@ use nautilus_model::{
 use pyo3::{prelude::*, types::PyDict};
 
 macro_rules! response {
-    ($wrapper:ident, $response:ident, $name:tt, $key:ident: $key_type:ty, $data:ty) => {
+    ($wrapper:ident, $response:ident, $name:tt, $key:ident: $key_type:ty, $data:ty, $copy:ident) => {
+        response!($wrapper, $response, $name, $key: $key_type, $data, $key: $key_type, |value| PyResult::Ok(value), [], $copy);
+    };
+    ($wrapper:ident, $response:ident, $name:tt, $key:ident: $key_type:ty, $data:ty,
+     $input:ident: $input_type:ty, $convert:expr, [$($input_meta:meta),*], $copy:ident) => {
         #[doc = concat!("An owned ", $name, " response.")]
         #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
         #[pyclass(name = $name, module = "nautilus_trader.live", frozen, from_py_object)]
@@ -59,13 +66,14 @@ macro_rules! response {
         #[pymethods]
         impl $wrapper {
             #[new]
-            #[pyo3(signature = (client_id, $key, data, correlation_id, ts_init, start=None, end=None, params=None))]
+            #[pyo3(signature = (client_id, $input, data, correlation_id, ts_init, start=None, end=None, params=None))]
             #[expect(clippy::too_many_arguments, reason = "response fields cross the Python boundary together")]
-            fn py_new(py: Python<'_>, client_id: ClientId, $key: $key_type, data: $data,
+            fn py_new(py: Python<'_>, client_id: ClientId, $(#[$input_meta])* $input: $input_type, data: $data,
                 correlation_id: UUID4, ts_init: u64, start: Option<u64>, end: Option<u64>,
                 params: Option<Py<PyDict>>) -> PyResult<Self> {
+                let $key = ($convert)($input)?;
                 Ok(Self { response: $response {
-                    client_id, $key, data, correlation_id, ts_init: ts_init.into(),
+                    client_id, $key, data: data.into(), correlation_id, ts_init: ts_init.into(),
                     start: start.map(Into::into), end: end.map(Into::into),
                     params: params.as_ref().map(|params| pydict_to_params(py, params)).transpose()?.flatten(),
                 }})
@@ -75,10 +83,12 @@ macro_rules! response {
             fn client_id(&self) -> ClientId { self.response.client_id }
 
             #[getter]
-            fn $key(&self) -> $key_type { self.response.$key }
+            fn $key(&self) -> $key_type { self.response.$key.to_owned() }
 
             #[getter]
-            fn data(&self) -> $data { self.response.data.clone() }
+            fn data(&self) -> $data {
+                self.response.data.$copy()
+            }
 
             #[getter]
             fn correlation_id(&self) -> UUID4 { self.response.correlation_id }
@@ -100,13 +110,31 @@ macro_rules! response {
     };
 }
 
-response!(PyQuotesResponse, QuotesResponse, "QuotesResponse", instrument_id: InstrumentId, Vec<QuoteTick>);
-response!(PyTradesResponse, TradesResponse, "TradesResponse", instrument_id: InstrumentId, Vec<TradeTick>);
-response!(PyFundingRatesResponse, FundingRatesResponse, "FundingRatesResponse", instrument_id: InstrumentId, Vec<FundingRateUpdate>);
-response!(PyBarsResponse, BarsResponse, "BarsResponse", bar_type: BarType, Vec<Bar>);
-response!(PyBookDeltasResponse, BookDeltasResponse, "BookDeltasResponse", instrument_id: InstrumentId, Vec<OrderBookDelta>);
-response!(PyBookDepthResponse, BookDepthResponse, "BookDepthResponse", instrument_id: InstrumentId, Vec<OrderBookDepth>);
-response!(PyBookResponse, BookResponse, "BookResponse", instrument_id: InstrumentId, OrderBook);
+response!(PyQuotesResponse, QuotesResponse, "QuotesResponse", instrument_ids: Vec<InstrumentId>, Vec<QuoteTick>, instrument_id: &Bound<'_, PyAny>, extract_instrument_ids, [gen_stub(override_type(type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"))], to_vec);
+response!(PyTradesResponse, TradesResponse, "TradesResponse", instrument_ids: Vec<InstrumentId>, Vec<TradeTick>, instrument_id: &Bound<'_, PyAny>, extract_instrument_ids, [gen_stub(override_type(type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"))], to_vec);
+response!(PyFundingRatesResponse, FundingRatesResponse, "FundingRatesResponse", instrument_id: InstrumentId, Vec<FundingRateUpdate>, to_vec);
+response!(PyBarsResponse, BarsResponse, "BarsResponse", bar_type: BarType, Vec<Bar>, to_vec);
+response!(PyBookDeltasResponse, BookDeltasResponse, "BookDeltasResponse", instrument_id: InstrumentId, Vec<OrderBookDelta>, to_vec);
+response!(PyBookDepthResponse, BookDepthResponse, "BookDepthResponse", instrument_id: InstrumentId, Vec<OrderBookDepth>, to_vec);
+response!(PyBookResponse, BookResponse, "BookResponse", instrument_id: InstrumentId, OrderBook, clone);
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PyQuotesResponse {
+    #[getter]
+    fn instrument_id(&self) -> PyResult<InstrumentId> {
+        self.response.single_instrument_id().map_err(to_pyvalue_err)
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PyTradesResponse {
+    #[getter]
+    fn instrument_id(&self) -> PyResult<InstrumentId> {
+        self.response.single_instrument_id().map_err(to_pyvalue_err)
+    }
+}
 
 /// An owned `InstrumentResponse` response.
 #[pyclass(
@@ -584,4 +612,46 @@ pub(crate) fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBookDepthResponse>()?;
     m.add_class::<PyBookResponse>()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{ops::Range, sync::Arc};
+
+    use nautilus_core::UnixNanos;
+    use nautilus_model::data::BatchView;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::visible(1..2)]
+    #[case::empty(1..1)]
+    fn test_quote_response_getter_contains_only_visible_rows(#[case] range: Range<usize>) {
+        let rows = [11, 23, 37].map(|ts| QuoteTick {
+            ts_init: UnixNanos::from(ts),
+            ..Default::default()
+        });
+
+        let backing = Arc::new(rows.to_vec());
+
+        let wrapper = PyQuotesResponse {
+            response: QuotesResponse::new(
+                UUID4::new(),
+                ClientId::from("HISTORY"),
+                rows[1].instrument_id,
+                BatchView::new(Arc::clone(&backing), range.clone()),
+                None,
+                None,
+                UnixNanos::from(41),
+                None,
+            ),
+        };
+
+        let data = wrapper.data();
+
+        assert_eq!(data.as_slice(), &rows[range.clone()]);
+        assert_eq!(wrapper.response.data.range(), range);
+        assert_eq!(backing.as_slice(), rows.as_slice());
+    }
 }

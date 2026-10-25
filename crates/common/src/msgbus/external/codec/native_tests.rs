@@ -18,12 +18,13 @@ use std::{
     io::{Read, Write},
     process::{Command, Stdio},
     rc::Rc,
+    sync::Arc,
 };
 
 use bytes::Bytes;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BookOrder, CustomData, FundingRateUpdate, OrderBookDelta, stubs::*},
+    data::{BatchView, BookOrder, CustomData, FundingRateUpdate, OrderBookDelta, stubs::*},
     enums::{BookAction, BookType, OrderSide, RecordFlag},
     events::{
         OrderEventAny,
@@ -56,16 +57,61 @@ use crate::{
 fn responses_preserve_every_field(
     #[case] encoding: SerializationEncoding,
     #[values(0, 1, 2)] mode: u8,
+    #[values(0, 1, 2)] view: u8,
 ) {
-    for expected in responses(mode) {
+    for mut expected in responses(mode) {
+        let mut expected_value = serde_json::to_value(&expected).unwrap();
+
+        if view != 0 {
+            macro_rules! narrow {
+                ($variant:ident, $response:expr) => {{
+                    let mut backing = $response.data.to_vec();
+                    let len = if view == 1 { backing.len() } else { 0 };
+                    let start = usize::from(!backing.is_empty());
+
+                    if let Some(row) = backing.first().cloned() {
+                        backing.insert(0, row.clone());
+                        backing.push(row);
+                    }
+
+                    $response.data = BatchView::new(Arc::new(backing), start..start + len);
+                    expected_value[stringify!($variant)]["data"] =
+                        serde_json::to_value($response.data.as_ref()).unwrap();
+                }};
+            }
+
+            match &mut expected {
+                DataResponse::BookDeltas(r) => narrow!(BookDeltas, r),
+                DataResponse::BookDepth(r) => narrow!(BookDepth, r),
+                DataResponse::Quotes(r) => narrow!(Quotes, r),
+                DataResponse::Trades(r) => narrow!(Trades, r),
+                DataResponse::FundingRates(r) => narrow!(FundingRates, r),
+                DataResponse::Bars(r) => narrow!(Bars, r),
+                _ => {}
+            }
+        }
+
         let payload = serialize_payload(encoding, BusPayloadType::DataResponse, &expected).unwrap();
         let decoded: DataResponse =
             deserialize_payload(BusPayloadType::DataResponse, encoding, &payload)
                 .unwrap()
                 .unwrap();
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), expected_value);
+
+        let envelope = DataResponseEnvelope::new(expected, false, Some(UUID4::new()));
+        let payload =
+            serialize_payload(encoding, BusPayloadType::DataResponseEnvelope, &envelope).unwrap();
+        let decoded: DataResponseEnvelope =
+            deserialize_payload(BusPayloadType::DataResponseEnvelope, encoding, &payload)
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            serde_json::to_value(decoded.response().unwrap()).unwrap(),
+            expected_value
+        );
         assert_eq!(
             serde_json::to_value(&decoded).unwrap(),
-            serde_json::to_value(&expected).unwrap()
+            serde_json::to_value(&envelope).unwrap()
         );
     }
 }
@@ -577,7 +623,7 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
         correlation_id: UUID4::new(),
         client_id: ClientId::from("CLIENT-001"),
         instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-        data: (!empty).then(stub_delta).into_iter().collect(),
+        data: ((!empty).then(stub_delta).into_iter().collect::<Vec<_>>()).into(),
         start: populated.then_some(UnixNanos::from(0_u64)),
         end: populated.then_some(UnixNanos::from(105_u64)),
         ts_init: UnixNanos::from(106_u64),
@@ -588,7 +634,7 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
         correlation_id: UUID4::new(),
         client_id: ClientId::from("CLIENT-001"),
         instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-        data: (!empty).then(stub_depth10).into_iter().collect(),
+        data: ((!empty).then(stub_depth10).into_iter().collect::<Vec<_>>()).into(),
         start: populated.then_some(UnixNanos::from(0_u64)),
         end: populated.then_some(UnixNanos::from(105_u64)),
         ts_init: UnixNanos::from(106_u64),
@@ -598,8 +644,12 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
     values.push(DataResponse::Quotes(QuotesResponse {
         correlation_id: UUID4::new(),
         client_id: ClientId::from("CLIENT-001"),
-        instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-        data: (!empty).then(quote_ethusdt_binance).into_iter().collect(),
+        instrument_ids: vec![InstrumentId::from("BTCUSDT.BINANCE")],
+        data: ((!empty)
+            .then(quote_ethusdt_binance)
+            .into_iter()
+            .collect::<Vec<_>>())
+        .into(),
         start: populated.then_some(UnixNanos::from(0_u64)),
         end: populated.then_some(UnixNanos::from(105_u64)),
         ts_init: UnixNanos::from(106_u64),
@@ -609,8 +659,12 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
     values.push(DataResponse::Trades(TradesResponse {
         correlation_id: UUID4::new(),
         client_id: ClientId::from("CLIENT-001"),
-        instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-        data: (!empty).then(stub_trade_ethusdt_buy).into_iter().collect(),
+        instrument_ids: vec![InstrumentId::from("BTCUSDT.BINANCE")],
+        data: ((!empty)
+            .then(stub_trade_ethusdt_buy)
+            .into_iter()
+            .collect::<Vec<_>>())
+        .into(),
         start: populated.then_some(UnixNanos::from(0_u64)),
         end: populated.then_some(UnixNanos::from(105_u64)),
         ts_init: UnixNanos::from(106_u64),
@@ -621,7 +675,7 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
         correlation_id: UUID4::new(),
         client_id: ClientId::from("CLIENT-001"),
         instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-        data: (!empty)
+        data: ((!empty)
             .then(|| FundingRateUpdate {
                 instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
                 rate: dec!(-0.0123456789),
@@ -631,7 +685,8 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
                 ts_init: UnixNanos::from(456_u64),
             })
             .into_iter()
-            .collect(),
+            .collect::<Vec<_>>())
+        .into(),
         start: populated.then_some(UnixNanos::from(0_u64)),
         end: populated.then_some(UnixNanos::from(105_u64)),
         ts_init: UnixNanos::from(106_u64),
@@ -653,7 +708,7 @@ pub(super) fn responses(mode: u8) -> Vec<DataResponse> {
         correlation_id: UUID4::new(),
         client_id: ClientId::from("CLIENT-001"),
         bar_type: "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL".parse().unwrap(),
-        data: (!empty).then(stub_bar).into_iter().collect(),
+        data: ((!empty).then(stub_bar).into_iter().collect::<Vec<_>>()).into(),
         ts_init: UnixNanos::from(104_u64),
         start: populated.then_some(UnixNanos::from(0_u64)),
         end: populated.then_some(UnixNanos::from(106_u64)),
@@ -917,5 +972,33 @@ fn mixed_sbe_market_data_and_msgpack_control_messages() {
     assert_eq!(
         serde_json::to_value(decoded).unwrap(),
         serde_json::to_value(response).unwrap()
+    );
+}
+
+#[rstest]
+#[case(SerializationEncoding::Json)]
+#[case(SerializationEncoding::MsgPack)]
+fn test_historical_envelope_round_trip(
+    #[case] encoding: SerializationEncoding,
+    #[values(false, true)] terminal: bool,
+) {
+    use crate::messages::data::DataResponseEnvelope;
+    let response = responses(1).remove(0);
+    let root = *response.correlation_id();
+    let expected = if terminal {
+        DataResponseEnvelope::terminal(root, Some("dataset unavailable".to_owned()))
+    } else {
+        DataResponseEnvelope::new(response, false, Some(UUID4::new()))
+    };
+
+    let payload =
+        serialize_payload(encoding, BusPayloadType::DataResponseEnvelope, &expected).unwrap();
+    let actual: DataResponseEnvelope =
+        deserialize_payload(BusPayloadType::DataResponseEnvelope, encoding, &payload)
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(expected).unwrap()
     );
 }

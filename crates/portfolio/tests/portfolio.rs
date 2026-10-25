@@ -76,6 +76,121 @@ use rust_decimal_macros::dec;
 
 // Venue is already imported above
 
+#[rstest]
+#[case::cash(AccountType::Cash)]
+#[case::margin(AccountType::Margin)]
+fn test_account_endpoint_applies_and_publishes_once(#[case] account_type: AccountType) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let _portfolio = Portfolio::new(clock, Rc::clone(&cache), None);
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let handler = TypedHandler::from({
+        let received = Rc::clone(&received);
+        let cache = Rc::clone(&cache);
+        move |event: &AccountState| {
+            let cache = cache.borrow();
+            let account = cache.account(&event.account_id).unwrap();
+            assert_eq!(account.last_event().unwrap(), *event);
+            assert_eq!(
+                account.balances().into_values().collect::<Vec<_>>(),
+                event.balances
+            );
+            received
+                .borrow_mut()
+                .push((event.event_id, account.events().len()));
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), Some(20));
+    let mut expected = Vec::new();
+
+    for (index, amount) in ["100.00 USD", "0.00 USD"].into_iter().enumerate() {
+        let event = AccountState::new(
+            AccountId::from("SIM-001"),
+            account_type,
+            vec![AccountBalance::new(
+                Money::from(amount),
+                Money::zero(Currency::USD()),
+                Money::from(amount),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(index as u64 + 1),
+            UnixNanos::from(index as u64 + 1),
+            Some(Currency::USD()),
+        );
+        msgbus::send_account_state(MessagingSwitchboard::portfolio_update_account(), &event);
+        expected.push((event.event_id, index + 1));
+    }
+    assert_eq!(*received.borrow(), expected);
+    msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
+}
+
+#[rstest]
+#[case::cash_update(AccountType::Cash, true)]
+#[case::wallet_initial(AccountType::Wallet, false)]
+#[case::wallet_update(AccountType::Wallet, true)]
+fn test_rejected_account_update_is_not_published(
+    #[case] account_type: AccountType,
+    #[case] existing_account: bool,
+    #[values(false, true)] endpoint: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        Rc::new(RefCell::new(Cache::default())),
+        None,
+    );
+    let account_id = AccountId::from("SIM-001");
+    let state = |amount: &str| {
+        AccountState::new(
+            account_id,
+            account_type,
+            vec![AccountBalance::new(
+                Money::from(amount),
+                Money::zero(Currency::USD()),
+                Money::from(amount),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            (account_type != AccountType::Wallet).then_some(Currency::USD()),
+        )
+    };
+    let initial = state("100.00 USD");
+
+    if existing_account {
+        portfolio.update_account(&initial);
+    }
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let handler = TypedHandler::from({
+        let received = Rc::clone(&received);
+        move |event: &AccountState| received.borrow_mut().push(event.clone())
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), None);
+    let rejected = state("-1.00 USD");
+
+    if endpoint {
+        msgbus::send_account_state(MessagingSwitchboard::portfolio_update_account(), &rejected);
+    } else {
+        portfolio.update_account(&rejected);
+    }
+    assert!(received.borrow().is_empty());
+    let cache = portfolio.cache().borrow();
+
+    if existing_account {
+        let account = cache.account(&account_id).unwrap();
+        assert_eq!(account.last_event(), Some(initial));
+        assert_eq!(account.events().len(), 1);
+    } else {
+        assert!(cache.account(&account_id).is_none());
+    }
+    msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
+}
+
 #[fixture]
 fn simple_cache() -> Cache {
     Cache::new(None, None)
@@ -1885,11 +2000,15 @@ fn test_position_update_publishes_margin_account_state(
     let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
     let handler = TypedHandler::from({
         let captured = Rc::clone(&captured);
+        let cache = Rc::clone(portfolio.cache());
         move |event: &AccountState| {
+            let cache = cache.borrow();
+            let account = cache.account(&event.account_id).unwrap();
+            assert_eq!(account.last_event().unwrap().event_id, event.event_id);
             captured.borrow_mut().push(event.clone());
         }
     });
-    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(20));
 
     let fill = make_fill_for_account(
         &instrument_audusd,
@@ -2018,8 +2137,22 @@ fn test_margin_position_adjusted_recomputes_account_only_for_quantity_change(
         Rc::new(RefCell::new(simple_cache)),
         None,
     );
+    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let captured = Rc::clone(&captured);
+        move |event: &AccountState| {
+            captured.borrow_mut().push(event.clone());
+        }
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
+
     let account_state = get_margin_account(Some(account_id.as_str()));
     portfolio.update_account(&account_state);
+    assert_eq!(
+        captured.borrow().as_slice(),
+        std::slice::from_ref(&account_state)
+    );
+    captured.borrow_mut().clear();
     portfolio
         .cache()
         .borrow_mut()
@@ -2041,15 +2174,6 @@ fn test_margin_position_adjusted_recomputes_account_only_for_quantity_change(
         .borrow_mut()
         .add_position(&position, OmsType::Hedging)
         .unwrap();
-
-    let captured = Rc::new(RefCell::new(Vec::<AccountState>::new()));
-    let handler = TypedHandler::from({
-        let captured = Rc::clone(&captured);
-        move |event: &AccountState| {
-            captured.borrow_mut().push(event.clone());
-        }
-    });
-    msgbus::subscribe_account_state("events.account.*".into(), handler, Some(10));
 
     let adjustment = PositionAdjusted::new(
         position.trader_id,
@@ -2073,12 +2197,20 @@ fn test_margin_position_adjusted_recomputes_account_only_for_quantity_change(
         .event_count();
     portfolio.update_position(&PositionEvent::PositionAdjusted(adjustment));
 
-    // Either way one state is published; only a quantity change recomputes a new one
+    // PnL-only adjustments reuse the state already published; quantity changes create a new one
     let cache = portfolio.cache().borrow();
     let account = cache.account(&account_id).unwrap();
     let captured = captured.borrow();
-    assert_eq!(captured.len(), 1);
-    assert_eq!(captured[0].event_id, account.last_event().unwrap().event_id);
+    assert_eq!(captured.len(), usize::from(expect_recompute));
+    if expect_recompute {
+        assert_eq!(captured[0].event_id, account.last_event().unwrap().event_id);
+        assert_ne!(captured[0].event_id, account_state.event_id);
+    } else {
+        assert_eq!(
+            account.last_event().unwrap().event_id,
+            account_state.event_id
+        );
+    }
     assert_eq!(
         account.event_count(),
         events_before + usize::from(expect_recompute)
@@ -2155,6 +2287,10 @@ fn test_pnl_only_adjustments_publish_each_account_state_once(
     funding_state.ts_event = UnixNanos::from(1);
     funding_state.ts_init = UnixNanos::from(1);
     portfolio.update_account(&funding_state);
+    assert_eq!(
+        captured.borrow().as_slice(),
+        std::slice::from_ref(&funding_state)
+    );
 
     let adjust_all = |portfolio: &mut Portfolio| {
         for position in &positions {

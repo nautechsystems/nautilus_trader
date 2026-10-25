@@ -806,8 +806,21 @@ A batch ready exactly at the deadline is discarded.
 
 Once the batch is accepted, deferred adapter processing and report application run synchronously,
 without another deadline check or cancellation point. Slow processing does not discard accepted reports.
-Targeted follow-up queries use a separate bounded task. Discarding a batch skips deferred adapter work;
-it cannot undo state changes an adapter makes during collection.
+Discarding a batch or targeted response skips deferred adapter work; it cannot undo state changes an adapter
+makes during collection.
+
+Targeted follow-up queries use one timeout budget starting when their task starts. For each order, the node
+tries available responsible clients in order and stops at the first matching status. It queries any required
+companion fills before starting the next order's status query. Each status query keeps its client busy until
+deferred processing or disposal. A companion fill query releases that client before the next order's query.
+
+The node accepts each status or fill response only before the original deadline, then runs deferred
+processing.
+A response ready exactly at the deadline is discarded. Accepted results stay under node ownership until
+reconciliation, including after fill timeout, fill error, cancellation, or normal shutdown. Slow processing
+cannot discard accepted results. A canceled or expired status with unaccounted fills stays deferred until
+those fills arrive. A timed out or canceled task does not resolve orders as missing. Fatal callback failure
+stops further dispatch and discards the retained results.
 
 The table below applies when cache state differs from venue state. A missing open-order report does not by
 itself prove a pending modify or cancel outcome. Thus, these checks leave those states unresolved until
@@ -899,6 +912,10 @@ event.
 The engine caps single-order queries per cycle with `max_single_order_queries_per_cycle`. Remaining orders are
 deferred to the next cycle. `single_order_query_delay_ms` spaces out consecutive queries to avoid rate limits.
 This handles bulk query failures across hundreds of orders without overwhelming the venue API.
+
+Targeted tasks apply the delay between available-client status attempts across all orders in the task.
+Unavailable clients consume no delay. A companion fill request follows its matching status without an extra
+pacing delay; the next status attempt uses the configured delay and the remaining timeout budget.
 
 ## Common reconciliation scenarios
 

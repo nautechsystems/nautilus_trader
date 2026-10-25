@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 mod emitter;
+mod external_account;
 mod manager;
 mod node;
 #[cfg(feature = "streaming")]

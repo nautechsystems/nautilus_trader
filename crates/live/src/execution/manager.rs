@@ -88,6 +88,8 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
+#[cfg(feature = "node")]
+pub(crate) use super::reconciliation::collect_targeted_order_reports;
 pub(crate) use super::reconciliation::{
     OpenOrderReconciliationResult, OpenOrderReportCheck, SourcedOrderStatusReport,
     TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
