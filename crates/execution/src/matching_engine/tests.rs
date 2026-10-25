@@ -4908,6 +4908,109 @@ fn test_bar_gap_stop_fills_at_open() {
 }
 
 #[rstest]
+#[case::zero("0.000")]
+#[case::one("0.001")]
+#[case::two("0.002")]
+#[case::three("0.003")]
+#[case::four("0.004")]
+#[case::many("10.000")]
+fn test_bar_trade_ticks_without_orders_match_per_tick_processing(
+    #[case] volume: &str,
+    #[values(false, true)] adaptive_ordering: bool,
+    #[values(false, true)] liquidity_consumption: bool,
+) {
+    // A resting order away from the market keeps the second engine on the per-tick path
+    let mut engines = [false, true].map(|with_order| {
+        let (mut engine, events) =
+            custom_book_engine(BookType::L1_MBP, liquidity_consumption, false);
+        engine.config.bar_execution = true;
+        engine.config.bar_adaptive_high_low_ordering = adaptive_ordering;
+
+        if with_order {
+            let mut order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(engine.instrument.id())
+                .client_order_id(ClientOrderId::from("AWAY"))
+                .side(OrderSide::Buy)
+                .price(Price::from("1.00"))
+                .quantity(Quantity::from("1.000"))
+                .submit(true)
+                .build();
+            process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+        }
+
+        (engine, events)
+    });
+    let bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+    // The last bar is stale, so the book skips its trade ticks
+    let bars = [
+        (2, ["100.00", "102.00", "99.00", "101.00"]),
+        (3, ["103.00", "103.00", "100.00", "100.00"]),
+        (4, ["100.00", "100.00", "100.00", "100.00"]),
+        (5, ["98.00", "101.00", "97.50", "99.00"]),
+        (4, ["99.50", "100.50", "98.50", "100.00"]),
+    ];
+
+    for (ts, [open, high, low, close]) in bars {
+        let ts = UnixNanos::from(ts);
+        let bar = Bar::new(
+            bar_type,
+            Price::from(open),
+            Price::from(high),
+            Price::from(low),
+            Price::from(close),
+            Quantity::from(volume),
+            ts,
+            ts,
+        );
+        let [(idle_updates, idle), (busy_updates, busy)] = engines.each_mut().map(|(engine, _)| {
+            let sequence = engine.book.sequence;
+            engine.process_bar(&bar);
+            let state = (
+                engine.core.last,
+                engine.core.bid,
+                engine.core.ask,
+                engine.book.best_bid_price(),
+                engine.book.best_bid_size(),
+                engine.book.best_ask_price(),
+                engine.book.best_ask_size(),
+                engine.book.ts_last,
+                engine.fill_at_market,
+                engine.l1_trade_size,
+                engine.trade_consumption,
+            );
+            (engine.book.sequence - sequence, state)
+        });
+
+        assert_eq!(idle, busy);
+        assert_eq!(idle_updates, busy_updates.min(1));
+    }
+
+    let [idle_fill, busy_fill] = engines.each_mut().map(|(engine, events)| {
+        events.borrow_mut().clear();
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(engine.instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.001"))
+            .submit(true)
+            .build();
+        process_cached_order(engine, &mut order, AccountId::from("SIM-001"));
+
+        events
+            .borrow()
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty, fill.trade_id)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    });
+
+    // Zero volume bars apply no trades, which leaves no market to fill against
+    assert_eq!(idle_fill.is_empty(), volume == "0.000");
+    assert_eq!(idle_fill, busy_fill);
+}
+
+#[rstest]
 fn test_quote_bar_close_restores_market_fill_and_clears_pair() {
     let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
     engine.config.bar_execution = true;

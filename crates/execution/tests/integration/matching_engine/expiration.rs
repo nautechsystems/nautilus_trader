@@ -244,6 +244,69 @@ fn test_expiration_settles_final_tick_fills(
 }
 
 #[rstest]
+fn test_expiration_bar_settles_at_first_trade_tick() {
+    let expiry = UnixNanos::from(2_000_000_000_000_000_000u64);
+    let instrument =
+        InstrumentAny::FuturesContract(futures_contract_es(Some(0.into()), Some(expiry)));
+    let account_id = AccountId::from("ACCOUNT-001");
+    let (mut engine, _cache, saved) = bracket_margin_engine(
+        &instrument,
+        account_id,
+        OmsType::Netting,
+        BookType::L1_MBP,
+        OrderMatchingEngineConfig {
+            bar_execution: true,
+            ..Default::default()
+        },
+    );
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument.id(),
+        Price::from("4.00"),
+        Price::from("5.00"),
+        Quantity::from(10),
+        Quantity::from(10),
+        1.into(),
+        1.into(),
+    ));
+    let mut opening = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
+    engine.process_order(&mut opening, account_id);
+    clear_order_event_handler_messages(&saved);
+
+    // No orders are working, but expiration still settles on the bar's first trade tick
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()).as_str());
+    for (open, high, low, close, ts) in [
+        ("5.00", "5.50", "4.50", "5.25", UnixNanos::from(2)),
+        ("6.00", "8.00", "5.00", "7.00", expiry),
+    ] {
+        engine.process_bar(&Bar::new(
+            bar_type,
+            Price::from(open),
+            Price::from(high),
+            Price::from(low),
+            Price::from(close),
+            Quantity::from(4),
+            ts,
+            ts,
+        ));
+    }
+
+    let events = get_order_event_handler_messages(&saved);
+    let [OrderEventAny::Accepted(_), OrderEventAny::Filled(close)] = events.as_slice() else {
+        panic!("Expected expiration settlement, received {events:?}");
+    };
+
+    assert!(close.client_order_id.as_str().starts_with("EXPIRATION-"));
+    assert_eq!(close.order_side, OrderSide::Sell);
+    assert_eq!(close.last_qty, Quantity::from(1));
+    assert_eq!(close.last_px, Price::from("6.00"));
+}
+
+#[rstest]
 fn test_expiration_waits_for_position_after_order_acknowledgement(
     #[values(false, true)] option: bool,
     #[values(1, 2)] fill_qty: u64,
