@@ -152,6 +152,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid data client consumption loop remaining active after its WebSocket handler closes
 - Fixed Hyperliquid REST fill reports omitting venue client order IDs
 - Fixed Hyperliquid REST order and fill report panics on invalid client order IDs
+- Fixed Hyperliquid reconnect recovery losing missed events after history request failures
 - Fixed Interactive Brokers small-lot entry prices after commission rounding (#5327), thanks @bebop23
 - Fixed Interactive Brokers futures expiry times blocking market data (#5318), thanks @chaneyka1
 - Fixed Interactive Brokers quote sizes dropped by float rounding (#5318), thanks @chaneyka1

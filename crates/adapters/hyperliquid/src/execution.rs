@@ -2748,6 +2748,8 @@ impl HyperliquidExecutionClient {
             // Venue time of the latest delivered report (the stream start before any), so a
             // stalled stream cannot push the recovery window past events lost after it.
             let mut ts_last_report = clock.get_time_ns();
+            let mut recovery_window: Option<RecoveryWindow> = None;
+            let mut reconnect_generation = 0;
             let mut recovered_reports = None;
             let (follow_up_tx, mut follow_up_rx) =
                 tokio::sync::mpsc::unbounded_channel::<FollowUpHistory>();
@@ -2755,6 +2757,7 @@ impl HyperliquidExecutionClient {
             loop {
                 let event = next_execution_event(
                     &mut recovered_reports,
+                    &mut recovery_window,
                     &mut follow_up_rx,
                     &mut ws_client,
                     &http_client,
@@ -2937,12 +2940,22 @@ impl HyperliquidExecutionClient {
                         NautilusWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
 
+                            reconnect_generation += 1;
+
+                            let window = RecoveryWindow {
+                                ts_start: recovery_window
+                                    .map_or(ts_last_report, |window| window.ts_start),
+                                generation: reconnect_generation,
+                            };
+
+                            recovery_window = Some(window);
+
                             recovered_reports = fetch_reconnect_reports(
                                 &ws_client,
                                 &http_client,
                                 &dispatch_state,
                                 &subscription_address,
-                                ts_last_report,
+                                window.ts_start,
                             )
                             .await
                             .inspect(|reports| {
@@ -2961,7 +2974,7 @@ impl HyperliquidExecutionClient {
                             spawn_follow_up_history_read(
                                 &http_client,
                                 &subscription_address,
-                                ts_last_report,
+                                window,
                                 follow_up_tx.clone(),
                                 &session_spawner,
                             );
@@ -3016,6 +3029,7 @@ async fn refresh_scheduled_cancel(
 
 async fn next_execution_event(
     recovered_reports: &mut Option<Vec<ExecutionReport>>,
+    recovery_window: &mut Option<RecoveryWindow>,
     follow_up_rx: &mut tokio::sync::mpsc::UnboundedReceiver<FollowUpHistory>,
     ws_client: &mut HyperliquidWebSocketClient,
     http_client: &HyperliquidHttpClient,
@@ -3036,16 +3050,21 @@ async fn next_execution_event(
                 released.into_iter().map(ExecutionReport::Order).collect(),
             ))
         }
-        Some((orders, fills, ts_last_report)) = follow_up_rx.recv() => {
+        Some((orders, fills, window)) = follow_up_rx.recv() => {
             let reports = reconnect_reports_from_history(
                 fills,
                 orders,
-                ts_last_report.saturating_sub(RECONNECT_RECOVERY_MARGIN),
+                window.ts_start.saturating_sub(RECONNECT_RECOVERY_MARGIN),
                 ws_client,
                 http_client,
                 dispatch_state,
             )
             .inspect(|reports| {
+                // An older read cannot settle a gap reopened by a newer reconnect
+                if *recovery_window == Some(window) {
+                    *recovery_window = None;
+                }
+
                 log::info!(
                     "Recovered {} execution reports in the follow-up history read",
                     reports.len(),
@@ -3103,18 +3122,24 @@ async fn fetch_reconnect_reports(
     )
 }
 
-// Raw history a follow-up read fetched, with the last report time that bounds its window
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RecoveryWindow {
+    ts_start: UnixNanos,
+    generation: u64,
+}
+
+// Raw history a follow-up read fetched, with the recovery window it can settle
 type FollowUpHistory = (
     Vec<HyperliquidOrderStatusEntry>,
     HyperliquidFills,
-    UnixNanos,
+    RecoveryWindow,
 );
 
 // The stream loop builds and replays the reports, so a slow read never holds back stream updates
 fn spawn_follow_up_history_read(
     http_client: &HyperliquidHttpClient,
     account_address: &str,
-    ts_last_report: UnixNanos,
+    window: RecoveryWindow,
     sender: tokio::sync::mpsc::UnboundedSender<FollowUpHistory>,
     task_spawner: &TaskSpawner,
 ) {
@@ -3126,7 +3151,7 @@ fn spawn_follow_up_history_read(
 
         match read_history(&http_client, &account_address).await {
             Ok((orders, fills)) => {
-                let _ = sender.send((orders, fills, ts_last_report));
+                let _ = sender.send((orders, fills, window));
             }
             Err(e) => log::error!("Failed the follow-up history read: {e:#}"),
         }
