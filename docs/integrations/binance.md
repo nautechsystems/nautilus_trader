@@ -901,8 +901,8 @@ Spot.
 
 Historical trade requests without bounds use the recent-trades endpoint. A request with time bounds uses
 aggregate trades and accepts at most 1000 records, so the source follows the request rather than a config
-option. Spot passes the supplied bounds to `/api/v3/aggTrades`. Futures accepts either bound within the last
-24 hours. When both are supplied, the range must be shorter than one hour.
+option. Spot passes the supplied bounds to `/api/v3/aggTrades`. Futures requires each supplied bound to be
+within the last 48 hours. When both are supplied, the range must be shorter than one hour.
 
 Historical core bar requests accept externally aggregated time bars and use the corresponding venue kline
 endpoint. Internally aggregated bars are built by the `DataEngine` from raw trade, quote, or source-bar

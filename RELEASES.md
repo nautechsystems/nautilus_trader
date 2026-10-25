@@ -129,6 +129,7 @@ Released on TBD (UTC).
 - Fixed Architect AX special-fill reconciliation, fill-history windows, and cached flat-position recovery
 - Fixed Architect AX position-report requests dropping flat rows and skipping invalid rows
 - Fixed Binance Spot and Futures overlapping instrument-status updates losing or duplicating changes
+- Fixed Binance USD-M and COIN-M aggregate trade requests rejecting history between 24 and 48 hours old
 - Fixed Binance Futures funding-fee account updates discarding symbol attribution
 - Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot account balances panicking or skipping an unrepresentable amount

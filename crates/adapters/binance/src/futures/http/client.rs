@@ -25,7 +25,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use aws_lc_rs::digest;
 use dashmap::DashMap;
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{AtomicMap, datetime::SECONDS_IN_DAY, nanos::UnixNanos, time::AtomicTime};
 use nautilus_model::{
@@ -3295,12 +3295,11 @@ impl BinanceFuturesHttpClient {
         end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let cutoff =
-            self.clock.get_time_ns().to_datetime_utc() - jiff::SignedDuration::from_hours(24);
+        let cutoff = self.clock.get_time_ns().to_datetime_utc() - SignedDuration::from_hours(48);
         anyhow::ensure!(
             start.as_ref().is_none_or(|value| value >= &cutoff)
                 && end.as_ref().is_none_or(|value| value >= &cutoff),
-            "Binance Futures aggregate trade history is limited to the past 24 hours"
+            "Binance Futures aggregate trade history is limited to the past 48 hours"
         );
         let (symbol, price_precision, size_precision) =
             self.cached_precisions_by_id(instrument_id)?;
@@ -4137,21 +4136,48 @@ mod tests {
     }
 
     #[rstest]
-    #[case::start(true, false)]
-    #[case::end(false, true)]
-    #[case::both(true, true)]
+    #[case::at_cutoff(0, false)]
+    #[case::before_cutoff(-1, true)]
+    #[case::after_cutoff(1, false)]
     #[tokio::test]
-    async fn test_request_agg_trades_rejects_history_older_than_24_hours(
-        #[case] include_start: bool,
-        #[case] include_end: bool,
+    async fn test_request_agg_trades_48_hour_boundary(
+        #[case] offset_ms: i64,
+        #[case] rejected: bool,
+        #[values(BinanceProductType::UsdM, BinanceProductType::CoinM)]
+        product_type: BinanceProductType,
+        #[values((true, false), (false, true), (true, true))] bounds: (bool, bool),
     ) {
-        let client = create_test_client();
-        let start = Timestamp::now() - jiff::SignedDuration::from_hours(25);
-        let end = start + jiff::SignedDuration::from_mins(30);
+        let (include_start, include_end) = bounds;
+        let now = UnixNanos::from_millis(1_800_000_000_000);
+        let clock = Box::leak(Box::new(AtomicTime::new(false, now)));
+        let client = BinanceFuturesHttpClient::new(
+            product_type,
+            BinanceEnvironment::Testnet,
+            clock,
+            None,
+            None,
+            Some("http://127.0.0.1:1".to_string()),
+            None,
+            Some(1),
+            None,
+            false,
+        )
+        .unwrap();
+        let start = now.to_datetime_utc() - SignedDuration::from_hours(48)
+            + SignedDuration::from_millis(offset_ms);
+        let end = start + SignedDuration::from_mins(30);
+
+        let instrument_id = InstrumentId::from(match product_type {
+            BinanceProductType::UsdM => "BTCUSDT-PERP.BINANCE",
+            BinanceProductType::CoinM => "BTCUSD_PERP.BINANCE",
+            _ => unreachable!(),
+        });
+
+        let end = if include_start { end } else { start };
 
         let error = client
             .request_agg_trades(
-                InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+                instrument_id,
                 include_start.then_some(start),
                 include_end.then_some(end),
                 Some(1000),
@@ -4159,10 +4185,13 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert_eq!(
-            error.to_string(),
-            "Binance Futures aggregate trade history is limited to the past 24 hours"
-        );
+        let expected = if rejected {
+            "Binance Futures aggregate trade history is limited to the past 48 hours".to_string()
+        } else {
+            InstrumentLookupError::not_found(instrument_id).to_string()
+        };
+
+        assert_eq!(error.to_string(), expected);
     }
 
     fn create_test_raw_client() -> BinanceRawFuturesHttpClient {
