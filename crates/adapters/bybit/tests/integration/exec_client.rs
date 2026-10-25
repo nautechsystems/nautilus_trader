@@ -59,7 +59,7 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, GenerateFillReports,
             GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
         },
         system::SocketState,
@@ -71,8 +71,8 @@ use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnec
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
-        TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     events::{AccountState, OrderCanceled, OrderDenied, OrderEventAny},
     identifiers::{
@@ -85,10 +85,12 @@ use nautilus_model::{
         StopMarketOrder, TrailingStopMarketOrder, builder::OrderTestBuilder,
         stubs::TestOrderEventStubs,
     },
-    types::{AccountBalance, Money, Price, Quantity},
+    reports::FillReport,
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
@@ -114,6 +116,7 @@ struct TestServerState {
     cancel_order_ret_code: Arc<AtomicUsize>,
     cancel_order_requests: Arc<AtomicUsize>,
     cancel_all_requests: Arc<AtomicUsize>,
+    execution_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     position_requests: Arc<AtomicUsize>,
     wallet_balance_requests: Arc<AtomicUsize>,
     ping_count: Arc<AtomicUsize>,
@@ -145,6 +148,7 @@ impl Default for TestServerState {
             cancel_order_ret_code: Arc::new(AtomicUsize::new(0)),
             cancel_order_requests: Arc::new(AtomicUsize::new(0)),
             cancel_all_requests: Arc::new(AtomicUsize::new(0)),
+            execution_response: Arc::default(),
             position_requests: Arc::new(AtomicUsize::new(0)),
             wallet_balance_requests: Arc::new(AtomicUsize::new(0)),
             ping_count: Arc::new(AtomicUsize::new(0)),
@@ -259,6 +263,17 @@ async fn handle_get_positions(
     state.position_requests.fetch_add(1, Ordering::Relaxed);
     let positions = load_test_data("http_get_positions.json");
     Json(positions).into_response()
+}
+
+async fn handle_get_executions(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(response) = state.execution_response.lock().await.as_ref() {
+        return Json(response.clone()).into_response();
+    }
+
+    handle_get_empty_report_list(headers).await.into_response()
 }
 
 async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
@@ -792,7 +807,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/position/list", get(handle_get_positions))
         .route("/v5/order/realtime", get(handle_get_orders_realtime))
         .route("/v5/order/history", get(handle_get_orders_history))
-        .route("/v5/execution/list", get(handle_get_empty_report_list))
+        .route("/v5/execution/list", get(handle_get_executions))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
         .route("/v5/order/cancel-all", post(handle_cancel_all_orders))
@@ -1084,6 +1099,84 @@ async fn test_exec_client_bulk_position_coverage_by_product_type(
         client.provides_bulk_position_coverage(InstrumentId::from(instrument_id)),
         expected
     );
+}
+
+#[rstest]
+#[case::targeted(false)]
+#[case::mass_status(true)]
+#[tokio::test]
+async fn test_exec_client_commission_failure_and_recovery(#[case] mass_status: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    let mut response = load_test_data("http_get_executions.json");
+    response["result"]["nextPageCursor"] = json!("");
+    response["result"]["list"][1]["execFee"] = json!("9999999999999999999999999999");
+    *state.execution_response.lock().await = Some(response.clone());
+    let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+    let venue_order_id = VenueOrderId::from("7b954230-6a41-3ba8-bc20-26d20ab44b83");
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(instrument_id),
+        Some(venue_order_id),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let e = if mass_status {
+        client.generate_mass_status(None).await.unwrap_err()
+    } else {
+        client.generate_fill_reports(cmd.clone()).await.unwrap_err()
+    };
+
+    assert!(
+        e.to_string()
+            .contains("Failed to create commission from execFee=")
+    );
+
+    response["result"]["list"][1]["execFee"] = json!("0.01234567");
+    *state.execution_response.lock().await = Some(response);
+
+    let reports = if mass_status {
+        client
+            .generate_mass_status(None)
+            .await
+            .unwrap()
+            .unwrap()
+            .fill_reports()
+            .shift_remove(&venue_order_id)
+            .unwrap()
+    } else {
+        client.generate_fill_reports(cmd).await.unwrap()
+    };
+
+    assert_eq!(reports.len(), 1);
+
+    let expected = FillReport::new(
+        AccountId::from("BYBIT-001"),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("f1dce92e-1g29-6977-a526-dg420c6ecb4c"),
+        OrderSide::Sell,
+        Quantity::from("0.50"),
+        Price::from("3000.00"),
+        Money::from_decimal(dec!(0.01234567), Currency::USDT()).unwrap(),
+        LiquiditySide::Taker,
+        Some(ClientOrderId::from("test-order-002")),
+        None,
+        UnixNanos::from(1_672_282_822_529_000_000),
+        reports[0].ts_init,
+        Some(reports[0].report_id),
+    );
+
+    assert_eq!(reports, vec![expected]);
+
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
