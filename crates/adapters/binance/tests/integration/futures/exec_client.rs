@@ -1775,6 +1775,44 @@ async fn test_disconnect_sets_state() {
 
 #[rstest]
 #[tokio::test]
+async fn test_disconnect_succeeds_when_listen_key_is_already_absent() {
+    let closes = Arc::new(AtomicUsize::new(0));
+    let close_count = closes.clone();
+    let router = create_exec_test_router().layer(middleware::from_fn(
+        move |request: Request, next: Next| {
+            let count = close_count.clone();
+            async move {
+                if request.method() == Method::DELETE
+                    && request.uri().path() == "/fapi/v1/listenKey"
+                {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        axum::Json(json!({"code": -1125, "msg": "This listenKey does not exist."})),
+                    )
+                        .into_response();
+                }
+                next.run(request).await
+            }
+        },
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{address}"), format!("ws://{address}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
+    assert_eq!(closes.load(Ordering::SeqCst), 1);
+    server.abort();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_connect_succeeds_when_set_leverage_rejected() {
     let addr = start_exec_test_server_with_leverage_reject().await;
     let base_url_http = format!("http://{addr}");
