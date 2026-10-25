@@ -26,7 +26,7 @@ round trip.
 The transaction and grouped-order fixtures cover market IDs `40000`, `4294967296`, and
 `281474976710655` across create, cancel, modify, grouped orders, and leverage updates.
 The v1.0.12 signer's upper market-ID bound is `281474976710655` (`2^48 - 1`); larger IDs are excluded
-because its validation rejects them. The sentinel ID `255` is also invalid. See the pinned
+because its validation rejects them. Order and leverage transactions also reject `255`; see the pinned
 [market-ID bounds](https://github.com/elliottech/lighter-go/blob/324c93b067f24ede24918f3ac10663605d5f11c3/types/txtypes/constants.go#L170-L173).
 
 This program is committed for reproducibility. It is not built into the crate
@@ -50,11 +50,15 @@ has SHA-256 `7f107a0e2240aa40c9f0ae8aba396380fe62892fe199dd3691e3103fc9a6fd8e`.
 
 `--grouped-out` optionally writes the grouped fixture to the supplied path, covering OTO, OCO, and
 OTOCO with empty and populated transaction attributes. For every fixture, use the signer at the
-pinned `UPSTREAM_REVISION` in `generate_oracle.py`. The auth-token and self-trade fixtures remain
-unchanged until regenerated with their optional flags.
+pinned `UPSTREAM_REVISION` in `generate_oracle.py`. The auth-token, self-trade, and account cancellation
+fixtures remain unchanged until regenerated with their optional flags.
 
 `--self-trade-out` optionally writes every permitted self-trade behavior/equality pair, with and
 without zero-fee integrator attribution. Default-valued modes do not contribute to the attribute hash.
+
+`--cancel-all-out ../../../crates/adapters/lighter/test_data/signing_cancel_all_tx_oracle.json`
+writes immediate, scheduled, and abort-scheduled account-wide cancellation vectors. Each mode uses
+the nil market sentinel `255`, so no market-scoping attribute enters the signed payload.
 
 `--auth-out` is optional. When set, the script also drives the signer's
 `CreateAuthToken` against fixed `(deadline, account_index, api_key_index)`

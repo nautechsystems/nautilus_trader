@@ -593,6 +593,11 @@ def main() -> int:
     )
     parser.add_argument("--grouped-out", type=Path, help="optional grouped-order oracle fixture")
     parser.add_argument(
+        "--cancel-all-out",
+        type=Path,
+        help="optional account cancellation oracle fixture",
+    )
+    parser.add_argument(
         "--self-trade-out",
         type=Path,
         help="optional self-trade attribute oracle fixture",
@@ -672,7 +677,31 @@ def main() -> int:
     if args.auth_out is not None:
         write_auth_oracle(lib, sk, chain_id, account_index, api_key_index, args.auth_out)
 
+    if args.cancel_all_out is not None:
+        payload["vectors"] = build_cancel_all_vectors(lib, base_ctx)
+        args.cancel_all_out.parent.mkdir(parents=True, exist_ok=True)
+        args.cancel_all_out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {len(payload['vectors'])} cancellation vectors to {args.cancel_all_out}")
+
     return 0
+
+
+def build_cancel_all_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
+    """
+    Generate immediate, scheduled, and abort-scheduled account cancellation vectors.
+    """
+    vectors = []
+    for time_in_force, scheduled_time_ms in ((0, 0), (1, 1_999_999_123_456), (2, 0)):
+        ctx = {**base_ctx, "nonce": 61 + time_in_force}
+        fields = {
+            "time_in_force": time_in_force,
+            "scheduled_time_ms": scheduled_time_ms,
+            "cancel_all_market_index": 255,
+            "skip_nonce": 0,
+        }
+        decoded = gen_cancel_all_orders(lib, ctx, fields)
+        vectors.append(build_vector("cancel_all_orders", ctx, fields, decoded))
+    return vectors
 
 
 def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:

@@ -46,7 +46,8 @@ and oracle fixtures Lighter requires for L2 transaction signing.
 - **`elliottech/lighter-go` and `elliottech/lighter-python` contributors**
   - Usage: The script under `scripts/oracle-py/lighter/` loads the compiled signer
     released by `lighter-go` v1.0.12 at revision `324c93b067f24ede24918f3ac10663605d5f11c3`
-    to generate transaction and grouped-order oracle fixtures under `test_data/`.
+    to generate transaction, grouped-order, and account cancellation oracle fixtures under `test_data/`.
+    The account cancellation outputs are in `test_data/signing_cancel_all_tx_oracle.json`.
     Auth-token and self-trade fixtures remain from the official Python SDK.
     The compiled signer is not vendored in this repository and is not linked into the crate;
     only the generated fixture outputs are committed for byte-equivalence tests.

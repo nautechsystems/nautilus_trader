@@ -461,6 +461,10 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/test_data/signing_tx_oracle.json",
     ));
+    const CANCEL_ALL_ORACLE_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test_data/signing_cancel_all_tx_oracle.json",
+    ));
 
     #[derive(Debug, Deserialize)]
     struct OracleFile {
@@ -903,7 +907,14 @@ mod tests {
 
     #[rstest]
     fn oracle_tx_hash_matches_cancel_all_orders() {
-        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        let suite: OracleFile = serde_json::from_str(CANCEL_ALL_ORACLE_JSON).expect("parse oracle");
+        let modes: Vec<_> = suite
+            .vectors
+            .iter()
+            .map(|v| v.fields["time_in_force"].as_u64().unwrap())
+            .collect();
+        assert_eq!(modes, vec![0, 1, 2]);
+
         for v in suite
             .vectors
             .iter()
@@ -1093,7 +1104,7 @@ mod tests {
 
     #[rstest]
     fn cancel_all_orders_json_byte_equals_oracle_modulo_sig() {
-        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        let suite: OracleFile = serde_json::from_str(CANCEL_ALL_ORACLE_JSON).expect("parse oracle");
         for v in suite
             .vectors
             .iter()

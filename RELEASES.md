@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Added Interactive Brokers `max_reconnect_attempts` configuration (#5392), thanks @tradatious
 - Added liquidation prices to Lighter position status reports
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
+- Added Lighter Rust APIs for account-wide cancellation and manual scheduled cancellation with revocation
 - Added Lighter self-trade behavior and account-scope order params with explicit defaults
 - Added OKX startup reconciliation history page limits (#5279), thanks for reporting @almostintuitive
 - Added OKX trading-account bills and archive queries (#5352), thanks @silarin

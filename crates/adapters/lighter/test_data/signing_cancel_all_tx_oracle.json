@@ -1,0 +1,69 @@
+{
+  "metadata": {
+    "license": "Apache-2.0 (lighter-go repository; compiled signer binary)",
+    "primitive": "lighter_l2_tx",
+    "source": "github.com/elliottech/lighter-go",
+    "upstream_version": "1.0.12",
+    "upstream_revision": "324c93b067f24ede24918f3ac10663605d5f11c3",
+    "note": "Sig is non-deterministic (random k); tx_hash and tx_info carry deterministic byte equality targets."
+  },
+  "vectors": [
+    {
+      "kind": "cancel_all_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 61,
+      "fields": {
+        "time_in_force": 0,
+        "scheduled_time_ms": 0,
+        "cancel_all_market_index": 255,
+        "skip_nonce": 0
+      },
+      "tx_type": 16,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"TimeInForce\":0,\"Time\":0,\"ExpiredAt\":1792891144403,\"Nonce\":61,\"Sig\":\"0Z8oFdO64ovMhuXAcWMmtXv9LxyKqQ4TtZRZh9Nxo+4qIe/GM6tqMTToUQ0bel10hhJIk6TZK9cGzOXW+vsnQ7wrk3dgZxo3t0pZkzs9p38=\",\"L2TxAttributes\":null}",
+      "tx_hash": "3fb3ca6c10aedd18f8ce7fa0d04b4f352e7553800e233d13f9e6fa88605401ef96da8bcb94da89d1",
+      "sig": "d19f2815d3bae28bcc86e5c0716326b57bfd2f1c8aa90e13b5945987d371a3ee2a21efc633ab6a3134e8510d1b7a5d7486124893a4d92bd706cce5d6fafb2743bc2b937760671a37b74a59933b3da77f",
+      "expired_at": 1792891144403
+    },
+    {
+      "kind": "cancel_all_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 62,
+      "fields": {
+        "time_in_force": 1,
+        "scheduled_time_ms": 1999999123456,
+        "cancel_all_market_index": 255,
+        "skip_nonce": 0
+      },
+      "tx_type": 16,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"TimeInForce\":1,\"Time\":1999999123456,\"ExpiredAt\":1792891144404,\"Nonce\":62,\"Sig\":\"Pz3BVfixqVJfZT81qAYcRoweaRV3Pzq/zbT5cvLQKiEU5QtjH+GxJUUKSng3r7RaKvrRYhcaJ4IQ7eF8cAUfDbSIRTXAySq5myZOEmLWZWk=\",\"L2TxAttributes\":null}",
+      "tx_hash": "f0ee45cc9c5d099561a1692996a8f0c1abbd833ba2bbfc9dc225dcdcbea036e0ce5613409d5eabb5",
+      "sig": "3f3dc155f8b1a9525f653f35a8061c468c1e6915773f3abfcdb4f972f2d02a2114e50b631fe1b125450a4a7837afb45a2afad162171a278210ede17c70051f0db4884535c0c92ab99b264e1262d66569",
+      "expired_at": 1792891144404
+    },
+    {
+      "kind": "cancel_all_orders",
+      "chain_id": 300,
+      "sk": "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001",
+      "account_index": 12345,
+      "api_key_index": 5,
+      "nonce": 63,
+      "fields": {
+        "time_in_force": 2,
+        "scheduled_time_ms": 0,
+        "cancel_all_market_index": 255,
+        "skip_nonce": 0
+      },
+      "tx_type": 16,
+      "tx_info": "{\"AccountIndex\":12345,\"ApiKeyIndex\":5,\"TimeInForce\":2,\"Time\":0,\"ExpiredAt\":1792891144405,\"Nonce\":63,\"Sig\":\"kkMfiGjKn6O3svzDSTpjZthG2OMG8fIrT/sOc5B5QTerqElbk6ZSSaPJeEWof1dgmYJY3SifbKAfrhlJrG948z/FWfUtgcn46R9thVKmagk=\",\"L2TxAttributes\":null}",
+      "tx_hash": "5586d443f1053e230b31b32d2e64dd506dc8acbf353f51a193d0e8d2821750c17c2fae260573b550",
+      "sig": "92431f8868ca9fa3b7b2fcc3493a6366d846d8e306f1f22b4ffb0e7390794137aba8495b93a65249a3c97845a87f5760998258dd289f6ca01fae1949ac6f78f33fc559f52d81c9f8e91f6d8552a66a09",
+      "expired_at": 1792891144405
+    }
+  ]
+}

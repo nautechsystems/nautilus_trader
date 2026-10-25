@@ -632,24 +632,52 @@ a venue rejection reason.
 
 ### Advanced order features
 
-| Feature            | Perpetuals | Spot | Notes                                                      |
-| ------------------ | ---------- | ---- | ---------------------------------------------------------- |
-| Order modification | ✓          | ✓    | Modify quantity, price, and trigger price on a live order. |
-| Bracket orders     | ✓          | -    | Native OTO parent with OCO-linked SL/TP exits.             |
-| Iceberg orders     | -          | -    | *Not supported by Lighter*.                                |
-| Trailing stops     | -          | -    | *Not supported by Lighter*.                                |
-| Pegged orders      | -          | -    | *Not supported by Lighter*; no native pegged API type.     |
-| TWAP orders        | -          | -    | *Not currently implemented*; no Nautilus mapping.          |
-| Chase limit orders | -          | -    | *Not currently implemented*.                               |
-| Atomic baskets     | -          | -    | *Not currently implemented*.                               |
-| Leverage update    | ✓          | -    | Perp only; submits a signed `UpdateLeverage` tx.           |
-| Native cancel-all  | -          | -    | *Not currently implemented* in the execution client.       |
-| Dead man's switch  | -          | -    | *Not currently implemented*; venue has scheduled cancel.   |
+| Feature            | Perpetuals | Spot | Notes                                                       |
+| ------------------ | ---------- | ---- | ----------------------------------------------------------- |
+| Order modification | ✓          | ✓    | Modify quantity, price, and trigger price on a live order.  |
+| Bracket orders     | ✓          | -    | Native OTO parent with OCO-linked SL/TP exits.              |
+| Iceberg orders     | -          | -    | *Not supported by Lighter*.                                 |
+| Trailing stops     | -          | -    | *Not supported by Lighter*.                                 |
+| Pegged orders      | -          | -    | *Not supported by Lighter*; no native pegged API type.      |
+| TWAP orders        | -          | -    | *Not currently implemented*; no Nautilus mapping.           |
+| Chase limit orders | -          | -    | *Not currently implemented*.                                |
+| Atomic baskets     | -          | -    | *Not currently implemented*.                                |
+| Leverage update    | ✓          | -    | Perp only; submits a signed `UpdateLeverage` tx.            |
+| Native cancel-all  | ✓          | ✓    | Explicit account-wide cancellation through the Rust client. |
+| Dead man's switch  | ✓          | ✓    | Manual venue-scheduled cancellation; see caveats below.     |
 
-Lighter's [`CancelAllOrders`](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders) supports
-immediate and scheduled cancellation. The execution client uses per-order cancellations. `lighter-flatten`
-uses immediate native account-wide cancellation. The adapter does not schedule or renew cancellation
-deadlines.
+Lighter's [`CancelAllOrders`](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders) transaction
+type 16 supports immediate and scheduled account-wide cancellation. The Rust execution client exposes
+`LighterExecutionClient::cancel_all_orders_account()` for immediate cancellation and
+`LighterExecutionClient::schedule_cancel(time)` to arm, replace, or revoke a schedule.
+These methods require access to the concrete Rust execution client; `ExecutionClient` commands and
+Python do not expose them.
+`lighter-flatten` also uses immediate native account-wide cancellation.
+
+Pass `Some(time)` to schedule cancellation or replace the existing deadline, and `None` to revoke it.
+The deadline is a Unix timestamp in milliseconds, between five minutes and fifteen days after the local
+clock. Allow headroom for rate limiting, latency, and clock skew; the venue can reject a delayed request.
+The client does not renew the deadline or revoke it on disconnect or process exit.
+
+:::warning
+Native cancellation affects all open orders on the configured account, across markets and strategies,
+including orders absent from the local cache. It does not close positions. Use a dedicated account when
+other applications also trade on Lighter.
+:::
+
+These methods use the ordered execution WebSocket and return a transaction hash after a transaction lookup
+confirms acceptance. Cancellation events come from venue order updates;
+acceptance alone does not prove cancellation, or that a schedule was armed, replaced, or revoked.
+Confirm transaction execution and the venue's account schedule before relying on it.
+A transport error, transaction-lookup failure, or confirmation
+timeout can leave the outcome unknown, so check the transaction and venue order state before retrying.
+Venue reads can still list resting orders after a scheduled deadline; treat them as closed only after
+a venue order update or later venue read reports cancellation.
+Dropping or timing out a call's future while waiting for its result does not stop submission, even while
+it waits for rate-limit quota. This also applies to revocation: a timed-out call can still revoke the
+schedule. Session shutdown can discard unsent requests; requests already in flight can have unknown outcomes.
+The generic `CancelAllOrders` command keeps its instrument and side filters and continues to use
+explicit per-order cancellations.
 
 Venue
 [chase limit orders and atomic baskets](https://docs.lighter.xyz/trading/order-types-and-matching#advanced-orders)
@@ -1009,9 +1037,9 @@ non-transaction traffic. Reconcile pending outcomes; do not resend blindly.
 
 ### Shared adapter limiters
 
-One execution limiter enforces `sendtx_quota_per_min` across WebSocket submit, modify, and cancel
-(`sendTx`/`sendTxBatch`) and startup HTTP `sendTx` integrator approval. Raw calls use it when configured,
-falling back to the raw client's REST limiter otherwise.
+One execution limiter enforces `sendtx_quota_per_min` across WebSocket `sendTx`/`sendTxBatch` trading,
+including account-wide cancellation and schedule control, and startup HTTP `sendTx` integrator approval.
+Raw calls use it when configured, falling back to the raw client's REST limiter otherwise.
 
 Clients with identical WebSocket URL strings share a 200-message/minute non-transaction control limiter. The default
 data URL's `readonly=true` separates it from execution. Budget combined control traffic within the per-IP limit.
